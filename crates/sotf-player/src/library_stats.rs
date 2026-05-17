@@ -7,6 +7,24 @@ use std::collections::{HashMap, HashSet};
 
 use crate::Album;
 
+/// Format a channel count without pretending to know a layout that was not
+/// stored in the library metadata.
+pub fn format_channel_count(n: u32) -> String {
+    match n {
+        1 => "1.0 Mono".to_string(),
+        2 => "2.0 Stereo".to_string(),
+        4 => "4.0".to_string(),
+        5 => "5.0".to_string(),
+        6 => "5.1".to_string(),
+        8 => "7.1".to_string(),
+        10 => "10ch (5.1.4/7.1.2)".to_string(),
+        12 => "12ch (7.1.4)".to_string(),
+        14 => "14ch (9.1.4)".to_string(),
+        16 => "16ch (9.1.6)".to_string(),
+        _ => format!("{}ch", n),
+    }
+}
+
 /// Cached library statistics to avoid recomputing on every render frame.
 /// These stats are expensive to compute (O(n) over all albums/tracks) and should
 /// only be invalidated when the library actually changes.
@@ -52,6 +70,8 @@ pub struct LibraryStats {
     pub surround71_count: usize,
     /// Number of albums with more than 8 channels
     pub surround_plus_count: usize,
+    /// Count of albums per exact uniform channel count.
+    pub channel_counts: HashMap<u32, usize>,
     /// Whether stats are valid (false = need recomputation)
     pub valid: bool,
 }
@@ -78,10 +98,12 @@ impl LibraryStats {
         let mut surround_count = 0usize;
         let mut surround71_count = 0usize;
         let mut surround_plus_count = 0usize;
+        let mut channel_counts: HashMap<u32, usize> = HashMap::new();
 
         for album in albums {
             // Count channels
             if let Some(channels) = album.uniform_channel_count() {
+                *channel_counts.entry(channels).or_insert(0) += 1;
                 match channels {
                     1 => mono_count += 1,
                     2 => stereo_count += 1,
@@ -208,6 +230,7 @@ impl LibraryStats {
             surround_count,
             surround71_count,
             surround_plus_count,
+            channel_counts,
             valid: true,
         }
     }
@@ -257,5 +280,47 @@ impl LibraryStats {
                 }
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use crate::{Album, Track};
+
+    use super::*;
+
+    fn album_with_channels(title: &str, channels: u32) -> Album {
+        Album {
+            title: title.to_string(),
+            tracks: vec![Track {
+                path: PathBuf::from(format!("{title}.wav")),
+                channels: Some(channels),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn stats_include_exact_high_channel_counts() {
+        let stats = LibraryStats::compute(&[
+            album_with_channels("stereo", 2),
+            album_with_channels("atmos-a", 10),
+            album_with_channels("atmos-b", 10),
+            album_with_channels("atmos-c", 12),
+        ]);
+
+        assert_eq!(stats.stereo_count, 1);
+        assert_eq!(stats.surround_plus_count, 3);
+        assert_eq!(stats.channel_counts.get(&10), Some(&2));
+        assert_eq!(stats.channel_counts.get(&12), Some(&1));
+    }
+
+    #[test]
+    fn channel_count_labels_do_not_guess_ambiguous_immersive_layouts() {
+        assert_eq!(format_channel_count(10), "10ch (5.1.4/7.1.2)");
+        assert_eq!(format_channel_count(12), "12ch (7.1.4)");
     }
 }

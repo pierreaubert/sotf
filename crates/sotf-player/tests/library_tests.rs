@@ -1,9 +1,37 @@
 use sotf_audio_player::MusicLibrary;
 /// Integration tests for MusicLibrary scanning and directory management
 use sotf_audio_player::database::MusicDatabase;
+use std::io::Write;
 use std::path::PathBuf;
 
 mod fixtures;
+
+fn write_minimal_wav(path: &std::path::Path) {
+    let channels = 2u16;
+    let sample_rate = 44_100u32;
+    let bits_per_sample = 16u16;
+    let samples_per_channel = 8u32;
+    let bytes_per_sample = (bits_per_sample / 8) as u32;
+    let data_size = samples_per_channel * channels as u32 * bytes_per_sample;
+    let byte_rate = sample_rate * channels as u32 * bytes_per_sample;
+    let block_align = channels * (bits_per_sample / 8);
+
+    let mut file = std::fs::File::create(path).expect("create wav");
+    file.write_all(b"RIFF").unwrap();
+    file.write_all(&(36 + data_size).to_le_bytes()).unwrap();
+    file.write_all(b"WAVE").unwrap();
+    file.write_all(b"fmt ").unwrap();
+    file.write_all(&16u32.to_le_bytes()).unwrap();
+    file.write_all(&1u16.to_le_bytes()).unwrap();
+    file.write_all(&channels.to_le_bytes()).unwrap();
+    file.write_all(&sample_rate.to_le_bytes()).unwrap();
+    file.write_all(&byte_rate.to_le_bytes()).unwrap();
+    file.write_all(&block_align.to_le_bytes()).unwrap();
+    file.write_all(&bits_per_sample.to_le_bytes()).unwrap();
+    file.write_all(b"data").unwrap();
+    file.write_all(&data_size.to_le_bytes()).unwrap();
+    file.write_all(&vec![0u8; data_size as usize]).unwrap();
+}
 
 #[test]
 fn test_create_library_with_database() {
@@ -14,6 +42,25 @@ fn test_create_library_with_database() {
 
     assert_eq!(library.directories.len(), 0, "New library should be empty");
     assert_eq!(library.albums.len(), 0, "New library should have no albums");
+}
+
+#[test]
+fn test_library_scan_supported_extensions_match_playable_formats() {
+    assert!(sotf_audio_player::library::is_supported_audio_extension(
+        "flac"
+    ));
+    assert!(sotf_audio_player::library::is_supported_audio_extension(
+        "mp4"
+    ));
+    assert!(sotf_audio_player::library::is_supported_audio_extension(
+        "oga"
+    ));
+    assert!(!sotf_audio_player::library::is_supported_audio_extension(
+        "opus"
+    ));
+    assert!(!sotf_audio_player::library::is_supported_audio_extension(
+        "wv"
+    ));
 }
 
 #[test]
@@ -107,6 +154,42 @@ fn test_scan_directory_extracts_metadata() {
             }
         }
     }
+}
+
+#[test]
+fn test_untagged_folders_survive_database_reload_as_distinct_albums() {
+    let temp_music = tempfile::TempDir::new().unwrap();
+    let album_a = temp_music.path().join("repo-a").join("disc");
+    let album_b = temp_music.path().join("repo-b").join("disc");
+    std::fs::create_dir_all(&album_a).unwrap();
+    std::fs::create_dir_all(&album_b).unwrap();
+
+    for idx in 1..=2 {
+        write_minimal_wav(&album_a.join(format!("track-{idx}.wav")));
+    }
+    for idx in 1..=3 {
+        write_minimal_wav(&album_b.join(format!("track-{idx}.wav")));
+    }
+
+    let (_temp_db, db_path) = fixtures::temp_database();
+    {
+        let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+        library
+            .add_directory(temp_music.path().to_path_buf())
+            .unwrap();
+        library.scan().expect("scan untagged folders");
+
+        assert_eq!(library.albums.len(), 2);
+        assert_eq!(library.directories[0].file_count, 5);
+        assert_eq!(library.directories[0].album_count, 2);
+    }
+
+    let mut reloaded = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    reloaded.load_from_database().expect("reload library");
+
+    assert_eq!(reloaded.albums.len(), 2);
+    assert_eq!(reloaded.directories[0].file_count, 5);
+    assert_eq!(reloaded.directories[0].album_count, 2);
 }
 
 #[test]

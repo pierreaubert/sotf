@@ -725,6 +725,7 @@ mod tests {
             lfo_rate_hz: 0.0,
             lfo_depth_ms: 0.0,
             allpass_feedback: false,
+            allpass_coeff: 0.5,
         };
         let params = serde_json::json!({
             "channel_delays_ms": [10.0, 25.0],

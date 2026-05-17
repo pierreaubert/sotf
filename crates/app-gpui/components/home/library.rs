@@ -53,6 +53,12 @@ impl PlayerView {
         let surround_count = stats.surround_count;
         let surround71_count = stats.surround71_count;
         let surround_plus_count = stats.surround_plus_count;
+        let mut exact_multichannel_counts: Vec<(u32, usize)> = stats
+            .channel_counts
+            .iter()
+            .filter_map(|(&channels, &count)| (channels > 8).then_some((channels, count)))
+            .collect();
+        exact_multichannel_counts.sort_by_key(|&(channels, _)| channels);
 
         // Selection filters and counts for each category
         let window_width = state.app.ui_state.window_width;
@@ -354,12 +360,25 @@ impl PlayerView {
                                 cx,
                             ))
                             .child(self.render_filter_button(
-                                &format!("7.1+ ({})", surround_plus_count),
+                                &format!(">7.1 ({})", surround_plus_count),
                                 crate::app::state::library::ChannelFilter::SurroundPlus,
                                 channel_filter,
                                 theme.clone(),
                                 cx,
-                            )),
+                            ))
+                            .children(exact_multichannel_counts.iter().map(|(channels, count)| {
+                                self.render_filter_button(
+                                    &format!(
+                                        "{} ({})",
+                                        sotf_audio_player::format_channel_count(*channels),
+                                        count
+                                    ),
+                                    crate::app::state::library::ChannelFilter::Specific(*channels),
+                                    channel_filter,
+                                    theme.clone(),
+                                    cx,
+                                )
+                            })),
                     )
                 })
                 // Search bar row (only visible when in search mode)
@@ -1575,7 +1594,7 @@ impl PlayerView {
         current_filter: crate::app::state::library::ChannelFilter,
         theme: crate::theme::Theme,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> impl IntoElement + use<> {
         let is_active = current_filter == filter;
         let label_owned = label.to_string();
 

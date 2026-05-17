@@ -841,6 +841,7 @@ sotf_plugins::serde_param_default! {
     fn default_delay_ms() -> f64 = "delay_ms";
     fn default_delay_feedback() -> f64 = "feedback";
     fn default_delay_mix() -> f64 = "mix";
+    fn default_delay_allpass_coeff() -> f64 = "allpass_coeff";
 }
 
 sotf_plugins::serde_param_default! {
@@ -1749,6 +1750,8 @@ pub enum PluginSettings {
         lfo_depth_ms: f64,
         #[serde(default)]
         allpass_feedback: bool,
+        #[serde(default = "default_delay_allpass_coeff")]
+        allpass_coeff: f64,
     },
     Aec {
         #[serde(default = "default_aec_echo_tail_ms")]
@@ -2080,6 +2083,7 @@ impl PluginSettings {
                 lfo_rate_hz,
                 lfo_depth_ms,
                 allpass_feedback,
+                allpass_coeff,
             } => PluginConfig::new(
                 "delay",
                 json!({
@@ -2089,6 +2093,7 @@ impl PluginSettings {
                     "lfo_rate_hz": lfo_rate_hz,
                     "lfo_depth_ms": lfo_depth_ms,
                     "allpass_feedback": allpass_feedback,
+                    "allpass_coeff": allpass_coeff,
                 }),
             ),
             Self::Aec {
@@ -3744,6 +3749,7 @@ impl PluginSettings {
                     lfo_rate_hz: p(d, "lfo_rate_hz").default_f64(),
                     lfo_depth_ms: p(d, "lfo_depth_ms").default_f64(),
                     allpass_feedback: p(d, "allpass_feedback").default_bool(),
+                    allpass_coeff: p(d, "allpass_coeff").default_f64(),
                 }
             }
             PluginType::Aec => {

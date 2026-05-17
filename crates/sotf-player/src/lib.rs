@@ -55,7 +55,7 @@ pub use library::{
     Playlist, PlaylistEntry, Track, group_and_merge_albums,
 };
 pub use library_scanner::{LibraryScanMessage, LibraryScanner};
-pub use library_stats::LibraryStats;
+pub use library_stats::{LibraryStats, format_channel_count};
 pub use play_tracker::PlayTracker;
 pub use player::{PlaybackState, Player};
 pub use plugin_graph::{

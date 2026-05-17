@@ -1,6 +1,7 @@
 //! Library loading, saving, scan tracking, and file cleanup.
 
 use rusqlite::{Result as SqlResult, TransactionBehavior, params};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::{
@@ -165,11 +166,26 @@ impl MusicDatabase {
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let now = current_timestamp();
+        let mut album_key_counts: HashMap<(String, String), usize> = HashMap::new();
+
+        for album in albums {
+            *album_key_counts
+                .entry((album.artist(), album.title.clone()))
+                .or_insert(0) += 1;
+        }
 
         for album in albums {
             // Compute artist from tracks for backwards compatibility with old schema
             // (old schema has artist column with UNIQUE(artist, title) constraint)
-            let album_artist = album.artist();
+            let mut album_artist = album.artist();
+            if album_key_counts
+                .get(&(album_artist.clone(), album.title.clone()))
+                .is_some_and(|count| *count > 1)
+            {
+                if let Some(parent) = album.tracks.iter().find_map(|track| track.path.parent()) {
+                    album_artist = format!("{} [{}]", album_artist, parent.display());
+                }
+            }
 
             // Insert or update album
             // Note: We still insert artist for backwards compatibility, but it's derived from tracks
