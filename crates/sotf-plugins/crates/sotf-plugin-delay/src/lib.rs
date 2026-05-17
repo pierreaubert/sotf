@@ -27,11 +27,17 @@ pub struct DelayPluginParams {
     pub lfo_depth_ms: f32,
     #[serde(default)]
     pub allpass_feedback: bool,
+    #[serde(default = "default_allpass_coeff")]
+    pub allpass_coeff: f32,
     /// Per-channel delay times in milliseconds. When non-empty, takes
     /// precedence over the scalar `delay_ms` and switches the plugin into
     /// per-channel mode (one independent delay per channel).
     #[serde(default)]
     pub channel_delays_ms: Vec<f32>,
+}
+
+fn default_allpass_coeff() -> f32 {
+    0.5
 }
 
 fn default_delay_ms() -> f32 {
@@ -78,6 +84,10 @@ impl AllpassState {
         self.x1 = 0.0;
         self.y1 = 0.0;
     }
+
+    fn set_coeff(&mut self, coeff: f32) {
+        self.coeff = coeff;
+    }
 }
 
 pub struct DelayPlugin {
@@ -95,6 +105,8 @@ pub struct DelayPlugin {
     lfo_depth_ms: f32,
     param_allpass_feedback: ParameterId,
     allpass_feedback: bool,
+    param_allpass_coeff: ParameterId,
+    allpass_coeff: f32,
     delay_smoother: Smoother,
     feedback_smoother: Smoother,
     mix_smoother: Smoother,
@@ -141,6 +153,8 @@ impl DelayPlugin {
             lfo_depth_ms: 0.0,
             param_allpass_feedback: ParameterId::from("allpass_feedback"),
             allpass_feedback: false,
+            param_allpass_coeff: ParameterId::from("allpass_coeff"),
+            allpass_coeff: 0.5,
             delay_smoother: Smoother::new(delay_ms * sr as f32 / 1000.0, 50.0, sr),
             feedback_smoother: Smoother::new(feedback, 5.0, sr),
             mix_smoother: Smoother::new(mix, 5.0, sr),
@@ -188,6 +202,8 @@ impl DelayPlugin {
             lfo_depth_ms: 0.0,
             param_allpass_feedback: ParameterId::from("allpass_feedback"),
             allpass_feedback: false,
+            param_allpass_coeff: ParameterId::from("allpass_coeff"),
+            allpass_coeff: 0.5,
             delay_smoother: Smoother::new(channel_delays_ms[0] * sr as f32 / 1000.0, 50.0, sr),
             feedback_smoother: Smoother::new(0.0, 5.0, sr),
             mix_smoother: Smoother::new(1.0, 5.0, sr),
@@ -223,6 +239,13 @@ impl DelayPlugin {
                 "Allpass Feedback",
                 self.allpass_feedback,
             ),
+            Parameter::new_float(
+                "allpass_coeff",
+                "Allpass Coeff",
+                self.allpass_coeff,
+                0.0,
+                0.99,
+            ),
         ];
         if self.is_per_channel() {
             for (ch, &ms) in self.channel_delays_ms.iter().enumerate() {
@@ -253,6 +276,10 @@ impl DelayPlugin {
             p.lfo_rate_hz = params.lfo_rate_hz;
             p.lfo_depth_ms = params.lfo_depth_ms;
             p.allpass_feedback = params.allpass_feedback;
+            p.allpass_coeff = params.allpass_coeff.clamp(0.0, 0.99);
+            for ap in &mut p.allpass_states {
+                ap.set_coeff(p.allpass_coeff);
+            }
             p.feedback_smoother.set_target(p.feedback);
             p.mix_smoother.set_target(p.mix);
             p.rebuild_cached_parameters();
@@ -262,6 +289,10 @@ impl DelayPlugin {
             p.lfo_rate_hz = params.lfo_rate_hz;
             p.lfo_depth_ms = params.lfo_depth_ms;
             p.allpass_feedback = params.allpass_feedback;
+            p.allpass_coeff = params.allpass_coeff.clamp(0.0, 0.99);
+            for ap in &mut p.allpass_states {
+                ap.set_coeff(p.allpass_coeff);
+            }
             p.rebuild_cached_parameters();
             Ok(p)
         }
@@ -365,6 +396,16 @@ impl InPlacePlugin for DelayPlugin {
                     ap.reset();
                 }
             }
+        } else if id == self.param_allpass_coeff {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "allpass_coeff must be a float".to_string())?;
+            if v.is_finite() {
+                self.allpass_coeff = v.clamp(0.0, 0.99);
+                for ap in &mut self.allpass_states {
+                    ap.set_coeff(self.allpass_coeff);
+                }
+            }
         } else if let Some(ch) = parse_channel_delay_id(id.as_str()) {
             if !self.is_per_channel() || ch >= self.channels {
                 return Err(format!("invalid per-channel delay id: {}", id.as_str()));
@@ -397,6 +438,8 @@ impl InPlacePlugin for DelayPlugin {
             Some(ParameterValue::Float(self.lfo_depth_ms))
         } else if id == &self.param_allpass_feedback {
             Some(ParameterValue::Bool(self.allpass_feedback))
+        } else if id == &self.param_allpass_coeff {
+            Some(ParameterValue::Float(self.allpass_coeff))
         } else if let Some(ch) = parse_channel_delay_id(id.as_str()) {
             self.channel_delays_ms
                 .get(ch)
@@ -428,7 +471,7 @@ impl InPlacePlugin for DelayPlugin {
         self.feedback_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
         self.lfo_phase = 0.0;
-        self.allpass_states = vec![AllpassState::new(0.5); self.channels];
+        self.allpass_states = vec![AllpassState::new(self.allpass_coeff); self.channels];
         Ok(())
     }
 
@@ -706,6 +749,7 @@ mod tests {
             lfo_rate_hz: 3.0,
             lfo_depth_ms: 1.5,
             allpass_feedback: true,
+            allpass_coeff: 0.5,
             channel_delays_ms: Vec::new(),
         };
         let p = DelayPlugin::from_params(2, params).unwrap();
@@ -733,6 +777,7 @@ mod tests {
             lfo_rate_hz: 0.0,
             lfo_depth_ms: 0.0,
             allpass_feedback: false,
+            allpass_coeff: 0.5,
             channel_delays_ms: vec![1.0, 3.0, 7.0],
         };
         let p = DelayPlugin::from_params(3, params).unwrap();
@@ -749,6 +794,7 @@ mod tests {
             lfo_rate_hz: 0.0,
             lfo_depth_ms: 0.0,
             allpass_feedback: false,
+            allpass_coeff: 0.5,
             channel_delays_ms: vec![1.0, 3.0, 7.0],
         };
         // 3 per-channel delays but channels arg = 2: hard error.
@@ -1052,6 +1098,69 @@ mod tests {
         // compiled and ran without assertion errors (the ramp test above is the
         // definitive behavioral check). We just guard against regression.
         let _ = buf; // consumed
+    }
+
+    #[test]
+    fn test_allpass_coeff_parameter_exists_and_affects_response() {
+        // Regression: allpass coefficient was hardcoded to 0.5 with no user parameter.
+        let mut p = DelayPlugin::new(1, 10.0, 0.5, 0.5);
+        p.initialize(48000).unwrap();
+
+        // The parameter must exist
+        assert!(
+            p.get_parameter(&ParameterId::from("allpass_coeff")).is_some(),
+            "allpass_coeff parameter should exist"
+        );
+
+        // Enable allpass feedback
+        p.set_parameter(
+            ParameterId::from("allpass_feedback"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+
+        // Process impulse with coeff=0.5 (default)
+        let mut b1 = vec![0.0; 2000];
+        b1[0] = 1.0;
+        p.process_in_place(
+            &mut b1,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 2000,
+            },
+        )
+        .unwrap();
+
+        // Change coefficient to 0.8
+        p.set_parameter(
+            ParameterId::from("allpass_coeff"),
+            ParameterValue::Float(0.8),
+        )
+        .unwrap();
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("allpass_coeff")),
+            Some(ParameterValue::Float(0.8))
+        );
+
+        // Process identical impulse with coeff=0.8
+        let mut b2 = vec![0.0; 2000];
+        b2[0] = 1.0;
+        p.process_in_place(
+            &mut b2,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 2000,
+            },
+        )
+        .unwrap();
+
+        // The outputs must differ because the allpass coefficient changed
+        let diff: f32 = b1.iter().zip(b2.iter()).map(|(a, b)| (a - b).abs()).sum();
+        assert!(
+            diff > 1e-6,
+            "different allpass coefficients should produce different outputs, diff={}",
+            diff
+        );
     }
 
     #[test]

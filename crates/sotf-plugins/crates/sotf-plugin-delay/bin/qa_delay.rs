@@ -15,6 +15,7 @@ fn main() {
         lfo_rate_hz: 0.0,
         lfo_depth_ms: 0.0,
         allpass_feedback: false,
+        allpass_coeff: 0.5,
         channel_delays_ms: Vec::new(),
     };
 

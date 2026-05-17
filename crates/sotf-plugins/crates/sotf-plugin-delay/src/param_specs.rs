@@ -20,4 +20,8 @@ pub mod delay {
     pub const LFO_DEPTH_MS_MAX: f32 = 5.0;
 
     pub const ALLPASS_FEEDBACK_DEFAULT: bool = false;
+
+    pub const ALLPASS_COEFF_DEFAULT: f32 = 0.5;
+    pub const ALLPASS_COEFF_MIN: f32 = 0.0;
+    pub const ALLPASS_COEFF_MAX: f32 = 0.99;
 }
