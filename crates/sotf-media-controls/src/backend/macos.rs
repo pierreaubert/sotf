@@ -3,16 +3,28 @@
 //! Drives `MPRemoteCommandCenter` (incoming media-key events) and
 //! `MPNowPlayingInfoCenter` (now-playing metadata + playback state) through
 //! the modern `objc2-media-player` bindings — no `cocoa-rs` dependency.
+//!
+//! Thread affinity. `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`
+//! mutating APIs require execution on the main thread (or at least a thread
+//! with a running `CFRunLoop`). `MediaControls` is constructed from
+//! arbitrary threads in the host apps, so all writes are marshalled onto
+//! `dispatch_get_main_queue` via `dispatch2::DispatchQueue::main().exec_async`.
+//! Construction-time reads of the singletons (`sharedCommandCenter`,
+//! `defaultCenter`) are safe from any thread; only mutation requires the
+//! main queue.
 
 #![allow(
     unsafe_code,
     reason = "objc2 framework calls are inherently unsafe FFI"
 )]
 
+use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use block2::RcBlock;
+use dispatch2::DispatchQueue;
+use objc2::Message;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2_foundation::{NSMutableDictionary, NSNumber, NSString};
@@ -36,22 +48,76 @@ type SharedHandler = Arc<Mutex<Option<EventHandler>>>;
 /// Concrete metadata-dictionary type expected by `MPNowPlayingInfoCenter`.
 type InfoDict = NSMutableDictionary<NSString, AnyObject>;
 
+/// Owned metadata snapshot (plain Rust types so it crosses threads cheaply
+/// — `Retained<NSString>` is not `Send`, but `String` is).
+#[derive(Default, Debug, Clone)]
+struct OwnedMetadata {
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    duration: Option<Duration>,
+}
+
+impl OwnedMetadata {
+    fn from_borrowed(m: &MediaMetadata<'_>) -> Self {
+        Self {
+            title: m.title.map(str::to_owned),
+            artist: m.artist.map(str::to_owned),
+            album: m.album.map(str::to_owned),
+            duration: m.duration,
+        }
+    }
+}
+
+/// `Retained<T>` wrapper with an `unsafe` `Send` impl.
+///
+/// SAFETY: We only wrap pointers that refer to thread-safe Objective-C
+/// objects: `MPRemoteCommand` (process-wide singleton dispensed by
+/// `MPRemoteCommandCenter`) and the opaque `id` token returned by
+/// `addTargetWithHandler:`. Both have thread-safe `retain` / `release`
+/// implementations in `MediaPlayer.framework`. The wrapper is used to
+/// shuttle the retained handles into a main-queue `exec_async` block from
+/// the `Drop` impl — sound because the wrapper never escapes that block.
+struct SendRetained<T: Message>(Retained<T>);
+
+// SAFETY: see the doc comment on `SendRetained`.
+unsafe impl<T: Message> Send for SendRetained<T> {}
+
+/// Wired command/target pair retained for the lifetime of the backend.
+struct WiredCommand {
+    cmd: SendRetained<MPRemoteCommand>,
+    target: SendRetained<AnyObject>,
+}
+
+thread_local! {
+    /// Cached `Retained<InfoDict>` *owned by the main thread*. We never
+    /// read or mutate this outside `DispatchQueue::main().exec_async`, so
+    /// a thread-local is the cheapest safe storage — no `Send` gymnastics,
+    /// no `MainThreadBound` ceremony, no cross-thread `Retained` traffic.
+    /// Successive `set_playback` ticks mutate this same dict in place,
+    /// avoiding the per-tick round trip through
+    /// `MPNowPlayingInfoCenter::nowPlayingInfo()` /
+    /// `addEntriesFromDictionary:` that the original implementation paid.
+    static CACHED_DICT: RefCell<Option<Retained<InfoDict>>> = const { RefCell::new(None) };
+}
+
 pub(crate) struct MacosBackend {
     handler: SharedHandler,
-    /// Targets returned by `addTargetWithHandler` must outlive the dispatch
-    /// they enable. `MPRemoteCommandCenter` is a process-wide singleton, so we
-    /// drop these only when the backend itself is dropped.
-    _targets: Vec<Retained<AnyObject>>,
+    /// Commands + target tokens for the wired `MPRemoteCommandCenter`
+    /// selectors. Held alive for the lifetime of the backend so the OS
+    /// can keep dispatching events; detached in `Drop` via `removeTarget:`.
+    wired: Vec<WiredCommand>,
 }
 
 impl MacosBackend {
     pub(crate) fn new(_config: &PlatformConfig<'_>) -> Result<Self, Error> {
         let handler: SharedHandler = Arc::new(Mutex::new(None));
-        let targets = unsafe { wire_commands(&handler) };
-        Ok(Self {
-            handler,
-            _targets: targets,
-        })
+        // SAFETY: `wire_commands` only touches `MPRemoteCommandCenter`,
+        // whose `sharedCommandCenter` / `addTargetWithHandler:` are safe
+        // from any thread (the registered blocks fire on the main run
+        // loop regardless).
+        let wired = unsafe { wire_commands(&handler) };
+        Ok(Self { handler, wired })
     }
 
     pub(crate) fn attach(&mut self, handler: EventHandler) -> Result<(), Error> {
@@ -60,41 +126,92 @@ impl MacosBackend {
     }
 
     pub(crate) fn set_metadata(&mut self, metadata: MediaMetadata<'_>) -> Result<(), Error> {
-        unsafe {
-            let center = MPNowPlayingInfoCenter::defaultCenter();
-            let dict = build_now_playing_dict(&metadata);
-            center.setNowPlayingInfo(Some(&dict));
-        }
+        // Cover artwork is intentionally omitted: souvlaki's implementation
+        // dragged in `NSImage` + `core-graphics`. Re-add via an async
+        // loader once it shows up in real-world telemetry.
+        let _ = metadata.cover_url;
+        let owned = OwnedMetadata::from_borrowed(&metadata);
+        // Marshal onto the main thread — `MPNowPlayingInfoCenter`
+        // mutators are main-thread-affine. `exec_async` is fire-and-forget;
+        // if the caller already *is* on the main thread, the block is
+        // enqueued rather than recursively invoked (no surprise
+        // re-entrancy).
+        DispatchQueue::main().exec_async(move || {
+            // SAFETY: closure runs on the main queue.
+            unsafe {
+                let dict = build_now_playing_dict(&owned);
+                CACHED_DICT.with(|slot| *slot.borrow_mut() = Some(dict.clone()));
+                MPNowPlayingInfoCenter::defaultCenter().setNowPlayingInfo(Some(&dict));
+            }
+        });
         Ok(())
     }
 
     pub(crate) fn set_playback(&mut self, playback: MediaPlayback) -> Result<(), Error> {
-        unsafe {
-            let center = MPNowPlayingInfoCenter::defaultCenter();
-            let state = match playback {
-                MediaPlayback::Stopped => MPNowPlayingPlaybackState::Stopped,
-                MediaPlayback::Paused { .. } => MPNowPlayingPlaybackState::Paused,
-                MediaPlayback::Playing { .. } => MPNowPlayingPlaybackState::Playing,
-            };
-            center.setPlaybackState(state);
-
-            let progress = match playback {
-                MediaPlayback::Stopped => None,
-                MediaPlayback::Paused { progress } | MediaPlayback::Playing { progress } => {
-                    progress
+        let state = match playback {
+            MediaPlayback::Stopped => MPNowPlayingPlaybackState::Stopped,
+            MediaPlayback::Paused { .. } => MPNowPlayingPlaybackState::Paused,
+            MediaPlayback::Playing { .. } => MPNowPlayingPlaybackState::Playing,
+        };
+        let progress = match playback {
+            MediaPlayback::Stopped => None,
+            MediaPlayback::Paused { progress } | MediaPlayback::Playing { progress } => progress,
+        };
+        DispatchQueue::main().exec_async(move || {
+            // SAFETY: closure runs on the main queue, which is where
+            // `MPNowPlayingInfoCenter` mutators are required to run.
+            unsafe {
+                MPNowPlayingInfoCenter::defaultCenter().setPlaybackState(state);
+                if let Some(MediaPosition(d)) = progress {
+                    update_elapsed_playback_time(d);
                 }
-            };
-            if let Some(progress) = progress {
-                update_elapsed_playback_time(progress.0);
             }
-        }
+        });
         Ok(())
     }
 }
 
-/// Wire every command we care about and return the retained target handles.
-unsafe fn wire_commands(handler: &SharedHandler) -> Vec<Retained<AnyObject>> {
-    let mut targets: Vec<Retained<AnyObject>> = Vec::with_capacity(8);
+impl Drop for MacosBackend {
+    fn drop(&mut self) {
+        // Detach every registered block from the shared command center so
+        // future `MediaControls` instances don't double-dispatch through
+        // ghost blocks. `removeTarget:` must run on the main thread; we
+        // go through `exec_async` regardless of the dropping thread to
+        // keep the threading contract uniform. The wired handles move
+        // into the closure and drop there.
+        let wired = std::mem::take(&mut self.wired);
+        if wired.is_empty() {
+            return;
+        }
+        DispatchQueue::main().exec_async(move || {
+            for w in &wired {
+                // SAFETY: main queue + the `MPRemoteCommand` handle is
+                // held alive by `wired`; `removeTarget:` accepts the same
+                // target returned by `addTargetWithHandler:` (per Apple
+                // docs).
+                unsafe {
+                    w.cmd.0.removeTarget(Some(&w.target.0));
+                    w.cmd.0.setEnabled(false);
+                }
+            }
+            drop(wired);
+        });
+    }
+}
+
+/// Wire every command we care about and return the retained command/target
+/// pairs.
+///
+/// # Safety
+///
+/// Caller must guarantee that the `SharedHandler` outlives the registered
+/// blocks. The current design ties that lifetime to the `MacosBackend`,
+/// whose `Drop` impl detaches the blocks before the `Arc` ref-count can
+/// drop to zero on the data the blocks captured.
+unsafe fn wire_commands(handler: &SharedHandler) -> Vec<WiredCommand> {
+    let mut wired: Vec<WiredCommand> = Vec::with_capacity(8);
+    // SAFETY: `sharedCommandCenter` returns a process-wide singleton and
+    // is safe to call from any thread.
     let center = unsafe { MPRemoteCommandCenter::sharedCommandCenter() };
 
     type CmdAccessor = fn(&MPRemoteCommandCenter) -> Retained<MPRemoteCommand>;
@@ -121,54 +238,93 @@ unsafe fn wire_commands(handler: &SharedHandler) -> Vec<Retained<AnyObject>> {
             },
         );
         let cmd = accessor(&center);
+        // SAFETY: command object lives on the shared command-center singleton.
         unsafe { cmd.setEnabled(true) };
         let target = unsafe { cmd.addTargetWithHandler(&block) };
-        targets.push(target);
+        wired.push(WiredCommand {
+            cmd: SendRetained(cmd),
+            target: SendRetained(target),
+        });
     }
 
-    // changePlaybackPositionCommand: payload is MPChangePlaybackPositionCommandEvent.
+    // `changePlaybackPositionCommand` returns an
+    // `MPChangePlaybackPositionCommand` — a documented subclass of
+    // `MPRemoteCommand`. Up-cast via `Retained::into_super` so the
+    // wired-command store can be uniformly typed.
     {
         let h = handler.clone();
         let block = RcBlock::new(
             move |event_ptr: std::ptr::NonNull<MPRemoteCommandEvent>| -> MPRemoteCommandHandlerStatus {
+                // SAFETY: the OS only invokes this block for
+                // `changePlaybackPositionCommand`, whose event payload is
+                // statically known to be
+                // `MPChangePlaybackPositionCommandEvent` (Apple docs:
+                // MPRemoteCommandCenter.changePlaybackPositionCommand).
                 let event: &MPChangePlaybackPositionCommandEvent =
                     unsafe { event_ptr.cast().as_ref() };
-                let pos_secs = unsafe { event.positionTime() }.max(0.0);
-                dispatch(
-                    &h,
-                    MediaControlEvent::SetPosition(MediaPosition(Duration::from_secs_f64(
-                        pos_secs,
-                    ))),
-                );
+                // SAFETY: `positionTime` is a `@property NSTimeInterval`
+                // on the event and safe to read from any thread.
+                let pos_secs = unsafe { event.positionTime() };
+                // Sanitise NaN / infinity here — the OS occasionally
+                // forwards bogus drag-end events, and
+                // `Duration::from_secs_f64(NaN)` panics.
+                let position = MediaPosition::from_secs_f64(pos_secs);
+                dispatch(&h, MediaControlEvent::SetPosition(position));
                 MPRemoteCommandHandlerStatus::Success
             },
         );
-        let cmd = unsafe { center.changePlaybackPositionCommand() };
-        unsafe { cmd.setEnabled(true) };
-        let target = unsafe { cmd.addTargetWithHandler(&block) };
-        targets.push(target);
+        let sub_cmd = unsafe { center.changePlaybackPositionCommand() };
+        unsafe { sub_cmd.setEnabled(true) };
+        let target = unsafe { sub_cmd.addTargetWithHandler(&block) };
+        let cmd: Retained<MPRemoteCommand> = sub_cmd.into_super();
+        wired.push(WiredCommand {
+            cmd: SendRetained(cmd),
+            target: SendRetained(target),
+        });
     }
 
-    targets
+    wired
 }
 
+/// Invoke the user closure with the handler mutex released.
+///
+/// `FnMut` requires `&mut`, so we `take()` the boxed closure out of the
+/// shared slot, run it without holding the lock, then put it back. This
+/// lets the user closure safely re-enter `MediaControls::set_metadata` /
+/// `set_playback` (which queue work via the OS callback path) without
+/// self-deadlock.
 fn dispatch(handler: &SharedHandler, event: MediaControlEvent) {
-    if let Ok(mut guard) = handler.lock()
-        && let Some(ref mut h) = *guard
-    {
-        h(event);
+    let taken = match handler.lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => return,
+    };
+    let Some(mut h) = taken else { return };
+    h(event);
+    if let Ok(mut guard) = handler.lock() {
+        // If an `attach` slid in while the user closure ran, keep the
+        // newer one — otherwise restore the boxed closure.
+        if guard.is_none() {
+            *guard = Some(h);
+        }
     }
 }
 
-unsafe fn build_now_playing_dict(metadata: &MediaMetadata<'_>) -> Retained<InfoDict> {
+/// Build a full now-playing dictionary from owned metadata.
+///
+/// # Safety
+///
+/// Must be called on the main thread.
+unsafe fn build_now_playing_dict(metadata: &OwnedMetadata) -> Retained<InfoDict> {
     let dict: Retained<InfoDict> = NSMutableDictionary::new();
-    if let Some(title) = metadata.title {
+    if let Some(title) = metadata.title.as_deref() {
+        // SAFETY: `MPMediaItemPropertyTitle` is a static `NSString*`
+        // symbol.
         put_string(&dict, unsafe { MPMediaItemPropertyTitle }, title);
     }
-    if let Some(artist) = metadata.artist {
+    if let Some(artist) = metadata.artist.as_deref() {
         put_string(&dict, unsafe { MPMediaItemPropertyArtist }, artist);
     }
-    if let Some(album) = metadata.album {
+    if let Some(album) = metadata.album.as_deref() {
         put_string(&dict, unsafe { MPMediaItemPropertyAlbumTitle }, album);
     }
     if let Some(duration) = metadata.duration {
@@ -178,10 +334,6 @@ unsafe fn build_now_playing_dict(metadata: &MediaMetadata<'_>) -> Retained<InfoD
             duration.as_secs_f64(),
         );
     }
-    // Cover artwork is intentionally omitted: souvlaki's implementation
-    // dragged in `NSImage` + `core-graphics 0.22`. Re-add via an async loader
-    // once it shows up in real-world telemetry.
-    let _ = metadata.cover_url;
     dict
 }
 
@@ -200,18 +352,67 @@ fn put_number(dict: &InfoDict, key: &NSString, value: f64) {
 }
 
 /// Update only the elapsed-playback-time entry without rebuilding metadata.
+///
+/// Uses the thread-local main-queue cache so we mutate the **same** dict
+/// across successive ticks instead of round-tripping through
+/// `MPNowPlayingInfoCenter::nowPlayingInfo()` (which copies all entries
+/// out of Apple's internal cache).
+///
+/// # Safety
+///
+/// Must be called on the main thread.
 unsafe fn update_elapsed_playback_time(progress: Duration) {
-    unsafe {
-        let center = MPNowPlayingInfoCenter::defaultCenter();
-        let dict: Retained<InfoDict> = NSMutableDictionary::new();
-        if let Some(current) = center.nowPlayingInfo() {
-            dict.addEntriesFromDictionary(&current);
+    CACHED_DICT.with(|slot| {
+        let mut borrow = slot.borrow_mut();
+        if borrow.is_none() {
+            // First playback update before metadata: lazy-init an empty
+            // dict so the elapsed time still shows on the lock screen.
+            *borrow = Some(NSMutableDictionary::new());
         }
+        let dict = borrow.as_ref().expect("CACHED_DICT just initialised");
+        // SAFETY: `MPNowPlayingInfoPropertyElapsedPlaybackTime` is a
+        // static `NSString*` constant.
         put_number(
-            &dict,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime,
+            dict,
+            unsafe { MPNowPlayingInfoPropertyElapsedPlaybackTime },
             progress.as_secs_f64(),
         );
-        center.setNowPlayingInfo(Some(&dict));
+        // SAFETY: main thread.
+        unsafe {
+            MPNowPlayingInfoCenter::defaultCenter().setNowPlayingInfo(Some(dict));
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Compile + smoke test: `MacosBackend::new` can be invoked from a
+    /// non-main thread without panicking — it should marshal every later
+    /// write onto the main queue internally. CI environments usually have
+    /// no running `CFRunLoop`, but construction itself must succeed.
+    #[test]
+    fn backend_constructs_off_main_thread() {
+        let handle = std::thread::spawn(|| {
+            let cfg = PlatformConfig {
+                dbus_name: "test",
+                display_name: "Test",
+                hwnd: None,
+            };
+            MacosBackend::new(&cfg).is_ok()
+        });
+        let ok = handle.join().expect("spawned thread panicked");
+        assert!(ok, "MacosBackend::new returned Err");
+    }
+
+    /// Regression guard: the `MPChangePlaybackPosition` block routes the
+    /// position value through `MediaPosition::from_secs_f64`, which must
+    /// not panic on NaN (the OS occasionally forwards bogus drag-end
+    /// events).
+    #[test]
+    fn macos_position_from_nan_does_not_panic() {
+        let p = MediaPosition::from_secs_f64(f64::NAN);
+        assert_eq!(p.0, Duration::ZERO);
     }
 }

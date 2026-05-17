@@ -7,6 +7,11 @@
 
 #![recursion_limit = "8192"]
 
+#[cfg(all(feature = "dev-api", not(debug_assertions)))]
+compile_error!(
+    "The app-gpui dev-api is QA/debug-only and must not be compiled in release/prod builds."
+);
+
 #[cfg(test)]
 mod test_harness {
     #[test]

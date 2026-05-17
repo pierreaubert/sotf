@@ -3,6 +3,7 @@
 // ============================================================================
 
 use crate::decoder::source::AudioSource;
+use std::cell::Cell;
 
 /// Fade curve type for clip boundaries.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -58,6 +59,8 @@ pub struct Clip {
     pub time_stretch_ratio: f64,
     /// Play in reverse
     pub reverse: bool,
+    cached_gain_db_bits: Cell<u32>,
+    cached_linear_gain: Cell<f32>,
 }
 
 impl Clip {
@@ -73,6 +76,8 @@ impl Clip {
             fade_curve: FadeCurve::Linear,
             time_stretch_ratio: 1.0,
             reverse: false,
+            cached_gain_db_bits: Cell::new(0.0f32.to_bits()),
+            cached_linear_gain: Cell::new(1.0),
         }
     }
 
@@ -98,7 +103,13 @@ impl Clip {
 
     /// Convert the clip gain from dB to linear gain.
     pub fn linear_gain(&self) -> f32 {
-        10.0f32.powf(self.gain_db / 20.0)
+        let gain_db_bits = self.gain_db.to_bits();
+        if self.cached_gain_db_bits.get() != gain_db_bits {
+            self.cached_gain_db_bits.set(gain_db_bits);
+            self.cached_linear_gain
+                .set(10.0f32.powf(self.gain_db / 20.0));
+        }
+        self.cached_linear_gain.get()
     }
 
     /// Compute only the fade envelope for a position within the clip.
@@ -176,6 +187,20 @@ mod tests {
         clip.gain_db = -6.0;
         let expected = 10.0f32.powf(-6.0 / 20.0);
         assert!((clip.gain_at(24000) - expected).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_clip_linear_gain_cache_tracks_public_gain_field() {
+        let mut clip = Clip::new(AudioSource::Driver, 48000);
+        assert!((clip.linear_gain() - 1.0).abs() < 1e-6);
+
+        clip.gain_db = -12.0;
+        let expected = 10.0f32.powf(-12.0 / 20.0);
+        assert!((clip.linear_gain() - expected).abs() < 1e-6);
+
+        clip.gain_db = 6.0;
+        let expected = 10.0f32.powf(6.0 / 20.0);
+        assert!((clip.linear_gain() - expected).abs() < 1e-6);
     }
 
     #[test]

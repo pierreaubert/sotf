@@ -11,6 +11,113 @@ use crate::renderer::ElementRenderer;
 use crate::types::*;
 use sotf_host::speaker_config::SpeakerConfig;
 
+/// IAMF channel order for a given loudspeaker_layout (IAMF v1.1.0 §7.3.2,
+/// referencing ITU-R BS.2051 system identifiers).
+///
+/// Each returned `&str` is the canonical IAMF channel label. We then map it
+/// to a SotF `SpeakerPosition::label` via [`iamf_label_to_sotf`]. Channels
+/// with no SotF equivalent in the target layout are dropped during map
+/// construction (mapped to `usize::MAX`).
+///
+/// Spec channel names:
+///   - `L`, `R` — front L/R
+///   - `Ls`, `Rs` — surrounds (~±110° for 5.1)
+///   - `Lss`, `Rss` — side surrounds (~±90°, 7.1)
+///   - `Lrs`, `Rrs` — rear surrounds (~±150°, 7.1)
+///   - `Ltf`, `Rtf` — top front (height)
+///   - `Ltb`, `Rtb` — top back (height)
+///   - `C` — center, `LFE` — sub
+fn iamf_channel_labels(layout: IamfChannelLayout) -> &'static [&'static str] {
+    match layout {
+        IamfChannelLayout::Mono => &["M"],
+        IamfChannelLayout::Stereo | IamfChannelLayout::Binaural => &["L", "R"],
+        // IAMF 5.1 order: L, R, Ls, Rs, C, LFE
+        IamfChannelLayout::Layout5_1 => &["L", "R", "Ls", "Rs", "C", "LFE"],
+        // IAMF 5.1.2 order: L, R, Ls, Rs, C, LFE, Ltf, Rtf
+        IamfChannelLayout::Layout5_1_2 => {
+            &["L", "R", "Ls", "Rs", "C", "LFE", "Ltf", "Rtf"]
+        }
+        // IAMF 5.1.4 order: L, R, Ls, Rs, C, LFE, Ltf, Rtf, Ltb, Rtb
+        IamfChannelLayout::Layout5_1_4 => {
+            &["L", "R", "Ls", "Rs", "C", "LFE", "Ltf", "Rtf", "Ltb", "Rtb"]
+        }
+        // IAMF 7.1 order: L, R, Lss, Rss, Lrs, Rrs, C, LFE
+        IamfChannelLayout::Layout7_1 => {
+            &["L", "R", "Lss", "Rss", "Lrs", "Rrs", "C", "LFE"]
+        }
+        IamfChannelLayout::Layout7_1_2 => {
+            &["L", "R", "Lss", "Rss", "Lrs", "Rrs", "C", "LFE", "Ltf", "Rtf"]
+        }
+        IamfChannelLayout::Layout7_1_4 => &[
+            "L", "R", "Lss", "Rss", "Lrs", "Rrs", "C", "LFE", "Ltf", "Rtf", "Ltb", "Rtb",
+        ],
+        // 3.1.2: L, R, C, LFE, Ltf, Rtf (per IAMF informative annex)
+        IamfChannelLayout::Layout3_1_2 => &["L", "R", "C", "LFE", "Ltf", "Rtf"],
+    }
+}
+
+/// Map an IAMF channel label to the canonical SotF `SpeakerPosition::label`.
+/// Returns `None` if the IAMF label has no fixed SotF equivalent (the channel
+/// is then dropped — silence rather than wrong routing).
+fn iamf_label_to_sotf(label: &str) -> Option<&'static str> {
+    match label {
+        "L" => Some("L"),
+        "R" => Some("R"),
+        "M" => Some("M"),
+        "C" => Some("C"),
+        "LFE" => Some("LFE"),
+        // 5.1 surrounds (~±110°) match SotF SL/SR in CONFIG_5_1.
+        "Ls" => Some("SL"),
+        "Rs" => Some("SR"),
+        // 7.1 side surrounds (~±90°) match SotF SL/SR in CONFIG_7_1.
+        "Lss" => Some("SL"),
+        "Rss" => Some("SR"),
+        // 7.1 rear surrounds (~±150°) match SotF BL/BR.
+        "Lrs" => Some("BL"),
+        "Rrs" => Some("BR"),
+        // Heights.
+        "Ltf" => Some("TFL"),
+        "Rtf" => Some("TFR"),
+        "Ltb" => Some("TBL"),
+        "Rtb" => Some("TBR"),
+        _ => None,
+    }
+}
+
+/// Build the IAMF → SotF channel permutation. `channel_map[iamf_ch] = sotf_ch`
+/// or `usize::MAX` to drop.
+///
+/// Channels in the IAMF stream that have no matching target speaker (e.g. a
+/// rear surround when targeting 5.1) are dropped. Stereo content rendered to
+/// 5.1 cleanly routes L→FL(idx 0) and R→FR(idx 1).
+fn build_channel_map(layout: IamfChannelLayout, target: &SpeakerConfig) -> Vec<usize> {
+    let labels = iamf_channel_labels(layout);
+    let mut map = Vec::with_capacity(labels.len());
+    for &iamf_label in labels {
+        let mapped = iamf_label_to_sotf(iamf_label).and_then(|target_label| {
+            // Direct match on SotF label first.
+            if let Some(sp) = target.speakers.iter().find(|s| s.label == target_label) {
+                return Some(sp.channel);
+            }
+            // Fallback: SotF uses "FL"/"FR" in surround configs and plain
+            // "L"/"R" in stereo. Translate.
+            let alias = match target_label {
+                "L" => Some("FL"),
+                "R" => Some("FR"),
+                "FL" => Some("L"),
+                "FR" => Some("R"),
+                "M" => Some("L"), // mono → front-left of stereo target
+                _ => None,
+            };
+            alias
+                .and_then(|a| target.speakers.iter().find(|s| s.label == a))
+                .map(|sp| sp.channel)
+        });
+        map.push(mapped.unwrap_or(usize::MAX));
+    }
+    map
+}
+
 /// Renders channel-based IAMF elements to the target speaker layout.
 pub struct ChannelRenderer {
     /// Selected layer channel count (for diagnostics)
@@ -52,16 +159,13 @@ impl ChannelRenderer {
             coupled_for_layer += l.coupled_substream_count as usize;
         }
 
-        // Build channel map: identity for now (assumes matching order)
-        // Real implementation would map IAMF channel order to SotF speaker indices
-        let mut channel_map = vec![usize::MAX; layer_channels];
-        for (i, slot) in channel_map
-            .iter_mut()
-            .enumerate()
-            .take(layer_channels.min(target_channels))
-        {
-            *slot = i;
-        }
+        // Map IAMF channel order (per spec) to SotF speaker indices.
+        let channel_map = build_channel_map(layer.loudspeaker_layout, target);
+        debug_assert_eq!(
+            channel_map.len(),
+            layer_channels,
+            "channel_map length must match IAMF layer channel count"
+        );
 
         Ok(Self {
             _layer_channels: layer_channels,
@@ -151,5 +255,85 @@ mod tests {
         assert!((output[1] - (-0.5)).abs() < 1e-6); // R
         // Other channels should be silent
         assert!(output[2].abs() < 1e-6);
+    }
+
+    /// 5.1 channel-map correctness: IAMF order is (L,R,Ls,Rs,C,LFE), SotF 5.1
+    /// is (FL,FR,C,LFE,SL,SR). The permutation must place each IAMF channel
+    /// in the right SotF slot.
+    #[test]
+    fn channel_map_5_1_permutes_correctly() {
+        let target = get_speaker_config("5.1").unwrap();
+        let map = build_channel_map(IamfChannelLayout::Layout5_1, target);
+        // IAMF: [L, R, Ls, Rs, C, LFE] -> SotF: [0(FL), 1(FR), 4(SL), 5(SR), 2(C), 3(LFE)]
+        assert_eq!(map, vec![0, 1, 4, 5, 2, 3], "5.1 IAMF->SotF map");
+    }
+
+    /// End-to-end render test: a 5.1 layer where each IAMF channel carries a
+    /// distinct marker sample. Output must place each marker at the right
+    /// SotF speaker slot.
+    #[test]
+    fn render_5_1_routes_each_channel_to_correct_speaker() {
+        let config = ScalableChannelConfig {
+            num_layers: 1,
+            layers: vec![ChannelLayer {
+                loudspeaker_layout: IamfChannelLayout::Layout5_1,
+                output_gain_is_present: false,
+                recon_gain_is_present: false,
+                // 4 substreams: 2 coupled (LR, LsRs) + 2 mono (C, LFE) = 6 ch
+                substream_count: 4,
+                coupled_substream_count: 2,
+                output_gain_db: 0.0,
+            }],
+        };
+        let target = get_speaker_config("5.1").unwrap();
+        let mut renderer = ChannelRenderer::new(&config, target).unwrap();
+
+        // Markers per IAMF channel: L=1, R=2, Ls=3, Rs=4, C=5, LFE=6.
+        // Coupled substreams are interleaved as [L,R, L,R, ...] per frame.
+        // We use 1 frame.
+        let ss_lr = vec![1.0_f32, 2.0]; // IAMF L, IAMF R
+        let ss_ls_rs = vec![3.0_f32, 4.0]; // IAMF Ls, IAMF Rs
+        let ss_c = vec![5.0_f32]; // IAMF C
+        let ss_lfe = vec![6.0_f32]; // IAMF LFE
+
+        let mut output = vec![0.0_f32; 6];
+        renderer
+            .render(&[ss_lr, ss_ls_rs, ss_c, ss_lfe], &mut output, 1)
+            .unwrap();
+
+        // SotF 5.1 indices: FL=0, FR=1, C=2, LFE=3, SL=4, SR=5.
+        assert!((output[0] - 1.0).abs() < 1e-6, "FL should be IAMF L");
+        assert!((output[1] - 2.0).abs() < 1e-6, "FR should be IAMF R");
+        assert!((output[2] - 5.0).abs() < 1e-6, "C should be IAMF C");
+        assert!((output[3] - 6.0).abs() < 1e-6, "LFE should be IAMF LFE");
+        assert!((output[4] - 3.0).abs() < 1e-6, "SL should be IAMF Ls");
+        assert!((output[5] - 4.0).abs() < 1e-6, "SR should be IAMF Rs");
+    }
+
+    /// 7.1 channel-map correctness: IAMF (L,R,Lss,Rss,Lrs,Rrs,C,LFE) ->
+    /// SotF 7.1 (FL,FR,C,LFE,SL,SR,BL,BR).
+    #[test]
+    fn channel_map_7_1_permutes_correctly() {
+        let target = get_speaker_config("7.1").unwrap();
+        let map = build_channel_map(IamfChannelLayout::Layout7_1, target);
+        // IAMF idx -> SotF channel:
+        //   0 L   -> 0 FL
+        //   1 R   -> 1 FR
+        //   2 Lss -> 4 SL
+        //   3 Rss -> 5 SR
+        //   4 Lrs -> 6 BL
+        //   5 Rrs -> 7 BR
+        //   6 C   -> 2 C
+        //   7 LFE -> 3 LFE
+        assert_eq!(map, vec![0, 1, 4, 5, 6, 7, 2, 3]);
+    }
+
+    /// Stereo IAMF rendered to 5.1 must place L→FL, R→FR and leave the rest
+    /// silent (regression for the original identity-map bug).
+    #[test]
+    fn channel_map_stereo_to_5_1_only_fills_l_r() {
+        let target = get_speaker_config("5.1").unwrap();
+        let map = build_channel_map(IamfChannelLayout::Stereo, target);
+        assert_eq!(map, vec![0, 1]);
     }
 }

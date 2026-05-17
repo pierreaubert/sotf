@@ -76,6 +76,7 @@ pub mod mapping;
 pub mod mapping_engine;
 pub mod message;
 pub mod profiles;
+pub mod sequencer;
 pub mod templates;
 
 pub use config::{DeviceConfig, DeviceProfile, MidiConfig};
@@ -86,4 +87,5 @@ pub use manager::MidiManager;
 pub use mapping::{ControlBinding, MidiMapping, MidiOverlay, ValueScaling};
 pub use mapping_engine::{MappingAction, MidiMappingEngine};
 pub use message::MidiMessage;
+pub use sequencer::{MidiClip, MidiEvent, MidiRegion};
 pub use templates::TemplateRegistry;

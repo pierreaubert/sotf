@@ -296,13 +296,20 @@ impl HttpMediaSource {
         self.buffer_pos = 0;
         self.buffer_len = 0;
 
-        // Fill the buffer in chunks, handling ICY metadata stripping
+        // Fill the buffer in chunks, handling ICY metadata stripping.
+        // We keep reading until either:
+        //   - the buffer is full,
+        //   - the source returns EOF, or
+        //   - the source returns a short read (n < chunk_size), meaning it
+        //     would block waiting for more bytes.
+        // The previous `buffer_len >= chunk_size` break clamped the 128 KiB
+        // read-ahead to a single 8 KiB chunk, defeating the buffer's purpose.
         while self.buffer_len < self.buffer.len() {
             let remaining = self.buffer.len() - self.buffer_len;
             // Take tmp_buf out to avoid borrow conflict with read_raw(&mut self)
             let mut tmp = std::mem::take(&mut self.tmp_buf);
             let chunk_size = remaining.min(tmp.len());
-            match self.read_raw(&mut tmp[..chunk_size]) {
+            let n = match self.read_raw(&mut tmp[..chunk_size]) {
                 Ok(0) => {
                     self.tmp_buf = tmp;
                     break;
@@ -311,6 +318,7 @@ impl HttpMediaSource {
                     self.buffer[self.buffer_len..self.buffer_len + n].copy_from_slice(&tmp[..n]);
                     self.buffer_len += n;
                     self.tmp_buf = tmp;
+                    n
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
                     self.tmp_buf = tmp;
@@ -320,10 +328,9 @@ impl HttpMediaSource {
                     self.tmp_buf = tmp;
                     return Err(e);
                 }
-            }
-            // Don't block trying to fill the entire buffer — return what we have
-            // once we've read at least one chunk
-            if self.buffer_len >= chunk_size {
+            };
+            if n < chunk_size {
+                // Short read: source would block. Return what we have.
                 break;
             }
         }

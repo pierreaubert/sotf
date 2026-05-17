@@ -1,3 +1,11 @@
+# 0.6.2
+
+## Fixes
+
+- **safe_area_insets**: doc comment now matches the actual return tuple
+  order — `(top, left, bottom, right)`, matching `UIEdgeInsets` field
+  order. Code behavior unchanged; only the documentation was stale.
+
 # 0.6.1
 
 ## New

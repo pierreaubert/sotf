@@ -16,7 +16,7 @@ use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
 use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale, Scale};
-use d3rs::text::{VectorFontConfig, render_vector_text};
+use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
 
@@ -260,10 +260,18 @@ impl BoxPlotChart {
         let (x_min, x_max) = extent_padded(&self.x, DEFAULT_PADDING_FRACTION);
         let (y_min, y_max) = extent_padded(&self.y, DEFAULT_PADDING_FRACTION);
 
-        // Calculate number of bins
+        // Calculate number of bins. Reject zero up-front so the
+        // `num_bins - 1` underflow and division by `num_bins` in
+        // calculate_boxes cannot fire even when callers pass `.bins(0)`.
         let num_bins = self
             .num_bins
             .unwrap_or_else(|| (plot_width / 40.0).max(3.0) as usize);
+        if num_bins == 0 {
+            return Err(ChartError::InvalidData {
+                field: "bins",
+                reason: "boxplot bin count must be at least 1",
+            });
+        }
 
         // Bin the data
         let boxes = self.calculate_boxes(x_min, x_max, num_bins);
@@ -283,7 +291,7 @@ impl BoxPlotChart {
         // Add title if present
         if let Some(title) = &self.title {
             let font_config =
-                VectorFontConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
+                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
             container = container.child(
                 div()
                     .w_full()
@@ -291,7 +299,7 @@ impl BoxPlotChart {
                     .flex()
                     .justify_center()
                     .items_center()
-                    .child(render_vector_text(title, &font_config)),
+                    .child(render_glyph_text(title, &font_config)),
             );
         }
 

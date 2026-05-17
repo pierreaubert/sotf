@@ -1,11 +1,44 @@
 # Unreleased
 
+# 0.5.93
+
 ## Features
 
+- Derived serde serialization/deserialization for host automation modes,
+  curves, and Bezier points so engine project files can persist automation.
+
+## Fixes
+
+- Fixed queued graph mutation node-id ordering by reserving node IDs for queued
+  chain plugin appends and returning the reserved ID from `queue_add_plugin()`.
+
+## Performance
+
+- Preallocated parameter-event drain scratch storage to the event queue capacity
+  so the first audio-block drain does not allocate.
+- Reused preallocated Rayon stage scratch/result storage during graph execution
+  instead of allocating a per-stage result vector in the audio path.
+
+# 0.5.92
+
+## Features
+
+- Added `Plugin::process_f64`, `InPlacePlugin::process_in_place_f64`, and `DawHost::process_f64` so hosts and plugins have a stable f64 processing API. Native f64 simple chains and DAGs are used when every active plugin declares `supports_f64()`; existing f32-only plugins use a compatibility bridge.
+- Added lock-free graph mutation handoff in `DawHost`: `take_graph_mutation_sender()` exposes a single-producer `GraphMutationSender` for queued add-node/add-plugin/add-edge/remove-plugin requests, and rebuilt `GraphTopology` snapshots are published through `ArcSwap`.
+- Added a preallocated `rtrb` parameter-event queue so `DawHost::set_plugin_parameter()` hands changes to the audio block instead of mutating plugin state directly from the caller. `take_parameter_event_sender()` exposes the single-producer handle for control/UI ownership, `set_plugin_parameter_at()` / `queue_node_parameter_at()` support sample-offset events for fixed-rate f32/f64 blocks, and `set_plugin_parameter_immediate()` remains available for offline setup and tests.
+- Added automatic host insertion of `AutoOversampledPlugin` for `Box<dyn Plugin>` values that declare `preferred_oversampling()`.
 - `analyzer_channel_correlation`: new `ChannelCorrelationMonitor` maintaining a sliding-window inter-channel Pearson r matrix (400 ms EMA window). Frame-alignment safe across split `add_frames` calls; heap-allocated scratch supports arbitrary channel counts (no >32ch truncation); upper-triangle-only storage halves the memory footprint.
 - `LoudnessMonitor` embeds the correlation monitor behind an opt-in `spatial_enabled` flag (default off, builder `with_spatial()`). When on, `LoudnessData.correlation_matrix` carries the row-major matrix and `correlation_samples_seen` distinguishes cold-start from settled state. Default-off keeps CLI / meter consumers free of N² compute and serialization payload.
 - `plugin_layout::viz_names::SPATIAL_SPIDER` const so layouts opt into the spatial-spider custom-viz hook without stringly-typed names.
 - `SpeakerPosition::to_cartesian()` / `spherical_to_cartesian()` extracted from the inline VBAP path so the spatial-spider widget can reuse the conversion.
+
+## Performance
+
+- Replaced real-time latency-compensation `HashMap<(NodeId, NodeId), LookaheadBuffer>` lookups with edge-indexed `Vec<Option<LookaheadBuffer>>` storage.
+- Replaced process-loop automation string-key `HashMap` lookups with indexed automation slots; the map is now control-side lookup only.
+- Added SIMD fast paths for contiguous merge, compensation, and multi-output summing via `scale_add_simd`.
+- Enabled conservative Rayon execution for independent simple DAG stages while keeping merge, sidechain, and channel-mapped stages on the full sequential path.
+- `DawHost::process_f64()` now uses generic graph buffers, merge/compensation helpers, and native f64 DAG processing when every active plugin declares `supports_f64()`, avoiding the f32 compatibility bridge for those graphs.
 
 # 0.5.91
 

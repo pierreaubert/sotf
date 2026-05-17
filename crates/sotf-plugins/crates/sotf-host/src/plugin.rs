@@ -122,6 +122,29 @@ pub trait Plugin: Send {
         context: &ProcessContext,
     ) -> Result<usize, String>;
 
+    /// Process f64 audio samples.
+    ///
+    /// Plugins that need true double-precision processing should override this
+    /// and return `supports_f64() == true`. The default bridges through f32 so
+    /// callers have a stable API even for existing plugins.
+    fn process_f64(
+        &mut self,
+        input: &[f64],
+        output: &mut [f64],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        let mut input_f32 = vec![0.0; input.len()];
+        let mut output_f32 = vec![0.0; output.len()];
+        for (dst, &src) in input_f32.iter_mut().zip(input.iter()) {
+            *dst = src as f32;
+        }
+        let frames = self.process(&input_f32, &mut output_f32, context)?;
+        for (dst, &src) in output.iter_mut().zip(output_f32.iter()) {
+            *dst = src as f64;
+        }
+        Ok(frames)
+    }
+
     /// Get the processing latency in samples (if any)
     /// This is used to compensate for algorithmic delays
     fn latency_samples(&self) -> usize {
@@ -242,6 +265,24 @@ pub trait InPlacePlugin: Send {
         context: &ProcessContext,
     ) -> PluginResult<usize>;
 
+    /// Process f64 audio samples in-place. Override together with
+    /// `supports_f64()` for true double-precision DSP.
+    fn process_in_place_f64(
+        &mut self,
+        buffer: &mut [f64],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
+        let mut buffer_f32 = vec![0.0; buffer.len()];
+        for (dst, &src) in buffer_f32.iter_mut().zip(buffer.iter()) {
+            *dst = src as f32;
+        }
+        let frames = self.process_in_place(&mut buffer_f32, context)?;
+        for (dst, &src) in buffer.iter_mut().zip(buffer_f32.iter()) {
+            *dst = src as f64;
+        }
+        Ok(frames)
+    }
+
     /// Get the processing latency in samples (if any)
     fn latency_samples(&self) -> usize {
         0
@@ -332,6 +373,31 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
             let frames = self
                 .plugin
                 .process_in_place(&mut output[..input.len()], context)?;
+            for frame in 0..frames {
+                let src = frame * in_ch;
+                let dst = frame * out_ch;
+                output.copy_within(src..src + out_ch, dst);
+            }
+            Ok(frames)
+        }
+    }
+
+    fn process_f64(
+        &mut self,
+        input: &[f64],
+        output: &mut [f64],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        let in_ch = self.plugin.input_channels();
+        let out_ch = self.plugin.channels();
+        if in_ch == out_ch {
+            output.copy_from_slice(input);
+            self.plugin.process_in_place_f64(output, context)
+        } else {
+            output[..input.len()].copy_from_slice(input);
+            let frames = self
+                .plugin
+                .process_in_place_f64(&mut output[..input.len()], context)?;
             for frame in 0..frames {
                 let src = frame * in_ch;
                 let dst = frame * out_ch;

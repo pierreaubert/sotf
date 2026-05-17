@@ -35,13 +35,17 @@
 //! # Volume Control
 //!
 //! Volume control is handled via the DSP chain using `GainPlugin` from the
-//! `plugins` crate. The `volume` module provides atomic volume types for
-//! thread-safe volume control:
+//! `plugins` crate. The `driver-hal` crate does not provide its own volume
+//! types — the previous `volume` module was dead code and has been removed.
 //!
-//! - `AtomicVolume`: Single global volume for all channels
-//! - `AtomicChannelVolumes`: Per-channel volume control
+//! # Real-time Safety
 //!
-//! See the `volume` module for details.
+//! All cross-process header fields are `AtomicU32`/`AtomicU64` to avoid data
+//! races with the Swift HAL plugin. The audio I/O hot paths perform no
+//! filesystem I/O and no allocations beyond the pre-allocated staging buffers
+//! created in `HalInputReader::new`/`HalOutputWriter::new`.
+//!
+//! Per-call trace logging is gated behind the `audio-trace` feature flag.
 
 #[cfg(target_os = "macos")]
 pub mod driver;
@@ -49,8 +53,6 @@ pub mod driver;
 pub mod encryption;
 #[cfg(target_os = "macos")]
 pub mod shared_memory;
-#[cfg(target_os = "macos")]
-pub mod volume;
 
 #[cfg(target_os = "macos")]
 pub use driver::HalDriver;
@@ -62,10 +64,4 @@ pub use encryption::{
 #[cfg(target_os = "macos")]
 pub use shared_memory::{
     HalInputReader, HalOutputWriter, SharedAudioBuffer, get_shared_memory_path,
-};
-#[cfg(target_os = "macos")]
-pub use volume::{
-    AtomicChannelVolumes, AtomicVolume, SharedChannelVolumes, SharedVolume, VolumeConfig,
-    clamp_volume_db, clamp_volume_linear, create_shared_channel_volumes, create_shared_volume,
-    db_to_linear, linear_to_db,
 };

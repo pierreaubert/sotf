@@ -185,6 +185,30 @@ pub struct ParameterDefinition {
     pub param_definition_mode: bool,
     pub duration: u32,
     pub constant_subblock_duration: u32,
+    /// Parameter payload kind (`parameter_definition_type` field in the
+    /// audio_element OBU): MixGain / DemixingInfo / ReconGain.
+    pub parameter_kind: ParameterDataKind,
+}
+
+/// What kind of payload a parameter block carries. Determines how
+/// `parse_parameter_block` decodes each subblock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterDataKind {
+    MixGain,
+    DemixingInfo,
+    ReconGain,
+}
+
+impl ParameterDataKind {
+    /// IAMF v1.1.0 §3.6.4 parameter_definition_type values.
+    pub fn from_u32(v: u32) -> Option<Self> {
+        match v {
+            0 => Some(Self::MixGain),
+            1 => Some(Self::DemixingInfo),
+            2 => Some(Self::ReconGain),
+            _ => None,
+        }
+    }
 }
 
 /// Mix presentation descriptor

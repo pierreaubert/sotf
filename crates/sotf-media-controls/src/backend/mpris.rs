@@ -181,11 +181,25 @@ async fn build_player(
         .build()
         .await?;
 
+    // Invoke the user closure with the mutex released so callers can
+    // safely re-enter `MediaControls::set_metadata` / `set_playback` from
+    // inside the handler without self-deadlock. The `take`/restore dance
+    // temporarily removes ownership of the boxed FnMut while it runs;
+    // concurrent dispatchers during that window drop their events, which
+    // matches the "best-effort, low-rate" contract.
     let dispatch_ev = move |handler: &SharedHandler, ev: MediaControlEvent| {
-        if let Ok(mut guard) = handler.lock()
-            && let Some(ref mut h) = *guard
-        {
-            h(ev);
+        let taken = match handler.lock() {
+            Ok(mut guard) => guard.take(),
+            Err(_) => return,
+        };
+        let Some(mut h) = taken else { return };
+        h(ev);
+        if let Ok(mut guard) = handler.lock() {
+            // If an `attach` slid in while the user closure ran, keep the
+            // newer one — otherwise restore the boxed closure.
+            if guard.is_none() {
+                *guard = Some(h);
+            }
         }
     };
 
@@ -278,7 +292,11 @@ async fn apply_metadata(player: &Player, m: OwnedMetadata) {
         md.set_album(Some(al));
     }
     if let Some(dur) = m.duration {
-        md.set_length(Some(Time::from_micros(dur.as_micros() as i64)));
+        // Guard against overflow: `Duration::as_micros` returns u128. Clamp
+        // to `i64::MAX` (≈292 000 years) so we never wrap into a negative
+        // `Time` — same guard `apply_playback` uses below.
+        let micros = dur.as_micros().min(i64::MAX as u128) as i64;
+        md.set_length(Some(Time::from_micros(micros)));
     }
     if let Some(url) = m.cover_url {
         md.set_art_url(Some(url));

@@ -117,9 +117,17 @@ impl ChannelCorrelationMonitor {
         };
         if need_from_head > 0 && carry_len + need_from_head == n {
             // We can complete exactly one frame from the carry + head.
+            // Inline accumulate_one_frame_from to avoid cloning partial_frame
+            // (which would allocate on the audio thread).
             self.partial_frame
                 .extend_from_slice(&samples[..need_from_head]);
-            self.accumulate_one_frame_from(&self.partial_frame.clone());
+            debug_assert_eq!(self.partial_frame.len(), n);
+            for ch in 0..n {
+                self.frame_scratch[ch] = self.partial_frame[ch] as f64;
+            }
+            self.decay_state(1);
+            self.fma_frame();
+            self.samples_seen = self.samples_seen.saturating_add(1);
             self.partial_frame.clear();
         } else if need_from_head > 0 {
             // Still don't have enough — just extend the carry.
@@ -140,18 +148,6 @@ impl ChannelCorrelationMonitor {
             self.partial_frame
                 .extend_from_slice(&body[num_frames * n..]);
         }
-    }
-
-    /// Internal helper: ingest a slice that is exactly `n` samples (one frame).
-    fn accumulate_one_frame_from(&mut self, frame_samples: &[f32]) {
-        let n = self.channels;
-        debug_assert_eq!(frame_samples.len(), n);
-        for (ch, s) in frame_samples.iter().enumerate() {
-            self.frame_scratch[ch] = *s as f64;
-        }
-        self.decay_state(1);
-        self.fma_frame();
-        self.samples_seen = self.samples_seen.saturating_add(1);
     }
 
     /// Internal helper: ingest a slice whose length is an exact multiple of
@@ -335,8 +331,18 @@ impl Plugin for ChannelCorrelationPlugin {
         if !self.enabled {
             return Ok(context.num_frames);
         }
+        let mut dropped = 0usize;
         for &s in input {
-            let _ = self.producer.push(s);
+            if self.producer.push(s).is_err() {
+                dropped += 1;
+            }
+        }
+        if dropped > 0 {
+            crate::rate_limited_log!(
+                warn,
+                5,
+                "correlation ring buffer full, dropped {dropped} samples"
+            );
         }
         let slots = self.consumer.slots();
         if let Ok(chunk) = self.consumer.read_chunk(slots) {

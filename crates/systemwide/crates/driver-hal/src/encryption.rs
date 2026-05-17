@@ -27,9 +27,25 @@ use sha2::{Digest, Sha256};
 /// Size of the authentication tag appended to each encrypted block
 pub const AUTH_TAG_SIZE: usize = 16;
 
-/// Required byte buffer size for encrypting N samples (samples * 4 + auth tag)
+/// Required byte buffer size for encrypting N samples (`samples * 4 + auth tag`).
+///
+/// **Unchecked.** Callers that receive `sample_count` from an external source
+/// (e.g. a parsed shared-memory record header) MUST use
+/// [`encrypted_byte_size_checked`] instead; this function uses non-checked
+/// arithmetic and can wrap on `usize` for very large inputs (notably on
+/// 32-bit targets).
 pub const fn encrypted_byte_size(sample_count: usize) -> usize {
     sample_count * 4 + AUTH_TAG_SIZE
+}
+
+/// Required byte buffer size for encrypting N samples, returning `None` on
+/// overflow. Use this when `sample_count` is attacker-controlled or otherwise
+/// unbounded.
+pub const fn encrypted_byte_size_checked(sample_count: usize) -> Option<usize> {
+    let Some(samples_bytes) = sample_count.checked_mul(4) else {
+        return None;
+    };
+    samples_bytes.checked_add(AUTH_TAG_SIZE)
 }
 
 /// Required f32 buffer size for storing encrypted data (ceiling division)
@@ -82,8 +98,16 @@ impl AudioCipher {
     /// # Returns
     /// Encrypted ciphertext with authentication tag appended (16 bytes longer than input)
     ///
-    /// # Panics
-    /// Panics if frame_counter is reused (nonce reuse is catastrophic for security)
+    /// # Nonce safety
+    /// `frame_counter` must be unique for the lifetime of the key. Nonce reuse
+    /// is catastrophic for ChaCha20-Poly1305 (keystream recovery + forgery).
+    /// This is a contract enforced by the caller: the
+    /// [`crate::SharedAudioBuffer`]'s `frame_counter` is monotonic via
+    /// `fetch_add`, and the session key is rotated whenever the header is
+    /// re-initialised, so the daemon never reuses a (key, counter) pair
+    /// across sessions. This function does NOT panic on reuse (no detection
+    /// is implemented in the AEAD layer); the previous doc comment was
+    /// misleading and has been corrected.
     pub fn encrypt(&self, samples: &[f32], frame_counter: u64) -> Vec<u8> {
         // Convert samples to bytes
         let plaintext = samples_to_bytes(samples);
@@ -234,27 +258,17 @@ fn samples_to_bytes_into(samples: &[f32], output: &mut [u8]) {
     }
 }
 
-/// Get a mutable byte view of f32 samples (zero-copy)
-///
-/// # Safety
-/// This reinterprets f32 memory as bytes. The resulting bytes are in native endian.
+/// Get a mutable byte view of f32 samples (zero-copy).
 fn samples_as_bytes_mut(samples: &mut [f32]) -> &mut [u8] {
-    // SAFETY: f32 can always be safely reinterpreted as bytes
-    // The alignment of f32 (4) is >= alignment of u8 (1)
     let ptr = samples.as_mut_ptr() as *mut u8;
     let len = samples.len() * 4;
-    // SAFETY: The resulting slice covers the same memory as the input slice
+    // SAFETY: `f32` has alignment 4 ≥ alignment of `u8` (1), `len` equals
+    // `samples.len() * size_of::<f32>()` so the slice stays within the
+    // backing allocation, and the returned lifetime is tied to the caller's
+    // `&mut [f32]` borrow so no aliasing reference can exist. Every bit
+    // pattern is a valid `u8`, so reinterpreting `f32` bits as bytes is
+    // always defined.
     unsafe { std::slice::from_raw_parts_mut(ptr, len) }
-}
-
-/// Get an immutable byte view of f32 samples (zero-copy)
-#[allow(dead_code)]
-fn samples_as_bytes(samples: &[f32]) -> &[u8] {
-    // SAFETY: f32 can always be safely reinterpreted as bytes
-    let ptr = samples.as_ptr() as *const u8;
-    let len = samples.len() * 4;
-    // SAFETY: The resulting slice covers the same memory as the input slice
-    unsafe { std::slice::from_raw_parts(ptr, len) }
 }
 
 /// Convert bytes back to f32 samples (native endian) - allocating version
@@ -270,25 +284,6 @@ fn bytes_to_samples(bytes: &[u8]) -> Vec<f32> {
     }
 
     samples
-}
-
-/// Convert bytes to f32 samples into a pre-allocated buffer (allocation-free)
-///
-/// # Returns
-/// Number of samples written
-#[allow(dead_code)]
-fn bytes_to_samples_into(bytes: &[u8], output: &mut [f32]) -> usize {
-    let sample_count = bytes.len() / 4;
-    let to_write = sample_count.min(output.len());
-
-    for i in 0..to_write {
-        let sample_bytes: [u8; 4] = bytes[i * 4..(i + 1) * 4]
-            .try_into()
-            .expect("slice should be exactly 4 bytes");
-        output[i] = f32::from_le_bytes(sample_bytes);
-    }
-
-    to_write
 }
 
 /// Generate a new random 256-bit encryption key
@@ -393,6 +388,41 @@ pub fn load_session_key() -> std::io::Result<[u8; 32]> {
     let mut file = std::fs::File::open(path)?;
     let mut key = [0u8; 32];
     file.read_exact(&mut key)?;
+    Ok(key)
+}
+
+/// Generate a fresh random session key and persist it to disk, overwriting
+/// any previous key at the canonical session-key path.
+///
+/// This is called from `SharedAudioBuffer::initialize_header` so that
+/// resetting `frame_counter` to 0 never reuses an old `(key, nonce)` pair.
+/// All I/O happens on the daemon's non-RT initialisation path.
+pub fn rotate_session_key() -> std::io::Result<[u8; 32]> {
+    use std::io::Write;
+    let key = generate_key();
+    let path = get_session_key_path();
+    if let Some(parent) = path.parent()
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).ok();
+        }
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&path)?;
+    file.write_all(&key)?;
+    file.sync_all().ok();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).ok();
+    }
     Ok(key)
 }
 

@@ -1,8 +1,12 @@
-# Unreleased
+# 0.6.9
 
 ## Features
 
 - `gpu3d::Lines3DElement`: new GPUI element rendering line / polygon scenes via CPU projection (`Camera3D::project_to_screen`) + `gpui::PathBuilder`. Same orbit / pan / zoom semantics as `Surface3DElement` through a shared `Lines3DState` (`Rc<RefCell<_>>`); parents wire mouse handlers to drive the embedded `OrbitControls`. Designed for sparse 3D scenes (~50 vertices) where a full wgpu pipeline would be overkill.
+
+## Fixes
+
+- **voronoi_airports example**: track `math-delaunay` API change — `triangles` and `halfedges` are now methods, not public fields. Updated callsites to use `.triangles()` / `.halfedges()`. Unblocks workspace compile.
 
 # 0.6.8
 

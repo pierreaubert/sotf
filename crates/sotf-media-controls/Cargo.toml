@@ -31,6 +31,7 @@ objc2-media-player = { version = "0.3", features = [
     "block2",
 ] }
 block2 = "0.6"
+dispatch2 = "0.3"
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
 mpris-server = "0.9"

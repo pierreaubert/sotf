@@ -1,3 +1,13 @@
+# 0.6.20
+
+## Fixes
+
+- **VolumeKnob**: drag value is now computed from a delta against the
+  position captured at `mouse_down` (via `store_drag_state` /
+  `handle_drag` / `clear_drag_state`), instead of interpreting the raw
+  window-space Y coordinate as knob-local progress. Drag now responds
+  to mouse movement regardless of where the knob is on screen.
+
 # 0.6.19
 
 - Added more options to configure audio components

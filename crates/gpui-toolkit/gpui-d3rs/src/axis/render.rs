@@ -2,7 +2,7 @@
 
 use super::{AxisConfig, AxisOrientation, AxisTheme};
 use crate::scale::Scale;
-use crate::text::{VectorFontConfig, measure_text_width, render_vector_text};
+use crate::text::{GlyphTextConfig, measure_glyph_text_width, render_glyph_text};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -91,10 +91,9 @@ where
 
             // Convert angle from degrees to radians
             let angle_rad = config.label_angle * std::f32::consts::PI / 180.0;
-            let font_config = VectorFontConfig {
+            let font_config = GlyphTextConfig {
                 font_size: config.label_font_size,
-                stroke_width: 1.2,
-                color: theme.axis_label_color().into(),
+                color: theme.axis_label_color(),
                 rotation: angle_rad,
                 letter_spacing: 0.1,
             };
@@ -111,7 +110,7 @@ where
 
             // Label - positioned absolutely
             let label_top = tick_top + config.tick_size + config.tick_padding;
-            let label_width = measure_text_width(&label, config.label_font_size);
+            let label_width = measure_glyph_text_width(&label, config.label_font_size);
 
             // For angled labels, adjust positioning
             // Negative angle rotates counter-clockwise, so text goes down-left
@@ -129,7 +128,7 @@ where
                 .left(relative(x_pos as f32))
                 .ml(px(ml_offset))
                 .top(px(label_top + mt_offset))
-                .child(render_vector_text(&label, &font_config));
+                .child(render_glyph_text(&label, &font_config));
 
             [tick_mark.into_any_element(), label_div.into_any_element()]
         }))
@@ -183,10 +182,8 @@ where
 
             let title_top =
                 config.tick_size + config.tick_padding + label_height + config.title_padding;
-            let font_config = VectorFontConfig::horizontal(
-                config.title_font_size,
-                theme.axis_label_color().into(),
-            );
+            let font_config =
+                GlyphTextConfig::horizontal(config.title_font_size, theme.axis_label_color());
             el.child(
                 div()
                     .absolute()
@@ -195,7 +192,7 @@ where
                     .top(px(title_top))
                     .flex()
                     .justify_center()
-                    .child(render_vector_text(&title, &font_config)),
+                    .child(render_glyph_text(&title, &font_config)),
             )
         })
 }
@@ -240,10 +237,8 @@ where
             let x_pos = (range_value - range_min) / range_span;
             let label = format_tick(tick_value, &config.tick_format);
             let half_tick_width = config.domain_line_width / 2.0;
-            let font_config = VectorFontConfig::horizontal(
-                config.label_font_size,
-                theme.axis_label_color().into(),
-            );
+            let font_config =
+                GlyphTextConfig::horizontal(config.label_font_size, theme.axis_label_color());
 
             // Tick mark - positioned absolutely, pointing upward from domain line
             let tick_mark = div()
@@ -257,13 +252,13 @@ where
 
             // Label - positioned absolutely, above the tick
             let label_bottom = tick_bottom - config.tick_size - config.tick_padding;
-            let half_label_width = measure_text_width(&label, config.label_font_size) / 2.0;
+            let half_label_width = measure_glyph_text_width(&label, config.label_font_size) / 2.0;
             let label_div = div()
                 .absolute()
                 .left(relative(x_pos as f32))
                 .ml(px(-half_label_width))
                 .top(px(label_bottom - config.label_font_size))
-                .child(render_vector_text(&label, &font_config));
+                .child(render_glyph_text(&label, &font_config));
 
             [tick_mark.into_any_element(), label_div.into_any_element()]
         }))
@@ -303,10 +298,8 @@ where
         // Title (horizontal for top axis, at the very top)
         .when(config.title.is_some(), |el| {
             let title = config.title.clone().unwrap_or_default();
-            let font_config = VectorFontConfig::horizontal(
-                config.title_font_size,
-                theme.axis_label_color().into(),
-            );
+            let font_config =
+                GlyphTextConfig::horizontal(config.title_font_size, theme.axis_label_color());
             el.child(
                 div()
                     .absolute()
@@ -315,7 +308,7 @@ where
                     .top_0()
                     .flex()
                     .justify_center()
-                    .child(render_vector_text(&title, &font_config)),
+                    .child(render_glyph_text(&title, &font_config)),
             )
         })
 }
@@ -345,9 +338,9 @@ where
         // Title (rotated text for left axis - reading bottom-to-top)
         .when(config.title.is_some(), |el| {
             let title = config.title.clone().unwrap_or_default();
-            let font_config = VectorFontConfig::vertical_bottom_to_top(
+            let font_config = GlyphTextConfig::vertical_bottom_to_top(
                 config.title_font_size,
-                theme.axis_label_color().into(),
+                theme.axis_label_color(),
             );
             el.child(
                 div()
@@ -359,7 +352,7 @@ where
                     .flex()
                     .justify_center()
                     .items_center()
-                    .child(render_vector_text(&title, &font_config)),
+                    .child(render_glyph_text(&title, &font_config)),
             )
         })
         // Domain line
@@ -381,10 +374,8 @@ where
             let y_pos = 1.0 - (range_value - range_min) / range_span;
             let label = format_tick(tick_value, &config.tick_format);
             let half_tick_height = config.domain_line_width / 2.0;
-            let font_config = VectorFontConfig::horizontal(
-                config.label_font_size,
-                theme.axis_label_color().into(),
-            );
+            let font_config =
+                GlyphTextConfig::horizontal(config.label_font_size, theme.axis_label_color());
 
             // Tick mark - positioned absolutely and centered on the y position
             let tick_mark = div()
@@ -404,7 +395,7 @@ where
                 .right(px(tick_right + config.tick_size + config.tick_padding))
                 .top(relative(y_pos as f32))
                 .mt(px(-half_label_height))
-                .child(render_vector_text(&label, &font_config));
+                .child(render_glyph_text(&label, &font_config));
 
             [tick_mark.into_any_element(), label_div.into_any_element()]
         }))
@@ -483,10 +474,8 @@ where
             let y_pos = 1.0 - (range_value - range_min) / range_span;
             let label = format_tick(tick_value, &config.tick_format);
             let half_tick_height = config.domain_line_width / 2.0;
-            let font_config = VectorFontConfig::horizontal(
-                config.label_font_size,
-                theme.axis_label_color().into(),
-            );
+            let font_config =
+                GlyphTextConfig::horizontal(config.label_font_size, theme.axis_label_color());
 
             // Tick mark - positioned absolutely and centered on the y position
             let tick_mark = div()
@@ -505,16 +494,16 @@ where
                 .left(px(tick_left + config.tick_size + config.tick_padding))
                 .top(relative(y_pos as f32))
                 .mt(px(-half_label_height))
-                .child(render_vector_text(&label, &font_config));
+                .child(render_glyph_text(&label, &font_config));
 
             [tick_mark.into_any_element(), label_div.into_any_element()]
         }))
         // Title (rotated text for right axis - reading bottom-to-top)
         .when(config.title.is_some(), |el| {
             let title = config.title.clone().unwrap_or_default();
-            let font_config = VectorFontConfig::vertical_bottom_to_top(
+            let font_config = GlyphTextConfig::vertical_bottom_to_top(
                 config.title_font_size,
-                theme.axis_label_color().into(),
+                theme.axis_label_color(),
             );
             el.child(
                 div()
@@ -526,7 +515,7 @@ where
                     .flex()
                     .justify_center()
                     .items_center()
-                    .child(render_vector_text(&title, &font_config)),
+                    .child(render_glyph_text(&title, &font_config)),
             )
         })
 }

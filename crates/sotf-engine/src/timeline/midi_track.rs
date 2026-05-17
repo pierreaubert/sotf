@@ -3,7 +3,50 @@
 // ============================================================================
 
 use super::track::Track;
-use sotf_plugins::{DawHost, InstrumentPlugin, NoteEvent, NoteEventKind, ProcessContext};
+use crate::engine::PluginConfig;
+use sotf_audio_player_midi::MidiMessage;
+use sotf_audio_player_midi::sequencer::MidiRegion;
+use sotf_plugins::{DawHost, ProcessContext};
+
+/// A MIDI note/controller event scheduled within a rendered audio block.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NoteEvent {
+    pub sample_offset: u32,
+    pub channel: u8,
+    pub kind: NoteEventKind,
+}
+
+/// MIDI event kinds consumed by timeline instrument plugins.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NoteEventKind {
+    NoteOn { note: u8, velocity: u8 },
+    NoteOff { note: u8 },
+    ControlChange { controller: u8, value: u8 },
+    PitchBend { value: i16 },
+}
+
+/// Instrument plugin interface for timeline MIDI tracks.
+pub trait InstrumentPlugin: Send {
+    fn info(&self) -> sotf_plugins::PluginInfo;
+    fn output_channels(&self) -> usize;
+    fn parameters(&self) -> Vec<sotf_plugins::parameters::Parameter>;
+    fn set_parameter(
+        &mut self,
+        id: sotf_plugins::parameters::ParameterId,
+        value: sotf_plugins::parameters::ParameterValue,
+    ) -> sotf_plugins::PluginResult<()>;
+    fn get_parameter(
+        &self,
+        id: &sotf_plugins::parameters::ParameterId,
+    ) -> Option<sotf_plugins::parameters::ParameterValue>;
+    fn process_events(
+        &mut self,
+        events: &[NoteEvent],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> sotf_plugins::PluginResult<usize>;
+    fn reset(&mut self);
+}
 
 /// A MIDI track on the timeline.
 ///
@@ -13,11 +56,15 @@ pub struct MidiTrack {
     /// Track name
     pub name: String,
     /// MIDI regions on this track
-    pub regions: Vec<sotf_audio_player_midi::sequencer::MidiRegion>,
+    pub regions: Vec<MidiRegion>,
     /// Instrument plugin that converts MIDI events to audio
     pub instrument: Box<dyn InstrumentPlugin>,
+    /// Serializable instrument config used to rebuild `instrument`.
+    pub instrument_config: Option<PluginConfig>,
     /// Post-instrument effect chain
     pub chain: DawHost,
+    /// Serializable plugin configs used to rebuild `chain`.
+    pub plugin_configs: Vec<PluginConfig>,
     /// Track volume (linear)
     pub volume: f32,
     /// Track pan (-1.0 to 1.0)
@@ -45,7 +92,9 @@ impl MidiTrack {
             name: name.into(),
             regions: Vec::new(),
             instrument,
+            instrument_config: None,
             chain: DawHost::new(out_ch, sample_rate),
+            plugin_configs: Vec::new(),
             volume: 1.0,
             pan: 0.0,
             muted: false,
@@ -57,7 +106,7 @@ impl MidiTrack {
     }
 
     /// Add a MIDI region to this track.
-    pub fn add_region(&mut self, region: sotf_audio_player_midi::sequencer::MidiRegion) {
+    pub fn add_region(&mut self, region: MidiRegion) {
         self.regions.push(region);
     }
 
@@ -88,42 +137,37 @@ impl MidiTrack {
             if !region.overlaps(position_samples, num_frames as u64) {
                 continue;
             }
-            let events = region.events_in_timeline_range(position_samples, num_frames as u64);
-            for (relative_time, msg) in events {
-                let kind = match msg {
-                    sotf_audio_player_midi::message::MidiMessage::NoteOn {
-                        note, velocity, ..
-                    } => NoteEventKind::NoteOn {
-                        note: *note,
-                        velocity: *velocity,
-                    },
-                    sotf_audio_player_midi::message::MidiMessage::NoteOff { note, .. } => {
-                        NoteEventKind::NoteOff { note: *note }
-                    }
-                    sotf_audio_player_midi::message::MidiMessage::ControlChange {
-                        controller,
-                        value,
-                        ..
-                    } => NoteEventKind::ControlChange {
-                        controller: *controller,
-                        value: *value,
-                    },
-                    sotf_audio_player_midi::message::MidiMessage::PitchBend { value, .. } => {
-                        NoteEventKind::PitchBend {
+            region.for_each_event_in_timeline_range(
+                position_samples,
+                num_frames as u64,
+                |relative_time, msg| {
+                    let kind = match msg {
+                        MidiMessage::NoteOn { note, velocity, .. } => NoteEventKind::NoteOn {
+                            note: *note,
+                            velocity: *velocity,
+                        },
+                        MidiMessage::NoteOff { note, .. } => NoteEventKind::NoteOff { note: *note },
+                        MidiMessage::ControlChange {
+                            controller, value, ..
+                        } => NoteEventKind::ControlChange {
+                            controller: *controller,
+                            value: *value,
+                        },
+                        MidiMessage::PitchBend { value, .. } => NoteEventKind::PitchBend {
                             value: *value as i16 - 8192,
-                        }
-                    }
-                    _ => continue,
-                };
-                self.event_buf.push(NoteEvent {
-                    sample_offset: relative_time as u32,
-                    channel: 0,
-                    kind,
-                });
-            }
+                        },
+                        _ => return,
+                    };
+                    self.event_buf.push(NoteEvent {
+                        sample_offset: relative_time as u32,
+                        channel: 0,
+                        kind,
+                    });
+                },
+            );
         }
 
-        // Sort events by sample offset
+        // Stable ordering at the same sample offset preserves MIDI clip/region order.
         self.event_buf.sort_by_key(|e| e.sample_offset);
 
         // Process through instrument
@@ -132,7 +176,10 @@ impl MidiTrack {
         }
         self.instrument_buf[..total_samples].fill(0.0);
 
-        let context = ProcessContext::new(sample_rate, num_frames);
+        let context = ProcessContext {
+            sample_rate,
+            num_frames,
+        };
         let frames = self.instrument.process_events(
             &self.event_buf,
             &mut self.instrument_buf[..total_samples],
@@ -311,7 +358,10 @@ mod tests {
     #[test]
     fn test_synth_silent_without_notes() {
         let mut synth = TestSynth::new(1, 48000);
-        let ctx = ProcessContext::new(48000, 256);
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 256,
+        };
         let mut output = vec![0.0f32; 256];
         synth.process_events(&[], &mut output, &ctx).unwrap();
         for &s in &output {
@@ -330,7 +380,10 @@ mod tests {
                 velocity: 127,
             },
         }];
-        let ctx = ProcessContext::new(48000, 256);
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 256,
+        };
         let mut output = vec![0.0f32; 256];
         synth.process_events(&events, &mut output, &ctx).unwrap();
 
@@ -383,5 +436,42 @@ mod tests {
 
         let rms2: f32 = (output2.iter().map(|s| s * s).sum::<f32>() / 1024.0).sqrt();
         assert!(rms2 < 0.001, "After note off, should be silent, RMS={rms2}");
+    }
+
+    #[test]
+    fn test_midi_track_preserves_same_sample_event_order() {
+        let synth = TestSynth::new(1, 48000);
+        let mut track = MidiTrack::new("Synth", Box::new(synth), 48000);
+
+        let mut clip = MidiClip::new(1024);
+        clip.add_event(MidiEvent::note_off(0, 0, 60));
+        clip.add_event(MidiEvent::note_on(0, 0, 60, 100));
+        clip.sort();
+
+        track.add_region(MidiRegion::new(clip, 0));
+        track.build().unwrap();
+
+        let mut output = vec![0.0f32; 1024];
+        track.render_block(0, 1024, 48000, &mut output).unwrap();
+
+        let rms: f32 = (output.iter().map(|s| s * s).sum::<f32>() / 1024.0).sqrt();
+        assert!(
+            rms > 0.01,
+            "same-sample note-off then note-on order should leave the note active, RMS={rms}"
+        );
+    }
+
+    #[test]
+    fn render_block_uses_non_allocating_midi_event_iteration() {
+        let source = include_str!("midi_track.rs");
+        let render_start = source
+            .find("pub fn render_block")
+            .expect("render_block should exist");
+        let render_body = &source[render_start..];
+
+        assert!(
+            !render_body.contains(concat!("events_in", "_timeline_range(")),
+            "MIDI render must iterate region events without allocating a Vec per block"
+        );
     }
 }

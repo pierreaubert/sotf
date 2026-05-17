@@ -108,7 +108,8 @@ fn main() {
     // it after `args` is partially consumed below. Option<(f32, f32)> is Copy.
     let cli_size_override: Option<(f32, f32)> = args.size;
 
-    // Apply QA directory override before any config dir access
+    // Apply QA directory override before any config dir access.
+    let qa_mode = args.qa.is_some();
     if let Some(qa_dir) = args.qa {
         sotf_audio_player::config::set_config_dir_override(qa_dir);
     }
@@ -487,12 +488,18 @@ fn main() {
 
             #[cfg(feature = "dev-api")]
             {
-                if let Ok(handle) = window.as_ref() {
-                    let port: u16 = std::env::var("SOTF_DEV_API_PORT")
-                        .ok()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(7777);
-                    sotf_audio_player_gpui::app::dev_api::start(cx, port, (*handle).into());
+                if qa_mode {
+                    if let Ok(handle) = window.as_ref() {
+                        let port: u16 = std::env::var("SOTF_DEV_API_PORT")
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(7777);
+                        sotf_audio_player_gpui::app::dev_api::start(cx, port, (*handle).into());
+                    }
+                } else {
+                    log::warn!(
+                        "dev-api feature is compiled but --qa was not provided; dev API disabled"
+                    );
                 }
             }
 
@@ -515,6 +522,16 @@ fn install_default_presets() {
             let dest = presets_dir.join(filename);
             if dest.exists() {
                 log::debug!("Default preset already exists, skipping: {}", filename);
+                continue;
+            }
+            if let Some(parent) = dest.parent()
+                && let Err(e) = std::fs::create_dir_all(parent)
+            {
+                log::warn!(
+                    "Failed to create preset directory {}: {}",
+                    parent.display(),
+                    e
+                );
                 continue;
             }
             if let Some(file) = Assets::get(&path) {

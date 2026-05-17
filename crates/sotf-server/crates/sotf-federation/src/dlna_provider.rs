@@ -35,37 +35,201 @@ impl DlnaProvider {
         Self { source_id, config }
     }
 
-    /// Fetch the ContentDirectory control URL from the device description XML.
-    fn get_content_directory_url(&self) -> Result<(String, String), ProviderError> {
-        let (host, base_url, body) = http_get(&self.config.location_url)?;
-
-        // Parse the device description XML to find the ContentDirectory service control URL
-        let control_url = extract_content_directory_control_url(&body).ok_or_else(|| {
-            ProviderError::Other(
-                "ContentDirectory service not found in device description".to_string(),
-            )
-        })?;
-
-        // Resolve relative URL against the device base
-        let full_url = if control_url.starts_with("http") {
-            control_url
-        } else {
-            format!("{}{}", base_url, control_url.trim_start_matches('/'))
-        };
-
-        Ok((host, full_url))
+    /// Fetch all albums from the DLNA server (Browse ObjectID=0).
+    async fn fetch_all_albums_internal(&self) -> Result<Vec<ProviderAlbum>, ProviderError> {
+        let location = self.config.location_url.clone();
+        // The HTTP/SOAP I/O uses blocking std::net::TcpStream — running it
+        // directly on a Tokio worker would stall that worker for the whole
+        // (potentially multi-second) fetch. Push it to the blocking pool.
+        tokio::task::spawn_blocking(move || fetch_all_albums_blocking(&location))
+            .await
+            .map_err(|e| {
+                ProviderError::Other(format!("DLNA fetch task panicked or was cancelled: {e}"))
+            })?
     }
+}
 
-    /// Send a Browse SOAP request and return the DIDL-Lite XML body.
-    fn browse(
-        &self,
-        control_url: &str,
-        object_id: &str,
-        start: u32,
-        count: u32,
-    ) -> Result<String, ProviderError> {
-        let body = format!(
-            r#"<?xml version="1.0" encoding="utf-8"?>
+/// Maximum number of pagination iterations against a single ContentDirectory
+/// container before we bail out. Protects against misbehaving servers that
+/// ignore `StartingIndex` and serve the same page indefinitely.
+pub const MAX_BROWSE_ITERATIONS: u32 = 1000;
+
+/// One DLNA Browse response, parsed.
+#[derive(Debug, Clone)]
+pub struct BrowsePage {
+    pub containers: Vec<(String, String)>,
+    /// Value of `<NumberReturned>` from the SOAP response, if parseable.
+    pub number_returned: Option<u32>,
+    /// Value of `<TotalMatches>` from the SOAP response, if parseable.
+    pub total_matches: Option<u32>,
+}
+
+/// Trait abstraction over Browse responses so pagination logic can be unit-
+/// tested deterministically (with a stub) rather than against a real server.
+pub trait BrowseSource {
+    fn browse_page(&mut self, start: u32, count: u32) -> Result<BrowsePage, ProviderError>;
+}
+
+/// Drain a `BrowseSource` over multiple pages with bounded iterations and
+/// multiple termination rules to keep us safe against misbehaving servers.
+///
+/// Termination (any one breaks the loop):
+///   1. Returned page is empty (`containers.is_empty()`).
+///   2. Server reports `NumberReturned == 0`.
+///   3. Page contained fewer than `page_size` items.
+///   4. We have reached or exceeded `TotalMatches` (if reported).
+///   5. We have done `MAX_BROWSE_ITERATIONS` iterations.
+pub fn paginate_browse<B: BrowseSource>(
+    source: &mut B,
+    page_size: u32,
+) -> Result<Vec<(String, String)>, ProviderError> {
+    let mut all = Vec::new();
+    let mut start = 0u32;
+    let mut iter = 0u32;
+    loop {
+        if iter >= MAX_BROWSE_ITERATIONS {
+            log::warn!(
+                "DLNA Browse pagination hit max iteration cap of {} — bailing out",
+                MAX_BROWSE_ITERATIONS
+            );
+            break;
+        }
+        iter += 1;
+
+        let page = source.browse_page(start, page_size)?;
+        let batch_len = page.containers.len() as u32;
+
+        if page.containers.is_empty() {
+            break;
+        }
+        if page.number_returned == Some(0) {
+            break;
+        }
+
+        all.extend(page.containers);
+
+        if let Some(total) = page.total_matches
+            && all.len() as u32 >= total
+        {
+            break;
+        }
+        if batch_len < page_size {
+            break;
+        }
+        start += batch_len;
+    }
+    Ok(all)
+}
+
+/// Blocking implementation of `fetch_all_albums_internal`.
+fn fetch_all_albums_blocking(location_url: &str) -> Result<Vec<ProviderAlbum>, ProviderError> {
+    let (_host, base_url, body) = http_get(location_url)?;
+    let control_url = extract_content_directory_control_url(&body).ok_or_else(|| {
+        ProviderError::Other("ContentDirectory service not found in device description".to_string())
+    })?;
+    let control_url = if control_url.starts_with("http") {
+        control_url
+    } else {
+        format!("{}{}", base_url, control_url.trim_start_matches('/'))
+    };
+
+    let mut source = HttpBrowseSource {
+        control_url: control_url.clone(),
+        object_id: "0".to_string(),
+    };
+    let containers = paginate_browse(&mut source, 100)?;
+
+    let mut all_albums = Vec::new();
+    for (container_id, container_title) in &containers {
+        let track_didl = browse_blocking(&control_url, container_id, 0, 10000)?;
+        let tracks = parse_didl_items(&track_didl);
+
+        if tracks.is_empty() {
+            continue;
+        }
+
+        let artist = tracks
+            .iter()
+            .find_map(|t| t.artist.clone())
+            .unwrap_or_default();
+
+        let provider_tracks: Vec<ProviderTrack> = tracks
+            .into_iter()
+            .map(|t| {
+                let format_hint = mime_to_format_hint(&t.mime_type);
+                ProviderTrack {
+                    external_id: t.id.clone(),
+                    title: t.title,
+                    artist: t.artist.clone(),
+                    album_artist: t.artist,
+                    track_number: t.track_number,
+                    disc_number: None,
+                    duration_secs: t.duration_secs,
+                    genre: t.genre,
+                    composer: None,
+                    channels: t.channels,
+                    sample_rate: t.sample_rate,
+                    bit_depth: t.bit_depth,
+                    audio_source: AudioSource::Url {
+                        url: t.resource_url,
+                        format_hint,
+                        seekable: true,
+                    },
+                }
+            })
+            .collect();
+
+        all_albums.push(ProviderAlbum {
+            external_id: container_id.clone(),
+            title: container_title.clone(),
+            artist,
+            year: None,
+            album_art_url: None,
+            tracks: provider_tracks,
+        });
+    }
+    Ok(all_albums)
+}
+
+/// HTTP-backed BrowseSource that hits a live ContentDirectory.
+struct HttpBrowseSource {
+    control_url: String,
+    object_id: String,
+}
+
+impl BrowseSource for HttpBrowseSource {
+    fn browse_page(&mut self, start: u32, count: u32) -> Result<BrowsePage, ProviderError> {
+        let (didl, number_returned, total_matches) =
+            browse_with_counts_blocking(&self.control_url, &self.object_id, start, count)?;
+        Ok(BrowsePage {
+            containers: parse_didl_containers(&didl),
+            number_returned,
+            total_matches,
+        })
+    }
+}
+
+/// Blocking Browse helper used outside the async runtime worker.
+fn browse_blocking(
+    control_url: &str,
+    object_id: &str,
+    start: u32,
+    count: u32,
+) -> Result<String, ProviderError> {
+    let (didl, _nr, _tm) = browse_with_counts_blocking(control_url, object_id, start, count)?;
+    Ok(didl)
+}
+
+/// Like `browse_blocking` but also returns parsed `NumberReturned` /
+/// `TotalMatches` from the SOAP envelope.
+fn browse_with_counts_blocking(
+    control_url: &str,
+    object_id: &str,
+    start: u32,
+    count: u32,
+) -> Result<(String, Option<u32>, Option<u32>), ProviderError> {
+    let body = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
 <s:Body>
 <u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
@@ -78,98 +242,22 @@ impl DlnaProvider {
 </u:Browse>
 </s:Body>
 </s:Envelope>"#
-        );
+    );
 
-        let response = soap_post(
-            control_url,
-            "urn:schemas-upnp-org:service:ContentDirectory:1#Browse",
-            &body,
-        )?;
+    let response = soap_post(
+        control_url,
+        "urn:schemas-upnp-org:service:ContentDirectory:1#Browse",
+        &body,
+    )?;
 
-        // Extract DIDL-Lite from the SOAP response (it's XML-escaped inside <Result>)
-        extract_browse_result(&response).ok_or_else(|| {
-            ProviderError::Other("failed to extract Browse result from SOAP response".to_string())
-        })
-    }
+    let number_returned =
+        extract_xml_text(&response, "NumberReturned").and_then(|s| s.parse().ok());
+    let total_matches = extract_xml_text(&response, "TotalMatches").and_then(|s| s.parse().ok());
 
-    /// Fetch all albums from the DLNA server (Browse ObjectID=0).
-    async fn fetch_all_albums_internal(&self) -> Result<Vec<ProviderAlbum>, ProviderError> {
-        let (_host, control_url) = self.get_content_directory_url()?;
-
-        // Browse root to get containers (albums/folders)
-        let mut all_albums = Vec::new();
-        let mut start = 0u32;
-        let page_size = 100u32;
-
-        loop {
-            let didl = self.browse(&control_url, "0", start, page_size)?;
-            let containers = parse_didl_containers(&didl);
-
-            if containers.is_empty() {
-                break;
-            }
-
-            let batch_len = containers.len() as u32;
-
-            for (container_id, container_title) in &containers {
-                // Browse each container to get its tracks
-                let track_didl = self.browse(&control_url, container_id, 0, 10000)?;
-                let tracks = parse_didl_items(&track_didl);
-
-                if tracks.is_empty() {
-                    continue;
-                }
-
-                // Derive artist from tracks
-                let artist = tracks
-                    .iter()
-                    .find_map(|t| t.artist.clone())
-                    .unwrap_or_default();
-
-                let provider_tracks: Vec<ProviderTrack> = tracks
-                    .into_iter()
-                    .map(|t| {
-                        let format_hint = mime_to_format_hint(&t.mime_type);
-                        ProviderTrack {
-                            external_id: t.id.clone(),
-                            title: t.title,
-                            artist: t.artist.clone(),
-                            album_artist: t.artist,
-                            track_number: t.track_number,
-                            disc_number: None,
-                            duration_secs: t.duration_secs,
-                            genre: t.genre,
-                            composer: None,
-                            channels: t.channels,
-                            sample_rate: t.sample_rate,
-                            bit_depth: t.bit_depth,
-                            audio_source: AudioSource::Url {
-                                url: t.resource_url,
-                                format_hint,
-                                seekable: true, // DLNA servers support HTTP Range
-                            },
-                        }
-                    })
-                    .collect();
-
-                all_albums.push(ProviderAlbum {
-                    external_id: container_id.clone(),
-                    title: container_title.clone(),
-                    artist,
-                    year: None,
-                    album_art_url: None,
-                    tracks: provider_tracks,
-                });
-            }
-
-            start += batch_len;
-            if batch_len < page_size {
-                break;
-            }
-        }
-
-        Ok(all_albums)
-    }
+    let didl = extract_browse_result(&response).ok_or_else(|| {
+        ProviderError::Other("failed to extract Browse result from SOAP response".to_string())
+    })?;
+    Ok((didl, number_returned, total_matches))
 }
 
 impl LibraryProvider for DlnaProvider {
@@ -340,19 +428,54 @@ fn parse_http_url(url: &str) -> Result<(String, u16, String), ProviderError> {
 // ─── XML parsing helpers ─────────────────────────────────────────────────────
 
 /// Extract the ContentDirectory control URL from a device description XML.
+///
+/// Scoping rules (UPnP CDS spec): the device description contains a
+/// `<serviceList>` of `<service>` blocks. Each service block contains a
+/// `<serviceType>` and a `<controlURL>`. We must locate the `<service>`
+/// whose `<serviceType>` matches
+/// `urn:schemas-upnp-org:service:ContentDirectory:<n>` and return the
+/// `<controlURL>` *from inside that block only* — never from a sibling
+/// service like `ConnectionManager`, which a naive substring search could
+/// otherwise pick up if "ContentDirectory" appears earlier in a comment,
+/// attribute, or different element.
 fn extract_content_directory_control_url(xml: &str) -> Option<String> {
-    // Find the ContentDirectory service section
-    let cd_marker = "ContentDirectory";
-    let cd_pos = xml.find(cd_marker)?;
-    let after_cd = &xml[cd_pos..];
+    let mut pos = 0;
+    while let Some(rel_start) = xml[pos..].find("<service") {
+        let block_open = pos + rel_start;
+        // Confirm this is a `<service ...>` tag (not e.g. `<serviceList>`):
+        // the next char must be whitespace or `>`.
+        let after_open = &xml[block_open + "<service".len()..];
+        let next_char = after_open.chars().next()?;
+        if !next_char.is_whitespace() && next_char != '>' {
+            pos = block_open + "<service".len();
+            continue;
+        }
 
-    // Find <controlURL>...</controlURL> within this service block
-    let start_tag = "<controlURL>";
-    let end_tag = "</controlURL>";
-    let start = after_cd.find(start_tag)? + start_tag.len();
-    let end = after_cd[start..].find(end_tag)? + start;
+        let rel_end = xml[block_open..].find("</service>")?;
+        let block_close = block_open + rel_end + "</service>".len();
+        let block = &xml[block_open..block_close];
+        pos = block_close;
 
-    Some(after_cd[start..end].trim().to_string())
+        let service_type = extract_xml_text(block, "serviceType").unwrap_or_default();
+        if !is_content_directory_service_type(&service_type) {
+            continue;
+        }
+
+        if let Some(url) = extract_xml_text(block, "controlURL") {
+            return Some(url);
+        }
+    }
+    None
+}
+
+/// Returns true for `urn:schemas-upnp-org:service:ContentDirectory:<digits>`
+/// (case-insensitive on the URN itself, since UPnP devices vary in casing).
+fn is_content_directory_service_type(s: &str) -> bool {
+    let lower = s.trim().to_ascii_lowercase();
+    let Some(rest) = lower.strip_prefix("urn:schemas-upnp-org:service:contentdirectory:") else {
+        return false;
+    };
+    !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
 }
 
 /// Extract the Browse Result (DIDL-Lite XML) from a SOAP response.
@@ -637,5 +760,161 @@ mod tests {
         assert_eq!(mime_to_format_hint("audio/flac"), Some("flac".to_string()));
         assert_eq!(mime_to_format_hint("audio/mpeg"), Some("mp3".to_string()));
         assert_eq!(mime_to_format_hint("unknown/type"), None);
+    }
+
+    #[test]
+    fn test_extract_content_directory_url_scoped_to_service_block() {
+        // ConnectionManager appears FIRST with a controlURL, and the document
+        // has a comment mentioning "ContentDirectory" before the right block.
+        // A naive substring search would return the ConnectionManager URL.
+        let xml = r#"
+        <root>
+          <!-- The ContentDirectory service is configured below -->
+          <serviceList>
+            <service>
+              <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+              <controlURL>/connection/control</controlURL>
+            </service>
+            <service>
+              <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+              <controlURL>/contentdir/control</controlURL>
+            </service>
+          </serviceList>
+        </root>"#;
+        assert_eq!(
+            extract_content_directory_control_url(xml),
+            Some("/contentdir/control".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_content_directory_url_no_match_when_only_other_services() {
+        let xml = r#"<serviceList>
+            <service>
+                <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+                <controlURL>/connection/control</controlURL>
+            </service>
+        </serviceList>"#;
+        assert_eq!(extract_content_directory_control_url(xml), None);
+    }
+
+    #[test]
+    fn test_extract_content_directory_url_case_insensitive_service_type() {
+        let xml = r#"<service>
+            <serviceType>urn:schemas-upnp-org:service:contentDirectory:2</serviceType>
+            <controlURL>/v2/cd</controlURL>
+        </service>"#;
+        assert_eq!(
+            extract_content_directory_control_url(xml),
+            Some("/v2/cd".to_string())
+        );
+    }
+
+    /// Stub that always returns the same page of containers and ignores the
+    /// `start` index — i.e., a buggy DLNA server. The pagination loop MUST
+    /// terminate in finite time on this.
+    struct StuckBrowseStub {
+        page_size: u32,
+        call_count: std::cell::Cell<u32>,
+    }
+
+    impl BrowseSource for StuckBrowseStub {
+        fn browse_page(&mut self, _start: u32, _count: u32) -> Result<BrowsePage, ProviderError> {
+            self.call_count.set(self.call_count.get() + 1);
+            let containers: Vec<(String, String)> = (0..self.page_size)
+                .map(|i| (format!("id-{i}"), format!("title-{i}")))
+                .collect();
+            Ok(BrowsePage {
+                containers,
+                // Server reports TotalMatches as huge so the iteration cap is
+                // the only safeguard left.
+                number_returned: Some(self.page_size),
+                total_matches: Some(u32::MAX),
+            })
+        }
+    }
+
+    #[test]
+    fn test_paginate_browse_terminates_on_stuck_server() {
+        let mut stub = StuckBrowseStub {
+            page_size: 100,
+            call_count: std::cell::Cell::new(0),
+        };
+        let result = paginate_browse(&mut stub, 100).expect("must not error");
+        assert_eq!(stub.call_count.get(), MAX_BROWSE_ITERATIONS);
+        // The cap is what saves us (no per-id dedup at this layer).
+        assert_eq!(result.len() as u32, MAX_BROWSE_ITERATIONS * 100);
+    }
+
+    /// Stub that returns NumberReturned == 0 after the first page.
+    struct ZeroAfterFirstStub {
+        call_count: std::cell::Cell<u32>,
+    }
+
+    impl BrowseSource for ZeroAfterFirstStub {
+        fn browse_page(&mut self, _start: u32, _count: u32) -> Result<BrowsePage, ProviderError> {
+            let n = self.call_count.get();
+            self.call_count.set(n + 1);
+            if n == 0 {
+                Ok(BrowsePage {
+                    containers: vec![("a".into(), "A".into()), ("b".into(), "B".into())],
+                    number_returned: Some(2),
+                    total_matches: Some(4),
+                })
+            } else {
+                // Server returns containers but NumberReturned == 0 — loop
+                // must trust the count and break.
+                Ok(BrowsePage {
+                    containers: vec![("ghost".into(), "GHOST".into())],
+                    number_returned: Some(0),
+                    total_matches: Some(4),
+                })
+            }
+        }
+    }
+
+    #[test]
+    fn test_paginate_browse_terminates_on_number_returned_zero() {
+        let mut stub = ZeroAfterFirstStub {
+            call_count: std::cell::Cell::new(0),
+        };
+        let result = paginate_browse(&mut stub, 2).expect("must not error");
+        assert_eq!(result.len(), 2);
+        assert_eq!(stub.call_count.get(), 2);
+    }
+
+    /// Stub that respects TotalMatches: returns just enough to satisfy it.
+    struct TotalMatchesStub {
+        call_count: std::cell::Cell<u32>,
+    }
+
+    impl BrowseSource for TotalMatchesStub {
+        fn browse_page(&mut self, start: u32, count: u32) -> Result<BrowsePage, ProviderError> {
+            self.call_count.set(self.call_count.get() + 1);
+            let total = 3u32;
+            let remaining = total.saturating_sub(start);
+            let take = remaining.min(count);
+            let containers: Vec<(String, String)> = (0..take)
+                .map(|i| {
+                    let id = start + i;
+                    (format!("id-{id}"), format!("t-{id}"))
+                })
+                .collect();
+            Ok(BrowsePage {
+                containers,
+                number_returned: Some(take),
+                total_matches: Some(total),
+            })
+        }
+    }
+
+    #[test]
+    fn test_paginate_browse_terminates_on_total_matches() {
+        let mut stub = TotalMatchesStub {
+            call_count: std::cell::Cell::new(0),
+        };
+        // Page size larger than total → one short page → natural termination.
+        let result = paginate_browse(&mut stub, 10).expect("must not error");
+        assert_eq!(result.len(), 3);
     }
 }

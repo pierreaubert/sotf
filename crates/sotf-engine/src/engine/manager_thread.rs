@@ -390,9 +390,13 @@ impl ManagerThread {
 
     /// Shutdown the manager thread
     pub fn shutdown(&mut self) {
-        self.send_command(ManagerCommand::Shutdown).ok();
+        if let Err(e) = self.send_command(ManagerCommand::Shutdown) {
+            log::trace!("[Manager Thread] Shutdown command receiver dropped: {}", e);
+        }
         if let Some(handle) = self.thread_handle.take() {
-            handle.join().ok();
+            if let Err(e) = handle.join() {
+                log::warn!("[Manager Thread] Thread panicked during shutdown: {:?}", e);
+            }
         }
     }
 }
@@ -573,7 +577,7 @@ fn run_manager_thread(
         actual_output_channels = config.output_channels;
     }
 
-    log::warn!(
+    log::info!(
         "[Manager Thread] CREATING playback thread with {} channels",
         actual_output_channels
     );
@@ -1723,7 +1727,7 @@ fn handle_command(
 
             // If a config update is already in progress, enqueue this one
             if config_queue.is_processing() {
-                log::warn!(
+                log::debug!(
                     "[Manager Thread] Config update ALREADY IN PROGRESS - queuing (this may cause channel mismatch!)"
                 );
                 log::trace!(
@@ -1732,7 +1736,7 @@ fn handle_command(
                 );
                 let queued = config_queue.enqueue(plugins, ConfigUpdatePriority::UserDirect);
                 if queued {
-                    log::warn!(
+                    log::debug!(
                         "[Manager Thread] UpdatePluginChain: Update QUEUED (not applied immediately)"
                     );
                     return ManagerResponse::Ok;
@@ -1744,7 +1748,7 @@ fn handle_command(
                 }
             }
 
-            log::warn!(
+            log::debug!(
                 "[Manager Thread] UpdatePluginChain: Applying update immediately (not queued)"
             );
 
@@ -1936,9 +1940,18 @@ fn handle_command(
             }
 
             // Signal threads to shutdown
-            decoder.send_command(DecoderCommand::Shutdown).ok();
-            processing.send_command(ProcessingCommand::Shutdown).ok();
-            playback.send_command(PlaybackCommand::Shutdown).ok();
+            if let Err(e) = decoder.send_command(DecoderCommand::Shutdown) {
+                log::trace!("[Manager Thread] Decoder shutdown command dropped: {}", e);
+            }
+            if let Err(e) = processing.send_command(ProcessingCommand::Shutdown) {
+                log::trace!(
+                    "[Manager Thread] Processing shutdown command dropped: {}",
+                    e
+                );
+            }
+            if let Err(e) = playback.send_command(PlaybackCommand::Shutdown) {
+                log::trace!("[Manager Thread] Playback shutdown command dropped: {}", e);
+            }
 
             ManagerResponse::Shutdown
         }

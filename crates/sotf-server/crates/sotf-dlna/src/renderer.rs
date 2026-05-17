@@ -7,11 +7,12 @@
 // SOTF player operations via the RendererAdapter trait.
 
 use crate::device::DlnaDevice;
+use crate::http_io;
 use crate::ssdp;
 use crate::xml;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
 const AVT_SERVICE: &str = "urn:schemas-upnp-org:service:AVTransport:1";
@@ -160,65 +161,20 @@ async fn handle_http_request(
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
 
-    // Read HTTP request line
-    let mut request_line = String::new();
-    reader
-        .read_line(&mut request_line)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let parts: Vec<&str> = request_line.split_whitespace().collect();
-    if parts.len() < 2 {
-        return Ok(());
-    }
-    let method = parts[0];
-    let path = parts[1];
-
-    // Read headers
-    let mut headers = Vec::new();
-    let mut content_length = 0usize;
-    loop {
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .await
-            .map_err(|e| e.to_string())?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            break;
-        }
-        if let Some((key, value)) = trimmed.split_once(':') {
-            let key = key.to_lowercase();
-            let value = value.trim().to_string();
-            if key == "content-length" {
-                content_length = value.parse().unwrap_or(0);
-            }
-            headers.push((key, value));
-        }
-    }
-
-    // Read body (cap at 1MB to prevent DoS)
-    const MAX_BODY: usize = 1024 * 1024;
-    if content_length > MAX_BODY {
-        return Err(format!("Request body too large: {} bytes", content_length));
-    }
-    let mut body = vec![0u8; content_length];
-    if content_length > 0 {
-        tokio::io::AsyncReadExt::read_exact(&mut reader, &mut body)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-    let body_str = String::from_utf8_lossy(&body);
+    // Hardened read: caps line length / header count / Content-Length
+    // BEFORE allocating the body (review §2).
+    let req = http_io::read_http_request(&mut reader).await?;
+    let body_str = String::from_utf8_lossy(&req.body);
 
     log::debug!(
         "[DLNA Renderer] {} {} ({} bytes)",
-        method,
-        path,
-        content_length
+        req.method,
+        req.path,
+        req.body.len()
     );
 
     // Route request
-    let response = match (method, path) {
+    let response = match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/description.xml") => {
             let xml = device.description_xml(base_url);
             http_response(200, "text/xml", &xml)
@@ -228,6 +184,17 @@ async fn handle_http_request(
             handle_rendering_control_action(&body_str, adapter)
         }
         ("POST", "/ConnectionManager/control") => handle_connection_manager_action(&body_str),
+        // GENA event endpoints (SUBSCRIBE/UNSUBSCRIBE) + SCPD endpoints
+        // are intentionally NOT implemented in this bug-fix pass — the
+        // task scope explicitly skips them. Return 501 so strict
+        // controllers can distinguish "device wrong" from "feature
+        // missing" (review §4).
+        ("SUBSCRIBE" | "UNSUBSCRIBE", p) if p.ends_with("/event") => {
+            http_response(501, "text/plain", "GENA eventing not implemented")
+        }
+        ("GET", p) if p.ends_with("/scpd.xml") => {
+            http_response(501, "text/plain", "SCPD endpoints not implemented")
+        }
         _ => http_response(404, "text/plain", "Not Found"),
     };
 
@@ -244,13 +211,21 @@ fn handle_avtransport_action(body: &str, adapter: &Arc<dyn RendererAdapter>) -> 
         return http_soap_fault(402, "Invalid SOAP action");
     };
 
-    let find_arg =
-        |name: &str| -> Option<&str> { args.iter().find(|(k, _)| *k == name).map(|(_, v)| *v) };
+    let find_arg = |name: &str| -> Option<&str> {
+        args.iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    };
 
-    let result = match action {
+    let result = match action.as_str() {
         "SetAVTransportURI" => {
             let uri = find_arg("CurrentURI").unwrap_or("");
             let metadata = find_arg("CurrentURIMetaData").unwrap_or("");
+            // Defence-in-depth: refuse non-http(s) schemes so a malicious
+            // controller can't make us fetch `file:///etc/passwd` etc.
+            if !uri.is_empty() && !is_safe_uri(uri) {
+                return http_soap_fault(402, "Unsupported URI scheme");
+            }
             adapter.set_uri(uri, metadata)
         }
         "Play" => adapter.play(),
@@ -324,11 +299,19 @@ fn handle_avtransport_action(body: &str, adapter: &Arc<dyn RendererAdapter>) -> 
 
     match result {
         Ok(()) => {
-            let resp = xml::soap_response(action, AVT_SERVICE, &[]);
+            let resp = xml::soap_response(&action, AVT_SERVICE, &[]);
             http_soap_response(&resp)
         }
         Err(e) => http_soap_fault(501, &e),
     }
+}
+
+/// Allow-list URI schemes we'll pass to the adapter. `file://`,
+/// `gopher://`, `javascript:` etc. are intentionally excluded so a hostile
+/// controller cannot turn the renderer into an SSRF / local-file fetcher.
+fn is_safe_uri(uri: &str) -> bool {
+    let lower = uri.trim().to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://")
 }
 
 fn handle_rendering_control_action(body: &str, adapter: &Arc<dyn RendererAdapter>) -> String {
@@ -336,17 +319,20 @@ fn handle_rendering_control_action(body: &str, adapter: &Arc<dyn RendererAdapter
         return http_soap_fault(402, "Invalid SOAP action");
     };
 
-    let find_arg =
-        |name: &str| -> Option<&str> { args.iter().find(|(k, _)| *k == name).map(|(_, v)| *v) };
+    let find_arg = |name: &str| -> Option<&str> {
+        args.iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    };
 
-    match action {
+    match action.as_str() {
         "SetVolume" => {
             let vol: u8 = find_arg("DesiredVolume")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(50);
             match adapter.set_volume(vol) {
                 Ok(()) => {
-                    let resp = xml::soap_response(action, RC_SERVICE, &[]);
+                    let resp = xml::soap_response(&action, RC_SERVICE, &[]);
                     http_soap_response(&resp)
                 }
                 Err(e) => http_soap_fault(501, &e),
@@ -355,14 +341,15 @@ fn handle_rendering_control_action(body: &str, adapter: &Arc<dyn RendererAdapter
         "GetVolume" => {
             let status = adapter.status();
             let vol = status.volume.to_string();
-            let resp = xml::soap_response(action, RC_SERVICE, &[("CurrentVolume", &vol)]);
+            let resp = xml::soap_response(&action, RC_SERVICE, &[("CurrentVolume", &vol)]);
             http_soap_response(&resp)
         }
         "SetMute" => {
-            let muted = find_arg("DesiredMute").is_some_and(|v| v == "1" || v == "true");
+            let muted =
+                find_arg("DesiredMute").is_some_and(|v| v == "1" || v == "true" || v == "yes");
             match adapter.set_mute(muted) {
                 Ok(()) => {
-                    let resp = xml::soap_response(action, RC_SERVICE, &[]);
+                    let resp = xml::soap_response(&action, RC_SERVICE, &[]);
                     http_soap_response(&resp)
                 }
                 Err(e) => http_soap_fault(501, &e),
@@ -371,7 +358,7 @@ fn handle_rendering_control_action(body: &str, adapter: &Arc<dyn RendererAdapter
         "GetMute" => {
             let status = adapter.status();
             let muted = if status.muted { "1" } else { "0" };
-            let resp = xml::soap_response(action, RC_SERVICE, &[("CurrentMute", muted)]);
+            let resp = xml::soap_response(&action, RC_SERVICE, &[("CurrentMute", muted)]);
             http_soap_response(&resp)
         }
         _ => {
@@ -389,7 +376,7 @@ fn handle_connection_manager_action(body: &str) -> String {
         return http_soap_fault(402, "Invalid SOAP action");
     };
 
-    match action {
+    match action.as_str() {
         "GetProtocolInfo" => {
             let protocols = "http-get:*:audio/flac:*,\
                              http-get:*:audio/mpeg:*,\
@@ -400,7 +387,7 @@ fn handle_connection_manager_action(body: &str) -> String {
                              http-get:*:audio/aac:*,\
                              http-get:*:audio/x-flac:*";
             let resp =
-                xml::soap_response(action, CM_SERVICE, &[("Source", ""), ("Sink", protocols)]);
+                xml::soap_response(&action, CM_SERVICE, &[("Source", ""), ("Sink", protocols)]);
             http_soap_response(&resp)
         }
         _ => http_soap_fault(401, &format!("Invalid Action: {}", action)),
@@ -410,8 +397,10 @@ fn handle_connection_manager_action(body: &str) -> String {
 fn http_response(status: u16, content_type: &str, body: &str) -> String {
     let status_text = match status {
         200 => "OK",
+        400 => "Bad Request",
         404 => "Not Found",
         500 => "Internal Server Error",
+        501 => "Not Implemented",
         _ => "Unknown",
     };
     format!(

@@ -22,6 +22,7 @@ pub mod parameters;
 pub mod plugin;
 pub mod plugin_layout;
 pub mod plugin_params;
+pub mod rate_limit;
 pub mod render_plan;
 pub mod serialization;
 pub mod sofa;
@@ -66,7 +67,7 @@ pub use analyzer_spectrum::{
     TiltReferenceFreq,
 };
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
-pub use host::{DawHost, GraphEdge, Host};
+pub use host::{DawHost, GraphEdge, GraphMutationSender, Host, ParameterEventSender};
 pub use lufs_target::LufsTarget;
 pub use math_audio_dsp::auto_makeup::MeasuredMakeup;
 pub use math_audio_dsp::channel_linking::{compute_linked_levels, link_stereo};
@@ -83,7 +84,8 @@ pub use math_audio_iir_fir::fir_crossover::{FirCrossover, MultibandFirCrossover}
 pub use math_audio_iir_fir::lr4_crossover::{Lr4Crossover, MultibandLr4Crossover};
 pub use multichannel_auto_gain::MultichannelAutoGain;
 pub use oversampling::{
-    OversampledPlugin, Oversampler, interleaved_to_planar, planar_to_interleaved,
+    AutoOversampledPlugin, OversampledPlugin, Oversampler, interleaved_to_planar,
+    planar_to_interleaved,
 };
 pub use parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 pub use plugin::{

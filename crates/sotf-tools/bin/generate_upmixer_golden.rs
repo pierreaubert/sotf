@@ -184,7 +184,7 @@ fn generate_config(
         // Generate input signal (process multiple blocks for longer output)
         let num_blocks = 10;
         let num_frames = fft_size * num_blocks;
-        let input = generate_signal(signal.name, sample_rate, num_frames)?;
+        let input = generate_signal(signal.name, sample_rate, num_frames, fft_size)?;
 
         // Process through upmixer using PluginHost-like approach
         let output = process_upmixer(
@@ -214,9 +214,17 @@ fn generate_config(
     Ok(config_entry)
 }
 
-fn generate_signal(name: &str, sample_rate: u32, num_frames: usize) -> anyhow::Result<Vec<f32>> {
-    // Ensure num_frames is a multiple of fft_size for block processing
-    let fft_size = 2048;
+fn generate_signal(
+    name: &str,
+    sample_rate: u32,
+    num_frames: usize,
+    fft_size: usize,
+) -> anyhow::Result<Vec<f32>> {
+    // Ensure num_frames is a multiple of fft_size for block processing.
+    // `fft_size` MUST come from the CLI flag (see Cli::fft_size) — a previous
+    // version hard-coded 2048 here, which silently desynced the buffer length
+    // from `process_upmixer` whenever the user passed `--fft-size`.
+    assert!(fft_size > 0, "fft_size must be > 0");
     let num_blocks = num_frames.div_ceil(fft_size);
     let actual_frames = num_blocks * fft_size;
     let mut data = vec![0.0_f32; actual_frames * 2]; // Stereo

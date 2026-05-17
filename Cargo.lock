@@ -3818,7 +3818,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "approx",
  "autoeq",
@@ -3856,7 +3856,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ios"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "block2",
@@ -3906,7 +3906,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-px"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "autoeq",
  "gpui",
@@ -3935,7 +3935,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.19"
+version = "0.6.20"
 dependencies = [
  "block2",
  "gpui",
@@ -5948,7 +5948,7 @@ dependencies = [
 
 [[package]]
 name = "math-rir"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "math-iir-fir",
  "rayon",
@@ -10166,7 +10166,7 @@ dependencies = [
 
 [[package]]
 name = "sofa-reader"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bincode",
  "flate2",
@@ -10210,7 +10210,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-dev-driver"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "anyhow",
  "clap",
@@ -10231,7 +10231,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-docs-gen"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "sotf-host",
  "sotf-plugins",
@@ -10277,6 +10277,7 @@ dependencies = [
  "signal-hook 0.4.4",
  "sofa-reader",
  "sotf-iamf",
+ "sotf-midi",
  "sotf-plugin-ambisonics",
  "sotf-plugins",
  "sotf-streaming",
@@ -10314,7 +10315,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -10383,7 +10384,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.91"
+version = "0.5.92"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",
@@ -10441,6 +10442,7 @@ name = "sotf-media-controls"
 version = "0.1.0"
 dependencies = [
  "block2",
+ "dispatch2",
  "log",
  "mpris-server",
  "objc2",
@@ -10490,6 +10492,7 @@ dependencies = [
  "autoeq",
  "chrono",
  "clap",
+ "crossbeam",
  "directories",
  "env_logger",
  "image",
@@ -11018,7 +11021,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugins"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -11146,7 +11149,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tls"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -11272,7 +11275,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-types"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "log",
  "serde",

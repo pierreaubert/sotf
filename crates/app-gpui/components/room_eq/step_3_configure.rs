@@ -1909,8 +1909,7 @@ impl PlayerView {
                 .iter()
                 .position(|w| *w >= current - 1e-9)
                 .unwrap_or(WEIGHT_CHOICES.len() - 1);
-            let next = (idx as i32 + delta)
-                .clamp(0, WEIGHT_CHOICES.len() as i32 - 1) as usize;
+            let next = (idx as i32 + delta).clamp(0, WEIGHT_CHOICES.len() as i32 - 1) as usize;
             WEIGHT_CHOICES[next]
         };
 
@@ -1952,7 +1951,11 @@ impl PlayerView {
 
         let row_modal = HStack::new()
             .spacing(StackSpacing::Md)
-            .child(Text::new("Modal").size(TextSize::Xs).color(theme.text_secondary))
+            .child(
+                Text::new("Modal")
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
+            )
             .child({
                 let state_entity = self.state.clone();
                 let mut btn = toggle_btn(
@@ -2008,19 +2011,25 @@ impl PlayerView {
                         });
                     })
                     .child(
-                        Button::new(SharedString::from("epa-tm-profile-btn"),
-                            format!("Profile: {}", profile.as_str()))
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Xs)
-                            .theme(theme.to_button_theme())
-                            .build(),
+                        Button::new(
+                            SharedString::from("epa-tm-profile-btn"),
+                            format!("Profile: {}", profile.as_str()),
+                        )
+                        .variant(ButtonVariant::Secondary)
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .build(),
                     )
                     .into_any_element()
             });
 
         let row_ir = HStack::new()
             .spacing(StackSpacing::Md)
-            .child(Text::new("FIR IR").size(TextSize::Xs).color(theme.text_secondary))
+            .child(
+                Text::new("FIR IR")
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
+            )
             .child({
                 let state_entity = self.state.clone();
                 div()
@@ -2598,12 +2607,10 @@ fn render_weight_stepper(
     current: f64,
     state_entity: gpui::Entity<crate::app::AppState>,
     step: impl Fn(f64, i32) -> f64 + Clone + 'static,
-    read: impl Fn(&sotf_audio_player::room_eq_types::EpaTemporalMaskingConfig) -> f64
-        + Clone
-        + 'static,
+    read: impl Fn(&sotf_audio_player::room_eq_types::EpaTemporalMaskingConfig) -> f64 + Clone + 'static,
     write: impl Fn(&mut sotf_audio_player::room_eq_types::EpaTemporalMaskingConfig, f64)
-        + Clone
-        + 'static,
+    + Clone
+    + 'static,
     theme: crate::theme::Theme,
 ) -> impl IntoElement {
     let make_button = |label: &'static str, suffix: &'static str, delta: i32| {

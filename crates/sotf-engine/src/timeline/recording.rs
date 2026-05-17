@@ -139,6 +139,12 @@ impl RecordingSession {
         }
 
         self.frames_written += (end_frame - start_frame) as u64;
+        if self
+            .punch_out
+            .is_some_and(|punch_out| write_end >= punch_out)
+        {
+            self.active = false;
+        }
         Ok(())
     }
 
@@ -261,6 +267,7 @@ mod tests {
         // Block 1: pos 1024..2048, punch-out at 1536 → record samples 0..512
         session.write_block(&block, 1024, 1024).unwrap();
         assert_eq!(session.frames_written, 1024); // 512 + 512
+        assert!(!session.active);
 
         // Block 2: pos 2048..3072 → after punch-out, nothing recorded
         session.write_block(&block, 2048, 1024).unwrap();

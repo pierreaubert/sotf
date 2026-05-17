@@ -108,6 +108,13 @@ pub struct MpdDirEntry {
 pub trait PlayerAdapter: Send + Sync + 'static {
     // Playback control
     fn play(&self, pos: Option<u32>) -> Result<(), String>;
+    /// Pause / resume the player.
+    ///
+    /// Semantics per MPD spec
+    /// (<https://mpd.readthedocs.io/en/latest/protocol.html#command-pause>):
+    /// - `Some(true)`  — pause if currently playing (`pause 1`).
+    /// - `Some(false)` — resume if currently paused (`pause 0`).
+    /// - `None`        — toggle (`pause` without argument).
     fn pause(&self, state: Option<bool>) -> Result<(), String>;
     fn stop(&self) -> Result<(), String>;
     fn next(&self) -> Result<(), String>;
@@ -124,17 +131,107 @@ pub trait PlayerAdapter: Send + Sync + 'static {
     fn current_song(&self) -> Option<MpdSongInfo>;
 
     // Queue
+
+    /// Return queue entries within an optional `(start, end_exclusive)` range.
+    ///
+    /// Streaming-friendly callers should prefer
+    /// [`for_each_playlist_song`](PlayerAdapter::for_each_playlist_song) so
+    /// that database-backed adapters do not have to materialise the entire
+    /// queue per request.
     fn playlist_info(&self, range: Option<(u32, Option<u32>)>) -> Vec<MpdSongInfo>;
+
+    /// Look up a queue entry by its stable MPD song id (NOT by position).
     fn playlist_song_by_id(&self, id: u32) -> Option<MpdSongInfo>;
+
+    /// Resolve an MPD song id to its current queue position.
+    ///
+    /// MPD ids are stable across queue reorderings; positions are not. The
+    /// default implementation derives the position from
+    /// [`playlist_song_by_id`](PlayerAdapter::playlist_song_by_id) so existing
+    /// adapters get id-keyed routing for free. Implementors with a direct
+    /// id→pos index should override.
+    fn find_pos_by_id(&self, id: u32) -> Option<u32> {
+        self.playlist_song_by_id(id).map(|s| s.pos)
+    }
+
     fn add(&self, uri: &str) -> Result<(), String>;
     fn add_id(&self, uri: &str, pos: Option<u32>) -> Result<u32, String>;
     fn delete(&self, pos: u32) -> Result<(), String>;
     fn clear(&self) -> Result<(), String>;
 
+    /// `playid <id>` — play the queue entry with the given song id.
+    ///
+    /// Default implementation translates the id to a position via
+    /// [`find_pos_by_id`](PlayerAdapter::find_pos_by_id) and delegates to
+    /// [`play`](PlayerAdapter::play). Implementors with a direct id-keyed API
+    /// should override so the lookup is atomic.
+    fn play_id(&self, id: u32) -> Result<(), String> {
+        match self.find_pos_by_id(id) {
+            Some(pos) => self.play(Some(pos)),
+            None => Err(format!("No such song with id: {id}")),
+        }
+    }
+
+    /// `seekid <id> <time>` — seek within the queue entry with the given id.
+    fn seek_id(&self, id: u32, time: f64) -> Result<(), String> {
+        match self.find_pos_by_id(id) {
+            Some(pos) => self.seek_pos(pos, time),
+            None => Err(format!("No such song with id: {id}")),
+        }
+    }
+
+    /// `deleteid <id>` — remove the queue entry with the given id.
+    fn delete_id(&self, id: u32) -> Result<(), String> {
+        match self.find_pos_by_id(id) {
+            Some(pos) => self.delete(pos),
+            None => Err(format!("No such song with id: {id}")),
+        }
+    }
+
     // Library
     fn search(&self, filters: &[FilterExpr], exact: bool) -> Vec<MpdSongInfo>;
     fn list_tag(&self, tag: &str, filters: &[FilterExpr]) -> Vec<String>;
     fn lsinfo(&self, path: Option<&str>) -> Vec<MpdDirEntry>;
+
+    // ----- Streaming variants — override to avoid materialising entire results -----
+
+    /// Stream queue entries to a callback. Default implementation iterates
+    /// [`playlist_info`](PlayerAdapter::playlist_info). Adapters with a
+    /// streaming backend should override this so the protocol layer avoids a
+    /// second `Vec<MpdSongInfo>` allocation for large queues.
+    fn for_each_playlist_song(
+        &self,
+        range: Option<(u32, Option<u32>)>,
+        f: &mut dyn FnMut(MpdSongInfo),
+    ) {
+        for song in self.playlist_info(range) {
+            f(song);
+        }
+    }
+
+    /// Stream search/find results to a callback.
+    fn for_each_search(
+        &self,
+        filters: &[FilterExpr],
+        exact: bool,
+        f: &mut dyn FnMut(MpdSongInfo),
+    ) {
+        for song in self.search(filters, exact) {
+            f(song);
+        }
+    }
+
+    /// `count <filters>` — return `(matching_song_count, total_playtime_secs)`.
+    ///
+    /// Default implementation falls back to
+    /// [`search`](PlayerAdapter::search), which materialises every matching
+    /// row. Database-backed adapters should override to aggregate at query
+    /// time.
+    fn count(&self, filters: &[FilterExpr]) -> (u64, f64) {
+        let songs = self.search(filters, false);
+        let total: f64 = songs.iter().filter_map(|s| s.duration).sum();
+        (songs.len() as u64, total)
+    }
 }
 
 /// Handle a single MPD command and produce a response.
@@ -150,9 +247,16 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
             Ok(()) => MpdResponse::ok(),
             Err(e) => MpdResponse::Error(MpdError::new(MpdErrorCode::System, "play", &e)),
         },
-        MpdCommand::PlayId(id) => match adapter.play(*id) {
-            Ok(()) => MpdResponse::ok(),
-            Err(e) => MpdResponse::Error(MpdError::new(MpdErrorCode::System, "playid", &e)),
+        MpdCommand::PlayId(id) => match id {
+            // `playid` with no argument behaves like bare `play` per spec.
+            None => match adapter.play(None) {
+                Ok(()) => MpdResponse::ok(),
+                Err(e) => MpdResponse::Error(MpdError::new(MpdErrorCode::System, "playid", &e)),
+            },
+            Some(song_id) => match adapter.play_id(*song_id) {
+                Ok(()) => MpdResponse::ok(),
+                Err(e) => MpdResponse::Error(MpdError::new(MpdErrorCode::NoExist, "playid", &e)),
+            },
         },
         MpdCommand::Pause(state) => match adapter.pause(*state) {
             Ok(()) => MpdResponse::ok(),
@@ -174,9 +278,9 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
             Ok(()) => MpdResponse::ok(),
             Err(e) => MpdResponse::Error(MpdError::new(MpdErrorCode::System, "seek", &e)),
         },
-        MpdCommand::SeekId(id, time) => match adapter.seek_pos(*id, *time) {
+        MpdCommand::SeekId(id, time) => match adapter.seek_id(*id, *time) {
             Ok(()) => MpdResponse::ok(),
-            Err(e) => MpdResponse::Error(MpdError::new(MpdErrorCode::System, "seekid", &e)),
+            Err(e) => MpdResponse::Error(MpdError::new(MpdErrorCode::NoExist, "seekid", &e)),
         },
         MpdCommand::SeekCur(time) => match adapter.seek_cur(*time) {
             Ok(()) => MpdResponse::ok(),
@@ -222,13 +326,22 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
                 kvs.push(kv("songid", songid));
             }
             if s.state != MpdPlayState::Stop {
-                kvs.push(kv("elapsed", format!("{:.3}", s.elapsed)));
-                kvs.push(kv("duration", format!("{:.3}", s.duration)));
-                // Legacy time field: "elapsed:total" as integers
-                kvs.push(kv(
-                    "time",
-                    format!("{}:{}", s.elapsed as u64, s.duration as u64),
-                ));
+                // Guard against NaN / negative elapsed: `as u64` on NaN is
+                // implementation-defined and a negative `as u64` saturates to
+                // 0 on most targets, masking upstream bugs in the player.
+                let elapsed = if s.elapsed.is_finite() {
+                    s.elapsed.max(0.0)
+                } else {
+                    0.0
+                };
+                let duration = if s.duration.is_finite() {
+                    s.duration.max(0.0)
+                } else {
+                    0.0
+                };
+                kvs.push(kv("elapsed", format!("{:.3}", elapsed)));
+                kvs.push(kv("duration", format!("{:.3}", duration)));
+                kvs.push(kv("time", format!("{}:{}", elapsed as u64, duration as u64)));
             }
             if let Some(ref audio) = s.audio {
                 kvs.push(kv("audio", audio));
@@ -254,11 +367,12 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
 
         // Queue
         MpdCommand::PlaylistInfo(range) => {
-            let songs = adapter.playlist_info(*range);
+            // Stream songs through the adapter callback so database-backed
+            // backends can avoid materialising the entire queue per request.
             let mut kvs = Vec::new();
-            for song in songs {
+            adapter.for_each_playlist_song(*range, &mut |song| {
                 kvs.extend(song.to_kvs());
-            }
+            });
             MpdResponse::ok_with(kvs)
         }
         MpdCommand::PlaylistId(id) => {
@@ -272,11 +386,10 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
                     )),
                 }
             } else {
-                let songs = adapter.playlist_info(None);
                 let mut kvs = Vec::new();
-                for song in songs {
+                adapter.for_each_playlist_song(None, &mut |song| {
                     kvs.extend(song.to_kvs());
-                }
+                });
                 MpdResponse::ok_with(kvs)
             }
         }
@@ -292,9 +405,9 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
             Ok(()) => MpdResponse::ok(),
             Err(e) => MpdResponse::Error(MpdError::new(MpdErrorCode::Arg, "delete", &e)),
         },
-        MpdCommand::DeleteId(id) => match adapter.delete(*id) {
+        MpdCommand::DeleteId(id) => match adapter.delete_id(*id) {
             Ok(()) => MpdResponse::ok(),
-            Err(e) => MpdResponse::Error(MpdError::new(MpdErrorCode::Arg, "deleteid", &e)),
+            Err(e) => MpdResponse::Error(MpdError::new(MpdErrorCode::NoExist, "deleteid", &e)),
         },
         MpdCommand::Clear => match adapter.clear() {
             Ok(()) => MpdResponse::ok(),
@@ -307,19 +420,17 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
 
         // Database
         MpdCommand::Find(filters) => {
-            let songs = adapter.search(filters, true);
             let mut kvs = Vec::new();
-            for song in songs {
+            adapter.for_each_search(filters, true, &mut |song| {
                 kvs.extend(song.to_kvs());
-            }
+            });
             MpdResponse::ok_with(kvs)
         }
         MpdCommand::Search(filters) => {
-            let songs = adapter.search(filters, false);
             let mut kvs = Vec::new();
-            for song in songs {
+            adapter.for_each_search(filters, false, &mut |song| {
                 kvs.extend(song.to_kvs());
-            }
+            });
             MpdResponse::ok_with(kvs)
         }
         MpdCommand::List(tag, filters) => {
@@ -333,11 +444,12 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
             MpdResponse::ok_with(kvs)
         }
         MpdCommand::Count(filters) => {
-            let songs = adapter.search(filters, false);
-            let total_time: f64 = songs.iter().filter_map(|s| s.duration).sum();
+            // Delegate to the adapter `count` method so a database-backed
+            // implementation can aggregate without materialising every row.
+            let (songs, total_time) = adapter.count(filters);
             MpdResponse::ok_with(vec![
-                kv("songs", songs.len()),
-                kv("playtime", total_time as u64),
+                kv("songs", songs),
+                kv("playtime", total_time.max(0.0) as u64),
             ])
         }
         MpdCommand::ListAll(path) => {
@@ -626,5 +738,279 @@ mod tests {
         assert!(out.contains("plugin: flac"));
         assert!(out.contains("plugin: mp3"));
         assert!(out.contains("suffix: ogg"));
+    }
+
+    // ===== Regression: playid / seekid / deleteid route through ID, not pos =====
+    //
+    // MPD ids are explicitly stable across queue mutations; positions are not.
+    // The previous implementation passed the id straight into the position-based
+    // adapter calls, so `playid 17` on a reordered queue tried to play
+    // *position 17* instead of the song that ever had id 17. These tests
+    // install an adapter where pos and id are guaranteed *not* to coincide
+    // and verify each id-keyed command asks for the right position.
+
+    use std::sync::Mutex;
+
+    struct IdRoutingAdapter {
+        /// Map id → pos. Deliberately chosen so pos and id are distinct.
+        id_to_pos: std::collections::HashMap<u32, u32>,
+        last_play_pos: Mutex<Option<u32>>,
+        last_seek_pos: Mutex<Option<(u32, f64)>>,
+        last_delete_pos: Mutex<Option<u32>>,
+    }
+
+    impl PlayerAdapter for IdRoutingAdapter {
+        fn play(&self, pos: Option<u32>) -> Result<(), String> {
+            *self.last_play_pos.lock().unwrap() = pos;
+            Ok(())
+        }
+        fn pause(&self, _: Option<bool>) -> Result<(), String> {
+            Ok(())
+        }
+        fn stop(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn next(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn previous(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn seek_pos(&self, pos: u32, time: f64) -> Result<(), String> {
+            *self.last_seek_pos.lock().unwrap() = Some((pos, time));
+            Ok(())
+        }
+        fn seek_cur(&self, _: f64) -> Result<(), String> {
+            Ok(())
+        }
+        fn set_volume(&self, _: u8) -> Result<(), String> {
+            Ok(())
+        }
+        fn volume_change(&self, _: i8) -> Result<(), String> {
+            Ok(())
+        }
+        fn status(&self) -> MpdStatus {
+            MpdStatus {
+                volume: 0,
+                repeat: false,
+                random: false,
+                single: false,
+                consume: false,
+                state: MpdPlayState::Stop,
+                song: None,
+                songid: None,
+                elapsed: 0.0,
+                duration: 0.0,
+                audio: None,
+                playlist_length: 0,
+                playlist_version: 0,
+            }
+        }
+        fn current_song(&self) -> Option<MpdSongInfo> {
+            None
+        }
+        fn playlist_info(&self, _: Option<(u32, Option<u32>)>) -> Vec<MpdSongInfo> {
+            vec![]
+        }
+        fn playlist_song_by_id(&self, id: u32) -> Option<MpdSongInfo> {
+            self.id_to_pos.get(&id).map(|&pos| MpdSongInfo {
+                file: format!("track-{id}.flac"),
+                title: None,
+                artist: None,
+                album: None,
+                track: None,
+                date: None,
+                genre: None,
+                duration: None,
+                pos,
+                id,
+            })
+        }
+        fn add(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn add_id(&self, _: &str, _: Option<u32>) -> Result<u32, String> {
+            Ok(0)
+        }
+        fn delete(&self, pos: u32) -> Result<(), String> {
+            *self.last_delete_pos.lock().unwrap() = Some(pos);
+            Ok(())
+        }
+        fn clear(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn search(&self, _: &[FilterExpr], _: bool) -> Vec<MpdSongInfo> {
+            vec![]
+        }
+        fn list_tag(&self, _: &str, _: &[FilterExpr]) -> Vec<String> {
+            vec![]
+        }
+        fn lsinfo(&self, _: Option<&str>) -> Vec<MpdDirEntry> {
+            vec![]
+        }
+    }
+
+    fn id_routing_adapter() -> IdRoutingAdapter {
+        // ID 17 lives at position 3, ID 42 lives at position 0 — the
+        // canonical "id mismatches pos" arrangement after any queue reorder.
+        let mut map = std::collections::HashMap::new();
+        map.insert(17u32, 3u32);
+        map.insert(42u32, 0u32);
+        IdRoutingAdapter {
+            id_to_pos: map,
+            last_play_pos: Mutex::new(None),
+            last_seek_pos: Mutex::new(None),
+            last_delete_pos: Mutex::new(None),
+        }
+    }
+
+    #[test]
+    fn test_playid_routes_by_id_not_position() {
+        // `playid 17` must invoke play(Some(3)), NOT play(Some(17)).
+        let adapter = id_routing_adapter();
+        let resp = handle_command(&MpdCommand::PlayId(Some(17)), &adapter);
+        assert!(resp.format().contains("OK"));
+        assert_eq!(*adapter.last_play_pos.lock().unwrap(), Some(3));
+    }
+
+    #[test]
+    fn test_seekid_routes_by_id_not_position() {
+        let adapter = id_routing_adapter();
+        let resp = handle_command(&MpdCommand::SeekId(42, 12.5), &adapter);
+        assert!(resp.format().contains("OK"));
+        assert_eq!(*adapter.last_seek_pos.lock().unwrap(), Some((0, 12.5)));
+    }
+
+    #[test]
+    fn test_deleteid_routes_by_id_not_position() {
+        let adapter = id_routing_adapter();
+        let resp = handle_command(&MpdCommand::DeleteId(17), &adapter);
+        assert!(resp.format().contains("OK"));
+        assert_eq!(*adapter.last_delete_pos.lock().unwrap(), Some(3));
+    }
+
+    #[test]
+    fn test_playid_unknown_returns_no_exist() {
+        // An unknown id must produce ACK [50] (NoExist), not corrupt state.
+        let adapter = id_routing_adapter();
+        let resp = handle_command(&MpdCommand::PlayId(Some(9999)), &adapter);
+        let out = resp.format();
+        assert!(
+            out.starts_with("ACK [50@"),
+            "expected ACK [50@...], got {out}"
+        );
+        assert!(adapter.last_play_pos.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_deleteid_unknown_returns_no_exist() {
+        let adapter = id_routing_adapter();
+        let resp = handle_command(&MpdCommand::DeleteId(9999), &adapter);
+        assert!(resp.format().starts_with("ACK [50@"));
+        assert!(adapter.last_delete_pos.lock().unwrap().is_none());
+    }
+
+    // ===== Regression: pause polarity matches the MPD spec =====
+
+    struct PausePolarityAdapter {
+        last: Mutex<Option<Option<bool>>>,
+    }
+
+    impl PlayerAdapter for PausePolarityAdapter {
+        fn play(&self, _: Option<u32>) -> Result<(), String> {
+            Ok(())
+        }
+        fn pause(&self, state: Option<bool>) -> Result<(), String> {
+            *self.last.lock().unwrap() = Some(state);
+            Ok(())
+        }
+        fn stop(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn next(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn previous(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn seek_pos(&self, _: u32, _: f64) -> Result<(), String> {
+            Ok(())
+        }
+        fn seek_cur(&self, _: f64) -> Result<(), String> {
+            Ok(())
+        }
+        fn set_volume(&self, _: u8) -> Result<(), String> {
+            Ok(())
+        }
+        fn volume_change(&self, _: i8) -> Result<(), String> {
+            Ok(())
+        }
+        fn status(&self) -> MpdStatus {
+            MpdStatus {
+                volume: 0,
+                repeat: false,
+                random: false,
+                single: false,
+                consume: false,
+                state: MpdPlayState::Stop,
+                song: None,
+                songid: None,
+                elapsed: 0.0,
+                duration: 0.0,
+                audio: None,
+                playlist_length: 0,
+                playlist_version: 0,
+            }
+        }
+        fn current_song(&self) -> Option<MpdSongInfo> {
+            None
+        }
+        fn playlist_info(&self, _: Option<(u32, Option<u32>)>) -> Vec<MpdSongInfo> {
+            vec![]
+        }
+        fn playlist_song_by_id(&self, _: u32) -> Option<MpdSongInfo> {
+            None
+        }
+        fn add(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn add_id(&self, _: &str, _: Option<u32>) -> Result<u32, String> {
+            Ok(0)
+        }
+        fn delete(&self, _: u32) -> Result<(), String> {
+            Ok(())
+        }
+        fn clear(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn search(&self, _: &[FilterExpr], _: bool) -> Vec<MpdSongInfo> {
+            vec![]
+        }
+        fn list_tag(&self, _: &str, _: &[FilterExpr]) -> Vec<String> {
+            vec![]
+        }
+        fn lsinfo(&self, _: Option<&str>) -> Vec<MpdDirEntry> {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn test_pause_polarity_dispatched_unchanged() {
+        // The handler must forward the boolean it received from the parser
+        // verbatim. Per spec: `pause 1` → pause, `pause 0` → resume,
+        // `pause` (no arg) → toggle. Flipping the polarity in either layer
+        // would invert the meaning for the adapter.
+        let adapter = PausePolarityAdapter {
+            last: Mutex::new(None),
+        };
+
+        let _ = handle_command(&MpdCommand::Pause(Some(true)), &adapter);
+        assert_eq!(*adapter.last.lock().unwrap(), Some(Some(true)));
+
+        let _ = handle_command(&MpdCommand::Pause(Some(false)), &adapter);
+        assert_eq!(*adapter.last.lock().unwrap(), Some(Some(false)));
+
+        let _ = handle_command(&MpdCommand::Pause(None), &adapter);
+        assert_eq!(*adapter.last.lock().unwrap(), Some(None));
     }
 }

@@ -1,0 +1,23 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+demo_audio_dir = "crates/app-gpui/assets/demo-audio"
+readiness_timeout = "20s"
+size = "1440x900"
+
+[[scenario]]
+name = "library-smoke"
+path = "crates/sotf-dev-driver/scenarios/library.scn"
+seed_demo_audio = true
+timeout = "30s"
+tags = ["smoke", "library"]
+
+[[scenario]]
+name = "recording-fake-capture"
+path = "crates/sotf-dev-driver/scenarios/recording_fake_capture.scn"
+timeout = "30s"
+tags = ["smoke", "recording", "roomeq"]
+
+[scenario.fake_recording]
+channels = 2
+points = 48

@@ -109,40 +109,55 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
         let delta = read_vlq(data, pos)?;
         abs_tick += delta;
 
-        if *pos >= data.len() {
+        if *pos >= track_end || *pos >= data.len() {
             break;
         }
 
         let status_byte = data[*pos];
 
-        // Meta event
+        // Meta event. Per the SMF spec, meta events invalidate running status.
         if status_byte == 0xFF {
+            running_status = 0;
             *pos += 1; // skip 0xFF
-            if *pos >= data.len() {
+            if *pos >= track_end || *pos >= data.len() {
                 break;
             }
             let _meta_type = data[*pos];
             *pos += 1;
+            if *pos >= track_end {
+                break;
+            }
             let length = read_vlq(data, pos)? as usize;
-            *pos += length; // skip meta data
+            *pos = (*pos + length).min(track_end);
             continue;
         }
 
-        // SysEx event
+        // SysEx event. Per the SMF spec, sysex also invalidates running status.
         if status_byte == 0xF0 || status_byte == 0xF7 {
+            running_status = 0;
             *pos += 1;
+            if *pos >= track_end {
+                break;
+            }
             let length = read_vlq(data, pos)? as usize;
-            *pos += length;
+            *pos = (*pos + length).min(track_end);
             continue;
         }
 
-        // Channel message
+        // Channel message. Running status persists across channel-voice messages:
+        // a new status byte updates it; data-only bytes reuse the previous status.
         let (status, data_start) = if status_byte & 0x80 != 0 {
             running_status = status_byte;
             *pos += 1;
             (status_byte, *pos)
         } else {
-            // Running status
+            // Running status — must be a previously seen channel-voice status.
+            if running_status == 0 {
+                return Err(format!(
+                    "Track has data byte 0x{:02X} with no running status at pos {}",
+                    status_byte, *pos
+                ));
+            }
             (running_status, *pos)
         };
 
@@ -370,6 +385,103 @@ mod tests {
     fn test_parse_smf_invalid() {
         let result = parse_smf(b"not a midi file", 48000);
         assert!(result.is_err());
+    }
+
+    /// Build an SMF that uses running status across three consecutive Note On events.
+    fn build_running_status_smf() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+
+        let mut track_data = Vec::new();
+        track_data.push(0x00);
+        track_data.push(0x90);
+        track_data.push(60);
+        track_data.push(100);
+        track_data.push(0x00);
+        track_data.push(62);
+        track_data.push(90);
+        track_data.push(0x00);
+        track_data.push(64);
+        track_data.push(80);
+        track_data.push(0x00);
+        track_data.push(0xFF);
+        track_data.push(0x2F);
+        track_data.push(0x00);
+
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(track_data.len() as u32).to_be_bytes());
+        data.extend_from_slice(&track_data);
+        data
+    }
+
+    #[test]
+    fn test_running_status_across_multiple_events() {
+        let data = build_running_status_smf();
+        let clips = parse_smf(&data, 48000).unwrap();
+        assert_eq!(clips.len(), 1);
+        let evts = &clips[0].events;
+        assert_eq!(evts.len(), 3, "should parse 3 note-on events via running status");
+        assert!(matches!(
+            evts[0].message,
+            MidiMessage::NoteOn { note: 60, velocity: 100, .. }
+        ));
+        assert!(matches!(
+            evts[1].message,
+            MidiMessage::NoteOn { note: 62, velocity: 90, .. }
+        ));
+        assert!(matches!(
+            evts[2].message,
+            MidiMessage::NoteOn { note: 64, velocity: 80, .. }
+        ));
+    }
+
+    /// Build an SMF where a meta event sits between two channel events.
+    fn build_meta_clears_running_status_smf() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+
+        let mut track_data = Vec::new();
+        track_data.push(0x00);
+        track_data.push(0x90);
+        track_data.push(60);
+        track_data.push(100);
+        track_data.push(0x00);
+        track_data.push(0xFF);
+        track_data.push(0x01);
+        track_data.push(0x02);
+        track_data.push(b'h');
+        track_data.push(b'i');
+        track_data.push(0x00);
+        track_data.push(62);
+        track_data.push(90);
+        track_data.push(0x00);
+        track_data.push(0xFF);
+        track_data.push(0x2F);
+        track_data.push(0x00);
+
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(track_data.len() as u32).to_be_bytes());
+        data.extend_from_slice(&track_data);
+        data
+    }
+
+    #[test]
+    fn test_meta_event_clears_running_status() {
+        let data = build_meta_clears_running_status_smf();
+        let result = parse_smf(&data, 48000);
+        assert!(
+            result.is_err(),
+            "expected error: meta event must invalidate running status, got {:?}",
+            result
+        );
     }
 
     #[test]

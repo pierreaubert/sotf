@@ -255,18 +255,38 @@ pub fn parse_command(line: &str) -> Result<MpdCommand, MpdError> {
             Ok(MpdCommand::SetVol(vol as u8))
         }
         "volume" => {
-            let delta = parts.require_i32(&cmd)? as i8;
-            Ok(MpdCommand::Volume(delta))
+            // MPD spec: delta is a signed integer; route through i32 explicitly
+            // and reject anything outside `-100..=100`. The previous `as i8`
+            // wrapped silently (e.g. 200 → -56, 1000 → -24).
+            let delta_i32 = parts.require_i32(&cmd)?;
+            if !(-100..=100).contains(&delta_i32) {
+                return Err(MpdError::new(
+                    MpdErrorCode::Arg,
+                    &cmd,
+                    "volume delta must be -100..=100",
+                ));
+            }
+            // Safe: the range check guarantees the value fits in i8.
+            Ok(MpdCommand::Volume(delta_i32 as i8))
         }
         "random" => Ok(MpdCommand::Random(parts.require_bool(&cmd)?)),
         "repeat" => Ok(MpdCommand::Repeat(parts.require_bool(&cmd)?)),
         "single" => {
-            let val = parts.next_token().unwrap_or_default();
+            // Per project rule: do not silently coerce unknown values to a
+            // default. Reject anything outside {`0`, `1`, `oneshot`} with
+            // ACK_ERROR_ARG so a misbehaving client gets a clear signal.
+            let val = parts.require_string(&cmd)?;
             let mode = match val.as_str() {
                 "0" => SingleMode::Off,
                 "1" => SingleMode::On,
                 "oneshot" => SingleMode::OneShot,
-                _ => SingleMode::Off,
+                other => {
+                    return Err(MpdError::new(
+                        MpdErrorCode::Arg,
+                        &cmd,
+                        &format!("expected 0/1/oneshot, got \"{other}\""),
+                    ));
+                }
             };
             Ok(MpdCommand::Single(mode))
         }
@@ -381,60 +401,94 @@ struct CommandTokenizer<'a> {
     pos: usize,
 }
 
+/// Errors raised by the quoted-token state machine. Surfaced through
+/// `next_token_result`; `require_string` rewrites them as ACK_ERROR_ARG.
+#[derive(Debug, Clone, Copy)]
+enum TokenizerError {
+    /// A quoted token never reached its closing quote.
+    UnterminatedQuote,
+    /// A quoted token's bytes did not form valid UTF-8 after escape processing.
+    InvalidUtf8,
+}
+
+impl TokenizerError {
+    fn message(self) -> &'static str {
+        match self {
+            TokenizerError::UnterminatedQuote => "unterminated quoted string",
+            TokenizerError::InvalidUtf8 => "invalid UTF-8 in quoted string",
+        }
+    }
+}
+
 impl<'a> CommandTokenizer<'a> {
     fn new(input: &'a str) -> Self {
         Self { input, pos: 0 }
     }
 
     fn next_token(&mut self) -> Option<String> {
+        // Tokenizer-level errors are dropped at this layer; the public
+        // `require_string` API uses `next_token_result` directly when it needs
+        // to surface them as ACK errors.
+        self.next_token_result().ok().flatten()
+    }
+
+    /// Like `next_token`, but reports quoted-string errors instead of silently
+    /// returning the dangling tail. Without this, an unterminated quote or a
+    /// multibyte UTF-8 corruption would leave the parser desynchronised.
+    fn next_token_result(&mut self) -> Result<Option<String>, TokenizerError> {
         self.skip_whitespace();
         if self.pos >= self.input.len() {
-            return None;
+            return Ok(None);
         }
 
         let bytes = self.input.as_bytes();
         if bytes[self.pos] == b'"' {
-            // Quoted string
+            // Quoted string. Accumulate as raw bytes and only validate UTF-8
+            // once the closing quote is reached, so that multibyte sequences
+            // spanning a backslash escape are preserved exactly. The previous
+            // implementation pushed `bytes[i] as char` mid-escape, which cast
+            // the leading byte of a multibyte UTF-8 sequence to a Latin-1
+            // codepoint and corrupted the rest of the token.
             self.pos += 1; // skip opening quote
-            let start = self.pos;
-            let mut result = String::new();
-            while self.pos < bytes.len() {
-                if bytes[self.pos] == b'\\' && self.pos + 1 < bytes.len() {
-                    result.push_str(&self.input[start..self.pos]);
-                    self.pos += 1; // skip backslash
-                    result.push(self.input.as_bytes()[self.pos] as char);
-                    self.pos += 1;
-                    return Some(result + &self.collect_until_quote());
-                } else if bytes[self.pos] == b'"' {
-                    result.push_str(&self.input[start..self.pos]);
-                    self.pos += 1; // skip closing quote
-                    return Some(result);
+            let mut buf: Vec<u8> = Vec::new();
+            loop {
+                if self.pos >= bytes.len() {
+                    return Err(TokenizerError::UnterminatedQuote);
                 }
-                self.pos += 1;
+                let b = bytes[self.pos];
+                match b {
+                    b'"' => {
+                        self.pos += 1; // consume closing quote
+                        return String::from_utf8(buf)
+                            .map(Some)
+                            .map_err(|_| TokenizerError::InvalidUtf8);
+                    }
+                    b'\\' => {
+                        // Per MPD spec, only `\\` and `\"` are required
+                        // escapes; any other escaped byte is taken literally.
+                        // Operating on raw bytes keeps multibyte content intact
+                        // and lets the post-loop `from_utf8` validation catch
+                        // genuine corruption rather than masking it.
+                        if self.pos + 1 >= bytes.len() {
+                            return Err(TokenizerError::UnterminatedQuote);
+                        }
+                        buf.push(bytes[self.pos + 1]);
+                        self.pos += 2;
+                    }
+                    other => {
+                        buf.push(other);
+                        self.pos += 1;
+                    }
+                }
             }
-            // Unterminated quote — return what we have
-            Some(self.input[start..].to_string())
         } else {
             // Unquoted token
             let start = self.pos;
             while self.pos < bytes.len() && bytes[self.pos] != b' ' && bytes[self.pos] != b'\t' {
                 self.pos += 1;
             }
-            Some(self.input[start..self.pos].to_string())
+            Ok(Some(self.input[start..self.pos].to_string()))
         }
-    }
-
-    fn collect_until_quote(&mut self) -> String {
-        let start = self.pos;
-        let bytes = self.input.as_bytes();
-        while self.pos < bytes.len() && bytes[self.pos] != b'"' {
-            self.pos += 1;
-        }
-        let result = self.input[start..self.pos].to_string();
-        if self.pos < bytes.len() {
-            self.pos += 1; // skip closing quote
-        }
-        result
     }
 
     fn skip_whitespace(&mut self) {
@@ -445,8 +499,15 @@ impl<'a> CommandTokenizer<'a> {
     }
 
     fn require_string(&mut self, cmd: &str) -> Result<String, MpdError> {
-        self.next_token()
-            .ok_or_else(|| MpdError::new(MpdErrorCode::Arg, cmd, "missing required argument"))
+        match self.next_token_result() {
+            Ok(Some(tok)) => Ok(tok),
+            Ok(None) => Err(MpdError::new(
+                MpdErrorCode::Arg,
+                cmd,
+                "missing required argument",
+            )),
+            Err(err) => Err(MpdError::new(MpdErrorCode::Arg, cmd, err.message())),
+        }
     }
 
     fn require_u32(&mut self, cmd: &str) -> Result<u32, MpdError> {
@@ -697,5 +758,110 @@ mod tests {
             parse_command("repeat 0"),
             Ok(MpdCommand::Repeat(false))
         ));
+    }
+
+    // ----- Regression: `volume` no longer silently wraps via `as i8` -----
+
+    #[test]
+    fn test_parse_volume_in_range() {
+        match parse_command("volume -50") {
+            Ok(MpdCommand::Volume(d)) => assert_eq!(d, -50),
+            other => panic!("unexpected: {:?}", other),
+        }
+        match parse_command("volume 100") {
+            Ok(MpdCommand::Volume(d)) => assert_eq!(d, 100),
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_volume_out_of_range_rejected() {
+        // `volume 200` used to silently wrap to -56 because of `as i8`.
+        // It must now be rejected with ACK_ERROR_ARG instead.
+        for input in ["volume 200", "volume -200", "volume 101", "volume -101"] {
+            match parse_command(input) {
+                Err(MpdError {
+                    code: MpdErrorCode::Arg,
+                    ..
+                }) => {}
+                other => panic!("expected Arg error for {input:?}, got {other:?}"),
+            }
+        }
+    }
+
+    // ----- Regression: `pause` polarity matches the MPD spec -----
+    // https://mpd.readthedocs.io/en/latest/protocol.html#command-pause
+    //   - `pause`   → toggle (None)
+    //   - `pause 1` → pause   (Some(true))
+    //   - `pause 0` → resume  (Some(false))
+    #[test]
+    fn test_parse_pause_polarity_spec() {
+        assert!(matches!(
+            parse_command("pause"),
+            Ok(MpdCommand::Pause(None))
+        ));
+        assert!(matches!(
+            parse_command("pause 1"),
+            Ok(MpdCommand::Pause(Some(true)))
+        ));
+        assert!(matches!(
+            parse_command("pause 0"),
+            Ok(MpdCommand::Pause(Some(false)))
+        ));
+    }
+
+    // ----- Regression: quoted-token UTF-8 preservation -----
+
+    #[test]
+    fn test_parse_quoted_token_multibyte_utf8() {
+        // A multibyte codepoint inside a quoted string must round-trip
+        // exactly; the leading byte of a UTF-8 sequence used to be cast
+        // through `as char` after an escape, corrupting the codepoint.
+        match parse_command("add \"caf\u{00e9}\"") {
+            Ok(MpdCommand::Add(uri)) => assert_eq!(uri, "café"),
+            other => panic!("unexpected: {:?}", other),
+        }
+        // Escape immediately before multibyte content.
+        match parse_command("add \"a\\\"\u{1f3b5}b\"") {
+            Ok(MpdCommand::Add(uri)) => assert_eq!(uri, "a\"\u{1f3b5}b"),
+            other => panic!("unexpected: {:?}", other),
+        }
+        // Multiple escapes — `\"...\"` used to lose every escape after the
+        // first because the second branch fell through to `collect_until_quote`.
+        match parse_command(r#"add "a\"b\"c""#) {
+            Ok(MpdCommand::Add(uri)) => assert_eq!(uri, r#"a"b"c"#),
+            other => panic!("unexpected: {:?}", other),
+        }
+        // Escaped backslash.
+        match parse_command(r#"add "a\\b""#) {
+            Ok(MpdCommand::Add(uri)) => assert_eq!(uri, r"a\b"),
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_unterminated_quote_is_arg_error() {
+        // Previously returned `Ok` with the dangling tail; clients would
+        // desync silently. Now must be ACK_ERROR_ARG.
+        match parse_command(r#"add "unterminated"#) {
+            Err(MpdError {
+                code: MpdErrorCode::Arg,
+                ..
+            }) => {}
+            other => panic!("expected Arg error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_single_rejects_unknown_value() {
+        // `single 2` is outside the documented {0,1,oneshot} set.
+        // Project rule: crash hard for unknown values rather than coerce.
+        match parse_command("single 2") {
+            Err(MpdError {
+                code: MpdErrorCode::Arg,
+                ..
+            }) => {}
+            other => panic!("expected Arg error, got {other:?}"),
+        }
     }
 }

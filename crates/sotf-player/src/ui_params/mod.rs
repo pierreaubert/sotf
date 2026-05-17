@@ -3,6 +3,64 @@
 use crate::PluginSettings;
 use std::path::PathBuf;
 
+/// Canonical "adjust a single EQ band field by delta" routine.
+///
+/// Both `controllers::plugin::adjust_plugin_param` (GPUI index space:
+/// 0=band-0-frequency, 1=band-0-q, …) and `ui_params::PluginSettings::adjust_param`
+/// (TUI index space: 0=max_filters, then bands) decode their index into
+/// `(filter_idx, field_idx)` and then need to apply the exact same per-field
+/// delta + clamp. Funneling the per-field math through this one helper keeps
+/// the two call sites in lockstep — historically the controller used
+/// `delta * 0.5` for gain while the TUI used `delta * 0.5` but a different
+/// type cycle for `field == 3`. Centralising the clamps prevents future drift.
+///
+/// `field_idx` is the index *inside* one band, 0-based:
+///   0 = frequency, 1 = q, 2 = gain_db, 3 = filter_type (delta sign = direction).
+///
+/// Returns `true` if the field was recognised and updated.
+pub fn apply_eq_band_field(filter: &mut crate::EQFilter, field_idx: usize, delta: f64) -> bool {
+    use crate::BiquadFilterType;
+    match field_idx {
+        0 => {
+            filter.frequency = (filter.frequency + delta * 10.0).clamp(20.0, 20_000.0);
+            true
+        }
+        1 => {
+            filter.q = (filter.q + delta * 0.1).clamp(0.1, 10.0);
+            true
+        }
+        2 => {
+            filter.gain_db = (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0);
+            true
+        }
+        3 => {
+            let types = [
+                BiquadFilterType::Peak,
+                BiquadFilterType::Lowshelf,
+                BiquadFilterType::Highshelf,
+                BiquadFilterType::Lowpass,
+                BiquadFilterType::Highpass,
+                BiquadFilterType::Bandpass,
+                BiquadFilterType::Notch,
+            ];
+            let current_idx = types
+                .iter()
+                .position(|t| *t == filter.filter_type)
+                .unwrap_or(0);
+            let new_idx = if delta > 0.0 {
+                (current_idx + 1) % types.len()
+            } else if current_idx == 0 {
+                types.len() - 1
+            } else {
+                current_idx - 1
+            };
+            filter.filter_type = types[new_idx];
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Specification for a plugin parameter in the TUI
 pub struct TuiParamSpec {
     pub name: String,
@@ -495,42 +553,15 @@ impl TuiEditablePlugin for PluginSettings {
                     }
                     return true;
                 }
+                // TUI index space: idx 0 is `max_filters` (handled above), idx
+                // 1+ maps to (band, field). Delegate to the shared helper so
+                // this matches `controllers::plugin::adjust_plugin_param` (which
+                // uses the same per-field math but a different outer indexing).
                 let filter_offset = index - 1;
                 let filter_idx = filter_offset / 4;
-                let param_idx = filter_offset % 4;
+                let field_idx = filter_offset % 4;
                 if let Some(filter) = filters.get_mut(filter_idx) {
-                    match param_idx {
-                        0 => {
-                            filter.frequency =
-                                (filter.frequency + delta * 10.0).clamp(20.0, 20000.0)
-                        }
-                        1 => filter.q = (filter.q + delta * 0.1).clamp(0.1, 10.0),
-                        2 => filter.gain_db = (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0),
-                        3 => {
-                            use crate::BiquadFilterType;
-                            let types = [
-                                BiquadFilterType::Peak,
-                                BiquadFilterType::Lowshelf,
-                                BiquadFilterType::Highshelf,
-                                BiquadFilterType::Lowpass,
-                                BiquadFilterType::Highpass,
-                                BiquadFilterType::Bandpass,
-                                BiquadFilterType::Notch,
-                            ];
-                            let current_idx = types
-                                .iter()
-                                .position(|t| *t == filter.filter_type)
-                                .unwrap_or(0);
-                            let new_idx = if delta > 0.0 {
-                                (current_idx + 1) % types.len()
-                            } else {
-                                (current_idx + types.len() - 1) % types.len()
-                            };
-                            filter.filter_type = types[new_idx];
-                        }
-                        _ => return false,
-                    }
-                    return true;
+                    return apply_eq_band_field(filter, field_idx, delta);
                 }
             }
             PluginSettings::LinearPhaseEq {

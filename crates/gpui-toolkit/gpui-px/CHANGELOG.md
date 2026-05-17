@@ -1,3 +1,13 @@
+# 0.6.4
+
+## Fixes
+
+- **Boxplot**: `bins(0)` now returns `ChartError::InvalidData` instead of
+  panicking via `num_bins - 1` underflow / division by zero in
+  `calculate_boxes`.
+- **Pie**: an empty user-supplied colors slice now falls back to the
+  default palette instead of dividing by zero in `colors[i % colors.len()]`.
+
 # 0.6.3
 
 ## Features

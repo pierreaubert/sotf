@@ -5,7 +5,7 @@
 #[cfg(test)]
 mod tests {
     use crate::decoder::source::AudioSource;
-    use crate::timeline::clip::{Clip, FadeCurve, Region};
+    use crate::timeline::clip::{Clip, Region};
     use crate::timeline::timeline::Timeline;
     use crate::timeline::track::Track;
     use std::path::Path;

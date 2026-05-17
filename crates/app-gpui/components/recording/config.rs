@@ -786,28 +786,40 @@ impl PlayerView {
                         .to_string_lossy()
                         .to_string();
 
-                    // Create the directory
-                    if let Err(e) = std::fs::create_dir_all(&full_path) {
-                        log::error!("Failed to create recording directory: {}", e);
-                        return;
-                    }
-
-                    log::info!("Created recording directory: {}", full_path);
+                    let (base_path, full_path, status_message) =
+                        match std::fs::create_dir_all(&full_path) {
+                            Ok(()) => {
+                                log::info!("Created recording directory: {}", full_path);
+                                (base_path, full_path, None)
+                            }
+                            Err(e) => {
+                                log::error!("Failed to create recording directory: {}", e);
+                                let (fallback_base, fallback_dir) =
+                                    crate::app::config::default_recording_paths();
+                                match (fallback_base, fallback_dir) {
+                                    (Some(base), Some(dir)) => (
+                                        base,
+                                        dir,
+                                        Some(format!(
+                                            "Cannot write to selected folder; using app recordings folder: {}",
+                                            e
+                                        )),
+                                    ),
+                                    _ => return,
+                                }
+                            }
+                        };
 
                     let Some(state_entity) = weak_state.upgrade() else {
                         return;
                     };
                     state_entity.update(&mut cx.clone(), |state, _| {
-                        state
-                            .app
-                            .measurement_state
-                            .recording_state
-                            .recording_base_directory = Some(base_path);
-                        state
-                            .app
-                            .measurement_state
-                            .recording_state
-                            .recording_directory = Some(full_path);
+                        let rec = &mut state.app.measurement_state.recording_state;
+                        rec.recording_base_directory = Some(base_path);
+                        rec.recording_directory = Some(full_path);
+                        if let Some(message) = status_message {
+                            rec.status_message = message;
+                        }
                     });
                 }
             })

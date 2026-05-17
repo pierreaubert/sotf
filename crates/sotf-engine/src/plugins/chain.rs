@@ -55,10 +55,21 @@ fn plugin_type_from_raw(raw: &serde_json::Value) -> String {
     "unknown".to_string()
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct PluginChain {
     plugins: Vec<Plugin>,
     next_id: usize,
+    input_channels: usize,
+}
+
+impl Default for PluginChain {
+    fn default() -> Self {
+        Self {
+            plugins: Vec::new(),
+            next_id: 0,
+            input_channels: 2,
+        }
+    }
 }
 
 impl PluginChain {
@@ -274,6 +285,11 @@ impl PluginChain {
 
     pub fn len(&self) -> usize {
         self.plugins.len()
+    }
+
+    /// Set the source channel count used by channel-dependent plugin updates.
+    pub fn set_input_channels(&mut self, input_channels: usize) {
+        self.input_channels = input_channels.max(1);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -971,7 +987,7 @@ impl PluginChain {
                 Err(e) => {
                     let ptype = plugin_type_from_raw(raw);
                     let msg = format!("Plugin {} ('{}') skipped: {}", i, ptype, e);
-                    log::warn!("{}", msg);
+                    crate::rate_limited_log!(warn, 5, "{}", msg);
                     warnings.push(msg);
                 }
             }
@@ -1087,12 +1103,13 @@ impl PluginChain {
     /// Update input channels for plugins that depend on the output of previous plugins (BinauralDecoder, Matrix)
     /// This should be called after any plugin chain modification (add, remove, move, toggle)
     pub fn update_channel_dependent_plugins(&mut self) {
-        self.update_channel_dependent_plugins_for_input(2);
+        self.update_channel_dependent_plugins_for_input(self.input_channels);
     }
 
     /// Update channel-dependent plugins for a known source/input channel count.
     pub fn update_channel_dependent_plugins_for_input(&mut self, input_channels: usize) {
         let mut current_channels = input_channels.max(1);
+        self.input_channels = current_channels;
 
         for i in 0..self.plugins.len() {
             // Update plugins that depend on input channels
@@ -2018,6 +2035,25 @@ mod tests {
         if let Some(p) = chain.get_plugin(0) {
             if let PluginSettings::EQ { channels, .. } = &p.settings {
                 assert_eq!(*channels, 1, "EQ on mono input should stay mono");
+            } else {
+                panic!("expected EQ");
+            }
+        }
+    }
+
+    #[test]
+    fn test_update_channels_uses_configured_input_channels() {
+        let mut chain = PluginChain::new();
+        chain.set_input_channels(1);
+        chain.add_plugin(&PluginType::EQ);
+        chain.update_channel_dependent_plugins();
+
+        if let Some(p) = chain.get_plugin(0) {
+            if let PluginSettings::EQ { channels, .. } = &p.settings {
+                assert_eq!(
+                    *channels, 1,
+                    "default update should use configured mono input"
+                );
             } else {
                 panic!("expected EQ");
             }

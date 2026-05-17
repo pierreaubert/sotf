@@ -11,8 +11,6 @@
 //
 // Key property: causal (only uses past frames), suitable for streaming.
 
-use std::collections::BinaryHeap;
-
 /// Phase reconstruction processor using RTPGHI.
 pub struct RtpghiProcessor {
     fft_size: usize,
@@ -96,165 +94,15 @@ impl RtpghiProcessor {
     /// * `magnitudes` - Magnitude spectrum (spectrum_size = fft_size/2 + 1)
     ///
     /// # Returns
-    /// Reconstructed phase values for each bin
+    /// Reconstructed phase values for each bin.
+    ///
+    /// This is a thin allocation wrapper over [`Self::process_frame_into`].
+    /// For real-time / allocation-free streaming, call `process_frame_into` directly.
     pub fn process_frame(&mut self, magnitudes: &[f32]) -> Vec<f32> {
-        let spectrum_size = self.fft_size / 2 + 1;
-        assert_eq!(
-            magnitudes.len(),
-            spectrum_size,
-            "Expected {} magnitudes, got {}",
-            spectrum_size,
-            magnitudes.len()
-        );
-
-        // Compute log-magnitudes
-        let log_mag: Vec<f64> = magnitudes
-            .iter()
-            .map(|&m| {
-                if m > 0.0 {
-                    (m as f64).ln()
-                } else {
-                    f64::NEG_INFINITY
-                }
-            })
-            .collect();
-
-        let mut phases = vec![0.0f64; spectrum_size];
-        let mut integrated = vec![false; spectrum_size];
-
-        if !self.has_prev {
-            // First frame: use zero phase
-            self.prev_log_mag = log_mag.clone();
-            self.prev_phase = phases.clone();
-            self.has_prev = true;
-            return phases.iter().map(|&p| p as f32).collect();
-        }
-
-        // Phase gradient estimation
-        let hop = self.hop_size as f64;
-        let two_pi = 2.0 * std::f64::consts::PI;
-
-        // Time-direction phase gradient (from previous frame)
-        // Formula: Δ_t φ[m,k] = 2πk·a/M + γ·(log|c[m,k]| - log|c[m-1,k]|)
-        let d_phase_time: Vec<f64> = (0..spectrum_size)
-            .map(|k| {
-                // Expected phase advance from bin frequency
-                let omega_k = two_pi * k as f64 / self.fft_size as f64;
-                let expected_advance = omega_k * hop;
-
-                // Phase gradient correction from log-magnitude difference
-                let time_grad =
-                    if log_mag[k] > self.log_mag_tol && self.prev_log_mag[k] > self.log_mag_tol {
-                        self.gamma * (log_mag[k] - self.prev_log_mag[k])
-                    } else {
-                        0.0
-                    };
-
-                expected_advance + time_grad
-            })
-            .collect();
-
-        // Frequency-direction phase gradient
-        // Formula: Δ_ω φ[m,k] = (1/γ)·(log|c[m,k+1]| - log|c[m,k-1]|)/2
-        let inv_gamma = if self.gamma.abs() > 1e-30 {
-            1.0 / self.gamma
-        } else {
-            0.0
-        };
-        let d_phase_freq: Vec<f64> = (0..spectrum_size)
-            .map(|k| {
-                if k == 0 || k == spectrum_size - 1 {
-                    return 0.0;
-                }
-                if log_mag[k] > self.log_mag_tol
-                    && log_mag[k - 1] > self.log_mag_tol
-                    && log_mag[k + 1] > self.log_mag_tol
-                {
-                    inv_gamma * (log_mag[k + 1] - log_mag[k - 1]) / 2.0
-                } else {
-                    0.0
-                }
-            })
-            .collect();
-
-        // Build max-heap ordered by magnitude
-        let mut heap = BinaryHeap::new();
-        for (k, &mag) in log_mag.iter().enumerate() {
-            if mag > self.log_mag_tol {
-                heap.push(HeapEntry {
-                    magnitude: mag,
-                    bin: k,
-                });
-            }
-        }
-
-        // Integrate phases starting from loudest bins
-        while let Some(entry) = heap.pop() {
-            let k = entry.bin;
-            if integrated[k] {
-                continue;
-            }
-
-            // Try to get phase from already-integrated neighbor or previous frame
-            let phase_from_time = self.prev_phase[k] + d_phase_time[k];
-
-            let phase_from_freq_below = if k > 0 && integrated[k - 1] {
-                Some(phases[k - 1] + d_phase_freq[k - 1])
-            } else {
-                None
-            };
-
-            let phase_from_freq_above = if k + 1 < spectrum_size && integrated[k + 1] {
-                Some(phases[k + 1] - d_phase_freq[k + 1])
-            } else {
-                None
-            };
-
-            // Choose the estimate from the highest-magnitude source
-            let phase = match (phase_from_freq_below, phase_from_freq_above) {
-                (Some(below), Some(above)) => {
-                    // Average the two frequency-direction estimates
-                    let avg = (below + above) / 2.0;
-                    // If previous frame also available, weight by magnitude
-                    if self.prev_log_mag[k] > self.log_mag_tol {
-                        (avg + phase_from_time) / 2.0
-                    } else {
-                        avg
-                    }
-                }
-                (Some(below), None) => {
-                    if self.prev_log_mag[k] > self.log_mag_tol {
-                        (below + phase_from_time) / 2.0
-                    } else {
-                        below
-                    }
-                }
-                (None, Some(above)) => {
-                    if self.prev_log_mag[k] > self.log_mag_tol {
-                        (above + phase_from_time) / 2.0
-                    } else {
-                        above
-                    }
-                }
-                (None, None) => phase_from_time,
-            };
-
-            phases[k] = phase;
-            integrated[k] = true;
-        }
-
-        // Bins below threshold get zero phase
-        for k in 0..spectrum_size {
-            if !integrated[k] {
-                phases[k] = 0.0;
-            }
-        }
-
-        // Store for next frame
-        self.prev_log_mag = log_mag;
-        self.prev_phase = phases.clone();
-
-        phases.iter().map(|&p| p as f32).collect()
+        let n = self.fft_size / 2 + 1;
+        let mut out = vec![0.0f32; n];
+        self.process_frame_into(magnitudes, &mut out);
+        out
     }
 
     /// Process one STFT frame without allocations: given magnitudes, write

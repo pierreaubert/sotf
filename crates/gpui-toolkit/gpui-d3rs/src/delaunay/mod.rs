@@ -81,30 +81,25 @@ impl Delaunay {
 
     /// Iterate over triangles as (i, j, k) tuples.
     pub fn triangles(&self) -> impl Iterator<Item = (usize, usize, usize)> + '_ {
-        (0..self.inner.triangles.len() / 3).map(move |t| {
-            (
-                self.inner.triangles[t * 3],
-                self.inner.triangles[t * 3 + 1],
-                self.inner.triangles[t * 3 + 2],
-            )
-        })
+        let tris = self.inner.triangles();
+        (0..tris.len() / 3).map(move |t| (tris[t * 3], tris[t * 3 + 1], tris[t * 3 + 2]))
     }
 
     /// Number of triangles.
     pub fn triangle_count(&self) -> usize {
-        self.inner.triangles.len() / 3
+        self.inner.triangles().len() / 3
     }
 
     /// Convex hull point indices.
     pub fn hull(&self) -> &[usize] {
-        &self.inner.hull
+        self.inner.hull()
     }
 
     /// Hull as a closed polygon of (x, y) points.
     pub fn hull_polygon(&self) -> Vec<(f64, f64)> {
         let mut poly: Vec<(f64, f64)> = self
             .inner
-            .hull
+            .hull()
             .iter()
             .map(|&i| self.inner.point(i))
             .collect();
@@ -116,12 +111,14 @@ impl Delaunay {
 
     /// Iterate over unique edges as (i, j) pairs.
     pub fn edges(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
-        (0..self.inner.halfedges.len()).filter_map(move |e| {
-            let j = self.inner.halfedges[e];
+        let halfedges = self.inner.halfedges();
+        let triangles = self.inner.triangles();
+        (0..halfedges.len()).filter_map(move |e| {
+            let j = halfedges[e];
             if j == delaunator::EMPTY || e < j {
                 Some((
-                    self.inner.triangles[e],
-                    self.inner.triangles[if j == delaunator::EMPTY {
+                    triangles[e],
+                    triangles[if j == delaunator::EMPTY {
                         if e % 3 == 2 { e - 2 } else { e + 1 }
                     } else {
                         j

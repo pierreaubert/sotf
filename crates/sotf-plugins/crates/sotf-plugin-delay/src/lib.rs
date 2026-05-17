@@ -228,9 +228,8 @@ impl DelayPlugin {
             for (ch, &ms) in self.channel_delays_ms.iter().enumerate() {
                 let id = format!("delay_ms_{ch}");
                 let name = format!("Delay Ch{ch}");
-                params.push(
-                    Parameter::new_float(&id, &name, ms, 0.0, MAX_DELAY_MS).with_unit("ms"),
-                );
+                params
+                    .push(Parameter::new_float(&id, &name, ms, 0.0, MAX_DELAY_MS).with_unit("ms"));
             }
         }
         self.cached_parameters = params;
@@ -399,7 +398,10 @@ impl InPlacePlugin for DelayPlugin {
         } else if id == &self.param_allpass_feedback {
             Some(ParameterValue::Bool(self.allpass_feedback))
         } else if let Some(ch) = parse_channel_delay_id(id.as_str()) {
-            self.channel_delays_ms.get(ch).copied().map(ParameterValue::Float)
+            self.channel_delays_ms
+                .get(ch)
+                .copied()
+                .map(ParameterValue::Float)
         } else {
             None
         }
@@ -788,7 +790,10 @@ mod tests {
         // wiggle).
         let peak_ch0 = (10..num_frames)
             .max_by(|&a, &b| {
-                buf[a * channels].abs().partial_cmp(&buf[b * channels].abs()).unwrap()
+                buf[a * channels]
+                    .abs()
+                    .partial_cmp(&buf[b * channels].abs())
+                    .unwrap()
             })
             .unwrap();
         let peak_ch1 = (10..num_frames)

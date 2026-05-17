@@ -100,11 +100,15 @@ impl SampleQueue {
     }
 }
 
-/// Take frame_send_buffer for sending, then restore it from a recycled
-/// Vec (zero alloc in steady state) or fall back to Vec::with_capacity.
+const DECODER_LOCAL_FRAME_POOL_SIZE: usize = 8;
+const DECODER_LOCAL_FRAME_CAPACITY: usize = 1024 * 8;
+
+/// Take frame_send_buffer for sending, then restore it from a recycled Vec or
+/// the local spare pool so the steady-state handoff does not allocate.
 fn take_frame_buffer(
     frame_send_buffer: &mut Vec<f32>,
     recycle_rx: &Receiver<Vec<f32>>,
+    local_pool: &mut Vec<Vec<f32>>,
     len: usize,
 ) -> Vec<f32> {
     let mut frame_data = std::mem::take(frame_send_buffer);
@@ -115,7 +119,7 @@ fn take_frame_buffer(
             v.clear();
             v
         }
-        Err(_) => Vec::with_capacity(len),
+        Err(_) => local_pool.pop().unwrap_or_default(),
     };
 
     frame_data
@@ -244,6 +248,8 @@ struct DecoderState {
     chunk_buffer: Vec<f32>,
     /// Pre-allocated buffer for frame sending (avoids allocation in hot path)
     frame_send_buffer: Vec<f32>,
+    /// Local spare buffers used when the recycle queue is temporarily empty.
+    frame_buffer_pool: Vec<Vec<f32>>,
     /// Receives recycled Vec<f32> buffers from the processing thread
     recycle_rx: Receiver<Vec<f32>>,
     /// Queued next source for gapless playback. When set and the current source ends,
@@ -264,6 +270,11 @@ struct DecoderState {
 
 impl DecoderState {
     fn new(recycle_rx: Receiver<Vec<f32>>) -> Self {
+        let mut frame_buffer_pool = Vec::with_capacity(DECODER_LOCAL_FRAME_POOL_SIZE);
+        for _ in 0..DECODER_LOCAL_FRAME_POOL_SIZE {
+            frame_buffer_pool.push(Vec::with_capacity(DECODER_LOCAL_FRAME_CAPACITY));
+        }
+
         Self {
             decoder: None,
             resampler: None,
@@ -279,6 +290,7 @@ impl DecoderState {
             // Pre-allocate for typical frame size (1024 frames * 8 channels)
             chunk_buffer: Vec::with_capacity(1024 * 8),
             frame_send_buffer: Vec::with_capacity(1024 * 8),
+            frame_buffer_pool,
             recycle_rx,
             queued_next: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -434,8 +446,12 @@ impl DecoderState {
         channels: usize,
         sample_rate: u32,
     ) -> Result<Option<DecoderCommand>, String> {
-        let frame_data =
-            take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, sample_len);
+        let frame_data = take_frame_buffer(
+            &mut self.frame_send_buffer,
+            &self.recycle_rx,
+            &mut self.frame_buffer_pool,
+            sample_len,
+        );
         let frame = AudioFrame::new(frame_data, num_frames, channels, sample_rate);
         self.send_decoder_message(
             message_tx,
@@ -536,7 +552,7 @@ impl DecoderState {
             let decode_buffer = self
                 .decode_buffer
                 .as_mut()
-                .expect("decode buffer must be initialized before decoding");
+                .ok_or("Decoder invariant violated: decode buffer missing before decoding")?;
             decoder.decode_into(decode_buffer)
         };
 
@@ -549,13 +565,12 @@ impl DecoderState {
                 let mut total_send_time = Duration::ZERO;
 
                 // Add to buffer (reusing resampler_buffer as general sample buffer)
-                self.resampler_buffer.extend_from_slice(
-                    &self
-                        .decode_buffer
-                        .as_ref()
-                        .expect("decode buffer must exist after successful decode")
-                        .samples,
-                );
+                let decoded_samples = &self
+                    .decode_buffer
+                    .as_ref()
+                    .ok_or("Decoder invariant violated: decode buffer missing after decode")?
+                    .samples;
+                self.resampler_buffer.extend_from_slice(decoded_samples);
 
                 // Process buffer in frame_size chunks
                 while self.resampler_buffer.len() >= frame_size * channels {
@@ -732,10 +747,9 @@ impl DecoderState {
                         self.chunk_buffer[copy_len..padded_len].fill(0.0);
                         self.resampler_buffer.clear();
 
-                        let resampler = self
-                            .resampler
-                            .as_mut()
-                            .expect("resampler must exist in resampled EOS flush path");
+                        let resampler = self.resampler.as_mut().ok_or(
+                            "Decoder invariant violated: resampler missing in EOS flush path",
+                        )?;
                         let max_output_frames = resampler.output_frames_for_input(frame_size);
                         let output_len = max_output_frames * channels;
 
@@ -1037,10 +1051,9 @@ impl DecoderState {
                     self.resample_output_buffer.clear();
                 }
 
-                let resampler = self
-                    .resampler
-                    .as_mut()
-                    .expect("HAL resampler must exist after creation/config validation");
+                let resampler = self.resampler.as_mut().ok_or(
+                    "Decoder invariant violated: HAL resampler missing after configuration",
+                )?;
                 let max_output_frames = resampler.output_frames_for_input(frame_size);
                 let output_len = max_output_frames * hal_channels;
 
@@ -1070,8 +1083,12 @@ impl DecoderState {
                 self.frame_send_buffer[..frame_len]
                     .copy_from_slice(&self.resample_output_buffer[..frame_len]);
 
-                let frame_data =
-                    take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, frame_len);
+                let frame_data = take_frame_buffer(
+                    &mut self.frame_send_buffer,
+                    &self.recycle_rx,
+                    &mut self.frame_buffer_pool,
+                    frame_len,
+                );
 
                 // Send frame with TARGET sample rate
                 let frame = AudioFrame::new(
@@ -1110,8 +1127,12 @@ impl DecoderState {
                 }
                 self.frame_send_buffer[..buffer_len]
                     .copy_from_slice(&self.hal_input_buffer[..buffer_len]);
-                let frame_data =
-                    take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, buffer_len);
+                let frame_data = take_frame_buffer(
+                    &mut self.frame_send_buffer,
+                    &self.recycle_rx,
+                    &mut self.frame_buffer_pool,
+                    buffer_len,
+                );
 
                 // Send frame with HAL sample rate (which matches target)
                 let frame = AudioFrame::new(frame_data, frame_size, hal_channels, hal_sample_rate);
@@ -1148,13 +1169,22 @@ impl DecoderState {
         }
         self.frame_send_buffer[..silent_len].fill(0.0);
 
-        let frame_data =
-            take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, silent_len);
+        let frame_data = take_frame_buffer(
+            &mut self.frame_send_buffer,
+            &self.recycle_rx,
+            &mut self.frame_buffer_pool,
+            silent_len,
+        );
 
         let frame = AudioFrame::new(frame_data, frame_size, silent_channels, target_sample_rate);
-        message_tx
-            .send(DecoderMessage::Frame(frame))
-            .map_err(|_| "Failed to send silent frame")?;
+        if let Some(cmd) = self.send_decoder_message(
+            message_tx,
+            command_rx,
+            response_tx,
+            DecoderMessage::Frame(frame),
+        )? {
+            return Ok((false, Some(cmd)));
+        }
 
         Ok((true, None))
     }
@@ -1396,7 +1426,7 @@ fn run_decoder_thread(
                     }
                 }
                 Err(e) => {
-                    log::debug!("[Decoder Thread] HAL input error: {}", e);
+                    crate::rate_limited_log!(warn, 5, "[Decoder Thread] HAL input error: {}", e);
                     state.stop();
                 }
             }
@@ -1522,7 +1552,7 @@ fn run_decoder_thread(
                     }
                 }
                 Err(e) => {
-                    log::debug!("[Decoder Thread] Error: {}", e);
+                    crate::rate_limited_log!(warn, 5, "[Decoder Thread] Error: {}", e);
                     state.stop();
                 }
             }
@@ -1573,6 +1603,40 @@ mod tests {
         let result = send_or_interrupt(&message_tx, &command_rx, DecoderMessage::Flush);
 
         assert!(result.unwrap_err().contains("queue stuck"));
+    }
+
+    #[test]
+    fn silent_source_fallback_send_is_interruptible_when_queue_full() {
+        let (message_tx, message_rx) = std::sync::mpsc::sync_channel(1);
+        message_tx.send(DecoderMessage::Flush).unwrap();
+        let (command_tx, command_rx) = std::sync::mpsc::channel();
+        let (response_tx, _response_rx) = std::sync::mpsc::channel();
+        command_tx.send(DecoderCommand::Stop).unwrap();
+
+        let (_recycle_tx, recycle_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut state = DecoderState::new(recycle_rx);
+            state.start_silent_source(2);
+            let result =
+                state.process_hal_input(&message_tx, &command_rx, &response_tx, 16, 48_000);
+            done_tx.send(result).ok();
+        });
+
+        let result = done_rx.recv_timeout(std::time::Duration::from_millis(250));
+        drop(message_rx);
+        let result = result.expect("silent-source send blocked instead of honoring Stop command");
+        let (_sent, cmd) = result.expect("silent-source processing failed");
+        assert!(matches!(cmd, Some(DecoderCommand::Stop)));
+    }
+
+    #[test]
+    fn decoder_frame_buffer_handoff_has_no_allocation_fallback() {
+        let source = include_str!("decoder_thread.rs");
+        assert!(
+            !source.contains(concat!("Err(_) => Vec::", "with_capacity(len)")),
+            "decoder frame handoff must use preallocated/recycled buffers instead of allocating on recycle miss"
+        );
     }
 
     #[test]

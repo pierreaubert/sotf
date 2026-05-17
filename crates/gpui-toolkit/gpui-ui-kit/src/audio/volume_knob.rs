@@ -15,7 +15,10 @@
 //! - Mute state support
 //! - Customizable colors and theme support
 
-use super::interactions::{InteractionConfig, handle_keyboard, handle_scroll, value_tracker};
+use super::interactions::{
+    InteractionConfig, clear_drag_state, get_drag_state, handle_drag, handle_keyboard,
+    handle_scroll, store_drag_state, value_tracker,
+};
 use crate::ComponentTheme;
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::scale::Scale;
@@ -465,6 +468,7 @@ impl RenderOnce for VolumeKnob {
         let current_value = value_tracker(self.value as f64);
         let interaction_config =
             InteractionConfig::rotational(0.0, 1.0, Scale::Linear, knob_size_f32).with_media_keys();
+        let drag_key = format!("{:?}", self.id);
 
         let mut container = div()
             .id(self.id)
@@ -481,13 +485,24 @@ impl RenderOnce for VolumeKnob {
         let on_change_rc = self.on_change.map(std::rc::Rc::new);
         let on_mute_rc = self.on_mute_toggle.map(std::rc::Rc::new);
 
-        // Focus handling
-        if let Some(ref focus_handle) = self.focus_handle {
-            let focus_handle_click = focus_handle.clone();
-            // Mouse down - focus for keyboard navigation
-            container = container.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+        // Mouse down: focus for keyboard navigation AND capture the drag
+        // origin so on_mouse_move can compute a delta. Storing the click
+        // Y position is what makes the drag delta-based instead of
+        // interpreting raw window-space Y as knob-local progress.
+        if self.focus_handle.is_some() || on_change_rc.is_some() {
+            let focus_handle_click = self.focus_handle.clone();
+            let drag_key_down = drag_key.clone();
+            let current_value_at_press = current_value.clone();
+            let has_change_handler = on_change_rc.is_some();
+            container = container.on_mouse_down(MouseButton::Left, move |event, window, cx| {
                 cx.stop_propagation();
-                focus_handle_click.focus(window, cx);
+                if let Some(ref fh) = focus_handle_click {
+                    fh.focus(window, cx);
+                }
+                if has_change_handler {
+                    let click_y: f32 = event.position.y.into();
+                    store_drag_state(&drag_key_down, click_y, current_value_at_press.get());
+                }
             });
         }
 
@@ -511,16 +526,23 @@ impl RenderOnce for VolumeKnob {
         // Drag support and hover focus
         {
             let drag_handler = on_change_rc.clone();
-            let knob_size_f32 = resolved_size.to_f64() as f32;
             let focus_handle_hover = self.focus_handle.clone();
+            let drag_key_move = drag_key.clone();
+            let current_value_drag = current_value.clone();
+            let config_drag = interaction_config.clone();
 
             container = container.on_mouse_move(move |event, window, cx| {
                 if event.pressed_button == Some(MouseButton::Left) {
-                    // Drag: Convert vertical drag to value change
-                    if let Some(ref handler) = drag_handler {
-                        let drag_y: f32 = event.position.y.into();
-                        let progress = 1.0 - (drag_y / knob_size_f32).clamp(0.0, 1.0);
-                        handler(progress, window, cx);
+                    // Delta-based drag keyed off the position captured at
+                    // mouse_down — see store_drag_state above.
+                    if let Some(ref handler) = drag_handler
+                        && let Some(state) = get_drag_state(&drag_key_move)
+                    {
+                        let current_y: f32 = event.position.y.into();
+                        if let Some(new_value) = handle_drag(current_y, &state, &config_drag) {
+                            current_value_drag.set(new_value);
+                            handler(new_value as f32, window, cx);
+                        }
                     }
                 } else if let Some(ref fh) = focus_handle_hover {
                     // Hover: Focus for keyboard navigation
@@ -528,6 +550,14 @@ impl RenderOnce for VolumeKnob {
                         fh.focus(window, cx);
                     }
                 }
+            });
+        }
+
+        // Mouse up — clear drag state for the next drag.
+        if on_change_rc.is_some() {
+            let drag_key_up = drag_key.clone();
+            container = container.on_mouse_up(MouseButton::Left, move |_event, _window, _cx| {
+                clear_drag_state(&drag_key_up);
             });
         }
 

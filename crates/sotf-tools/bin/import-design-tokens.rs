@@ -1,41 +1,56 @@
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
+use sotf_audio_player_gpui::theme::ThemeId;
 use std::collections::HashMap;
 use std::path::Path;
 
 /// Parse a hex color string into (r, g, b, a) as f32 components.
-/// Supports: #rrggbb, #rrggbbaa
-fn parse_hex(hex: &str) -> (f32, f32, f32, f32) {
-    let hex = hex.trim_start_matches('#');
-    match hex.len() {
+/// Supports: `#rrggbb` and `#rrggbbaa` (with or without the leading `#`).
+///
+/// Returns a structured error rather than panicking so a malformed
+/// `tokens.json` produces an actionable build-time message.
+fn parse_hex(hex: &str) -> Result<(f32, f32, f32, f32)> {
+    let trimmed = hex.trim_start_matches('#');
+    if trimmed.is_empty() {
+        bail!("empty hex color string");
+    }
+    match trimmed.len() {
         6 => {
-            let r = u8::from_str_radix(&hex[0..2], 16).expect("valid hex r");
-            let g = u8::from_str_radix(&hex[2..4], 16).expect("valid hex g");
-            let b = u8::from_str_radix(&hex[4..6], 16).expect("valid hex b");
-            (
+            let r = u8::from_str_radix(&trimmed[0..2], 16)
+                .with_context(|| format!("invalid hex (r) in #{trimmed}"))?;
+            let g = u8::from_str_radix(&trimmed[2..4], 16)
+                .with_context(|| format!("invalid hex (g) in #{trimmed}"))?;
+            let b = u8::from_str_radix(&trimmed[4..6], 16)
+                .with_context(|| format!("invalid hex (b) in #{trimmed}"))?;
+            Ok((
                 f32::from(r) / 255.0,
                 f32::from(g) / 255.0,
                 f32::from(b) / 255.0,
                 1.0,
-            )
+            ))
         }
         8 => {
-            let r = u8::from_str_radix(&hex[0..2], 16).expect("valid hex r");
-            let g = u8::from_str_radix(&hex[2..4], 16).expect("valid hex g");
-            let b = u8::from_str_radix(&hex[4..6], 16).expect("valid hex b");
-            let a = u8::from_str_radix(&hex[6..8], 16).expect("valid hex a");
-            (
+            let r = u8::from_str_radix(&trimmed[0..2], 16)
+                .with_context(|| format!("invalid hex (r) in #{trimmed}"))?;
+            let g = u8::from_str_radix(&trimmed[2..4], 16)
+                .with_context(|| format!("invalid hex (g) in #{trimmed}"))?;
+            let b = u8::from_str_radix(&trimmed[4..6], 16)
+                .with_context(|| format!("invalid hex (b) in #{trimmed}"))?;
+            let a = u8::from_str_radix(&trimmed[6..8], 16)
+                .with_context(|| format!("invalid hex (a) in #{trimmed}"))?;
+            Ok((
                 f32::from(r) / 255.0,
                 f32::from(g) / 255.0,
                 f32::from(b) / 255.0,
                 f32::from(a) / 255.0,
-            )
+            ))
         }
-        _ => panic!("unsupported hex format: #{hex}"),
+        n => bail!("unsupported hex length {n} in #{trimmed} (expected 6 or 8)"),
     }
 }
 
 /// Read a color token value from a JSON path like `color.base.background`
-fn get_color(theme_obj: &Value, path: &str) -> String {
+fn get_color(theme_obj: &Value, path: &str) -> Result<String> {
     let parts: Vec<&str> = path.split('.').collect();
     let mut current = theme_obj;
     for part in &parts {
@@ -43,55 +58,37 @@ fn get_color(theme_obj: &Value, path: &str) -> String {
     }
     let hex = current["$value"]
         .as_str()
-        .unwrap_or_else(|| panic!("missing $value at {path}"));
-    let (r, g, b, a) = parse_hex(hex);
+        .ok_or_else(|| anyhow!("missing $value at {path}"))?;
+    let (r, g, b, a) = parse_hex(hex).with_context(|| format!("parsing color at {path}"))?;
 
+    let hex_trim = hex.trim_start_matches('#');
     // If fully opaque and the hex is 6 chars, use rgb() macro
-    if a == 1.0 && hex.trim_start_matches('#').len() == 6 {
-        let hex_str = hex.trim_start_matches('#');
-        format!("rgb(0x{hex_str})")
-    } else if hex.trim_start_matches('#').len() == 8 {
-        // 8-char hex: check if we can use the rgba() macro (exact byte values)
-        let hex_str = hex.trim_start_matches('#');
-        let r_byte = u8::from_str_radix(&hex_str[0..2], 16).unwrap();
-        let g_byte = u8::from_str_radix(&hex_str[2..4], 16).unwrap();
-        let b_byte = u8::from_str_radix(&hex_str[4..6], 16).unwrap();
-        let a_byte = u8::from_str_radix(&hex_str[6..8], 16).unwrap();
-
-        // Check if all components round-trip cleanly through the rgba() macro
-        let rf = f32::from(r_byte) / 255.0;
-        let gf = f32::from(g_byte) / 255.0;
-        let bf = f32::from(b_byte) / 255.0;
-        let af = f32::from(a_byte) / 255.0;
-        let _ = (rf, gf, bf, af);
-
-        // Use explicit Rgba struct for precision
-        format!(
-            "Rgba {{ r: {r:.3}, g: {g:.3}, b: {b:.3}, a: {a:.3} }}",
-            r = r,
-            g = g,
-            b = b,
-            a = a
-        )
+    if a == 1.0 && hex_trim.len() == 6 {
+        Ok(format!("rgb(0x{hex_trim})"))
     } else {
-        format!("Rgba {{ r: {r:.3}, g: {g:.3}, b: {b:.3}, a: {a:.3} }}")
+        // Use explicit Rgba struct for precision
+        Ok(format!(
+            "Rgba {{ r: {r:.3}, g: {g:.3}, b: {b:.3}, a: {a:.3} }}"
+        ))
     }
 }
 
 /// Read band colors as a Vec of color expressions
-fn get_band_colors(theme_obj: &Value) -> Vec<String> {
+fn get_band_colors(theme_obj: &Value) -> Result<Vec<String>> {
     let band_obj = &theme_obj["color"]["band"];
-    let map = band_obj.as_object().expect("band should be an object");
-    let mut entries: Vec<(usize, String)> = map
-        .iter()
-        .map(|(k, _)| {
-            let idx: usize = k.parse().expect("band index should be numeric");
-            let expr = get_color(theme_obj, &format!("color.band.{k}"));
-            (idx, expr)
-        })
-        .collect();
+    let map = band_obj
+        .as_object()
+        .ok_or_else(|| anyhow!("color.band should be an object"))?;
+    let mut entries: Vec<(usize, String)> = Vec::with_capacity(map.len());
+    for (k, _) in map.iter() {
+        let idx: usize = k
+            .parse()
+            .with_context(|| format!("band index '{k}' is not numeric"))?;
+        let expr = get_color(theme_obj, &format!("color.band.{k}"))?;
+        entries.push((idx, expr));
+    }
     entries.sort_by_key(|(idx, _)| *idx);
-    entries.into_iter().map(|(_, expr)| expr).collect()
+    Ok(entries.into_iter().map(|(_, expr)| expr).collect())
 }
 
 struct ThemeConfig {
@@ -101,43 +98,64 @@ struct ThemeConfig {
     doc_comment: &'static str,
 }
 
-fn theme_configs() -> Vec<ThemeConfig> {
-    vec![
-        ThemeConfig {
+/// Derive the per-theme import config from a `ThemeId`.
+///
+/// This is the single source of truth for the round-trip mapping between
+/// the JSON `set_name` produced by `export-design-tokens.rs` and the
+/// `Theme::*` Rust function emitted into `app-gpui/app/theme/*.rs`.
+fn theme_config_for(id: ThemeId) -> ThemeConfig {
+    match id {
+        ThemeId::Dark => ThemeConfig {
             set_name: "theme/dark",
             fn_name: "dark",
             file_name: "black.rs",
             doc_comment: "Dark theme (default)",
         },
-        ThemeConfig {
+        ThemeId::Light => ThemeConfig {
             set_name: "theme/light",
             fn_name: "light",
             file_name: "light.rs",
             doc_comment: "Light theme",
         },
-        ThemeConfig {
+        ThemeId::Midnight => ThemeConfig {
             set_name: "theme/midnight",
             fn_name: "midnight",
             file_name: "midnight.rs",
             doc_comment: "Midnight theme (deep blue)",
         },
-        ThemeConfig {
+        ThemeId::Forest => ThemeConfig {
             set_name: "theme/forest",
             fn_name: "forest",
             file_name: "forest.rs",
             doc_comment: "Forest theme (green tones)",
         },
-        ThemeConfig {
+        ThemeId::BlackAndWhite => ThemeConfig {
             set_name: "theme/black-and-white",
             fn_name: "black_and_white",
             file_name: "black_and_white.rs",
             doc_comment: "Black & White theme (monochrome high contrast)",
         },
-    ]
+        ThemeId::Onyx => ThemeConfig {
+            set_name: "theme/onyx",
+            fn_name: "onyx",
+            file_name: "onyx.rs",
+            doc_comment: "Onyx theme",
+        },
+    }
 }
 
-fn generate_theme_file(tokens: &Value, config: &ThemeConfig) -> String {
+fn theme_configs() -> Vec<ThemeConfig> {
+    ThemeId::all().iter().copied().map(theme_config_for).collect()
+}
+
+fn generate_theme_file(tokens: &Value, config: &ThemeConfig) -> Result<String> {
     let t = &tokens[config.set_name];
+    if t.is_null() {
+        bail!(
+            "theme set '{}' not found in tokens.json (export must include it)",
+            config.set_name
+        );
+    }
 
     // Check if any color value uses Rgba struct (has alpha != 1.0)
     let has_rgba = needs_rgba_import(t);
@@ -146,13 +164,13 @@ fn generate_theme_file(tokens: &Value, config: &ThemeConfig) -> String {
 
     let rgba_import = if has_rgba { ", rgba" } else { "" };
 
-    let band_colors = get_band_colors(t);
+    let band_colors = get_band_colors(t)?;
     let band_lines: String = band_colors
         .iter()
         .map(|expr| format!("                {expr},\n"))
         .collect();
 
-    format!(
+    Ok(format!(
         r#"use super::{{
     EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme, rgb{rgba_import}
 }};{rgba_use}
@@ -293,105 +311,105 @@ impl Theme {{
         rgba_import = rgba_import,
         rgba_use = rgba_use,
         // Base
-        background = get_color(t, "color.base.background"),
-        background_secondary = get_color(t, "color.base.backgroundSecondary"),
-        background_tertiary = get_color(t, "color.base.backgroundTertiary"),
-        surface = get_color(t, "color.base.surface"),
-        surface_hover = get_color(t, "color.base.surfaceHover"),
-        surface_selected = get_color(t, "color.base.surfaceSelected"),
+        background = get_color(t, "color.base.background")?,
+        background_secondary = get_color(t, "color.base.backgroundSecondary")?,
+        background_tertiary = get_color(t, "color.base.backgroundTertiary")?,
+        surface = get_color(t, "color.base.surface")?,
+        surface_hover = get_color(t, "color.base.surfaceHover")?,
+        surface_selected = get_color(t, "color.base.surfaceSelected")?,
         // Text
-        text_primary = get_color(t, "color.text.primary"),
-        text_secondary = get_color(t, "color.text.secondary"),
-        text_muted = get_color(t, "color.text.muted"),
-        text_disabled = get_color(t, "color.text.disabled"),
-        text_on_accent = get_color(t, "color.text.onAccent"),
-        text_on_accent_muted = get_color(t, "color.text.onAccentMuted"),
-        icon_on_accent = get_color(t, "color.text.iconOnAccent"),
+        text_primary = get_color(t, "color.text.primary")?,
+        text_secondary = get_color(t, "color.text.secondary")?,
+        text_muted = get_color(t, "color.text.muted")?,
+        text_disabled = get_color(t, "color.text.disabled")?,
+        text_on_accent = get_color(t, "color.text.onAccent")?,
+        text_on_accent_muted = get_color(t, "color.text.onAccentMuted")?,
+        icon_on_accent = get_color(t, "color.text.iconOnAccent")?,
         // Border
-        border = get_color(t, "color.border.default"),
-        border_focused = get_color(t, "color.border.focused"),
+        border = get_color(t, "color.border.default")?,
+        border_focused = get_color(t, "color.border.focused")?,
         // Accent
-        accent = get_color(t, "color.accent.default"),
-        accent_hover = get_color(t, "color.accent.hover"),
-        accent_muted = get_color(t, "color.accent.muted"),
+        accent = get_color(t, "color.accent.default")?,
+        accent_hover = get_color(t, "color.accent.hover")?,
+        accent_muted = get_color(t, "color.accent.muted")?,
         // Semantic
-        success = get_color(t, "color.semantic.success"),
-        warning = get_color(t, "color.semantic.warning"),
-        error = get_color(t, "color.semantic.error"),
-        info = get_color(t, "color.semantic.info"),
+        success = get_color(t, "color.semantic.success")?,
+        warning = get_color(t, "color.semantic.warning")?,
+        error = get_color(t, "color.semantic.error")?,
+        info = get_color(t, "color.semantic.info")?,
         // Meter
-        meter_normal = get_color(t, "color.meter.normal"),
-        meter_warning = get_color(t, "color.meter.warning"),
-        meter_clip = get_color(t, "color.meter.clip"),
+        meter_normal = get_color(t, "color.meter.normal")?,
+        meter_warning = get_color(t, "color.meter.warning")?,
+        meter_clip = get_color(t, "color.meter.clip")?,
         // Button
-        button_mute_active = get_color(t, "color.button.muteActive"),
-        button_solo_active = get_color(t, "color.button.soloActive"),
-        button_dim_active = get_color(t, "color.button.dimActive"),
+        button_mute_active = get_color(t, "color.button.muteActive")?,
+        button_solo_active = get_color(t, "color.button.soloActive")?,
+        button_dim_active = get_color(t, "color.button.dimActive")?,
         // Playback
-        progress_bar_bg = get_color(t, "color.playback.progressBarBg"),
-        progress_bar_fill = get_color(t, "color.playback.progressBarFill"),
+        progress_bar_bg = get_color(t, "color.playback.progressBarBg")?,
+        progress_bar_fill = get_color(t, "color.playback.progressBarFill")?,
         // Toast
-        toast_success_bg = get_color(t, "color.toast.successBg"),
-        toast_error_bg = get_color(t, "color.toast.errorBg"),
-        toast_info_bg = get_color(t, "color.toast.infoBg"),
-        toast_warning_bg = get_color(t, "color.toast.warningBg"),
+        toast_success_bg = get_color(t, "color.toast.successBg")?,
+        toast_error_bg = get_color(t, "color.toast.errorBg")?,
+        toast_info_bg = get_color(t, "color.toast.infoBg")?,
+        toast_warning_bg = get_color(t, "color.toast.warningBg")?,
         // Plugin
-        plugin_eq = get_color(t, "color.plugin.eq"),
-        plugin_gain = get_color(t, "color.plugin.gain"),
-        plugin_upmixer = get_color(t, "color.plugin.upmixer"),
-        plugin_compressor = get_color(t, "color.plugin.compressor"),
-        plugin_limiter = get_color(t, "color.plugin.limiter"),
-        plugin_gate = get_color(t, "color.plugin.gate"),
-        plugin_loudness = get_color(t, "color.plugin.loudness"),
-        plugin_binaural = get_color(t, "color.plugin.binaural"),
-        plugin_convolution = get_color(t, "color.plugin.convolution"),
-        plugin_monitor = get_color(t, "color.plugin.monitor"),
-        plugin_spectrum = get_color(t, "color.plugin.spectrum"),
-        plugin_mute_solo = get_color(t, "color.plugin.muteSolo"),
+        plugin_eq = get_color(t, "color.plugin.eq")?,
+        plugin_gain = get_color(t, "color.plugin.gain")?,
+        plugin_upmixer = get_color(t, "color.plugin.upmixer")?,
+        plugin_compressor = get_color(t, "color.plugin.compressor")?,
+        plugin_limiter = get_color(t, "color.plugin.limiter")?,
+        plugin_gate = get_color(t, "color.plugin.gate")?,
+        plugin_loudness = get_color(t, "color.plugin.loudness")?,
+        plugin_binaural = get_color(t, "color.plugin.binaural")?,
+        plugin_convolution = get_color(t, "color.plugin.convolution")?,
+        plugin_monitor = get_color(t, "color.plugin.monitor")?,
+        plugin_spectrum = get_color(t, "color.plugin.spectrum")?,
+        plugin_mute_solo = get_color(t, "color.plugin.muteSolo")?,
         // Graph
-        graph_input = get_color(t, "color.graph.input"),
-        graph_target = get_color(t, "color.graph.target"),
-        graph_filter_response = get_color(t, "color.graph.filterResponse"),
-        graph_corrected = get_color(t, "color.graph.corrected"),
-        graph_error = get_color(t, "color.graph.error"),
-        graph_deviation = get_color(t, "color.graph.deviation"),
-        graph_grid = get_color(t, "color.graph.grid"),
-        graph_secondary_line = get_color(t, "color.graph.secondaryLine"),
-        graph_directivity_er = get_color(t, "color.graph.directivityEr"),
-        graph_directivity_sp = get_color(t, "color.graph.directivitySp"),
+        graph_input = get_color(t, "color.graph.input")?,
+        graph_target = get_color(t, "color.graph.target")?,
+        graph_filter_response = get_color(t, "color.graph.filterResponse")?,
+        graph_corrected = get_color(t, "color.graph.corrected")?,
+        graph_error = get_color(t, "color.graph.error")?,
+        graph_deviation = get_color(t, "color.graph.deviation")?,
+        graph_grid = get_color(t, "color.graph.grid")?,
+        graph_secondary_line = get_color(t, "color.graph.secondaryLine")?,
+        graph_directivity_er = get_color(t, "color.graph.directivityEr")?,
+        graph_directivity_sp = get_color(t, "color.graph.directivitySp")?,
         // Band
         band_lines = band_lines,
         // EQ Curve
-        eq_background = get_color(t, "color.eqCurve.background"),
-        eq_grid = get_color(t, "color.eqCurve.grid"),
-        eq_curve_boost = get_color(t, "color.eqCurve.curveBoost"),
-        eq_curve_cut = get_color(t, "color.eqCurve.curveCut"),
-        eq_fill_boost = get_color(t, "color.eqCurve.fillBoost"),
-        eq_fill_cut = get_color(t, "color.eqCurve.fillCut"),
-        eq_zero_line = get_color(t, "color.eqCurve.zeroLine"),
+        eq_background = get_color(t, "color.eqCurve.background")?,
+        eq_grid = get_color(t, "color.eqCurve.grid")?,
+        eq_curve_boost = get_color(t, "color.eqCurve.curveBoost")?,
+        eq_curve_cut = get_color(t, "color.eqCurve.curveCut")?,
+        eq_fill_boost = get_color(t, "color.eqCurve.fillBoost")?,
+        eq_fill_cut = get_color(t, "color.eqCurve.fillCut")?,
+        eq_zero_line = get_color(t, "color.eqCurve.zeroLine")?,
         // Spectrum
-        spectrum_background = get_color(t, "color.spectrum.background"),
-        spectrum_bass = get_color(t, "color.spectrum.bass"),
-        spectrum_mids = get_color(t, "color.spectrum.mids"),
-        spectrum_treble = get_color(t, "color.spectrum.treble"),
+        spectrum_background = get_color(t, "color.spectrum.background")?,
+        spectrum_bass = get_color(t, "color.spectrum.bass")?,
+        spectrum_mids = get_color(t, "color.spectrum.mids")?,
+        spectrum_treble = get_color(t, "color.spectrum.treble")?,
         // Meter colors
-        meter_background = get_color(t, "color.meterColors.background"),
-        meter_normal_c = get_color(t, "color.meterColors.normal"),
-        meter_warning_c = get_color(t, "color.meterColors.warning"),
-        meter_clip_c = get_color(t, "color.meterColors.clip"),
-        meter_peak = get_color(t, "color.meterColors.peak"),
-        meter_text = get_color(t, "color.meterColors.text"),
+        meter_background = get_color(t, "color.meterColors.background")?,
+        meter_normal_c = get_color(t, "color.meterColors.normal")?,
+        meter_warning_c = get_color(t, "color.meterColors.warning")?,
+        meter_clip_c = get_color(t, "color.meterColors.clip")?,
+        meter_peak = get_color(t, "color.meterColors.peak")?,
+        meter_text = get_color(t, "color.meterColors.text")?,
         // Additional
-        peak_indicator = get_color(t, "color.additional.peakIndicator"),
-        drag_over_highlight = get_color(t, "color.additional.dragOverHighlight"),
-        drag_over_border = get_color(t, "color.additional.dragOverBorder"),
-        neutral_indicator = get_color(t, "color.additional.neutralIndicator"),
-        warning_background = get_color(t, "color.additional.warningBackground"),
-        knob_color = get_color(t, "color.additional.knobColor"),
-        optimization_color = get_color(t, "color.additional.optimizationColor"),
-        grid_color = get_color(t, "color.additional.gridColor"),
-        overlay_bg = get_color(t, "color.additional.overlayBg"),
-    )
+        peak_indicator = get_color(t, "color.additional.peakIndicator")?,
+        drag_over_highlight = get_color(t, "color.additional.dragOverHighlight")?,
+        drag_over_border = get_color(t, "color.additional.dragOverBorder")?,
+        neutral_indicator = get_color(t, "color.additional.neutralIndicator")?,
+        warning_background = get_color(t, "color.additional.warningBackground")?,
+        knob_color = get_color(t, "color.additional.knobColor")?,
+        optimization_color = get_color(t, "color.additional.optimizationColor")?,
+        grid_color = get_color(t, "color.additional.gridColor")?,
+        overlay_bg = get_color(t, "color.additional.overlayBg")?,
+    ))
 }
 
 /// Check if a theme set has any colors with alpha != 1.0 (needs Rgba import)
@@ -409,21 +427,23 @@ fn needs_rgba_import(theme_obj: &Value) -> bool {
     check_value(theme_obj)
 }
 
-fn main() {
+fn main() -> Result<()> {
     let tokens_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("parent of crates/import-design-tokens")
+        .ok_or_else(|| anyhow!("parent of crates/sotf-tools"))?
         .parent()
-        .expect("workspace root")
+        .ok_or_else(|| anyhow!("workspace root"))?
         .join("design-tokens")
         .join("tokens.json");
 
-    let tokens_str = std::fs::read_to_string(&tokens_path).expect("read tokens.json");
-    let tokens: Value = serde_json::from_str(&tokens_str).expect("parse tokens.json");
+    let tokens_str = std::fs::read_to_string(&tokens_path)
+        .with_context(|| format!("read {}", tokens_path.display()))?;
+    let tokens: Value = serde_json::from_str(&tokens_str)
+        .with_context(|| format!("parse {}", tokens_path.display()))?;
 
     let theme_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("parent of crates/import-design-tokens")
+        .ok_or_else(|| anyhow!("parent of crates/sotf-tools"))?
         .join("app-gpui")
         .join("app")
         .join("theme");
@@ -431,10 +451,12 @@ fn main() {
     let mut generated = HashMap::new();
 
     for config in theme_configs() {
-        let content = generate_theme_file(&tokens, &config);
+        let content = generate_theme_file(&tokens, &config)
+            .with_context(|| format!("generating {}", config.file_name))?;
         let out_path = theme_dir.join(config.file_name);
         generated.insert(config.file_name, out_path.clone());
-        std::fs::write(&out_path, content.as_bytes()).expect("write theme file");
+        std::fs::write(&out_path, content.as_bytes())
+            .with_context(|| format!("write {}", out_path.display()))?;
         println!("Wrote {}", out_path.display());
     }
 
@@ -443,4 +465,274 @@ fn main() {
         generated.len(),
         tokens_path.display()
     );
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use sotf_audio_player_gpui::theme::{Theme, ThemeId};
+
+    #[test]
+    fn parse_hex_rrggbb() {
+        let (r, g, b, a) = parse_hex("#ff8000").unwrap();
+        assert!((r - 1.0).abs() < 1e-6);
+        assert!((g - 128.0 / 255.0).abs() < 1e-6);
+        assert!((b - 0.0).abs() < 1e-6);
+        assert!((a - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn parse_hex_rrggbbaa_leading_hash() {
+        let (r, g, b, a) = parse_hex("#11223344").unwrap();
+        assert!((r - 0x11 as f32 / 255.0).abs() < 1e-6);
+        assert!((g - 0x22 as f32 / 255.0).abs() < 1e-6);
+        assert!((b - 0x33 as f32 / 255.0).abs() < 1e-6);
+        assert!((a - 0x44 as f32 / 255.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn parse_hex_no_leading_hash() {
+        // No leading '#': should still parse successfully.
+        let (r, _g, _b, a) = parse_hex("ff0000").unwrap();
+        assert!((r - 1.0).abs() < 1e-6);
+        assert!((a - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn parse_hex_too_short() {
+        // 3 chars is not yet supported and must error (not panic).
+        let err = parse_hex("#abc").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("unsupported hex length"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_hex_non_hex() {
+        // 6 chars but with invalid hex digits.
+        let err = parse_hex("#zzzzzz").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("invalid hex"), "unexpected error: {msg}");
+    }
+
+    #[test]
+    fn parse_hex_empty() {
+        assert!(parse_hex("").is_err());
+        assert!(parse_hex("#").is_err());
+    }
+
+    /// Onyx round-trip regression: every theme exposed by `ThemeId::all()`
+    /// must have a corresponding `theme_config_for` entry whose `set_name`
+    /// matches what `export-design-tokens.rs` writes, and `generate_theme_file`
+    /// must succeed for it.
+    #[test]
+    fn theme_configs_cover_all_themes() {
+        let configs = theme_configs();
+        assert_eq!(
+            configs.len(),
+            ThemeId::all().len(),
+            "every ThemeId must produce a ThemeConfig"
+        );
+
+        // The export uses exactly these set names (kept in sync with
+        // bin/export-design-tokens.rs::theme_set_name).
+        let expected: Vec<&'static str> = ThemeId::all()
+            .iter()
+            .map(|id| match id {
+                ThemeId::Dark => "theme/dark",
+                ThemeId::Light => "theme/light",
+                ThemeId::Midnight => "theme/midnight",
+                ThemeId::Forest => "theme/forest",
+                ThemeId::BlackAndWhite => "theme/black-and-white",
+                ThemeId::Onyx => "theme/onyx",
+            })
+            .collect();
+        let got: Vec<&'static str> = configs.iter().map(|c| c.set_name).collect();
+        assert_eq!(got, expected);
+
+        // Onyx specifically — the bug we are guarding against.
+        assert!(
+            configs.iter().any(|c| c.set_name == "theme/onyx"),
+            "Onyx theme must be present in theme_configs()"
+        );
+    }
+
+    /// Build a minimal JSON object for a single theme by inlining the
+    /// `Rgba` components of every field touched by `generate_theme_file`.
+    /// We borrow the live Onyx theme so the test fails if the schema drifts.
+    fn export_theme_minimal_to_json(theme: &Theme) -> Value {
+        fn c(rgba: gpui::Rgba) -> Value {
+            let ri = (rgba.r * 255.0).round() as u8;
+            let gi = (rgba.g * 255.0).round() as u8;
+            let bi = (rgba.b * 255.0).round() as u8;
+            let ai = (rgba.a * 255.0).round() as u8;
+            let hex = if ai == 255 {
+                format!("#{ri:02x}{gi:02x}{bi:02x}")
+            } else {
+                format!("#{ri:02x}{gi:02x}{bi:02x}{ai:02x}")
+            };
+            json!({ "$type": "color", "$value": hex })
+        }
+        let band_map: serde_json::Map<String, Value> = theme
+            .band_colors
+            .iter()
+            .enumerate()
+            .map(|(i, color)| (i.to_string(), c(*color)))
+            .collect();
+        json!({
+            "color": {
+                "base": {
+                    "background": c(theme.background),
+                    "backgroundSecondary": c(theme.background_secondary),
+                    "backgroundTertiary": c(theme.background_tertiary),
+                    "surface": c(theme.surface),
+                    "surfaceHover": c(theme.surface_hover),
+                    "surfaceSelected": c(theme.surface_selected)
+                },
+                "text": {
+                    "primary": c(theme.text_primary),
+                    "secondary": c(theme.text_secondary),
+                    "muted": c(theme.text_muted),
+                    "disabled": c(theme.text_disabled),
+                    "onAccent": c(theme.text_on_accent),
+                    "onAccentMuted": c(theme.text_on_accent_muted),
+                    "iconOnAccent": c(theme.icon_on_accent)
+                },
+                "border": {
+                    "default": c(theme.border),
+                    "focused": c(theme.border_focused)
+                },
+                "accent": {
+                    "default": c(theme.accent),
+                    "hover": c(theme.accent_hover),
+                    "muted": c(theme.accent_muted)
+                },
+                "semantic": {
+                    "success": c(theme.success),
+                    "warning": c(theme.warning),
+                    "error": c(theme.error),
+                    "info": c(theme.info)
+                },
+                "meter": {
+                    "normal": c(theme.meter_normal),
+                    "warning": c(theme.meter_warning),
+                    "clip": c(theme.meter_clip)
+                },
+                "button": {
+                    "muteActive": c(theme.button_mute_active),
+                    "soloActive": c(theme.button_solo_active),
+                    "dimActive": c(theme.button_dim_active)
+                },
+                "playback": {
+                    "progressBarBg": c(theme.progress_bar_bg),
+                    "progressBarFill": c(theme.progress_bar_fill)
+                },
+                "toast": {
+                    "successBg": c(theme.toast_success_bg),
+                    "errorBg": c(theme.toast_error_bg),
+                    "infoBg": c(theme.toast_info_bg),
+                    "warningBg": c(theme.toast_warning_bg)
+                },
+                "plugin": {
+                    "eq": c(theme.plugin_colors.eq),
+                    "gain": c(theme.plugin_colors.gain),
+                    "upmixer": c(theme.plugin_colors.upmixer),
+                    "compressor": c(theme.plugin_colors.compressor),
+                    "limiter": c(theme.plugin_colors.limiter),
+                    "gate": c(theme.plugin_colors.gate),
+                    "loudness": c(theme.plugin_colors.loudness),
+                    "binaural": c(theme.plugin_colors.binaural),
+                    "convolution": c(theme.plugin_colors.convolution),
+                    "monitor": c(theme.plugin_colors.monitor),
+                    "spectrum": c(theme.plugin_colors.spectrum),
+                    "muteSolo": c(theme.plugin_colors.mute_solo)
+                },
+                "graph": {
+                    "input": c(theme.graph_colors.input),
+                    "target": c(theme.graph_colors.target),
+                    "filterResponse": c(theme.graph_colors.filter_response),
+                    "corrected": c(theme.graph_colors.corrected),
+                    "error": c(theme.graph_colors.error),
+                    "deviation": c(theme.graph_colors.deviation),
+                    "grid": c(theme.graph_colors.grid),
+                    "secondaryLine": c(theme.graph_colors.secondary_line),
+                    "directivityEr": c(theme.graph_colors.directivity_er),
+                    "directivitySp": c(theme.graph_colors.directivity_sp)
+                },
+                "band": Value::Object(band_map),
+                "eqCurve": {
+                    "background": c(theme.eq_curve_colors.background),
+                    "grid": c(theme.eq_curve_colors.grid),
+                    "curveBoost": c(theme.eq_curve_colors.curve_boost),
+                    "curveCut": c(theme.eq_curve_colors.curve_cut),
+                    "fillBoost": c(theme.eq_curve_colors.fill_boost),
+                    "fillCut": c(theme.eq_curve_colors.fill_cut),
+                    "zeroLine": c(theme.eq_curve_colors.zero_line)
+                },
+                "spectrum": {
+                    "background": c(theme.spectrum_colors.background),
+                    "bass": c(theme.spectrum_colors.bass),
+                    "mids": c(theme.spectrum_colors.mids),
+                    "treble": c(theme.spectrum_colors.treble)
+                },
+                "meterColors": {
+                    "background": c(theme.meter_colors.background),
+                    "normal": c(theme.meter_colors.normal),
+                    "warning": c(theme.meter_colors.warning),
+                    "clip": c(theme.meter_colors.clip),
+                    "peak": c(theme.meter_colors.peak),
+                    "text": c(theme.meter_colors.text)
+                },
+                "additional": {
+                    "peakIndicator": c(theme.peak_indicator),
+                    "dragOverHighlight": c(theme.drag_over_highlight),
+                    "dragOverBorder": c(theme.drag_over_border),
+                    "neutralIndicator": c(theme.neutral_indicator),
+                    "warningBackground": c(theme.warning_background),
+                    "knobColor": c(theme.knob_color),
+                    "optimizationColor": c(theme.optimization_color),
+                    "gridColor": c(theme.grid_color),
+                    "overlayBg": c(theme.overlay_bg)
+                }
+            }
+        })
+    }
+
+    /// Onyx import/export round-trip regression test.
+    ///
+    /// Exports the Onyx theme to the tokens.json JSON shape, then runs the
+    /// importer's `generate_theme_file` over it. The previous bug silently
+    /// dropped the Onyx theme on import; we assert here that:
+    /// 1. `theme_configs()` produces an Onyx entry, and
+    /// 2. `generate_theme_file` succeeds and emits a non-empty `Theme::onyx()`
+    ///    function definition.
+    #[test]
+    fn onyx_round_trip() {
+        let onyx_theme = Theme::from_id(ThemeId::Onyx);
+        let onyx_json = export_theme_minimal_to_json(&onyx_theme);
+
+        // Wrap under the same `set_name` the exporter uses.
+        let tokens = json!({ "theme/onyx": onyx_json });
+
+        let cfg = theme_config_for(ThemeId::Onyx);
+        assert_eq!(cfg.set_name, "theme/onyx");
+        assert_eq!(cfg.fn_name, "onyx");
+        assert_eq!(cfg.file_name, "onyx.rs");
+
+        let generated =
+            generate_theme_file(&tokens, &cfg).expect("Onyx must round-trip on import");
+        assert!(
+            generated.contains("pub fn onyx() -> Self"),
+            "generated Onyx file must declare `pub fn onyx`"
+        );
+        // Sanity check that band colors made it through (structural check).
+        assert!(
+            generated.contains("band_colors: vec!["),
+            "generated Onyx file must contain band_colors vec"
+        );
+    }
 }

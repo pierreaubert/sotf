@@ -21,49 +21,53 @@ use sotf_audio_player::autoeq::speaker::{
     SpeakerOptimizationProgress,
 };
 use sotf_audio_player::autoeq::types::SpeakerConfigType;
-use std::sync::Mutex;
-
-/// Lock a std::sync::Mutex, recovering from poisoning instead of panicking.
-macro_rules! lock {
-    ($m:expr) => {
-        $m.lock().unwrap_or_else(|e| e.into_inner())
-    };
-}
 
 mod step_1_select;
 mod step_2_configure;
 mod step_3_review;
 mod step_4_export;
 
-// Global for sharing optimization result between threads
-// Format: (success, result, full_result, error_message)
+// ──────────────────────────────────────────────────────────────────────
+// Channel-based async results
+//
+// Previously this module used 5 process-wide `static Mutex<Option<T>>`
+// globals plus polling `cx.spawn` loops that called `sleep 100 ms +
+// lock(global).take()` until a result appeared. That breaks for two
+// reasons:
+//
+//   1. Overlapping requests overwrite each other — the first polling
+//      consumer silently swallows the second result, and the originator
+//      polls forever.
+//   2. The "recover on poison" `lock!` macro hid invariant violations.
+//
+// Each function now creates its own `smol::channel` (bounded(1) for a
+// oneshot, unbounded for the progress stream), spawns a thread that
+// sends to its own channel, and `cx.spawn`-awaits the channel directly.
+// No globals, no polling. Same pattern as `room_eq/step_4_optimise.rs`.
+// ──────────────────────────────────────────────────────────────────────
+
+/// One progress sample from the optimizer:
+/// `(iteration, loss, optional_score, progress_pct)`.
+type ProgressSample = (usize, f64, Option<f64>, f32);
+
+/// Final optimization result delivered via a oneshot channel.
+/// `(success, result, full_result, error_message)`.
 #[allow(clippy::type_complexity)]
-static SPINORAMA_RESULT: Mutex<
-    Option<(
-        bool,
-        Option<crate::app::types::SpinoramaEqResult>,
-        Option<sotf_audio_player::autoeq::SpeakerOptimizationResult>,
-        Option<String>,
-    )>,
-> = Mutex::new(None);
+type OptimizationOutcome = (
+    bool,
+    Option<crate::app::types::SpinoramaEqResult>,
+    Option<sotf_audio_player::autoeq::SpeakerOptimizationResult>,
+    Option<String>,
+);
 
-// Global mutex for sharing phase check results between threads
-static PHASE_CHECK_RESULT: Mutex<Option<bool>> = Mutex::new(None);
-
-// Global mutex for sharing optimization progress between threads
-// Format: Vec<(iteration, loss, optional_score, progress_pct)>
-#[allow(clippy::type_complexity)]
-static SPINORAMA_PROGRESS: Mutex<Vec<(usize, f64, Option<f64>, f32)>> = Mutex::new(Vec::new());
-
-// Global mutex for sharing spinorama CEA2034 curves result between threads
-static SPINORAMA_CURVES: Mutex<Option<Result<crate::app::types::SpinoramaCurves, String>>> =
-    Mutex::new(None);
-
-/// Spawn a background thread to load CEA2034 spinorama curves for the plot.
-fn spawn_spinorama_curves_thread(speaker: String, version: String) {
-    // Clear previous result
-    *lock!(SPINORAMA_CURVES) = None;
-
+/// Spawn a background thread that loads CEA2034 spinorama curves for the
+/// plot, returning a oneshot receiver. If the receiver is dropped (wizard
+/// closed) the producer's `send_blocking` silently fails — no leak.
+fn spawn_spinorama_curves_thread(
+    speaker: String,
+    version: String,
+) -> smol::channel::Receiver<Result<crate::app::types::SpinoramaCurves, String>> {
+    let (tx, rx) = smol::channel::bounded::<Result<crate::app::types::SpinoramaCurves, String>>(1);
     std::thread::spawn(move || {
         log::info!(
             "Loading spinorama CEA2034 curves for {} / {}",
@@ -170,15 +174,20 @@ fn spawn_spinorama_curves_thread(speaker: String, version: String) {
                 log::error!("Failed to load spinorama curves: {}", e);
             }
         }
-        *lock!(SPINORAMA_CURVES) = Some(result);
+        let _ = tx.send_blocking(result);
     });
+    rx
 }
 
-/// Spawn a background task to check phase data availability for a speaker/version/measurement.
-/// This updates the state asynchronously when the result is ready.
-fn spawn_phase_data_check_thread(speaker: String, version: String, measurement: String) {
-    *lock!(PHASE_CHECK_RESULT) = None;
-
+/// Spawn a background thread to check phase data availability for a
+/// speaker/version/measurement, returning a oneshot receiver that yields
+/// the `has_phase` boolean once the check completes.
+fn spawn_phase_data_check_thread(
+    speaker: String,
+    version: String,
+    measurement: String,
+) -> smol::channel::Receiver<bool> {
+    let (tx, rx) = smol::channel::bounded::<bool>(1);
     let curve_name = "Estimated In-Room Response".to_string();
 
     std::thread::spawn(move || {
@@ -193,8 +202,9 @@ fn spawn_phase_data_check_thread(speaker: String, version: String, measurement: 
                 }
             }
         });
-        *lock!(PHASE_CHECK_RESULT) = Some(has_phase);
+        let _ = tx.send_blocking(has_phase);
     });
+    rx
 }
 
 impl PlayerView {
@@ -285,59 +295,51 @@ impl PlayerView {
                     .spinorama_eq_state
                     .loading_spinorama_curves = true;
             });
-            spawn_spinorama_curves_thread(speaker, version);
+            let curves_rx = spawn_spinorama_curves_thread(speaker, version);
 
-            // Poll for results
+            // Await the per-request oneshot channel instead of polling a
+            // global mutex. Dropping the receiver if the wizard is closed
+            // is harmless — the producing thread's `send_blocking` returns
+            // `Err` and is ignored.
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
-                loop {
-                    cx.background_executor()
-                        .timer(std::time::Duration::from_millis(100))
-                        .await;
-
-                    let spinorama_result = {
-                        let mut guard = lock!(SPINORAMA_CURVES);
-                        guard.take()
-                    };
-
-                    if let Some(result) = spinorama_result {
-                        let Some(state_for_poll) = weak_state.upgrade() else {
-                            break;
-                        };
-                        state_for_poll.update(cx, |state, cx| {
+                let Ok(result) = curves_rx.recv().await else {
+                    return;
+                };
+                let Some(state_for_poll) = weak_state.upgrade() else {
+                    return;
+                };
+                state_for_poll.update(cx, |state, cx| {
+                    state
+                        .app
+                        .measurement_state
+                        .spinorama_eq_state
+                        .loading_spinorama_curves = false;
+                    match result {
+                        Ok(curves) => {
+                            log::info!("Auto-loaded spinorama curves successfully");
                             state
                                 .app
                                 .measurement_state
                                 .spinorama_eq_state
-                                .loading_spinorama_curves = false;
-                            match result {
-                                Ok(curves) => {
-                                    log::info!("Auto-loaded spinorama curves successfully");
-                                    state
-                                        .app
-                                        .measurement_state
-                                        .spinorama_eq_state
-                                        .spinorama_curves = curves;
-                                    state
-                                        .app
-                                        .measurement_state
-                                        .spinorama_eq_state
-                                        .spinorama_curves_error = None;
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to auto-load spinorama curves: {}", e);
-                                    state
-                                        .app
-                                        .measurement_state
-                                        .spinorama_eq_state
-                                        .spinorama_curves_error = Some(e);
-                                }
-                            }
-                            cx.notify();
-                        });
-                        break;
+                                .spinorama_curves = curves;
+                            state
+                                .app
+                                .measurement_state
+                                .spinorama_eq_state
+                                .spinorama_curves_error = None;
+                        }
+                        Err(e) => {
+                            log::error!("Failed to auto-load spinorama curves: {}", e);
+                            state
+                                .app
+                                .measurement_state
+                                .spinorama_eq_state
+                                .spinorama_curves_error = Some(e);
+                        }
                     }
-                }
+                    cx.notify();
+                });
             })
             .detach();
         }
@@ -543,84 +545,68 @@ impl PlayerView {
         });
         cx.notify();
 
-        // Use a global mutex to share results between threads (like optimization does)
-        static SPEAKERS_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
-            std::sync::Mutex::new(None);
-
-        // Clear any previous result
-        *lock!(SPEAKERS_RESULT) = None;
-
-        // Spawn a background thread with its own tokio runtime for the HTTP request
-        std::thread::spawn(|| {
+        // Per-request oneshot channel — no shared global state.
+        let (tx, rx) = smol::channel::bounded::<Result<Vec<String>, String>>(1);
+        std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
             let result = rt.block_on(async { autoeq::fetch_available_speakers().await });
-
-            let mapped_result = result.map_err(|e| e.to_string());
-            *lock!(SPEAKERS_RESULT) = Some(mapped_result);
+            let _ = tx.send_blocking(result.map_err(|e| e.to_string()));
         });
 
-        // Poll for results from GPUI's async context
+        // Await the channel — no polling loop, no global mutex.
         let weak_state = self.state.downgrade();
         cx.spawn(async move |_, cx| {
-            loop {
-                smol::Timer::after(std::time::Duration::from_millis(100)).await;
-
-                // Check if result is ready
-                let result = lock!(SPEAKERS_RESULT).take();
-
-                if let Some(result) = result {
-                    let Some(state_entity) = weak_state.upgrade() else {
-                        break;
-                    };
-                    match result {
-                        Ok(speakers) => {
-                            log::info!("Fetched {} speakers from spinorama.org", speakers.len());
-                            state_entity.update(cx, |state, cx| {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .available_speakers = speakers;
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .loading_speakers = false;
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .speakers_cached_at = Some(std::time::Instant::now());
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .update_suggestions();
-                                cx.notify();
-                            });
-                        }
-                        Err(e) => {
-                            log::error!("Failed to fetch speakers: {}", e);
-                            state_entity.update(cx, |state, cx| {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .loading_speakers = false;
-                                let msg = format!("Failed to fetch speakers: {}", e);
-                                state.app.measurement_state.spinorama_eq_state.error_message =
-                                    Some(msg.clone());
-                                // Surface the error via toast as well — the
-                                // step_1 inline banner only shows when the
-                                // user is actively on the speaker-search
-                                // screen.
-                                state.app.ui_state.toast_message =
-                                    Some(crate::app::ToastMessage::error(msg));
-                                cx.notify();
-                            });
-                        }
-                    }
-                    break;
+            let Ok(result) = rx.recv().await else {
+                return;
+            };
+            let Some(state_entity) = weak_state.upgrade() else {
+                return;
+            };
+            match result {
+                Ok(speakers) => {
+                    log::info!("Fetched {} speakers from spinorama.org", speakers.len());
+                    state_entity.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .available_speakers = speakers;
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .loading_speakers = false;
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .speakers_cached_at = Some(std::time::Instant::now());
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .update_suggestions();
+                        cx.notify();
+                    });
+                }
+                Err(e) => {
+                    log::error!("Failed to fetch speakers: {}", e);
+                    state_entity.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .loading_speakers = false;
+                        let msg = format!("Failed to fetch speakers: {}", e);
+                        state.app.measurement_state.spinorama_eq_state.error_message =
+                            Some(msg.clone());
+                        // Surface the error via toast as well — the step_1
+                        // inline banner only shows when the user is
+                        // actively on the speaker-search screen.
+                        state.app.ui_state.toast_message =
+                            Some(crate::app::ToastMessage::error(msg));
+                        cx.notify();
+                    });
                 }
             }
         })
@@ -669,12 +655,8 @@ impl PlayerView {
         log::info!("Fetching versions for speaker: {}", speaker);
         let speaker_name = speaker.to_string();
 
-        // Use a global mutex to share results
-        static VERSIONS_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
-            std::sync::Mutex::new(None);
-        *lock!(VERSIONS_RESULT) = None;
-
-        // Spawn background thread for HTTP request
+        // Per-request oneshot channel.
+        let (tx, rx) = smol::channel::bounded::<Result<Vec<String>, String>>(1);
         let speaker_for_fetch = speaker_name.clone();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
@@ -691,82 +673,71 @@ impl PlayerView {
                 let versions: Vec<String> = response.json().await?;
                 Ok::<Vec<String>, Box<dyn std::error::Error + Send + Sync>>(versions)
             });
-            *lock!(VERSIONS_RESULT) = Some(result.map_err(|e| e.to_string()));
+            let _ = tx.send_blocking(result.map_err(|e| e.to_string()));
         });
 
-        // Poll for results
+        // Await the channel.
         let weak_state = self.state.downgrade();
         let speaker_for_poll = speaker_name.clone();
         cx.spawn(async move |view, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(100))
-                    .await;
-
-                let result = lock!(VERSIONS_RESULT).take();
-                if let Some(result) = result {
-                    let Some(state_entity) = weak_state.upgrade() else {
-                        break;
-                    };
-                    match result {
-                        Ok(versions) => {
-                            log::info!(
-                                "Fetched {} versions for {}",
-                                versions.len(),
-                                speaker_for_poll
-                            );
-                            let first_version = versions.first().cloned();
-                            let selected_version = first_version.clone();
-                            state_entity.update(cx, |state, cx| {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .available_versions = versions;
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .loading_versions = false;
-                                // Auto-select first version if available
-                                if let Some(ref version) = selected_version {
-                                    state
-                                        .app
-                                        .measurement_state
-                                        .spinorama_eq_state
-                                        .selected_version = version.clone();
-                                }
-                                cx.notify();
-                            });
-                            // Fetch measurements for the selected version
-                            if let Some(version) = selected_version {
-                                let _ = view.update(cx, |view, cx| {
-                                    view.fetch_spinorama_measurements(
-                                        &speaker_for_poll,
-                                        &version,
-                                        cx,
-                                    );
-                                });
-                            }
+            let Ok(result) = rx.recv().await else {
+                return;
+            };
+            let Some(state_entity) = weak_state.upgrade() else {
+                return;
+            };
+            match result {
+                Ok(versions) => {
+                    log::info!(
+                        "Fetched {} versions for {}",
+                        versions.len(),
+                        speaker_for_poll
+                    );
+                    let first_version = versions.first().cloned();
+                    let selected_version = first_version.clone();
+                    state_entity.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .available_versions = versions;
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .loading_versions = false;
+                        // Auto-select first version if available
+                        if let Some(ref version) = selected_version {
+                            state
+                                .app
+                                .measurement_state
+                                .spinorama_eq_state
+                                .selected_version = version.clone();
                         }
-                        Err(e) => {
-                            log::error!("Failed to fetch versions: {}", e);
-                            state_entity.update(cx, |state, cx| {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .loading_versions = false;
-                                let msg = format!("Failed to fetch versions: {}", e);
-                                state.app.measurement_state.spinorama_eq_state.error_message =
-                                    Some(msg.clone());
-                                state.app.ui_state.toast_message =
-                                    Some(crate::app::ToastMessage::error(msg));
-                                cx.notify();
-                            });
-                        }
+                        cx.notify();
+                    });
+                    // Fetch measurements for the selected version
+                    if let Some(version) = selected_version {
+                        let _ = view.update(cx, |view, cx| {
+                            view.fetch_spinorama_measurements(&speaker_for_poll, &version, cx);
+                        });
                     }
-                    break;
+                }
+                Err(e) => {
+                    log::error!("Failed to fetch versions: {}", e);
+                    state_entity.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .loading_versions = false;
+                        let msg = format!("Failed to fetch versions: {}", e);
+                        state.app.measurement_state.spinorama_eq_state.error_message =
+                            Some(msg.clone());
+                        state.app.ui_state.toast_message =
+                            Some(crate::app::ToastMessage::error(msg));
+                        cx.notify();
+                    });
                 }
             }
         })
@@ -803,12 +774,9 @@ impl PlayerView {
         let speaker_name = speaker.to_string();
         let version_name = version.to_string();
 
-        // Use a global mutex to share results
-        static MEASUREMENTS_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
-            std::sync::Mutex::new(None);
-        *lock!(MEASUREMENTS_RESULT) = None;
-
-        // Spawn background thread for HTTP request
+        // Per-request oneshot channel.
+        let (measurements_tx, measurements_rx) =
+            smol::channel::bounded::<Result<Vec<String>, String>>(1);
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
             let result = rt.block_on(async {
@@ -825,176 +793,146 @@ impl PlayerView {
                 let measurements: Vec<String> = response.json().await?;
                 Ok::<Vec<String>, Box<dyn std::error::Error + Send + Sync>>(measurements)
             });
-            *lock!(MEASUREMENTS_RESULT) = Some(result.map_err(|e| e.to_string()));
+            let _ = measurements_tx.send_blocking(result.map_err(|e| e.to_string()));
         });
 
-        // Poll for results
+        // Await the channel, then chain the phase-check + curves-load
+        // followups, each on its own per-request channel.
         let weak_state = self.state.downgrade();
         let speaker_for_poll = speaker.to_string();
         let version_for_poll = version.to_string();
         cx.spawn(async move |_, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(100))
-                    .await;
-
-                let result = lock!(MEASUREMENTS_RESULT).take();
-                if let Some(result) = result {
-                    let Some(state_entity) = weak_state.upgrade() else {
-                        break;
+            let Ok(result) = measurements_rx.recv().await else {
+                return;
+            };
+            let Some(state_entity) = weak_state.upgrade() else {
+                return;
+            };
+            match result {
+                Ok(measurements) => {
+                    log::info!(
+                        "Fetched {} measurements for {}/{}",
+                        measurements.len(),
+                        speaker_for_poll,
+                        version_for_poll
+                    );
+                    let has_cea2034 = measurements.iter().any(|m| m == "CEA2034");
+                    let selected_measurement = if has_cea2034 {
+                        "CEA2034".to_string()
+                    } else {
+                        measurements
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "CEA2034".to_string())
                     };
-                    match result {
-                        Ok(measurements) => {
-                            log::info!(
-                                "Fetched {} measurements for {}/{}",
-                                measurements.len(),
-                                speaker_for_poll,
-                                version_for_poll
-                            );
-                            let has_cea2034 = measurements.iter().any(|m| m == "CEA2034");
-                            // Determine which measurement to auto-select
-                            let selected_measurement = if has_cea2034 {
-                                "CEA2034".to_string()
-                            } else {
-                                measurements
-                                    .first()
-                                    .cloned()
-                                    .unwrap_or_else(|| "CEA2034".to_string())
-                            };
-                            let measurement_for_phase = selected_measurement.clone();
-                            state_entity.update(cx, |state, cx| {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .available_measurements = measurements;
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .loading_measurements = false;
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .selected_measurement = selected_measurement;
-                                // Auto-load spinorama curves if CEA2034 is selected
-                                if has_cea2034 {
+                    let measurement_for_phase = selected_measurement.clone();
+                    state_entity.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .available_measurements = measurements;
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .loading_measurements = false;
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .selected_measurement = selected_measurement;
+                        if has_cea2034 {
+                            state
+                                .app
+                                .measurement_state
+                                .spinorama_eq_state
+                                .loading_spinorama_curves = true;
+                        }
+                        cx.notify();
+                    });
+
+                    // Fire-and-await: each follow-up has its own channel,
+                    // so a second `fetch_measurements` for a different
+                    // speaker can't steal results.
+                    let curves_rx = if has_cea2034 {
+                        Some(spawn_spinorama_curves_thread(
+                            speaker_for_poll.clone(),
+                            version_for_poll.clone(),
+                        ))
+                    } else {
+                        None
+                    };
+                    let phase_rx = spawn_phase_data_check_thread(
+                        speaker_for_poll.clone(),
+                        version_for_poll.clone(),
+                        measurement_for_phase,
+                    );
+
+                    // Phase check first (it tends to complete sooner).
+                    if let Ok(has_phase) = phase_rx.recv().await {
+                        state_entity.update(cx, |state, cx| {
+                            state
+                                .app
+                                .measurement_state
+                                .spinorama_eq_state
+                                .has_phase_data = has_phase;
+                            log::info!("Phase data availability: {}", has_phase);
+                            cx.notify();
+                        });
+                    }
+
+                    if let Some(curves_rx) = curves_rx
+                        && let Ok(curves_result) = curves_rx.recv().await
+                    {
+                        state_entity.update(cx, |state, cx| {
+                            state
+                                .app
+                                .measurement_state
+                                .spinorama_eq_state
+                                .loading_spinorama_curves = false;
+                            match curves_result {
+                                Ok(curves) => {
+                                    log::info!("Auto-loaded spinorama curves successfully");
                                     state
                                         .app
                                         .measurement_state
                                         .spinorama_eq_state
-                                        .loading_spinorama_curves = true;
+                                        .spinorama_curves = curves;
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .spinorama_eq_state
+                                        .spinorama_curves_error = None;
                                 }
-                                cx.notify();
-                            });
-                            // Auto-load spinorama curves when CEA2034 is available
-                            if has_cea2034 {
-                                spawn_spinorama_curves_thread(
-                                    speaker_for_poll.clone(),
-                                    version_for_poll.clone(),
-                                );
-                            }
-                            // Check for phase data availability
-                            spawn_phase_data_check_thread(
-                                speaker_for_poll.clone(),
-                                version_for_poll.clone(),
-                                measurement_for_phase,
-                            );
-                            // Continue polling for phase check and spinorama curves results
-                            let mut phase_done = false;
-                            let mut spinorama_done = !has_cea2034; // Skip if not CEA2034
-                            loop {
-                                cx.background_executor()
-                                    .timer(std::time::Duration::from_millis(100))
-                                    .await;
-
-                                // Check for phase result
-                                if !phase_done
-                                    && let Some(has_phase) = lock!(PHASE_CHECK_RESULT).take()
-                                {
-                                    state_entity.update(cx, |state, cx| {
-                                        state
-                                            .app
-                                            .measurement_state
-                                            .spinorama_eq_state
-                                            .has_phase_data = has_phase;
-                                        log::info!("Phase data availability: {}", has_phase);
-                                        cx.notify();
-                                    });
-                                    phase_done = true;
-                                }
-
-                                // Check for spinorama curves result
-                                if !spinorama_done {
-                                    let spinorama_result = {
-                                        let mut guard = lock!(SPINORAMA_CURVES);
-                                        guard.take()
-                                    };
-                                    if let Some(result) = spinorama_result {
-                                        state_entity.update(cx, |state, cx| {
-                                            state
-                                                .app
-                                                .measurement_state
-                                                .spinorama_eq_state
-                                                .loading_spinorama_curves = false;
-                                            match result {
-                                                Ok(curves) => {
-                                                    log::info!(
-                                                        "Auto-loaded spinorama curves successfully"
-                                                    );
-                                                    state
-                                                        .app
-                                                        .measurement_state
-                                                        .spinorama_eq_state
-                                                        .spinorama_curves = curves;
-                                                    state
-                                                        .app
-                                                        .measurement_state
-                                                        .spinorama_eq_state
-                                                        .spinorama_curves_error = None;
-                                                }
-                                                Err(e) => {
-                                                    log::error!(
-                                                        "Failed to auto-load spinorama curves: {}",
-                                                        e
-                                                    );
-                                                    state
-                                                        .app
-                                                        .measurement_state
-                                                        .spinorama_eq_state
-                                                        .spinorama_curves_error = Some(e);
-                                                }
-                                            }
-                                            cx.notify();
-                                        });
-                                        spinorama_done = true;
-                                    }
-                                }
-
-                                if phase_done && spinorama_done {
-                                    break;
+                                Err(e) => {
+                                    log::error!("Failed to auto-load spinorama curves: {}", e);
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .spinorama_eq_state
+                                        .spinorama_curves_error = Some(e);
                                 }
                             }
-                        }
-                        Err(e) => {
-                            log::error!("Failed to fetch measurements: {}", e);
-                            state_entity.update(cx, |state, cx| {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .spinorama_eq_state
-                                    .loading_measurements = false;
-                                let msg = format!("Failed to fetch measurements: {}", e);
-                                state.app.measurement_state.spinorama_eq_state.error_message =
-                                    Some(msg.clone());
-                                state.app.ui_state.toast_message =
-                                    Some(crate::app::ToastMessage::error(msg));
-                                cx.notify();
-                            });
-                        }
+                            cx.notify();
+                        });
                     }
-                    break;
+                }
+                Err(e) => {
+                    log::error!("Failed to fetch measurements: {}", e);
+                    state_entity.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .loading_measurements = false;
+                        let msg = format!("Failed to fetch measurements: {}", e);
+                        state.app.measurement_state.spinorama_eq_state.error_message =
+                            Some(msg.clone());
+                        state.app.ui_state.toast_message =
+                            Some(crate::app::ToastMessage::error(msg));
+                        cx.notify();
+                    });
                 }
             }
         })
@@ -1101,8 +1039,11 @@ impl PlayerView {
         });
         cx.notify();
 
-        // Clear progress mutex for fresh start
-        lock!(SPINORAMA_PROGRESS).clear();
+        // Per-request channels — one progress stream and one oneshot
+        // outcome. No shared global state between concurrent optimization
+        // runs.
+        let (progress_tx, progress_rx) = smol::channel::unbounded::<ProgressSample>();
+        let (outcome_tx, outcome_rx) = smol::channel::bounded::<OptimizationOutcome>(1);
 
         // Build optimization params
         let loss = mode.to_loss_string().to_string();
@@ -1194,6 +1135,8 @@ impl PlayerView {
 
         // Run optimization in background thread (blocking tokio runtime)
         let cancel_for_thread = cancel_flag.clone();
+        let progress_tx_for_thread = progress_tx.clone();
+        let outcome_tx_for_thread = outcome_tx.clone();
         std::thread::spawn(move || {
             // Build the optimization config
             let config = SpeakerOptimizationConfig {
@@ -1230,10 +1173,11 @@ impl PlayerView {
                     let loss = progress.loss;
                     let score = progress.score;
 
-                    // Push progress to global mutex for GPUI polling
-                    if let Ok(mut progress_vec) = SPINORAMA_PROGRESS.lock() {
-                        progress_vec.push((iter, loss, score, progress_pct));
-                    }
+                    // Send progress through the per-request channel. The
+                    // GPUI side drains in batches (see below) to coalesce
+                    // updates and keep the UI responsive. If the receiver
+                    // has been dropped we silently ignore the error.
+                    let _ = progress_tx_for_thread.send_blocking((iter, loss, score, progress_pct));
 
                     log::debug!(
                         "Spinorama optimization: iter={}, loss={:.4}, score={:?}, progress={:.1}%",
@@ -1284,174 +1228,106 @@ impl PlayerView {
                 Some(callback),
             );
 
-            // Update state with result (need to use smol to get back to GPUI context)
-            smol::block_on(async {
-                match result {
-                    Ok(opt_result) => {
-                        log::info!(
-                            "Optimization complete: {} filters, loss {:.4} -> {:.4}",
-                            opt_result.biquads.len(),
-                            opt_result.initial_loss,
-                            opt_result.final_loss
-                        );
+            // Build the outcome and send it through the per-request oneshot
+            // channel. No globals, no shared state — if the consumer has
+            // gone away `send_blocking` returns `Err` and we ignore it.
+            let outcome: OptimizationOutcome = match result {
+                Ok(opt_result) => {
+                    log::info!(
+                        "Optimization complete: {} filters, loss {:.4} -> {:.4}",
+                        opt_result.biquads.len(),
+                        opt_result.initial_loss,
+                        opt_result.final_loss
+                    );
 
-                        // Convert biquads to our result format
-                        let biquads: Vec<crate::app::types::SpinoramaBiquad> = opt_result
-                            .biquads
-                            .iter()
-                            .map(|b| crate::app::types::SpinoramaBiquad {
-                                filter_type: format!("{:?}", b.filter_type),
-                                freq: b.freq,
-                                q: b.q,
-                                db_gain: b.db_gain,
-                            })
-                            .collect();
+                    let biquads: Vec<crate::app::types::SpinoramaBiquad> = opt_result
+                        .biquads
+                        .iter()
+                        .map(|b| crate::app::types::SpinoramaBiquad {
+                            filter_type: format!("{:?}", b.filter_type),
+                            freq: b.freq,
+                            q: b.q,
+                            db_gain: b.db_gain,
+                        })
+                        .collect();
 
-                        // Convert curves for plotting
-                        let original_response: Vec<(f64, f64)> = opt_result
-                            .frequencies
-                            .iter()
-                            .zip(opt_result.input_curve.iter())
-                            .map(|(&f, &db)| (f, db))
-                            .collect();
+                    let original_response: Vec<(f64, f64)> = opt_result
+                        .frequencies
+                        .iter()
+                        .zip(opt_result.input_curve.iter())
+                        .map(|(&f, &db)| (f, db))
+                        .collect();
+                    let corrected_response: Vec<(f64, f64)> = opt_result
+                        .frequencies
+                        .iter()
+                        .zip(opt_result.corrected_curve.iter())
+                        .map(|(&f, &db)| (f, db))
+                        .collect();
+                    let target_response: Vec<(f64, f64)> = opt_result
+                        .frequencies
+                        .iter()
+                        .zip(opt_result.target_curve.iter())
+                        .map(|(&f, &db)| (f, db))
+                        .collect();
 
-                        let corrected_response: Vec<(f64, f64)> = opt_result
-                            .frequencies
-                            .iter()
-                            .zip(opt_result.corrected_curve.iter())
-                            .map(|(&f, &db)| (f, db))
-                            .collect();
+                    log::info!("Sending optimization result with {} filters", biquads.len());
 
-                        let target_response: Vec<(f64, f64)> = opt_result
-                            .frequencies
-                            .iter()
-                            .zip(opt_result.target_curve.iter())
-                            .map(|(&f, &db)| (f, db))
-                            .collect();
-
-                        // Note: We can't directly call state_entity.update() from a std::thread
-                        // We need to use a channel or store in a shared Arc<Mutex<>>
-                        // For now, we'll store in a temporary and poll from GPUI
-                        // This is a limitation - ideally we'd use cx.spawn() but that requires async
-                        log::info!("Storing optimization result with {} filters", biquads.len());
-
-                        // Store result in a global for pickup (temporary hack)
-                        let result = crate::app::types::SpinoramaEqResult {
-                            biquads,
-                            pre_score: opt_result.initial_loss,
-                            post_score: opt_result.final_loss,
-                            original_response: Some(original_response),
-                            corrected_response: Some(corrected_response),
-                            target_response: Some(target_response),
-                        };
-
-                        // Use parking_lot or std Mutex to share result
-                        lock!(SPINORAMA_RESULT).replace((
-                            true,
-                            Some(result),
-                            Some(opt_result),
-                            None,
-                        ));
-                    }
-                    Err(e) => {
-                        log::error!("Optimization failed: {}", e);
-                        lock!(SPINORAMA_RESULT).replace((false, None, None, Some(e)));
-                    }
+                    let result = crate::app::types::SpinoramaEqResult {
+                        biquads,
+                        pre_score: opt_result.initial_loss,
+                        post_score: opt_result.final_loss,
+                        original_response: Some(original_response),
+                        corrected_response: Some(corrected_response),
+                        target_response: Some(target_response),
+                    };
+                    (true, Some(result), Some(opt_result), None)
                 }
-            });
+                Err(e) => {
+                    log::error!("Optimization failed: {}", e);
+                    (false, None, None, Some(e))
+                }
+            };
+            let _ = outcome_tx_for_thread.send_blocking(outcome);
         });
 
-        // Start a polling timer to check for results and progress
-        let weak_state = self.state.downgrade();
-        let cancel_for_poll = cancel_flag.clone();
+        // Drop the local senders so the receivers can see "channel closed"
+        // if the worker thread panics without sending — otherwise the
+        // receive would hang forever.
+        drop(progress_tx);
+        drop(outcome_tx);
+
+        // Drain progress messages in batches and update state. Same shape
+        // as `room_eq/step_4_optimise.rs:1007-1156`: block on the next
+        // message, then drain everything else that's been queued before
+        // the UI yield. 50 ms between batches caps re-renders at ~20 fps.
+        let weak_state_progress = self.state.downgrade();
         cx.spawn(async move |_, cx| {
             loop {
-                smol::Timer::after(std::time::Duration::from_millis(100)).await;
-
-                let Some(state_for_poll) = weak_state.upgrade() else {
+                let Ok(first) = progress_rx.recv().await else {
                     break;
                 };
-
-                // Check for progress updates and transfer to state
-                let new_progress: Vec<(usize, f64, Option<f64>, f32)> = {
-                    let mut progress_guard = lock!(SPINORAMA_PROGRESS);
-                    std::mem::take(&mut *progress_guard)
-                };
-
-                if !new_progress.is_empty() {
-                    state_for_poll.update(cx, |state, cx| {
-                        // Append new progress points to history
-                        for (iter, loss, score, _) in &new_progress {
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .progress_history
-                                .push((*iter, *loss, *score));
-                        }
-                        // Update progress from last entry
-                        if let Some((_, _, _, pct)) = new_progress.last() {
-                            state.app.measurement_state.spinorama_eq_state.progress = *pct;
-                        }
-                        cx.notify();
-                    });
+                let mut last = first;
+                let mut batch: Vec<ProgressSample> = vec![first];
+                while let Ok(sample) = progress_rx.try_recv() {
+                    batch.push(sample);
+                    last = sample;
                 }
-
-                // Check if result is ready
-                let result_ready = lock!(SPINORAMA_RESULT).take();
-
-                if let Some((success, result, full_result, error)) = result_ready {
-                    let was_cancelled = cancel_for_poll.load(std::sync::atomic::Ordering::Relaxed);
-                    state_for_poll.update(cx, |state, cx| {
-                        if was_cancelled {
-                            // The optimizer may have returned Ok with partial
-                            // results, but the user asked us to stop — surface
-                            // Cancelled status and stay on the Configure step.
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .optimization_status =
-                                crate::app::types::OptimizationStatus::Cancelled;
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .status_message = "Optimization cancelled".to_string();
-                        } else if success {
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .optimization_status =
-                                crate::app::types::OptimizationStatus::Completed;
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .status_message = "Complete!".to_string();
-                            state.app.measurement_state.spinorama_eq_state.progress = 1.0;
-                            state.app.measurement_state.spinorama_eq_state.result = result;
-                            state.app.measurement_state.spinorama_eq_state.full_result =
-                                full_result;
-                            state.app.measurement_state.spinorama_eq_state.step =
-                                crate::app::types::SpinoramaStep::Review;
-                        } else {
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .optimization_status =
-                                crate::app::types::OptimizationStatus::Failed;
-                            state.app.measurement_state.spinorama_eq_state.error_message = error;
-                        }
-                        cx.notify();
-                    });
+                let Some(state_for_poll) = weak_state_progress.upgrade() else {
                     break;
-                }
-
-                // Update progress message
+                };
+                let last_pct = last.3;
                 state_for_poll.update(cx, |state, cx| {
+                    for (iter, loss, score, _) in batch {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .progress_history
+                            .push((iter, loss, score));
+                    }
+                    state.app.measurement_state.spinorama_eq_state.progress = last_pct;
+                    // Cycle through animated "Optimizing..." text — only
+                    // when the run is still active.
                     if state
                         .app
                         .measurement_state
@@ -1459,7 +1335,6 @@ impl PlayerView {
                         .optimization_status
                         == crate::app::types::OptimizationStatus::Running
                     {
-                        // Cycle through messages
                         let dots = match (std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()
@@ -1477,10 +1352,66 @@ impl PlayerView {
                             .measurement_state
                             .spinorama_eq_state
                             .status_message = format!("Optimizing{}", dots);
-                        cx.notify();
                     }
+                    cx.notify();
                 });
+                smol::Timer::after(std::time::Duration::from_millis(50)).await;
             }
+        })
+        .detach();
+
+        // Await the per-request outcome channel — no polling, no globals.
+        let weak_state_outcome = self.state.downgrade();
+        let cancel_for_poll = cancel_flag.clone();
+        cx.spawn(async move |_, cx| {
+            let Ok((success, result, full_result, error)) = outcome_rx.recv().await else {
+                return;
+            };
+            let Some(state_for_poll) = weak_state_outcome.upgrade() else {
+                return;
+            };
+            let was_cancelled = cancel_for_poll.load(std::sync::atomic::Ordering::Relaxed);
+            state_for_poll.update(cx, |state, cx| {
+                if was_cancelled {
+                    // The optimizer may have returned Ok with partial
+                    // results, but the user asked us to stop — surface
+                    // Cancelled status and stay on the Configure step.
+                    state
+                        .app
+                        .measurement_state
+                        .spinorama_eq_state
+                        .optimization_status = crate::app::types::OptimizationStatus::Cancelled;
+                    state
+                        .app
+                        .measurement_state
+                        .spinorama_eq_state
+                        .status_message = "Optimization cancelled".to_string();
+                } else if success {
+                    state
+                        .app
+                        .measurement_state
+                        .spinorama_eq_state
+                        .optimization_status = crate::app::types::OptimizationStatus::Completed;
+                    state
+                        .app
+                        .measurement_state
+                        .spinorama_eq_state
+                        .status_message = "Complete!".to_string();
+                    state.app.measurement_state.spinorama_eq_state.progress = 1.0;
+                    state.app.measurement_state.spinorama_eq_state.result = result;
+                    state.app.measurement_state.spinorama_eq_state.full_result = full_result;
+                    state.app.measurement_state.spinorama_eq_state.step =
+                        crate::app::types::SpinoramaStep::Review;
+                } else {
+                    state
+                        .app
+                        .measurement_state
+                        .spinorama_eq_state
+                        .optimization_status = crate::app::types::OptimizationStatus::Failed;
+                    state.app.measurement_state.spinorama_eq_state.error_message = error;
+                }
+                cx.notify();
+            });
         })
         .detach();
     }

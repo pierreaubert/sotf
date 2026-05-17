@@ -23,20 +23,36 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use serde_json::Value;
+
+mod suite;
 
 #[derive(Parser, Debug)]
 #[command(name = "sotf-dev-driver", version)]
 struct Args {
-    /// Path to a .scn scenario file.
-    script: PathBuf,
+    #[command(subcommand)]
+    command: Option<Command>,
+    /// Path to a .scn scenario file (legacy single-scenario mode).
+    script: Option<PathBuf>,
     /// Base URL of the running SotF dev API.
     #[arg(long, default_value = "http://127.0.0.1:7777")]
     url: String,
     /// Print every verb + result.
-    #[arg(long)]
+    #[arg(short, long)]
     verbose: bool,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Start SotF with --qa and run every scenario in a suite TOML file.
+    RunSuite {
+        /// Path to a suite TOML file.
+        suite: PathBuf,
+        /// Print process and scenario details.
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 fn main() {
@@ -49,15 +65,27 @@ fn main() {
 }
 
 fn run(args: &Args) -> Result<()> {
-    let source =
-        fs::read_to_string(&args.script).with_context(|| format!("reading {:?}", args.script))?;
+    match &args.command {
+        Some(Command::RunSuite { suite, verbose }) => suite::run_suite(suite, *verbose),
+        None => {
+            let script = args
+                .script
+                .as_ref()
+                .ok_or_else(|| anyhow!("missing scenario path or subcommand"))?;
+            run_script(script, &args.url, args.verbose)
+        }
+    }
+}
+
+pub(crate) fn run_script(script: &PathBuf, url: &str, verbose: bool) -> Result<()> {
+    let source = fs::read_to_string(script).with_context(|| format!("reading {:?}", script))?;
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
     let ctx = Ctx {
         client,
-        base: args.url.trim_end_matches('/').to_string(),
-        verbose: args.verbose,
+        base: url.trim_end_matches('/').to_string(),
+        verbose,
     };
 
     for (lineno, raw) in source.lines().enumerate() {
@@ -172,7 +200,7 @@ fn verb_query(rest: &str, ctx: &Ctx) -> Result<Value> {
 
 fn verb_assert(rest: &str, ctx: &Ctx) -> Result<()> {
     let cmp = parse_compare(rest)?;
-    let actual = verb_query(cmp.path, ctx)?;
+    let actual = verb_query(&cmp.path, ctx)?;
     if !cmp.matches(&actual) {
         bail!(
             "assertion failed: {} == {} (got {})",
@@ -193,7 +221,7 @@ fn verb_wait_until(rest: &str, ctx: &Ctx) -> Result<()> {
     let deadline = Instant::now() + timeout;
     let mut last = Value::Null;
     while Instant::now() < deadline {
-        match verb_query(cmp.path, ctx) {
+        match verb_query(&cmp.path, ctx) {
             Ok(v) => {
                 if cmp.matches(&v) {
                     if ctx.verbose {
@@ -311,10 +339,10 @@ fn verb_focus(rest: &str, ctx: &Ctx) -> Result<()> {
 // Comparison parsing
 // ---------------------------------------------------------------------------
 
-struct Compare<'a> {
-    path: &'a str,
+struct Compare {
+    path: String,
     expected: ExpectedValue,
-    expected_text: &'a str,
+    expected_text: String,
     tolerance: Option<f64>,
     timeout: Option<Duration>,
 }
@@ -326,7 +354,7 @@ enum ExpectedValue {
     Null,
 }
 
-impl Compare<'_> {
+impl Compare {
     fn matches(&self, actual: &Value) -> bool {
         match (&self.expected, actual) {
             (ExpectedValue::Bool(b), Value::Bool(a)) => a == b,
@@ -344,7 +372,7 @@ impl Compare<'_> {
     }
 }
 
-fn parse_compare(rest: &str) -> Result<Compare<'_>> {
+fn parse_compare(rest: &str) -> Result<Compare> {
     // Split off trailing `tolerance=` / `timeout=` clauses.
     let mut tolerance = None;
     let mut timeout = None;
@@ -366,28 +394,21 @@ fn parse_compare(rest: &str) -> Result<Compare<'_>> {
         break;
     }
 
-    // Now core is `<path> == <literal>`. Take it from the original `rest`
-    // so we can return string slices into it.
-    let (path, lit) = rest
+    // Now `core` is `<path> == <literal>` with the tolerance/timeout
+    // suffixes already stripped (see loop above). Splitting on `core`
+    // — not the raw `rest` — ensures a literal that happens to contain
+    // the substring `tolerance=` or `timeout=` survives intact.
+    let (path, lit_text) = core
         .split_once("==")
         .ok_or_else(|| anyhow!("missing `==` in comparison"))?;
-    let path = path.trim();
-    let lit_text_full = lit.trim();
-    // Strip trailing tolerance/timeout from literal text for display.
-    let mut lit_text = lit_text_full;
-    for marker in ["tolerance=", "timeout="] {
-        if let Some(i) = lit_text.find(marker) {
-            // Walk back over whitespace.
-            let trimmed = lit_text[..i].trim_end();
-            lit_text = trimmed;
-        }
-    }
+    let path = path.trim().to_string();
+    let lit_text = lit_text.trim();
     let expected = parse_literal(lit_text)?;
 
     Ok(Compare {
         path,
         expected,
-        expected_text: lit_text,
+        expected_text: lit_text.to_string(),
         tolerance,
         timeout,
     })

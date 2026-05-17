@@ -82,8 +82,14 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             }
             KeyCode::Right | KeyCode::Tab => {
                 let next = recording_step_next_wrap(app.recording.step);
-                // Guard: entering Capture requires an output directory
-                if app.recording.step == RecordingStep::Config && next == RecordingStep::Capture {
+                // Guard: entering Capture requires an output directory.
+                // `recording_step_next_wrap(SplCalibration) == Capture`,
+                // so the guard fires on the SplCalibration→Capture
+                // edge — Config and Capture are not adjacent in the
+                // wrap order (Config → SplCalibration → Capture).
+                if next == RecordingStep::Capture
+                    && app.recording.step == RecordingStep::SplCalibration
+                {
                     if app.recording.output_directory.is_empty() {
                         app.recording.status_message = "Set an output directory first".to_string();
                         return None;
@@ -2360,23 +2366,64 @@ pub(crate) fn save_recordings(app: &mut App) {
 
     let path = std::path::PathBuf::from(&dir).join(format!("{}.json", name));
 
-    match serde_json::to_string_pretty(&room_config) {
-        Ok(json) => match std::fs::write(&path, json) {
-            Ok(()) => {
-                app.recording.save_success = true;
-                app.recording.save_error = None;
-                if ctc_raw_fallback {
-                    app.recording.status_message =
-                        "Saved with measured CTC fallback; raw-sweep CTC was incomplete"
-                            .to_string();
-                }
-            }
-            Err(e) => {
-                app.recording.save_error = Some(format!("Write error: {}", e));
-            }
-        },
-        Err(e) => {
-            app.recording.save_error = Some(format!("Serialize error: {}", e));
+    // Serialize + write on a background thread — JSON for a
+    // multi-position multichannel session can be megabytes, and the
+    // TUI freezes (no ticks, no redraws) for the duration if this
+    // runs inline. Matches the existing `poll_*` pattern used by
+    // capture/probe flows. Drained by `poll_save_recordings`.
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    app.recording.save_in_progress = true;
+    app.recording.save_error = None;
+    app.recording.save_success = false;
+    app.recording.save_receiver = Some(rx);
+    if ctc_raw_fallback {
+        app.recording.status_message =
+            "Saved with measured CTC fallback; raw-sweep CTC was incomplete".to_string();
+    }
+
+    std::thread::spawn(move || {
+        let result = match serde_json::to_string_pretty(&room_config) {
+            Ok(json) => match std::fs::write(&path, json) {
+                Ok(()) => Ok(()),
+                Err(e) => Err(format!("Write error: {}", e)),
+            },
+            Err(e) => Err(format!("Serialize error: {}", e)),
+        };
+        let _ = tx.send(result);
+    });
+}
+
+/// Drain the background save thread's result, if any. Returns true
+/// when state changed (forces a redraw via the tick handler).
+pub fn poll_save_recordings(app: &mut App) -> bool {
+    let rx = match app.recording.save_receiver.as_ref() {
+        Some(rx) => rx,
+        None => return false,
+    };
+    match rx.try_recv() {
+        Ok(Ok(())) => {
+            app.recording.save_success = true;
+            app.recording.save_error = None;
+            app.recording.save_in_progress = false;
+            app.recording.save_receiver = None;
+            true
+        }
+        Ok(Err(msg)) => {
+            app.recording.save_error = Some(msg);
+            app.recording.save_success = false;
+            app.recording.save_in_progress = false;
+            app.recording.save_receiver = None;
+            true
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => false,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            // Worker dropped its sender without sending — treat as
+            // failure rather than a silent hang.
+            app.recording.save_error =
+                Some("Save thread terminated without result".to_string());
+            app.recording.save_in_progress = false;
+            app.recording.save_receiver = None;
+            true
         }
     }
 }

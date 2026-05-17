@@ -132,9 +132,18 @@ fn parse_search_response(response: &str, from: SocketAddr) -> Option<DiscoveredD
     let mut usn = None;
 
     for line in response.lines() {
-        if let Some((key, value)) = line.split_once(':') {
-            let key = key.trim().to_lowercase();
-            let value = value.trim().to_string();
+        // Use splitn(2, ':') explicitly to make it obvious that the value
+        // side keeps every character after the first ':'. `LOCATION` URLs
+        // contain `:` (scheme separator + port) so the value side must NOT
+        // be split further.
+        let mut it = line.splitn(2, ':');
+        let raw_key = it.next();
+        let raw_value = it.next();
+        if let (Some(raw_key), Some(raw_value)) = (raw_key, raw_value) {
+            // Only the header name is case-insensitive in HTTP — values
+            // (especially URLs) must remain unchanged.
+            let key = raw_key.trim().to_ascii_lowercase();
+            let value = raw_value.trim().to_string();
             match key.as_str() {
                 "location" => location = Some(value),
                 "st" => st = Some(value),
@@ -172,6 +181,25 @@ mod tests {
         assert_eq!(device.location, "http://192.168.1.50:8200/description.xml");
         assert!(device.device_type.contains("MediaRenderer"));
         assert!(device.usn.contains("abc-123"));
+    }
+
+    /// Regression test for the truncation bug from
+    /// `reviews/review-sotf-dlna.md` §1: the LOCATION URL
+    /// `http://192.168.1.1:8080/desc.xml` must survive the header split
+    /// unchanged. A naive split on every `:` would yield just `"http"`.
+    #[test]
+    fn test_parse_search_response_preserves_port_in_location() {
+        let response = "HTTP/1.1 200 OK\r\n\
+            LOCATION: http://192.168.1.1:8080/desc.xml\r\n\
+            ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\
+            USN: uuid:x::urn:schemas-upnp-org:device:MediaRenderer:1\r\n\
+            \r\n";
+        let from: SocketAddr = "192.168.1.1:8080".parse().unwrap();
+        let device = parse_search_response(response, from).unwrap();
+        assert_eq!(device.location, "http://192.168.1.1:8080/desc.xml");
+        assert_ne!(device.location, "http");
+        // ST is also colon-rich — make sure it round-trips too.
+        assert_eq!(device.device_type, "urn:schemas-upnp-org:device:MediaRenderer:1");
     }
 
     #[test]

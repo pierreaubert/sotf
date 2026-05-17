@@ -18,7 +18,8 @@ private let kSharedMemoryMagic: UInt32 = 0x534F5446
 /// Version 2: Added encryption fields (encrypted, key_fingerprint, frame_counter)
 /// Version 3: Added config negotiation fields for bidirectional HAL-Daemon sync
 /// Version 4: Added daemon heartbeat for stale-engine detection in the HAL driver
-private let kSharedMemoryVersion: UInt32 = 4
+/// Version 5: Added configuring handshake for daemon-side reconfiguration
+private let kSharedMemoryVersion: UInt32 = 5
 private let kDaemonHeartbeatTimeoutMs: UInt64 = 3_000
 
 /// Encrypted audio record magic: 'SEA1' (SotF Encrypted Audio v1)
@@ -89,6 +90,9 @@ struct SharedAudioHeader {
     // Statistics
     var encryptionOverflowCount: UInt64 // Encrypted write drops due to insufficient ring space
     var daemonHeartbeatMs: UInt64       // Daemon liveness heartbeat in Unix epoch milliseconds
+
+    // Reconfiguration handshake (version 5+)
+    var configuring: UInt32             // Daemon is mutating geometry/ring positions
 }
 
 private struct EncryptedRecordMetadata {
@@ -450,6 +454,9 @@ final class SharedAudioBuffer {
     func writeAudio(_ buffer: UnsafePointer<Float>, frameCount: Int, channelCount: Int) -> Int {
         guard let header = header, let audioData = audioData else { return 0 }
         guard frameCount > 0, channelCount > 0, audioCapacity > 0 else { return 0 }
+        if header.pointee.configuring != 0 {
+            return 0
+        }
 
         // Check for encryption
         if header.pointee.encrypted != 0 {
@@ -546,6 +553,9 @@ final class SharedAudioBuffer {
     /// Helper to write raw bytes (ciphertext) to ring buffer
     private func writeRawBytes(_ bytes: [UInt8], originalFrameCount: Int) -> Int {
         guard let header = header, let audioData = audioData else { return 0 }
+        if header.pointee.configuring != 0 {
+            return 0
+        }
         
         // Calculate required space in floats (rounded up)
         let floatCount = (bytes.count + 3) / 4
@@ -820,6 +830,9 @@ final class SharedAudioBuffer {
     /// configChanged flag acts as the notification point for the responder.
     func requestConfigChange(sampleRate: UInt32, bufferFrames: UInt32, channelCount: UInt32) {
         guard let header = header else { return }
+        if header.pointee.configuring != 0 {
+            return
+        }
         header.pointee.requestedSampleRate = sampleRate
         header.pointee.requestedBufferFrames = bufferFrames
         header.pointee.channelCount = channelCount

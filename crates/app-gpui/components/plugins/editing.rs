@@ -350,9 +350,7 @@ impl PluginEditingManager for App {
     }
 
     fn pop_eq_kautz_section(&mut self, plugin_idx: usize, band_idx: usize) {
-        let effect = self
-            .plugin_state
-            .pop_eq_kautz_section(plugin_idx, band_idx);
+        let effect = self.plugin_state.pop_eq_kautz_section(plugin_idx, band_idx);
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
     }
 

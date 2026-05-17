@@ -18,7 +18,7 @@ use super::{SpatialSpiderSnapshot, SpiderMode, SpiderViewMode};
 use crate::app::AppState;
 use crate::components::design::Ds;
 use d3rs::gpu3d::{Line3D, Lines3DElement, Lines3DScene, Lines3DState, Polygon3D};
-use d3rs::text::{measure_text_width, paint_vector_text_at};
+use d3rs::text::{measure_glyph_text_width, paint_glyph_text_at};
 use glam::Vec3;
 use gpui::prelude::*;
 use gpui::*;
@@ -345,10 +345,10 @@ impl Element for SpiderDisc2DInner {
             let label_r = unit * LABEL_RADIUS_FACTOR;
             let (lx, ly) = SpiderDisc2D::polar_to_screen(cx, cy, label_r, *az_deg);
             let font_size = 10.0;
-            let text_w = measure_text_width(label, font_size);
+            let text_w = measure_glyph_text_width(label, font_size);
             let x = lx - text_w * 0.5;
             let y = ly - font_size * 0.5;
-            paint_vector_text_at(window, label, x, y, font_size, 1.0, self.colors.label, 0.0);
+            paint_glyph_text_at(window, label, x, y, font_size, self.colors.label, 0.0);
         }
 
         // LFE marker: a coloured ring at the disc centre. The LFE has no
@@ -371,14 +371,13 @@ impl Element for SpiderDisc2DInner {
             if self.show_labels {
                 let font_size = 9.0;
                 let text = "LFE";
-                let text_w = measure_text_width(text, font_size);
-                paint_vector_text_at(
+                let text_w = measure_glyph_text_width(text, font_size);
+                paint_glyph_text_at(
                     window,
                     text,
                     cx - text_w * 0.5,
                     cy + lfe_r + 4.0,
                     font_size,
-                    1.0,
                     self.colors.label,
                     0.0,
                 );

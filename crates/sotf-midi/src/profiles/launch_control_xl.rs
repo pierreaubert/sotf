@@ -127,17 +127,23 @@ impl LaunchControlXLProfile {
     /// Track Control button note numbers (bottom row)
     pub const TRACK_CONTROL_NOTES: [u8; 8] = [73, 74, 75, 76, 89, 90, 91, 92];
 
-    /// Function button notes
+    /// Function button notes (User template — Device/Mute/Solo/Record Arm send
+    /// note-on/off on the template's MIDI channel). Verified against Novation
+    /// Launch Control XL Programmer's Reference Guide §3 (User Template Defaults).
     pub const DEVICE_NOTE: u8 = 105;
     pub const MUTE_NOTE: u8 = 106;
     pub const SOLO_NOTE: u8 = 107;
     pub const RECORD_ARM_NOTE: u8 = 108;
 
-    /// Arrow button notes
-    pub const UP_NOTE: u8 = 104;
-    pub const DOWN_NOTE: u8 = 105;
-    pub const LEFT_NOTE: u8 = 106;
-    pub const RIGHT_NOTE: u8 = 107;
+    /// Arrow buttons are **Control Change messages**, not notes (per Novation
+    /// Programmer's Reference Guide §2 — Cursor Keys). Sending CC 104..=107 on
+    /// the template's MIDI channel with value 127 (press) / 0 (release).
+    /// The previous `*_NOTE` aliases (105..=107) duplicated DEVICE/MUTE/SOLO notes
+    /// and were incorrect.
+    pub const UP_CC: u8 = 104;
+    pub const DOWN_CC: u8 = 105;
+    pub const LEFT_CC: u8 = 106;
+    pub const RIGHT_CC: u8 = 107;
 
     /// Create a device profile for Launch Control XL
     pub fn create_profile() -> DeviceProfile {

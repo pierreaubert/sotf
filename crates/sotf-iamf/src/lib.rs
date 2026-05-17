@@ -16,7 +16,7 @@ use std::io::{Read, Seek};
 
 use error::{IamfError, IamfResult};
 use mixer::MixState;
-use obu::parser::{IamfDescriptors, parse_descriptors, parse_temporal_unit};
+use obu::parser::{IamfDescriptors, parse_descriptors, parse_temporal_unit_with_kinds};
 use renderer::ElementRenderer;
 use types::*;
 
@@ -291,7 +291,8 @@ impl IamfDecoder {
         }
 
         let remaining = &self.data[self.position..];
-        let (temporal_unit, consumed) = parse_temporal_unit(remaining)?;
+        let kinds = self.descriptors.parameter_kinds();
+        let (temporal_unit, consumed) = parse_temporal_unit_with_kinds(remaining, &kinds)?;
         self.position += consumed;
 
         // Apply parameter blocks

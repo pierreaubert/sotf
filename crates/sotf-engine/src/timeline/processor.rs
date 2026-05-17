@@ -174,7 +174,6 @@ impl TimelineProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decoder::source::AudioSource;
     use crate::timeline::clip::{Clip, Region};
     use crate::timeline::track::Track;
 

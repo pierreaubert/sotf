@@ -258,7 +258,9 @@ pub fn upmixer_output_channels(speaker_config: &str) -> usize {
         "9.1.4" => 14,
         "9.1.6" => 16,
         _ => {
-            log::warn!(
+            crate::rate_limited_log!(
+                warn,
+                5,
                 "Unknown speaker config '{}', defaulting to 5.1 (6 channels)",
                 speaker_config
             );

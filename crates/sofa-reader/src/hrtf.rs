@@ -38,7 +38,13 @@ impl SourcePosition {
         }
     }
 
-    /// Calculate angular distance between two positions, in degrees.
+    /// Calculate the great-circle (angular) distance between two positions, in degrees.
+    ///
+    /// Uses the haversine formula on the unit sphere, mapping (azimuth, elevation)
+    /// to (longitude, latitude). The `distance` (radius) component is
+    /// intentionally ignored — two positions in the same direction at different
+    /// radii return zero. Callers that handle near-field measurements must
+    /// branch on `distance` separately.
     pub fn angular_distance(&self, other: &SourcePosition) -> f32 {
         let az1 = self.azimuth.to_radians();
         let el1 = self.elevation.to_radians();
@@ -48,7 +54,11 @@ impl SourcePosition {
         let dlat = el2 - el1;
         let dlon = az2 - az1;
 
+        // Haversine: a = sin²(Δφ/2) + cos φ1 · cos φ2 · sin²(Δλ/2)
         let a = (dlat / 2.0).sin().powi(2) + el1.cos() * el2.cos() * (dlon / 2.0).sin().powi(2);
+        // Clamp to [0, 1] to guard against tiny floating-point overshoot that
+        // would make `sqrt(1 - a)` NaN at near-antipodes.
+        let a = a.clamp(0.0, 1.0);
         let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
         c.to_degrees()
@@ -64,6 +74,21 @@ impl SourcePosition {
         let z = el.sin();
 
         [x, y, z]
+    }
+
+    /// Build a spherical position from a Cartesian `[x, y, z]` triple in metres.
+    ///
+    /// Uses x=front, y=left, z=up. Returns `SourcePosition { 0, 0, 0 }` when
+    /// the input is the origin (otherwise `atan2(0, 0) == 0` plus
+    /// `asin(z/0) == NaN` would poison nearest-neighbour search).
+    pub fn from_cartesian(x: f32, y: f32, z: f32) -> Self {
+        let distance = (x * x + y * y + z * z).sqrt();
+        if !distance.is_finite() || distance <= f32::EPSILON {
+            return Self::new(0.0, 0.0, 0.0);
+        }
+        let azimuth = y.atan2(x).to_degrees();
+        let elevation = (z / distance).clamp(-1.0, 1.0).asin().to_degrees();
+        Self::new(azimuth, elevation, distance)
     }
 }
 
@@ -429,10 +454,7 @@ impl SofaFile {
                 }
                 CoordinateSystem::Cartesian => {
                     let (x, y, z) = (pos_data[idx], pos_data[idx + 1], pos_data[idx + 2]);
-                    let distance = (x * x + y * y + z * z).sqrt();
-                    let azimuth = y.atan2(x).to_degrees();
-                    let elevation = (z / distance).asin().to_degrees();
-                    SourcePosition::new(azimuth, elevation, distance)
+                    SourcePosition::from_cartesian(x, y, z)
                 }
             };
             positions.push(pos);
@@ -442,6 +464,23 @@ impl SofaFile {
         let ir_data = reader
             .read_f32("Data.IR")
             .map_err(|e| format!("Failed to read IR data: {}", e))?;
+
+        let expected_ir_len = num_measurements
+            .checked_mul(num_receivers)
+            .and_then(|v| v.checked_mul(ir_length))
+            .ok_or_else(|| {
+                format!(
+                    "SOFA dimensions overflow: M={}, R={}, N={}",
+                    num_measurements, num_receivers, ir_length
+                )
+            })?;
+        if ir_data.len() != expected_ir_len {
+            return Err(format!(
+                "Data.IR size mismatch: expected M*R*N = {}, got {}",
+                expected_ir_len,
+                ir_data.len()
+            ));
+        }
 
         log::info!(
             "[SOFA] Loaded {} IR samples ({}x{}x{})",
@@ -463,23 +502,50 @@ impl SofaFile {
     }
 
     /// Get HRTF data for a measurement index.
+    ///
+    /// Allocates two new `Vec<f32>` for the impulse responses. Use
+    /// [`Self::get_hrtf_slices`] or [`Self::get_hrtf_into`] in audio-thread
+    /// paths where allocation is forbidden.
     pub fn get_hrtf(&self, index: usize) -> Option<HrtfData> {
+        let (position, left, right) = self.get_hrtf_slices(index)?;
+        Some(HrtfData {
+            position,
+            ir_left: left.to_vec(),
+            ir_right: right.to_vec(),
+        })
+    }
+
+    /// Borrow the left/right impulse responses for a measurement index.
+    /// Returns `(position, ir_left, ir_right)` borrowed directly from the
+    /// internal `impulse_responses` buffer — no allocation, audio-thread safe.
+    pub fn get_hrtf_slices(&self, index: usize) -> Option<(SourcePosition, &[f32], &[f32])> {
         if index >= self.num_measurements {
             return None;
         }
-
         let position = self.positions[index];
         let offset = index * 2 * self.ir_length;
+        let left = &self.impulse_responses[offset..offset + self.ir_length];
+        let right = &self.impulse_responses[offset + self.ir_length..offset + 2 * self.ir_length];
+        Some((position, left, right))
+    }
 
-        let ir_left = self.impulse_responses[offset..offset + self.ir_length].to_vec();
-        let ir_right =
-            self.impulse_responses[offset + self.ir_length..offset + 2 * self.ir_length].to_vec();
-
-        Some(HrtfData {
-            position,
-            ir_left,
-            ir_right,
-        })
+    /// Copy the left/right impulse responses for a measurement index into
+    /// caller-supplied buffers. Returns the position on success. Each output
+    /// buffer must have at least `ir_length()` elements; only that prefix is
+    /// overwritten.
+    pub fn get_hrtf_into(
+        &self,
+        index: usize,
+        left_out: &mut [f32],
+        right_out: &mut [f32],
+    ) -> Option<SourcePosition> {
+        let (position, left, right) = self.get_hrtf_slices(index)?;
+        if left_out.len() < left.len() || right_out.len() < right.len() {
+            return None;
+        }
+        left_out[..left.len()].copy_from_slice(left);
+        right_out[..right.len()].copy_from_slice(right);
+        Some(position)
     }
 
     /// Find the nearest HRTF measurement for a source position.
@@ -526,6 +592,59 @@ impl SofaFile {
         self.get_hrtf(index)
     }
 
+    /// Get an HRTF interpolated across the three nearest measurements using
+    /// inverse-angular-distance weights, eliminating the audible "snap" of
+    /// nearest-neighbor lookup when sources move continuously.
+    ///
+    /// Falls back to the nearest measurement if any of the three lookups
+    /// collapse onto the same index. Returns `None` if the database is empty.
+    pub fn get_hrtf_interpolated(&self, position: &SourcePosition) -> Option<HrtfData> {
+        if self.num_measurements == 0 {
+            return None;
+        }
+        let nbrs = self.find_three_nearest(position);
+        // Degenerate case: only one unique neighbor — return it directly.
+        if nbrs[0].0 == nbrs[1].0 && nbrs[1].0 == nbrs[2].0 {
+            return self.get_hrtf(nbrs[0].0);
+        }
+
+        // Inverse-distance weights with epsilon to avoid div-by-zero when a
+        // neighbour lies exactly on the query point. Normalise so weights sum
+        // to 1.
+        const EPS: f32 = 1e-4;
+        let mut weights = [0.0f32; 3];
+        let mut total = 0.0f32;
+        for (slot, (_idx, dist)) in weights.iter_mut().zip(nbrs.iter()) {
+            let w = 1.0 / (*dist + EPS);
+            *slot = w;
+            total += w;
+        }
+        if total <= 0.0 {
+            return self.get_hrtf(nbrs[0].0);
+        }
+        for w in weights.iter_mut() {
+            *w /= total;
+        }
+
+        let position_out = self.positions[nbrs[0].0];
+        let mut ir_left = vec![0.0f32; self.ir_length];
+        let mut ir_right = vec![0.0f32; self.ir_length];
+        for ((idx, _dist), w) in nbrs.iter().zip(weights.iter()) {
+            let (_pos, left, right) = self.get_hrtf_slices(*idx)?;
+            for (dst, src) in ir_left.iter_mut().zip(left.iter()) {
+                *dst += src * (*w);
+            }
+            for (dst, src) in ir_right.iter_mut().zip(right.iter()) {
+                *dst += src * (*w);
+            }
+        }
+        Some(HrtfData {
+            position: position_out,
+            ir_left,
+            ir_right,
+        })
+    }
+
     /// Get all available source positions.
     pub fn get_positions(&self) -> &[SourcePosition] {
         &self.positions
@@ -556,5 +675,97 @@ mod tests {
 
         let dist = pos1.angular_distance(&pos2);
         assert!(dist < 0.01, "Expected ~0 degrees, got {}", dist);
+    }
+
+    #[test]
+    fn test_angular_distance_antipodes() {
+        let pos1 = SourcePosition::new(0.0, 0.0, 1.0);
+        let pos2 = SourcePosition::new(180.0, 0.0, 1.0);
+        let dist = pos1.angular_distance(&pos2);
+        assert!(
+            (dist - 180.0).abs() < 0.01,
+            "Antipodal points should be 180°, got {}",
+            dist
+        );
+        assert!(dist.is_finite(), "Antipodal distance must not be NaN");
+    }
+
+    #[test]
+    fn test_angular_distance_ninety_degrees() {
+        let pos1 = SourcePosition::new(0.0, 90.0, 1.0);
+        let pos2 = SourcePosition::new(0.0, 0.0, 1.0);
+        let dist = pos1.angular_distance(&pos2);
+        assert!(
+            (dist - 90.0).abs() < 0.01,
+            "Pole-to-equator should be 90°, got {}",
+            dist
+        );
+    }
+
+    #[test]
+    fn test_angular_distance_ignores_radius() {
+        let pos1 = SourcePosition::new(30.0, 15.0, 0.2);
+        let pos2 = SourcePosition::new(30.0, 15.0, 2.0);
+        let dist = pos1.angular_distance(&pos2);
+        assert!(
+            dist < 0.01,
+            "Angular distance should ignore radius, got {}",
+            dist
+        );
+    }
+
+    #[test]
+    fn test_angular_distance_wrap_around() {
+        let pos1 = SourcePosition::new(-179.0, 0.0, 1.0);
+        let pos2 = SourcePosition::new(179.0, 0.0, 1.0);
+        let dist = pos1.angular_distance(&pos2);
+        assert!(
+            (dist - 2.0).abs() < 0.01,
+            "Azimuth wrap-around should give 2°, got {}",
+            dist
+        );
+    }
+
+    #[test]
+    fn test_cartesian_to_spherical_origin() {
+        let pos = SourcePosition::from_cartesian(0.0, 0.0, 0.0);
+        assert_eq!(pos.azimuth, 0.0);
+        assert_eq!(pos.elevation, 0.0);
+        assert_eq!(pos.distance, 0.0);
+        assert!(pos.azimuth.is_finite());
+        assert!(pos.elevation.is_finite());
+        assert!(pos.distance.is_finite());
+    }
+
+    #[test]
+    fn test_cartesian_to_spherical_known_points() {
+        let pos = SourcePosition::from_cartesian(1.0, 0.0, 0.0);
+        assert!(pos.azimuth.abs() < 0.01);
+        assert!(pos.elevation.abs() < 0.01);
+        assert!((pos.distance - 1.0).abs() < 0.01);
+
+        let pos = SourcePosition::from_cartesian(0.0, 0.0, 1.0);
+        assert!((pos.elevation - 90.0).abs() < 0.01);
+        assert!((pos.distance - 1.0).abs() < 0.01);
+
+        let pos = SourcePosition::from_cartesian(0.0, 1.0, 0.0);
+        assert!((pos.azimuth - 90.0).abs() < 0.01);
+        assert!((pos.distance - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_find_nearest_never_returns_nan() {
+        let sf = SofaFile {
+            sample_rate: 48000.0,
+            num_measurements: 1,
+            ir_length: 1,
+            positions: vec![SourcePosition::from_cartesian(0.0, 0.0, 0.0)],
+            impulse_responses: vec![0.0, 0.0],
+            convention: "test".to_string(),
+            data_sample_rate: Some(48000.0),
+        };
+        let (idx, dist) = sf.find_nearest(&SourcePosition::new(45.0, 30.0, 1.0));
+        assert_eq!(idx, 0);
+        assert!(dist.is_finite(), "find_nearest should never return NaN");
     }
 }

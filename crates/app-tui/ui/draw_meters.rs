@@ -1,4 +1,42 @@
 use super::*;
+use std::fmt::Write as _;
+
+/// Stack-buffered formatter for the short numeric labels rendered next
+/// to every meter / LUFS bar. Reusing the same buffer across renders
+/// avoids the `format!`-per-channel-per-frame allocation that appeared
+/// in flamegraphs of multi-channel meter screens.
+pub(crate) struct MeterLabelBuf {
+    buf: [u8; 32],
+    len: usize,
+}
+
+impl MeterLabelBuf {
+    pub(crate) fn new() -> Self {
+        Self {
+            buf: [0; 32],
+            len: 0,
+        }
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        // Only ASCII / valid-UTF-8 sequences are ever written via the
+        // `write!` macro below, and `len` tracks bytes written.
+        std::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
+    }
+}
+
+impl std::fmt::Write for MeterLabelBuf {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        let remaining = self.buf.len() - self.len;
+        let bytes = s.as_bytes();
+        if bytes.len() > remaining {
+            return Err(std::fmt::Error);
+        }
+        self.buf[self.len..self.len + bytes.len()].copy_from_slice(bytes);
+        self.len += bytes.len();
+        Ok(())
+    }
+}
 
 pub(crate) fn draw_meters_column(f: &mut Frame, area: Rect, app: &mut App) {
     // Split the right column - LUFS, level meter, volume
@@ -59,6 +97,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
 
     if let Some(ref loudness) = app.loudness_info {
         let mut y_offset = 0;
+        let mut label_buf = MeterLabelBuf::new();
 
         // ============================================================================
         // True Peak Section
@@ -72,14 +111,17 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                 .copied()
                 .fold(f64::NEG_INFINITY, f64::max);
 
-            // Header: "True Peak      [XX.X]"
-            let true_peak_label = if max_true_peak.is_finite() {
-                format!("True Peak      [{:>4.1}]", max_true_peak)
+            // Header: "True Peak      [XX.X]" — write into the
+            // reused stack buffer to avoid a per-frame `format!`.
+            label_buf.len = 0;
+            if max_true_peak.is_finite() {
+                let _ = write!(&mut label_buf, "True Peak      [{:>4.1}]", max_true_peak);
             } else {
-                "True Peak        [-∞]".to_string()
-            };
+                let _ = write!(&mut label_buf, "True Peak        [-∞]");
+            }
             f.render_widget(
-                Paragraph::new(true_peak_label).style(Style::default().fg(app.theme.title_color)),
+                Paragraph::new(label_buf.as_str())
+                    .style(Style::default().fg(app.theme.title_color)),
                 Rect {
                     x: inner.x,
                     y: inner.y + y_offset,

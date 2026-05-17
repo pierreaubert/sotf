@@ -169,8 +169,28 @@ impl PluginScanner {
     /// Scan a directory for plugin files of the given format.
     fn scan_directory(&mut self, dir: &Path, format: PluginFormat) {
         let ext = format.extension();
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(e) => {
+                log::warn!(
+                    "external_plugin: cannot read plugin dir {}: {e}",
+                    dir.display()
+                );
+                return;
+            }
+        };
+        for entry in entries {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    log::warn!(
+                        "external_plugin: unreadable entry under {}: {e}",
+                        dir.display()
+                    );
+                    continue;
+                }
+            };
+            {
                 let path = entry.path();
                 if path.extension().map_or(false, |e| e == ext) {
                     let name = path

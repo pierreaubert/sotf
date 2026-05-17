@@ -122,7 +122,39 @@ impl TofuStore {
         }
         let content = toml::to_string_pretty(&self.hosts)
             .map_err(|e| format!("serialize known_hosts: {e}"))?;
-        std::fs::write(&self.path, content).map_err(|e| format!("write known_hosts: {e}"))?;
+
+        // Atomic save: write to a tmp file then rename. Prevents a torn
+        // known_hosts.toml if the process is killed mid-write.
+        let tmp_path = self.path.with_extension("toml.tmp");
+        {
+            use std::io::Write;
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+            let mut f = opts
+                .open(&tmp_path)
+                .map_err(|e| format!("open known_hosts tmp: {e}"))?;
+            f.write_all(content.as_bytes())
+                .map_err(|e| format!("write known_hosts tmp: {e}"))?;
+            f.sync_all()
+                .map_err(|e| format!("sync known_hosts tmp: {e}"))?;
+        }
+        std::fs::rename(&tmp_path, &self.path)
+            .map_err(|e| format!("rename known_hosts: {e}"))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Re-assert 0600 in case rename inherited different mode.
+            let _ = std::fs::set_permissions(
+                &self.path,
+                std::fs::Permissions::from_mode(0o600),
+            );
+        }
         Ok(())
     }
 }

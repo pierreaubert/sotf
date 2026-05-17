@@ -154,15 +154,26 @@ impl EngineConfig {
         Ok(())
     }
 
-    /// Apply all necessary migrations to bring EngineConfig to the latest version
-    fn migrate(config: EngineConfig) -> Result<EngineConfig, Box<dyn std::error::Error>> {
+    /// Apply all necessary migrations to bring EngineConfig to the latest version.
+    ///
+    /// Versions newer than `LATEST_VERSION` are unknown and rejected. Older
+    /// versions are migrated forward. Currently only v1 exists, so older
+    /// configs (v0, default-initialized) are silently upgraded by stamping
+    /// the latest version onto them.
+    fn migrate(mut config: EngineConfig) -> Result<EngineConfig, Box<dyn std::error::Error>> {
         const LATEST_VERSION: u32 = 1;
 
-        // Apply migrations sequentially
-        if config.version < LATEST_VERSION {
-            return Err(format!("Unknown EngineConfig version: {}", config.version).into());
+        if config.version > LATEST_VERSION {
+            return Err(format!(
+                "Unknown EngineConfig version {} (this build supports up to {})",
+                config.version, LATEST_VERSION
+            )
+            .into());
         }
 
+        // v0 → v1: no field migration needed (v0 was never serialized in the wild);
+        // simply stamp the current version.
+        config.version = LATEST_VERSION;
         Ok(config)
     }
 }

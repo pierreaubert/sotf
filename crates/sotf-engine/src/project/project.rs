@@ -4,6 +4,7 @@
 
 use crate::engine::{PluginConfig, PluginGraphConfig};
 use serde::{Deserialize, Serialize};
+use sotf_plugins::automation::AutomationCurve;
 use std::path::Path;
 
 /// Current project file format version.
@@ -209,7 +210,7 @@ pub struct AutomationConfig {
     /// Parameter ID
     pub param_id: String,
     /// Automation curve
-    pub curve: sotf_plugins::AutomationCurve,
+    pub curve: AutomationCurve,
 }
 
 #[cfg(test)]
@@ -324,14 +325,14 @@ mod tests {
         track.automation.push(AutomationConfig {
             plugin_index: 0,
             param_id: "gain".to_string(),
-            curve: sotf_plugins::AutomationCurve::Linear {
+            curve: AutomationCurve::Linear {
                 values: vec![0.0, 0.5, 1.0],
             },
         });
         track.automation.push(AutomationConfig {
             plugin_index: 1,
             param_id: "frequency".to_string(),
-            curve: sotf_plugins::AutomationCurve::Step {
+            curve: AutomationCurve::Step {
                 values: vec![440.0, 880.0],
                 samples_per_step: 48000,
             },
@@ -349,7 +350,7 @@ mod tests {
         let auto0 = &loaded.tracks[0].automation[0];
         assert_eq!(auto0.param_id, "gain");
         match &auto0.curve {
-            sotf_plugins::AutomationCurve::Linear { values } => {
+            AutomationCurve::Linear { values } => {
                 assert_eq!(values, &[0.0, 0.5, 1.0]);
             }
             other => panic!("Expected Linear curve, got {other:?}"),
@@ -359,7 +360,7 @@ mod tests {
         let auto1 = &loaded.tracks[0].automation[1];
         assert_eq!(auto1.param_id, "frequency");
         match &auto1.curve {
-            sotf_plugins::AutomationCurve::Step {
+            AutomationCurve::Step {
                 values,
                 samples_per_step,
             } => {

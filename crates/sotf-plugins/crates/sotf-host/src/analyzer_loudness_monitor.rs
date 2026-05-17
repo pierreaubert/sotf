@@ -13,6 +13,12 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
 
+/// L/R correlation EMA window. Matches `analyzer_channel_correlation::WINDOW_SECONDS`
+/// (400 ms — EBU R128 momentary block) so the L/R EMA and the full
+/// per-pair correlation matrix share the same time-response characteristics
+/// regardless of buffer size.
+const CORRELATION_WINDOW_SECONDS: f64 = 0.4;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoudnessInfo {
     pub momentary_lufs: f64,
@@ -24,8 +30,14 @@ pub struct LoudnessInfo {
 pub struct LoudnessMonitor {
     ebur128: EbuR128,
     channels: u32,
+    /// Sample rate, used to scale the L/R correlation EMA so the smoothing
+    /// time-constant is buffer-size-independent and consistent with the
+    /// sliding-EMA used by `ChannelCorrelationMonitor`.
+    sample_rate: u32,
     /// Running L/R correlation (Pearson) for stereo width.
-    /// Smoothed with EMA to avoid jitter.
+    /// Smoothed with a buffer-size-aware EMA (alpha derived from `samples.len()
+    /// / (sample_rate * WINDOW_SECONDS)`) so the time response matches the
+    /// full correlation-matrix EMA at any block size.
     correlation_lr: Option<f64>,
     /// When true, also maintain a full inter-channel Pearson r matrix and
     /// write it into `LoudnessData.correlation_matrix` on each update.
@@ -42,6 +54,11 @@ pub struct LoudnessMonitor {
     /// `LoudnessData::update_correlation_matrix`. Reused across calls to
     /// keep the audio-thread allocation count at zero.
     matrix_scratch: crate::analyzer::CorrelationData,
+    /// Pre-allocated per-channel peak buffers sized to `channels`. Reused on
+    /// every `update_loudness_data` call so >32-channel layouts (22.2, Atmos
+    /// beds) do not silently truncate.
+    peaks_buf: Vec<f64>,
+    true_peaks_buf: Vec<f64>,
 }
 
 impl LoudnessMonitor {
@@ -55,10 +72,13 @@ impl LoudnessMonitor {
         Ok(Self {
             ebur128: ebur,
             channels,
+            sample_rate: sr,
             correlation_lr: None,
             spatial_enabled: false,
             correlation_matrix: ChannelCorrelationMonitor::new(channels as usize, sr),
             matrix_scratch: crate::analyzer::CorrelationData::new(channels as usize),
+            peaks_buf: vec![0.0; channels as usize],
+            true_peaks_buf: vec![0.0; channels as usize],
         })
     }
 
@@ -88,14 +108,19 @@ impl LoudnessMonitor {
     }
 
     pub fn add_frames(&mut self, samples: &[f32]) -> Result<(), String> {
-        // Compute L/R correlation for stereo signals
+        // Compute L/R correlation for stereo signals using a sliding-EMA that
+        // matches the full inter-channel matrix's time response: the per-block
+        // alpha scales with the block's fraction of the 400 ms window, so the
+        // smoothing time-constant is buffer-size-independent.
         if self.channels == 2 {
             let frame_corr = compute_correlation_interleaved(samples, 2);
             if let Some(c) = frame_corr {
-                // EMA smoothing: ~100ms at typical frame rates
-                const ALPHA: f64 = 0.15;
+                let frames = (samples.len() / 2) as f64;
+                let window_samples =
+                    (self.sample_rate as f64 * CORRELATION_WINDOW_SECONDS).max(1.0);
+                let alpha = (frames / window_samples).clamp(0.0, 1.0);
                 self.correlation_lr = Some(match self.correlation_lr {
-                    Some(prev) => prev * (1.0 - ALPHA) + c * ALPHA,
+                    Some(prev) => prev * (1.0 - alpha) + c * alpha,
                     None => c,
                 });
             }
@@ -118,13 +143,17 @@ impl LoudnessMonitor {
         d.shortterm_lufs = self.ebur128.loudness_shortterm().unwrap_or(-120.0);
         d.integrated_lufs = self.ebur128.loudness_global().unwrap_or(-120.0);
 
-        // Pre-allocate temporary slices on stack for speed
-        let mut peaks = [0.0f64; 32];
-        let mut tps = [0.0f64; 32];
+        // Use the pre-allocated per-channel buffers (no stack-array channel
+        // limit, so 22.2 / Atmos beds are not silently truncated).
         let nc = self.channels as usize;
-        let nc_clamped = nc.min(32);
+        if self.peaks_buf.len() < nc {
+            self.peaks_buf.resize(nc, 0.0);
+            self.true_peaks_buf.resize(nc, 0.0);
+        }
+        let peaks = &mut self.peaks_buf[..nc];
+        let tps = &mut self.true_peaks_buf[..nc];
 
-        for ch in 0..nc_clamped {
+        for ch in 0..nc {
             peaks[ch] = self.ebur128.prev_sample_peak(ch as u32).unwrap_or(0.0);
             let tp_linear = self.ebur128.prev_true_peak(ch as u32).unwrap_or(0.0);
             tps[ch] = if tp_linear > 0.0 {
@@ -135,8 +164,8 @@ impl LoudnessMonitor {
             };
         }
 
-        d.update_peaks(&peaks[..nc_clamped]);
-        d.update_true_peaks(&tps[..nc_clamped]);
+        d.update_peaks(peaks);
+        d.update_true_peaks(tps);
 
         d.peak = d.channel_peaks.iter().copied().fold(0.0, f64::max);
         d.correlation_lr = self.correlation_lr;
@@ -304,7 +333,9 @@ impl Plugin for LoudnessMonitorPlugin {
         Ok(())
     }
     fn reset(&mut self) {
-        let _ = self.monitor.reset();
+        if let Err(e) = self.monitor.reset() {
+            crate::rate_limited_log!(warn, 5, "loudness monitor reset failed: {e}");
+        }
         self.cache.update(|d| {
             *d = LoudnessData::new(self.num_channels);
         });
@@ -319,14 +350,28 @@ impl Plugin for LoudnessMonitorPlugin {
         if !self.enabled {
             return Ok(context.num_frames);
         }
+        let mut dropped = 0usize;
         for &s in input {
-            let _ = self.producer.push(s);
+            if self.producer.push(s).is_err() {
+                dropped += 1;
+            }
+        }
+        if dropped > 0 {
+            crate::rate_limited_log!(
+                warn,
+                5,
+                "loudness ring buffer full, dropped {dropped} samples"
+            );
         }
         let slots = self.consumer.slots();
         if let Ok(chunk) = self.consumer.read_chunk(slots) {
             let (s1, s2) = chunk.as_slices();
-            let _ = self.monitor.add_frames(s1);
-            let _ = self.monitor.add_frames(s2);
+            if let Err(e) = self.monitor.add_frames(s1) {
+                crate::rate_limited_log!(warn, 5, "loudness add_frames failed: {e}");
+            }
+            if let Err(e) = self.monitor.add_frames(s2) {
+                crate::rate_limited_log!(warn, 5, "loudness add_frames failed: {e}");
+            }
             chunk.commit_all();
 
             // Update cache: read loudness data then swap into cache.

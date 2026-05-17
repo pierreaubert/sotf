@@ -18,9 +18,26 @@ pub struct AudioFrame {
 }
 
 impl AudioFrame {
-    /// Create a new audio frame
+    /// Create a new audio frame.
+    ///
+    /// # Panics
+    /// Panics if `data.len()` does not equal `num_frames * num_channels`.
+    /// This is a load-bearing invariant — downstream DSP code indexes the
+    /// flat buffer with that arithmetic and a mismatch would silently corrupt
+    /// audio in release builds, so we assert unconditionally (not just under
+    /// debug_assertions).
     pub fn new(data: Vec<f32>, num_frames: usize, num_channels: usize, sample_rate: u32) -> Self {
-        debug_assert_eq!(data.len(), num_frames * num_channels);
+        let expected = num_frames.checked_mul(num_channels).expect(
+            "AudioFrame::new: num_frames * num_channels overflowed usize",
+        );
+        assert_eq!(
+            data.len(),
+            expected,
+            "AudioFrame::new: data length {} != num_frames ({}) * num_channels ({})",
+            data.len(),
+            num_frames,
+            num_channels
+        );
         Self {
             data,
             num_frames,

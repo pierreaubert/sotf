@@ -69,6 +69,11 @@ pub struct AutoGain {
     attack_coeff: f32,
     /// Slow release coefficient (~300ms) for gain increases (output recovered)
     release_coeff: f32,
+    /// Cache of `fast_pow10(gain_smoother.target() / 20)`. Avoids the redundant
+    /// `pow10` call on the apply_compensation hot path when the user-set
+    /// target hasn't moved since the last call.
+    cached_target_db: f32,
+    cached_target_linear: f32,
 }
 
 impl std::fmt::Debug for AutoGain {
@@ -110,6 +115,8 @@ impl AutoGain {
             smoothing_ms: params.smoothing_ms,
             attack_coeff: (-1.0 / (20.0 * 0.001 * sample_rate as f32)).exp(),
             release_coeff: (-1.0 / (300.0 * 0.001 * sample_rate as f32)).exp(),
+            cached_target_db: 0.0,
+            cached_target_linear: 1.0,
         })
     }
 
@@ -130,8 +137,12 @@ impl AutoGain {
     }
 
     pub fn reset(&mut self) {
-        let _ = self.input_monitor.reset();
-        let _ = self.output_monitor.reset();
+        if let Err(e) = self.input_monitor.reset() {
+            crate::rate_limited_log!(warn, 5, "auto_gain input_monitor reset failed: {e}");
+        }
+        if let Err(e) = self.output_monitor.reset() {
+            crate::rate_limited_log!(warn, 5, "auto_gain output_monitor reset failed: {e}");
+        }
         self.gain_smoother.reset(0.0);
         self.current_gain_linear = 1.0;
         self.last_input_lufs = f64::NEG_INFINITY;
@@ -209,8 +220,26 @@ impl AutoGain {
             let target = (self.last_input_lufs - self.last_output_lufs) as f32;
             self.gain_smoother
                 .set_target(target.clamp(-self.max_gain_db, self.max_gain_db));
+        } else {
+            // Silence on either side leaves the gain-LUFS difference undefined.
+            // Stuck targets here cause unity-gain misbehavior when sound returns
+            // at a different level — decay the target back toward 0 dB (unity)
+            // so the smoother converges to a safe value during silence.
+            self.gain_smoother.set_target(0.0);
         }
         Ok(())
+    }
+
+    /// Cached `fast_pow10(gain_smoother.target() / 20)`. Recomputes only when
+    /// the user-set target actually changes; otherwise reuses the last value.
+    #[inline]
+    fn target_linear_cached(&mut self) -> f32 {
+        let t_db = self.gain_smoother.target();
+        if t_db != self.cached_target_db {
+            self.cached_target_db = t_db;
+            self.cached_target_linear = fast_pow10(t_db / 20.0);
+        }
+        self.cached_target_linear
     }
 
     #[inline]
@@ -278,8 +307,7 @@ impl AutoGain {
         }
         crate::simd::enable_ftz_daz();
 
-        let target_db = self.gain_smoother.target();
-        let target_linear = fast_pow10(target_db / 20.0);
+        let target_linear = self.target_linear_cached();
 
         // Optimization: if gain is already stable at target, use fast SIMD path
         if (self.current_gain_linear - target_linear).abs() < 1e-5 {

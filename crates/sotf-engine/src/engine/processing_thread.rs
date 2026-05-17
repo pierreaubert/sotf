@@ -223,6 +223,12 @@ impl ProcessingState {
         (block_duration_ms / crossfade_duration_ms).min(0.5)
     }
 
+    fn prepare_scratch_buffer(buffer: &mut Vec<f32>, len: usize) {
+        if buffer.len() != len {
+            buffer.resize(len, 0.0);
+        }
+    }
+
     fn fade_in_unblended_tail(
         output: &mut [f32],
         blend_samples: usize,
@@ -267,9 +273,7 @@ impl ProcessingState {
             // new host), so prev_host has enough room even if it produces a
             // slightly different frame count.
             let buf_len = output.len();
-            if self.prev_process_buffer.len() < buf_len {
-                self.prev_process_buffer.resize(buf_len, 0.0);
-            }
+            Self::prepare_scratch_buffer(&mut self.prev_process_buffer, buf_len);
 
             let output_samples = actual_frames * self.channels;
             let prev_actual = prev_host.process(input, &mut self.prev_process_buffer[..buf_len])?;
@@ -473,7 +477,7 @@ fn run_processing_thread(
 
                 let mut process_buffer = std::mem::take(&mut state.process_buffer);
                 if process_buffer.len() != output_samples {
-                    process_buffer.resize(output_samples, 0.0);
+                    ProcessingState::prepare_scratch_buffer(&mut process_buffer, output_samples);
                 }
 
                 let frame_start = std::time::Instant::now();
@@ -1497,6 +1501,20 @@ mod tests {
 
         assert_eq!(&output[..4], &[1.0; 4]);
         assert_eq!(&output[4..], &[0.25; 4]);
+    }
+
+    #[test]
+    fn processing_hot_path_uses_prepared_buffers_for_output_and_crossfade() {
+        let source = include_str!("processing_thread.rs");
+
+        assert!(
+            !source.contains(concat!("process_buffer.", "resize(output_samples, 0.0)")),
+            "processing thread must not allocate/resize the process buffer in the frame hot path"
+        );
+        assert!(
+            !source.contains(concat!("prev_process_buffer.", "resize(buf_len, 0.0)")),
+            "crossfade processing must not allocate/resize the previous-host buffer in process_frame"
+        );
     }
 
     // ── Thread isolation tests for send_or_interrupt ──

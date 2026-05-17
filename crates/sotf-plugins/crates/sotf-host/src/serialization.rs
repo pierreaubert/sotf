@@ -93,9 +93,33 @@ impl PluginPreset {
         }
     }
 
-    /// Check if this preset is compatible with the given plugin ID
+    /// Check if this preset is compatible with the given plugin ID.
+    ///
+    /// Compatibility is based on the plugin id alone — version is reported
+    /// separately via [`Self::is_version_compatible`] so callers can decide
+    /// whether to attempt a [`SerializablePlugin::deserialize`] or trigger a
+    /// migration path.
     pub fn is_compatible(&self, plugin_id: &str) -> bool {
         self.plugin_id == plugin_id
+    }
+
+    /// Returns true when the preset was saved by a plugin version whose major
+    /// component matches `current_version`. Semantic-versioning convention:
+    /// only major-version bumps break preset format compatibility.
+    ///
+    /// Both `self.version` and `current_version` should be valid `semver`
+    /// strings (`MAJOR.MINOR.PATCH`); leading non-numeric prefixes are
+    /// tolerated by parsing the first `.`-separated component as an unsigned
+    /// integer. Unparseable versions fall back to strict string equality, so
+    /// the function never accepts a clearly unknown format.
+    pub fn is_version_compatible(&self, current_version: &str) -> bool {
+        match (
+            major_component(&self.version),
+            major_component(current_version),
+        ) {
+            (Some(a), Some(b)) => a == b,
+            _ => self.version == current_version,
+        }
     }
 
     /// Add a tag to the preset
@@ -112,6 +136,12 @@ impl PluginPreset {
     pub fn set_comment(&mut self, comment: impl Into<String>) {
         self.metadata.comment = Some(comment.into());
     }
+}
+
+/// Extract the major-version component (`<MAJOR>` in `MAJOR.MINOR.PATCH`)
+/// as a `u32`. Returns `None` if the string has no leading numeric segment.
+fn major_component(version: &str) -> Option<u32> {
+    version.split('.').next()?.parse::<u32>().ok()
 }
 
 impl Default for PluginPreset {

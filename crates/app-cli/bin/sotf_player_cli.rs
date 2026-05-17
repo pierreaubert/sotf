@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
 
-fn parse_loudness_compensation(vals: &Vec<f64>) -> Result<Option<LoudnessCompensation>, String> {
-    let (ref_level, low, high) = match vals.as_slice() {
+fn parse_loudness_compensation(vals: &[f64]) -> Result<Option<LoudnessCompensation>, String> {
+    let (ref_level, low, high) = match vals {
         [r, l] => (*r, *l, *l),
         [r, l, h] => (*r, *l, *h),
         _ => return Err("Expected 2 or 3 values: REF,LOW[,HIGH]".to_string()),
@@ -2286,9 +2286,11 @@ enum Commands {
         #[arg(short = 's', long, default_value = "0")]
         start_time: f64,
 
-        /// Buffer size in chunks (32=low latency, 128=balanced, 1024=high reliability)
-        #[arg(long = "buffer-chunks", default_value = "32")]
-        _buffer_chunks: usize,
+        /// DEPRECATED: no-op. Buffer chunk size is fixed by the engine; this flag
+        /// has been ignored for several releases and will be removed in a future
+        /// version. Kept here only so existing scripts do not fail to parse.
+        #[arg(long = "buffer-chunks", hide = true)]
+        _buffer_chunks: Option<usize>,
 
         /// Enable real-time LUFS monitoring (prints momentary/short-term loudness)
         #[arg(long = "lufs", alias = "monitor-lufs", default_value_t = false)]
@@ -2333,17 +2335,32 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
-    let log_file = OpenOptions::new()
+    // Log to file when possible, but fall back to stderr if the current
+    // directory is read-only (e.g. running from `/` or as a systemd unit).
+    // Users can override the log path with the SOTF_CLI_LOG env var.
+    let log_path = std::env::var("SOTF_CLI_LOG")
+        .unwrap_or_else(|_| "sotf_cli_player.log".to_string());
+    let mut builder = env_logger::Builder::from_default_env();
+    builder
+        .filter_level(log::LevelFilter::Debug)
+        .filter_module("symphonia_core", log::LevelFilter::Debug);
+    match OpenOptions::new()
         .create(true)
         .append(true)
-        .open("sotf_cli_player.log")
-        .expect("Failed to open log file");
-
-    env_logger::Builder::from_default_env()
-        .target(env_logger::Target::Pipe(Box::new(log_file)))
-        .filter_level(log::LevelFilter::Debug)
-        .filter_module("symphonia_core", log::LevelFilter::Debug)
-        .init();
+        .open(&log_path)
+    {
+        Ok(log_file) => {
+            builder.target(env_logger::Target::Pipe(Box::new(log_file)));
+        }
+        Err(e) => {
+            eprintln!(
+                "Warning: could not open log file {:?}: {}; falling back to stderr.",
+                log_path, e
+            );
+            builder.target(env_logger::Target::Stderr);
+        }
+    }
+    builder.init();
 
     log::info!("SOTF CLI Player starting...");
 
@@ -2394,11 +2411,19 @@ fn main() {
             rack,
             plugins,
         } => {
+            if _buffer_chunks.is_some() {
+                let msg =
+                    "Warning: --buffer-chunks is deprecated and currently has no effect.";
+                log::warn!("{}", msg);
+                eprintln!("{}", msg);
+            }
+
             // Parse filters
             let filter_params = match parse_filters(&filters) {
                 Ok(params) => params,
                 Err(e) => {
                     log::error!("Error parsing filters: {}", e);
+                    eprintln!("Error parsing filters: {}", e);
                     std::process::exit(1);
                 }
             };
@@ -2407,6 +2432,7 @@ fn main() {
             let loudness: Option<LoudnessCompensation> = match loudness_compensation {
                 Some(ref vals) => parse_loudness_compensation(vals).unwrap_or_else(|e| {
                     log::error!("Error in --loudness-compensation: {}", e);
+                    eprintln!("Error in --loudness-compensation: {}", e);
                     std::process::exit(1);
                 }),
                 None => None,
@@ -2463,11 +2489,10 @@ fn list_devices() -> Result<(), String> {
                 } else if device.available_sample_rates.len() == 1 {
                     format!("{} Hz", device.available_sample_rates[0])
                 } else {
-                    format!(
-                        "{}-{} Hz",
-                        device.available_sample_rates.first().unwrap(),
-                        device.available_sample_rates.last().unwrap()
-                    )
+                    {
+                        let rates = &device.available_sample_rates;
+                        format!("{}-{} Hz", rates[0], rates[rates.len() - 1])
+                    }
                 };
 
                 let line = format!(
@@ -2510,11 +2535,10 @@ fn list_devices() -> Result<(), String> {
                 } else if device.available_sample_rates.len() == 1 {
                     format!("{} Hz", device.available_sample_rates[0])
                 } else {
-                    format!(
-                        "{}-{} Hz",
-                        device.available_sample_rates.first().unwrap(),
-                        device.available_sample_rates.last().unwrap()
-                    )
+                    {
+                        let rates = &device.available_sample_rates;
+                        format!("{}-{} Hz", rates[0], rates[rates.len() - 1])
+                    }
                 };
 
                 let line = format!(
@@ -2639,6 +2663,15 @@ fn parse_channel_mapping(mapping_str: &str) -> Result<(Vec<usize>, Vec<usize>, V
 
     if input_channels.is_empty() {
         return Err("No input channels specified".to_string());
+    }
+
+    // Channels are 1-indexed in the user-facing syntax; reject 0 explicitly
+    // to avoid `ch - 1` underflowing to `usize::MAX` below.
+    if let Some(&bad) = input_channels.iter().find(|&&ch| ch == 0) {
+        return Err(format!(
+            "Input channel index must be >= 1 (1-indexed), got {}",
+            bad
+        ));
     }
 
     let output_spec: Vec<&str> = parts[1].split(',').map(|s| s.trim()).collect();
@@ -2805,6 +2838,8 @@ fn play_stream(
             &filters,
             &loudness,
             loudness_auto_gain_params,
+            lufs,
+            hwaudio_play.as_deref(),
             plugins,
             device.as_deref(),
         )?
@@ -2919,12 +2954,15 @@ fn play_stream(
 }
 
 /// Build plugin chain using rack mode (PluginChain with specified plugin order)
+#[allow(clippy::too_many_arguments)]
 fn build_rack_mode_plugins(
     rack: &[String],
     audio_info: &sotf_audio::AudioFileInfo,
     filters: &[Biquad],
     loudness: &Option<LoudnessCompensation>,
     loudness_auto_gain_params: (bool, f32, f32),
+    lufs: bool,
+    hwaudio_play: Option<&str>,
     plugins: &PluginArgs,
     device: Option<&str>,
 ) -> Result<(Vec<PluginConfig>, usize, Option<usize>), String> {
@@ -3092,16 +3130,19 @@ fn build_rack_mode_plugins(
                         };
                     }
                 } else {
+                    // No --loudness-compensation values supplied: use inert
+                    // 0 dB boosts so the plugin is a no-op. The previous +6 dB
+                    // defaults were musically destructive and surprising.
                     let idx = chain.add_plugin(&PluginType::LoudnessCompensation);
                     if let Some(plugin) = chain.get_plugin_mut(idx) {
                         plugin.settings = PluginSettings::LoudnessCompensation {
                             low_freq: 100.0,
-                            low_gain: 6.0,
+                            low_gain: 0.0,
                             high_freq: 10000.0,
-                            high_gain: 6.0,
-                            mid_enabled: true,
+                            high_gain: 0.0,
+                            mid_enabled: false,
                             mid_freq: 3000.0,
-                            mid_gain: 3.0,
+                            mid_gain: 0.0,
                             mid_q: 0.707,
                             auto_gain_enabled,
                             auto_gain_max_db: auto_gain_max_db as f64,
@@ -3112,6 +3153,11 @@ fn build_rack_mode_plugins(
                             playback_volume_db: 0.0,
                         };
                     }
+                    let msg =
+                        "Note: `loudness` rack item used without --loudness-compensation; \
+                         applying 0 dB shelves (no-op).";
+                    log::warn!("{}", msg);
+                    eprintln!("{}", msg);
                 }
                 log::info!("Rack: Added LoudnessCompensation plugin");
             }
@@ -3147,10 +3193,11 @@ fn build_rack_mode_plugins(
                 }
                 log::info!("Rack: Added Gain plugin ({:.1} dB)", plugins.gain.gain_db);
             }
-            "single-compressor" | "compressor"
-                if plugins.compressor.enabled
-                    || plugin_name.to_lowercase() == "single-compressor" =>
-            {
+            // In rack mode, the rack list IS the source of truth: a literal
+            // `compressor` entry asks for the single-band compressor, while
+            // `mb-compressor` asks for the multiband variant. The traditional
+            // `--compressor` enable flag is unrelated here.
+            "compressor" | "single-compressor" => {
                 let idx = chain.add_plugin(&PluginType::Compressor);
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Compressor {
@@ -3174,7 +3221,7 @@ fn build_rack_mode_plugins(
                 }
                 log::info!("Rack: Added Compressor plugin");
             }
-            "compressor" | "mb-compressor" => {
+            "mb-compressor" | "multiband-compressor" => {
                 let idx = chain.add_plugin(&PluginType::MultibandCompressor);
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::MultibandCompressor {
@@ -3413,6 +3460,12 @@ fn build_rack_mode_plugins(
                     .ir_file
                     .as_ref()
                     .ok_or("Convolution requires --convolution-ir-file to be specified")?;
+                if !ir_path.exists() {
+                    return Err(format!(
+                        "Convolution IR file not found: {:?}",
+                        ir_path
+                    ));
+                }
                 let idx = chain.add_plugin(&PluginType::Convolution);
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Convolution {
@@ -3622,8 +3675,47 @@ fn build_rack_mode_plugins(
         }
     }
 
-    let plugin_configs = chain.to_plugin_configs(sample_rate);
-    let output_channels = chain.output_channels();
+    let mut plugin_configs = chain.to_plugin_configs(sample_rate);
+    let mut output_channels = chain.output_channels();
+
+    // Honor `--hwaudio-play` in rack mode by appending a routing matrix as the
+    // final node. Previously this flag was silently dropped whenever `--rack`
+    // was used; now it behaves the same as in traditional mode (see
+    // `build_traditional_mode_plugins` for the original implementation).
+    if let Some(mapping_str) = hwaudio_play {
+        let (input_channel_map, output_channel_map, matrix) =
+            parse_channel_mapping(mapping_str)?;
+
+        if input_channel_map.len() != output_channels {
+            return Err(format!(
+                "Channel mapping input mismatch: mapping expects {} channels but plugin chain outputs {}",
+                input_channel_map.len(),
+                output_channels
+            ));
+        }
+
+        let max_hw_ch = output_channel_map.iter().max().map(|&v| v + 1).unwrap_or(0);
+        let logical_output_channels = output_channel_map.len();
+
+        log::info!("\nRack: Channel mapping enabled:");
+        log::info!("  Mapping: {}", mapping_str);
+        log::info!("  Logical input channels: {}", input_channel_map.len());
+        log::info!("  Logical output channels: {}", logical_output_channels);
+
+        let matrix_plugin =
+            create_matrix_plugin_config(input_channel_map, output_channel_map, matrix)?;
+        plugin_configs.push(matrix_plugin);
+
+        output_channels = max_hw_ch;
+    }
+
+    // Honor `--lufs` in rack mode by appending a LoudnessMonitor as the very
+    // last analyzer plugin (no-op if the user already added `lufs` to --rack).
+    if lufs && !has_lufs {
+        plugin_configs.push(create_loudness_analyzer_plugin_config()?);
+        has_lufs = true;
+        log::info!("Rack: Appended LoudnessMonitor plugin (--lufs)");
+    }
 
     let actual_loudness_idx = if has_lufs {
         plugin_configs
@@ -3945,4 +4037,85 @@ fn build_traditional_mode_plugins(
     };
 
     Ok((plugin_configs, output_channels, loudness_plugin_index))
+}
+
+// ============================================================================
+// Tests — regression coverage for CLI bugs documented in
+// reviews/review-app-cli.md.
+//
+// Note: the existing per-plugin clap arg structs have a number of latent
+// "duplicate argument id" issues (e.g. two fields named `config` across
+// `UpmixerArgs` and `AaeArgs`, two `low_latency` fields, several
+// `auto_gain_max_db`/`auto_gain_smoothing_ms`/`auto_gain_enabled`/…) that
+// trigger clap's `debug_assert!` at parse time. They are pre-existing bugs
+// that don't surface in release builds (where `debug_assertions` is off) and
+// were not flagged in reviews/review-app-cli.md, so we deliberately do not
+// fix them here — that's a separate cleanup PR. As a result, the tests below
+// cover only pure helpers; the rack-mode behavioural fixes are intentionally
+// uncovered by automated tests until that cleanup lands.
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- parse_channel_mapping ------------------------------------------------
+
+    #[test]
+    fn parse_channel_mapping_rejects_zero_input_channel() {
+        // Regression: previously `ch - 1` underflowed to usize::MAX for ch == 0.
+        let err = parse_channel_mapping("0,1->1,2").expect_err("0-indexed input must fail");
+        assert!(
+            err.contains("Input channel index must be >= 1"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_channel_mapping_rejects_zero_output_channel() {
+        let err = parse_channel_mapping("1,2->0,1").expect_err("0-indexed output must fail");
+        assert!(err.contains(">= 1"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn parse_channel_mapping_happy_path_is_one_indexed() {
+        let (inp, out, matrix) = parse_channel_mapping("1,2->9,10").expect("valid mapping");
+        assert_eq!(inp, vec![0, 1]);
+        assert_eq!(out, vec![8, 9]);
+        assert_eq!(matrix, vec![1.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn parse_channel_mapping_supports_gap_underscore() {
+        let (inp, out, _matrix) = parse_channel_mapping("1,2->_,9,10").expect("gap mapping");
+        assert_eq!(inp, vec![0, 1]);
+        assert_eq!(out, vec![8, 9]);
+    }
+
+    #[test]
+    fn parse_channel_mapping_rejects_unparseable_input() {
+        assert!(parse_channel_mapping("x,1->1,2").is_err());
+        assert!(parse_channel_mapping("1,2").is_err());
+    }
+
+    // -- parse_loudness_compensation -----------------------------------------
+
+    #[test]
+    fn parse_loudness_compensation_accepts_two_values() {
+        let res = parse_loudness_compensation(&[70.0, 3.0]).expect("2 values valid");
+        assert!(res.is_some());
+    }
+
+    #[test]
+    fn parse_loudness_compensation_accepts_three_values() {
+        let res = parse_loudness_compensation(&[70.0, 3.0, 4.0]).expect("3 values valid");
+        assert!(res.is_some());
+    }
+
+    #[test]
+    fn parse_loudness_compensation_rejects_wrong_arity() {
+        assert!(parse_loudness_compensation(&[]).is_err());
+        assert!(parse_loudness_compensation(&[70.0]).is_err());
+        assert!(parse_loudness_compensation(&[70.0, 3.0, 4.0, 5.0]).is_err());
+    }
 }

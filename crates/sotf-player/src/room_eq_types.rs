@@ -3613,9 +3613,8 @@ fn build_factored_routed_room_eq_graph(
     } else {
         graph.input_channels.clone()
     };
-    let name_to_index = |name: &str| -> Option<usize> {
-        channel_order.iter().position(|n| n == name)
-    };
+    let name_to_index =
+        |name: &str| -> Option<usize> { channel_order.iter().position(|n| n == name) };
 
     // Per-channel parameter arrays, sized to channel_count and zero-initialized.
     let mut gain_pre_db = vec![0.0f32; channel_count];
@@ -3675,16 +3674,12 @@ fn build_factored_routed_room_eq_graph(
                         .unwrap_or(0.0);
                 }
                 ("eq", Some("pre_route")) => {
-                    if let Some(arr) =
-                        plugin.parameters.get("filters").and_then(|v| v.as_array())
-                    {
+                    if let Some(arr) = plugin.parameters.get("filters").and_then(|v| v.as_array()) {
                         filters_pre[idx].extend(arr.iter().cloned());
                     }
                 }
                 ("eq", Some("post_route")) => {
-                    if let Some(arr) =
-                        plugin.parameters.get("filters").and_then(|v| v.as_array())
-                    {
+                    if let Some(arr) = plugin.parameters.get("filters").and_then(|v| v.as_array()) {
                         filters_post[idx].extend(arr.iter().cloned());
                     }
                 }
@@ -3737,13 +3732,12 @@ fn build_factored_routed_room_eq_graph(
                 // applied-sub-gain baked into the LFE chain. For all other
                 // routes use route.gain_db so multi-destination routes from
                 // a single source don't collapse.
-                let route_gain_db = if src_idx == dst_idx
-                    && chain_route_owned_gain_db[src_idx].abs() > 1e-6
-                {
-                    chain_route_owned_gain_db[src_idx]
-                } else {
-                    route.gain_db as f32
-                };
+                let route_gain_db =
+                    if src_idx == dst_idx && chain_route_owned_gain_db[src_idx].abs() > 1e-6 {
+                        chain_route_owned_gain_db[src_idx]
+                    } else {
+                        route.gain_db as f32
+                    };
                 lp_matrix_entries.push((dst_idx, src_idx, route_gain_db));
             }
             _ => {
@@ -4210,16 +4204,12 @@ fn build_linear_room_eq_graph(
                         .unwrap_or(0.0) as f32;
                 }
                 ("eq", "post_route") => {
-                    if let Some(arr) =
-                        plugin.parameters.get("filters").and_then(|v| v.as_array())
-                    {
+                    if let Some(arr) = plugin.parameters.get("filters").and_then(|v| v.as_array()) {
                         filters_post[idx].extend(arr.iter().cloned());
                     }
                 }
                 ("eq", _) => {
-                    if let Some(arr) =
-                        plugin.parameters.get("filters").and_then(|v| v.as_array())
-                    {
+                    if let Some(arr) = plugin.parameters.get("filters").and_then(|v| v.as_array()) {
                         filters_pre[idx].extend(arr.iter().cloned());
                     }
                 }
@@ -6347,12 +6337,18 @@ mod tests {
         // The LP gain that used to live in its own `gain_lp` node is now
         // baked into the matrix coefficient.
         assert_eq!(
-            plugin_types.iter().filter(|&&kind| kind == "matrix").count(),
+            plugin_types
+                .iter()
+                .filter(|&&kind| kind == "matrix")
+                .count(),
             1,
             "factored graph has exactly one routing matrix (the sub-bus sum)"
         );
         assert_eq!(
-            plugin_types.iter().filter(|&&kind| kind == "crossover").count(),
+            plugin_types
+                .iter()
+                .filter(|&&kind| kind == "crossover")
+                .count(),
             2,
             "factored graph has exactly two crossover nodes (HP + LP)"
         );
@@ -6422,9 +6418,7 @@ mod tests {
             .nodes
             .iter()
             .find(|n| {
-                n.parameters
-                    .get("label")
-                    .and_then(|l| l.as_str())
+                n.parameters.get("label").and_then(|l| l.as_str())
                     == Some("room_eq_matrix_to_sub_bus")
             })
             .unwrap();
@@ -6778,7 +6772,9 @@ mod tests {
         // arrays — they don't survive as standalone nodes.
         for fold_name in ["left_trim", "right_trim", "center_eq"] {
             assert!(
-                !labeled_nodes.iter().any(|(_, _, label)| *label == fold_name),
+                !labeled_nodes
+                    .iter()
+                    .any(|(_, _, label)| *label == fold_name),
                 "{fold_name} should be folded into the factored per-channel arrays"
             );
         }
@@ -6810,7 +6806,9 @@ mod tests {
         let gain_pre = graph
             .nodes
             .iter()
-            .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_gain_pre"))
+            .find(|n| {
+                n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_gain_pre")
+            })
             .unwrap();
         let gains: Vec<f32> = gain_pre.parameters["channel_gains"]
             .as_array()
@@ -6927,7 +6925,10 @@ mod tests {
                 .iter()
                 .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some(role))
                 .unwrap_or_else(|| panic!("missing factored node {role}"));
-            assert_eq!(node.input_channels, 3, "{role} must be at post-global width 3");
+            assert_eq!(
+                node.input_channels, 3,
+                "{role} must be at post-global width 3"
+            );
         }
     }
 
@@ -7143,7 +7144,9 @@ mod tests {
         let xover_hp = graph
             .nodes
             .iter()
-            .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_xover_hp"))
+            .find(|n| {
+                n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_xover_hp")
+            })
             .expect("factored HP crossover");
         let modes: Vec<String> = xover_hp.parameters["channel_modes"]
             .as_array()
@@ -7157,7 +7160,10 @@ mod tests {
         // graph after the relabel → "mute".
         // SubA (idx 2) is destination-only → must be "passthrough".
         assert_eq!(modes[0], "highpass", "L must be HP");
-        assert_eq!(modes[2], "passthrough", "destination-only SubA must be passthrough");
+        assert_eq!(
+            modes[2], "passthrough",
+            "destination-only SubA must be passthrough"
+        );
     }
 
     /// I5b: When `lfe_gain_applied_to_chain == true` AND the LFE chain has a
@@ -7182,16 +7188,14 @@ mod tests {
             (
                 "LFE".to_string(),
                 ChannelDspChain {
-                    plugins: vec![
-                        PluginConfigWrapper {
-                            plugin_type: "gain".to_string(),
-                            parameters: serde_json::json!({
-                                "label": "lfe_route_owned_gain",
-                                "room_eq_stage": "route_owned",
-                                "gain_db": -17.0,
-                            }),
-                        },
-                    ],
+                    plugins: vec![PluginConfigWrapper {
+                        plugin_type: "gain".to_string(),
+                        parameters: serde_json::json!({
+                            "label": "lfe_route_owned_gain",
+                            "room_eq_stage": "route_owned",
+                            "gain_db": -17.0,
+                        }),
+                    }],
                     ..bare_chain("LFE", None)
                 },
             ),
@@ -7310,7 +7314,10 @@ mod tests {
         let matrix_node = config
             .nodes
             .iter()
-            .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_matrix_to_sub_bus"))
+            .find(|n| {
+                n.parameters.get("label").and_then(|l| l.as_str())
+                    == Some("room_eq_matrix_to_sub_bus")
+            })
             .expect("factored sub-bus matrix");
         let matrix: Vec<f32> = matrix_node.parameters["matrix"]
             .as_array()
@@ -7390,12 +7397,18 @@ mod tests {
         // Bug 2: legacy carries the source chain's pre-EQ as a standalone
         // node; factored folds it into the single `room_eq_eq_pre` array.
         assert_eq!(
-            factored_labels.iter().filter(|l| **l == "pre_room_eq").count(),
+            factored_labels
+                .iter()
+                .filter(|l| **l == "pre_room_eq")
+                .count(),
             0,
             "factored folds pre_room_eq into room_eq_eq_pre channel_filters"
         );
         assert_eq!(
-            factored_labels.iter().filter(|l| **l == "room_eq_eq_pre").count(),
+            factored_labels
+                .iter()
+                .filter(|l| **l == "room_eq_eq_pre")
+                .count(),
             1,
         );
 
@@ -7532,7 +7545,9 @@ mod tests {
         let xover_hp = config
             .nodes
             .iter()
-            .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_xover_hp"))
+            .find(|n| {
+                n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_xover_hp")
+            })
             .unwrap();
         let modes: Vec<String> = xover_hp.parameters["channel_modes"]
             .as_array()
@@ -7545,7 +7560,10 @@ mod tests {
         let matrix_node = config
             .nodes
             .iter()
-            .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_matrix_to_sub_bus"))
+            .find(|n| {
+                n.parameters.get("label").and_then(|l| l.as_str())
+                    == Some("room_eq_matrix_to_sub_bus")
+            })
             .unwrap();
         let matrix: Vec<f32> = matrix_node.parameters["matrix"]
             .as_array()

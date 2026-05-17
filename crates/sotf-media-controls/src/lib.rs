@@ -38,6 +38,7 @@ mod types;
 
 pub use types::{
     MediaControlEvent, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig, SeekDirection,
+    WindowHandle,
 };
 
 /// Errors produced by media-control operations.
@@ -102,8 +103,54 @@ impl MediaControls {
 /// Convenience helper used by callers that want to construct a `MediaPosition`
 /// from a `f64` of seconds without depending on `Duration` directly.
 impl MediaPosition {
+    /// Build a `MediaPosition` from a `f64` second count.
+    ///
+    /// `NaN`, infinities, and non-positive values clamp to zero —
+    /// `Duration::from_secs_f64` would otherwise panic on NaN / infinity.
+    /// Use this constructor when the value comes from external/untrusted
+    /// sources (UI scrubbers, MPRIS, lock-screen `positionTime`, ...).
     #[must_use]
     pub fn from_secs_f64(secs: f64) -> Self {
-        Self(Duration::from_secs_f64(secs.max(0.0)))
+        if !secs.is_finite() || secs <= 0.0 {
+            Self(Duration::ZERO)
+        } else {
+            Self(Duration::from_secs_f64(secs))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn media_position_from_secs_handles_nan() {
+        // `Duration::from_secs_f64(NaN)` panics — the constructor's job
+        // is to guard against that.
+        let p = MediaPosition::from_secs_f64(f64::NAN);
+        assert_eq!(p.0, Duration::ZERO);
+    }
+
+    #[test]
+    fn media_position_from_secs_handles_infinities() {
+        assert_eq!(
+            MediaPosition::from_secs_f64(f64::INFINITY).0,
+            Duration::ZERO
+        );
+        assert_eq!(
+            MediaPosition::from_secs_f64(f64::NEG_INFINITY).0,
+            Duration::ZERO
+        );
+    }
+
+    #[test]
+    fn media_position_from_secs_handles_negative() {
+        assert_eq!(MediaPosition::from_secs_f64(-1.0).0, Duration::ZERO);
+    }
+
+    #[test]
+    fn media_position_from_secs_preserves_positive() {
+        let p = MediaPosition::from_secs_f64(1.5);
+        assert_eq!(p.0, Duration::from_millis(1500));
     }
 }

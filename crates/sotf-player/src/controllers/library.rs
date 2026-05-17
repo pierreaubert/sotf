@@ -55,6 +55,12 @@ pub struct LibraryController {
     /// Cache for filtered and sorted albums
     cached_albums: Vec<Album>,
     cache_dirty: bool,
+
+    /// Cache for the second-stage selection filter (genre/decade/year/artist/…).
+    /// Stores indices into `cached_albums`. Invalidated whenever any selection
+    /// field changes or `cached_albums` is rebuilt. `None` means "not yet
+    /// computed" (cold start); empty Vec means "computed, result is empty".
+    cached_selection_indices: Option<Vec<usize>>,
 }
 
 impl Default for LibraryController {
@@ -101,6 +107,7 @@ impl LibraryController {
             scan_progress_albums: 0,
             cached_albums: Vec::new(),
             cache_dirty: true,
+            cached_selection_indices: None,
         }
     }
 
@@ -114,8 +121,11 @@ impl LibraryController {
     // =========================================================================
 
     /// Mark the cache as dirty so it will be recomputed next time it's needed.
+    /// Also invalidates the second-stage selection cache, which sits on top of
+    /// the primary cached albums.
     pub fn invalidate_cache(&mut self) {
         self.cache_dirty = true;
+        self.cached_selection_indices = None;
     }
 
     /// Ensure the cached filtered albums are up to date.
@@ -149,6 +159,9 @@ impl LibraryController {
 
         self.cached_albums = merged_albums;
         self.cache_dirty = false;
+        // Rebuilt cached_albums → any selection-cache snapshot keyed off the
+        // old indices is stale.
+        self.cached_selection_indices = None;
     }
 
     /// Get filtered and sorted albums from cache.
@@ -159,115 +172,147 @@ impl LibraryController {
         self.cached_albums.iter().collect()
     }
 
-    /// Get filtered albums with selection filters applied on top of the cache.
-    ///
-    /// This applies genre, decade, year, artist, composer, album letter, and
-    /// track range filters. When a search query is active, selection filters
-    /// are skipped (search results should not be narrowed by sidebar selections).
-    pub fn selection_filtered_albums(&self) -> Vec<&Album> {
-        let mut albums = self.filtered_albums();
-
-        // When there's an active search query, skip all selection filters.
+    /// Single combined predicate for the sidebar selection filters.
+    /// Skips everything when a search query is active.
+    fn matches_selection(&self, album: &Album) -> bool {
         if !self.search_query.is_empty() {
-            return albums;
+            return true;
         }
 
-        if let Some(ref genre) = self.selected_genre {
-            albums.retain(|album| {
-                album
-                    .tracks
-                    .first()
-                    .and_then(|t| t.genre.as_ref())
-                    .is_some_and(|g| g.eq_ignore_ascii_case(genre))
-            });
+        if let Some(ref genre) = self.selected_genre
+            && !album
+                .tracks
+                .first()
+                .and_then(|t| t.genre.as_ref())
+                .is_some_and(|g| g.eq_ignore_ascii_case(genre))
+        {
+            return false;
         }
 
-        if let Some((decade_start, decade_end)) = self.selected_decade {
-            if self.selected_year.is_none() {
-                albums.retain(|album| {
-                    album
-                        .year
-                        .map(|y| y as i32)
-                        .is_some_and(|y| y >= decade_start && y <= decade_end)
-                });
-            }
+        if let Some((decade_start, decade_end)) = self.selected_decade
+            && self.selected_year.is_none()
+            && !album
+                .year
+                .map(|y| y as i32)
+                .is_some_and(|y| y >= decade_start && y <= decade_end)
+        {
+            return false;
         }
 
-        if let Some(year) = self.selected_year {
-            albums.retain(|album| album.year.map(|y| y as i32) == Some(year));
+        if let Some(year) = self.selected_year
+            && album.year.map(|y| y as i32) != Some(year)
+        {
+            return false;
         }
 
-        if let Some(letter) = self.selected_artist_letter {
-            if self.selected_artist.is_none() {
-                albums.retain(|album| {
-                    album.artist().chars().next().is_some_and(|c| {
-                        let first = c.to_ascii_uppercase();
+        if let Some(letter) = self.selected_artist_letter
+            && self.selected_artist.is_none()
+            && !album.artist().chars().next().is_some_and(|c| {
+                let first = c.to_ascii_uppercase();
+                if letter == '#' {
+                    !first.is_ascii_alphabetic()
+                } else {
+                    first == letter
+                }
+            })
+        {
+            return false;
+        }
+
+        if let Some(ref artist) = self.selected_artist
+            && !album.artist().eq_ignore_ascii_case(artist)
+        {
+            return false;
+        }
+
+        if let Some(letter) = self.selected_composer_letter
+            && self.selected_composer.is_none()
+            && !album
+                .tracks
+                .first()
+                .and_then(|t| t.composer.as_ref())
+                .is_some_and(|c| {
+                    c.chars().next().is_some_and(|ch| {
+                        let first = ch.to_ascii_uppercase();
                         if letter == '#' {
                             !first.is_ascii_alphabetic()
                         } else {
                             first == letter
                         }
                     })
-                });
-            }
-        }
-
-        if let Some(ref artist) = self.selected_artist {
-            albums.retain(|album| album.artist().eq_ignore_ascii_case(artist));
-        }
-
-        if let Some(letter) = self.selected_composer_letter {
-            if self.selected_composer.is_none() {
-                albums.retain(|album| {
-                    album
-                        .tracks
-                        .first()
-                        .and_then(|t| t.composer.as_ref())
-                        .is_some_and(|c| {
-                            c.chars().next().is_some_and(|ch| {
-                                let first = ch.to_ascii_uppercase();
-                                if letter == '#' {
-                                    !first.is_ascii_alphabetic()
-                                } else {
-                                    first == letter
-                                }
-                            })
-                        })
-                });
-            }
-        }
-
-        if let Some(ref composer) = self.selected_composer {
-            albums.retain(|album| {
-                album
-                    .tracks
-                    .first()
-                    .and_then(|t| t.composer.as_ref())
-                    .is_some_and(|c| c.eq_ignore_ascii_case(composer))
-            });
-        }
-
-        if let Some(letter) = self.selected_album_letter {
-            albums.retain(|album| {
-                album.title.chars().next().is_some_and(|c| {
-                    let first = c.to_ascii_uppercase();
-                    if letter == '#' {
-                        !first.is_ascii_alphabetic()
-                    } else {
-                        first == letter
-                    }
                 })
-            });
+        {
+            return false;
+        }
+
+        if let Some(ref composer) = self.selected_composer
+            && !album
+                .tracks
+                .first()
+                .and_then(|t| t.composer.as_ref())
+                .is_some_and(|c| c.eq_ignore_ascii_case(composer))
+        {
+            return false;
+        }
+
+        if let Some(letter) = self.selected_album_letter
+            && !album.title.chars().next().is_some_and(|c| {
+                let first = c.to_ascii_uppercase();
+                if letter == '#' {
+                    !first.is_ascii_alphabetic()
+                } else {
+                    first == letter
+                }
+            })
+        {
+            return false;
         }
 
         if let Some((min, max)) = self.selected_track_range {
-            albums.retain(|album| {
-                let count = album.tracks.len();
-                count >= min && count <= max
-            });
+            let count = album.tracks.len();
+            if count < min || count > max {
+                return false;
+            }
         }
 
-        albums
+        true
+    }
+
+    /// Get filtered albums with selection filters applied on top of the cache.
+    ///
+    /// Uses `cached_selection_indices` when warm to skip the per-keystroke
+    /// re-walk of the cached_albums vec. When cold (or after any selection
+    /// field changes), falls back to a single-pass `iter().filter()` so the
+    /// behaviour stays identical to the un-cached path.
+    pub fn selection_filtered_albums(&self) -> Vec<&Album> {
+        if let Some(indices) = &self.cached_selection_indices {
+            return indices
+                .iter()
+                .filter_map(|i| self.cached_albums.get(*i))
+                .collect();
+        }
+        // Cold-path: single combined-predicate pass over the cached albums,
+        // instead of the legacy chain of ten retain()s.
+        self.cached_albums
+            .iter()
+            .filter(|a| self.matches_selection(a))
+            .collect()
+    }
+
+    /// Populate `cached_selection_indices` so subsequent `selection_filtered_albums`
+    /// calls are O(n) over a tighter list rather than O(n) over all cached
+    /// albums. Safe to call from any code that already holds `&mut self`.
+    pub fn ensure_selection_cache_valid(&mut self) {
+        if self.cached_selection_indices.is_some() {
+            return;
+        }
+        let mut indices = Vec::with_capacity(self.cached_albums.len());
+        for (i, album) in self.cached_albums.iter().enumerate() {
+            if self.matches_selection(album) {
+                indices.push(i);
+            }
+        }
+        self.cached_selection_indices = Some(indices);
     }
 
     /// Check if album matches current channel filter.

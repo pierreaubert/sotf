@@ -30,11 +30,16 @@ pub use manager::{
 pub mod preflight;
 pub use preflight::{PreflightError, run_preflight_checks};
 
+pub mod project;
+
+pub mod rate_limit;
+
 pub mod replaygain;
 pub mod signal_recorder;
 pub use signal_recorder::{
     ChannelRecordingInfo, DeviceInfo, RecordingSession, reprocess_recordings,
 };
+pub mod timeline;
 pub mod waveform;
 
 // Re-export from math-dsp crate
