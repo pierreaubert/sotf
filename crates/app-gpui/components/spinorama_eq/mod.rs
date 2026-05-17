@@ -67,8 +67,7 @@ fn spawn_spinorama_curves_thread(
     speaker: String,
     version: String,
 ) -> smol::channel::Receiver<Result<crate::app::types::SpinoramaCurves, String>> {
-    let (tx, rx) =
-        smol::channel::bounded::<Result<crate::app::types::SpinoramaCurves, String>>(1);
+    let (tx, rx) = smol::channel::bounded::<Result<crate::app::types::SpinoramaCurves, String>>(1);
     std::thread::spawn(move || {
         log::info!(
             "Loading spinorama CEA2034 curves for {} / {}",
@@ -720,11 +719,7 @@ impl PlayerView {
                     // Fetch measurements for the selected version
                     if let Some(version) = selected_version {
                         let _ = view.update(cx, |view, cx| {
-                            view.fetch_spinorama_measurements(
-                                &speaker_for_poll,
-                                &version,
-                                cx,
-                            );
+                            view.fetch_spinorama_measurements(&speaker_for_poll, &version, cx);
                         });
                     }
                 }
@@ -898,9 +893,7 @@ impl PlayerView {
                                 .loading_spinorama_curves = false;
                             match curves_result {
                                 Ok(curves) => {
-                                    log::info!(
-                                        "Auto-loaded spinorama curves successfully"
-                                    );
+                                    log::info!("Auto-loaded spinorama curves successfully");
                                     state
                                         .app
                                         .measurement_state
@@ -913,10 +906,7 @@ impl PlayerView {
                                         .spinorama_curves_error = None;
                                 }
                                 Err(e) => {
-                                    log::error!(
-                                        "Failed to auto-load spinorama curves: {}",
-                                        e
-                                    );
+                                    log::error!("Failed to auto-load spinorama curves: {}", e);
                                     state
                                         .app
                                         .measurement_state
@@ -1187,8 +1177,7 @@ impl PlayerView {
                     // GPUI side drains in batches (see below) to coalesce
                     // updates and keep the UI responsive. If the receiver
                     // has been dropped we silently ignore the error.
-                    let _ = progress_tx_for_thread
-                        .send_blocking((iter, loss, score, progress_pct));
+                    let _ = progress_tx_for_thread.send_blocking((iter, loss, score, progress_pct));
 
                     log::debug!(
                         "Spinorama optimization: iter={}, loss={:.4}, score={:?}, progress={:.1}%",
@@ -1358,8 +1347,11 @@ impl PlayerView {
                             2 => "..",
                             _ => "...",
                         };
-                        state.app.measurement_state.spinorama_eq_state.status_message =
-                            format!("Optimizing{}", dots);
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .status_message = format!("Optimizing{}", dots);
                     }
                     cx.notify();
                 });
@@ -1388,8 +1380,7 @@ impl PlayerView {
                         .app
                         .measurement_state
                         .spinorama_eq_state
-                        .optimization_status =
-                        crate::app::types::OptimizationStatus::Cancelled;
+                        .optimization_status = crate::app::types::OptimizationStatus::Cancelled;
                     state
                         .app
                         .measurement_state
@@ -1400,8 +1391,7 @@ impl PlayerView {
                         .app
                         .measurement_state
                         .spinorama_eq_state
-                        .optimization_status =
-                        crate::app::types::OptimizationStatus::Completed;
+                        .optimization_status = crate::app::types::OptimizationStatus::Completed;
                     state
                         .app
                         .measurement_state
@@ -1409,8 +1399,7 @@ impl PlayerView {
                         .status_message = "Complete!".to_string();
                     state.app.measurement_state.spinorama_eq_state.progress = 1.0;
                     state.app.measurement_state.spinorama_eq_state.result = result;
-                    state.app.measurement_state.spinorama_eq_state.full_result =
-                        full_result;
+                    state.app.measurement_state.spinorama_eq_state.full_result = full_result;
                     state.app.measurement_state.spinorama_eq_state.step =
                         crate::app::types::SpinoramaStep::Review;
                 } else {
@@ -1418,8 +1407,7 @@ impl PlayerView {
                         .app
                         .measurement_state
                         .spinorama_eq_state
-                        .optimization_status =
-                        crate::app::types::OptimizationStatus::Failed;
+                        .optimization_status = crate::app::types::OptimizationStatus::Failed;
                     state.app.measurement_state.spinorama_eq_state.error_message = error;
                 }
                 cx.notify();

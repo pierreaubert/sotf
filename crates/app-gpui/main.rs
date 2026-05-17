@@ -517,6 +517,16 @@ fn install_default_presets() {
                 log::debug!("Default preset already exists, skipping: {}", filename);
                 continue;
             }
+            if let Some(parent) = dest.parent()
+                && let Err(e) = std::fs::create_dir_all(parent)
+            {
+                log::warn!(
+                    "Failed to create preset directory {}: {}",
+                    parent.display(),
+                    e
+                );
+                continue;
+            }
             if let Some(file) = Assets::get(&path) {
                 match std::fs::write(&dest, &file.data) {
                     Ok(()) => log::info!("Installed default preset: {}", filename),

@@ -8,6 +8,33 @@ use crate::i18n::Language;
 use crate::keybindings::KeymapPreset;
 use crate::theme::ThemeId;
 
+pub(crate) fn default_recording_paths() -> (Option<String>, Option<String>) {
+    let Some(base_dir) = sotf_audio_player::config::get_recordings_dir() else {
+        return (None, None);
+    };
+
+    let timestamp_dir = format!("recording-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+    let recording_dir = base_dir.join(timestamp_dir);
+    let _ = std::fs::create_dir_all(&recording_dir);
+
+    (
+        Some(base_dir.to_string_lossy().to_string()),
+        Some(recording_dir.to_string_lossy().to_string()),
+    )
+}
+
+fn default_recording_base_directory() -> Option<String> {
+    default_recording_paths().0
+}
+
+fn default_recording_directory() -> Option<String> {
+    default_recording_paths().1
+}
+
+fn directory_is_writable(path: &str) -> bool {
+    std::fs::create_dir_all(path).is_ok()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error("Failed to determine config directory")]
@@ -43,12 +70,15 @@ pub struct RecordingConfigState {
     /// Per-channel microphone calibration file paths
     #[serde(default)]
     pub mic_calibration_paths: Vec<Option<String>>,
+    #[serde(default = "default_recording_directory")]
     pub recording_directory: Option<String>,
+    #[serde(default = "default_recording_base_directory")]
     pub recording_base_directory: Option<String>,
 }
 
 impl Default for RecordingConfigState {
     fn default() -> Self {
+        let (recording_base_directory, recording_directory) = default_recording_paths();
         Self {
             playback: PlaybackDeviceConfig::default(),
             recording: RecordingDeviceConfig::default(),
@@ -57,8 +87,8 @@ impl Default for RecordingConfigState {
             signal_level_db: DEFAULT_SIGNAL_LEVEL_DB,
             mic_calibration_path: None,
             mic_calibration_paths: Vec::new(),
-            recording_directory: None,
-            recording_base_directory: None,
+            recording_directory,
+            recording_base_directory,
         }
     }
 }
@@ -71,6 +101,30 @@ impl RecordingConfigState {
         {
             self.mic_calibration_paths = vec![Some(path.clone())];
         }
+    }
+
+    pub fn ensure_writable_recording_directory(&mut self) {
+        if let Some(ref directory) = self.recording_directory
+            && directory_is_writable(directory)
+        {
+            return;
+        }
+
+        if self.recording_directory.is_none()
+            && let Some(ref base_directory) = self.recording_base_directory
+            && directory_is_writable(base_directory)
+        {
+            let timestamp_dir =
+                format!("recording-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+            let recording_dir = std::path::Path::new(base_directory).join(timestamp_dir);
+            let _ = std::fs::create_dir_all(&recording_dir);
+            self.recording_directory = Some(recording_dir.to_string_lossy().to_string());
+            return;
+        }
+
+        let (recording_base_directory, recording_directory) = default_recording_paths();
+        self.recording_base_directory = recording_base_directory;
+        self.recording_directory = recording_directory;
     }
 }
 
@@ -294,10 +348,16 @@ impl Config {
             source,
         })?;
 
-        serde_json::from_str(&json).map_err(|source| ConfigError::ParseError {
-            path: path.clone(),
-            source,
-        })
+        let mut config: Self =
+            serde_json::from_str(&json).map_err(|source| ConfigError::ParseError {
+                path: path.clone(),
+                source,
+            })?;
+
+        config
+            .recording_config
+            .ensure_writable_recording_directory();
+        Ok(config)
     }
 
     pub fn save(&self) -> Result<(), ConfigError> {

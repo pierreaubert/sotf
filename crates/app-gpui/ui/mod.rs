@@ -492,10 +492,8 @@ impl PlayerView {
     /// observable state changed in the tick.
     fn tick_snapshot(view: &PlayerView, cx: &mut Context<Self>) -> TickSnapshot {
         let state = view.state.read(cx);
-        let position_centiseconds =
-            (state.app.playback.position_secs.max(0.0) * 100.0) as u64;
-        let duration_centiseconds =
-            (state.app.playback.duration_secs.max(0.0) * 100.0) as u64;
+        let position_centiseconds = (state.app.playback.position_secs.max(0.0) * 100.0) as u64;
+        let duration_centiseconds = (state.app.playback.duration_secs.max(0.0) * 100.0) as u64;
         TickSnapshot {
             is_playing: state.app.playback.is_playing,
             position_centiseconds,
@@ -717,9 +715,7 @@ impl PlayerView {
             // `is_playing` inside the queue branch, leaving stale state
             // until the user touched transport. Mirror the cleanup the
             // queue branch does.
-            log::info!(
-                "[GPUI] Engine stopped without queue context — clearing playing state"
-            );
+            log::info!("[GPUI] Engine stopped without queue context — clearing playing state");
             state.app.playback.is_playing = false;
             state.app.stop_track_tracking();
         }

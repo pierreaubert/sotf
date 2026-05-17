@@ -217,6 +217,9 @@ pub struct RecordingState {
 
 impl Default for RecordingState {
     fn default() -> Self {
+        let (recording_base_directory, recording_directory) =
+            crate::app::config::default_recording_paths();
+
         Self {
             step: RecordingStep::Config,
             playback_config: PlaybackDeviceConfig::default(),
@@ -237,8 +240,8 @@ impl Default for RecordingState {
             recording_progress: 0.0,
             status_message: String::new(),
             auto_record_remaining: false,
-            recording_directory: None,
-            recording_base_directory: None,
+            recording_directory,
+            recording_base_directory,
             probe_capture: ProbeCaptureState::default(),
             probe_cancel_requested: Arc::new(AtomicBool::new(false)),
             bass_anchor_capture: BassAnchorCaptureState::default(),

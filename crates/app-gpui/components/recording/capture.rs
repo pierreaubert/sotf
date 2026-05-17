@@ -1107,13 +1107,26 @@ impl PlayerView {
         let recording_dir = match params.recording_directory {
             Some(ref dir) => std::path::PathBuf::from(dir),
             None => {
-                log::error!("No recording directory selected");
+                let (_, fallback_dir) = crate::app::config::default_recording_paths();
+                let Some(fallback_dir) = fallback_dir else {
+                    log::error!("No recording directory selected");
+                    self.state.update(cx, |state, _| {
+                        state.app.measurement_state.recording_state.status_message =
+                            "Please select a recording directory in the Configuration step"
+                                .to_string();
+                    });
+                    cx.notify();
+                    return;
+                };
+                let recording_dir = std::path::PathBuf::from(&fallback_dir);
                 self.state.update(cx, |state, _| {
-                    state.app.measurement_state.recording_state.status_message =
-                        "Please select a recording directory in the Configuration step".to_string();
+                    state
+                        .app
+                        .measurement_state
+                        .recording_state
+                        .recording_directory = Some(fallback_dir);
                 });
-                cx.notify();
-                return;
+                recording_dir
             }
         };
 

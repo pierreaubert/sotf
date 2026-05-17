@@ -1878,8 +1878,7 @@ pub(crate) fn render_room_eq_report_overview(
     // + 2 × grid gap (≈24). Floor at 280 px so charts stay legible on
     // narrow windows.
     // intentional-file: chart canvas dimensions are layout-driven px.
-    let overview_chart_width =
-        ((window_width - 104.0) / 3.0).clamp(280.0, 900.0);
+    let overview_chart_width = ((window_width - 104.0) / 3.0).clamp(280.0, 900.0);
     let overview_chart_height = (overview_chart_width * 0.62).clamp(220.0, 520.0);
     let chart_size = (overview_chart_width, overview_chart_height);
     let original_chart = render_room_eq_curve_chart(
@@ -2321,7 +2320,11 @@ fn render_room_eq_epa_metric_table(
                         })),
                 )
                 .children(rows.iter().map(|(_, label, pre, post, delta, improved)| {
-                    let verdict_color = if *improved { theme.success } else { theme.error };
+                    let verdict_color = if *improved {
+                        theme.success
+                    } else {
+                        theme.error
+                    };
                     let mark = if *improved { "✓ " } else { "✗ " };
                     div()
                         .grid()

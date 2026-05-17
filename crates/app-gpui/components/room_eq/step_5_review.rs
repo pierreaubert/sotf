@@ -15,7 +15,6 @@ use super::render::{
 };
 use crate::app::types::room_eq::{RoomEqReviewGraphId, RoomEqReviewGraphSettings};
 
-
 impl PlayerView {
     pub(crate) fn render_room_eq_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
@@ -101,10 +100,9 @@ impl PlayerView {
                     .and_then(|report| report.bass_management.as_ref()),
                 |vstack, bass| vstack.child(render_room_eq_bass_management_report(d, bass, &theme)),
             )
-            .when_some(
-                room_eq.dsp_output.as_ref(),
-                |vstack, dsp_output| vstack.child(render_fir_temporal_masking_summary(dsp_output, &theme)),
-            )
+            .when_some(room_eq.dsp_output.as_ref(), |vstack, dsp_output| {
+                vstack.child(render_fir_temporal_masking_summary(dsp_output, &theme))
+            })
             // Selected channel result
             .child(self.render_selected_channel_result(cx))
             // EPA + EQ filter cards: lifted out of the per-channel
@@ -616,19 +614,13 @@ fn render_fir_temporal_masking_summary(
         .child(Text::label("Post audible (dB)"))
         .child(Text::label("Penalty"));
 
-    let mut content = VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(header_row);
+    let mut content = VStack::new().spacing(StackSpacing::Xs).child(header_row);
 
     for (name, m) in rows {
         content = content.child(
             HStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new(name)
-                        .size(TextSize::Sm)
-                        .color(theme.text_primary),
-                )
+                .child(Text::new(name).size(TextSize::Sm).color(theme.text_primary))
                 .child(Text::new(format!("{:.2}", m.main_time_ms)).size(TextSize::Sm))
                 .child(Text::new(format!("{:.1}", m.pre_ringing_peak_db)).size(TextSize::Sm))
                 .child(Text::new(format!("{:.1}", m.post_ringing_peak_db)).size(TextSize::Sm))

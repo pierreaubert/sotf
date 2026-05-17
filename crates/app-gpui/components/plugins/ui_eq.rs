@@ -1622,7 +1622,10 @@ fn render_topology_controls(
                     div()
                         .text_size(d.text_xs)
                         .text_color(theme.text_muted)
-                        .child(format!("{count} section{}", if count == 1 { "" } else { "s" })),
+                        .child(format!(
+                            "{count} section{}",
+                            if count == 1 { "" } else { "s" }
+                        )),
                 )
                 .child(
                     div()
@@ -1636,9 +1639,9 @@ fn render_topology_controls(
                         .hover(|s| s.bg(theme.surface_hover))
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             entity_add.update(cx, |state, _| {
-                                state.app.add_eq_kautz_section(
-                                    plugin_idx, band_idx, pole_freq, q, gain,
-                                );
+                                state
+                                    .app
+                                    .add_eq_kautz_section(plugin_idx, band_idx, pole_freq, q, gain);
                             });
                         })
                         .child("+"),
