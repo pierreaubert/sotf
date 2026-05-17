@@ -200,16 +200,11 @@ impl RnnoiseBackend {
         to_write
     }
 
-    /// Reset processing state.
-    ///
-    /// Note: `nnnoiseless::DenoiseState` does not expose a `clear()` method,
-    /// so resetting requires heap allocation of fresh states.  This is
-    /// acceptable for a transport-stop/start event but must not be called
-    /// on every audio callback.
+    /// Reset processing state in place without heap allocation.
     pub fn reset(&mut self) {
-        self.denoisers = (0..self.channels)
-            .map(|_| nnnoiseless::DenoiseState::new())
-            .collect::<Vec<_>>();
+        for denoiser in &mut self.denoisers {
+            denoiser.reset();
+        }
         for buf in &mut self.accum_buffers {
             buf.fill(0.0);
         }
@@ -354,5 +349,25 @@ mod tests {
         assert_eq!(backend.output_write_pos, 0);
         assert_eq!(backend.output_read_pos, 0);
         assert!(!backend.first_frame_discarded);
+    }
+
+    /// Regression test: reset() must not heap-allocate new DenoiseState objects.
+    #[test]
+    fn reset_does_not_reallocate_denoisers() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 2).unwrap();
+
+        let ptrs_before: Vec<*const nnnoiseless::DenoiseState> =
+            backend.denoisers.iter().map(|d| d.as_ref() as *const _).collect();
+
+        backend.reset();
+
+        let ptrs_after: Vec<*const nnnoiseless::DenoiseState> =
+            backend.denoisers.iter().map(|d| d.as_ref() as *const _).collect();
+
+        assert_eq!(
+            ptrs_before, ptrs_after,
+            "reset() must reuse existing DenoiseState objects"
+        );
     }
 }
