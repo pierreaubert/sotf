@@ -2,6 +2,7 @@
 pub struct TransientSuppressor {
     channels: usize,
     last_samples: Vec<f32>,
+    last_outputs: Vec<f32>,
     slope_envelope: Vec<f32>,
     sensitivity: f32,
     decay: f32,
@@ -13,6 +14,7 @@ impl TransientSuppressor {
         Self {
             channels,
             last_samples: vec![0.0; channels],
+            last_outputs: vec![0.0; channels],
             // Start at the non-zero floor so new() and reset() behave
             // identically (fix for issue 3).
             slope_envelope: vec![1e-6; channels],
@@ -24,6 +26,7 @@ impl TransientSuppressor {
 
     pub fn reset(&mut self) {
         self.last_samples.fill(0.0);
+        self.last_outputs.fill(0.0);
         // Initialise to a small non-zero floor so the first sample after
         // reset never triggers the discontinuous `== 0.0` re-initialisation
         // branch (fix for issue 3).
@@ -55,13 +58,26 @@ impl TransientSuppressor {
                 let threshold = self.slope_envelope[ch] * self.sensitivity + 1e-5;
 
                 if abs_delta > threshold {
-                    let sign = if delta >= 0.0 { 1.0 } else { -1.0 };
-                    *sample = last + sign * threshold;
+                    let output_delta = input - self.last_outputs[ch];
+                    let abs_output_delta = output_delta.abs();
+                    if abs_output_delta > threshold {
+                        let sign = if output_delta >= 0.0 { 1.0 } else { -1.0 };
+                        *sample = self.last_outputs[ch] + sign * threshold;
+                    }
                     // Update the envelope with the *allowed* delta so the
                     // threshold adapts during a burst of clicks rather than
                     // staying frozen at its pre-click value (fix for issue 2).
                     self.slope_envelope[ch] =
                         self.slope_envelope[ch] * self.decay + threshold * self.one_minus_decay;
+                    // Keep the output reference drifting toward the true input
+                    // so it does not get stuck far from the signal level during
+                    // long bursts or aggressive initialisation.  A faster
+                    // time constant (decay²) prevents post-click samples from
+                    // being over-suppressed while still bounding staircase
+                    // growth during a sustained corrupted ramp.
+                    let output_decay = self.decay * self.decay;
+                    self.last_outputs[ch] =
+                        self.last_outputs[ch] * output_decay + input * (1.0 - output_decay);
                 } else {
                     if abs_delta > self.slope_envelope[ch] {
                         self.slope_envelope[ch] = abs_delta;
@@ -69,6 +85,7 @@ impl TransientSuppressor {
                         self.slope_envelope[ch] =
                             self.slope_envelope[ch] * self.decay + abs_delta * self.one_minus_decay;
                     }
+                    self.last_outputs[ch] = input;
                 }
 
                 // Always track the *input* sample so the next frame's delta
@@ -186,6 +203,48 @@ mod tests {
             assert!(
                 v > 0.05,
                 "post-click sample buf[{k}] over-suppressed (value={v})",
+            );
+        }
+    }
+
+    /// During a multi-sample click burst the old hard-clamp followed the
+    /// corrupted input ramp (`last_input ± threshold`), creating a staircase.
+    /// The fix uses `last_output ± threshold` with a faster one-pole drift
+    /// so the output stays near the pre-burst level and recovers smoothly.
+    #[test]
+    fn suppression_does_not_staircase_during_burst() {
+        let mut suppressor = TransientSuppressor::new(1);
+        suppressor.set_sensitivity(5.0);
+
+        // Prime the envelope with gentle sine.
+        let mut prime: Vec<f32> = (0..40).map(|i| (i as f32 * 0.05).sin() * 0.1).collect();
+        suppressor.process(&mut prime);
+
+        // Gentle sine with a 5-sample ramp burst injected.
+        let mut buf: Vec<f32> = (0..20).map(|i| (i as f32 * 0.05).sin() * 0.1).collect();
+        for i in 0..5 {
+            buf[5 + i] = 5.0 + i as f32; // ramp: 5, 6, 7, 8, 9
+        }
+
+        suppressor.process(&mut buf);
+
+        // With a staircase the burst samples after the first would follow
+        // the ramp (~6, 7, 8...).  The fix keeps them near the pre-burst
+        // signal level.
+        let burst_max = buf[5..10].iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            burst_max < 1.0,
+            "burst output followed input ramp (max={burst_max})"
+        );
+
+        // Step size within the burst should be bounded, not ~1.0 per sample.
+        for i in 6..10 {
+            let step = (buf[i] - buf[i - 1]).abs();
+            assert!(
+                step < 0.5,
+                "stair-step at {i}: step={step}, prev={}, cur={}",
+                buf[i - 1],
+                buf[i]
             );
         }
     }
