@@ -495,6 +495,50 @@ impl MusicDatabase {
         self.clean_missing_files_with_progress(|_, _| {})
     }
 
+    /// Remove tracks whose file extension is no longer supported by the scanner.
+    pub fn clean_unsupported_extensions(
+        &mut self,
+        supported_extensions: &[&str],
+    ) -> SqlResult<usize> {
+        let tracks: Vec<(i64, String)> = {
+            let mut stmt = self.conn.prepare("SELECT id, path FROM tracks")?;
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<SqlResult<Vec<_>>>()?
+        };
+
+        let mut to_delete = Vec::new();
+        for (id, path_str) in tracks {
+            let supported = Path::new(&path_str)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| {
+                    supported_extensions
+                        .iter()
+                        .any(|supported| supported.eq_ignore_ascii_case(ext))
+                });
+            if !supported {
+                to_delete.push(id);
+            }
+        }
+
+        let count = to_delete.len();
+        if count > 0 {
+            let tx = self
+                .conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            for id in to_delete {
+                tx.execute("DELETE FROM tracks WHERE id = ?1", params![id])?;
+            }
+            tx.execute(
+                "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks)",
+                [],
+            )?;
+            tx.commit()?;
+        }
+
+        Ok(count)
+    }
+
     pub fn clean_missing_files_with_progress<F>(
         &mut self,
         mut progress_callback: F,

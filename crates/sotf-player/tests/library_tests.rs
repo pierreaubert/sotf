@@ -1,6 +1,6 @@
-use sotf_audio_player::MusicLibrary;
 /// Integration tests for MusicLibrary scanning and directory management
 use sotf_audio_player::database::MusicDatabase;
+use sotf_audio_player::{Album, MusicLibrary, Track};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -31,6 +31,37 @@ fn write_minimal_wav(path: &std::path::Path) {
     file.write_all(b"data").unwrap();
     file.write_all(&data_size.to_le_bytes()).unwrap();
     file.write_all(&vec![0u8; data_size as usize]).unwrap();
+}
+
+fn test_track(path: PathBuf) -> Track {
+    Track {
+        path,
+        source: None,
+        title: None,
+        artist: None,
+        track_number: None,
+        duration_secs: None,
+        channels: Some(2),
+        sample_rate: Some(44_100),
+        bit_depth: Some(16),
+        replay_gain: None,
+        replay_peak: None,
+        album_gain: None,
+        album_peak: None,
+        waveform: None,
+        genre: None,
+        composer: None,
+        disc_number: None,
+        conductor: None,
+        performer: None,
+        isrc: None,
+        album_artist: None,
+        ensemble: None,
+        edition: None,
+        is_favorite: false,
+        play_count: 0,
+        uuid: None,
+    }
 }
 
 #[test]
@@ -190,6 +221,89 @@ fn test_untagged_folders_survive_database_reload_as_distinct_albums() {
     assert_eq!(reloaded.albums.len(), 2);
     assert_eq!(reloaded.directories[0].file_count, 5);
     assert_eq!(reloaded.directories[0].album_count, 2);
+}
+
+#[test]
+fn test_incremental_scan_preserves_skipped_folder_album_counts() {
+    let temp_music = tempfile::TempDir::new().unwrap();
+    let album_a = temp_music.path().join("repo-a").join("disc");
+    let album_b = temp_music.path().join("repo-b").join("disc");
+    std::fs::create_dir_all(&album_a).unwrap();
+    std::fs::create_dir_all(&album_b).unwrap();
+
+    for idx in 1..=2 {
+        write_minimal_wav(&album_a.join(format!("track-{idx}.wav")));
+    }
+    for idx in 1..=3 {
+        write_minimal_wav(&album_b.join(format!("track-{idx}.wav")));
+    }
+
+    let (_temp_db, db_path) = fixtures::temp_database();
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    library
+        .add_directory(temp_music.path().to_path_buf())
+        .unwrap();
+    library.scan().expect("initial scan");
+
+    library
+        .scan_incremental(true)
+        .expect("incremental scan with mtime skips");
+
+    assert_eq!(library.albums.len(), 2);
+    assert_eq!(library.directories[0].file_count, 5);
+    assert_eq!(library.directories[0].album_count, 2);
+
+    let scan_dirs = library
+        .get_database()
+        .unwrap()
+        .get_scanned_directories()
+        .unwrap();
+    let (_, tracks, albums, _) = scan_dirs
+        .iter()
+        .find(|(path, _, _, _)| path == temp_music.path())
+        .expect("scan history for test root");
+    assert_eq!((*tracks, *albums), (5, 2));
+}
+
+#[test]
+fn test_incremental_scan_prunes_stale_unsupported_tracks() {
+    let temp_music = tempfile::TempDir::new().unwrap();
+    let album_dir = temp_music.path().join("album10opus");
+    std::fs::create_dir_all(&album_dir).unwrap();
+
+    let wav_path = album_dir.join("track.wav");
+    let opus_path = album_dir.join("track.opus");
+    write_minimal_wav(&wav_path);
+    write_minimal_wav(&opus_path);
+
+    let (_temp_db, db_path) = fixtures::temp_database();
+    {
+        let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();
+        db.save_albums(&[Album {
+            title: "Album10opus".to_string(),
+            tracks: vec![test_track(wav_path.clone()), test_track(opus_path.clone())],
+            ..Default::default()
+        }])
+        .unwrap();
+    }
+
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    library
+        .add_directory(temp_music.path().to_path_buf())
+        .unwrap();
+    library
+        .scan_incremental(true)
+        .expect("incremental scan should prune unsupported rows");
+
+    let db = MusicDatabase::open_for_testing(&db_path).unwrap();
+    let albums = db.load_library().unwrap();
+    let tracks: Vec<_> = albums
+        .iter()
+        .flat_map(|album| album.tracks.iter())
+        .collect();
+
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(tracks[0].path, wav_path);
 }
 
 #[test]

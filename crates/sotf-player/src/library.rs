@@ -29,6 +29,12 @@ pub fn is_supported_audio_extension(ext: &str) -> bool {
         .any(|supported| supported.eq_ignore_ascii_case(ext))
 }
 
+fn is_supported_audio_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(is_supported_audio_extension)
+}
+
 /// Normalize an artist or album name for consistent grouping
 /// Converts to lowercase, trims whitespace, removes diacritics and special characters
 /// Keeps ASCII letters, numbers, periods, and UTF-8 letters/numbers
@@ -1069,62 +1075,57 @@ impl MusicLibrary {
         // Final progress report
         progress_callback(total_tracks, album_map.len());
 
-        // Stitch album-key sets into dir_stats. Each track contributes its
-        // album's key to the parent directory's set; aggregation up the tree
-        // unions these sets so an album whose tracks span N subdirectories is
-        // counted once instead of N times.
-        for (title, album) in &album_map {
-            for track in &album.tracks {
-                if let Some(parent) = track.path.parent() {
-                    let entry = dir_stats.entry(parent.to_path_buf()).or_default();
-                    entry.1.insert(title.clone());
-                }
-            }
-        }
-
-        // Update directory stats using aggregate computation (no tree walk needed)
-        for dir_info in &mut self.directories {
-            let (tracks, albums) = compute_aggregate_stats_for_path(&dir_info.path, &dir_stats);
-            dir_info.file_count = tracks;
-            dir_info.album_count = albums;
-            dir_info.last_scanned = Some(scan_time);
-            // Reset children so they get fresh stats on next expand
-            dir_info.subdirectories.clear();
-            dir_info.children_loaded = false;
-        }
-
-        // Update the stats cache for lazy loading
-        self.dir_stats_cache = dir_stats;
-
         // Merge with existing albums if we have a database
         if let Some(db) = &self.db
             && incremental
         {
             // Load existing albums from database
             let existing_albums = db.load_library()?;
+            let scanned_paths: HashSet<PathBuf> = album_map
+                .values()
+                .flat_map(|album| album.tracks.iter().map(|track| track.path.clone()))
+                .collect();
 
             // Merge existing albums that weren't updated
-            for existing_album in existing_albums {
-                // Single-track albums might be standalone (path-keyed in scan).
-                // If the path-based key already exists, this album was re-scanned → skip it.
-                if existing_album.tracks.len() == 1 {
-                    let path_key = format!(
-                        "__standalone__|{}",
-                        existing_album.tracks[0].path.to_string_lossy()
-                    );
-                    if album_map.contains_key(&path_key) {
-                        continue;
+            for mut existing_album in existing_albums {
+                existing_album.tracks.retain(|track| {
+                    is_supported_audio_path(&track.path) && !scanned_paths.contains(&track.path)
+                });
+                if existing_album.tracks.is_empty() {
+                    continue;
+                }
+
+                let title_key =
+                    tagged_album_key(&existing_album.title, existing_album.edition.as_deref());
+                let folder_key = folder_album_key(&existing_album);
+                let merge_key = if album_map.contains_key(&title_key) {
+                    title_key
+                } else if folder_key
+                    .as_ref()
+                    .is_some_and(|key| album_map.contains_key(key))
+                {
+                    folder_key.expect("folder key checked")
+                } else {
+                    folder_key.unwrap_or(title_key)
+                };
+
+                match album_map.get_mut(&merge_key) {
+                    Some(album) => {
+                        if album.id.is_none() {
+                            album.id = existing_album.id;
+                        }
+                        if album.album_art_path.is_none() {
+                            album.album_art_path = existing_album.album_art_path.clone();
+                        }
+                        if album.album_art_thumbnail.is_none() {
+                            album.album_art_thumbnail = existing_album.album_art_thumbnail.clone();
+                        }
+                        album.tracks.extend(existing_album.tracks);
+                    }
+                    None => {
+                        album_map.insert(merge_key, existing_album);
                     }
                 }
-                // Use title|edition key (matches scan format for regular albums)
-                let normalized = normalize_album_key(&existing_album.title);
-                let edition = existing_album
-                    .edition
-                    .as_ref()
-                    .map(|e| normalize_album_key(e))
-                    .unwrap_or_default();
-                let key = format!("{}|{}", normalized, edition);
-                album_map.entry(key).or_insert(existing_album);
             }
         }
 
@@ -1151,8 +1152,29 @@ impl MusicLibrary {
         self.albums
             .sort_by(|a, b| a.artist().cmp(&b.artist()).then(a.title.cmp(&b.title)));
 
+        // Compute directory stats from the final album set, after incremental
+        // scans have merged skipped DB tracks back in.
+        dir_stats = compute_directory_stats(&self.albums);
+        for dir_info in &mut self.directories {
+            let (tracks, albums) = compute_aggregate_stats_for_path(&dir_info.path, &dir_stats);
+            dir_info.file_count = tracks;
+            dir_info.album_count = albums;
+            dir_info.last_scanned = Some(scan_time);
+            // Reset children so they get fresh stats on next expand
+            dir_info.subdirectories.clear();
+            dir_info.children_loaded = false;
+        }
+
+        // Update the stats cache for lazy loading
+        self.dir_stats_cache = dir_stats;
+
         // Save to database if available
         if let Some(db) = &mut self.db {
+            let removed = db.clean_unsupported_extensions(SUPPORTED_AUDIO_EXTENSIONS)?;
+            if removed > 0 {
+                log::info!("Removed {removed} tracks with unsupported extensions from the library");
+            }
+
             db.save_albums(&self.albums)?;
 
             // Sync FTS index to ensure search works correctly after scan
@@ -1315,15 +1337,8 @@ impl MusicLibrary {
 
                             let key = if has_album_tag {
                                 // Albums are keyed by title only - artist comes from tracks
-                                let normalized_title = normalize_album_key(&album_title);
-
                                 // Include edition in key to separate versions
-                                let edition_key = metadata
-                                    .edition
-                                    .as_ref()
-                                    .map(|e| normalize_album_key(e))
-                                    .unwrap_or_default();
-                                format!("{}|{}", normalized_title, edition_key)
+                                tagged_album_key(&album_title, metadata.edition.as_deref())
                             } else {
                                 // Group by folder path so all untagged files in the same
                                 // directory become one album.
@@ -1838,6 +1853,20 @@ fn directory_album_key(album: &Album) -> String {
         normalize_album_key(&album.artist()),
         first_parent,
     )
+}
+
+fn tagged_album_key(title: &str, edition: Option<&str>) -> String {
+    let normalized = normalize_album_key(title);
+    let edition = edition.map(normalize_album_key).unwrap_or_default();
+    format!("{}|{}", normalized, edition)
+}
+
+fn folder_album_key(album: &Album) -> Option<String> {
+    album
+        .tracks
+        .iter()
+        .find_map(|track| track.path.parent())
+        .map(|parent| format!("__folder__|{}", parent.to_string_lossy()))
 }
 
 /// Compute directory stats from albums in the library.
