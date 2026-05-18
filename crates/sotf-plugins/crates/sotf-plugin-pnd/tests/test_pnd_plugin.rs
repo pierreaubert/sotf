@@ -24,10 +24,7 @@ fn test_pnd_processing_silence() {
     let input = vec![0.0; num_frames * 2];
     let mut output = vec![0.0; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames,
-    };
+    let context = ProcessContext::new(44100, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -54,10 +51,7 @@ fn test_pnd_processing_signal() {
 
     let mut output = vec![0.0; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames,
-    };
+    let context = ProcessContext::new(44100, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -121,10 +115,7 @@ fn test_pnd_known_drift_correction() {
     for pos in (0..total_frames).step_by(block_size) {
         let end = (pos + block_size).min(total_frames);
         let nf = end - pos;
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(sr, nf);
         plugin
             .process(&input[pos..end], &mut output[pos..end], &ctx)
             .unwrap();

@@ -29,10 +29,7 @@ fn test_xtc_saturation_fix() {
 
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 

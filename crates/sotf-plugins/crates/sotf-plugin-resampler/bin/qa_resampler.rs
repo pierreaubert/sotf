@@ -21,10 +21,7 @@ fn main() {
     let input = vec![0.5f32; num_frames * channels];
     let max_out_frames = ((num_frames as f64 * output_sr as f64 / input_sr as f64) as usize) + 128;
     let mut output = vec![0.0f32; max_out_frames * channels];
-    let ctx = ProcessContext {
-        sample_rate: input_sr,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(input_sr, num_frames);
     plugin.process(&input, &mut output, &ctx).unwrap();
 
     let has_output = output.iter().any(|&s| s.abs() > 0.01);
@@ -44,10 +41,7 @@ fn main() {
     let rt_input = vec![0.1f32; rt_block * channels];
     let rt_max_out = ((rt_block as f64 * output_sr as f64 / input_sr as f64) as usize) + 128;
     let mut rt_output = vec![0.0f32; rt_max_out * channels];
-    let rt_ctx = ProcessContext {
-        sample_rate: input_sr,
-        num_frames: rt_block,
-    };
+    let rt_ctx = ProcessContext::new(input_sr, rt_block);
 
     // Warm up
     for _ in 0..10 {
@@ -70,10 +64,7 @@ fn main() {
     let mut pos = 0;
     while pos < bench_frames {
         let end = (pos + rt_block).min(bench_frames);
-        let ctx = ProcessContext {
-            sample_rate: input_sr,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(input_sr, end - pos);
         plugin
             .process(
                 &bench_input[pos * channels..end * channels],

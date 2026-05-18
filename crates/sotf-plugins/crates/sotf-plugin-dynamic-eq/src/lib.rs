@@ -1025,10 +1025,7 @@ mod tests {
         let original = make_sine(1000.0, sr, num_frames, amplitude);
         let mut buf = original.clone();
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         plugin.process_in_place(&mut buf, &ctx).unwrap();
 
         // Output should be essentially the same (peak EQ at 0 dB is passthrough)
@@ -1078,10 +1075,7 @@ mod tests {
         let mut buf = make_sine(1000.0, sr, num_frames, amplitude);
         let input_rms = rms(&buf);
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         plugin.process_in_place(&mut buf, &ctx).unwrap();
 
         // Use the second half to allow attack to settle
@@ -1130,10 +1124,7 @@ mod tests {
         let mut buf = make_sine(1000.0, sr, num_frames, amplitude);
         let input_rms = rms(&buf);
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         plugin.process_in_place(&mut buf, &ctx).unwrap();
 
         let output_rms = rms(&buf[num_frames / 2..]);
@@ -1181,10 +1172,7 @@ mod tests {
         plugin_1k.initialize(sr).unwrap();
         let mut buf_1k = make_sine(1000.0, sr, num_frames, amplitude);
         let input_rms_1k = rms(&buf_1k);
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         plugin_1k.process_in_place(&mut buf_1k, &ctx).unwrap();
         let output_rms_1k = rms(&buf_1k[num_frames / 2..]);
 
@@ -1349,10 +1337,7 @@ mod tests {
         plugin.reset();
 
         let mut buf = input.clone();
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         plugin.process_in_place(&mut buf, &ctx).unwrap();
 
         let output_rms = rms(&buf[num_frames / 2..]);
@@ -1368,10 +1353,7 @@ mod tests {
         let mut plugin = DynamicEqPlugin::new(2);
         plugin.initialize(sr).unwrap();
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: 16,
-        };
+        let ctx = ProcessContext::new(sr, 16);
         let mut short = vec![0.0; 31];
         let err = plugin.process_in_place(&mut short, &ctx).unwrap_err();
         assert!(err.contains("Buffer size mismatch"));
@@ -1435,10 +1417,7 @@ mod tests {
         // which reflects what the sidechain detected. If the sidechain was reading
         // the modified buffer, band 0's presence would inflate the band 1 detection.
         let capture_band1_gr = |plugin: &mut DynamicEqPlugin| -> f32 {
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames,
-            };
+            let ctx = ProcessContext::new(sr, num_frames);
             let mut buf = make_sine(1000.0, sr, num_frames, amplitude);
             plugin.process_in_place(&mut buf, &ctx).unwrap();
             plugin.monitoring_gr[1]
@@ -1509,10 +1488,7 @@ mod tests {
 
         let input = make_sine(1000.0, sr, num_frames, amplitude);
         let mut buf = input.clone();
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         plugin.process_in_place(&mut buf, &ctx).unwrap();
 
         // At steady state (second half) proportion ≈ 1.0; output should match

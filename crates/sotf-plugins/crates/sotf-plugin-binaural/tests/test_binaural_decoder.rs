@@ -56,10 +56,7 @@ fn test_binaural_channel_normalization_no_clipping() {
 
     let output_channels = 2; // Stereo output
     let mut output = vec![0.0; num_samples * output_channels];
-    let context = sotf_host::ProcessContext {
-        sample_rate,
-        num_frames: num_samples,
-    };
+    let context = sotf_host::ProcessContext::new(sample_rate, num_samples);
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Check for clipping (values exceeding [-1.0, 1.0])
@@ -141,10 +138,7 @@ fn test_binaural_denormal_flushing() {
     plugin.initialize(sample_rate).unwrap();
 
     let num_samples = 1024;
-    let context = sotf_host::ProcessContext {
-        sample_rate,
-        num_frames: num_samples,
-    };
+    let context = sotf_host::ProcessContext::new(sample_rate, num_samples);
 
     // Step 1: Process normal values to prime the STFT pipeline
     // Note: Without a SOFA file, HRTFs are all-zero so output is silence.
@@ -218,10 +212,7 @@ fn test_binaural_silence_after_draining_stft_tail() {
     plugin.initialize(sample_rate).unwrap();
 
     let num_samples = 1024;
-    let context = sotf_host::ProcessContext {
-        sample_rate,
-        num_frames: num_samples,
-    };
+    let context = sotf_host::ProcessContext::new(sample_rate, num_samples);
 
     // Step 1: Feed normal signal to prime the STFT pipeline
     let input_normal = vec![0.5; num_samples * input_channels];

@@ -1429,10 +1429,7 @@ mod tests {
                 let out_samples = num_frames * plugin.output_channels();
                 let input = vec![0.5_f32; in_samples];
                 let mut output = vec![0.0_f32; out_samples];
-                let context = sotf_plugins::plugin::ProcessContext {
-                    sample_rate,
-                    num_frames,
-                };
+                let context = sotf_plugins::plugin::ProcessContext::new(sample_rate, num_frames);
                 let _ = plugin.process(&input, &mut output, &context);
             }));
 
@@ -1479,10 +1476,7 @@ mod tests {
                 Err(_) => continue,
             };
 
-            let context = sotf_plugins::plugin::ProcessContext {
-                sample_rate,
-                num_frames: 0,
-            };
+            let context = sotf_plugins::plugin::ProcessContext::new(sample_rate, 0);
             // Zero-length buffers — must not panic
             let _ = plugin.process(&[], &mut [], &context);
         }

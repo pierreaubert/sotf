@@ -55,10 +55,7 @@ fn process_blocks(
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(sample_rate, end - pos);
         plugin
             .process(
                 &input[pos * in_ch..end * in_ch],
@@ -313,10 +310,7 @@ fn test_bypass(plugin: &mut AaePlugin, sample_rate: u32) {
         .collect();
     let mut output = vec![0.0_f32; num_frames * out_ch];
 
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     plugin.process(&input, &mut output, &ctx).unwrap();
 
     // In bypass, FL should equal input L, FR should equal input R

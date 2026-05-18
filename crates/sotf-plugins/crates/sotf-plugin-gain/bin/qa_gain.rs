@@ -22,10 +22,7 @@ fn main() {
     println!("\n[Test 1] Global Gain (-6.00dB)");
     let num_frames = 24000; // 500ms
     let mut buffer = vec![1.0; num_frames * channels];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = 20.0 * buffer[num_frames * channels - 1].abs().log10();
     println!("  Target: -6.00dB, Measured: {:.2}dB", peak);

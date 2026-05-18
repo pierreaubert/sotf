@@ -22,10 +22,7 @@ fn benchmark_plugin(c: &mut Criterion, name: &str, mut plugin: AmbisonicsDecoder
         })
         .collect();
     let mut output = vec![0.0_f32; FRAME_SIZE * out_ch];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: FRAME_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, FRAME_SIZE);
 
     c.bench_function(name, |b| {
         b.iter(|| {

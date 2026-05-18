@@ -321,14 +321,8 @@ mod tests {
     fn test_unity_gain() {
         let mut p = GainPlugin::new(2, 0.0);
         let mut b = vec![1.0, 2.0, 3.0, 4.0];
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 44100,
-                num_frames: 2,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(44100, 2))
+            .unwrap();
         assert!((b[0] - 1.0).abs() < 1e-5);
     }
 
@@ -403,14 +397,8 @@ mod tests {
         // to converge. Process 200ms worth of samples to be safe.
         let num_frames = 19200; // 200ms at 96kHz
         let mut buf = vec![1.0f32; num_frames];
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 96000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(96000, num_frames))
+            .unwrap();
 
         // After 200ms, the smoother should have converged to the target gain
         let last_sample = buf[num_frames - 1];

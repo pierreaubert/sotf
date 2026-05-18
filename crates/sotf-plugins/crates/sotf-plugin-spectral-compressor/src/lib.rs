@@ -980,10 +980,7 @@ mod tests {
 
         // Process the entire signal in one call (like the multiband expander test)
         let mut buf = signal.to_vec();
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: total_frames,
-        };
+        let ctx = ProcessContext::new(48000, total_frames);
         plugin.process_in_place(&mut buf, &ctx).unwrap();
         buf
     }
@@ -1146,10 +1143,7 @@ mod tests {
     #[test]
     fn test_process_rejects_buffer_size_mismatch() {
         let mut plugin = make_plugin(-20.0, 2.0);
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 64,
-        };
+        let ctx = ProcessContext::new(48000, 64);
         let mut short = vec![0.0f32; ctx.num_frames * plugin.channels() - 1];
         let err = plugin.process_in_place(&mut short, &ctx).unwrap_err();
         assert!(err.contains("Buffer size mismatch"));
@@ -1171,10 +1165,7 @@ mod tests {
             buffer[i * 2 + 1] = -(i as f32) * 0.001;
         }
         let original = buffer.clone();
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
 
         plugin.process_in_place(&mut buffer, &ctx).unwrap();
         assert_eq!(buffer, original);

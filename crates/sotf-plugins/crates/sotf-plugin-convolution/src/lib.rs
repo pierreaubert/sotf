@@ -1003,10 +1003,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin
                 .process_in_place(&mut buffer[block_start..block_end], &ctx)
                 .unwrap();
@@ -1049,10 +1046,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             let buf_start = block_start * channels;
             let buf_end = block_end * channels;
             plugin
@@ -1102,10 +1096,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin
                 .process_in_place(&mut buffer[block_start..block_end], &ctx)
                 .unwrap();
@@ -1154,10 +1145,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin_0db
                 .process_in_place(&mut buffer_0db[block_start..block_end], &ctx)
                 .unwrap();
@@ -1177,10 +1165,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin_6db
                 .process_in_place(&mut buffer_6db[block_start..block_end], &ctx)
                 .unwrap();
@@ -1244,10 +1229,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin_par
                 .process_in_place(&mut buf_par[block_start..block_end], &ctx)
                 .unwrap();
@@ -1265,10 +1247,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin_seq
                 .process_in_place(&mut buf_seq[block_start..block_end], &ctx)
                 .unwrap();
@@ -1329,10 +1308,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin
                 .process_in_place(&mut buffer[block_start..block_end], &ctx)
                 .unwrap();
@@ -1384,10 +1360,7 @@ mod tests {
 
         // Spin until the background thread finishes loading.
         let mut buf = vec![0.0f32; 1024];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1024,
-        };
+        let ctx = ProcessContext::new(48000, 1024);
         for _ in 0..200 {
             plugin.process_in_place(&mut buf, &ctx).unwrap();
             if plugin.ir_load_result_rx.is_none() {
@@ -1416,10 +1389,7 @@ mod tests {
     #[test]
     fn test_process_rejects_short_buffer() {
         let mut plugin = make_plugin_with_ir(2, 48000, vec![vec![1.0], vec![1.0]]);
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 32,
-        };
+        let ctx = ProcessContext::new(48000, 32);
         let mut short = vec![0.0_f32; 32 * 2 - 1];
         assert!(plugin.process_in_place(&mut short, &ctx).is_err());
     }
@@ -1459,10 +1429,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(small_block) {
             let block_end = (block_start + small_block).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin
                 .process_in_place(&mut buffer[block_start..block_end], &ctx)
                 .unwrap();
@@ -1519,10 +1486,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(small_block) {
             let block_end = (block_start + small_block).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin
                 .process_in_place(&mut buffer[block_start..block_end], &ctx)
                 .unwrap();
@@ -1563,10 +1527,7 @@ mod tests {
         let mut buf1 = signal.clone();
         for block_start in (0..frames).step_by(PARTITION_SIZE) {
             let nf = PARTITION_SIZE.min(frames - block_start);
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin
                 .process_in_place(&mut buf1[block_start..block_start + nf], &ctx)
                 .unwrap();
@@ -1577,10 +1538,7 @@ mod tests {
         let mut buf2 = signal.clone();
         for block_start in (0..frames).step_by(PARTITION_SIZE) {
             let nf = PARTITION_SIZE.min(frames - block_start);
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf);
             plugin
                 .process_in_place(&mut buf2[block_start..block_start + nf], &ctx)
                 .unwrap();

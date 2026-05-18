@@ -27,10 +27,7 @@ fn test_matrix_plugin() {
     let settle_frames = 4096;
     let settle_input = vec![0.0_f32; settle_frames * 2];
     let mut settle_output = vec![0.0_f32; settle_frames * 2];
-    let settle_context = ProcessContext {
-        sample_rate: 44100,
-        num_frames: settle_frames,
-    };
+    let settle_context = ProcessContext::new(44100, settle_frames);
     matrix
         .process(&settle_input, &mut settle_output, &settle_context)
         .unwrap();
@@ -38,10 +35,7 @@ fn test_matrix_plugin() {
     let input = vec![0.1, 0.8]; // L=0.1, R=0.8
     let mut output = vec![0.0; 2];
 
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames: 1,
-    };
+    let context = ProcessContext::new(44100, 1);
 
     matrix.process(&input, &mut output, &context).unwrap();
 

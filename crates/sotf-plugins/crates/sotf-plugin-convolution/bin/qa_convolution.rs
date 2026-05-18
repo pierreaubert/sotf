@@ -19,10 +19,7 @@ fn main() {
     println!("\n[Test 1] Passthrough without IR");
     let num_frames = 4096;
     let mut buffer = vec![0.5f32; num_frames * channels];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
 
     let last = buffer[(num_frames - 1) * channels];

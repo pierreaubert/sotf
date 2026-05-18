@@ -71,10 +71,7 @@ fn test_attack_controls_gate_open_speed() {
         buf_a[i] = amp_loud;
         buf_b[i] = amp_loud;
     }
-    let ctx = ProcessContext {
-        sample_rate: sr,
-        num_frames: total,
-    };
+    let ctx = ProcessContext::new(sr, total);
 
     // Experiment A: slow attack = 100 ms
     let mut gate_a = make_gate(100.0, 1.0);
@@ -144,10 +141,7 @@ fn test_linked_mode_is_open_false_when_gated() {
     for pos in (0..num_frames).step_by(block_size) {
         let end = (pos + block_size).min(num_frames);
         let nf = end - pos;
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(sr, nf);
         gate.process_in_place(&mut buf[pos * stride..end * stride], &ctx)
             .unwrap();
     }
@@ -271,17 +265,11 @@ fn test_gate_hysteresis_prevents_chatter() {
 
     // Process in blocks
     let block_size = 1024;
-    let _ctx = ProcessContext {
-        sample_rate: sr,
-        num_frames: block_size,
-    };
+    let _ctx = ProcessContext::new(sr, block_size);
     for pos in (0..num_frames).step_by(block_size) {
         let end = (pos + block_size).min(num_frames);
         let nf = end - pos;
-        let c = ProcessContext {
-            sample_rate: sr,
-            num_frames: nf,
-        };
+        let c = ProcessContext::new(sr, nf);
         gate.process_in_place(&mut buffer[pos..end], &c).unwrap();
     }
 

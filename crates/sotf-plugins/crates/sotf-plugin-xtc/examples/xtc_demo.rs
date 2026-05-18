@@ -60,10 +60,7 @@ fn main() {
         input[i * 2 + 1] = phase.cos() * 0.5; // Right: cosine (90° phase shift)
     }
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     // Process audio
     plugin
@@ -118,10 +115,7 @@ fn main() {
         .map(|i| ((i as f32) * 0.01).sin())
         .collect();
     let mut bypass_output = vec![0.0_f32; bypass_frames * 2];
-    let bypass_context = ProcessContext {
-        sample_rate,
-        num_frames: bypass_frames,
-    };
+    let bypass_context = ProcessContext::new(sample_rate, bypass_frames);
     plugin
         .process(&bypass_input, &mut bypass_output, &bypass_context)
         .expect("Failed to process audio");

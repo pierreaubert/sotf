@@ -440,10 +440,7 @@ mod tests {
     #[test]
     fn test_aec_plugin_process() {
         let mut plugin = AecPlugin::new(48000);
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 512,
-        };
+        let context = ProcessContext::new(48000, 512);
 
         // 2-channel interleaved input
         let input = vec![0.1f32; 512 * 2];
@@ -456,10 +453,7 @@ mod tests {
     #[test]
     fn test_aec_rejects_mismatched_buffer_sizes() {
         let mut plugin = AecPlugin::new(48000);
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 16,
-        };
+        let context = ProcessContext::new(48000, 16);
 
         let short_input = vec![0.0f32; 31];
         let mut output = vec![0.0f32; 16];
@@ -496,10 +490,7 @@ mod tests {
             input[frame * 2 + 1] = 0.0;
         }
         let mut output = vec![0.0f32; num_frames];
-        let context = ProcessContext {
-            sample_rate,
-            num_frames,
-        };
+        let context = ProcessContext::new(sample_rate, num_frames);
 
         plugin.process(&input, &mut output, &context).unwrap();
         let nonzero = output.iter().filter(|sample| sample.abs() > 0.01).count();
@@ -528,10 +519,7 @@ mod tests {
         for _ in 0..10 {
             let input = vec![0.1f32; block_size * 2];
             let mut output = vec![0.0f32; block_size];
-            let ctx = ProcessContext {
-                sample_rate: 48000,
-                num_frames: block_size,
-            };
+            let ctx = ProcessContext::new(48000, block_size);
             plugin.process(&input, &mut output, &ctx).unwrap();
         }
         assert_eq!(
@@ -564,10 +552,7 @@ mod tests {
         let num_frames = DEFAULT_BLOCK_SIZE * 32;
         let input = vec![0.1f32; num_frames * 2];
         let mut output = vec![0.0f32; num_frames];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         plugin.process(&input, &mut output, &ctx).unwrap();
     }
 
@@ -599,10 +584,7 @@ mod tests {
                 [t.sin() * 0.5, 0.0_f32]
             })
             .collect();
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: block_size,
-        };
+        let ctx = ProcessContext::new(48000, block_size);
         let transfers_before = plugin.aec.transfer_count();
         for _ in 0..10 {
             let mut out = vec![0.0f32; block_size];
@@ -633,10 +615,7 @@ mod tests {
                 post_filter_enabled: false,
             },
         );
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: block_size,
-        };
+        let ctx = ProcessContext::new(48000, block_size);
         // Training phase: non-zero reference creates non-zero weights
         for block_idx in 0..50 {
             let mut input = vec![0.0f32; block_size * 2];
@@ -680,10 +659,7 @@ mod tests {
                 post_filter_enabled: true,
             },
         );
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: block_size,
-        };
+        let ctx = ProcessContext::new(48000, block_size);
         // Feed pure near-end speech (mic) with zero reference for many blocks so
         // AEC weights are near zero and echo estimate is negligible.
         // Power of near-end should be preserved (not suppressed > 20 dB).
@@ -766,10 +742,7 @@ mod tests {
                 input[i * 2 + 1] = reference[i];
             }
 
-            let context = ProcessContext {
-                sample_rate,
-                num_frames: block_size,
-            };
+            let context = ProcessContext::new(sample_rate, block_size);
             let mut output = vec![0.0f32; block_size];
             plugin.process(&input, &mut output, &context).unwrap();
 

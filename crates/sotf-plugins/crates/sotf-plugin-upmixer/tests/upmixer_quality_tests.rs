@@ -28,10 +28,7 @@ fn test_upmixer_voice_leakage() {
     let out_ch = plugin.output_channels();
     let mut output = vec![0.0_f32; num_frames * out_ch];
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -86,10 +83,7 @@ fn test_upmixer_phase_alignment_extraction() {
     let out_ch = plugin.output_channels();
     let mut output = vec![0.0_f32; num_frames * out_ch];
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 

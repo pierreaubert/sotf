@@ -97,10 +97,7 @@ fn test_feed_forward_lookahead_tracks_peak() {
         buffer[i * 2 + 1] = amp;
     }
 
-    let context = ProcessContext {
-        num_frames: 512,
-        sample_rate: 48000,
-    };
+    let context = ProcessContext::new(48000, 512);
     plugin.process_in_place(&mut buffer, &context).unwrap();
 
     // With feed-forward, the limiter should have started reducing gain
@@ -129,10 +126,7 @@ fn test_more_than_32_channels() {
         buffer[frame * 48 + 40] = 2.0;
     }
 
-    let context = ProcessContext {
-        num_frames: 64,
-        sample_rate: 48000,
-    };
+    let context = ProcessContext::new(48000, 64);
     plugin.process_in_place(&mut buffer, &context).unwrap();
 
     // Channel 40 should have been limited.

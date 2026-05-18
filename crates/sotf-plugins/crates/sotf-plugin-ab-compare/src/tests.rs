@@ -68,10 +68,7 @@ fn test_bypass_mode() {
 
     let input = vec![1.0, 0.5, 0.8, 0.3]; // 2 frames, 2 channels
     let mut output = vec![0.0; 4];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 2,
-    };
+    let context = ProcessContext::new(48000, 2);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -137,10 +134,7 @@ fn test_mix_pure_a() {
     // Process multiple times to let smoothers settle
     let input = vec![1.0; 4800 * 2]; // 100ms at 48kHz
     let mut output = vec![0.0; 4800 * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 4800,
-    };
+    let context = ProcessContext::new(48000, 4800);
 
     for _ in 0..5 {
         plugin.process(&input, &mut output, &context).unwrap();
@@ -178,10 +172,7 @@ fn test_mix_pure_b() {
     // Process multiple times to let smoothers settle
     let input = vec![1.0; 4800 * 2];
     let mut output = vec![0.0; 4800 * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 4800,
-    };
+    let context = ProcessContext::new(48000, 4800);
 
     for _ in 0..5 {
         plugin.process(&input, &mut output, &context).unwrap();
@@ -227,10 +218,7 @@ fn test_multichannel_support() {
 
     let input = vec![0.5; 5 * 1024]; // 1024 frames, 5 channels
     let mut output = vec![0.0; 5 * 1024];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 1024,
-    };
+    let context = ProcessContext::new(48000, 1024);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -245,10 +233,7 @@ fn test_empty_path_fast_path_matches_equal_power_mix() {
 
     let input = vec![0.25; 512 * 2];
     let mut output = vec![0.0; 512 * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 512,
-    };
+    let context = ProcessContext::new(48000, 512);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -269,10 +254,7 @@ fn test_reset() {
     // Process some audio
     let input = vec![1.0; 1000 * 2];
     let mut output = vec![0.0; 1000 * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 1000,
-    };
+    let context = ProcessContext::new(48000, 1000);
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Reset should not panic
@@ -313,10 +295,7 @@ fn test_rack_configuration() {
     // Two -3dB gains = -6dB total
     let input = vec![1.0; 4800 * 2];
     let mut output = vec![0.0; 4800 * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 4800,
-    };
+    let context = ProcessContext::new(48000, 4800);
 
     for _ in 0..5 {
         plugin.process(&input, &mut output, &context).unwrap();
@@ -338,10 +317,7 @@ fn test_get_data() {
     // Process some audio
     let input = vec![0.5; 4800 * 2];
     let mut output = vec![0.0; 4800 * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 4800,
-    };
+    let context = ProcessContext::new(48000, 4800);
     plugin.process(&input, &mut output, &context).unwrap();
 
     let data = plugin.get_data().unwrap();
@@ -369,10 +345,7 @@ fn test_runtime_path_change() {
     // Verify it works
     let input = vec![1.0; 1024 * 2];
     let mut output = vec![0.0; 1024 * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 1024,
-    };
+    let context = ProcessContext::new(48000, 1024);
 
     plugin.process(&input, &mut output, &context).unwrap();
 }
@@ -537,10 +510,7 @@ fn test_auto_gain_attenuates_louder_b() {
     let num_frames = 4800; // 100ms at 48kHz
     let input = generate_sine_input(num_frames, 2);
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process multiple times to let loudness monitors and smoothers settle
     for _ in 0..10 {
@@ -581,10 +551,7 @@ fn test_auto_gain_boosts_quieter_b() {
     let num_frames = 4800;
     let input = generate_sine_input(num_frames, 2);
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process multiple times
     for _ in 0..10 {
@@ -624,10 +591,7 @@ fn test_auto_gain_disabled_no_compensation() {
     let num_frames = 4800;
     let input = generate_sine_input(num_frames, 2);
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process multiple times
     for _ in 0..5 {
@@ -669,10 +633,7 @@ fn test_auto_gain_max_clamp() {
     let num_frames = 9600; // 200ms
     let input = generate_sine_input(num_frames, 2);
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process multiple times
     for _ in 0..10 {
@@ -710,10 +671,7 @@ fn test_auto_gain_reset_clears_gain() {
     let num_frames = 4800;
     let input = generate_sine_input(num_frames, 2);
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process to build up auto-gain
     for _ in 0..10 {
@@ -757,10 +715,7 @@ fn test_auto_gain_get_data_includes_loudness() {
     let num_frames = 4800;
     let input = generate_sine_input(num_frames, 2);
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process to get loudness measurements
     for _ in 0..5 {
@@ -805,10 +760,7 @@ fn test_auto_gain_runtime_enable_disable() {
     let num_frames = 4800;
     let input = generate_sine_input(num_frames, 2);
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process while disabled
     for _ in 0..5 {
@@ -901,10 +853,7 @@ fn test_auto_gain_equal_paths_no_compensation() {
     let num_frames = 4800;
     let input = generate_sine_input(num_frames, 2);
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process multiple times
     for _ in 0..10 {
@@ -943,10 +892,7 @@ fn test_auto_gain_multichannel() {
     let num_frames = 4800;
     let input = generate_sine_input(num_frames, 5);
     let mut output = vec![0.0; num_frames * 5];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Should not panic with multichannel
     for _ in 0..10 {
@@ -1033,10 +979,7 @@ fn test_latency_compensation() {
     }
 
     let mut output = vec![0.0f32; num_frames * channels];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Use pure-A mode (mix = -1) with auto-gain disabled
     plugin
@@ -1114,10 +1057,7 @@ fn test_latency_compensation_reset() {
     let num_frames = 64;
     let input = vec![1.0f32; num_frames * channels];
     let mut output = vec![0.0f32; num_frames * channels];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Reset should clear delay line contents
@@ -1196,10 +1136,7 @@ fn test_difference_mode_identical_paths_silence() {
     let num_frames = 4800;
     let input = generate_sine_input(num_frames, 2);
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process several blocks for smoothers to settle
     for _ in 0..5 {
@@ -1237,10 +1174,7 @@ fn test_difference_mode_a_sine_b_silence() {
     let num_frames = 4800;
     let input = generate_sine_input(num_frames, 2);
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process several blocks for smoothers to settle
     for _ in 0..5 {
@@ -1309,10 +1243,7 @@ fn test_band_mask_reduces_out_of_band_energy() {
 
     let mut output_full = vec![0.0; num_frames * channels];
     let mut output_masked = vec![0.0; num_frames * channels];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process several blocks
     for _ in 0..3 {
@@ -1355,10 +1286,7 @@ fn test_large_block_beyond_4096_succeeds() {
     let num_frames = 8192;
     let input = vec![0.3f32; num_frames * channels];
     let mut output = vec![0.0f32; num_frames * channels];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Before the fix this would return Err("Internal buffers too small…").
     // After the fix it must succeed.

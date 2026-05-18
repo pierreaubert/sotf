@@ -402,15 +402,8 @@ mod tests {
         p.initialize(48000).unwrap();
         let i = vec![1.0; 1000];
         let mut o = vec![0.0; 2000];
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(48000, 1000))
+            .unwrap();
         assert!(o[0].is_finite());
     }
 
@@ -421,15 +414,8 @@ mod tests {
         assert_eq!(p.output_channels(), 3); // 1 channel * 3 bands
         let i = vec![1.0; 1000];
         let mut o = vec![0.0; 3000]; // 1000 frames * 3 output channels
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(48000, 1000))
+            .unwrap();
         assert!(o[0].is_finite());
         assert!(o[2999].is_finite());
     }
@@ -441,15 +427,8 @@ mod tests {
         assert_eq!(p.output_channels(), 4);
         let i = vec![1.0; 500];
         let mut o = vec![0.0; 2000]; // 500 frames * 4 output channels
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 500,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(48000, 500))
+            .unwrap();
         assert!(o[0].is_finite());
         assert!(o[1999].is_finite());
     }
@@ -462,15 +441,8 @@ mod tests {
         assert_eq!(p.output_channels(), 6); // 2 channels * 3 bands
         let i = vec![0.5; 200]; // 100 frames * 2 channels
         let mut o = vec![0.0; 600]; // 100 frames * 6 output channels
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 100,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(48000, 100))
+            .unwrap();
         assert!(o[0].is_finite());
         assert!(o[599].is_finite());
     }
@@ -507,15 +479,8 @@ mod tests {
         let n = 10000;
         let input = vec![1.0; n];
         let mut output = vec![0.0; n * 2];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, n))
+            .unwrap();
         // Last frame: low (idx n*2 - 2) + high (idx n*2 - 1) should sum near 1.0
         let low = output[n * 2 - 2];
         let high = output[n * 2 - 1];
@@ -545,10 +510,7 @@ mod tests {
 
         let n = 10000;
         let input = vec![1.0f32; n];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: n,
-        };
+        let ctx = ProcessContext::new(48000, n);
 
         // Reference: 0dB gain (unity)
         let mut p_ref = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
@@ -606,10 +568,7 @@ mod tests {
         let input_settle = vec![1.0f32; n_settle];
         let input_short = vec![1.0f32; n_short];
 
-        let make_ctx = |n: usize| ProcessContext {
-            sample_rate: 48000,
-            num_frames: n,
-        };
+        let make_ctx = |n: usize| ProcessContext::new(48000, n);
 
         // Settle at 0 dB
         let mut p = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
@@ -659,10 +618,7 @@ mod tests {
         let n_block = 512usize;
         let input = vec![1.0f32; n_settle.max(n_block)];
 
-        let make_ctx = |n: usize| ProcessContext {
-            sample_rate: 48000,
-            num_frames: n,
-        };
+        let make_ctx = |n: usize| ProcessContext::new(48000, n);
 
         let mut p = BandSplitPlugin::new(1, 500.0, "LR24").unwrap();
         p.initialize(48000).unwrap();
@@ -716,15 +672,8 @@ mod tests {
         let n = 20000;
         let input = vec![1.0f32; n];
         let mut output = vec![0.0f32; n * 2];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, n))
+            .unwrap();
         let low = output[n * 2 - 2];
         let high = output[n * 2 - 1];
         let sum = low + high;

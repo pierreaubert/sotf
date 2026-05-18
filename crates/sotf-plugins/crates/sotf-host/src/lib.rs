@@ -89,7 +89,8 @@ pub use oversampling::{
 };
 pub use parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 pub use plugin::{
-    InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
+    InPlacePlugin, InPlacePluginAdapter, LoopRange, MidiEvent, MidiMessage, Plugin, PluginInfo,
+    PluginResult, ProcessContext, TimeSignature, TransportInfo,
 };
 
 #[cfg(feature = "qa")]

@@ -103,10 +103,7 @@ fn main() {
         let input_block = &samples[sample_start..sample_end];
 
         let mut output_block = vec![0.0_f32; frames_this_block * out_channels];
-        let context = ProcessContext {
-            sample_rate,
-            num_frames: frames_this_block,
-        };
+        let context = ProcessContext::new(sample_rate, frames_this_block);
 
         plugin
             .process(input_block, &mut output_block, &context)

@@ -741,10 +741,7 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
                 let chunk_frames = (nf - frame).min(max_chunk_frames);
                 let start = frame * nc;
                 let end = start + chunk_frames * nc;
-                let chunk_context = ProcessContext {
-                    sample_rate: context.sample_rate,
-                    num_frames: chunk_frames,
-                };
+                let chunk_context = ProcessContext::new(context.sample_rate, chunk_frames);
                 self.process_in_place(&mut buffer[start..end], &chunk_context)?;
                 frame += chunk_frames;
             }
@@ -922,10 +919,7 @@ mod tests {
     use super::*;
 
     fn make_context(num_frames: usize) -> ProcessContext {
-        ProcessContext {
-            sample_rate: DEFAULT_SAMPLE_RATE,
-            num_frames,
-        }
+        ProcessContext::new(DEFAULT_SAMPLE_RATE, num_frames)
     }
 
     #[test]
@@ -1037,13 +1031,7 @@ mod tests {
         let input = buffer.clone();
 
         plugin
-            .process_in_place(
-                &mut buffer,
-                &ProcessContext {
-                    sample_rate: sr,
-                    num_frames,
-                },
-            )
+            .process_in_place(&mut buffer, &ProcessContext::new(sr, num_frames))
             .unwrap();
 
         let changed = buffer
@@ -1221,10 +1209,7 @@ mod tests {
                     buf[frame * nc + ch] = s;
                 }
             }
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames,
-            };
+            let ctx = ProcessContext::new(sr, num_frames);
             plugin.process_in_place(&mut buf, &ctx).unwrap();
             if block >= measure_from && block * num_frames > latency + num_frames {
                 for &s in &buf {

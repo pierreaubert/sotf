@@ -131,10 +131,7 @@ fn process_streaming(
     let mut pos = 0;
     while pos < input.len() {
         let end = (pos + block_size).min(input.len());
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(sample_rate, end - pos);
         plugin
             .process(&input[pos..end], &mut output[pos * 2..end * 2], &ctx)
             .unwrap();

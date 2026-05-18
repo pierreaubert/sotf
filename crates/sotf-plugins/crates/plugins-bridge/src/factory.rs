@@ -454,10 +454,7 @@ mod tests {
 
         let input = vec![0.0f32; 256];
         let mut output = vec![0.0f32; 256];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 128,
-        };
+        let ctx = ProcessContext::new(48000, 128);
         let result = plugin.process(&input, &mut output, &ctx);
         assert!(result.is_ok());
     }

@@ -31,10 +31,7 @@ fn test_eq_plugin_basic() {
 
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process
     plugin.process(&input, &mut output, &context).unwrap();
@@ -83,10 +80,7 @@ fn test_eq_plugin_parametric() {
 
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -125,10 +119,7 @@ fn test_eq_plugin_filter_update() {
     let input = vec![0.5_f32; num_frames * 2];
     let mut output1 = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output1, &context).unwrap();
 
@@ -193,15 +184,13 @@ fn test_eq_plugin_multi_channel() {
         input[i * 5 + 1] = (2.0 * std::f32::consts::PI * 550.0 * t).sin() * 0.3; // FR
         input[i * 5 + 2] = (2.0 * std::f32::consts::PI * 660.0 * t).sin() * 0.3; // C
         input[i * 5 + 3] = (2.0 * std::f32::consts::PI * 770.0 * t).sin() * 0.3; // RL
-        input[i * 5 + 4] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3; // RR
+        input[i * 5 + 4] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3;
+        // RR
     }
 
     let mut output = vec![0.0_f32; num_frames * 5];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 

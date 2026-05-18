@@ -1466,6 +1466,7 @@ impl DawHost {
         let max_of = self.output_frames_for_input(nf);
         let out_ch = self.output_channels();
         self.apply_automation_for_block(nf);
+        let block_start_sample = self.playback_position as u64;
 
         // Use BufferGuard to guarantee process_buffers are returned even on early ?-return
         let mut guard = BufferGuard::take(&mut self.process_buffers);
@@ -1484,6 +1485,7 @@ impl DawHost {
                 input,
                 self.sample_rate,
                 cf,
+                block_start_sample,
                 &mut self.plugins,
                 &self.nodes,
                 &self.predecessors,
@@ -1536,10 +1538,8 @@ impl DawHost {
                     cf
                 } else {
                     let p = self.plugins[nid].as_mut().unwrap();
-                    let context = ProcessContext {
-                        sample_rate: self.sample_rate,
-                        num_frames: cf,
-                    };
+                    let context = ProcessContext::new(self.sample_rate, cf)
+                        .with_sample_position(block_start_sample);
                     let mof = p.output_frames_for_input(cf);
                     let ol = mof * node.output_channels();
                     let needs_extended_in_place_buffer = node.input_channels()
@@ -1851,6 +1851,7 @@ impl DawHost {
         let max_of = self.output_frames_for_input(nf);
         let out_ch = self.output_channels();
         self.apply_automation_for_block(nf);
+        let block_start_sample = self.playback_position as u64;
 
         let mut guard = BufferGuard::take(&mut self.process_buffers_f64);
         let bufs = guard.get_mut();
@@ -1902,10 +1903,8 @@ impl DawHost {
                     cf
                 } else {
                     let plugin = self.plugins[nid].as_mut().unwrap();
-                    let context = ProcessContext {
-                        sample_rate: self.sample_rate,
-                        num_frames: cf,
-                    };
+                    let context = ProcessContext::new(self.sample_rate, cf)
+                        .with_sample_position(block_start_sample);
                     let max_output_frames = plugin.output_frames_for_input(cf);
                     let output_len = max_output_frames * node.output_channels();
                     let needs_extended_in_place_buffer = node.input_channels()
@@ -1984,6 +1983,7 @@ impl DawHost {
         let mut current_len = input.len();
         let mut current_frames = input.len() / self.input_channels();
         let mut current_rate = self.sample_rate;
+        let block_start_sample = self.playback_position as u64;
 
         for idx in 0..self.chain_nodes.len() {
             let nid = self.chain_nodes[idx];
@@ -2015,6 +2015,7 @@ impl DawHost {
                         &mut output[..output_len],
                         current_rate,
                         current_frames,
+                        block_start_sample,
                     )?
                 } else {
                     Self::process_f64_node(
@@ -2024,6 +2025,7 @@ impl DawHost {
                         &mut output[..output_len],
                         current_rate,
                         current_frames,
+                        block_start_sample,
                     )?
                 }
             } else if current_in_a {
@@ -2035,6 +2037,7 @@ impl DawHost {
                     &mut scratch_b[..output_len],
                     current_rate,
                     current_frames,
+                    block_start_sample,
                 )?;
                 current_in_a = false;
                 frames
@@ -2047,6 +2050,7 @@ impl DawHost {
                     &mut scratch_a[..output_len],
                     current_rate,
                     current_frames,
+                    block_start_sample,
                 )?;
                 current_in_a = true;
                 frames
@@ -2073,15 +2077,14 @@ impl DawHost {
         output: &mut [f64],
         sample_rate: u32,
         num_frames: usize,
+        sample_position: u64,
     ) -> Result<usize, String> {
         if bypassed {
             output[..input.len()].copy_from_slice(input);
             return Ok(num_frames);
         }
-        let context = ProcessContext {
-            sample_rate,
-            num_frames,
-        };
+        let context =
+            ProcessContext::new(sample_rate, num_frames).with_sample_position(sample_position);
         plugin.process_f64(input, output, &context)
     }
 
@@ -2091,6 +2094,7 @@ impl DawHost {
         input: &[f32],
         sample_rate: u32,
         cf: usize,
+        sample_position: u64,
         plugins: &mut [Option<Box<dyn Plugin>>],
         nodes: &HashMap<NodeId, GraphNode>,
         predecessors: &[Vec<GraphEdge>],
@@ -2187,10 +2191,8 @@ impl DawHost {
                         cf
                     } else {
                         let plugin = plugin_slot.as_mut().unwrap();
-                        let context = ProcessContext {
-                            sample_rate,
-                            num_frames: cf,
-                        };
+                        let context = ProcessContext::new(sample_rate, cf)
+                            .with_sample_position(sample_position);
                         let max_output_frames = plugin.output_frames_for_input(cf);
                         let output_len = max_output_frames * node.output_channels();
                         ensure_len(scratch_output, output_len);
@@ -3299,6 +3301,88 @@ mod tests {
         fn get_data(&self) -> Option<Arc<dyn std::any::Any + Send + Sync>> {
             Some(Arc::new(self.last_num_frames.get()))
         }
+    }
+
+    struct ContextRecorderPlugin {
+        channels: usize,
+        last_sample_position: u64,
+        last_ppq_position: f64,
+    }
+
+    impl ContextRecorderPlugin {
+        fn new(channels: usize) -> Self {
+            Self {
+                channels,
+                last_sample_position: 0,
+                last_ppq_position: 0.0,
+            }
+        }
+    }
+
+    impl Plugin for ContextRecorderPlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("ContextRecorder", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _: crate::parameters::ParameterId,
+            _: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            Err("none".into())
+        }
+        fn get_parameter(
+            &self,
+            _: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            None
+        }
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            self.last_sample_position = ctx.transport.sample_position;
+            self.last_ppq_position = ctx.transport.ppq_position;
+            let len = input.len().min(output.len());
+            output[..len].copy_from_slice(&input[..len]);
+            Ok(ctx.num_frames)
+        }
+        fn get_data(&self) -> Option<Arc<dyn std::any::Any + Send + Sync>> {
+            Some(Arc::new((
+                self.last_sample_position,
+                self.last_ppq_position,
+            )))
+        }
+    }
+
+    #[test]
+    fn test_process_context_receives_playback_position() {
+        let mut g = DawHost::new(2, 48_000);
+        g.add_plugin(Box::new(ContextRecorderPlugin::new(2)))
+            .unwrap();
+
+        let input = vec![0.0; 256 * 2];
+        let mut output = vec![0.0; 256 * 2];
+        g.process(&input, &mut output).unwrap();
+        g.process(&input, &mut output).unwrap();
+
+        let data = g.get_plugin_data(0).unwrap();
+        let recorded = Arc::downcast::<(u64, f64)>(data).unwrap();
+        assert_eq!(recorded.0, 256);
+        assert!(
+            (recorded.1 - (256.0 / 48_000.0 * 2.0)).abs() < 1e-12,
+            "PPQ should derive from sample position at 120 bpm"
+        );
     }
 
     #[test]

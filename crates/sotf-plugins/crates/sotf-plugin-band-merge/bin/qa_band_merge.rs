@@ -35,10 +35,7 @@ fn main() {
         }
     }
     let mut output = vec![0.0f32; num_frames * output_channels];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     plugin.process(&input, &mut output, &ctx).unwrap();
 
     // Output should be sum of bands: 0.5 + 0.3 = 0.8

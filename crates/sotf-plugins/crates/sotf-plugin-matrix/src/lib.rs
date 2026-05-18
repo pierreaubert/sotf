@@ -757,10 +757,7 @@ mod tests {
 
         let input = vec![1.0, 2.0];
         let mut output = vec![0.0, 0.0];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1,
-        };
+        let context = ProcessContext::new(48000, 1);
 
         for _ in 0..5000 {
             plugin.process(&input, &mut output, &context).unwrap();
@@ -779,10 +776,7 @@ mod tests {
         input[1] = 10.0;
         input[2] = 20.0;
         let mut output = vec![0.0; 17];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1,
-        };
+        let context = ProcessContext::new(48000, 1);
         plugin.process(&input, &mut output, &context).unwrap();
         assert_eq!(output[15], 10.0);
         assert_eq!(output[16], 20.0);
@@ -794,10 +788,7 @@ mod tests {
 
     /// Helper: process enough frames for smoothers to converge, return last frame
     fn process_converged(plugin: &mut MatrixPlugin, channels: usize) -> Vec<f32> {
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: CONVERGE_FRAMES,
-        };
+        let context = ProcessContext::new(48000, CONVERGE_FRAMES);
         let input = vec![1.0; CONVERGE_FRAMES * channels];
         let mut output = vec![0.0; CONVERGE_FRAMES * channels];
         plugin.process(&input, &mut output, &context).unwrap();
@@ -818,10 +809,7 @@ mod tests {
             input[frame * channels + 2] = 0.8; // center channel
         }
         let mut output = vec![0.0; num_frames * channels];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let context = ProcessContext::new(48000, num_frames);
         plugin.process(&input, &mut output, &context).unwrap();
 
         // Check last frame: left (0) should have center signal, center (2) should also have it (identity)

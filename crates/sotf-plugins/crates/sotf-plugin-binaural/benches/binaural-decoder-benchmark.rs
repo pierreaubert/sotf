@@ -51,10 +51,7 @@ fn bench_process_channels(c: &mut Criterion) {
 
                 let input = vec![0.5f32; block_size * channels];
                 let mut output = vec![0.0f32; block_size * 2];
-                let context = ProcessContext {
-                    num_frames: block_size,
-                    sample_rate,
-                };
+                let context = ProcessContext::new(sample_rate, block_size);
 
                 b.iter(|| {
                     decoder
@@ -93,10 +90,7 @@ fn bench_process_fft_sizes(c: &mut Criterion) {
 
                 let input = vec![0.5f32; block_size * channels];
                 let mut output = vec![0.0f32; block_size * 2];
-                let context = ProcessContext {
-                    num_frames: block_size,
-                    sample_rate,
-                };
+                let context = ProcessContext::new(sample_rate, block_size);
 
                 b.iter(|| {
                     decoder
@@ -138,10 +132,7 @@ fn bench_optimization_comparison(c: &mut Criterion) {
 
                 let input = vec![0.5f32; block_size * channels];
                 let mut output = vec![0.0f32; block_size * 2];
-                let context = ProcessContext {
-                    num_frames: block_size,
-                    sample_rate,
-                };
+                let context = ProcessContext::new(sample_rate, block_size);
 
                 b.iter(|| {
                     decoder
@@ -191,10 +182,7 @@ fn bench_externalization(c: &mut Criterion) {
 
                 let input = vec![0.5f32; block_size * channels];
                 let mut output = vec![0.0f32; block_size * 2];
-                let context = ProcessContext {
-                    num_frames: block_size,
-                    sample_rate,
-                };
+                let context = ProcessContext::new(sample_rate, block_size);
 
                 b.iter(|| {
                     decoder
@@ -235,10 +223,7 @@ fn bench_large_blocks(c: &mut Criterion) {
 
                 let input = vec![0.5f32; block_size * channels];
                 let mut output = vec![0.0f32; block_size * 2];
-                let context = ProcessContext {
-                    num_frames: block_size,
-                    sample_rate,
-                };
+                let context = ProcessContext::new(sample_rate, block_size);
 
                 b.iter(|| {
                     decoder
@@ -277,10 +262,7 @@ fn bench_passthrough(c: &mut Criterion) {
 
                 let input = vec![0.5f32; block_size * channels];
                 let mut output = vec![0.0f32; block_size * 2];
-                let context = ProcessContext {
-                    num_frames: block_size,
-                    sample_rate,
-                };
+                let context = ProcessContext::new(sample_rate, block_size);
 
                 b.iter(|| {
                     decoder
@@ -329,10 +311,7 @@ fn bench_atmos_7_1_4(c: &mut Criterion) {
 
         let input = vec![0.5f32; block_size * channels];
         let mut output = vec![0.0f32; block_size * 2];
-        let context = ProcessContext {
-            num_frames: block_size,
-            sample_rate,
-        };
+        let context = ProcessContext::new(sample_rate, block_size);
 
         b.iter(|| {
             decoder

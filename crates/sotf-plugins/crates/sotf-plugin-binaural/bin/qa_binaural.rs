@@ -32,10 +32,7 @@ fn main() {
     let input = vec![0.5f32; num_frames * input_channels];
     let output_channels = plugin.output_channels();
     let mut output = vec![0.0f32; num_frames * output_channels];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     plugin.process(&input, &mut output, &ctx).unwrap();
 
     // Output should be finite

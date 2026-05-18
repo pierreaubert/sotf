@@ -978,15 +978,8 @@ mod tests {
         p.initialize(48000).unwrap();
         let input = vec![1.0; 1000];
         let mut output = vec![0.0; 1000];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, 1000))
+            .unwrap();
         assert!(output[999].is_finite());
     }
 
@@ -996,15 +989,8 @@ mod tests {
         p.initialize(48000).unwrap();
         let input = vec![1.0; 1000];
         let mut output = vec![0.0; 1000];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, 1000))
+            .unwrap();
         assert!(output[999].is_finite());
     }
 
@@ -1018,15 +1004,8 @@ mod tests {
         let frames = 512;
         let input: Vec<f32> = (0..frames).map(|i| (i as f32 * 0.1).sin()).collect();
         let mut output = vec![0.0; frames * 2];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, frames))
+            .unwrap();
 
         let mut max_error = 0.0f32;
         for i in (latency + 16)..frames {
@@ -1045,15 +1024,8 @@ mod tests {
         p.initialize(48000).unwrap();
         let input = vec![0.5; 200];
         let mut output = vec![0.0; 200];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 100,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, 100))
+            .unwrap();
         assert!(output[0].is_finite());
         assert!(output[199].is_finite());
     }
@@ -1064,15 +1036,8 @@ mod tests {
         p.initialize(48000).unwrap();
         let input = vec![1.0; 10000];
         let mut output = vec![0.0; 10000];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 10000,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, 10000))
+            .unwrap();
         assert!(
             output[9999] > 0.9,
             "DC through lowpass should be near 1.0, got {}",
@@ -1086,15 +1051,8 @@ mod tests {
         p.initialize(48000).unwrap();
         let input = vec![1.0; 10000];
         let mut output = vec![0.0; 10000];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 10000,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, 10000))
+            .unwrap();
         assert!(
             output[9999].abs() < 0.1,
             "DC through highpass should be near 0.0, got {}",
@@ -1119,15 +1077,8 @@ mod tests {
         let num_frames = 10000;
         let input = vec![1.0f32; num_frames];
         let mut output = vec![0.0f32; num_frames * 2]; // 2 output channels
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
 
         // Last frame: output[idx*2] = low, output[idx*2+1] = high
         let last = (num_frames - 1) * 2;
@@ -1155,15 +1106,8 @@ mod tests {
         let num_frames = 10000;
         let input: Vec<f32> = (0..num_frames).map(|i| (i as f32 * 0.05).sin()).collect();
         let mut output = vec![0.0f32; num_frames * 2];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
 
         // Compare RMS of input vs RMS of (low+high) over the settled region.
         // Use at least 5000 samples for settle to ensure the filter has fully settled.
@@ -1199,15 +1143,8 @@ mod tests {
         let num_frames = 100;
         let input = vec![0.5f32; num_frames * 2];
         let mut output = vec![0.0f32; num_frames * 4];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
         // All outputs should be finite
         assert!(output.iter().all(|s| s.is_finite()));
     }
@@ -1222,15 +1159,8 @@ mod tests {
         let num_frames = 10000;
         let input = vec![1.0f32; num_frames]; // DC
         let mut output = vec![0.0f32; num_frames * 3];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
 
         // DC should pass through lowest band only
         let last = (num_frames - 1) * 3;
@@ -1262,15 +1192,8 @@ mod tests {
         let num_frames = 1000;
         let input: Vec<f32> = (0..num_frames).map(|i| (i as f32 * 0.1).sin()).collect();
         let mut output = vec![0.0f32; num_frames * 4];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
 
         // All outputs should be finite
         assert!(output.iter().all(|s| s.is_finite()));
@@ -1286,15 +1209,8 @@ mod tests {
         let num_frames = 10000;
         let input = vec![1.0f32; num_frames];
         let mut output = vec![0.0f32; num_frames];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
 
         // DC passes through lowpass
         assert!(
@@ -1312,15 +1228,8 @@ mod tests {
         let num_frames = 10000;
         let input = vec![1.0f32; num_frames]; // DC
         let mut output = vec![0.0; num_frames];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
         assert!(
             output[num_frames - 1].abs() < 0.05,
             "Highpass should reject DC, got {}",
@@ -1336,15 +1245,8 @@ mod tests {
         let num_frames = 10000;
         let input = vec![1.0f32; num_frames]; // DC
         let mut output = vec![0.0; num_frames];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
         assert!(
             output[num_frames - 1] > 0.95,
             "Lowpass should pass DC, got {}",
@@ -1378,10 +1280,7 @@ mod tests {
         assert_eq!(p.output_channels(), 3); // 3 bands
 
         let num_frames = 2000;
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
 
         // Process a block before parameter change
         let input: Vec<f32> = (0..num_frames)
@@ -1455,15 +1354,8 @@ mod tests {
         let input: Vec<f32> = (0..num_frames).map(|i| (i as f32 * 0.1).sin()).collect();
         let num_bands = p.num_bands();
         let mut output = vec![0.0f32; num_frames * num_bands];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
         assert!(output.iter().all(|s| s.is_finite()));
     }
 
@@ -1559,15 +1451,8 @@ mod tests {
         // Process only a few samples so the smoother is mid-transition.
         let input = vec![0.0f32; 16];
         let mut output = vec![0.0f32; 16];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 16,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, 16))
+            .unwrap();
 
         // Reset must snap the smoother current to target.
         p.reset();
@@ -1600,15 +1485,8 @@ mod tests {
         let num_frames = 1000;
         let input = vec![1.0f32; num_frames];
         let mut output = vec![0.0f32; num_frames];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 32000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(32000, num_frames))
+            .unwrap();
         assert!(
             output.iter().all(|s| s.is_finite()),
             "Output must be finite after initialize at low sample rate"
@@ -1652,15 +1530,8 @@ mod tests {
             input[f * 2 + 1] = 1.0; // ch1: DC (muted)
         }
         let mut output = vec![0.0; num_frames * 2];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
         // Muted channel must be exactly silence.
         for f in 0..num_frames {
             assert_eq!(output[f * 2 + 1], 0.0, "muted channel must be zero");
@@ -1692,15 +1563,8 @@ mod tests {
             input[f * 2 + 1] = lf;
         }
         let mut output = vec![0.0f32; num_frames * 2];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(sr, num_frames))
+            .unwrap();
 
         // Skip transient: measure RMS on the tail half.
         let tail = num_frames / 2;
@@ -1740,15 +1604,8 @@ mod tests {
             input[f * 2 + 1] = 0.5;
         }
         let mut output = vec![0.0; num_frames * 2];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
         for f in 0..num_frames {
             // ch1 (Passthrough) must be exactly the input — bit-for-bit.
             assert_eq!(

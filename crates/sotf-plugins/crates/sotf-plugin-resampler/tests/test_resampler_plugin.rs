@@ -28,10 +28,7 @@ fn test_resampler_basic_usage() {
     let mut output = vec![0.0_f32; max_output_frames * 2];
 
     // Process
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames,
-    };
+    let context = ProcessContext::new(44100, num_frames);
     resampler.process(&input, &mut output, &context).unwrap();
 
     println!(
@@ -70,10 +67,7 @@ fn test_resampler_downsampling() {
     let max_output_frames = resampler.output_frames_for_input(num_frames);
     let mut output = vec![0.0_f32; max_output_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
     resampler.process(&input, &mut output, &context).unwrap();
 
     println!(
@@ -108,16 +102,14 @@ fn test_resampler_surround_sound() {
         input[i * 6 + 2] = (2.0 * std::f32::consts::PI * 277.0 * t).sin() * 0.2; // C
         input[i * 6 + 3] = (2.0 * std::f32::consts::PI * 110.0 * t).sin() * 0.15; // LFE
         input[i * 6 + 4] = (2.0 * std::f32::consts::PI * 185.0 * t).sin() * 0.15; // RL
-        input[i * 6 + 5] = (2.0 * std::f32::consts::PI * 196.0 * t).sin() * 0.15; // RR
+        input[i * 6 + 5] = (2.0 * std::f32::consts::PI * 196.0 * t).sin() * 0.15;
+        // RR
     }
 
     let max_output_frames = resampler.output_frames_for_input(num_frames);
     let mut output = vec![0.0_f32; max_output_frames * 6];
 
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames,
-    };
+    let context = ProcessContext::new(44100, num_frames);
     resampler.process(&input, &mut output, &context).unwrap();
 
     println!(
@@ -159,10 +151,7 @@ fn test_resampler_multiple_blocks() {
         }
 
         let mut output = vec![0.0_f32; max_output_frames * 2];
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
         resampler.process(&input, &mut output, &context).unwrap();
 
         println!("Block {}: processed successfully", block);
@@ -204,10 +193,7 @@ fn test_resampler_reset_functionality() {
     let max_output_frames = resampler.output_frames_for_input(num_frames);
     let mut output = vec![0.0_f32; max_output_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames,
-    };
+    let context = ProcessContext::new(44100, num_frames);
 
     // Process once
     resampler.process(&input, &mut output, &context).unwrap();
@@ -241,10 +227,7 @@ fn test_resampler_with_default_chunk_size() {
     let max_output_frames = resampler.output_frames_for_input(num_frames);
     let mut output = vec![0.0_f32; max_output_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames,
-    };
+    let context = ProcessContext::new(44100, num_frames);
 
     resampler.process(&input, &mut output, &context).unwrap();
 

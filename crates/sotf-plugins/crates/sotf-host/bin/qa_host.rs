@@ -42,10 +42,7 @@ fn qa_spectrum_analyzer() {
     let num_blocks = (48000 * 50) / block_size;
     let input = vec![0.1_f32; block_size * 2];
     let mut output = vec![0.0_f32; block_size * 2];
-    let ctx = ProcessContext {
-        sample_rate: 48000,
-        num_frames: block_size,
-    };
+    let ctx = ProcessContext::new(48000, block_size);
 
     for _ in 0..num_blocks {
         plugin.process(&input, &mut output, &ctx).unwrap();
@@ -79,10 +76,7 @@ fn qa_loudness_monitor() {
     let num_blocks = (48000 * 50) / block_size;
     let input = vec![0.1_f32; block_size * 2];
     let mut output = vec![0.0_f32; block_size * 2];
-    let ctx = ProcessContext {
-        sample_rate: 48000,
-        num_frames: block_size,
-    };
+    let ctx = ProcessContext::new(48000, block_size);
 
     for _ in 0..num_blocks {
         plugin.process(&input, &mut output, &ctx).unwrap();
@@ -149,10 +143,7 @@ fn qa_oversampled_plugin() {
     let num_blocks = (48000 * 50) / block_size;
     let input = vec![0.1_f32; block_size * 2];
     let mut output = vec![0.0_f32; block_size * 2];
-    let ctx = ProcessContext {
-        sample_rate: 48000,
-        num_frames: block_size,
-    };
+    let ctx = ProcessContext::new(48000, block_size);
 
     for _ in 0..num_blocks {
         plugin.process(&input, &mut output, &ctx).unwrap();

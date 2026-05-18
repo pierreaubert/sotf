@@ -316,10 +316,7 @@ mod tests {
     #[test]
     fn process_rejects_mismatched_buffer() {
         let mut plugin = make_test_plugin();
-        let ctx = ProcessContext {
-            num_frames: 4,
-            sample_rate: 48000,
-        };
+        let ctx = ProcessContext::new(48000, 4);
         // 4 frames * 2 channels = 8 samples; supply 7 instead.
         let input = vec![0.0f32; 7];
         let mut output = vec![];

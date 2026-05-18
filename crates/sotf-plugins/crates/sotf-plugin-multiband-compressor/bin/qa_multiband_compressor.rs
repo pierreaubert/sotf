@@ -37,10 +37,7 @@ fn main() {
     let block_size = 1024;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(sample_rate, end - pos);
         inner.process_in_place(&mut buffer[pos..end], &ctx).unwrap();
         pos = end;
     }
@@ -64,10 +61,7 @@ fn main() {
         .unwrap();
 
     let mut buffer = generate_sine(sample_rate, 100.0, -10.0, 4096);
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames: 4096,
-    };
+    let ctx = ProcessContext::new(sample_rate, 4096);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer);
     println!("  Muted Peak: {:.2}dB", peak);

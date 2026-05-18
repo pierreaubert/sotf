@@ -12,10 +12,7 @@ fn disabled_is_transparent() {
 
     let mut buffer = vec![0.25, -0.25, 0.5, -0.5];
     let input = buffer.clone();
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 2,
-    };
+    let context = ProcessContext::new(48000, 2);
     assert_eq!(plugin.process_in_place(&mut buffer, &context).unwrap(), 2);
     assert_eq!(buffer, input);
 }
@@ -45,10 +42,7 @@ fn param_change_preserves_state() {
     plugin.initialize(48000).expect("initialize");
 
     // Warm up the reducer so it accumulates state.
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 64,
-    };
+    let context = ProcessContext::new(48000, 64);
     let mut warm_buf = vec![0.8f32; 64];
     plugin
         .process_in_place(&mut warm_buf, &context)
@@ -93,7 +87,11 @@ fn param_change_preserves_state() {
 #[test]
 fn latency_is_zero_for_iir_filter() {
     let plugin = HissReducerPlugin::new(2);
-    assert_eq!(plugin.latency_samples(), 0, "IIR-based HissReducer has zero latency");
+    assert_eq!(
+        plugin.latency_samples(),
+        0,
+        "IIR-based HissReducer has zero latency"
+    );
 }
 
 /// Bug fix: the plugin used to store sample_rate=44100 before initialize() was
@@ -110,10 +108,7 @@ fn initial_sample_rate_is_consistent() {
     // produces identical output to never calling initialize at all — i.e.,
     // no silent coefficient change happens on the first initialize().
     let mut plugin_uninit = HissReducerPlugin::new(1);
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 8,
-    };
+    let context = ProcessContext::new(48000, 8);
     // Process before initialize — uses construction-time coefficients.
     let mut buf_uninit = vec![0.5f32; 8];
     plugin_uninit

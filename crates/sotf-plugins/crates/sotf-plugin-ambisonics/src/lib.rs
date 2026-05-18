@@ -487,10 +487,7 @@ mod tests {
         let input = vec![0.0_f32; num_frames * 4]; // 4 FOA channels
         let mut output = vec![0.0_f32; num_frames * 6]; // 6 channels (5.1)
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
 
         let frames = plugin.process(&input, &mut output, &ctx).unwrap();
         assert_eq!(frames, num_frames);
@@ -506,10 +503,7 @@ mod tests {
         let mut plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
         plugin.initialize(48000).unwrap();
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 16,
-        };
+        let ctx = ProcessContext::new(48000, 16);
         let short_input = vec![0.0_f32; 16 * 4 - 1];
         let mut output = vec![0.0_f32; 16 * 6];
         assert!(plugin.process(&short_input, &mut output, &ctx).is_err());
@@ -535,10 +529,7 @@ mod tests {
         let input = vec![1.0_f32, 0.0, 0.0, 0.0];
         let mut output = vec![0.0_f32; 6];
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
 
         plugin.process(&input, &mut output, &ctx).unwrap();
 
@@ -658,10 +649,7 @@ mod tests {
         let mut single_out = vec![0.0_f32; num_frames * out_ch];
         let mut dual_out = vec![0.0_f32; num_frames * out_ch];
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         single.process(&input, &mut single_out, &ctx).unwrap();
         dual.process(&input, &mut dual_out, &ctx).unwrap();
 
@@ -699,10 +687,7 @@ mod tests {
         let num_frames = 256;
         let input = vec![0.0_f32; num_frames * 4];
         let mut output = vec![0.0_f32; num_frames * 6];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
 
         let frames = plugin.process(&input, &mut output, &ctx).unwrap();
         assert_eq!(frames, num_frames);
@@ -737,10 +722,7 @@ mod tests {
 
         let input = vec![0.1_f32; num_frames * in_ch];
         let mut output = vec![0.0_f32; num_frames * out_ch];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
 
         let frames = plugin.process(&input, &mut output, &ctx).unwrap();
         assert_eq!(frames, num_frames);

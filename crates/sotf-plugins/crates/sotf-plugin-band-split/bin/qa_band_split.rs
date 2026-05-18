@@ -28,10 +28,7 @@ fn main() {
     let input = generate_sine(sample_rate, 100.0, -10.0, num_frames);
     let out_ch = in_ch * 2; // 2 bands
     let mut output = vec![0.0f32; num_frames * out_ch];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     plugin.process(&input, &mut output, &ctx).unwrap();
 
     // Band 0 (low): every even sample in output

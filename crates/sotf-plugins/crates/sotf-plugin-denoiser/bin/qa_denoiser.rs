@@ -22,10 +22,7 @@ fn main() {
     let block_frames = 2048;
     for chunk in buffer.chunks_mut(block_frames * channels) {
         let frames = chunk.len() / channels;
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(sample_rate, frames);
         inner.process_in_place(chunk, &ctx).unwrap();
     }
 

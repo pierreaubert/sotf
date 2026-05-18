@@ -24,10 +24,7 @@ fn main() {
         buffer[i * channels] = 0.5;
         buffer[i * channels + 1] = 0.0;
     }
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
 
     let right_last = buffer[(num_frames - 1) * channels + 1];

@@ -986,10 +986,7 @@ mod tests {
     use super::*;
 
     fn make_context(num_frames: usize) -> ProcessContext {
-        ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        }
+        ProcessContext::new(48000, num_frames)
     }
 
     fn rms(buf: &[f32]) -> f32 {

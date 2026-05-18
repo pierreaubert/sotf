@@ -367,10 +367,7 @@ mod tests {
     fn underrun_count_not_incremented_on_fully_empty_read() {
         // The non-hal path fills the buffer with silence (analogous to a
         // fully-empty HAL read).  The underrun counter must stay at 0.
-        let ctx = ProcessContext {
-            num_frames: 4,
-            sample_rate: 48000,
-        };
+        let ctx = ProcessContext::new(48000, 4);
         let input: Vec<f32> = vec![];
         let mut output: Vec<f32> = vec![0.0f32; ctx.num_frames * 2];
         let mut p = stub_plugin(2);
@@ -399,10 +396,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn process_returns_num_frames() {
-        let ctx = ProcessContext {
-            num_frames: 8,
-            sample_rate: 48000,
-        };
+        let ctx = ProcessContext::new(48000, 8);
         let input: Vec<f32> = vec![];
         let mut output: Vec<f32> = vec![0.0f32; ctx.num_frames * 2];
         let mut p = stub_plugin(2);
@@ -412,10 +406,7 @@ mod tests {
 
     #[test]
     fn process_rejects_wrong_output_buffer_size() {
-        let ctx = ProcessContext {
-            num_frames: 4,
-            sample_rate: 48000,
-        };
+        let ctx = ProcessContext::new(48000, 4);
         let input: Vec<f32> = vec![];
         // Buffer too small: 7 instead of 4*2=8
         let mut output: Vec<f32> = vec![0.0f32; 7];

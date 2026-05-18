@@ -41,13 +41,241 @@ impl PluginInfo {
     }
 }
 
-/// Processing context passed to plugins
-#[derive(Clone)]
-pub struct ProcessContext {
+/// A raw MIDI message scheduled within a processing block.
+///
+/// `data[..len]` stores the MIDI bytes. Short channel messages fit in the
+/// inline 3-byte storage; larger messages should be transported by a future
+/// external SysEx/event arena rather than allocated in the audio thread.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MidiMessage {
+    /// Inline MIDI bytes.
+    pub data: [u8; 3],
+    /// Number of valid bytes in `data`.
+    pub len: u8,
+}
+
+impl MidiMessage {
+    /// Create a MIDI message from up to three raw bytes.
+    pub const fn new(data: [u8; 3], len: u8) -> Self {
+        Self { data, len }
+    }
+
+    /// Create a Note On message.
+    pub const fn note_on(channel: u8, note: u8, velocity: u8) -> Self {
+        Self::new([0x90 | (channel & 0x0f), note, velocity], 3)
+    }
+
+    /// Create a Note Off message.
+    pub const fn note_off(channel: u8, note: u8, velocity: u8) -> Self {
+        Self::new([0x80 | (channel & 0x0f), note, velocity], 3)
+    }
+
+    /// Create a Control Change message.
+    pub const fn control_change(channel: u8, controller: u8, value: u8) -> Self {
+        Self::new([0xb0 | (channel & 0x0f), controller, value], 3)
+    }
+
+    /// Borrow the valid MIDI bytes.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.data[..self.len.min(3) as usize]
+    }
+}
+
+/// A MIDI event timestamped relative to the start of a processing block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MidiEvent {
+    /// Sample offset within the current block.
+    pub sample_offset: usize,
+    /// Raw MIDI payload.
+    pub message: MidiMessage,
+}
+
+impl MidiEvent {
+    /// Create a block-relative MIDI event.
+    pub const fn new(sample_offset: usize, message: MidiMessage) -> Self {
+        Self {
+            sample_offset,
+            message,
+        }
+    }
+}
+
+/// Musical time signature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimeSignature {
+    /// Beats per bar.
+    pub numerator: u8,
+    /// Beat unit denominator.
+    pub denominator: u8,
+}
+
+impl Default for TimeSignature {
+    fn default() -> Self {
+        Self {
+            numerator: 4,
+            denominator: 4,
+        }
+    }
+}
+
+/// Loop range in absolute samples.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoopRange {
+    /// Inclusive loop start sample.
+    pub start_sample: u64,
+    /// Exclusive loop end sample.
+    pub end_sample: u64,
+}
+
+impl LoopRange {
+    /// Create a loop range when the end is after the start.
+    pub const fn new(start_sample: u64, end_sample: u64) -> Option<Self> {
+        if end_sample > start_sample {
+            Some(Self {
+                start_sample,
+                end_sample,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+/// Transport and musical-time metadata for a processing block.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TransportInfo {
+    /// Whether playback is currently running.
+    pub playing: bool,
+    /// Whether recording is currently armed/running.
+    pub recording: bool,
+    /// Whether looping is active.
+    pub looping: bool,
+    /// Absolute sample position at the start of the block.
+    pub sample_position: u64,
+    /// Tempo in beats per minute.
+    pub bpm: f64,
+    /// Current time signature.
+    pub time_signature: TimeSignature,
+    /// Pulses/quarters position at the start of the block.
+    pub ppq_position: f64,
+    /// Active loop range, if any.
+    pub loop_range: Option<LoopRange>,
+}
+
+impl Default for TransportInfo {
+    fn default() -> Self {
+        Self {
+            playing: true,
+            recording: false,
+            looping: false,
+            sample_position: 0,
+            bpm: 120.0,
+            time_signature: TimeSignature::default(),
+            ppq_position: 0.0,
+            loop_range: None,
+        }
+    }
+}
+
+impl TransportInfo {
+    /// Create default transport metadata for a block starting at `sample_position`.
+    pub fn at_sample(sample_position: u64, sample_rate: u32) -> Self {
+        let bpm = 120.0;
+        let ppq_position = samples_to_ppq(sample_position, sample_rate, bpm);
+        Self {
+            sample_position,
+            ppq_position,
+            ..Self::default()
+        }
+    }
+
+    /// Return a copy with updated tempo and recalculated PPQ position.
+    pub fn with_tempo(mut self, bpm: f64, sample_rate: u32) -> Self {
+        if bpm.is_finite() && bpm > 0.0 {
+            self.bpm = bpm;
+            self.ppq_position = samples_to_ppq(self.sample_position, sample_rate, bpm);
+        }
+        self
+    }
+
+    /// Return a copy with updated time signature.
+    pub const fn with_time_signature(mut self, numerator: u8, denominator: u8) -> Self {
+        self.time_signature = TimeSignature {
+            numerator,
+            denominator,
+        };
+        self
+    }
+
+    /// Return a copy with updated loop state.
+    pub const fn with_loop_range(mut self, loop_range: Option<LoopRange>) -> Self {
+        self.looping = loop_range.is_some();
+        self.loop_range = loop_range;
+        self
+    }
+}
+
+/// Processing context passed to plugins.
+#[derive(Clone, Copy)]
+pub struct ProcessContext<'a> {
     /// Sample rate in Hz
     pub sample_rate: u32,
     /// Number of frames in this processing block
     pub num_frames: usize,
+    /// Transport and musical-time metadata at block start.
+    pub transport: TransportInfo,
+    /// MIDI events scheduled within this processing block.
+    pub midi_events: &'a [MidiEvent],
+}
+
+impl<'a> ProcessContext<'a> {
+    /// Create a processing context with default transport and no MIDI events.
+    pub fn new(sample_rate: u32, num_frames: usize) -> Self {
+        Self {
+            sample_rate,
+            num_frames,
+            transport: TransportInfo::at_sample(0, sample_rate),
+            midi_events: &[],
+        }
+    }
+
+    /// Return a copy with absolute sample position populated.
+    pub fn with_sample_position(mut self, sample_position: u64) -> Self {
+        let prev = self.transport;
+        self.transport = TransportInfo::at_sample(sample_position, self.sample_rate)
+            .with_tempo(prev.bpm, self.sample_rate)
+            .with_time_signature(
+                prev.time_signature.numerator,
+                prev.time_signature.denominator,
+            )
+            .with_loop_range(prev.loop_range);
+        self.transport.playing = prev.playing;
+        self.transport.recording = prev.recording;
+        self
+    }
+
+    /// Return a copy with transport metadata.
+    pub const fn with_transport(mut self, transport: TransportInfo) -> Self {
+        self.transport = transport;
+        self
+    }
+
+    /// Return a copy with borrowed MIDI events.
+    pub const fn with_midi_events<'b>(self, midi_events: &'b [MidiEvent]) -> ProcessContext<'b> {
+        ProcessContext {
+            sample_rate: self.sample_rate,
+            num_frames: self.num_frames,
+            transport: self.transport,
+            midi_events,
+        }
+    }
+}
+
+fn samples_to_ppq(sample_position: u64, sample_rate: u32, bpm: f64) -> f64 {
+    if sample_rate == 0 || !bpm.is_finite() || bpm <= 0.0 {
+        return 0.0;
+    }
+    sample_position as f64 / sample_rate as f64 * bpm / 60.0
 }
 
 /// Result type for plugin operations
@@ -514,5 +742,51 @@ mod tests {
         let adapted = InPlacePluginAdapter::new(DummyInPlacePlugin);
         assert_eq!(adapted.preferred_oversampling(), None);
         assert!(!adapted.supports_f64());
+    }
+
+    #[test]
+    fn process_context_defaults_to_musical_transport_without_midi() {
+        let ctx = ProcessContext::new(48_000, 512);
+
+        assert_eq!(ctx.sample_rate, 48_000);
+        assert_eq!(ctx.num_frames, 512);
+        assert!(ctx.transport.playing);
+        assert_eq!(ctx.transport.bpm, 120.0);
+        assert_eq!(ctx.transport.time_signature, TimeSignature::default());
+        assert_eq!(ctx.transport.sample_position, 0);
+        assert_eq!(ctx.transport.ppq_position, 0.0);
+        assert!(ctx.transport.loop_range.is_none());
+        assert!(ctx.midi_events.is_empty());
+    }
+
+    #[test]
+    fn process_context_tracks_sample_position_and_ppq() {
+        let ctx = ProcessContext::new(48_000, 128).with_sample_position(48_000);
+
+        assert_eq!(ctx.transport.sample_position, 48_000);
+        assert!(
+            (ctx.transport.ppq_position - 2.0).abs() < 1e-9,
+            "120 bpm at 48 kHz should advance 2 quarter notes per second"
+        );
+    }
+
+    #[test]
+    fn process_context_borrows_midi_events_without_copying() {
+        let events = [MidiEvent::new(12, MidiMessage::note_on(0, 60, 100))];
+        let ctx = ProcessContext::new(48_000, 128).with_midi_events(&events);
+
+        assert_eq!(ctx.midi_events.len(), 1);
+        assert_eq!(ctx.midi_events[0].sample_offset, 12);
+        assert_eq!(ctx.midi_events[0].message.as_bytes(), &[0x90, 60, 100]);
+    }
+
+    #[test]
+    fn transport_loop_range_validates_order() {
+        assert_eq!(LoopRange::new(100, 100), None);
+        let range = LoopRange::new(100, 200).unwrap();
+        let transport = TransportInfo::default().with_loop_range(Some(range));
+
+        assert!(transport.looping);
+        assert_eq!(transport.loop_range, Some(range));
     }
 }

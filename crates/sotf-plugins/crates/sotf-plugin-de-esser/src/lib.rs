@@ -672,10 +672,7 @@ mod tests {
         let mut buf = make_sine(8000.0, sr, num_frames, amplitude);
         let input_rms = rms(&buf);
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         plugin.process_in_place(&mut buf, &ctx).unwrap();
 
         // Use the second half to allow attack to settle
@@ -715,10 +712,7 @@ mod tests {
         let mut buf = make_sine(200.0, sr, num_frames, amplitude);
         let input_rms = rms(&buf);
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         plugin.process_in_place(&mut buf, &ctx).unwrap();
 
         let output_rms = rms(&buf[num_frames / 2..]);
@@ -813,10 +807,7 @@ mod tests {
         // Capture the first sample's input value
         let first_input = buf[0];
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         plugin.process_in_place(&mut buf, &ctx).unwrap();
 
         // With mix=0 at block start and a 5ms ramp, after only 100 samples
@@ -930,10 +921,7 @@ mod tests {
         let mut buf_hf = make_sine(8000.0, sr, num_frames, amplitude);
         let input_rms_hf = rms(&buf_hf);
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         plugin.process_in_place(&mut buf_hf, &ctx).unwrap();
         let output_rms_hf = rms(&buf_hf[num_frames / 2..]);
 
