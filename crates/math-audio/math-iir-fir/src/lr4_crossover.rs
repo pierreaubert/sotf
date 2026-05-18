@@ -90,7 +90,7 @@ impl<T: FilterFloat> Lr4Crossover<T> {
     /// Update the crossover frequency. Recomputes all filter coefficients
     /// without resetting filter state (click-free).
     pub fn set_frequency(&mut self, freq: T) {
-        if (freq - self.freq).abs() < lit(0.1) {
+        if (freq - self.freq).abs() < lit(0.001) {
             return;
         }
         self.freq = freq;
@@ -297,6 +297,14 @@ mod tests {
         let mut xo = Lr4Crossover::new(1000.0_f64, 48000.0, 2);
         xo.set_frequency(2000.0);
         assert!((xo.frequency() - 2000.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_set_frequency_small_changes_are_not_ignored() {
+        let mut xo = Lr4Crossover::new(1000.0_f64, 48000.0, 2);
+        xo.set_frequency(1000.05);
+        assert!((xo.frequency() - 1000.05).abs() < 0.001,
+            "small frequency changes (< 0.1 Hz) should not be ignored, got freq={}", xo.frequency());
     }
 
     #[test]

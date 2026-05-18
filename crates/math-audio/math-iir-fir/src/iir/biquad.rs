@@ -696,6 +696,17 @@ impl<T: FilterFloat> Biquad<T> {
         self.s2 = s2;
     }
 
+    /// Reset all internal state to zero while preserving coefficients.
+    pub fn reset(&mut self) {
+        let zero = T::zero();
+        self.x1 = zero;
+        self.x2 = zero;
+        self.y1 = zero;
+        self.y2 = zero;
+        self.s1 = zero;
+        self.s2 = zero;
+    }
+
     /// Calculates the filter's complex frequency response at a single frequency `f`.
     pub fn complex_response(&self, f: T) -> Complex<T> {
         let omega = lit::<T>(2.0) * T::PI() * f / self.srate;

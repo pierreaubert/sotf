@@ -1,3 +1,7 @@
+# 0.5.13
+
+- optimised initalisation of parameters
+
 # 0.5.12
 
 - Added support for linear phase crossover
