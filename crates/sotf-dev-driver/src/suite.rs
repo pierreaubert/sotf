@@ -60,6 +60,8 @@ struct ScenarioConfig {
     require_virtual_audio: bool,
     #[serde(default)]
     fake_recording: Option<FakeRecordingConfig>,
+    #[serde(default)]
+    room_eq: Option<RoomEqConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,6 +70,25 @@ struct FakeRecordingConfig {
     channels: usize,
     #[serde(default = "default_fake_points")]
     points: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct RoomEqConfig {
+    fixture_dir: PathBuf,
+    #[serde(default)]
+    dist_path: Option<PathBuf>,
+    target: String,
+    loss: String,
+    processing: String,
+    crossover: String,
+    #[serde(default = "default_room_eq_num_filters")]
+    num_filters: usize,
+    #[serde(default = "default_room_eq_max_iter")]
+    max_iter: usize,
+    #[serde(default = "default_room_eq_population")]
+    population: usize,
+    #[serde(default = "default_true")]
+    start: bool,
 }
 
 fn default_app_bin() -> PathBuf {
@@ -96,6 +117,22 @@ fn default_fake_channels() -> usize {
 
 fn default_fake_points() -> usize {
     48
+}
+
+fn default_room_eq_num_filters() -> usize {
+    7
+}
+
+fn default_room_eq_max_iter() -> usize {
+    20
+}
+
+fn default_room_eq_population() -> usize {
+    24
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub(crate) fn run_suite(path: &Path, verbose: bool) -> Result<()> {
@@ -167,6 +204,11 @@ fn run_one(
     if scenario.seed_demo_audio {
         copy_audio_fixtures(&runner.demo_audio_dir, &seeded_library)?;
     }
+    let room_eq_fixture_dir = scenario
+        .room_eq
+        .as_ref()
+        .map(|fixture| copy_room_eq_fixture(fixture, &scenario_dir))
+        .transpose()?;
 
     let port = free_port()?;
     let base_url = format!("http://127.0.0.1:{port}");
@@ -201,6 +243,26 @@ fn run_one(
                 json!({ "channels": fake.channels, "points": fake.points }),
             )
             .context("installing fake recording capture")?;
+        }
+
+        if let (Some(config), Some(fixture_dir)) = (&scenario.room_eq, &room_eq_fixture_dir) {
+            post_json(
+                &client,
+                &base_url,
+                "/qa/room-eq",
+                json!({
+                    "fixture_dir": fixture_dir,
+                    "target": &config.target,
+                    "loss": &config.loss,
+                    "processing": &config.processing,
+                    "crossover": &config.crossover,
+                    "num_filters": config.num_filters,
+                    "max_iter": config.max_iter,
+                    "population": config.population,
+                    "start": config.start,
+                }),
+            )
+            .context("loading RoomEQ fixture")?;
         }
 
         let timeout = parse_duration(&scenario.timeout)?;
@@ -341,6 +403,45 @@ fn copy_audio_fixtures(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+fn copy_room_eq_fixture(config: &RoomEqConfig, scenario_dir: &Path) -> Result<PathBuf> {
+    let source = &config.fixture_dir;
+    if !source.is_dir() {
+        bail!("RoomEQ fixture does not exist: {}", source.display());
+    }
+
+    let dist_path = config
+        .dist_path
+        .as_deref()
+        .unwrap_or(config.fixture_dir.as_path());
+    if dist_path.is_absolute() {
+        bail!(
+            "RoomEQ dist_path must be relative, got {}",
+            dist_path.display()
+        );
+    }
+
+    let dst = scenario_dir.join("dist").join(dist_path);
+    copy_dir_recursive(source, &dst)?;
+    Ok(dst)
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+    fs::create_dir_all(dst).with_context(|| format!("creating {dst:?}"))?;
+    for entry in fs::read_dir(src).with_context(|| format!("reading {src:?}"))? {
+        let entry = entry?;
+        let path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            copy_dir_recursive(&path, &dst_path)?;
+        } else if file_type.is_file() {
+            fs::copy(&path, &dst_path)
+                .with_context(|| format!("copying {} to {}", path.display(), dst_path.display()))?;
+        }
+    }
+    Ok(())
+}
+
 fn free_port() -> Result<u16> {
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
     Ok(listener.local_addr()?.port())
@@ -399,6 +500,17 @@ mod tests {
             [scenario.fake_recording]
             channels = 2
             points = 48
+
+            [scenario.room_eq]
+            fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+            dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+            target = "NearField"
+            loss = "Flat"
+            processing = "Iir"
+            crossover = "Lr24"
+            num_filters = 7
+            max_iter = 20
+            population = 24
         "#;
         let suite: SuiteFile = toml::from_str(src).unwrap();
         assert_eq!(suite.scenarios.len(), 1);
@@ -407,10 +519,29 @@ mod tests {
         let fake = suite.scenarios[0].fake_recording.as_ref().unwrap();
         assert_eq!(fake.channels, 2);
         assert_eq!(fake.points, 48);
+        let room_eq = suite.scenarios[0].room_eq.as_ref().unwrap();
+        assert_eq!(room_eq.target, "NearField");
+        assert_eq!(room_eq.loss, "Flat");
+        assert_eq!(room_eq.processing, "Iir");
+        assert_eq!(room_eq.crossover, "Lr24");
+        assert_eq!(room_eq.num_filters, 7);
+        assert_eq!(room_eq.max_iter, 20);
+        assert_eq!(room_eq.population, 24);
+        assert!(room_eq.start);
     }
 
     #[test]
     fn safe_name_removes_path_punctuation() {
         assert_eq!(safe_name("Player / Smoke"), "Player---Smoke");
+    }
+
+    #[test]
+    fn checked_in_suites_parse() {
+        let smoke: SuiteFile = toml::from_str(include_str!("../suites/smoke.toml")).unwrap();
+        assert!(!smoke.scenarios.is_empty());
+
+        let roomeq: SuiteFile =
+            toml::from_str(include_str!("../suites/roomeq_matrix.toml")).unwrap();
+        assert_eq!(roomeq.scenarios.len(), 24);
     }
 }

@@ -92,4 +92,21 @@ pub enum DevCommand {
         selector: String,
         reply: mpsc::SyncSender<DevReply>,
     },
+    /// Return a small readiness/status payload.
+    Health {
+        reply: mpsc::SyncSender<DevQueryReply>,
+    },
+    /// Gracefully quit the app.
+    Quit { reply: mpsc::SyncSender<DevReply> },
+    /// Load deterministic RoomEQ recording fixture data and optionally start
+    /// the real optimizer.
+    QaRoomEq {
+        payload: serde_json::Value,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Export the completed RoomEQ DSP output to a deterministic QA JSON file.
+    QaRoomEqExportJson {
+        payload: serde_json::Value,
+        reply: mpsc::SyncSender<DevQueryReply>,
+    },
 }
