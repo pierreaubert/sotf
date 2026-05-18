@@ -199,6 +199,32 @@ pub struct PresetBank {
     pub presets: Vec<PluginPreset>,
 }
 
+/// Field that contributed to a preset search match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PresetSearchField {
+    /// Preset display name.
+    Name,
+    /// Plugin identifier.
+    PluginId,
+    /// Metadata author.
+    Author,
+    /// Metadata tag.
+    Tag,
+    /// Metadata comment.
+    Comment,
+}
+
+/// Ranked preset search result.
+#[derive(Debug, Clone)]
+pub struct PresetSearchResult<'a> {
+    /// Matched preset.
+    pub preset: &'a PluginPreset,
+    /// Higher scores are stronger matches.
+    pub score: u32,
+    /// Fields that matched at least one query term.
+    pub matched_fields: Vec<PresetSearchField>,
+}
+
 impl PresetBank {
     /// Create a new empty bank
     pub fn new(name: impl Into<String>) -> Self {
@@ -224,5 +250,256 @@ impl PresetBank {
             .iter()
             .filter(|p| p.metadata.tags.contains(&tag.to_string()))
             .collect()
+    }
+
+    /// Search presets by name, plugin id, author, tags, and comment.
+    ///
+    /// The query is split into whitespace-separated terms. All terms must
+    /// match at least one searchable field. Results are ranked by match
+    /// strength, then by preset name for deterministic ordering.
+    pub fn search(&self, query: &str) -> Vec<PresetSearchResult<'_>> {
+        let terms = normalize_terms(query);
+        if terms.is_empty() {
+            return Vec::new();
+        }
+
+        let mut results: Vec<PresetSearchResult<'_>> = self
+            .presets
+            .iter()
+            .filter_map(|preset| score_preset(preset, &terms))
+            .collect();
+
+        results.sort_by(|a, b| {
+            b.score
+                .cmp(&a.score)
+                .then_with(|| a.preset.name.cmp(&b.preset.name))
+                .then_with(|| a.preset.plugin_id.cmp(&b.preset.plugin_id))
+        });
+
+        results
+    }
+}
+
+fn normalize_terms(query: &str) -> Vec<String> {
+    query
+        .split_whitespace()
+        .map(normalize_search_text)
+        .filter(|term| !term.is_empty())
+        .collect()
+}
+
+fn normalize_search_text(text: &str) -> String {
+    text.chars()
+        .flat_map(char::to_lowercase)
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn score_preset<'a>(preset: &'a PluginPreset, terms: &[String]) -> Option<PresetSearchResult<'a>> {
+    let fields = searchable_fields(preset);
+    let mut score = 0u32;
+    let mut matched_fields = Vec::new();
+
+    for term in terms {
+        let mut term_matched = false;
+        for (field, value, exact_weight, contains_weight, fuzzy_weight) in &fields {
+            let Some(field_score) =
+                score_field(value, term, *exact_weight, *contains_weight, *fuzzy_weight)
+            else {
+                continue;
+            };
+            score = score.saturating_add(field_score);
+            push_unique_field(&mut matched_fields, *field);
+            term_matched = true;
+        }
+        if !term_matched {
+            return None;
+        }
+    }
+
+    Some(PresetSearchResult {
+        preset,
+        score,
+        matched_fields,
+    })
+}
+
+fn searchable_fields(preset: &PluginPreset) -> Vec<(PresetSearchField, String, u32, u32, u32)> {
+    let mut fields = vec![
+        (
+            PresetSearchField::Name,
+            normalize_search_text(&preset.name),
+            100,
+            60,
+            20,
+        ),
+        (
+            PresetSearchField::PluginId,
+            normalize_search_text(&preset.plugin_id),
+            45,
+            35,
+            8,
+        ),
+    ];
+
+    if let Some(author) = preset.metadata.author.as_ref() {
+        fields.push((
+            PresetSearchField::Author,
+            normalize_search_text(author),
+            40,
+            25,
+            8,
+        ));
+    }
+    if let Some(comment) = preset.metadata.comment.as_ref() {
+        fields.push((
+            PresetSearchField::Comment,
+            normalize_search_text(comment),
+            25,
+            15,
+            5,
+        ));
+    }
+    for tag in &preset.metadata.tags {
+        fields.push((
+            PresetSearchField::Tag,
+            normalize_search_text(tag),
+            70,
+            50,
+            12,
+        ));
+    }
+
+    fields
+}
+
+fn score_field(
+    field_value: &str,
+    term: &str,
+    exact_weight: u32,
+    contains_weight: u32,
+    fuzzy_weight: u32,
+) -> Option<u32> {
+    if field_value.is_empty() || term.is_empty() {
+        return None;
+    }
+    if field_value == term {
+        return Some(exact_weight);
+    }
+    if field_value.split_whitespace().any(|word| word == term) {
+        return Some(exact_weight.saturating_sub(5));
+    }
+    if field_value.contains(term) {
+        return Some(contains_weight);
+    }
+    if is_subsequence(term, field_value) {
+        return Some(fuzzy_weight);
+    }
+    None
+}
+
+fn is_subsequence(needle: &str, haystack: &str) -> bool {
+    let mut chars = needle.chars();
+    let Some(mut wanted) = chars.next() else {
+        return true;
+    };
+    for ch in haystack.chars() {
+        if ch == wanted {
+            match chars.next() {
+                Some(next) => wanted = next,
+                None => return true,
+            }
+        }
+    }
+    false
+}
+
+fn push_unique_field(fields: &mut Vec<PresetSearchField>, field: PresetSearchField) {
+    if !fields.contains(&field) {
+        fields.push(field);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn preset(name: &str, plugin_id: &str, tags: &[&str]) -> PluginPreset {
+        let mut preset = PluginPreset::new(name.into(), plugin_id.into(), "1.2.3".into());
+        for tag in tags {
+            preset.add_tag(*tag);
+        }
+        preset
+    }
+
+    #[test]
+    fn presets_with_tag_remains_exact() {
+        let mut bank = PresetBank::new("Factory");
+        bank.add_preset(preset("Warm Bus", "sotf-eq", &["Bus"]));
+
+        assert_eq!(bank.presets_with_tag("Bus").len(), 1);
+        assert!(bank.presets_with_tag("bus").is_empty());
+    }
+
+    #[test]
+    fn search_matches_name_case_insensitively() {
+        let mut bank = PresetBank::new("Factory");
+        bank.add_preset(preset("Warm Analog Bus", "sotf-eq", &["mix"]));
+        bank.add_preset(preset("Clean Vocal", "sotf-compressor", &["voice"]));
+
+        let results = bank.search("analog");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].preset.name, "Warm Analog Bus");
+        assert!(results[0].matched_fields.contains(&PresetSearchField::Name));
+    }
+
+    #[test]
+    fn search_matches_author_comment_and_tags() {
+        let mut bank = PresetBank::new("Factory");
+        let mut vocal = preset("Smooth Lead", "sotf-compressor", &["vocal"]);
+        vocal.set_author("Ada");
+        vocal.set_comment("Gentle leveling for spoken voice");
+        bank.add_preset(vocal);
+
+        assert_eq!(bank.search("ada")[0].preset.name, "Smooth Lead");
+        assert_eq!(bank.search("spoken")[0].preset.name, "Smooth Lead");
+        assert_eq!(bank.search("vocal")[0].preset.name, "Smooth Lead");
+    }
+
+    #[test]
+    fn search_requires_all_terms_but_allows_partial_terms() {
+        let mut bank = PresetBank::new("Factory");
+        bank.add_preset(preset("Warm Analog Bus", "sotf-eq", &["mixbus"]));
+        bank.add_preset(preset("Warm Vocal", "sotf-compressor", &["voice"]));
+
+        let results = bank.search("warm ana");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].preset.name, "Warm Analog Bus");
+    }
+
+    #[test]
+    fn search_ranks_exact_name_above_tag_match() {
+        let mut bank = PresetBank::new("Factory");
+        bank.add_preset(preset("Glue", "sotf-compressor", &["master"]));
+        bank.add_preset(preset("Master", "sotf-eq", &["utility"]));
+
+        let results = bank.search("master");
+
+        assert_eq!(results[0].preset.name, "Master");
+        assert_eq!(results[1].preset.name, "Glue");
+        assert!(results[0].score > results[1].score);
+    }
+
+    #[test]
+    fn empty_search_returns_no_results() {
+        let mut bank = PresetBank::new("Factory");
+        bank.add_preset(preset("Warm Analog Bus", "sotf-eq", &["mix"]));
+
+        assert!(bank.search("  ").is_empty());
     }
 }
