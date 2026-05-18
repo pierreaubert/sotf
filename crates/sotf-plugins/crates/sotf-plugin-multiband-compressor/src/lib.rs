@@ -188,14 +188,19 @@ pub struct MultibandCompressorPlugin {
     sidechain_tilt_db: f32,
     link_amount: f32,
     /// Sidechain high-pass frequency (single-band compatibility, not yet applied to DSP)
+    #[allow(dead_code)]
     sidechain_hpf_hz: f32,
     /// Sidechain HPF order (single-band compatibility, not yet applied to DSP)
+    #[allow(dead_code)]
     sidechain_hpf_order: String,
     /// Detection mode (single-band compatibility, not yet applied to DSP)
+    #[allow(dead_code)]
     detection_mode: String,
     /// Program-dependent release (single-band compatibility, not yet applied to DSP)
+    #[allow(dead_code)]
     program_dependent_release: bool,
     /// External sidechain (single-band compatibility, not yet applied to DSP)
+    #[allow(dead_code)]
     sidechain_external: bool,
     /// Per-band, per-channel tilt biquad pair (lowshelf + highshelf) for sidechain tilt.
     /// Layout: [band][channel]. Empty when tilt_db ≈ 0.
@@ -417,34 +422,11 @@ impl MultibandCompressorPlugin {
             )
             .with_group("Output"),
         );
-        params.push(
-            Parameter::new_float(
-                "sidechain_hpf_hz",
-                "Sidechain HPF",
-                self.sidechain_hpf_hz,
-                0.0,
-                200.0,
-            )
-            .with_group("Sidechain"),
-        );
-        {
-            let idx = if self.sidechain_hpf_order == "4th" {
-                1
-            } else {
-                0
-            };
-            params.push(
-                Parameter::new_int("sidechain_hpf_order", "Sidechain HPF Order", idx, 0, 1)
-                    .with_group("Sidechain"),
-            );
-        }
-        {
-            let idx = if self.detection_mode == "rms" { 1 } else { 0 };
-            params.push(
-                Parameter::new_int("detection_mode", "Detection Mode", idx, 0, 1)
-                    .with_group("Sidechain"),
-            );
-        }
+        // NOTE: sidechain_hpf_hz, sidechain_hpf_order, detection_mode,
+        // program_dependent_release, and sidechain_external are stored in
+        // the struct for backward-compat preset loading but are NOT exposed
+        // in parameters() because their DSP implementation is stubbed out.
+        // This prevents users from toggling controls that have no effect.
         params.push(
             Parameter::new_float(
                 "lookahead_ms",
@@ -454,22 +436,6 @@ impl MultibandCompressorPlugin {
                 20.0,
             )
             .with_group("Timing"),
-        );
-        params.push(
-            Parameter::new_bool(
-                "program_dependent_release",
-                "Program Dependent Release",
-                self.program_dependent_release,
-            )
-            .with_group("Timing"),
-        );
-        params.push(
-            Parameter::new_bool(
-                "sidechain_external",
-                "External Sidechain",
-                self.sidechain_external,
-            )
-            .with_group("Sidechain"),
         );
 
         // Per-band dynamics (not covered by GLOBAL_PARAMS)
@@ -778,30 +744,11 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 self.rebuild_cached_parameters();
                 return Ok(());
             }
-            "sidechain_hpf_hz" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "sidechain_hpf_hz must be a float".to_string())?;
-                self.sidechain_hpf_hz = v;
-                self.rebuild_cached_parameters();
-                return Ok(());
-            }
-            "sidechain_hpf_order" => {
-                let idx = value
-                    .as_int()
-                    .ok_or_else(|| "sidechain_hpf_order must be an integer".to_string())?;
-                self.sidechain_hpf_order = if idx == 1 { "4th" } else { "2nd" }.to_string();
-                self.rebuild_cached_parameters();
-                return Ok(());
-            }
-            "detection_mode" => {
-                let idx = value
-                    .as_int()
-                    .ok_or_else(|| "detection_mode must be an integer".to_string())?;
-                self.detection_mode = if idx == 1 { "rms" } else { "peak" }.to_string();
-                self.rebuild_cached_parameters();
-                return Ok(());
-            }
+            // NOTE: sidechain_hpf_hz, sidechain_hpf_order, detection_mode,
+            // program_dependent_release, and sidechain_external are no longer
+            // exposed in parameters() because their DSP implementation is
+            // stubbed out.  They are silently ignored here so that old presets
+            // still load without error.
             "lookahead_ms" => {
                 let v = value
                     .as_float()
@@ -812,22 +759,6 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                         buf.set_delay_ms(self.per_band_lookahead_ms, self.sample_rate);
                     }
                 }
-                self.rebuild_cached_parameters();
-                return Ok(());
-            }
-            "program_dependent_release" => {
-                let v = value
-                    .as_bool()
-                    .ok_or_else(|| "program_dependent_release must be a boolean".to_string())?;
-                self.program_dependent_release = v;
-                self.rebuild_cached_parameters();
-                return Ok(());
-            }
-            "sidechain_external" => {
-                let v = value
-                    .as_bool()
-                    .ok_or_else(|| "sidechain_external must be a boolean".to_string())?;
-                self.sidechain_external = v;
                 self.rebuild_cached_parameters();
                 return Ok(());
             }
@@ -957,29 +888,13 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                         .is_some_and(|bp| bp.measured_auto_makeup),
                 ));
             }
-            "sidechain_hpf_hz" => {
-                return Some(ParameterValue::Float(self.sidechain_hpf_hz));
-            }
-            "sidechain_hpf_order" => {
-                let idx = if self.sidechain_hpf_order == "4th" {
-                    1
-                } else {
-                    0
-                };
-                return Some(ParameterValue::Int(idx));
-            }
-            "detection_mode" => {
-                let idx = if self.detection_mode == "rms" { 1 } else { 0 };
-                return Some(ParameterValue::Int(idx));
-            }
+            // NOTE: sidechain_hpf_hz, sidechain_hpf_order, detection_mode,
+            // program_dependent_release, and sidechain_external are no longer
+            // exposed in parameters() because their DSP implementation is
+            // stubbed out.  get_parameter returns None for them so that hosts
+            // querying unknown IDs fall back gracefully.
             "lookahead_ms" => {
                 return Some(ParameterValue::Float(self.per_band_lookahead_ms));
-            }
-            "program_dependent_release" => {
-                return Some(ParameterValue::Bool(self.program_dependent_release));
-            }
-            "sidechain_external" => {
-                return Some(ParameterValue::Bool(self.sidechain_external));
             }
             _ => {}
         }
@@ -1832,5 +1747,30 @@ mod tests {
             "True tilt span should be ~6 dB, got {:.2} dB",
             span
         );
+    }
+
+    /// Regression: stub parameters that have no DSP implementation must not be
+    /// exposed in parameters(), to prevent users from toggling controls that
+    /// have no audible effect.
+    #[test]
+    fn test_stub_params_not_exposed() {
+        let mut p = MultibandCompressorPlugin::new(2);
+        p.initialize(48000).unwrap();
+        let params = p.parameters();
+        let ids: Vec<&str> = params.iter().map(|par| par.id.0.as_str()).collect();
+
+        let stubs = [
+            "sidechain_hpf_hz",
+            "sidechain_hpf_order",
+            "detection_mode",
+            "program_dependent_release",
+            "sidechain_external",
+        ];
+        for stub in &stubs {
+            assert!(
+                !ids.contains(stub),
+                "Stub parameter '{}' must not appear in parameters()", stub
+            );
+        }
     }
 }

@@ -1538,4 +1538,27 @@ fn test_rebuild_resampler_reuses_buffers() {
         residual_ptr,
         "residual_input was reallocated"
     );
+
+    /// Regression: latency_samples() must include the chunking buffer latency.
+    /// The plugin buffers up to chunk_size - 1 frames before calling rubato,
+    /// so the maximum end-to-end latency is output_delay() + chunk_size - 1.
+    #[test]
+    fn test_latency_includes_chunking_buffer() {
+        let chunk_size = 1024;
+        let resampler =
+            ResamplerPlugin::with_quality(2, 44100, 48000, chunk_size, ResamplerQuality::Medium)
+                .unwrap();
+        let reported = resampler.latency_samples();
+        let rubato_delay = resampler
+            .resampler
+            .as_ref()
+            .map(|r| r.output_delay())
+            .unwrap_or(0);
+        assert!(
+            reported >= rubato_delay + chunk_size - 1,
+            "latency_samples()={reported} must include chunking buffer ({}), \
+             rubato_delay={rubato_delay}",
+            chunk_size - 1
+        );
+    }
 }

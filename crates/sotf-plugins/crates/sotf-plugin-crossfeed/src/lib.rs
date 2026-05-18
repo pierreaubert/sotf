@@ -824,8 +824,14 @@ impl InPlacePlugin for CrossfeedPlugin {
 
     fn reset(&mut self) {
         self.mix_smoother.reset(self.params.mix);
+        self.yaw_smoother.reset(self.params.head_yaw_deg);
         self.itd_delay_l.reset();
         self.itd_delay_r.reset();
+        self.bauer_shelf.reset();
+        self.meier_lpf_l.reset();
+        self.meier_lpf_r.reset();
+        self.meier_allpass_l.reset();
+        self.meier_allpass_r.reset();
         self.mb_crossover_l.reset();
         self.mb_crossover_r.reset();
         if let Some(ag) = &mut self.auto_gain {
@@ -1539,5 +1545,54 @@ mod tests {
             last_r > first_r,
             "Mix ramp: last right sample ({last_r:.6}) should exceed first ({first_r:.6})"
         );
+    }
+
+    /// Regression: reset() must clear all filter state so that a second
+    /// playback pass starts from the same deterministic state as a fresh
+    /// plugin. Previously bauer_shelf, meier LPF/allpass, and yaw_smoother
+    /// were not reset, causing stale filter tails and wrong yaw values.
+    #[test]
+    fn test_reset_clears_all_filter_state() {
+        let sr = 48000;
+        let n = 512;
+
+        // Create two identical plugins
+        let params = CrossfeedPluginParams {
+            mode: CrossfeedMode::Meier,
+            meier_level: 0.5,
+            head_yaw_deg: 30.0,
+            itd_delay_ms: 0.3,
+            mix: 1.0,
+            ..CrossfeedPluginParams::default()
+        };
+        let mut p1 = CrossfeedPlugin::new(params.clone()).unwrap();
+        p1.initialize(sr).unwrap();
+        let mut p2 = CrossfeedPlugin::new(params.clone()).unwrap();
+        p2.initialize(sr).unwrap();
+
+        // Run p1 for one block to warm up filter state
+        let mut block1: Vec<f32> = (0..n).flat_map(|i| [(i as f32 * 0.01).sin(), 0.0f32]).collect();
+        p1.process_in_place(&mut block1, &ProcessContext { sample_rate: sr, num_frames: n }).unwrap();
+
+        // Reset p1 — after this it should behave like a fresh p2
+        p1.reset();
+
+        // Process the same impulse on both
+        let mut impulse1 = vec![0.0f32; n * 2];
+        impulse1[0] = 1.0;
+        let mut impulse2 = impulse1.clone();
+
+        p1.process_in_place(&mut impulse1, &ProcessContext { sample_rate: sr, num_frames: n }).unwrap();
+        p2.process_in_place(&mut impulse2, &ProcessContext { sample_rate: sr, num_frames: n }).unwrap();
+
+        // Outputs should match exactly (or very closely)
+        for i in 0..(n * 2) {
+            assert!(
+                (impulse1[i] - impulse2[i]).abs() < 1e-5,
+                "reset() did not fully clear state: sample {} differs by {}",
+                i,
+                (impulse1[i] - impulse2[i]).abs()
+            );
+        }
     }
 }
