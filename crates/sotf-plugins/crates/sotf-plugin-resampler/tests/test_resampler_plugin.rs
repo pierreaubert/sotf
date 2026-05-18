@@ -102,7 +102,8 @@ fn test_resampler_surround_sound() {
         input[i * 6 + 2] = (2.0 * std::f32::consts::PI * 277.0 * t).sin() * 0.2; // C
         input[i * 6 + 3] = (2.0 * std::f32::consts::PI * 110.0 * t).sin() * 0.15; // LFE
         input[i * 6 + 4] = (2.0 * std::f32::consts::PI * 185.0 * t).sin() * 0.15; // RL
-        input[i * 6 + 5] = (2.0 * std::f32::consts::PI * 196.0 * t).sin() * 0.15; // RR
+        input[i * 6 + 5] = (2.0 * std::f32::consts::PI * 196.0 * t).sin() * 0.15;
+        // RR
     }
 
     let max_output_frames = resampler.output_frames_for_input(num_frames);

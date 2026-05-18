@@ -238,7 +238,8 @@ fn test_analyzer_with_5ch_audio() {
         input[i * 5 + 1] = (2.0 * std::f32::consts::PI * 554.0 * t).sin() * 0.2; // FR
         input[i * 5 + 2] = (2.0 * std::f32::consts::PI * 660.0 * t).sin() * 0.2; // C
         input[i * 5 + 3] = (2.0 * std::f32::consts::PI * 110.0 * t).sin() * 0.1; // RL
-        input[i * 5 + 4] = (2.0 * std::f32::consts::PI * 138.0 * t).sin() * 0.1; // RR
+        input[i * 5 + 4] = (2.0 * std::f32::consts::PI * 138.0 * t).sin() * 0.1;
+        // RR
     }
 
     let context = ProcessContext::new(48000, num_frames);

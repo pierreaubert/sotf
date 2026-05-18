@@ -967,7 +967,8 @@ mod upmixer_tests {
         for i in 0..2048 {
             let t = i as f32 / 44100.0;
             input[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5; // Left
-            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.5; // Right (different frequency)
+            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.5;
+            // Right (different frequency)
         }
 
         let mut output = vec![0.0_f32; 2048 * 10];
@@ -1170,7 +1171,8 @@ mod upmixer_tests {
         for i in 0..fft_size {
             let t = i as f32 / 44100.0;
             input[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5; // Left: 440 Hz
-            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.5; // Right: 880 Hz
+            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.5;
+            // Right: 880 Hz
         }
         let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
 
@@ -1240,7 +1242,8 @@ mod upmixer_tests {
         for i in 0..2048 {
             // High amplitude signals that are uncorrelated (pure ambient)
             input[i * 2] = (i as f32 * 0.1).sin() * 0.9; // Left
-            input[i * 2 + 1] = (i as f32 * 0.1 + std::f32::consts::PI).cos() * 0.9; // Right (uncorrelated)
+            input[i * 2 + 1] = (i as f32 * 0.1 + std::f32::consts::PI).cos() * 0.9;
+            // Right (uncorrelated)
         }
         let mut output = vec![0.0_f32; 2048 * 6];
 
@@ -1883,7 +1886,8 @@ mod upmixer_tests {
         for i in 0..buffer_size {
             let t = i as f32 / 44100.0;
             input[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.7; // Left channel
-            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.7; // Right channel
+            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.7;
+            // Right channel
         }
 
         let mut output = vec![0.0_f32; buffer_size * plugin.output_channels()];
@@ -2313,7 +2317,8 @@ mod upmixer_tests {
         for i in 0..fft_size {
             let t = i as f32 / 44100.0;
             input[i * 2] = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5; // Left only
-            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 3000.0 * t).sin() * 0.5; // Right only
+            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 3000.0 * t).sin() * 0.5;
+            // Right only
         }
         let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
 
