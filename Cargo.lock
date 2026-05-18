@@ -5915,7 +5915,7 @@ dependencies = [
 
 [[package]]
 name = "math-iir-fir"
-version = "0.5.12"
+version = "0.5.13"
 dependencies = [
  "base64 0.22.1",
  "byteorder",

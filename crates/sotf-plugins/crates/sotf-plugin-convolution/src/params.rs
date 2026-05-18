@@ -89,11 +89,11 @@ pub struct Params {
     #[serde(default)]
     pub zero_latency_head: bool,
     #[serde(default = "d_head_taps")]
-    pub head_taps: i64,
+    pub head_taps: usize,
 }
 
-fn d_head_taps() -> i64 {
-    pk(PARAMS, "head_taps").default_f64() as i64
+fn d_head_taps() -> usize {
+    pk(PARAMS, "head_taps").default_f64() as usize
 }
 fn d_mix() -> f64 {
     pk(PARAMS, "mix").default_f64()
@@ -146,7 +146,7 @@ impl PluginParamDef for Params {
             2 => self.gain_db = value,
             3 => self.use_nupc = value > 0.5,
             4 => self.zero_latency_head = value > 0.5,
-            5 => self.head_taps = value as i64,
+            5 => self.head_taps = value as usize,
             _ => {}
         }
     }

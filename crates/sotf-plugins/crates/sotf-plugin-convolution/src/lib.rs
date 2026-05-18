@@ -806,7 +806,7 @@ impl InPlacePlugin for ConvolutionPlugin {
                     let ir_ch = if state.ir_channels == 1 {
                         0
                     } else {
-                        ch.min(state.ir_channels - 1)
+                        ch % state.ir_channels
                     };
 
                     if num_partitions >= 8 {
