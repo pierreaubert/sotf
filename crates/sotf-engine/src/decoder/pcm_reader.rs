@@ -69,13 +69,13 @@ impl AudioDecoder for PcmDecoder {
     }
 
     fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize> {
-        if self.eof {
-            return Ok(0);
-        }
-
         dest.samples.clear();
         dest.frame_position = self.position;
         dest.spec = self.spec.clone();
+
+        if self.eof {
+            return Ok(0);
+        }
 
         // Read a chunk of raw bytes
         let read_bytes = bytemuck::cast_slice_mut::<f32, u8>(&mut self.read_buf);
@@ -202,11 +202,22 @@ mod tests {
         let reader = Box::new(Cursor::new(Vec::<u8>::new()));
         let mut decoder = PcmDecoder::new(44100, 2, 16, None, reader);
 
-        let mut dest = DecodedAudio::new(decoder.spec().clone());
+        let mut dest = DecodedAudio::new(AudioSpec {
+            sample_rate: 1,
+            channels: 1,
+            bits_per_sample: 8,
+            total_frames: Some(1),
+        });
+        dest.samples.extend_from_slice(&[0.25, -0.25]);
+        dest.frame_position = 99;
+
         let frames = decoder.decode_into(&mut dest).unwrap();
 
         assert_eq!(frames, 0);
         assert!(decoder.is_eof());
+        assert!(dest.samples.is_empty());
+        assert_eq!(dest.spec, *decoder.spec());
+        assert_eq!(dest.frame_position, decoder.position());
     }
 
     #[test]
