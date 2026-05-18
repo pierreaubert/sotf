@@ -14,7 +14,8 @@ use std::path::Path;
 // Production imports
 use sotf_audio_player_gpui::components::graphs::common::rgba_to_u32;
 use sotf_audio_player_gpui::components::home::album_card::{
-    AlbumCardMode, album_card_height, format_dr, format_sample_info, get_format_from_path,
+    AlbumCardMode, album_card_height, format_channel_info, format_dr, format_sample_info,
+    get_format_from_path,
 };
 use sotf_audio_player_gpui::components::plugins::common::{
     compute_transfer, format_shortcut_label,
@@ -100,6 +101,24 @@ fn test_format_sample_info_sample_rate_only() {
 #[test]
 fn test_format_sample_info_none() {
     assert_eq!(format_sample_info(None, None), None);
+}
+
+#[test]
+fn test_format_channel_info_surround_51() {
+    assert_eq!(format_channel_info(Some(6)), Some("5.1".to_string()));
+}
+
+#[test]
+fn test_format_channel_info_stereo_hidden() {
+    assert_eq!(format_channel_info(Some(2)), None);
+}
+
+#[test]
+fn test_format_channel_info_high_count() {
+    assert_eq!(
+        format_channel_info(Some(10)),
+        Some("10ch (5.1.4/7.1.2)".to_string())
+    );
 }
 
 #[test]

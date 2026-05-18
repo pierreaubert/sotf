@@ -7,17 +7,19 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::codecs::CodecParameters;
+use symphonia::core::common::Limit;
+use symphonia::core::formats::probe::{Hint, Probe};
+use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::{Limit, MetadataOptions};
-use symphonia::core::probe::{Hint, Probe};
+use symphonia::core::meta::MetadataOptions;
 use walkdir::WalkDir;
 
 use crate::database::MusicDatabase;
 
 /// File extensions that the library should import as playable local audio.
 ///
-/// Keep this in sync with `sotf-engine`'s decoder support. Symphonia 0.5 can
+/// Keep this in sync with `sotf-engine`'s decoder support. Symphonia can
 /// parse Ogg/MP4 Opus containers, but this build does not include an Opus
 /// decoder, so `.opus` is intentionally absent here.
 pub const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &[
@@ -1484,6 +1486,13 @@ impl MusicLibrary {
         if album.artist().to_lowercase().contains(query_lower) {
             return true;
         }
+        // Match channel labels so "5.0", "5.1", "10ch", etc. work in search.
+        if let Some(channels) = album.uniform_channel_count() {
+            let channel_label = crate::library_stats::format_channel_count(channels).to_lowercase();
+            if channel_label.contains(query_lower) || channels.to_string() == query_lower {
+                return true;
+            }
+        }
         // Match track titles, artists, and filenames
         for track in &album.tracks {
             if let Some(title) = &track.title {
@@ -1506,6 +1515,15 @@ impl MusicLibrary {
                 {
                     return true;
                 }
+            }
+            // Match parent directory names for tagged albums whose display title differs
+            // from their on-disk QA/source folder.
+            if track.path.ancestors().any(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().to_lowercase().contains(query_lower))
+                    .unwrap_or(false)
+            }) {
+                return true;
             }
         }
         false
@@ -1552,15 +1570,15 @@ fn create_probe() -> Probe {
     let mut probe = Probe::default();
 
     // Register metadata readers to read ID3 tags
-    probe.register_all::<symphonia_metadata::id3v2::Id3v2Reader>();
+    probe.register_metadata::<symphonia_metadata::id3v2::Id3v2Reader>();
 
     // Register all format readers to help probe find formats more efficiently
-    probe.register_all::<symphonia_bundle_flac::FlacReader>();
-    probe.register_all::<symphonia_bundle_mp3::MpaReader>();
-    probe.register_all::<symphonia_format_riff::WavReader>();
-    probe.register_all::<symphonia_format_ogg::OggReader>();
-    probe.register_all::<symphonia_format_isomp4::IsoMp4Reader>();
-    probe.register_all::<symphonia_codec_aac::AdtsReader>();
+    probe.register_format::<symphonia_bundle_flac::FlacReader>();
+    probe.register_format::<symphonia_bundle_mp3::MpaReader>();
+    probe.register_format::<symphonia_format_riff::WavReader>();
+    probe.register_format::<symphonia_format_ogg::OggReader>();
+    probe.register_format::<symphonia_format_isomp4::IsoMp4Reader>();
+    probe.register_format::<symphonia_codec_aac::AdtsReader>();
 
     probe
 }
@@ -1576,125 +1594,160 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
 
     let format_opts = FormatOptions::default();
     // Use larger limits to avoid crashes with files that have large metadata or embedded artwork
-    let metadata_opts = MetadataOptions {
-        limit_metadata_bytes: Limit::Maximum(10 * 1024 * 1024), // 10 MB for metadata
-        limit_visual_bytes: Limit::Maximum(20 * 1024 * 1024),   // 20 MB for embedded artwork
-    };
+    let metadata_opts = MetadataOptions::default()
+        .limit_tag_bytes(Limit::Maximum(10 * 1024 * 1024)) // 10 MB for metadata
+        .limit_visual_bytes(Limit::Maximum(20 * 1024 * 1024)); // 20 MB for embedded artwork
 
     // Use custom probe with registered formats for better format detection
     let probe = create_probe();
-    let mut probed = probe.format(&hint, mss, &format_opts, &metadata_opts)?;
+    let mut format = probe.probe(&hint, mss, format_opts, metadata_opts)?;
 
     let mut metadata = TrackMetadata::default();
 
     // Extract duration, channel count, sample rate, and bit depth from the format
-    if let Some(track) = probed.format.default_track() {
+    if let Some(track) = format.default_track(TrackType::Audio) {
         // Get duration
-        if let Some(time_base) = track.codec_params.time_base
-            && let Some(n_frames) = track.codec_params.n_frames
+        if let Some(time_base) = track.time_base
+            && let Some(n_frames) = track.num_frames
         {
-            let duration = time_base.calc_time(n_frames);
-            metadata.duration_secs = Some(duration.seconds);
+            let duration =
+                time_base.calc_time(symphonia::core::units::Timestamp::new(n_frames as i64));
+            metadata.duration_secs = duration.map(|time| time.as_secs().max(0) as u64);
         }
 
-        // Get channel count
-        if let Some(channels) = track.codec_params.channels {
-            metadata.channels = Some(channels.count() as u32);
-        }
+        if let Some(CodecParameters::Audio(codec_params)) = &track.codec_params {
+            // Get channel count
+            if let Some(channels) = codec_params.channels.as_ref() {
+                metadata.channels = Some(channels.count() as u32);
+            }
 
-        // Get sample rate
-        if let Some(sample_rate) = track.codec_params.sample_rate {
-            metadata.sample_rate = Some(sample_rate);
-        }
+            // Get sample rate
+            if let Some(sample_rate) = codec_params.sample_rate {
+                metadata.sample_rate = Some(sample_rate);
+            }
 
-        // Get bit depth (bits per sample)
-        if let Some(bits_per_sample) = track.codec_params.bits_per_sample {
-            metadata.bit_depth = Some(bits_per_sample);
+            // Get bit depth (bits per sample)
+            if let Some(bits_per_sample) = codec_params.bits_per_sample {
+                metadata.bit_depth = Some(bits_per_sample);
+            }
         }
     }
 
     // Extract metadata tags
-    use symphonia::core::meta::StandardTagKey;
+    use symphonia::core::meta::{RawValue, StandardTag, Tag};
 
-    let non_empty_tag_value = |value: &symphonia::core::meta::Value| {
-        let value = value.to_string();
+    let non_empty_string = |value: &str| {
         let trimmed = value.trim();
         (!trimmed.is_empty()).then(|| trimmed.to_string())
     };
 
-    // Helper to process tags from a metadata revision
-    let mut process_tags = |metadata_rev: &symphonia::core::meta::MetadataRevision| {
-        for tag in metadata_rev.tags() {
-            match tag.std_key {
-                Some(StandardTagKey::TrackTitle) => {
-                    metadata.title = non_empty_tag_value(&tag.value);
+    let raw_value = |value: &RawValue| non_empty_string(&value.to_string());
+
+    let mut process_tag = |tag: &Tag| match &tag.std {
+        Some(StandardTag::TrackTitle(value)) => {
+            metadata.title = non_empty_string(value);
+        }
+        Some(StandardTag::Artist(value)) => {
+            metadata.artist = non_empty_string(value);
+        }
+        Some(StandardTag::Album(value)) => {
+            metadata.album = non_empty_string(value);
+        }
+        Some(StandardTag::TrackNumber(num)) => {
+            metadata.track_number = Some(*num as u32);
+        }
+        Some(StandardTag::RecordingDate(value)) | Some(StandardTag::ReleaseDate(value)) => {
+            if let Some(year_str) = value.split('-').next()
+                && let Ok(year) = year_str.parse()
+            {
+                metadata.year = Some(year);
+            }
+        }
+        Some(StandardTag::RecordingYear(year)) | Some(StandardTag::ReleaseYear(year)) => {
+            metadata.year = Some(*year as u32);
+        }
+        Some(StandardTag::Genre(value)) => {
+            metadata.genre = non_empty_string(value);
+        }
+        Some(StandardTag::Composer(value)) => {
+            metadata.composer = non_empty_string(value);
+        }
+        Some(StandardTag::DiscNumber(num)) => {
+            metadata.disc_number = Some(*num as u32);
+        }
+        Some(StandardTag::Conductor(value)) => {
+            metadata.conductor = non_empty_string(value);
+        }
+        Some(StandardTag::Performer(value)) => {
+            metadata.performer = non_empty_string(value);
+        }
+        Some(StandardTag::IdentIsrc(value)) => {
+            metadata.isrc = non_empty_string(value);
+        }
+        Some(StandardTag::AlbumArtist(value)) => {
+            metadata.album_artist = non_empty_string(value);
+        }
+        Some(StandardTag::Ensemble(value)) => {
+            metadata.ensemble = non_empty_string(value);
+        }
+        _ => {
+            let raw_key = tag.raw.key.to_ascii_lowercase();
+            match raw_key.as_str() {
+                "title" => metadata.title = raw_value(&tag.raw.value),
+                "artist" => metadata.artist = raw_value(&tag.raw.value),
+                "album" => metadata.album = raw_value(&tag.raw.value),
+                "genre" => metadata.genre = raw_value(&tag.raw.value),
+                "composer" => metadata.composer = raw_value(&tag.raw.value),
+                "conductor" => metadata.conductor = raw_value(&tag.raw.value),
+                "performer" => metadata.performer = raw_value(&tag.raw.value),
+                "isrc" => metadata.isrc = raw_value(&tag.raw.value),
+                "albumartist" | "album_artist" | "album artist" => {
+                    metadata.album_artist = raw_value(&tag.raw.value);
                 }
-                Some(StandardTagKey::Artist) => {
-                    metadata.artist = non_empty_tag_value(&tag.value);
-                }
-                Some(StandardTagKey::Album) => {
-                    metadata.album = non_empty_tag_value(&tag.value);
-                }
-                Some(StandardTagKey::TrackNumber) => {
-                    // Handle "1/12" format (track/total)
-                    let value = tag.value.to_string();
-                    let track_num = value.split('/').next().unwrap_or(&value);
-                    if let Ok(num) = track_num.trim().parse() {
-                        metadata.track_number = Some(num);
+                "ensemble" => metadata.ensemble = raw_value(&tag.raw.value),
+                "track" | "tracknumber" | "track_number" => {
+                    if let Some(value) = raw_value(&tag.raw.value) {
+                        let track_num = value.split('/').next().unwrap_or(&value);
+                        if let Ok(num) = track_num.trim().parse() {
+                            metadata.track_number = Some(num);
+                        }
                     }
                 }
-                Some(StandardTagKey::Date) | Some(StandardTagKey::ReleaseDate) => {
-                    // Try to extract year from date string
-                    let date_str = tag.value.to_string();
-                    if let Some(year_str) = date_str.split('-').next()
+                "disc" | "discnumber" | "disc_number" => {
+                    if let Some(value) = raw_value(&tag.raw.value) {
+                        let disc_num = value.split('/').next().unwrap_or(&value);
+                        if let Ok(num) = disc_num.trim().parse() {
+                            metadata.disc_number = Some(num);
+                        }
+                    }
+                }
+                "date" | "year" | "releasedate" | "release_date" => {
+                    if let Some(value) = raw_value(&tag.raw.value)
+                        && let Some(year_str) = value.split('-').next()
                         && let Ok(year) = year_str.parse()
                     {
                         metadata.year = Some(year);
                     }
-                }
-                Some(StandardTagKey::Genre) => {
-                    metadata.genre = non_empty_tag_value(&tag.value);
-                }
-                Some(StandardTagKey::Composer) => {
-                    metadata.composer = non_empty_tag_value(&tag.value);
-                }
-                Some(StandardTagKey::DiscNumber) => {
-                    // Handle "1/2" format (disc/total)
-                    let value = tag.value.to_string();
-                    let disc_num = value.split('/').next().unwrap_or(&value);
-                    if let Ok(num) = disc_num.trim().parse() {
-                        metadata.disc_number = Some(num);
-                    }
-                }
-                Some(StandardTagKey::Conductor) => {
-                    metadata.conductor = non_empty_tag_value(&tag.value);
-                }
-                Some(StandardTagKey::Performer) => {
-                    metadata.performer = non_empty_tag_value(&tag.value);
-                }
-                Some(StandardTagKey::IdentIsrc) => {
-                    metadata.isrc = non_empty_tag_value(&tag.value);
-                }
-                Some(StandardTagKey::AlbumArtist) => {
-                    metadata.album_artist = non_empty_tag_value(&tag.value);
-                }
-                Some(StandardTagKey::Ensemble) => {
-                    metadata.ensemble = non_empty_tag_value(&tag.value);
                 }
                 _ => {}
             }
         }
     };
 
-    // First check metadata from the probe phase (for ID3 tags in MP3 files)
-    // ID3v2 tags are read during probe and stored in probed.metadata
-    if let Some(metadata_rev) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
-        process_tags(metadata_rev);
-    }
+    // Helper to process tags from a metadata revision
+    let mut process_tags = |metadata_rev: &symphonia::core::meta::MetadataRevision| {
+        for tag in &metadata_rev.media.tags {
+            process_tag(tag);
+        }
+        for track in &metadata_rev.per_track {
+            for tag in &track.metadata.tags {
+                process_tag(tag);
+            }
+        }
+    };
 
-    // Then check format metadata (for tags embedded in the container, like FLAC, OGG)
-    // This may override probe metadata if both are present
-    if let Some(metadata_rev) = probed.format.metadata().current() {
+    // Check format metadata, including metadata discovered during probing.
+    if let Some(metadata_rev) = format.metadata().current() {
         process_tags(metadata_rev);
     }
 
@@ -2417,18 +2470,16 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
             }
         }
 
-        // Deduplicate tracks by (title + disc + track number)
-        // This preserves tracks from different discs even if they have the same title
+        // Deduplicate tracks by (title + disc + track number) only when track numbers exist.
+        // Files without track numbers can legitimately share a title, so keep path identity.
         let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
         album.tracks.retain(|track| {
             let title_key = track.title.as_ref().map(|t| t.trim().to_lowercase());
-            let key = if title_key.as_deref().unwrap_or_default().is_empty()
-                && track.track_number.is_none()
-            {
+            let key = if track.track_number.is_none() {
                 format!("path:{}", track.path.display())
             } else {
                 let disc = track.disc_number.unwrap_or(1);
-                let track_num = track.track_number.unwrap_or(0);
+                let track_num = track.track_number.unwrap_or_default();
                 format!(
                     "tag:{}|{}|{}",
                     title_key.unwrap_or_default(),
@@ -2636,6 +2687,40 @@ mod tests {
         assert_eq!(lib.search_albums("MeTaLLiCa").len(), 1);
         assert_eq!(lib.search_albums("master").len(), 1);
         assert_eq!(lib.search_albums("MASTER").len(), 1);
+    }
+
+    #[test]
+    fn test_search_albums_matches_directory_and_channel_label() {
+        let mut lib = MusicLibrary::new();
+
+        lib.albums.push(Album {
+            id: None,
+            title: "Ace Cool".to_string(),
+            year: None,
+            tracks: vec![Track {
+                path: PathBuf::from(
+                    "/Volumes/home_ext1/Music/sotf-qa/ace1.5/album16flac-5.0/track.flac",
+                ),
+                title: Some("Upmixed".to_string()),
+                channels: Some(5),
+                ..Default::default()
+            }],
+            album_art_path: None,
+            album_art_thumbnail: None,
+            play_count: 0,
+            edition: None,
+            dynamic_range: None,
+            is_favorite: false,
+            uuid: None,
+        });
+
+        let results = lib.search_albums("album16flac-5.0");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Ace Cool");
+
+        let results = lib.search_albums("5.0");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Ace Cool");
     }
 
     #[test]
@@ -3107,6 +3192,35 @@ mod tests {
             merged[0].tracks.len(),
             3,
             "untagged tracks must not collapse to one UI/queue track"
+        );
+    }
+
+    #[test]
+    fn test_tracks_with_same_title_without_track_numbers_deduplicate_by_path() {
+        let mut album = create_test_album("Tagged Folder Album", "Unknown Artist", 1);
+        album.id = None;
+        let track_template = album.tracks[0].clone();
+        album.tracks = (1..=3)
+            .map(|idx| {
+                let mut track = track_template.clone();
+                track.path = PathBuf::from(format!("/music/folder/upmixed-{idx}.flac"));
+                track.title = Some("Upmixed to 5.0".to_string());
+                track.track_number = None;
+                track.disc_number = Some(1);
+                track.channels = Some(5);
+                track
+            })
+            .collect();
+
+        let albums = [album];
+        let album_refs: Vec<&Album> = albums.iter().collect();
+        let merged = group_and_merge_albums(album_refs);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(
+            merged[0].tracks.len(),
+            3,
+            "tracks with repeated titles but no track numbers must not collapse"
         );
     }
 

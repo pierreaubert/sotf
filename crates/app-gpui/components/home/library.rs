@@ -56,7 +56,7 @@ impl PlayerView {
         let mut exact_multichannel_counts: Vec<(u32, usize)> = stats
             .channel_counts
             .iter()
-            .filter_map(|(&channels, &count)| (channels > 8).then_some((channels, count)))
+            .filter_map(|(&channels, &count)| (channels > 2).then_some((channels, count)))
             .collect();
         exact_multichannel_counts.sort_by_key(|&(channels, _)| channels);
 
