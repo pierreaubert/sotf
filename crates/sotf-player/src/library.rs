@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
@@ -1697,6 +1698,14 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
         process_tags(metadata_rev);
     }
 
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("wav") || ext.eq_ignore_ascii_case("wave"))
+    {
+        apply_riff_info_metadata(path, &mut metadata);
+    }
+
     // Try to detect edition from directory name
     if let Some(parent) = path.parent() {
         if let Some(dir_name) = parent.file_name().map(|n| n.to_string_lossy()) {
@@ -1728,6 +1737,123 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
     }
 
     Ok(metadata)
+}
+
+fn apply_riff_info_metadata(path: &Path, metadata: &mut TrackMetadata) {
+    match read_riff_info_tags(path) {
+        Ok(tags) => {
+            for (key, value) in tags {
+                match key.as_str() {
+                    "INAM" | "TITL" => {
+                        metadata.title.get_or_insert(value);
+                    }
+                    "IART" => {
+                        metadata.artist.get_or_insert(value);
+                    }
+                    "IPRD" | "IALB" => {
+                        metadata.album.get_or_insert(value);
+                    }
+                    "ITRK" | "TRCK" => {
+                        if metadata.track_number.is_none()
+                            && let Some(track_number) = parse_slash_prefixed_u32(&value)
+                        {
+                            metadata.track_number = Some(track_number);
+                        }
+                    }
+                    "ICRD" | "YEAR" | "DATE" => {
+                        if metadata.year.is_none()
+                            && let Some(year) = parse_year(&value)
+                        {
+                            metadata.year = Some(year);
+                        }
+                    }
+                    "IGNR" => {
+                        metadata.genre.get_or_insert(value);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Err(err) => {
+            log::debug!(
+                "Failed to read RIFF INFO metadata from {}: {}",
+                path.display(),
+                err
+            );
+        }
+    }
+}
+
+fn parse_slash_prefixed_u32(value: &str) -> Option<u32> {
+    value.split('/').next()?.trim().parse().ok()
+}
+
+fn parse_year(value: &str) -> Option<u32> {
+    value
+        .split(['-', '/', ' '])
+        .next()
+        .and_then(|year| year.trim().parse().ok())
+}
+
+fn read_riff_info_tags(path: &Path) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+    let mut file = std::fs::File::open(path)?;
+    let mut riff_header = [0u8; 12];
+    file.read_exact(&mut riff_header)?;
+
+    if &riff_header[0..4] != b"RIFF" || &riff_header[8..12] != b"WAVE" {
+        return Ok(Vec::new());
+    }
+
+    let mut tags = Vec::new();
+    loop {
+        let mut chunk_header = [0u8; 8];
+        match file.read_exact(&mut chunk_header) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(err) => return Err(Box::new(err)),
+        }
+
+        let chunk_id = &chunk_header[0..4];
+        let chunk_size = u32::from_le_bytes(chunk_header[4..8].try_into()?) as u64;
+        let next_chunk = file.stream_position()? + chunk_size + (chunk_size % 2);
+
+        if chunk_id == b"LIST" && chunk_size >= 4 {
+            let mut list_type = [0u8; 4];
+            file.read_exact(&mut list_type)?;
+
+            if &list_type == b"INFO" {
+                let list_end = file.stream_position()? + chunk_size - 4;
+                while file.stream_position()? + 8 <= list_end {
+                    let mut info_header = [0u8; 8];
+                    file.read_exact(&mut info_header)?;
+                    let info_id = String::from_utf8_lossy(&info_header[0..4]).to_string();
+                    let info_size = u32::from_le_bytes(info_header[4..8].try_into()?) as u64;
+
+                    if file.stream_position()? + info_size > list_end {
+                        break;
+                    }
+
+                    let mut value_bytes = vec![0u8; info_size as usize];
+                    file.read_exact(&mut value_bytes)?;
+                    if info_size % 2 == 1 && file.stream_position()? < list_end {
+                        file.seek(SeekFrom::Current(1))?;
+                    }
+
+                    let value = String::from_utf8_lossy(&value_bytes)
+                        .trim_matches(char::from(0))
+                        .trim()
+                        .to_string();
+                    if !value.is_empty() {
+                        tags.push((info_id, value));
+                    }
+                }
+            }
+        }
+
+        file.seek(SeekFrom::Start(next_chunk))?;
+    }
+
+    Ok(tags)
 }
 
 /// Get file modification time as Unix timestamp
@@ -2295,14 +2421,21 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
         // This preserves tracks from different discs even if they have the same title
         let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
         album.tracks.retain(|track| {
-            let title_key = track
-                .title
-                .as_ref()
-                .map(|t| t.to_lowercase())
-                .unwrap_or_default();
-            let disc = track.disc_number.unwrap_or(1);
-            let track_num = track.track_number.unwrap_or(0);
-            let key = format!("{}|{}|{}", title_key, disc, track_num);
+            let title_key = track.title.as_ref().map(|t| t.trim().to_lowercase());
+            let key = if title_key.as_deref().unwrap_or_default().is_empty()
+                && track.track_number.is_none()
+            {
+                format!("path:{}", track.path.display())
+            } else {
+                let disc = track.disc_number.unwrap_or(1);
+                let track_num = track.track_number.unwrap_or(0);
+                format!(
+                    "tag:{}|{}|{}",
+                    title_key.unwrap_or_default(),
+                    disc,
+                    track_num
+                )
+            };
             seen_keys.insert(key)
         });
 
@@ -2946,6 +3079,34 @@ mod tests {
             merged.len(),
             2,
             "Standalone tracks with different titles must not merge"
+        );
+    }
+
+    #[test]
+    fn test_untagged_tracks_without_titles_deduplicate_by_path() {
+        let mut album = create_test_album("Folder Album", "Unknown Artist", 1);
+        album.id = None;
+        let track_template = album.tracks[0].clone();
+        album.tracks = (1..=3)
+            .map(|idx| {
+                let mut track = track_template.clone();
+                track.path = PathBuf::from(format!("/music/folder/track-{idx}.wav"));
+                track.title = None;
+                track.track_number = None;
+                track.disc_number = None;
+                track
+            })
+            .collect();
+
+        let albums = [album];
+        let album_refs: Vec<&Album> = albums.iter().collect();
+        let merged = group_and_merge_albums(album_refs);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(
+            merged[0].tracks.len(),
+            3,
+            "untagged tracks must not collapse to one UI/queue track"
         );
     }
 
