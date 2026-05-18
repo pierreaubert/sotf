@@ -270,21 +270,28 @@ pub(crate) fn build_reflection_data_ir(
     num_bins: usize,
     fft_forward: Option<Arc<dyn RealToComplex<f32>>>,
 ) -> Result<RoomReflectionData, String> {
-    use symphonia::core::audio::{AudioBufferRef, Signal};
-    use symphonia::core::codecs::{Decoder, DecoderOptions};
-    use symphonia::core::formats::{FormatOptions, FormatReader};
+    use symphonia::core::audio::{Audio, GenericAudioBufferRef};
+    use symphonia::core::codecs::CodecParameters;
+    use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
+    use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
     use symphonia::core::io::MediaSourceStream;
 
     // Load WAV file
     let file = std::fs::File::open(ir_path).map_err(|e| format!("IO: {}", e))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
-    let mut reader = symphonia_format_riff::WavReader::try_new(mss, &FormatOptions::default())
+    let mut reader = symphonia_format_riff::WavReader::try_new(mss, FormatOptions::default())
         .map_err(|e| format!("WAV probe: {}", e))?;
 
-    let track = reader.default_track().ok_or("No track in WAV file")?;
+    let track = reader
+        .default_track(TrackType::Audio)
+        .ok_or("No track in WAV file")?;
+    let codec_params = match track.codec_params.clone() {
+        Some(CodecParameters::Audio(params)) => params,
+        _ => return Err("WAV file does not contain an audio track".into()),
+    };
 
     // Validate sample rate
-    let ir_sample_rate = track.codec_params.sample_rate.unwrap_or(0);
+    let ir_sample_rate = codec_params.sample_rate.unwrap_or(0);
     if ir_sample_rate != sample_rate {
         return Err(format!(
             "IR sample rate {} does not match engine sample rate {}. Resampling not supported.",
@@ -292,25 +299,25 @@ pub(crate) fn build_reflection_data_ir(
         ));
     }
 
-    let num_channels = track
-        .codec_params
+    let num_channels = codec_params
         .channels
-        .map(|c: symphonia::core::audio::Channels| c.count())
+        .as_ref()
+        .map(|c| c.count())
         .unwrap_or(1);
 
     let mut decoder =
-        symphonia_codec_pcm::PcmDecoder::try_new(&track.codec_params, &DecoderOptions::default())
+        symphonia_codec_pcm::PcmDecoder::try_new(&codec_params, &AudioDecoderOptions::default())
             .map_err(|e| format!("Decoder: {}", e))?;
 
     let mut channels: Vec<Vec<f32>> = vec![Vec::new(); num_channels];
-    while let Ok(packet) = reader.next_packet() {
+    while let Ok(Some(packet)) = reader.next_packet() {
         let decoded = decoder
             .decode(&packet)
             .map_err(|e| format!("Decode: {}", e))?;
         match &decoded {
-            AudioBufferRef::F32(buf) => {
+            GenericAudioBufferRef::F32(buf) => {
                 for (ch, channel) in channels.iter_mut().enumerate() {
-                    channel.extend_from_slice(buf.chan(ch));
+                    channel.extend_from_slice(buf.plane(ch).ok_or("Missing IR channel")?);
                 }
             }
             _ => return Err("Only F32 WAV format supported for room IR".into()),

@@ -34,13 +34,16 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use symphonia::core::audio::{AudioBufferRef, SampleBuffer, SignalSpec};
-use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+use symphonia::core::audio::{Audio, GenericAudioBufferRef};
+use symphonia::core::codecs::CodecParameters;
+use symphonia::core::codecs::audio::AudioDecoderOptions;
+use symphonia::core::codecs::registry::CodecRegistry;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
+use symphonia::core::formats::TrackType;
+use symphonia::core::formats::probe::{Hint, Probe};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 // ============================================================================
 // CLI Arguments
@@ -313,76 +316,158 @@ fn load_audio_file(path: &PathBuf) -> Result<(Vec<f32>, usize, u32), String> {
 
     let format_opts = FormatOptions::default();
     let metadata_opts = MetadataOptions::default();
-    let decoder_opts = DecoderOptions::default();
+    let decoder_opts = AudioDecoderOptions::default();
 
     // Create probe with explicit format support
-    let mut probe = symphonia::core::probe::Probe::default();
-    probe.register_all::<symphonia_format_riff::WavReader>();
-    probe.register_all::<symphonia_bundle_flac::FlacReader>();
-    probe.register_all::<symphonia_bundle_mp3::MpaReader>();
+    let mut probe = Probe::default();
+    probe.register_format::<symphonia_format_riff::WavReader>();
+    probe.register_format::<symphonia_bundle_flac::FlacReader>();
+    probe.register_format::<symphonia_bundle_mp3::MpaReader>();
 
-    let probed = probe
-        .format(&hint, mss, &format_opts, &metadata_opts)
+    let mut format = probe
+        .probe(&hint, mss, format_opts, metadata_opts)
         .map_err(|e| format!("Failed to probe file: {}", e))?;
 
-    let mut format = probed.format;
     let track = format
-        .tracks()
-        .iter()
-        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .default_track(TrackType::Audio)
         .ok_or("No valid audio track found")?;
 
     let track_id = track.id;
+    let codec_params = match track.codec_params.clone() {
+        Some(CodecParameters::Audio(params)) => params,
+        _ => return Err("No valid audio track found".into()),
+    };
+
     // Create codec registry with explicit codec support
-    let mut codecs = symphonia::core::codecs::CodecRegistry::new();
-    codecs.register_all::<symphonia_codec_pcm::PcmDecoder>();
-    codecs.register_all::<symphonia_bundle_flac::FlacDecoder>();
-    codecs.register_all::<symphonia_bundle_mp3::MpaDecoder>();
+    let mut codecs = CodecRegistry::new();
+    codecs.register_audio_decoder::<symphonia_codec_pcm::PcmDecoder>();
+    codecs.register_audio_decoder::<symphonia_bundle_flac::FlacDecoder>();
+    codecs.register_audio_decoder::<symphonia_bundle_mp3::MpaDecoder>();
 
     let mut decoder = codecs
-        .make(&track.codec_params, &decoder_opts)
+        .make_audio_decoder(&codec_params, &decoder_opts)
         .map_err(|e| format!("Failed to create decoder: {}", e))?;
 
-    let channels_info = track.codec_params.channels.ok_or("No channel info")?;
+    let channels_info = codec_params.channels.as_ref().ok_or("No channel info")?;
     let channels = channels_info.count();
-    let sample_rate = track.codec_params.sample_rate.ok_or("No sample rate")?;
+    let sample_rate = codec_params.sample_rate.ok_or("No sample rate")?;
 
     let mut audio_data = Vec::new();
 
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
             Err(SymphoniaError::IoError(_)) => break,
             Err(SymphoniaError::ResetRequired) => break,
             Err(e) => return Err(format!("Failed to read packet: {}", e)),
         };
 
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
 
         match decoder.decode(&packet) {
             Ok(decoded) => {
-                let num_frames = match &decoded {
-                    AudioBufferRef::F32(b) => b.capacity(),
-                    AudioBufferRef::U8(b) => b.capacity(),
-                    AudioBufferRef::U16(b) => b.capacity(),
-                    AudioBufferRef::U24(b) => b.capacity(),
-                    AudioBufferRef::U32(b) => b.capacity(),
-                    AudioBufferRef::S8(b) => b.capacity(),
-                    AudioBufferRef::S16(b) => b.capacity(),
-                    AudioBufferRef::S24(b) => b.capacity(),
-                    AudioBufferRef::S32(b) => b.capacity(),
-                    AudioBufferRef::F64(b) => b.capacity(),
-                };
-
-                let mut sample_buf = SampleBuffer::<f32>::new(
-                    num_frames as u64,
-                    SignalSpec::new(sample_rate, channels_info),
-                );
-                sample_buf.copy_interleaved_ref(decoded);
-
-                audio_data.extend_from_slice(sample_buf.samples());
+                let channels_count = decoded.spec().channels().count();
+                let duration = decoded.frames();
+                match decoded {
+                    GenericAudioBufferRef::F32(buf) => {
+                        for frame in 0..duration {
+                            for ch in 0..channels_count {
+                                audio_data.push(buf.plane(ch).expect("decoded channel")[frame]);
+                            }
+                        }
+                    }
+                    GenericAudioBufferRef::U8(buf) => {
+                        for frame in 0..duration {
+                            for ch in 0..channels_count {
+                                audio_data.push(
+                                    buf.plane(ch).expect("decoded channel")[frame] as f32 / 128.0
+                                        - 1.0,
+                                );
+                            }
+                        }
+                    }
+                    GenericAudioBufferRef::U16(buf) => {
+                        for frame in 0..duration {
+                            for ch in 0..channels_count {
+                                audio_data.push(
+                                    buf.plane(ch).expect("decoded channel")[frame] as f32 / 32768.0
+                                        - 1.0,
+                                );
+                            }
+                        }
+                    }
+                    GenericAudioBufferRef::U24(buf) => {
+                        for frame in 0..duration {
+                            for ch in 0..channels_count {
+                                audio_data.push(
+                                    buf.plane(ch).expect("decoded channel")[frame].inner() as f32
+                                        / 8388608.0
+                                        - 1.0,
+                                );
+                            }
+                        }
+                    }
+                    GenericAudioBufferRef::U32(buf) => {
+                        for frame in 0..duration {
+                            for ch in 0..channels_count {
+                                audio_data.push(
+                                    buf.plane(ch).expect("decoded channel")[frame] as f32
+                                        / 2147483648.0
+                                        - 1.0,
+                                );
+                            }
+                        }
+                    }
+                    GenericAudioBufferRef::S8(buf) => {
+                        for frame in 0..duration {
+                            for ch in 0..channels_count {
+                                audio_data.push(
+                                    buf.plane(ch).expect("decoded channel")[frame] as f32 / 128.0,
+                                );
+                            }
+                        }
+                    }
+                    GenericAudioBufferRef::S16(buf) => {
+                        for frame in 0..duration {
+                            for ch in 0..channels_count {
+                                audio_data.push(
+                                    buf.plane(ch).expect("decoded channel")[frame] as f32 / 32768.0,
+                                );
+                            }
+                        }
+                    }
+                    GenericAudioBufferRef::S24(buf) => {
+                        for frame in 0..duration {
+                            for ch in 0..channels_count {
+                                audio_data.push(
+                                    buf.plane(ch).expect("decoded channel")[frame].inner() as f32
+                                        / 8388608.0,
+                                );
+                            }
+                        }
+                    }
+                    GenericAudioBufferRef::S32(buf) => {
+                        for frame in 0..duration {
+                            for ch in 0..channels_count {
+                                audio_data.push(
+                                    buf.plane(ch).expect("decoded channel")[frame] as f32
+                                        / 2147483648.0,
+                                );
+                            }
+                        }
+                    }
+                    GenericAudioBufferRef::F64(buf) => {
+                        for frame in 0..duration {
+                            for ch in 0..channels_count {
+                                audio_data
+                                    .push(buf.plane(ch).expect("decoded channel")[frame] as f32);
+                            }
+                        }
+                    }
+                }
             }
             Err(SymphoniaError::DecodeError(_)) => continue,
             Err(_) => break,

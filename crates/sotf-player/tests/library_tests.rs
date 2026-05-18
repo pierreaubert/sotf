@@ -1,6 +1,6 @@
-use sotf_audio_player::MusicLibrary;
 /// Integration tests for MusicLibrary scanning and directory management
 use sotf_audio_player::database::MusicDatabase;
+use sotf_audio_player::{Album, MusicLibrary, Track};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -31,6 +31,91 @@ fn write_minimal_wav(path: &std::path::Path) {
     file.write_all(b"data").unwrap();
     file.write_all(&data_size.to_le_bytes()).unwrap();
     file.write_all(&vec![0u8; data_size as usize]).unwrap();
+}
+
+fn write_wav_with_riff_info(path: &std::path::Path) {
+    let channels = 2u16;
+    let sample_rate = 44_100u32;
+    let bits_per_sample = 16u16;
+    let samples_per_channel = 8u32;
+    let bytes_per_sample = (bits_per_sample / 8) as u32;
+    let data_size = samples_per_channel * channels as u32 * bytes_per_sample;
+    let byte_rate = sample_rate * channels as u32 * bytes_per_sample;
+    let block_align = channels * (bits_per_sample / 8);
+
+    let mut info_payload = Vec::new();
+    info_payload.extend_from_slice(b"INFO");
+    for (key, value) in [
+        (*b"IPRD", "Tagged Album"),
+        (*b"IART", "Tagged Artist"),
+        (*b"INAM", "Tagged Track"),
+        (*b"ITRK", "7"),
+        (*b"ICRD", "2026"),
+        (*b"IGNR", "QA"),
+    ] {
+        let mut bytes = value.as_bytes().to_vec();
+        bytes.push(0);
+        let size = bytes.len() as u32;
+        info_payload.extend_from_slice(&key);
+        info_payload.extend_from_slice(&size.to_le_bytes());
+        info_payload.extend_from_slice(&bytes);
+        if size % 2 == 1 {
+            info_payload.push(0);
+        }
+    }
+
+    let list_size = info_payload.len() as u32;
+    let riff_size = 4 + (8 + 16) + (8 + data_size) + (8 + list_size);
+
+    let mut file = std::fs::File::create(path).expect("create wav");
+    file.write_all(b"RIFF").unwrap();
+    file.write_all(&riff_size.to_le_bytes()).unwrap();
+    file.write_all(b"WAVE").unwrap();
+    file.write_all(b"fmt ").unwrap();
+    file.write_all(&16u32.to_le_bytes()).unwrap();
+    file.write_all(&1u16.to_le_bytes()).unwrap();
+    file.write_all(&channels.to_le_bytes()).unwrap();
+    file.write_all(&sample_rate.to_le_bytes()).unwrap();
+    file.write_all(&byte_rate.to_le_bytes()).unwrap();
+    file.write_all(&block_align.to_le_bytes()).unwrap();
+    file.write_all(&bits_per_sample.to_le_bytes()).unwrap();
+    file.write_all(b"data").unwrap();
+    file.write_all(&data_size.to_le_bytes()).unwrap();
+    file.write_all(&vec![0u8; data_size as usize]).unwrap();
+    file.write_all(b"LIST").unwrap();
+    file.write_all(&list_size.to_le_bytes()).unwrap();
+    file.write_all(&info_payload).unwrap();
+}
+
+fn test_track(path: PathBuf) -> Track {
+    Track {
+        path,
+        source: None,
+        title: None,
+        artist: None,
+        track_number: None,
+        duration_secs: None,
+        channels: Some(2),
+        sample_rate: Some(44_100),
+        bit_depth: Some(16),
+        replay_gain: None,
+        replay_peak: None,
+        album_gain: None,
+        album_peak: None,
+        waveform: None,
+        genre: None,
+        composer: None,
+        disc_number: None,
+        conductor: None,
+        performer: None,
+        isrc: None,
+        album_artist: None,
+        ensemble: None,
+        edition: None,
+        is_favorite: false,
+        play_count: 0,
+        uuid: None,
+    }
 }
 
 #[test]
@@ -190,6 +275,111 @@ fn test_untagged_folders_survive_database_reload_as_distinct_albums() {
     assert_eq!(reloaded.albums.len(), 2);
     assert_eq!(reloaded.directories[0].file_count, 5);
     assert_eq!(reloaded.directories[0].album_count, 2);
+}
+
+#[test]
+fn test_scan_imports_wav_riff_info_tags() {
+    let temp_music = tempfile::TempDir::new().unwrap();
+    write_wav_with_riff_info(&temp_music.path().join("tagged.wav"));
+
+    let (_temp_db, db_path) = fixtures::temp_database();
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    library
+        .add_directory(temp_music.path().to_path_buf())
+        .unwrap();
+    library.scan().expect("scan tagged wav");
+
+    assert_eq!(library.albums.len(), 1);
+    let album = &library.albums[0];
+    assert_eq!(album.title, "Tagged Album");
+    assert_eq!(album.artist(), "Tagged Artist");
+    assert_eq!(album.year, Some(2026));
+    assert_eq!(album.tracks[0].title.as_deref(), Some("Tagged Track"));
+    assert_eq!(album.tracks[0].track_number, Some(7));
+    assert_eq!(album.tracks[0].genre.as_deref(), Some("QA"));
+}
+
+#[test]
+fn test_incremental_scan_preserves_skipped_folder_album_counts() {
+    let temp_music = tempfile::TempDir::new().unwrap();
+    let album_a = temp_music.path().join("repo-a").join("disc");
+    let album_b = temp_music.path().join("repo-b").join("disc");
+    std::fs::create_dir_all(&album_a).unwrap();
+    std::fs::create_dir_all(&album_b).unwrap();
+
+    for idx in 1..=2 {
+        write_minimal_wav(&album_a.join(format!("track-{idx}.wav")));
+    }
+    for idx in 1..=3 {
+        write_minimal_wav(&album_b.join(format!("track-{idx}.wav")));
+    }
+
+    let (_temp_db, db_path) = fixtures::temp_database();
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    library
+        .add_directory(temp_music.path().to_path_buf())
+        .unwrap();
+    library.scan().expect("initial scan");
+
+    library
+        .scan_incremental(true)
+        .expect("incremental scan with mtime skips");
+
+    assert_eq!(library.albums.len(), 2);
+    assert_eq!(library.directories[0].file_count, 5);
+    assert_eq!(library.directories[0].album_count, 2);
+
+    let scan_dirs = library
+        .get_database()
+        .unwrap()
+        .get_scanned_directories()
+        .unwrap();
+    let (_, tracks, albums, _) = scan_dirs
+        .iter()
+        .find(|(path, _, _, _)| path == temp_music.path())
+        .expect("scan history for test root");
+    assert_eq!((*tracks, *albums), (5, 2));
+}
+
+#[test]
+fn test_incremental_scan_prunes_stale_unsupported_tracks() {
+    let temp_music = tempfile::TempDir::new().unwrap();
+    let album_dir = temp_music.path().join("album10opus");
+    std::fs::create_dir_all(&album_dir).unwrap();
+
+    let wav_path = album_dir.join("track.wav");
+    let opus_path = album_dir.join("track.opus");
+    write_minimal_wav(&wav_path);
+    write_minimal_wav(&opus_path);
+
+    let (_temp_db, db_path) = fixtures::temp_database();
+    {
+        let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();
+        db.save_albums(&[Album {
+            title: "Album10opus".to_string(),
+            tracks: vec![test_track(wav_path.clone()), test_track(opus_path.clone())],
+            ..Default::default()
+        }])
+        .unwrap();
+    }
+
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    library
+        .add_directory(temp_music.path().to_path_buf())
+        .unwrap();
+    library
+        .scan_incremental(true)
+        .expect("incremental scan should prune unsupported rows");
+
+    let db = MusicDatabase::open_for_testing(&db_path).unwrap();
+    let albums = db.load_library().unwrap();
+    let tracks: Vec<_> = albums
+        .iter()
+        .flat_map(|album| album.tracks.iter())
+        .collect();
+
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(tracks[0].path, wav_path);
 }
 
 #[test]

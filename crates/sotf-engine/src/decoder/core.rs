@@ -185,7 +185,7 @@ pub fn create_decoder_from_source(
             format_hint,
             seekable: _,
         } if url.starts_with("mpd-stream://") => {
-            use symphonia::core::probe::Hint;
+            use symphonia::core::formats::probe::Hint;
 
             let (mpd_source, _metadata_rx) = sotf_streaming::MpdStreamSource::open(url)
                 .map_err(AudioDecoderError::NetworkError)?;
@@ -206,7 +206,7 @@ pub fn create_decoder_from_source(
             format_hint,
             seekable: _,
         } => {
-            use symphonia::core::probe::Hint;
+            use symphonia::core::formats::probe::Hint;
 
             let (http_source, _metadata_rx) = sotf_streaming::HttpMediaSource::open(url)
                 .map_err(|e| AudioDecoderError::NetworkError(e.to_string()))?;

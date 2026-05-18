@@ -3,38 +3,43 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use symphonia::core::audio::{AudioBufferRef, Signal};
-use symphonia::core::codecs::{CodecRegistry, Decoder, DecoderOptions};
+use symphonia::core::audio::{Audio, GenericAudioBufferRef};
+use symphonia::core::codecs::CodecParameters;
+use symphonia::core::codecs::audio::{
+    AudioCodecId, AudioCodecParameters, AudioDecoder as SymphoniaAudioDecoder, AudioDecoderOptions,
+    CODEC_ID_NULL_AUDIO, well_known,
+};
+use symphonia::core::codecs::registry::CodecRegistry;
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::{FormatOptions, FormatReader};
+use symphonia::core::formats::probe::{Hint, Probe};
+use symphonia::core::formats::{FormatOptions, FormatReader, Track, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::{Hint, Probe};
 
 use crate::decoder::core::{AudioDecoder, AudioSpec, DecodedAudio};
 
 /// Shared probe with all supported format readers (initialized once)
 static PROBE: LazyLock<Probe> = LazyLock::new(|| {
     let mut probe = Probe::default();
-    probe.register_all::<symphonia_bundle_flac::FlacReader>();
-    probe.register_all::<symphonia_bundle_mp3::MpaReader>();
-    probe.register_all::<symphonia_format_riff::WavReader>();
-    probe.register_all::<symphonia_format_riff::AiffReader>();
-    probe.register_all::<symphonia_format_ogg::OggReader>();
-    probe.register_all::<symphonia_format_isomp4::IsoMp4Reader>();
-    probe.register_all::<symphonia_codec_aac::AdtsReader>();
+    probe.register_format::<symphonia_bundle_flac::FlacReader>();
+    probe.register_format::<symphonia_bundle_mp3::MpaReader>();
+    probe.register_format::<symphonia_format_riff::WavReader>();
+    probe.register_format::<symphonia_format_riff::AiffReader>();
+    probe.register_format::<symphonia_format_ogg::OggReader>();
+    probe.register_format::<symphonia_format_isomp4::IsoMp4Reader>();
+    probe.register_format::<symphonia_codec_aac::AdtsReader>();
     probe
 });
 
 /// Shared codec registry with all supported codecs (initialized once)
 static CODEC_REGISTRY: LazyLock<CodecRegistry> = LazyLock::new(|| {
     let mut registry = CodecRegistry::new();
-    registry.register_all::<symphonia_bundle_flac::FlacDecoder>();
-    registry.register_all::<symphonia_bundle_mp3::MpaDecoder>();
-    registry.register_all::<symphonia_codec_pcm::PcmDecoder>();
-    registry.register_all::<symphonia_codec_aac::AacDecoder>();
-    registry.register_all::<symphonia_codec_alac::AlacDecoder>();
-    registry.register_all::<symphonia_codec_vorbis::VorbisDecoder>();
+    registry.register_audio_decoder::<symphonia_bundle_flac::FlacDecoder>();
+    registry.register_audio_decoder::<symphonia_bundle_mp3::MpaDecoder>();
+    registry.register_audio_decoder::<symphonia_codec_pcm::PcmDecoder>();
+    registry.register_audio_decoder::<symphonia_codec_aac::AacDecoder>();
+    registry.register_audio_decoder::<symphonia_codec_alac::AlacDecoder>();
+    registry.register_audio_decoder::<symphonia_codec_vorbis::VorbisDecoder>();
     registry
 });
 
@@ -47,7 +52,7 @@ pub struct SymphoniaDecoder {
     /// Symphonia format reader
     format_reader: Box<dyn FormatReader>,
     /// Symphonia decoder
-    decoder: Box<dyn Decoder>,
+    decoder: Box<dyn SymphoniaAudioDecoder>,
     /// Current position in frames
     position: u64,
     /// Track ID in the format
@@ -59,6 +64,17 @@ pub struct SymphoniaDecoder {
 }
 
 impl SymphoniaDecoder {
+    fn audio_codec_params_from_track(track: &Track) -> AudioDecoderResult<AudioCodecParameters> {
+        match track.codec_params.clone() {
+            Some(CodecParameters::Audio(params)) if params.codec != CODEC_ID_NULL_AUDIO => {
+                Ok(params)
+            }
+            _ => Err(AudioDecoderError::InvalidFile(
+                "No valid audio track found".to_string(),
+            )),
+        }
+    }
+
     /// Create a Symphonia decoder from an already-opened `MediaSource`.
     ///
     /// Used for HTTP streams where the source is not a local file.
@@ -72,11 +88,11 @@ impl SymphoniaDecoder {
         let media_source = MediaSourceStream::new(source, Default::default());
 
         let probe_result = PROBE
-            .format(
+            .probe(
                 &hint,
                 media_source,
-                &FormatOptions::default(),
-                &MetadataOptions::default(),
+                FormatOptions::default(),
+                MetadataOptions::default(),
             )
             .map_err(|e| match e {
                 SymphoniaError::Unsupported(_) => AudioDecoderError::UnsupportedFormat(
@@ -85,43 +101,43 @@ impl SymphoniaDecoder {
                 _ => AudioDecoderError::from(e),
             })?;
 
-        let mut format_reader = probe_result.format;
+        let mut format_reader = probe_result;
 
         let track = format_reader
-            .tracks()
-            .iter()
-            .find(|t| t.codec_params.codec != symphonia::core::codecs::CODEC_TYPE_NULL)
+            .default_track(TrackType::Audio)
             .ok_or_else(|| {
                 AudioDecoderError::InvalidFile("No valid audio track found".to_string())
             })?;
 
         let track_id = track.id;
-        let codec_params = track.codec_params.clone();
+        let total_frames = track.num_frames;
+        let codec_params = Self::audio_codec_params_from_track(track)?;
 
-        let decoder_opts = DecoderOptions::default();
+        let decoder_opts = AudioDecoderOptions::default();
 
         let sample_rate = codec_params
             .sample_rate
             .ok_or_else(|| AudioDecoderError::InvalidFile("No sample rate found".to_string()))?;
         let bits_per_sample = codec_params.bits_per_sample.unwrap_or(16);
-        let total_frames = codec_params.n_frames;
 
         // For streaming sources we cannot re-open the source to probe channels,
         // so if channel info is not in codec params we decode the first packet
         // and continue from there (no reset possible for non-seekable streams).
-        let channels_opt = codec_params.channels.map(|layout| layout.count() as u16);
+        let channels_opt = codec_params
+            .channels
+            .as_ref()
+            .map(|layout| layout.count() as u16);
 
         let (final_format_reader, final_decoder, channels, pending_decoded) = match channels_opt {
             None => {
-                let mut temp_decoder =
-                    CODEC_REGISTRY
-                        .make(&codec_params, &decoder_opts)
-                        .map_err(|e| {
-                            AudioDecoderError::UnsupportedFormat(format!(
-                                "Cannot create decoder for codec '{:?}': {:?}",
-                                codec_params.codec, e
-                            ))
-                        })?;
+                let mut temp_decoder = CODEC_REGISTRY
+                    .make_audio_decoder(&codec_params, &decoder_opts)
+                    .map_err(|e| {
+                        AudioDecoderError::UnsupportedFormat(format!(
+                            "Cannot create decoder for codec '{:?}': {:?}",
+                            codec_params.codec, e
+                        ))
+                    })?;
 
                 let pending_spec = AudioSpec {
                     sample_rate,
@@ -140,7 +156,7 @@ impl SymphoniaDecoder {
             }
             Some(channels) => {
                 let decoder = CODEC_REGISTRY
-                    .make(&codec_params, &decoder_opts)
+                    .make_audio_decoder(&codec_params, &decoder_opts)
                     .map_err(|e| {
                         AudioDecoderError::UnsupportedFormat(format!(
                             "Cannot create decoder for codec '{:?}': {:?}",
@@ -185,26 +201,25 @@ impl SymphoniaDecoder {
     }
 
     /// Infer AudioFormat from a Symphonia codec type.
-    fn format_from_codec(codec: symphonia::core::codecs::CodecType) -> AudioFormat {
-        use symphonia::core::codecs;
+    fn format_from_codec(codec: AudioCodecId) -> AudioFormat {
         match codec {
-            codecs::CODEC_TYPE_FLAC => AudioFormat::Flac,
-            codecs::CODEC_TYPE_MP3 => AudioFormat::Mp3,
-            codecs::CODEC_TYPE_AAC => AudioFormat::Aac,
-            codecs::CODEC_TYPE_VORBIS => AudioFormat::Vorbis,
-            codecs::CODEC_TYPE_ALAC => AudioFormat::Alac,
-            codecs::CODEC_TYPE_PCM_S16LE
-            | codecs::CODEC_TYPE_PCM_S24LE
-            | codecs::CODEC_TYPE_PCM_S32LE
-            | codecs::CODEC_TYPE_PCM_F32LE
-            | codecs::CODEC_TYPE_PCM_F64LE => AudioFormat::Wav,
+            well_known::CODEC_ID_FLAC => AudioFormat::Flac,
+            well_known::CODEC_ID_MP3 => AudioFormat::Mp3,
+            well_known::CODEC_ID_AAC => AudioFormat::Aac,
+            well_known::CODEC_ID_VORBIS => AudioFormat::Vorbis,
+            well_known::CODEC_ID_ALAC => AudioFormat::Alac,
+            well_known::CODEC_ID_PCM_S16LE
+            | well_known::CODEC_ID_PCM_S24LE
+            | well_known::CODEC_ID_PCM_S32LE
+            | well_known::CODEC_ID_PCM_F32LE
+            | well_known::CODEC_ID_PCM_F64LE => AudioFormat::Wav,
             _ => AudioFormat::Mp3, // fallback
         }
     }
 
     fn decode_probe_packet_for_channels(
         format_reader: &mut Box<dyn FormatReader>,
-        decoder: &mut Box<dyn Decoder>,
+        decoder: &mut Box<dyn SymphoniaAudioDecoder>,
         track_id: u32,
         pending_spec: Option<AudioSpec>,
     ) -> AudioDecoderResult<(u16, Option<DecodedAudio>)> {
@@ -212,7 +227,12 @@ impl SymphoniaDecoder {
 
         loop {
             let packet = match format_reader.next_packet() {
-                Ok(packet) => packet,
+                Ok(Some(packet)) => packet,
+                Ok(None) => {
+                    return Err(AudioDecoderError::InvalidFile(
+                        "No channel information found before end of stream".to_string(),
+                    ));
+                }
                 Err(SymphoniaError::IoError(ref err))
                     if err.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
@@ -223,13 +243,13 @@ impl SymphoniaDecoder {
                 Err(err) => return Err(AudioDecoderError::from(err)),
             };
 
-            if packet.track_id() != track_id {
+            if packet.track_id != track_id {
                 continue;
             }
 
             match decoder.decode(&packet) {
                 Ok(decoded) => {
-                    let channels = decoded.spec().channels.count() as u16;
+                    let channels = decoded.spec().channels().count() as u16;
                     let frame_count = decoded.frames();
 
                     let pending = if let Some(mut spec) = pending_spec {
@@ -275,11 +295,11 @@ impl SymphoniaDecoder {
 
         // Probe the file to determine format using our shared probe
         let probe_result = PROBE
-            .format(
+            .probe(
                 &hint,
                 media_source,
-                &FormatOptions::default(),
-                &MetadataOptions::default(),
+                FormatOptions::default(),
+                MetadataOptions::default(),
             )
             .map_err(|e| match e {
                 SymphoniaError::Unsupported(_) => AudioDecoderError::UnsupportedFormat(
@@ -288,41 +308,42 @@ impl SymphoniaDecoder {
                 _ => AudioDecoderError::from(e),
             })?;
 
-        let mut format_reader = probe_result.format;
+        let mut format_reader = probe_result;
 
         // Get the default track (usually the first one)
         let track = format_reader
-            .tracks()
-            .iter()
-            .find(|t| t.codec_params.codec != symphonia::core::codecs::CODEC_TYPE_NULL)
+            .default_track(TrackType::Audio)
             .ok_or_else(|| {
                 AudioDecoderError::InvalidFile("No valid audio track found".to_string())
             })?;
 
         let track_id = track.id;
-        let codec_params = track.codec_params.clone();
+        let total_frames = track.num_frames;
+        let codec_params = Self::audio_codec_params_from_track(track)?;
 
         // Create decoder for this track using our shared codec registry
-        let decoder_opts = DecoderOptions::default();
+        let decoder_opts = AudioDecoderOptions::default();
 
         // Extract audio specification
         let sample_rate = codec_params
             .sample_rate
             .ok_or_else(|| AudioDecoderError::InvalidFile("No sample rate found".to_string()))?;
         let bits_per_sample = codec_params.bits_per_sample.unwrap_or(16);
-        let total_frames = codec_params.n_frames;
 
         // For AAC and some other codecs, channel information may not be available
         // until the first packet is decoded. Try to get it from codec params first,
         // and if that fails, decode the first packet.
-        let channels_opt = codec_params.channels.map(|layout| layout.count() as u16);
+        let channels_opt = codec_params
+            .channels
+            .as_ref()
+            .map(|layout| layout.count() as u16);
 
         let (final_format_reader, final_decoder, channels) = match channels_opt {
             None => {
                 // Need to probe for channels - create temporary decoder
                 let mut temp_decoder =
                     CODEC_REGISTRY
-                        .make(&codec_params, &decoder_opts)
+                        .make_audio_decoder(&codec_params, &decoder_opts)
                         .map_err(|e| {
                             AudioDecoderError::UnsupportedFormat(format!(
                                 "Cannot create decoder for codec '{:?}'. Supported codecs: FLAC, MP3, AAC, ALAC, PCM, Vorbis. Error: {:?}",
@@ -345,19 +366,19 @@ impl SymphoniaDecoder {
                     hint.with_extension(extension);
                 }
                 let probe_result = PROBE
-                    .format(
+                    .probe(
                         &hint,
                         media_source,
-                        &FormatOptions::default(),
-                        &MetadataOptions::default(),
+                        FormatOptions::default(),
+                        MetadataOptions::default(),
                     )
                     .map_err(AudioDecoderError::from)?;
-                let new_format_reader = probe_result.format;
+                let new_format_reader = probe_result;
 
                 // Recreate decoder for fresh state
                 let new_decoder =
                     CODEC_REGISTRY
-                        .make(&codec_params, &decoder_opts)
+                        .make_audio_decoder(&codec_params, &decoder_opts)
                         .map_err(|e| {
                             AudioDecoderError::UnsupportedFormat(format!(
                                 "Cannot create decoder for codec '{:?}'. Supported codecs: FLAC, MP3, AAC, ALAC, PCM, Vorbis. Error: {:?}",
@@ -370,7 +391,7 @@ impl SymphoniaDecoder {
             Some(channels) => {
                 // Channel info is available, use as is
                 let decoder = CODEC_REGISTRY
-                    .make(&codec_params, &decoder_opts)
+                    .make_audio_decoder(&codec_params, &decoder_opts)
                     .map_err(|e| {
                         AudioDecoderError::UnsupportedFormat(format!(
                             "Cannot create decoder for codec '{:?}'. Supported codecs: FLAC, MP3, AAC, ALAC, PCM, Vorbis. Error: {:?}",
@@ -414,10 +435,10 @@ impl SymphoniaDecoder {
 
     /// Convert audio buffer to normalized f32 samples and append to output vector
     fn convert_audio_buffer_into(
-        audio_buf: AudioBufferRef,
+        audio_buf: GenericAudioBufferRef<'_>,
         samples: &mut Vec<f32>,
     ) -> AudioDecoderResult<()> {
-        let channels_count = audio_buf.spec().channels.count();
+        let channels_count = audio_buf.spec().channels().count();
         let duration = audio_buf.frames();
         let total_samples = duration * channels_count;
 
@@ -429,79 +450,87 @@ impl SymphoniaDecoder {
         let output = &mut samples[current_len..];
 
         match audio_buf {
-            AudioBufferRef::U8(buf) => {
+            GenericAudioBufferRef::U8(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
                         output[frame * channels_count + ch] =
-                            buf.chan(ch)[frame] as f32 / 128.0 - 1.0;
+                            buf.plane(ch).expect("decoded channel")[frame] as f32 / 128.0 - 1.0;
                     }
                 }
             }
-            AudioBufferRef::U16(buf) => {
+            GenericAudioBufferRef::U16(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
                         output[frame * channels_count + ch] =
-                            buf.chan(ch)[frame] as f32 / 32768.0 - 1.0;
+                            buf.plane(ch).expect("decoded channel")[frame] as f32 / 32768.0 - 1.0;
                     }
                 }
             }
-            AudioBufferRef::U24(buf) => {
+            GenericAudioBufferRef::U24(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
                         output[frame * channels_count + ch] =
-                            (buf.chan(ch)[frame].inner() as f32) / 8388608.0 - 1.0;
+                            (buf.plane(ch).expect("decoded channel")[frame].inner() as f32)
+                                / 8388608.0
+                                - 1.0;
                     }
                 }
             }
-            AudioBufferRef::U32(buf) => {
+            GenericAudioBufferRef::U32(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
                         output[frame * channels_count + ch] =
-                            buf.chan(ch)[frame] as f32 / 2147483648.0 - 1.0;
+                            buf.plane(ch).expect("decoded channel")[frame] as f32 / 2147483648.0
+                                - 1.0;
                     }
                 }
             }
-            AudioBufferRef::S8(buf) => {
-                for frame in 0..duration {
-                    for ch in 0..channels_count {
-                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 128.0;
-                    }
-                }
-            }
-            AudioBufferRef::S16(buf) => {
-                for frame in 0..duration {
-                    for ch in 0..channels_count {
-                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 32768.0;
-                    }
-                }
-            }
-            AudioBufferRef::S24(buf) => {
+            GenericAudioBufferRef::S8(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
                         output[frame * channels_count + ch] =
-                            (buf.chan(ch)[frame].inner() as f32) / 8388608.0;
+                            buf.plane(ch).expect("decoded channel")[frame] as f32 / 128.0;
                     }
                 }
             }
-            AudioBufferRef::S32(buf) => {
+            GenericAudioBufferRef::S16(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
                         output[frame * channels_count + ch] =
-                            buf.chan(ch)[frame] as f32 / 2147483648.0;
+                            buf.plane(ch).expect("decoded channel")[frame] as f32 / 32768.0;
                     }
                 }
             }
-            AudioBufferRef::F32(buf) => {
+            GenericAudioBufferRef::S24(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        output[frame * channels_count + ch] = buf.chan(ch)[frame];
+                        output[frame * channels_count + ch] =
+                            (buf.plane(ch).expect("decoded channel")[frame].inner() as f32)
+                                / 8388608.0;
                     }
                 }
             }
-            AudioBufferRef::F64(buf) => {
+            GenericAudioBufferRef::S32(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32;
+                        output[frame * channels_count + ch] =
+                            buf.plane(ch).expect("decoded channel")[frame] as f32 / 2147483648.0;
+                    }
+                }
+            }
+            GenericAudioBufferRef::F32(buf) => {
+                for frame in 0..duration {
+                    for ch in 0..channels_count {
+                        output[frame * channels_count + ch] =
+                            buf.plane(ch).expect("decoded channel")[frame];
+                    }
+                }
+            }
+            GenericAudioBufferRef::F64(buf) => {
+                for frame in 0..duration {
+                    for ch in 0..channels_count {
+                        output[frame * channels_count + ch] =
+                            buf.plane(ch).expect("decoded channel")[frame] as f32;
                     }
                 }
             }
@@ -574,7 +603,11 @@ impl AudioDecoder for SymphoniaDecoder {
         loop {
             // Read the next packet
             let packet = match self.format_reader.next_packet() {
-                Ok(packet) => packet,
+                Ok(Some(packet)) => packet,
+                Ok(None) => {
+                    self.eof = true;
+                    return Ok(0);
+                }
                 Err(SymphoniaError::IoError(ref err))
                     if err.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
@@ -603,7 +636,7 @@ impl AudioDecoder for SymphoniaDecoder {
             };
 
             // Skip packets that don't belong to our track
-            if packet.track_id() != self.track_id {
+            if packet.track_id != self.track_id {
                 continue;
             }
 
@@ -615,13 +648,13 @@ impl AudioDecoder for SymphoniaDecoder {
                 Err(SymphoniaError::DecodeError(msg)) => {
                     // Advance position by the packet's declared duration so
                     // timestamps stay roughly in sync after skipping.
-                    self.position += packet.dur();
+                    self.position += packet.dur.get();
                     self.check_error_limit(&mut consecutive_errors, msg, "corrupted packet")?;
                     continue;
                 }
                 Err(SymphoniaError::ResetRequired) => {
                     self.decoder.reset();
-                    self.position += packet.dur();
+                    self.position += packet.dur.get();
                     self.check_error_limit(
                         &mut consecutive_errors,
                         "reset required",
@@ -655,13 +688,13 @@ impl AudioDecoder for SymphoniaDecoder {
         // frame_position is in PCM frames (track time-base). Use TimeStamp, not Time-in-seconds.
         match self.format_reader.seek(
             symphonia::core::formats::SeekMode::Accurate,
-            symphonia::core::formats::SeekTo::TimeStamp {
-                ts: frame_position,
+            symphonia::core::formats::SeekTo::Timestamp {
+                ts: symphonia::core::units::Timestamp::new(frame_position as i64),
                 track_id: self.track_id,
             },
         ) {
             Ok(seeked) => {
-                self.position = seeked.actual_ts;
+                self.position = seeked.actual_ts.get().max(0) as u64;
                 self.eof = false;
                 Ok(())
             }
@@ -708,7 +741,7 @@ mod tests_decoder {
 
     #[test]
     fn test_alac_codec_maps_to_lossless_alac_format() {
-        let format = SymphoniaDecoder::format_from_codec(symphonia::core::codecs::CODEC_TYPE_ALAC);
+        let format = SymphoniaDecoder::format_from_codec(well_known::CODEC_ID_ALAC);
         assert_eq!(format, AudioFormat::Alac);
         assert!(format.is_lossless());
     }

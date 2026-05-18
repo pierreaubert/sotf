@@ -11,7 +11,7 @@ use crate::ui::ALBUM_CARD_WIDTH_REMS;
 use gpui::prelude::*;
 use gpui::*;
 
-use sotf_audio_player::Album;
+use sotf_audio_player::{Album, format_channel_count};
 use std::sync::Arc;
 
 /// Create an image from thumbnail bytes
@@ -133,6 +133,11 @@ pub fn format_sample_info(bit_depth: Option<u32>, sample_rate: Option<u32>) -> O
     }
 }
 
+/// Format non-stereo channel counts for compact album metadata display.
+pub fn format_channel_info(channels: Option<u32>) -> Option<String> {
+    channels.and_then(|count| (count != 2).then(|| format_channel_count(count)))
+}
+
 /// Get the audio format (e.g., "FLAC", "MP3") from a file path extension
 pub fn get_format_from_path(path: &std::path::Path) -> Option<String> {
     path.extension()
@@ -157,6 +162,10 @@ impl AlbumCard {
             .tracks
             .first()
             .and_then(|t| format_sample_info(t.bit_depth, t.sample_rate))
+    }
+
+    fn format_channel_info(album: &Album) -> Option<String> {
+        format_channel_info(album.uniform_channel_count())
     }
 
     fn format_dr(dr: Option<f64>) -> Option<String> {
@@ -210,6 +219,7 @@ impl AlbumCard {
     ) -> impl IntoElement {
         let format = Self::get_format(album);
         let sample_info = Self::format_sample_info(album);
+        let channel_info = Self::format_channel_info(album);
         let dr = Self::format_dr(album.dynamic_range);
         let track_count = album.tracks.len();
 
@@ -223,6 +233,8 @@ impl AlbumCard {
             .when_some(format, |el, fmt| el.child(fmt))
             // Sample rate info (e.g., 24/44.1k)
             .when_some(sample_info, |el, info| el.child(info))
+            // Channel layout/count for non-stereo albums (e.g., 5.1, 10ch)
+            .when_some(channel_info, |el, info| el.child(info))
             // Dynamic range with icon
             .when_some(dr, |el, dr_val| {
                 el.child(
@@ -256,6 +268,7 @@ impl AlbumCard {
         // Metadata for grid view (smaller font)
         let format = Self::get_format(&album);
         let sample_info = Self::format_sample_info(&album);
+        let channel_info = Self::format_channel_info(&album);
         let dr = Self::format_dr(album.dynamic_range);
         let track_count = album.tracks.len();
 
@@ -339,6 +352,8 @@ impl AlbumCard {
                             .when_some(format, |el, fmt| el.child(fmt))
                             // Sample rate info (e.g., 24/44.1k)
                             .when_some(sample_info, |el, info| el.child(info))
+                            // Channel layout/count for non-stereo albums (e.g., 5.1, 10ch)
+                            .when_some(channel_info, |el, info| el.child(info))
                             // Dynamic range with icon - keep wrapper for flex layout
                             .when_some(dr, |el, dr_val| {
                                 el.child(

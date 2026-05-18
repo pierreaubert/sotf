@@ -20,12 +20,14 @@ use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::path::Path;
 use std::sync::Arc;
-use symphonia::core::audio::{AudioBufferRef, Signal};
-use symphonia::core::codecs::{CodecRegistry, DecoderOptions};
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::audio::{Audio, GenericAudioBufferRef};
+use symphonia::core::codecs::CodecParameters;
+use symphonia::core::codecs::audio::AudioDecoderOptions;
+use symphonia::core::codecs::registry::CodecRegistry;
+use symphonia::core::formats::probe::{Hint, Probe};
+use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::{Hint, Probe};
 
 const PARTITION_SIZE: usize = 1024;
 const FFT_SIZE: usize = PARTITION_SIZE * 2;
@@ -339,16 +341,16 @@ impl ConvolutionPlugin {
         // Shared probe and codec registry for IR loading
         static IR_PROBE: LazyLock<Probe> = LazyLock::new(|| {
             let mut probe = Probe::default();
-            probe.register_all::<symphonia_format_riff::WavReader>();
-            probe.register_all::<symphonia_format_riff::AiffReader>();
-            probe.register_all::<symphonia_bundle_flac::FlacReader>();
+            probe.register_format::<symphonia_format_riff::WavReader>();
+            probe.register_format::<symphonia_format_riff::AiffReader>();
+            probe.register_format::<symphonia_bundle_flac::FlacReader>();
             probe
         });
 
         static IR_CODEC_REGISTRY: LazyLock<CodecRegistry> = LazyLock::new(|| {
             let mut registry = CodecRegistry::new();
-            registry.register_all::<symphonia_codec_pcm::PcmDecoder>();
-            registry.register_all::<symphonia_bundle_flac::FlacDecoder>();
+            registry.register_audio_decoder::<symphonia_codec_pcm::PcmDecoder>();
+            registry.register_audio_decoder::<symphonia_bundle_flac::FlacDecoder>();
             registry
         });
 
@@ -361,29 +363,39 @@ impl ConvolutionPlugin {
         }
 
         let probe_result = IR_PROBE
-            .format(
+            .probe(
                 &hint,
                 mss,
-                &FormatOptions::default(),
-                &MetadataOptions::default(),
+                FormatOptions::default(),
+                MetadataOptions::default(),
             )
             .map_err(|e| format!("Probe: {e}"))?;
 
-        let mut reader = probe_result.format;
-        let track = reader.default_track().ok_or("No track found in IR file")?;
-        let codec_params = track.codec_params.clone();
+        let mut reader = probe_result;
+        let track = reader
+            .default_track(TrackType::Audio)
+            .ok_or("No track found in IR file")?;
+        let codec_params = match track.codec_params.clone() {
+            Some(CodecParameters::Audio(params)) => params,
+            _ => return Err("IR file does not contain an audio track".into()),
+        };
 
         let sample_rate = codec_params.sample_rate.unwrap_or(0);
-        let num_channels = codec_params.channels.map(|c| c.count()).unwrap_or(1);
+        let num_channels = codec_params
+            .channels
+            .as_ref()
+            .map(|c| c.count())
+            .unwrap_or(1);
 
         let mut decoder = IR_CODEC_REGISTRY
-            .make(&codec_params, &DecoderOptions::default())
+            .make_audio_decoder(&codec_params, &AudioDecoderOptions::default())
             .map_err(|e| format!("Decoder: {e}"))?;
 
         let mut samples = vec![Vec::new(); num_channels];
         loop {
             let packet = match reader.next_packet() {
-                Ok(p) => p,
+                Ok(Some(p)) => p,
+                Ok(None) => break,
                 Err(symphonia::core::errors::Error::IoError(ref e))
                     if e.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
@@ -395,27 +407,42 @@ impl ConvolutionPlugin {
                 .decode(&packet)
                 .map_err(|e| format!("Decode: {e}"))?;
             match &decoded {
-                AudioBufferRef::F32(buf) => {
+                GenericAudioBufferRef::F32(buf) => {
                     for (ch, sample_ch) in samples.iter_mut().enumerate() {
-                        sample_ch.extend_from_slice(buf.chan(ch));
+                        sample_ch.extend_from_slice(buf.plane(ch).ok_or("Missing IR channel")?);
                     }
                 }
-                AudioBufferRef::S16(buf) => {
+                GenericAudioBufferRef::S16(buf) => {
                     let scale = 1.0 / 32768.0;
                     for (ch, sample_ch) in samples.iter_mut().enumerate() {
-                        sample_ch.extend(buf.chan(ch).iter().map(|&s| s as f32 * scale));
+                        sample_ch.extend(
+                            buf.plane(ch)
+                                .ok_or("Missing IR channel")?
+                                .iter()
+                                .map(|&s| s as f32 * scale),
+                        );
                     }
                 }
-                AudioBufferRef::S24(buf) => {
+                GenericAudioBufferRef::S24(buf) => {
                     let scale = 1.0 / 8388608.0;
                     for (ch, sample_ch) in samples.iter_mut().enumerate() {
-                        sample_ch.extend(buf.chan(ch).iter().map(|s| s.inner() as f32 * scale));
+                        sample_ch.extend(
+                            buf.plane(ch)
+                                .ok_or("Missing IR channel")?
+                                .iter()
+                                .map(|s| s.inner() as f32 * scale),
+                        );
                     }
                 }
-                AudioBufferRef::S32(buf) => {
+                GenericAudioBufferRef::S32(buf) => {
                     let scale = 1.0 / 2147483648.0;
                     for (ch, sample_ch) in samples.iter_mut().enumerate() {
-                        sample_ch.extend(buf.chan(ch).iter().map(|&s| s as f32 * scale));
+                        sample_ch.extend(
+                            buf.plane(ch)
+                                .ok_or("Missing IR channel")?
+                                .iter()
+                                .map(|&s| s as f32 * scale),
+                        );
                     }
                 }
                 _ => return Err("Unsupported sample format in IR file".into()),
