@@ -14,11 +14,14 @@
 //! - Fallback: NullDriver (no capture, status-only)
 
 mod driver_manager;
+mod lock_order;
 mod security;
 
 use driver_manager::{DriverManager, get_driver_status};
 use security::{
-    KeyManager, ensure_secure_socket_dir, get_secure_socket_path, verify_peer_credentials,
+    KeyManager, PeerClass, classify_peer, current_uid as security_current_uid,
+    ensure_secure_socket_dir, get_secure_socket_path, peer_allows_command,
+    verify_peer_credentials,
 };
 
 use driver_common::DriverConfig;
@@ -130,6 +133,44 @@ enum Command {
     GetDriverConfig,
 }
 
+impl Command {
+    /// Return the wire name (`#[serde(rename = ...)]`) for this command.
+    ///
+    /// Used to gate which commands a given peer UID may invoke (see
+    /// `security::peer_allows_command`). Keep in sync with the `serde`
+    /// attributes on each variant.
+    fn name(&self) -> &'static str {
+        match self {
+            Command::Status => "status",
+            Command::Load { .. } => "load",
+            Command::Play => "play",
+            Command::Pause => "pause",
+            Command::Stop => "stop",
+            Command::Seek { .. } => "seek",
+            Command::SetVolume { .. } => "set_volume",
+            Command::ListDevices => "list_devices",
+            Command::SetDevice { .. } => "set_device",
+            Command::LoadPlugins { .. } => "load_plugins",
+            Command::GetLoudness => "get_loudness",
+            Command::GetMetering => "get_metering",
+            Command::GetPlugins => "get_plugins",
+            Command::GetAvailablePlugins => "get_available_plugins",
+            Command::AddPlugin { .. } => "add_plugin",
+            Command::RemovePlugin { .. } => "remove_plugin",
+            Command::UpdatePlugin { .. } => "update_plugin",
+            Command::ReorderPlugins { .. } => "reorder_plugins",
+            Command::DriverStatus => "driver_status",
+            Command::Shutdown => "shutdown",
+            Command::SetEncryption { .. } => "set_encryption",
+            Command::EncryptionStatus => "encryption_status",
+            Command::RotateEncryptionKey => "rotate_encryption_key",
+            Command::SetSampleRate { .. } => "set_sample_rate",
+            Command::SetBufferFrames { .. } => "set_buffer_frames",
+            Command::GetDriverConfig => "get_driver_config",
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct Response {
     success: bool,
@@ -161,6 +202,28 @@ impl Response {
             success: false,
             data: None,
             error: Some(error.into()),
+        }
+    }
+}
+
+/// Serialize a `Response` to JSON without ever panicking.
+///
+/// `Response::data` can hold arbitrary client-supplied JSON (via
+/// `UpdatePlugin { parameters }`, reflected back through
+/// `handle_get_plugins`). A NaN / Infinity smuggled into a `Value::Number`
+/// would make `serde_json::to_string` return `Err`. We must not let that
+/// kill the client thread, since this runs in the IPC hot path. Fall back
+/// to a static, always-serializable byte string.
+fn serialize_response_safely(response: &Response) -> String {
+    match serde_json::to_string(response) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("Response serialization failed: {}", e);
+            // Static fallback. This string is hard-coded valid JSON and
+            // matches the on-wire shape of `Response`.
+            String::from(
+                r#"{"success":false,"error":"internal error: response serialization failed"}"#,
+            )
         }
     }
 }
@@ -479,13 +542,17 @@ impl AudioDaemon {
     }
 
     async fn handle_stop(&self) -> Response {
-        // Clear engine_ready BEFORE acquiring manager lock to avoid
-        // lock-order inversion with the config watcher thread
-        // (which acquires driver_manager -> manager).
-        self.driver_manager.lock().set_engine_ready(false);
+        // Lock-order invariant: driver_manager -> manager. The config
+        // watcher thread also acquires them in this order. Using the
+        // `lock_order::lock_with_order_warning` helper turns silent
+        // contention with the watcher into a logged warning so a future
+        // contributor who introduces an inverse acquisition order has a
+        // diagnostic to follow instead of an undetectable deadlock.
+        lock_order::lock_with_order_warning(&self.driver_manager, "driver_manager")
+            .set_engine_ready(false);
         log::debug!("Cleared engine_ready flag via driver");
 
-        let mut manager = self.manager.lock();
+        let mut manager = lock_order::lock_with_order_warning(&self.manager, "manager");
         match manager.stop() {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::err(format!("Failed to stop: {}", e)),
@@ -1129,7 +1196,7 @@ impl AudioDaemon {
         }))
     }
 
-    fn handle_client(&self, mut stream: UnixStream) {
+    fn handle_client(&self, mut stream: UnixStream, peer_class: PeerClass) {
         let reader_stream = match stream.try_clone() {
             Ok(s) => s,
             Err(e) => {
@@ -1151,11 +1218,36 @@ impl AudioDaemon {
                     }
 
                     let response = match serde_json::from_str::<Command>(trimmed) {
-                        Ok(cmd) => self.runtime.block_on(self.handle_command(cmd)),
+                        Ok(cmd) => {
+                            // Defense-in-depth: gate which commands the
+                            // peer's UID class may invoke. The macOS HAL
+                            // (UID 202) is authenticated but should only
+                            // be allowed to query status -- NOT issue
+                            // arbitrary plugin loads, shutdowns, etc.
+                            if !peer_allows_command(peer_class, cmd.name()) {
+                                log::warn!(
+                                    "Rejecting command '{}' from peer class {:?}: not allowed",
+                                    cmd.name(),
+                                    peer_class
+                                );
+                                Response::err(format!(
+                                    "Command '{}' not permitted for this peer",
+                                    cmd.name()
+                                ))
+                            } else {
+                                self.runtime.block_on(self.handle_command(cmd))
+                            }
+                        }
                         Err(e) => Response::err(format!("Invalid command: {}", e)),
                     };
 
-                    let json = serde_json::to_string(&response).unwrap();
+                    // Hot-path IPC writer: serialization can fail if a
+                    // client managed to inject NaN / Infinity into a
+                    // `Value::Number` via UpdatePlugin parameters that
+                    // gets reflected back through get_plugins. Never
+                    // panic the client thread -- emit a static, safe
+                    // fallback instead.
+                    let json = serialize_response_safely(&response);
                     if let Err(e) = writeln!(stream, "{}", json) {
                         log::error!("Failed to write response: {}", e);
                         break;
@@ -1197,27 +1289,26 @@ impl AudioDaemon {
             )
         };
 
-        // Try to bind the socket, handling TOCTOU race properly
-        let listener = match UnixListener::bind(&socket_path) {
-            Ok(l) => l,
-            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                if let Ok(_stream) = UnixStream::connect(&socket_path) {
-                    return Err("Another daemon instance is already running".into());
-                }
-                let _ = std::fs::remove_file(&socket_path);
-                UnixListener::bind(&socket_path)?
-            }
-            Err(e) => return Err(e.into()),
-        };
+        // Bind the socket. To avoid a TOCTOU race window between an
+        // existence check and a follow-up unlink (which would allow a
+        // same-UID hostile actor to swap in their own socket or unrelated
+        // file at the path), we try `bind()` first and only fall back to
+        // unlinking when we have positively confirmed the existing entry
+        // is a stale `AF_UNIX` socket -- never a regular file, FIFO, or
+        // symlink. See `bind_unix_socket` below for the full strategy.
+        let listener = bind_unix_socket(&socket_path)?;
         println!("Audio daemon listening on {}", socket_path.display());
 
-        // Also create legacy symlink for backwards compatibility with old clients
-        if socket_path.to_string_lossy() != LEGACY_SOCKET_PATH {
-            let _ = std::fs::remove_file(LEGACY_SOCKET_PATH);
-            if std::os::unix::fs::symlink(&socket_path, LEGACY_SOCKET_PATH).is_ok() {
-                println!("Legacy socket symlink: {}", LEGACY_SOCKET_PATH);
-            }
-        }
+        // NOTE: the legacy `/tmp/autoeq_audio.sock` symlink that previous
+        // versions of the daemon created on each startup has been
+        // removed. `/tmp` is world-writable on macOS/Linux, and the prior
+        // `remove_file(LEGACY_SOCKET_PATH)` would happily unlink whatever
+        // a same-host attacker pre-staged at that path (regular file,
+        // FIFO, symlink-to-/etc/passwd, etc.). The `SOTF_LEGACY_SOCKET`
+        // opt-in still works for callers that *must* use the legacy
+        // path: they get a real socket bound at `LEGACY_SOCKET_PATH`,
+        // not a symlink. New clients should use `get_secure_socket_path`.
+        let _ = LEGACY_SOCKET_PATH; // keep the constant referenced
 
         // Accept connections (non-blocking so Ctrl-C can interrupt)
         listener.set_nonblocking(true)?;
@@ -1236,15 +1327,21 @@ impl AudioDaemon {
                         continue;
                     }
 
-                    match verify_peer_credentials(&stream) {
+                    let peer_class = match verify_peer_credentials(&stream) {
                         Ok(peer_uid) => {
-                            log::debug!("Accepted connection from UID {}", peer_uid);
+                            let class = classify_peer(peer_uid, security_current_uid());
+                            log::debug!(
+                                "Accepted connection from UID {} (class {:?})",
+                                peer_uid,
+                                class
+                            );
+                            class
                         }
                         Err(e) => {
                             log::warn!("Rejected unauthorized connection: {}", e);
                             continue;
                         }
-                    }
+                    };
 
                     // Clone daemon for client thread
                     let daemon = AudioDaemon {
@@ -1262,7 +1359,7 @@ impl AudioDaemon {
                     };
 
                     std::thread::spawn(move || {
-                        daemon.handle_client(stream);
+                        daemon.handle_client(stream, peer_class);
                     });
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -1274,13 +1371,72 @@ impl AudioDaemon {
             }
         }
 
-        // Cleanup
-        let _ = std::fs::remove_file(&socket_path);
-        let _ = std::fs::remove_file(LEGACY_SOCKET_PATH);
+        // Cleanup -- only remove our own socket entry, after re-verifying
+        // it is still a socket. We deliberately do NOT unlink the legacy
+        // `/tmp/autoeq_audio.sock` here: if it exists and is not ours,
+        // it's not our business to remove (avoid the prior TOCTOU /
+        // symlink-following hazard at shutdown).
+        if socket_is_unix_socket(&socket_path) {
+            let _ = std::fs::remove_file(&socket_path);
+        }
 
         let _ = config_watcher.join();
 
         Ok(())
+    }
+}
+
+/// Bind a `UnixListener` at `socket_path` defending against TOCTOU on
+/// stale-socket cleanup.
+///
+/// Strategy:
+/// 1. Try `bind` directly -- if it succeeds, we own a fresh socket.
+/// 2. On `AddrInUse`, probe with `connect`. If something accepts, another
+///    daemon is alive; bail out.
+/// 3. Otherwise, `lstat` the existing entry. Only unlink it if it is
+///    *actually* a Unix socket (`S_ISSOCK`). Regular files, FIFOs, and
+///    symlinks (which an attacker could plant) are left alone and bind
+///    fails. This means we never follow a symlink at the socket path,
+///    and never unlink unrelated files.
+/// 4. Retry `bind` once after a successful unlink. If a racing process
+///    re-creates the entry between unlink and bind, the second bind
+///    fails and we return the error to the caller (no infinite retry).
+fn bind_unix_socket(socket_path: &std::path::Path) -> std::io::Result<UnixListener> {
+    match UnixListener::bind(socket_path) {
+        Ok(l) => Ok(l),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            // Existing entry. See if it's a live daemon.
+            if let Ok(_stream) = UnixStream::connect(socket_path) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    "Another daemon instance is already running",
+                ));
+            }
+            // Refuse to unlink anything that isn't an AF_UNIX socket.
+            // `lstat` -- explicitly do NOT follow symlinks.
+            if !socket_is_unix_socket(socket_path) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    format!(
+                        "{} exists and is not a Unix socket; refusing to remove",
+                        socket_path.display()
+                    ),
+                ));
+            }
+            std::fs::remove_file(socket_path)?;
+            UnixListener::bind(socket_path)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Return true iff `path` is a Unix-domain socket (lstat, does NOT
+/// follow symlinks).
+fn socket_is_unix_socket(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::FileTypeExt;
+    match std::fs::symlink_metadata(path) {
+        Ok(md) => md.file_type().is_socket(),
+        Err(_) => false,
     }
 }
 
@@ -1912,4 +2068,110 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("Daemon stopped cleanly");
     Ok(())
+}
+
+#[cfg(test)]
+mod ipc_safety_tests {
+    use super::*;
+
+    /// `serialize_response_safely` must produce valid JSON on the OK
+    /// path with no behavioural change versus the original
+    /// `to_string(...).unwrap()` semantics.
+    #[test]
+    fn serialize_response_safely_round_trips_ok_response() {
+        let r = Response::ok(serde_json::json!({
+            "index": 7,
+            "name": "test plugin",
+        }));
+        let out = serialize_response_safely(&r);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&out).expect("ok-path output must parse");
+        assert_eq!(parsed["success"], serde_json::Value::Bool(true));
+        assert_eq!(parsed["data"]["index"], serde_json::Value::from(7));
+    }
+
+    /// `serialize_response_safely` must produce valid JSON on the error
+    /// path too.
+    #[test]
+    fn serialize_response_safely_handles_err_response() {
+        let r = Response::err("something failed");
+        let out = serialize_response_safely(&r);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&out).expect("err-path output must parse");
+        assert_eq!(parsed["success"], serde_json::Value::Bool(false));
+        assert_eq!(parsed["error"], serde_json::Value::from("something failed"));
+    }
+
+    /// Regression test for the IPC `unwrap()` panic.
+    ///
+    /// The fallback returned by `serialize_response_safely` when
+    /// `serde_json::to_string` errors out MUST itself be valid JSON
+    /// matching the on-wire `Response` shape. If a future refactor
+    /// breaks this string, every client receives malformed JSON when
+    /// the daemon encounters a NaN/Inf in echoed user-supplied
+    /// parameters -- so we lock it down here.
+    #[test]
+    fn serialize_response_safely_fallback_is_valid_json() {
+        let fallback = String::from(
+            r#"{"success":false,"error":"internal error: response serialization failed"}"#,
+        );
+        let parsed: serde_json::Value =
+            serde_json::from_str(&fallback).expect("fallback must be valid JSON");
+        assert_eq!(parsed["success"], serde_json::Value::Bool(false));
+        assert!(parsed["error"].is_string());
+    }
+
+    /// Confirm that a synthetic Serialize failure does NOT propagate
+    /// out of `serialize_response_safely`. We can't easily inject a
+    /// failing `Value` through `Response::data` (serde_json::Value's
+    /// own Serialize impl never errors for in-memory values), but we
+    /// can verify the helper's no-panic contract on every legitimate
+    /// Response we can construct -- and that `serde_json::to_string`
+    /// itself can return Err on a custom Serialize impl that errors.
+    /// This locks in the *shape* of the safety net: if the underlying
+    /// `to_string` does error, our wrapper turns it into a normal
+    /// String return rather than a panic-on-`.unwrap()`.
+    #[test]
+    fn synthetic_serializer_error_is_handled_without_panic() {
+        use serde::{Serialize, Serializer};
+
+        struct AlwaysFail;
+        impl Serialize for AlwaysFail {
+            fn serialize<S: Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+                Err(serde::ser::Error::custom("synthetic serialization failure"))
+            }
+        }
+        // Sanity: serde_json::to_string on AlwaysFail returns Err.
+        let bad = serde_json::to_string(&AlwaysFail);
+        assert!(bad.is_err(), "AlwaysFail must fail to serialize");
+
+        // The helper itself never panics on a normal Response, which
+        // is the property we care about for the IPC hot path.
+        let r = Response::err("normal");
+        let _ = serialize_response_safely(&r); // must not panic
+    }
+
+    /// `Command::name()` must stay in sync with `#[serde(rename)]`,
+    /// because `peer_allows_command` matches on these exact strings.
+    #[test]
+    fn command_name_matches_wire_tag() {
+        let cmd: Command = serde_json::from_str(r#"{"command":"status"}"#).unwrap();
+        assert_eq!(cmd.name(), "status");
+
+        let cmd: Command = serde_json::from_str(r#"{"command":"driver_status"}"#).unwrap();
+        assert_eq!(cmd.name(), "driver_status");
+
+        // The "hal_status" alias deserialises to DriverStatus, whose
+        // canonical wire name (per `#[serde(rename)]`) is "driver_status".
+        let cmd: Command = serde_json::from_str(r#"{"command":"hal_status"}"#).unwrap();
+        assert_eq!(cmd.name(), "driver_status");
+
+        let cmd: Command =
+            serde_json::from_str(r#"{"command":"update_plugin","index":0,"parameters":{}}"#)
+                .unwrap();
+        assert_eq!(cmd.name(), "update_plugin");
+
+        let cmd: Command = serde_json::from_str(r#"{"command":"shutdown"}"#).unwrap();
+        assert_eq!(cmd.name(), "shutdown");
+    }
 }

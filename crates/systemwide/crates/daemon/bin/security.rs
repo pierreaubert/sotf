@@ -185,8 +185,73 @@ fn get_key_path() -> PathBuf {
 }
 
 /// HAL-readable copy of the session key.
-fn get_hal_key_path() -> PathBuf {
+pub(crate) fn get_hal_key_path() -> PathBuf {
     PathBuf::from(format!("/tmp/sotf-{}/session.key", get_current_uid()))
+}
+
+/// Per-UID command authorization classes.
+///
+/// Most callers run as the daemon's own UID (full access). The macOS HAL
+/// runs inside `coreaudiod` (UID 202) and only needs status / config /
+/// encryption-key visibility -- it must NOT be able to load arbitrary
+/// plugin chains, change devices, or shut the daemon down. Root is given
+/// the same broad access as the owning UID since on macOS that is the
+/// administrator running the daemon manually for debugging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeerClass {
+    /// Same-UID caller (or root) -- all commands allowed.
+    Owner,
+    /// macOS `_coreaudiod` (UID 202) -- restricted HAL-protocol commands only.
+    CoreAudioD,
+}
+
+/// Classify an authenticated peer UID into a permission class.
+///
+/// The `daemon_uid` argument is the UID the daemon itself runs as.
+pub fn classify_peer(peer_uid: u32, daemon_uid: u32) -> PeerClass {
+    if peer_uid == daemon_uid || peer_uid == 0 {
+        return PeerClass::Owner;
+    }
+    #[cfg(target_os = "macos")]
+    if peer_uid == 202 {
+        return PeerClass::CoreAudioD;
+    }
+    // verify_peer_credentials() would have rejected the connection long
+    // before we reach this point for any other UID. Treat as CoreAudioD
+    // (the most restricted class) as a defense-in-depth fallback.
+    let _ = peer_uid;
+    PeerClass::CoreAudioD
+}
+
+/// Return the current daemon UID. Pub wrapper around the internal helper
+/// so the binary entrypoint can build a `classify_peer` argument without
+/// duplicating the libc call.
+pub fn current_uid() -> u32 {
+    get_current_uid()
+}
+
+/// Whether a peer of the given class may invoke the named command.
+///
+/// `command_name` matches the `#[serde(rename = "...")]` tag from the
+/// `Command` enum in `sotf_daemon.rs`. Unknown commands are rejected by
+/// default for non-Owner classes (deny-by-default).
+pub fn peer_allows_command(class: PeerClass, command_name: &str) -> bool {
+    match class {
+        PeerClass::Owner => true,
+        PeerClass::CoreAudioD => matches!(
+            command_name,
+            // HAL needs to query driver / encryption state so it can
+            // attach the shared-memory cipher. Everything else (loading
+            // plugins, choosing devices, shutting the daemon down) is
+            // out of scope for the audio driver process.
+            "driver_status"
+                | "hal_status"
+                | "get_driver_config"
+                | "get_hal_config"
+                | "encryption_status"
+                | "status"
+        ),
+    }
 }
 
 // =============================================================================
@@ -320,22 +385,38 @@ mod encryption_impl {
             if let Some(parent) = path.parent() {
                 if !parent.exists() {
                     fs::create_dir_all(parent)?;
-                    fs::set_permissions(parent, fs::Permissions::from_mode(0o755))?;
                 }
+                // Always clamp the parent dir to 0o700 (owner only). Other
+                // users must not be able to enumerate the directory; the
+                // _coreaudiod (UID 202) process is granted access by the
+                // explicit ACL applied via grant_coreaudiod_key_access().
+                fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
             }
+
+            // Create with mode 0o600 (owner read/write only). The
+            // ChaCha20-Poly1305 audio session key must never be
+            // world-readable. _coreaudiod (UID 202) reads it via the
+            // macOS `chmod +a` ACL applied separately by
+            // grant_coreaudiod_key_access(). Remove any pre-existing
+            // file first so we never inherit looser permissions from a
+            // prior daemon run that wrote 0o644.
+            let _ = fs::remove_file(&path);
 
             let mut file = OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(true)
-                .mode(0o644)
+                .mode(0o600)
                 .open(&path)?;
             file.write_all(key)?;
             file.sync_all()?;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o644))?;
+            // Re-assert the mode in case the open call honored a
+            // permissive umask. This is the canonical post-write
+            // permission.
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
 
             log::info!(
-                "Published HAL-readable encryption key at {}",
+                "Published HAL-readable encryption key at {} (mode 0600)",
                 path.display()
             );
             Ok(())
@@ -606,6 +687,131 @@ mod tests {
         let path1 = get_secure_socket_path();
         let path2 = get_secure_socket_path();
         assert_eq!(path1, path2);
+    }
+
+    #[test]
+    fn test_classify_peer_owner_uid() {
+        assert_eq!(classify_peer(1000, 1000), PeerClass::Owner);
+    }
+
+    #[test]
+    fn test_classify_peer_root_is_owner() {
+        assert_eq!(classify_peer(0, 1000), PeerClass::Owner);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_classify_peer_coreaudiod_is_restricted() {
+        assert_eq!(classify_peer(202, 1000), PeerClass::CoreAudioD);
+    }
+
+    #[test]
+    fn test_peer_allows_command_owner_everything() {
+        for cmd in [
+            "status",
+            "load_plugins",
+            "shutdown",
+            "rotate_encryption_key",
+            "set_device",
+            "completely_unknown_command",
+        ] {
+            assert!(
+                peer_allows_command(PeerClass::Owner, cmd),
+                "Owner should be allowed to run '{}'",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_peer_allows_command_coreaudiod_restricted() {
+        for cmd in [
+            "driver_status",
+            "hal_status",
+            "get_driver_config",
+            "get_hal_config",
+            "encryption_status",
+            "status",
+        ] {
+            assert!(
+                peer_allows_command(PeerClass::CoreAudioD, cmd),
+                "CoreAudioD should be allowed to run '{}'",
+                cmd
+            );
+        }
+        for cmd in [
+            "load_plugins",
+            "shutdown",
+            "rotate_encryption_key",
+            "set_device",
+            "set_sample_rate",
+            "set_buffer_frames",
+            "set_encryption",
+            "unknown_command",
+        ] {
+            assert!(
+                !peer_allows_command(PeerClass::CoreAudioD, cmd),
+                "CoreAudioD should NOT be allowed to run '{}'",
+                cmd
+            );
+        }
+    }
+
+    /// Verify that after `KeyManager::default()` publishes the HAL key
+    /// copy, the on-disk file is mode 0o600 (owner read/write only).
+    ///
+    /// Regression test for the security review finding that
+    /// `publish_hal_key_copy` previously wrote the ChaCha20-Poly1305
+    /// session key with mode 0o644 -- world-readable -- defeating the
+    /// whole shared-memory encryption story.
+    ///
+    /// This test silently skips when KeyManager::default() returns the
+    /// error fallback (`.is_enabled() == false`), which happens in CI
+    /// or sandboxed test environments where macOS TCC blocks writes to
+    /// `/tmp/sotf-{uid}/` or `~/.config/sotf/`. On a normal developer
+    /// macOS box without TCC restrictions, this assertion runs and the
+    /// regression is caught.
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    #[test]
+    fn test_published_hal_key_copy_is_0600() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // Triggers create_new_key + publish_hal_key_copy as a side effect.
+        let manager = KeyManager::default();
+
+        if !manager.is_enabled() {
+            // KeyManager::new() returned Err -- usually because the
+            // sandbox blocked filesystem writes to /tmp/sotf-{uid}/ or
+            // ~/.config/sotf/. Without a freshly-published file we
+            // can't assert on its mode; skip rather than wave a flag
+            // for an environmental issue. The test still runs and
+            // catches the regression on any developer box where the
+            // KeyManager constructor successfully writes to disk.
+            eprintln!(
+                "skipping test_published_hal_key_copy_is_0600: KeyManager::default() \
+                 returned disabled fallback (likely sandboxed write to /tmp or ~/.config)"
+            );
+            return;
+        }
+
+        let path = get_hal_key_path();
+        let md = std::fs::metadata(&path).expect("HAL key file should exist after KeyManager::new");
+        let mode = md.permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "HAL key copy must be mode 0o600 (got 0o{:o}) -- world/group readability is a leak of the audio session key",
+            mode
+        );
+
+        if let Some(parent) = path.parent() {
+            let pmd = std::fs::metadata(parent).expect("HAL key parent dir should exist");
+            let pmode = pmd.permissions().mode() & 0o777;
+            assert_eq!(
+                pmode, 0o700,
+                "HAL key parent dir must be mode 0o700 (got 0o{:o})",
+                pmode
+            );
+        }
     }
 
     #[test]
