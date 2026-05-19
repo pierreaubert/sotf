@@ -34,7 +34,11 @@ impl std::fmt::Display for ServiceError {
 impl std::error::Error for ServiceError {}
 
 /// Credentials for service authentication.
-#[derive(Debug, Clone)]
+///
+/// `Debug` is implemented manually so passwords and tokens are not leaked into
+/// logs. Tokens are shown as their first four characters followed by `***`
+/// (or fully redacted if shorter than four chars).
+#[derive(Clone)]
 pub enum ServiceCredentials {
     /// Username + password (Spotify)
     UsernamePassword { username: String, password: String },
@@ -44,6 +48,39 @@ pub enum ServiceCredentials {
     DeviceCode,
     /// Cached session from a previous authentication
     CachedSession(Vec<u8>),
+}
+
+/// Redact a sensitive string for logging: keep the first 4 characters and
+/// replace the rest with `***`. Strings shorter than 4 chars are fully
+/// redacted (no prefix is shown).
+pub fn redact_secret(s: &str) -> String {
+    let prefix: String = s.chars().take(4).collect();
+    if prefix.chars().count() < 4 {
+        "***".to_string()
+    } else {
+        format!("{}***", prefix)
+    }
+}
+
+impl std::fmt::Debug for ServiceCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ServiceCredentials::UsernamePassword { username, .. } => f
+                .debug_struct("UsernamePassword")
+                .field("username", username)
+                .field("password", &"[REDACTED]")
+                .finish(),
+            ServiceCredentials::AccessToken(token) => f
+                .debug_tuple("AccessToken")
+                .field(&redact_secret(token))
+                .finish(),
+            ServiceCredentials::DeviceCode => f.write_str("DeviceCode"),
+            ServiceCredentials::CachedSession(data) => f
+                .debug_tuple("CachedSession")
+                .field(&format!("[{} bytes]", data.len()))
+                .finish(),
+        }
+    }
 }
 
 /// Audio quality preference.
@@ -189,6 +226,59 @@ mod tests {
     #[test]
     fn test_audio_quality_default() {
         assert_eq!(AudioQuality::default(), AudioQuality::High);
+    }
+
+    #[test]
+    fn test_redact_secret_long() {
+        // Tokens of 4+ chars keep their first 4 chars and append "***".
+        assert_eq!(redact_secret("abcdef12345"), "abcd***");
+        assert_eq!(redact_secret("ABCDEF"), "ABCD***");
+        assert_eq!(redact_secret("1234"), "1234***");
+    }
+
+    #[test]
+    fn test_redact_secret_short() {
+        // Short tokens are fully redacted.
+        assert_eq!(redact_secret(""), "***");
+        assert_eq!(redact_secret("a"), "***");
+        assert_eq!(redact_secret("ab"), "***");
+        assert_eq!(redact_secret("abc"), "***");
+    }
+
+    #[test]
+    fn test_service_credentials_debug_redacts_password() {
+        let creds = ServiceCredentials::UsernamePassword {
+            username: "alice".to_string(),
+            password: "super-secret-password".to_string(),
+        };
+        let dbg = format!("{:?}", creds);
+        assert!(
+            !dbg.contains("super-secret-password"),
+            "password leaked: {dbg}"
+        );
+        assert!(dbg.contains("alice"));
+        assert!(dbg.contains("REDACTED"));
+    }
+
+    #[test]
+    fn test_service_credentials_debug_redacts_access_token() {
+        let token = "abcdefghijklmnopqrstuvwxyz0123456789";
+        let creds = ServiceCredentials::AccessToken(token.to_string());
+        let dbg = format!("{:?}", creds);
+        assert!(!dbg.contains(token), "token leaked: {dbg}");
+        // First 4 chars should be visible
+        assert!(dbg.contains("abcd"));
+        assert!(dbg.contains("***"));
+    }
+
+    #[test]
+    fn test_service_credentials_debug_devicecode_and_cached() {
+        let dbg = format!("{:?}", ServiceCredentials::DeviceCode);
+        assert!(dbg.contains("DeviceCode"));
+
+        let dbg = format!("{:?}", ServiceCredentials::CachedSession(vec![0u8; 32]));
+        assert!(dbg.contains("CachedSession"));
+        assert!(dbg.contains("32 bytes"));
     }
 
     #[test]
