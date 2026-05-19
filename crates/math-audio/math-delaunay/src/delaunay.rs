@@ -6,21 +6,28 @@ use delaunator::{EMPTY, Point, triangulate};
 const NO_EDGE: usize = EMPTY;
 
 /// Delaunay triangulation with D3-compatible API.
+///
+/// **Encapsulation.** The internal flat-array buffers are
+/// `pub(crate)` rather than `pub` to plug a mutable-state leak — callers
+/// previously could mutate `points`, `triangles`, etc. and silently
+/// invalidate every cached structure. Read-only access is exposed via
+/// the `points()`, `triangles()`, `halfedges()`, `hull()`, `inedges()`,
+/// `hull_index()`, and `collinear()` accessors.
 pub struct Delaunay {
     /// Flat coordinate array [x0, y0, x1, y1, ...].
-    pub points: Vec<f64>,
+    pub(crate) points: Vec<f64>,
     /// Triangle vertex indices.
-    pub triangles: Vec<usize>,
+    pub(crate) triangles: Vec<usize>,
     /// Half-edge index. `halfedges[e]` is the opposite half-edge, or `EMPTY`.
-    pub halfedges: Vec<usize>,
+    pub(crate) halfedges: Vec<usize>,
     /// Convex hull point indices.
-    pub hull: Vec<usize>,
+    pub(crate) hull: Vec<usize>,
     /// Incoming half-edge per point. `NO_EDGE` if not set.
-    pub inedges: Vec<usize>,
+    pub(crate) inedges: Vec<usize>,
     /// Maps hull point → position in hull array. `NO_EDGE` if not on hull.
-    pub hull_index: Vec<usize>,
+    pub(crate) hull_index: Vec<usize>,
     /// Collinear point indices (sorted), or empty.
-    pub collinear: Vec<usize>,
+    pub(crate) collinear: Vec<usize>,
 }
 
 impl Delaunay {
@@ -128,6 +135,45 @@ impl Delaunay {
     }
     pub fn point(&self, i: usize) -> (f64, f64) {
         (self.points[i * 2], self.points[i * 2 + 1])
+    }
+
+    /// Read-only access to the flat coordinate array `[x0, y0, x1, y1, ...]`.
+    pub fn points(&self) -> &[f64] {
+        &self.points
+    }
+
+    /// Read-only access to triangle vertex indices
+    /// (`triangles.len() / 3` triangles, three vertex indices each).
+    pub fn triangles(&self) -> &[usize] {
+        &self.triangles
+    }
+
+    /// Read-only access to half-edge twin indices. `delaunator::EMPTY`
+    /// marks hull edges.
+    pub fn halfedges(&self) -> &[usize] {
+        &self.halfedges
+    }
+
+    /// Convex hull point indices, in counter-clockwise order.
+    pub fn hull(&self) -> &[usize] {
+        &self.hull
+    }
+
+    /// Incoming half-edge per point. `delaunator::EMPTY` for unmapped points.
+    pub fn inedges(&self) -> &[usize] {
+        &self.inedges
+    }
+
+    /// Position of each point in the hull array. `delaunator::EMPTY` if
+    /// the point is not on the hull.
+    pub fn hull_index(&self) -> &[usize] {
+        &self.hull_index
+    }
+
+    /// Sorted collinear point indices when the input is degenerate (all
+    /// points on a line); empty otherwise.
+    pub fn collinear(&self) -> &[usize] {
+        &self.collinear
     }
 
     pub fn voronoi(&self, bounds: [f64; 4]) -> Voronoi<'_> {
@@ -243,49 +289,113 @@ impl Delaunay {
         let (x1, y1) = (self.points[t1], self.points[t1 + 1]);
         let (x2, y2) = (self.points[t2], self.points[t2 + 1]);
         let (x3, y3) = (self.points[t3], self.points[t3 + 1]);
+        // Translated coordinates with vertex 1 at the origin (same trick
+        // `delaunator::circumradius2` uses for conditioning).
         let dx = x2 - x1;
         let dy = y2 - y1;
         let ex = x3 - x1;
         let ey = y3 - y1;
         let ab = (dx * ey - dy * ex) * 2.0;
-        let max_coord = x1
-            .abs()
-            .max(y1.abs())
-            .max(x2.abs())
-            .max(y2.abs())
-            .max(x3.abs())
-            .max(y3.abs());
-        let max_coord = if max_coord == 0.0 { 1.0 } else { max_coord };
-        let threshold = 1e-9 * max_coord * max_coord;
+        let bl = dx * dx + dy * dy;
+        let cl = ex * ex + ey * ey;
+        // Translation-invariant scale: sum of squared edge lengths from
+        // vertex 1. The previous absolute-coordinate scale (max |x_i|,
+        // |y_i|) inflated the threshold for valid triangles far from the
+        // origin and substituted the centroid for non-degenerate
+        // triangles.
+        let scale_sq = bl + cl;
+        let scale_sq = if scale_sq > 0.0 { scale_sq } else { 1.0 };
+        // `ab` is twice the signed area, compare to a relative area
+        // threshold (units of length²).
+        let threshold = 1e-9 * scale_sq;
         if ab.abs() < threshold {
             ((x1 + x2 + x3) / 3.0, (y1 + y2 + y3) / 3.0)
         } else {
             let d = 1.0 / ab;
-            let bl = dx * dx + dy * dy;
-            let cl = ex * ex + ey * ey;
             (x1 + (ey * bl - dy * cl) * d, y1 + (dx * cl - ex * bl) * d)
         }
     }
 }
 
-/// Compute a characteristic coordinate scale from a flat coordinate array.
-fn coord_scale(coords: &[f64]) -> f64 {
-    let mut max = 0.0f64;
+/// Squared bounding-box diagonal of a flat coordinate array.
+///
+/// Translation-invariant — moving the entire point set by a large offset
+/// (e.g. lon/lat shifted by `1e6`) does not inflate the scale. The
+/// previous implementation used the maximum absolute coordinate, which
+/// caused non-degenerate triangulations on translated point sets to be
+/// mis-flagged as collinear.
+///
+/// Returns at least `1.0` so the threshold never collapses to zero on
+/// degenerate (single-point or coincident) inputs.
+fn bbox_scale_sq(coords: &[f64]) -> f64 {
+    let mut xmin = f64::INFINITY;
+    let mut xmax = f64::NEG_INFINITY;
+    let mut ymin = f64::INFINITY;
+    let mut ymax = f64::NEG_INFINITY;
     for i in (0..coords.len()).step_by(2) {
-        max = max.max(coords[i].abs()).max(coords[i + 1].abs());
+        let x = coords[i];
+        let y = coords[i + 1];
+        if !x.is_finite() || !y.is_finite() {
+            continue;
+        }
+        if x < xmin {
+            xmin = x;
+        }
+        if x > xmax {
+            xmax = x;
+        }
+        if y < ymin {
+            ymin = y;
+        }
+        if y > ymax {
+            ymax = y;
+        }
     }
-    if max == 0.0 { 1.0 } else { max }
+    if !xmin.is_finite() || !ymin.is_finite() {
+        return 1.0;
+    }
+    let dx = xmax - xmin;
+    let dy = ymax - ymin;
+    let s2 = dx * dx + dy * dy;
+    if s2 > 0.0 { s2 } else { 1.0 }
 }
 
+/// Test whether all returned triangles are degenerate (collinear within
+/// a bounding-box-relative tolerance).
+///
+/// The 2D cross product has units of area (`length²`), so we compare it
+/// to `1e-10 · bbox_diagonal²` — a relative tolerance that is translation
+/// invariant.
+///
+/// **NaN handling.** If any vertex coordinate is non-finite we return
+/// `false` (treat as not-collinear) so the caller skips the jitter
+/// path. The previous implementation returned `true` for NaN input
+/// because `f64::NAN.abs() > x` is always `false`, which silently
+/// triggered jitter on otherwise-finite point sets containing a single
+/// NaN.
 fn is_collinear(triangles: &[usize], coords: &[f64]) -> bool {
-    let scale = coord_scale(coords);
-    let threshold = 1e-10 * scale * scale;
+    let scale_sq = bbox_scale_sq(coords);
+    let threshold = 1e-10 * scale_sq;
     for i in (0..triangles.len()).step_by(3) {
         let a = 2 * triangles[i];
         let b = 2 * triangles[i + 1];
         let c = 2 * triangles[i + 2];
-        let cross = (coords[c] - coords[a]) * (coords[b + 1] - coords[a + 1])
-            - (coords[b] - coords[a]) * (coords[c + 1] - coords[a + 1]);
+        let ax = coords[a];
+        let ay = coords[a + 1];
+        let bx = coords[b];
+        let by = coords[b + 1];
+        let cx = coords[c];
+        let cy = coords[c + 1];
+        if !(ax.is_finite()
+            && ay.is_finite()
+            && bx.is_finite()
+            && by.is_finite()
+            && cx.is_finite()
+            && cy.is_finite())
+        {
+            return false;
+        }
+        let cross = (cx - ax) * (by - ay) - (bx - ax) * (cy - ay);
         if cross.abs() > threshold {
             return false;
         }
@@ -345,6 +455,72 @@ mod tests {
         let d = Delaunay::from_points(&[(0.0, 0.0), (f64::NAN, 1.0), (1.0, f64::NAN)]);
         // Should not panic; collinear detection with NaN should be stable
         assert!(d.len() == 3, "should have 3 points");
+    }
+
+    /// `is_collinear` must not return true for NaN-containing triangles —
+    /// `cross.abs() > threshold` is `false` for NaN, which previously meant
+    /// NaN-containing triangles were classified collinear and the jitter
+    /// path was applied unnecessarily.
+    #[test]
+    fn test_is_collinear_returns_false_for_nan() {
+        let coords = vec![0.0, 0.0, 1.0, 0.0, f64::NAN, 1.0];
+        let tris = vec![0_usize, 1, 2];
+        assert!(
+            !is_collinear(&tris, &coords),
+            "is_collinear must return false for NaN-containing input"
+        );
+    }
+
+    /// A non-collinear triangle translated far from the origin should NOT
+    /// be flagged collinear. The previous `coord_scale` was the maximum
+    /// absolute coordinate, so the threshold scaled with the translation
+    /// offset and ate valid triangulations.
+    #[test]
+    fn test_translated_triangle_not_collinear() {
+        // Unit right triangle offset by 1e6. Cross product = 1, bbox
+        // diagonal² = 2 → threshold = 2e-10. Cross 1 ≫ 2e-10 → not
+        // collinear.
+        let off = 1e6;
+        let d = Delaunay::from_points(&[
+            (off + 0.0, off + 0.0),
+            (off + 1.0, off + 0.0),
+            (off + 0.0, off + 1.0),
+        ]);
+        assert!(
+            d.collinear.is_empty(),
+            "translated non-collinear triangle must NOT be flagged collinear"
+        );
+        assert!(!d.triangles.is_empty(), "should triangulate normally");
+    }
+
+    /// The circumcenter of a triangle far from the origin should still be
+    /// accurate. The previous absolute-coordinate threshold collapsed
+    /// translated triangles to their centroid because `ab` (∝ area) was
+    /// always small relative to `max_coord²`.
+    #[test]
+    fn test_circumcenter_far_from_origin_accurate() {
+        let off = 1e6;
+        let d = Delaunay::from_points(&[
+            (off + 0.0, off + 0.0),
+            (off + 1.0, off + 0.0),
+            (off + 0.0, off + 1.0),
+        ]);
+        assert_eq!(d.triangles.len() / 3, 1);
+        let (cx, cy) = d.circumcenter(0);
+        // Circumcenter of a right triangle is the midpoint of the
+        // hypotenuse.
+        let expected = off + 0.5;
+        assert!(
+            (cx - expected).abs() < 1e-4 && (cy - expected).abs() < 1e-4,
+            "expected ≈ ({expected}, {expected}), got ({cx}, {cy})"
+        );
+        // Must NOT be the centroid (the old buggy result).
+        let centroid = off + 1.0 / 3.0;
+        assert!(
+            (cx - centroid).abs() > 1e-3 || (cy - centroid).abs() > 1e-3,
+            "circumcenter collapsed to centroid — translation-invariant \
+             threshold not applied"
+        );
     }
 
     // ================================================================

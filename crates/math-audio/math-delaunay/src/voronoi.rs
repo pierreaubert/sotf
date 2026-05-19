@@ -7,16 +7,23 @@ use crate::Delaunay;
 use delaunator::EMPTY as NO_EDGE;
 
 /// Voronoi diagram with D3-compatible API.
+///
+/// **Encapsulation.** The internal buffers are `pub(crate)` rather than
+/// `pub` to plug a mutable-state leak — callers previously could mutate
+/// `circumcenters` / `vectors` / bounds and silently break every
+/// subsequent query. Read-only access is exposed via `delaunay()`,
+/// `bounds()`, `xmin()` / `xmax()` / `ymin()` / `ymax()`,
+/// `circumcenters()`, and `vectors()`.
 pub struct Voronoi<'a> {
-    pub delaunay: &'a Delaunay,
-    pub xmin: f64,
-    pub ymin: f64,
-    pub xmax: f64,
-    pub ymax: f64,
+    pub(crate) delaunay: &'a Delaunay,
+    pub(crate) xmin: f64,
+    pub(crate) ymin: f64,
+    pub(crate) xmax: f64,
+    pub(crate) ymax: f64,
     /// Circumcenters of all triangles, flat [cx0, cy0, cx1, cy1, ...].
-    pub circumcenters: Vec<f64>,
+    pub(crate) circumcenters: Vec<f64>,
     /// Exterior cell ray vectors, 4 per point [vx_in, vy_in, vx_out, vy_out].
-    pub vectors: Vec<f64>,
+    pub(crate) vectors: Vec<f64>,
 }
 
 impl<'a> Voronoi<'a> {
@@ -66,6 +73,45 @@ impl<'a> Voronoi<'a> {
             circumcenters,
             vectors,
         }
+    }
+
+    /// The Delaunay triangulation this Voronoi diagram was built from.
+    pub fn delaunay(&self) -> &Delaunay {
+        self.delaunay
+    }
+
+    /// Clipping bounds as `[xmin, ymin, xmax, ymax]`.
+    pub fn bounds(&self) -> [f64; 4] {
+        [self.xmin, self.ymin, self.xmax, self.ymax]
+    }
+
+    /// `xmin` of the clipping bounding box.
+    pub fn xmin(&self) -> f64 {
+        self.xmin
+    }
+    /// `ymin` of the clipping bounding box.
+    pub fn ymin(&self) -> f64 {
+        self.ymin
+    }
+    /// `xmax` of the clipping bounding box.
+    pub fn xmax(&self) -> f64 {
+        self.xmax
+    }
+    /// `ymax` of the clipping bounding box.
+    pub fn ymax(&self) -> f64 {
+        self.ymax
+    }
+
+    /// Read-only access to triangle circumcenters,
+    /// flat `[cx0, cy0, cx1, cy1, ...]`.
+    pub fn circumcenters(&self) -> &[f64] {
+        &self.circumcenters
+    }
+
+    /// Read-only access to the per-hull-point exterior ray vectors,
+    /// 4 floats per point: `[vx_in, vy_in, vx_out, vy_out]`.
+    pub fn vectors(&self) -> &[f64] {
+        &self.vectors
     }
 
     /// Get the polygon for Voronoi cell i, clipped to bounds.
@@ -553,10 +599,18 @@ impl<'a> Voronoi<'a> {
     }
 
     /// Remove collinear points from the polygon.
+    ///
+    /// The 2D cross product `(j − i) × (k − i)` has units of area
+    /// (`length²`), so the natural relative tolerance is
+    /// `1e-9 · bbox_scale²`. The previous implementation used
+    /// `eps² = (1e-9 · bbox_scale)²`, which is nine orders of magnitude
+    /// tighter than intended and silently retained near-collinear
+    /// vertices that should have been simplified.
     fn simplify(&self, p: Option<Vec<f64>>) -> Option<Vec<f64>> {
         let mut p = p?;
         if p.len() > 4 {
-            let eps = self.epsilon();
+            let bbox = self.bbox_scale();
+            let area_eps = bbox * bbox * 1e-9;
             let mut i = 0;
             while i < p.len() && p.len() > 4 {
                 let j = (i + 2) % p.len();
@@ -564,7 +618,7 @@ impl<'a> Voronoi<'a> {
                 // 2D cross product for collinearity (axis-aligned or diagonal)
                 let cross =
                     (p[j] - p[i]) * (p[k + 1] - p[i + 1]) - (p[j + 1] - p[i + 1]) * (p[k] - p[i]);
-                if cross.abs() <= eps * eps {
+                if cross.abs() <= area_eps {
                     p.remove(j + 1);
                     p.remove(j);
                     if i >= 2 {
@@ -677,6 +731,32 @@ mod tests {
             s.len(),
             6,
             "should remove the middle diagonal collinear point, got {s:?}"
+        );
+    }
+
+    /// Near-collinear (but not exactly collinear) middle point should still
+    /// be removed by `simplify` when its perpendicular offset from the line
+    /// is well within the area-scale epsilon. The OLD `eps²` threshold was
+    /// nine orders of magnitude tighter than intended, so this case
+    /// silently failed to simplify.
+    #[test]
+    fn test_simplify_near_collinear() {
+        let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+        let d = Delaunay::from_points(&points);
+        let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+        // Bounding box scale = max(10, 10) = 10, area_eps = 10² · 1e-9 = 1e-7.
+        // We offset the middle vertex perpendicular to y=x by ~5e-9, well
+        // below 1e-7 but well above the OLD eps² ≈ 1e-16.
+        let poly = vec![0.0, 0.0, 1.0, 1.0 + 5e-9, 2.0, 2.0, 3.0, 0.0];
+        let simplified = v.simplify(Some(poly));
+        assert!(simplified.is_some());
+        let s = simplified.unwrap();
+        assert_eq!(
+            s.len(),
+            6,
+            "near-collinear middle point should be removed under the \
+             area-scale epsilon, got {s:?}"
         );
     }
 
