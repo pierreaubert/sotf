@@ -1,9 +1,9 @@
 use crate::database::MusicDatabase;
+use crossbeam::channel::{self, Receiver, Sender};
 use sotf_audio::waveform;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
 use std::thread;
 
 /// Message sent by waveform scanner thread
@@ -28,26 +28,24 @@ pub enum WaveformScanMessage {
 pub struct WaveformScanner {
     _workers: Vec<thread::JoinHandle<()>>,
     task_tx: Sender<PathBuf>,
-    message_rx: Arc<Mutex<Receiver<WaveformScanMessage>>>,
+    message_rx: Receiver<WaveformScanMessage>,
     stop_tx: Sender<()>,
 }
 
 impl WaveformScanner {
     /// Create a new scanner with the given number of worker threads
     pub fn new(num_threads: usize, db_path: PathBuf, pause_flag: Arc<AtomicBool>) -> Self {
-        let (task_tx, task_rx) = mpsc::channel::<PathBuf>();
-        let (message_tx, message_rx) = mpsc::channel::<WaveformScanMessage>();
-        let (stop_tx, stop_rx) = mpsc::channel::<()>();
-
-        // Shared state for task distribution
-        let task_rx = Arc::new(Mutex::new(task_rx));
-        let stop_rx = Arc::new(Mutex::new(stop_rx));
+        let (task_tx, task_rx) = channel::unbounded::<PathBuf>();
+        let (message_tx, message_rx) = channel::unbounded::<WaveformScanMessage>();
+        // One stop sender per worker (each `stop()` call fans out N signals).
+        let (stop_tx, stop_rx) = channel::unbounded::<()>();
 
         let mut workers = Vec::new();
 
         for worker_id in 0..num_threads {
-            let task_rx = Arc::clone(&task_rx);
-            let stop_rx = Arc::clone(&stop_rx);
+            // crossbeam Receivers are Sync + cloneable — no Mutex needed.
+            let task_rx = task_rx.clone();
+            let stop_rx = stop_rx.clone();
             let message_tx = message_tx.clone();
             let db_path = db_path.clone();
             let pause_flag = Arc::clone(&pause_flag);
@@ -70,30 +68,32 @@ impl WaveformScanner {
 
                 loop {
                     // Check if we should stop
-                    if stop_rx.lock().unwrap().try_recv().is_ok() {
+                    if stop_rx.try_recv().is_ok() {
                         log::info!("[Waveform Worker {}] Stopping", worker_id);
                         break;
                     }
 
                     // Wait while paused (check every 200ms, also check for stop)
                     while pause_flag.load(Ordering::Relaxed) {
-                        if stop_rx.lock().unwrap().try_recv().is_ok() {
+                        if stop_rx.try_recv().is_ok() {
                             log::info!("[Waveform Worker {}] Stopping while paused", worker_id);
                             return;
                         }
                         std::thread::sleep(std::time::Duration::from_millis(200));
                     }
 
-                    // Get next task
-                    let path = match task_rx
-                        .lock()
-                        .unwrap()
-                        .recv_timeout(std::time::Duration::from_millis(100))
-                    {
-                        Ok(path) => path,
-                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                        Err(mpsc::RecvTimeoutError::Disconnected) => {
-                            log::info!("[Waveform Worker {}] Task channel closed", worker_id);
+                    // Block on (task, stop) concurrently — N workers wait at
+                    // once without serializing through a Mutex<Receiver>.
+                    let path = channel::select! {
+                        recv(task_rx) -> msg => match msg {
+                            Ok(path) => path,
+                            Err(_) => {
+                                log::info!("[Waveform Worker {}] Task channel closed", worker_id);
+                                break;
+                            }
+                        },
+                        recv(stop_rx) -> _ => {
+                            log::info!("[Waveform Worker {}] Stopping (select)", worker_id);
                             break;
                         }
                     };
@@ -179,7 +179,7 @@ impl WaveformScanner {
         Self {
             _workers: workers,
             task_tx,
-            message_rx: Arc::new(Mutex::new(message_rx)),
+            message_rx,
             stop_tx,
         }
     }
@@ -198,7 +198,7 @@ impl WaveformScanner {
 
     /// Try to receive a message (non-blocking)
     pub fn try_recv(&self) -> Option<WaveformScanMessage> {
-        self.message_rx.lock().unwrap().try_recv().ok()
+        self.message_rx.try_recv().ok()
     }
 
     /// Stop all workers

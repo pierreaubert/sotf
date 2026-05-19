@@ -1451,6 +1451,12 @@ fn adjust_plugin_param(
 ) -> bool {
     match settings {
         // === EQ: dynamic filter array, param indices map to band/field ===
+        //
+        // Controller index space: idx 0 = band-0-frequency, idx 1 = band-0-q,
+        // …, idx 4 = band-1-frequency, … (no `max_filters` slot — that lives
+        // separately in the TUI index space, see `ui_params::adjust_param`).
+        // Per-field math is shared with `ui_params::apply_eq_band_field` so the
+        // two index spaces stay in lockstep when one of them is touched.
         PluginSettings::EQ { filters, .. } => {
             if filters.is_empty() {
                 return false;
@@ -1465,46 +1471,7 @@ fn adjust_plugin_param(
             let field_idx = param_idx % 4;
 
             if let Some(filter) = filters.get_mut(filter_idx) {
-                match field_idx {
-                    0 => {
-                        filter.frequency = (filter.frequency + delta * 10.0).clamp(20.0, 20_000.0);
-                        true
-                    }
-                    1 => {
-                        filter.q = (filter.q + delta * 0.1).clamp(0.1, 10.0);
-                        true
-                    }
-                    2 => {
-                        filter.gain_db = (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0);
-                        true
-                    }
-                    3 => {
-                        let types = [
-                            BiquadFilterType::Peak,
-                            BiquadFilterType::Lowshelf,
-                            BiquadFilterType::Highshelf,
-                            BiquadFilterType::Lowpass,
-                            BiquadFilterType::Highpass,
-                            BiquadFilterType::Bandpass,
-                            BiquadFilterType::Notch,
-                        ];
-
-                        let current_idx = types
-                            .iter()
-                            .position(|t| *t == filter.filter_type)
-                            .unwrap_or(0);
-                        let new_idx = if delta > 0.0 {
-                            (current_idx + 1) % types.len()
-                        } else if current_idx == 0 {
-                            types.len() - 1
-                        } else {
-                            current_idx - 1
-                        };
-                        filter.filter_type = types[new_idx];
-                        true
-                    }
-                    _ => false,
-                }
+                crate::ui_params::apply_eq_band_field(filter, field_idx, delta)
             } else {
                 false
             }

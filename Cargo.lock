@@ -10490,6 +10490,7 @@ dependencies = [
  "autoeq",
  "chrono",
  "clap",
+ "crossbeam",
  "directories",
  "env_logger",
  "image",
