@@ -44,6 +44,13 @@ pub struct HalInputPlugin {
     /// True if the HAL native sample rate differs from the engine sample rate
     sample_rate_mismatch: bool,
 
+    /// Cached HAL connection status.
+    is_connected: bool,
+
+    /// Cached HAL buffer capacity in frames.
+    #[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
+    buffer_capacity_frames: usize,
+
     #[cfg(all(target_os = "macos", feature = "hal"))]
     /// HAL input reader
     reader: Option<HalInputReader>,
@@ -74,6 +81,11 @@ impl HalInputPlugin {
                 channels,
                 underrun_counter: Arc::new(AtomicU64::new(0)),
                 sample_rate_mismatch: false,
+                is_connected: reader.as_ref().is_some_and(HalInputReader::is_connected),
+                buffer_capacity_frames: reader
+                    .as_ref()
+                    .map(|r| r.buffer_frames() as usize)
+                    .unwrap_or(0),
                 reader,
             })
         }
@@ -103,6 +115,21 @@ impl HalInputPlugin {
     pub fn underrun_count(&self) -> u64 {
         self.underrun_counter.load(Ordering::Relaxed)
     }
+
+    /// Zero-fill the tail of an interleaved output buffer after a partial read.
+    ///
+    /// Using `write_bytes` here gives us a low-level contiguous clear path for the
+    /// remaining samples, which is typically faster than a hand-written scalar loop.
+    fn zero_fill_from(output: &mut [f32], start: usize) {
+        if start >= output.len() {
+            return;
+        }
+
+        let remaining = output.len() - start;
+        unsafe {
+            std::ptr::write_bytes(output.as_mut_ptr().add(start), 0, remaining);
+        }
+    }
 }
 
 impl Plugin for HalInputPlugin {
@@ -121,7 +148,13 @@ impl Plugin for HalInputPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_int("input_channels", "Input Channels", 2, 1, 16)
+            Parameter::new_int(
+                "input_channels",
+                "Input Channels",
+                self.channels as i32,
+                1,
+                16,
+            )
                 .with_description("Number of HAL input channels (structural — set at construction time)")
                 .with_group("Configuration")
                 .with_importance(ParameterImportance::Critical),
@@ -143,6 +176,14 @@ impl Plugin for HalInputPlugin {
             .with_description(
                 "True if HAL native sample rate differs from engine sample rate (read-only diagnostic)",
             )
+            .with_group("Diagnostics")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool(
+                "is_connected",
+                "Connected",
+                self.is_connected,
+            )
+            .with_description("HAL input reader currently connected to shared memory")
             .with_group("Diagnostics")
             .with_importance(ParameterImportance::FineTuning),
         ]
@@ -203,6 +244,7 @@ impl Plugin for HalInputPlugin {
         let param_input_channels = ParameterId::from("input_channels");
         let param_underrun = ParameterId::from("underrun_count");
         let param_sr_mismatch = ParameterId::from("sample_rate_mismatch");
+        let param_connected = ParameterId::from("is_connected");
 
         if id == &param_input_channels {
             Some(ParameterValue::Int(self.channels as i32))
@@ -212,6 +254,8 @@ impl Plugin for HalInputPlugin {
             ))
         } else if id == &param_sr_mismatch {
             Some(ParameterValue::Bool(self.sample_rate_mismatch))
+        } else if id == &param_connected {
+            Some(ParameterValue::Bool(self.is_connected))
         } else {
             None
         }
@@ -237,6 +281,8 @@ impl Plugin for HalInputPlugin {
         {
             // Try to read from HAL
             if let Some(ref mut reader) = self.reader {
+                self.is_connected = reader.is_connected();
+                self.buffer_capacity_frames = reader.buffer_frames() as usize;
                 let samples_read = reader.read(output);
 
                 // TRACE: Log frames consumed from HAL shared memory by daemon
@@ -264,7 +310,7 @@ impl Plugin for HalInputPlugin {
                             output.len()
                         );
                     }
-                    output[samples_read..].fill(0.0);
+                    Self::zero_fill_from(output, samples_read);
                 }
             } else {
                 return Err("HAL reader not available".to_string());
@@ -273,10 +319,21 @@ impl Plugin for HalInputPlugin {
 
         #[cfg(not(all(target_os = "macos", feature = "hal")))]
         {
-            output.fill(0.0);
+            Self::zero_fill_from(output, 0);
         }
 
         Ok(context.num_frames)
+    }
+
+    fn latency_samples(&self) -> usize {
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        {
+            self.buffer_capacity_frames
+        }
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
+        {
+            0
+        }
     }
 }
 
@@ -299,6 +356,8 @@ mod tests {
             channels,
             underrun_counter: Arc::new(AtomicU64::new(0)),
             sample_rate_mismatch: false,
+            is_connected: false,
+            buffer_capacity_frames: 0,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             reader: None,
         }
@@ -327,6 +386,21 @@ mod tests {
     }
 
     #[test]
+    fn parameters_input_channels_reflects_constructed_channel_count() {
+        let plugin = stub_plugin(6);
+        let params = plugin.parameters();
+        let input_channels = params
+            .iter()
+            .find(|p| p.id == ParameterId::from("input_channels"))
+            .expect("input_channels parameter should exist");
+        assert_eq!(
+            input_channels.default_value,
+            ParameterValue::Int(6),
+            "input_channels metadata must reflect the plugin's structural channel count"
+        );
+    }
+
+    #[test]
     fn get_parameter_input_channels_returns_value() {
         let plugin = stub_plugin(4);
         let id = ParameterId::from("input_channels");
@@ -343,6 +417,29 @@ mod tests {
             val, None,
             "old 'channels' id must return None after rename to 'input_channels'"
         );
+    }
+
+    #[test]
+    fn parameters_exposes_connected_diagnostic() {
+        let plugin = stub_plugin(2);
+        let params = plugin.parameters();
+        let ids: Vec<&str> = params.iter().map(|p| p.id.0.as_str()).collect();
+        assert!(ids.contains(&"is_connected"));
+    }
+
+    #[test]
+    fn get_parameter_connected_returns_bool() {
+        let plugin = stub_plugin(2);
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("is_connected")),
+            Some(ParameterValue::Bool(false))
+        );
+    }
+
+    #[test]
+    fn latency_samples_reports_buffer_capacity() {
+        let plugin = stub_plugin(2);
+        assert_eq!(plugin.latency_samples(), 0);
     }
 
     #[test]
@@ -422,5 +519,12 @@ mod tests {
         let mut p = stub_plugin(2);
         let result = p.process(&input, &mut output, &ctx);
         assert!(result.is_err(), "wrong buffer size must return Err");
+    }
+
+    #[test]
+    fn zero_fill_from_clears_expected_tail() {
+        let mut output: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        HalInputPlugin::zero_fill_from(&mut output, 3);
+        assert_eq!(output, vec![1.0, 2.0, 3.0, 0.0, 0.0]);
     }
 }
