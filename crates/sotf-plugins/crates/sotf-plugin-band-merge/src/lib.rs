@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
+use std::cell::Cell;
 
 /// Maximum number of bands supported.
 const MAX_BANDS: usize = 32;
@@ -44,8 +45,11 @@ pub struct BandMergePlugin {
     /// Per-band mute toggle.
     band_mutes: [bool; MAX_BANDS],
     /// Reconstruction error in dB (diagnostic). Measures how much the output
-    /// deviates from perfect reconstruction. Updated each process() call.
+    /// deviates from perfect reconstruction.
+    ///
+    /// This value is refreshed when requested by the host.
     reconstruction_error_db: f32,
+    reconstruction_error_requested: Cell<bool>,
     cached_parameters: Vec<Parameter>,
     // ---- gain smoothing ----
     /// Per-band one-pole gain smoother to prevent zipper noise during automation.
@@ -72,6 +76,7 @@ impl BandMergePlugin {
             band_gains_linear: [1.0; MAX_BANDS],
             band_mutes: [false; MAX_BANDS],
             reconstruction_error_db: 0.0,
+            reconstruction_error_requested: Cell::new(false),
             cached_parameters: Vec::new(),
             band_gain_smoothers: std::array::from_fn(|_| {
                 sotf_host::smoothing::Smoother::new(1.0, GAIN_SMOOTH_MS, DEFAULT_SR)
@@ -208,6 +213,7 @@ impl Plugin for BandMergePlugin {
             return Some(ParameterValue::Int(self.num_bands as i32));
         }
         if id.0 == "reconstruction_error_db" {
+            self.reconstruction_error_requested.set(true);
             return Some(ParameterValue::Float(self.reconstruction_error_db));
         }
         if let Some(rest) = id.0.strip_prefix("band_") {
@@ -255,6 +261,7 @@ impl Plugin for BandMergePlugin {
         // Accumulate RMS for reconstruction validation:
         // - reference_rms: sum of all bands (unity gain, no mute) -- what perfect reconstruction would be
         // - output_rms: actual summed output with gains and mutes applied
+        let measure_reconstruction_error = self.reconstruction_error_requested.replace(false);
         let mut reference_energy = 0.0_f64;
         let mut output_energy = 0.0_f64;
 
@@ -278,18 +285,22 @@ impl Plugin for BandMergePlugin {
                 let mut ref_sum = 0.0f32;
                 for band in 0..self.num_bands {
                     let sample = input[in_off + band * out_ch + ch];
-                    ref_sum += sample;
+                    if measure_reconstruction_error {
+                        ref_sum += sample;
+                    }
                     sum += sample * effective_gains[band];
                 }
                 output[out_off + ch] = sum;
-                reference_energy += (ref_sum as f64) * (ref_sum as f64);
-                output_energy += (sum as f64) * (sum as f64);
+                if measure_reconstruction_error {
+                    reference_energy += (ref_sum as f64) * (ref_sum as f64);
+                    output_energy += (sum as f64) * (sum as f64);
+                }
             }
         }
 
         // Compute reconstruction error in dB
-        let total_samples = (num_frames * out_ch) as f64;
-        if total_samples > 0.0 {
+        if measure_reconstruction_error {
+            let total_samples = (num_frames * out_ch) as f64;
             let ref_rms = (reference_energy / total_samples).sqrt();
             let out_rms = (output_energy / total_samples).sqrt();
 
@@ -508,6 +519,7 @@ mod tests {
             }
         }
         let mut output = vec![0.0f32; nf * out_ch];
+        let _ = p.get_parameter(&ParameterId::from("reconstruction_error_db"));
         p.process(
             &input,
             &mut output,
@@ -530,6 +542,68 @@ mod tests {
         } else {
             panic!("reconstruction_error_db should be a Float parameter");
         }
+    }
+
+    #[test]
+    fn test_reconstruction_error_db_is_computed_on_demand() {
+        let mut p = BandMergePlugin::new(1, 2).unwrap();
+
+        // Set a non-unity gain to make the diagnostic value clearly non-zero.
+        p.set_parameter(
+            ParameterId::from("band_0_gain_db"),
+            ParameterValue::Float(6.0206),
+        )
+        .unwrap();
+        p.reset();
+
+        let input = vec![1.0f32, 1.0];
+        let mut output = vec![0.0f32];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 1,
+            },
+        )
+        .unwrap();
+
+        // No diagnostic read was requested yet, so the value should still be the
+        // default 0 dB in-place (no on-demand work performed this frame).
+        let err_before = match p
+            .get_parameter(&ParameterId::from("reconstruction_error_db"))
+            .unwrap()
+        {
+            ParameterValue::Float(v) => v,
+            _ => panic!("reconstruction_error_db should be a Float parameter"),
+        };
+        assert!(
+            err_before.abs() < 0.0001,
+            "expected on-demand metric to remain untouched before request-processing cycle, got {err_before}"
+        );
+
+        // Next process should perform the diagnostic now that the host requested it.
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 1,
+            },
+        )
+        .unwrap();
+
+        let err_after = match p
+            .get_parameter(&ParameterId::from("reconstruction_error_db"))
+            .unwrap()
+        {
+            ParameterValue::Float(v) => v,
+            _ => panic!("reconstruction_error_db should be a Float parameter"),
+        };
+        assert!(
+            err_after.abs() > 1.0,
+            "expected reconstructed-error metric to be calculated after request, got {err_after}"
+        );
     }
 
     #[test]
