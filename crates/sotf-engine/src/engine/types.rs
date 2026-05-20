@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 // Re-export shared types from sotf-types
 pub use sotf_types::{
-    AudioEngineState, AudioFrame, PlaybackState, PluginConfig, PluginGraphConfig,
-    PluginGraphEdgeConfig, PluginGraphNodeConfig,
+    AudioEngineState, AudioFrame, IsolatedExternalPluginWorkerStatus, PlaybackState, PluginConfig,
+    PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
 };
 
 // ============================================================================
@@ -105,6 +105,9 @@ pub enum ProcessingCommand {
     Bypass(bool),
     /// Query plugin data (e.g. analyzer results)
     GetPluginData(usize),
+    /// Poll isolated external plugin workers for process lifecycle events
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    PollIsolatedExternalPluginWorkers,
     /// Stop processing
     Stop,
     /// Shutdown the thread
@@ -127,6 +130,10 @@ impl std::fmt::Debug for ProcessingCommand {
                 .finish(),
             Self::Bypass(bypass) => f.debug_tuple("Bypass").field(bypass).finish(),
             Self::GetPluginData(index) => f.debug_tuple("GetPluginData").field(index).finish(),
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+            Self::PollIsolatedExternalPluginWorkers => {
+                write!(f, "PollIsolatedExternalPluginWorkers")
+            }
             Self::Stop => write!(f, "Stop"),
             Self::Shutdown => write!(f, "Shutdown"),
         }
@@ -198,6 +205,10 @@ pub enum ManagerCommand {
     },
     BypassProcessing(bool),
 
+    /// Poll isolated external plugin worker status without starting or restarting workers.
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    MaintainIsolatedExternalPluginWorkers,
+
     // Queries
     GetState,
     GetPosition,
@@ -249,4 +260,7 @@ pub enum ThreadEvent {
     SeekComplete,
     /// Plugin chain total latency changed (in samples at the processing sample rate)
     PluginLatencyUpdate(usize),
+    /// Isolated external plugin worker status snapshot.
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    IsolatedExternalPluginWorkerStatuses(Vec<IsolatedExternalPluginWorkerStatus>),
 }

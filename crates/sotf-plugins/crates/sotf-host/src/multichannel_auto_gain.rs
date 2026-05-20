@@ -78,7 +78,16 @@ impl MultichannelAutoGain {
         if !self.inner.is_enabled() || num_frames == 0 || out_ch == 0 {
             return Ok(());
         }
-        debug_assert_eq!(output.len(), num_frames * out_ch);
+        let expected_len = num_frames
+            .checked_mul(out_ch)
+            .ok_or_else(|| "output buffer size overflow".to_string())?;
+        if output.len() != expected_len {
+            return Err(format!(
+                "output buffer length mismatch: expected {expected_len} samples for \
+                 {num_frames} frames x {out_ch} channels, got {}",
+                output.len()
+            ));
+        }
 
         self.fill_meter_buffer(output, num_frames, out_ch, speaker_config);
         self.inner.measure_output(&self.meter_buf)?;
@@ -268,5 +277,15 @@ mod tests {
         mag.measure_input(&input).unwrap();
         mag.measure_and_apply(&mut output, frames, 2, cfg).unwrap();
         assert!(output.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn invalid_output_length_returns_error() {
+        let mut mag = MultichannelAutoGain::new(48000, enabled_params()).unwrap();
+        let cfg = get_speaker_config("5.1").unwrap();
+        let mut output = vec![0.0_f32; 15];
+
+        let err = mag.measure_and_apply(&mut output, 4, cfg.total_channels, cfg);
+        assert!(err.is_err(), "mismatched buffer length should be rejected");
     }
 }

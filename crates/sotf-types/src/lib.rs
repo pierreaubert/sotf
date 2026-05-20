@@ -16,3 +16,7 @@ pub use plugin_config::{
 };
 pub use sink::{SinkConfig, SinkOpenResult, SinkType};
 pub use state::{AudioEngineState, AudioFrame, PlaybackState};
+pub use state::{
+    IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
+    IsolatedExternalPluginWorkerEvent, IsolatedExternalPluginWorkerStatus,
+};

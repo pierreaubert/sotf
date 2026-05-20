@@ -523,10 +523,7 @@ impl<P: InPlacePlugin> InPlacePlugin for OversampledPlugin<P> {
         // The oversampler's callback receives planar buffers at the OS rate.
         // We need to convert to interleaved, call inner.process_in_place, then
         // convert back to planar.
-        let os_context = ProcessContext {
-            sample_rate: context.sample_rate * self.factor,
-            num_frames: 0, // will be set per-chunk inside callback
-        };
+        let os_context = ProcessContext::new(context.sample_rate * self.factor, 0);
 
         let inner = &mut self.inner;
         let os_interleaved = &mut self.os_interleaved;
@@ -558,10 +555,7 @@ impl<P: InPlacePlugin> InPlacePlugin for OversampledPlugin<P> {
                 // Convert planar → interleaved
                 planar_to_interleaved(planar, &mut os_interleaved[..total_os], os_frames, nc);
                 // Process at oversampled rate
-                let ctx = ProcessContext {
-                    sample_rate: os_context.sample_rate,
-                    num_frames: os_frames,
-                };
+                let ctx = ProcessContext::new(os_context.sample_rate, os_frames);
                 match inner.process_in_place(&mut os_interleaved[..total_os], &ctx) {
                     Ok(frames) if frames == os_frames => {}
                     Ok(frames) => {
@@ -717,10 +711,7 @@ impl Plugin for AutoOversampledPlugin {
                     os_input_interleaved.resize(total_os, 0.0);
                 }
                 planar_to_interleaved(planar, &mut os_input_interleaved[..total_os], os_frames, nc);
-                let ctx = ProcessContext {
-                    sample_rate: os_rate,
-                    num_frames: os_frames,
-                };
+                let ctx = ProcessContext::new(os_rate, os_frames);
                 match inner.process(
                     &os_input_interleaved[..total_os],
                     &mut os_interleaved[..total_os],
@@ -1041,10 +1032,7 @@ mod tests {
         os.initialize(48000).unwrap();
 
         // Feed a few blocks to prime the oversampler pipeline
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 256,
-        };
+        let ctx = ProcessContext::new(48000, 256);
         let mut buf = vec![0.5f32; 256];
         os.process_in_place(&mut buf, &ctx).unwrap();
 
@@ -1096,10 +1084,7 @@ mod tests {
         let mut os = OversampledPlugin::new(ErrorPlugin, 2, 1).unwrap();
         os.initialize(48000).unwrap();
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 256,
-        };
+        let ctx = ProcessContext::new(48000, 256);
         let mut buf = vec![0.0f32; 256];
         let err = os.process_in_place(&mut buf, &ctx).unwrap_err();
 

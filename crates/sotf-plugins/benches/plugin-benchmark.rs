@@ -24,10 +24,7 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
         plugin.initialize(48000).unwrap();
 
         let mut buffer = vec![0.5f32; buffer_size * 2];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: buffer_size,
-        };
+        let context = ProcessContext::new(48000, buffer_size);
 
         group.bench_function(format!("process_{}frames", buffer_size), |b| {
             b.iter(|| {
@@ -45,10 +42,7 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
 
         let buffer_size = 512;
         let mut buffer = vec![0.5f32; buffer_size * 2];
-        let context = ProcessContext {
-            sample_rate,
-            num_frames: buffer_size,
-        };
+        let context = ProcessContext::new(sample_rate, buffer_size);
 
         group.bench_function(format!("process_{}hz", sample_rate), |b| {
             b.iter(|| {
@@ -66,10 +60,7 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
 
         let buffer_size = 512;
         let mut buffer = vec![0.5f32; buffer_size * 2];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: buffer_size,
-        };
+        let context = ProcessContext::new(48000, buffer_size);
 
         group.bench_function(format!("process_{}db", gain_db), |b| {
             b.iter(|| {
@@ -87,10 +78,7 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
 
         let buffer_size = 512;
         let mut buffer = vec![0.5f32; buffer_size * channels];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: buffer_size,
-        };
+        let context = ProcessContext::new(48000, buffer_size);
 
         group.bench_function(format!("process_{}ch", channels), |b| {
             b.iter(|| {
@@ -193,10 +181,7 @@ fn benchmark_inplace_processing(c: &mut Criterion) {
         plugin.initialize(48000).unwrap();
 
         let mut buffer = vec![0.5f32; buffer_size * channels];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: buffer_size,
-        };
+        let context = ProcessContext::new(48000, buffer_size);
 
         group.bench_function(format!("gain_{}ch", channels), |b| {
             b.iter(|| {
@@ -232,10 +217,7 @@ fn benchmark_per_sample_cost(c: &mut Criterion) {
             plugin.initialize(48000).unwrap();
 
             let mut buffer = vec![0.5f32; buffer_size * channels];
-            let context = ProcessContext {
-                sample_rate: 48000,
-                num_frames: buffer_size,
-            };
+            let context = ProcessContext::new(48000, buffer_size);
 
             group.bench_function(name, |b| {
                 b.iter(|| {

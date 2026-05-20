@@ -66,10 +66,7 @@ fn test_gain_multi_sample_rate() {
         plugin.initialize(sr).unwrap();
 
         let mut buffer = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         plugin.process_in_place(&mut buffer, &context).unwrap();
         assert_all_finite(&buffer, &format!("Gain@{}Hz", sr));
@@ -102,10 +99,7 @@ fn test_eq_multi_sample_rate() {
 
         let input = generate_sine_stereo(sr, 1000.0, 0.3, NUM_FRAMES);
         let mut output = vec![0.0_f32; NUM_FRAMES * 2];
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         plugin.process(&input, &mut output, &context).unwrap();
         assert_all_finite(&output, &format!("EQ@{}Hz", sr));
@@ -130,10 +124,7 @@ fn test_compressor_multi_sample_rate() {
         plugin.initialize(sr).unwrap();
 
         let mut buffer = generate_sine_stereo(sr, 440.0, 0.8, NUM_FRAMES);
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         plugin.process_in_place(&mut buffer, &context).unwrap();
         assert_all_finite(&buffer, &format!("Compressor@{}Hz", sr));
@@ -151,10 +142,7 @@ fn test_gate_multi_sample_rate() {
         plugin.initialize(sr).unwrap();
 
         let mut buffer = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         plugin.process_in_place(&mut buffer, &context).unwrap();
         assert_all_finite(&buffer, &format!("Gate@{}Hz", sr));
@@ -172,10 +160,7 @@ fn test_limiter_multi_sample_rate() {
         plugin.initialize(sr).unwrap();
 
         let mut buffer = generate_sine_stereo(sr, 440.0, 2.0, NUM_FRAMES); // Hot signal
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         plugin.process_in_place(&mut buffer, &context).unwrap();
         assert_all_finite(&buffer, &format!("Limiter@{}Hz", sr));
@@ -193,10 +178,7 @@ fn test_expander_multi_sample_rate() {
         plugin.initialize(sr).unwrap();
 
         let mut buffer = generate_sine_stereo(sr, 440.0, 0.01, NUM_FRAMES); // Quiet signal
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         plugin.process_in_place(&mut buffer, &context).unwrap();
         assert_all_finite(&buffer, &format!("Expander@{}Hz", sr));
@@ -214,10 +196,7 @@ fn test_delay_multi_sample_rate() {
         plugin.initialize(sr).unwrap();
 
         let mut buffer = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         plugin.process_in_place(&mut buffer, &context).unwrap();
         assert_all_finite(&buffer, &format!("Delay@{}Hz", sr));
@@ -236,10 +215,7 @@ fn test_crossover_multi_sample_rate() {
         lp.initialize(sr).unwrap();
 
         let input = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         let mut output = vec![0.0f32; input.len()];
         lp.process(&input, &mut output, &context).unwrap();
@@ -268,10 +244,7 @@ fn test_matrix_multi_sample_rate() {
 
         let input = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
         let mut output = vec![0.0_f32; NUM_FRAMES * 2];
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         plugin.process(&input, &mut output, &context).unwrap();
         assert_all_finite(&output, &format!("Matrix@{}Hz", sr));
@@ -374,10 +347,7 @@ fn test_crossover_delay_chain_multi_sample_rate() {
         delay.initialize(sr).unwrap();
 
         let input = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         let mut crossover_output = vec![0.0f32; input.len()];
         crossover
@@ -414,10 +384,7 @@ fn test_eq_near_nyquist() {
 
         let input = generate_sine_stereo(sr, freq as f32, 0.3, NUM_FRAMES);
         let mut output = vec![0.0_f32; NUM_FRAMES * 2];
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames: NUM_FRAMES,
-        };
+        let context = ProcessContext::new(sr, NUM_FRAMES);
 
         plugin.process(&input, &mut output, &context).unwrap();
         assert_all_finite(&output, &format!("EQ@{}Hz_near_nyquist", sr));
@@ -435,19 +402,13 @@ fn test_reinitialize_sample_rate_change() {
     // Initialize at 44100, process some data
     plugin.initialize(44100).unwrap();
     let mut buffer = generate_sine_stereo(44100, 440.0, 0.5, NUM_FRAMES);
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames: NUM_FRAMES,
-    };
+    let context = ProcessContext::new(44100, NUM_FRAMES);
     plugin.process_in_place(&mut buffer, &context).unwrap();
 
     // Reinitialize at 96000, process more data
     plugin.initialize(96000).unwrap();
     let mut buffer2 = generate_sine_stereo(96000, 440.0, 0.5, NUM_FRAMES);
-    let context2 = ProcessContext {
-        sample_rate: 96000,
-        num_frames: NUM_FRAMES,
-    };
+    let context2 = ProcessContext::new(96000, NUM_FRAMES);
     plugin.process_in_place(&mut buffer2, &context2).unwrap();
     assert_all_finite(&buffer2, "Compressor_reinit@96kHz");
 }

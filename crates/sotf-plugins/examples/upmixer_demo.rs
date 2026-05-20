@@ -206,10 +206,7 @@ fn process_upmixer(
         let end = start + frames * in_ch;
         let block_in = &input[start..end];
         let mut block_out = vec![0.0_f32; frames * out_ch];
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(sample_rate, frames);
         plugin
             .process(block_in, &mut block_out, &ctx)
             .expect("upmixer process failed");

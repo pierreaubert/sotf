@@ -334,14 +334,14 @@ pub fn interpolate_hrtf_frequency_domain(
     let mut right_itds = Vec::with_capacity(3);
 
     for (idx, _) in nearest.iter() {
-        if let Some(hrtf) = sofa.get_hrtf(*idx) {
+        if let Some((_, left, right)) = sofa.get_hrtf_slices(*idx) {
             // Convert to frequency domain (returns freq_size bins)
-            let left_fft = ir_to_freq(&hrtf.ir_left, fft_size, fft_r2c);
-            let right_fft = ir_to_freq(&hrtf.ir_right, fft_size, fft_r2c);
+            let left_fft = ir_to_freq(left, fft_size, fft_r2c);
+            let right_fft = ir_to_freq(right, fft_size, fft_r2c);
 
             // Detect ITD (onset delay) using threshold method
-            let left_itd = detect_ir_onset(&hrtf.ir_left, sample_rate);
-            let right_itd = detect_ir_onset(&hrtf.ir_right, sample_rate);
+            let left_itd = detect_ir_onset(left, sample_rate);
+            let right_itd = detect_ir_onset(right, sample_rate);
 
             left_hrtfs_freq.push(left_fft);
             right_hrtfs_freq.push(right_fft);

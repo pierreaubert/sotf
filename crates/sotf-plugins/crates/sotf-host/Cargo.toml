@@ -17,9 +17,16 @@ name = "qa-host"
 path = "bin/qa_host.rs"
 required-features = ["qa"]
 
+[[bin]]
+name = "sotf-external-plugin-worker"
+path = "bin/external_plugin_worker.rs"
+
 [features]
 default = []
 qa = ["dep:criterion"]
+external-plugin-clap = ["dep:libloading"]
+external-plugin-vst3 = ["dep:libloading"]
+external-plugin-au = ["dep:libloading"]
 
 [dependencies]
 gpui-design = { workspace = true }
@@ -36,11 +43,25 @@ rtrb = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 chrono = { workspace = true }
+libc = { workspace = true }
+memmap2 = { workspace = true }
 sofa-reader = { workspace = true }
 rayon = { workspace = true }
 rubato = { workspace = true }
 audioadapter-buffers = { workspace = true }
 criterion = { workspace = true, optional = true }
+libloading = { version = "0.8", optional = true }
 
 [dev-dependencies]
 insta = { workspace = true }
+tempfile = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }

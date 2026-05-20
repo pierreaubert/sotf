@@ -75,6 +75,82 @@ pub enum PlaybackState {
     Paused,
 }
 
+/// Lifecycle event reported for an isolated external plugin worker.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IsolatedExternalPluginWorkerEvent {
+    /// Worker process is already running.
+    AlreadyRunning,
+    /// Worker process was started.
+    Started {
+        /// Worker process ID.
+        pid: u32,
+    },
+    /// Worker process has exited.
+    Exited {
+        /// Exit code if available.
+        exit_code: Option<i32>,
+    },
+    /// Worker is not running.
+    NotRunning,
+}
+
+/// Reported worker sandbox status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum IsolatedExternalPluginSandboxStatus {
+    #[default]
+    Unknown,
+    Disabled,
+    Enforced,
+    Unsupported,
+}
+
+/// Reported sandbox backend for a worker process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum IsolatedExternalPluginSandboxBackend {
+    #[default]
+    Unknown,
+    LinuxLandlock,
+    MacosProcessIsolation,
+    WindowsProcessIsolation,
+}
+
+/// Snapshot of a single isolated external plugin worker status.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IsolatedExternalPluginWorkerStatus {
+    /// Index of the plugin in the chain.
+    pub plugin_index: usize,
+    /// Host node id for the plugin.
+    pub node_id: usize,
+    /// Latest lifecycle event reported by the worker supervisor.
+    pub event: Option<IsolatedExternalPluginWorkerEvent>,
+    /// Last error while polling/ensuring worker state.
+    pub error: Option<String>,
+    /// Number of successful worker starts.
+    pub worker_start_count: u64,
+    /// Number of observed worker exits.
+    pub worker_exit_count: u64,
+    /// Number of launch failures.
+    pub worker_launch_failure_count: u64,
+    /// Number of block timeouts from the shared-memory proxy.
+    pub block_timeout_count: u64,
+    /// Number of worker failures while processing blocks.
+    pub block_worker_failure_count: u64,
+    /// Number of wrong-sequence block responses from the worker.
+    pub block_wrong_sequence_count: u64,
+    /// Runtime sandbox status observed by the worker.
+    #[serde(default)]
+    pub sandbox_status: IsolatedExternalPluginSandboxStatus,
+    /// Runtime sandbox backend observed by the worker.
+    #[serde(default)]
+    pub sandbox_backend: IsolatedExternalPluginSandboxBackend,
+    /// Optional reason text when sandboxing is unavailable/disabled/failed.
+    #[serde(default)]
+    pub sandbox_reason: Option<String>,
+}
+
 /// Complete audio engine state
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AudioEngineState {
@@ -106,6 +182,9 @@ pub struct AudioEngineState {
     pub last_error: Option<String>,
     /// Seek in progress flag
     pub seeking: bool,
+    /// Snapshot of isolated external plugin worker status.
+    #[serde(default)]
+    pub isolated_external_plugin_worker_statuses: Vec<IsolatedExternalPluginWorkerStatus>,
 }
 
 impl Default for AudioEngineState {
@@ -125,6 +204,7 @@ impl Default for AudioEngineState {
             plugin_latency_samples: 0,
             last_error: None,
             seeking: false,
+            isolated_external_plugin_worker_statuses: Vec::new(),
         }
     }
 }

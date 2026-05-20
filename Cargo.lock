@@ -10402,9 +10402,12 @@ dependencies = [
  "criterion",
  "gpui-design",
  "insta",
+ "libc",
+ "libloading",
  "log",
  "math-dsp",
  "math-iir-fir",
+ "memmap2",
  "rand 0.9.4",
  "rayon",
  "realfft",
@@ -10414,7 +10417,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sofa-reader",
+ "tempfile",
  "thiserror 2.0.18",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

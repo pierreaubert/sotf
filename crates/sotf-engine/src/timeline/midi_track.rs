@@ -176,10 +176,7 @@ impl MidiTrack {
         }
         self.instrument_buf[..total_samples].fill(0.0);
 
-        let context = ProcessContext {
-            sample_rate,
-            num_frames,
-        };
+        let context = ProcessContext::new(sample_rate, num_frames);
         let frames = self.instrument.process_events(
             &self.event_buf,
             &mut self.instrument_buf[..total_samples],
@@ -358,10 +355,7 @@ mod tests {
     #[test]
     fn test_synth_silent_without_notes() {
         let mut synth = TestSynth::new(1, 48000);
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 256,
-        };
+        let ctx = ProcessContext::new(48000, 256);
         let mut output = vec![0.0f32; 256];
         synth.process_events(&[], &mut output, &ctx).unwrap();
         for &s in &output {
@@ -380,10 +374,7 @@ mod tests {
                 velocity: 127,
             },
         }];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 256,
-        };
+        let ctx = ProcessContext::new(48000, 256);
         let mut output = vec![0.0f32; 256];
         synth.process_events(&events, &mut output, &ctx).unwrap();
 

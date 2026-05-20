@@ -597,10 +597,7 @@ impl DecoderState {
                             self.resample_output_buffer.resize(output_len, 0.0);
                         }
 
-                        let context = ProcessContext {
-                            sample_rate: source_sample_rate,
-                            num_frames: frame_size,
-                        };
+                        let context = ProcessContext::new(source_sample_rate, frame_size);
 
                         let r_start = Instant::now();
                         let actual_output_frames = resampler
@@ -757,10 +754,7 @@ impl DecoderState {
                             self.resample_output_buffer.resize(output_len, 0.0);
                         }
 
-                        let context = ProcessContext {
-                            sample_rate: source_sample_rate,
-                            num_frames: frame_size,
-                        };
+                        let context = ProcessContext::new(source_sample_rate, frame_size);
 
                         match resampler.process(
                             &self.chunk_buffer[..padded_len],
@@ -1061,10 +1055,7 @@ impl DecoderState {
                     self.resample_output_buffer.resize(output_len, 0.0);
                 }
 
-                let context = ProcessContext {
-                    sample_rate: hal_sample_rate,
-                    num_frames: frame_size,
-                };
+                let context = ProcessContext::new(hal_sample_rate, frame_size);
 
                 // Process resampling
                 let actual_output_frames = resampler
