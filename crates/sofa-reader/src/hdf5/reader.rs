@@ -309,8 +309,7 @@ fn parse_fill_value_non_zero(data: &[u8], msg_type: u8) -> bool {
                     if fill_defined == 0 || data.len() < 8 {
                         return false;
                     }
-                    let size =
-                        u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize;
+                    let size = u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize;
                     if size == 0 || data.len() < 8 + size {
                         return false;
                     }
@@ -328,8 +327,7 @@ fn parse_fill_value_non_zero(data: &[u8], msg_type: u8) -> bool {
                     if data.len() < 6 {
                         return false;
                     }
-                    let size =
-                        u32::from_le_bytes([data[2], data[3], data[4], data[5]]) as usize;
+                    let size = u32::from_le_bytes([data[2], data[3], data[4], data[5]]) as usize;
                     if size == 0 || data.len() < 6 + size {
                         return false;
                     }
@@ -2102,9 +2100,7 @@ impl Hdf5File {
                 let cont_addr = mc.offset()?;
                 let cont_len = mc.length()?;
                 if cont_addr != UNDEF_ADDR {
-                    self.parse_dataset_oh_v1_continuation(
-                        cont_addr, cont_len, ds, attrs, filters,
-                    )?;
+                    self.parse_dataset_oh_v1_continuation(cont_addr, cont_len, ds, attrs, filters)?;
                 }
             } else {
                 self.apply_dataset_msg(msg_type, msg_data, ds, attrs, filters, false)?;
@@ -2441,10 +2437,7 @@ impl Hdf5File {
         let bo = ds.byte_order;
 
         match ds.dtype {
-            DType::Float32 => Ok(raw
-                .chunks_exact(4)
-                .map(|c| read_f32_bytes(c, bo))
-                .collect()),
+            DType::Float32 => Ok(raw.chunks_exact(4).map(|c| read_f32_bytes(c, bo)).collect()),
             DType::Float64 => Ok(raw
                 .chunks_exact(8)
                 .map(|c| read_f64_bytes(c, bo) as f32)
@@ -2467,10 +2460,7 @@ impl Hdf5File {
                 .chunks_exact(4)
                 .map(|c| read_f32_bytes(c, bo) as f64)
                 .collect()),
-            DType::Float64 => Ok(raw
-                .chunks_exact(8)
-                .map(|c| read_f64_bytes(c, bo))
-                .collect()),
+            DType::Float64 => Ok(raw.chunks_exact(8).map(|c| read_f64_bytes(c, bo)).collect()),
             _ => Err(SofaError::TypeMismatch {
                 expected: "f64".into(),
                 got: ds.dtype.to_string(),

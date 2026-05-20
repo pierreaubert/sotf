@@ -2338,17 +2338,13 @@ fn main() {
     // Log to file when possible, but fall back to stderr if the current
     // directory is read-only (e.g. running from `/` or as a systemd unit).
     // Users can override the log path with the SOTF_CLI_LOG env var.
-    let log_path = std::env::var("SOTF_CLI_LOG")
-        .unwrap_or_else(|_| "sotf_cli_player.log".to_string());
+    let log_path =
+        std::env::var("SOTF_CLI_LOG").unwrap_or_else(|_| "sotf_cli_player.log".to_string());
     let mut builder = env_logger::Builder::from_default_env();
     builder
         .filter_level(log::LevelFilter::Debug)
         .filter_module("symphonia_core", log::LevelFilter::Debug);
-    match OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    {
+    match OpenOptions::new().create(true).append(true).open(&log_path) {
         Ok(log_file) => {
             builder.target(env_logger::Target::Pipe(Box::new(log_file)));
         }
@@ -2412,8 +2408,7 @@ fn main() {
             plugins,
         } => {
             if _buffer_chunks.is_some() {
-                let msg =
-                    "Warning: --buffer-chunks is deprecated and currently has no effect.";
+                let msg = "Warning: --buffer-chunks is deprecated and currently has no effect.";
                 log::warn!("{}", msg);
                 eprintln!("{}", msg);
             }
@@ -3153,8 +3148,7 @@ fn build_rack_mode_plugins(
                             playback_volume_db: 0.0,
                         };
                     }
-                    let msg =
-                        "Note: `loudness` rack item used without --loudness-compensation; \
+                    let msg = "Note: `loudness` rack item used without --loudness-compensation; \
                          applying 0 dB shelves (no-op).";
                     log::warn!("{}", msg);
                     eprintln!("{}", msg);
@@ -3461,10 +3455,7 @@ fn build_rack_mode_plugins(
                     .as_ref()
                     .ok_or("Convolution requires --convolution-ir-file to be specified")?;
                 if !ir_path.exists() {
-                    return Err(format!(
-                        "Convolution IR file not found: {:?}",
-                        ir_path
-                    ));
+                    return Err(format!("Convolution IR file not found: {:?}", ir_path));
                 }
                 let idx = chain.add_plugin(&PluginType::Convolution);
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
@@ -3683,8 +3674,7 @@ fn build_rack_mode_plugins(
     // was used; now it behaves the same as in traditional mode (see
     // `build_traditional_mode_plugins` for the original implementation).
     if let Some(mapping_str) = hwaudio_play {
-        let (input_channel_map, output_channel_map, matrix) =
-            parse_channel_mapping(mapping_str)?;
+        let (input_channel_map, output_channel_map, matrix) = parse_channel_mapping(mapping_str)?;
 
         if input_channel_map.len() != output_channels {
             return Err(format!(

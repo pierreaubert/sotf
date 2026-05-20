@@ -1,4 +1,4 @@
-# player-midi
+# sotf-midi (lib: `sotf_audio_player_midi`)
 
 MIDI device management and control for SOTF audio players with pre-configured profiles for professional audio hardware.
 
@@ -17,7 +17,7 @@ MIDI device management and control for SOTF audio players with pre-configured pr
 
 #### RME UFX+ / TotalMix FX
 - **Full fader control**: 192 faders across 3 rows (Input/Playback/Output)
-- **CC-based control**: CC 102-117 for 16 faders per bank
+- **CC-based control**: CC 102–117 for 16 faders per bank
 - **Mackie Control Protocol**: Mute, solo, pan controls
 - **Snapshot recall**: Program change messages
 - **Main output volume**: Standard CC 7
@@ -37,7 +37,7 @@ MIDI device management and control for SOTF audio players with pre-configured pr
 - **52 physical controls** across 3 layers
 - **12 rotary pots**: Analog potentiometers
 - **6 endless encoders**: With push switches
-- **4 linear faders**: 0-127 range
+- **4 linear faders**: 0–127 range
 - **30 backlit buttons**: RGB LED feedback
 - **Fixed CC assignments**: Hardware-defined mapping
 
@@ -173,18 +173,18 @@ manager.connect_input(0, move |msg| {
 ### RME TotalMix FX Implementation
 
 **Matrix Layout:**
-- **Input Row**: MIDI channels 1-4 (banks 0-3), up to 64 faders
-- **Playback Row**: MIDI channels 5-8 (banks 0-3), up to 64 faders
-- **Output Row**: MIDI channels 9-12 (banks 0-3), up to 64 faders
+- **Input Row**: MIDI channels 1–4 (banks 0–3), up to 64 faders
+- **Playback Row**: MIDI channels 5–8 (banks 0–3), up to 64 faders
+- **Output Row**: MIDI channels 9–12 (banks 0–3), up to 64 faders
 
 **CC Assignments:**
-- **Faders**: CC 102-117 (16 faders per bank)
+- **Faders**: CC 102–117 (16 faders per bank)
 - **Main Volume**: CC 7 on channel 1
 
 **Mackie Control Protocol:**
-- **Mute**: Notes 16-23 (channels 0-7)
-- **Solo**: Notes 8-15 (channels 0-7)
-- **Pan**: CC 16-23 (channels 0-7)
+- **Mute**: Notes 16–23 (channels 0–7)
+- **Solo**: Notes 8–15 (channels 0–7)
+- **Pan**: CC 16–23 (channels 0–7)
 
 ### Genelec GLM Configuration
 
@@ -213,30 +213,30 @@ manager.connect_input(0, move |msg| {
 ### Xone K2/K3 Layout
 
 **Layer 1 CC Assignments:**
-- **Rotary Pots**: CC 0-11 (top to bottom, left to right)
-- **Encoders**: CC 12-17
-- **Faders**: CC 44-47
+- **Rotary Pots**: CC 0–11 (top to bottom, left to right)
+- **Encoders**: CC 12–17
+- **Faders**: CC 44–47
 
 **Button Note Assignments:**
-- **Track Focus**: Notes 24-31 (top row)
-- **Track Control**: Notes 32-39 (bottom row)
-- **Function Buttons**: Notes 40-43
-- **Encoder Switches**: Notes 48-53
+- **Track Focus**: Notes 24–31 (top row)
+- **Track Control**: Notes 32–39 (bottom row)
+- **Function Buttons**: Notes 40–43
+- **Encoder Switches**: Notes 48–53
 
 **Important:** CC numbers are **FIXED** in hardware. You can only change MIDI channel.
 
 ### Launch Control XL Templates
 
 **Factory Template 1 (Ableton Live):**
-- **Top Row Knobs**: CC 13-20
-- **Middle Row Knobs**: CC 29-36
-- **Bottom Row Knobs**: CC 49-56
-- **Faders**: CC 77-84
+- **Top Row Knobs**: CC 13–20
+- **Middle Row Knobs**: CC 29–36
+- **Bottom Row Knobs**: CC 49–56
+- **Faders**: CC 77–84
 
 **Button Layout:**
-- **Track Focus**: Notes 41-44, 57-60
-- **Track Control**: Notes 73-76, 89-92
-- **Function Buttons**: Notes 105-108
+- **Track Focus**: Notes 41–44, 57–60
+- **Track Control**: Notes 73–76, 89–92
+- **Function Buttons**: Notes 105–108
 
 **LED Control:**
 Use SysEx messages for RGB LED feedback:
@@ -266,59 +266,6 @@ cargo run --example glm_control          # Interactive GLM control
 cargo run --example studio_integration   # Full studio setup demo
 ```
 
-## Advanced Usage
-
-### Device Profiles with Custom Mappings
-
-```rust
-use sotf_audio_player_midi::{DeviceConfig, DeviceProfile, MidiConfig, MidiManager};
-
-let mut profile = DeviceProfile::new("My Setup".to_string());
-profile.device_config = DeviceConfig::new()
-    .with_manufacturer("RME".to_string())
-    .with_model("UFX+".to_string())
-    .with_channel(0);
-
-// Add control mappings
-profile.add_mapping(7, "main_volume".to_string());
-profile.add_mapping(102, "channel_1".to_string());
-
-// Add initialization sequence
-profile.add_init_message(vec![0xB0, 0x00, 0x00]);
-
-// Save configuration
-let mut config = MidiConfig::default();
-config.add_profile("studio".to_string(), profile);
-config.save("studio_config.json")?;
-```
-
-### Multi-Device Integration
-
-```rust
-use sotf_audio_player_midi::MidiManager;
-use std::sync::{Arc, Mutex};
-
-let mut manager = MidiManager::new()?;
-
-// Connect to TotalMix
-manager.connect_output(0)?;
-let totalmix = TotalMixControl::new(&mut manager)?;
-
-// Connect to GLM
-manager.connect_output(1)?;
-let glm = GLMControl::new(&mut manager);
-
-// Use control surface to control both
-let volume = Arc::new(Mutex::new(100u8));
-manager.connect_input(2, move |msg| {
-    // Map K2 encoder to GLM volume
-    if let Some((K2Control::Encoder(0), value)) = XoneK2Profile::identify_control(&msg) {
-        *volume.lock().unwrap() = value;
-        // Send to GLM via separate manager instance
-    }
-})?;
-```
-
 ## Architecture
 
 ### Module Structure
@@ -343,10 +290,10 @@ The `MidiManager` uses thread-safe primitives:
 
 ## Dependencies
 
-- `midir`: Cross-platform MIDI I/O
+- `midir`: Cross-platform MIDI I/O (not available on tvOS)
 - `serde`/`serde_json`: Configuration serialization
 - `parking_lot`: Thread-safe data structures
-- `dirs`: Platform-specific configuration directories
+- `directories`: Platform-specific configuration directories
 - `chrono`: Timestamps for examples
 
 ## MIDI Message Types
@@ -363,4 +310,4 @@ Supports all standard MIDI message types:
 
 ## License
 
-GPL-3.0-or-later
+See the root workspace `LICENSE` file.

@@ -79,9 +79,9 @@ pub fn bandpass(
 
     // Build a HP + LP cascade and convert to second-order sections
     // suitable for `filtfilt`.
-    let mut sections = filtfilt::peq_to_coefficients(&math_audio_iir_fir::peq_butterworth_highpass(
-        order, f_low, sample_rate,
-    ));
+    let mut sections = filtfilt::peq_to_coefficients(
+        &math_audio_iir_fir::peq_butterworth_highpass(order, f_low, sample_rate),
+    );
     sections.extend(filtfilt::peq_to_coefficients(
         &math_audio_iir_fir::peq_butterworth_lowpass(order, f_high, sample_rate),
     ));
@@ -137,10 +137,7 @@ pub fn analyze_iso3382_octaves(rir: &[f32], sample_rate: f64) -> Vec<(f64, Iso33
 }
 
 /// Convenience: ISO third-octave-band analysis (100 Hz … 10 kHz).
-pub fn analyze_iso3382_third_octaves(
-    rir: &[f32],
-    sample_rate: f64,
-) -> Vec<(f64, Iso3382Metrics)> {
+pub fn analyze_iso3382_third_octaves(rir: &[f32], sample_rate: f64) -> Vec<(f64, Iso3382Metrics)> {
     analyze_iso3382_bands(
         rir,
         sample_rate,

@@ -2,7 +2,7 @@
 
 TLS infrastructure for SOTF — self-signed certs, TOFU trust store, server/client helpers.
 
-## What It Does
+## Overview
 
 Provides zero-configuration TLS encryption for SOTF's peer-to-peer networking. Uses a Trust-On-First-Use (TOFU) model — like SSH — so devices automatically establish encrypted connections without requiring a certificate authority.
 
@@ -46,12 +46,21 @@ src/
 └── server.rs      # TLS server config builders
 ```
 
+## Dependencies
+
+- `rustls` — TLS implementation
+- `tokio-rustls` — Async TLS
+- `rcgen` — Certificate generation
+- `sha2` — Fingerprint hashing
+- `serde` / `toml` — Trust store serialization
+
 ## Testing
 
 ```bash
 cargo test -p sotf-tls
+cargo check -p sotf-tls && cargo clippy -p sotf-tls
 ```
 
 ## License
 
-Part of the SOTF (Sound of the Future) project.
+See the root workspace `LICENSE` file.

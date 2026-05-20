@@ -87,13 +87,8 @@ fn run_post_eq(
     progress: Option<WorkflowProgressCallback>,
 ) -> Result<(Vec<Biquad>, f64)> {
     let result = if let Some(WorkflowProgressCallback { callback, stopped }) = progress {
-        let res = eq::optimize_channel_eq_with_callback(
-            curve,
-            opt_config,
-            target,
-            sample_rate,
-            callback,
-        );
+        let res =
+            eq::optimize_channel_eq_with_callback(curve, opt_config, target, sample_rate, callback);
         workflow_progress_stopped(&Some(stopped), "Post-EQ")?;
         res
     } else {
@@ -2559,8 +2554,7 @@ fn optimize_home_cinema_with_sub(
     for (role_index, role) in main_roles.iter().enumerate() {
         // Heartbeat so the UI doesn't appear frozen during the
         // potentially long DE pass for each main's Post-EQ.
-        let role_progress_base = 0.91
-            + (role_index as f64 / total_post_eq_passes as f64) * 0.03;
+        let role_progress_base = 0.91 + (role_index as f64 / total_post_eq_passes as f64) * 0.03;
         workflow_stage_event(
             stage_callback,
             PipelineStepId::TopologyWorkflowExecution,

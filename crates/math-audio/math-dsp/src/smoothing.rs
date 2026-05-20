@@ -213,7 +213,8 @@ impl LogSmoother {
             return self.current;
         }
 
-        self.current *= self.ratio.powi(n as i32);
+        let new_log = self.current.ln() + self.ratio.ln() * n as f32;
+        self.current = new_log.exp().clamp(1e-7, 1e6);
 
         // Check if we passed the target
         if (self.ratio > 1.0 && self.current >= self.target)
@@ -290,6 +291,22 @@ mod tests {
         }
         assert!((s.advance() - 1000.0).abs() < 1e-4);
         assert!((s.advance() - 1000.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_log_smoother_large_block_stays_finite() {
+        let mut s = LogSmoother::new(1e-7, 20.0, 48000);
+        s.set_target(1e6);
+
+        let value = s.next_n(4096);
+        assert!(
+            value.is_finite(),
+            "large-block log smoothing must not overflow to inf"
+        );
+        assert!(
+            value <= 1e6,
+            "large-block log smoothing should clamp at target range, got {value}"
+        );
     }
 
     #[test]

@@ -27,9 +27,9 @@ impl AudioFrame {
     /// audio in release builds, so we assert unconditionally (not just under
     /// debug_assertions).
     pub fn new(data: Vec<f32>, num_frames: usize, num_channels: usize, sample_rate: u32) -> Self {
-        let expected = num_frames.checked_mul(num_channels).expect(
-            "AudioFrame::new: num_frames * num_channels overflowed usize",
-        );
+        let expected = num_frames
+            .checked_mul(num_channels)
+            .expect("AudioFrame::new: num_frames * num_channels overflowed usize");
         assert_eq!(
             data.len(),
             expected,

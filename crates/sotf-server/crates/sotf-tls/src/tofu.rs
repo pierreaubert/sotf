@@ -143,17 +143,13 @@ impl TofuStore {
             f.sync_all()
                 .map_err(|e| format!("sync known_hosts tmp: {e}"))?;
         }
-        std::fs::rename(&tmp_path, &self.path)
-            .map_err(|e| format!("rename known_hosts: {e}"))?;
+        std::fs::rename(&tmp_path, &self.path).map_err(|e| format!("rename known_hosts: {e}"))?;
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             // Re-assert 0600 in case rename inherited different mode.
-            let _ = std::fs::set_permissions(
-                &self.path,
-                std::fs::Permissions::from_mode(0o600),
-            );
+            let _ = std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o600));
         }
         Ok(())
     }

@@ -7822,6 +7822,7 @@ name = "plugins-denoiser"
 version = "0.5.5"
 dependencies = [
  "nnnoiseless",
+ "rayon",
 ]
 
 [[package]]

@@ -145,7 +145,11 @@ fn theme_config_for(id: ThemeId) -> ThemeConfig {
 }
 
 fn theme_configs() -> Vec<ThemeConfig> {
-    ThemeId::all().iter().copied().map(theme_config_for).collect()
+    ThemeId::all()
+        .iter()
+        .copied()
+        .map(theme_config_for)
+        .collect()
 }
 
 fn generate_theme_file(tokens: &Value, config: &ThemeConfig) -> Result<String> {
@@ -723,8 +727,7 @@ mod tests {
         assert_eq!(cfg.fn_name, "onyx");
         assert_eq!(cfg.file_name, "onyx.rs");
 
-        let generated =
-            generate_theme_file(&tokens, &cfg).expect("Onyx must round-trip on import");
+        let generated = generate_theme_file(&tokens, &cfg).expect("Onyx must round-trip on import");
         assert!(
             generated.contains("pub fn onyx() -> Self"),
             "generated Onyx file must declare `pub fn onyx`"

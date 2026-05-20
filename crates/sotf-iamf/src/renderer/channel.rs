@@ -34,20 +34,16 @@ fn iamf_channel_labels(layout: IamfChannelLayout) -> &'static [&'static str] {
         // IAMF 5.1 order: L, R, Ls, Rs, C, LFE
         IamfChannelLayout::Layout5_1 => &["L", "R", "Ls", "Rs", "C", "LFE"],
         // IAMF 5.1.2 order: L, R, Ls, Rs, C, LFE, Ltf, Rtf
-        IamfChannelLayout::Layout5_1_2 => {
-            &["L", "R", "Ls", "Rs", "C", "LFE", "Ltf", "Rtf"]
-        }
+        IamfChannelLayout::Layout5_1_2 => &["L", "R", "Ls", "Rs", "C", "LFE", "Ltf", "Rtf"],
         // IAMF 5.1.4 order: L, R, Ls, Rs, C, LFE, Ltf, Rtf, Ltb, Rtb
         IamfChannelLayout::Layout5_1_4 => {
             &["L", "R", "Ls", "Rs", "C", "LFE", "Ltf", "Rtf", "Ltb", "Rtb"]
         }
         // IAMF 7.1 order: L, R, Lss, Rss, Lrs, Rrs, C, LFE
-        IamfChannelLayout::Layout7_1 => {
-            &["L", "R", "Lss", "Rss", "Lrs", "Rrs", "C", "LFE"]
-        }
-        IamfChannelLayout::Layout7_1_2 => {
-            &["L", "R", "Lss", "Rss", "Lrs", "Rrs", "C", "LFE", "Ltf", "Rtf"]
-        }
+        IamfChannelLayout::Layout7_1 => &["L", "R", "Lss", "Rss", "Lrs", "Rrs", "C", "LFE"],
+        IamfChannelLayout::Layout7_1_2 => &[
+            "L", "R", "Lss", "Rss", "Lrs", "Rrs", "C", "LFE", "Ltf", "Rtf",
+        ],
         IamfChannelLayout::Layout7_1_4 => &[
             "L", "R", "Lss", "Rss", "Lrs", "Rrs", "C", "LFE", "Ltf", "Rtf", "Ltb", "Rtb",
         ],

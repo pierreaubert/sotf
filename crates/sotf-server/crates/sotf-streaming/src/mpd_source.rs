@@ -170,7 +170,10 @@ fn prepare_mpd_playback(parsed: &MpdStreamUrl) -> Result<(), String> {
 
     // Clear queue, add track, play
     send_mpd(&mut reader, "clear")?;
-    send_mpd(&mut reader, &format!("add {}", mpd_quote(&parsed.file_path)))?;
+    send_mpd(
+        &mut reader,
+        &format!("add {}", mpd_quote(&parsed.file_path)),
+    )?;
     send_mpd(&mut reader, "play")?;
 
     Ok(())
