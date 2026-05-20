@@ -69,13 +69,13 @@ pub struct AaePlugin {
     lfe_filter_state: f32,
     lfe_filter_coeff: f32,
 
-    // Per-tap VBAP gains for early reflections (pre-computed)
-    // er_gains[tap_index][speaker_index]
-    er_gains: Vec<Vec<f32>>,
+    // Per-tap VBAP gains for early reflections (flattened row-major):
+    // [tap_index * out_ch + speaker_index]
+    er_gains: Vec<f32>,
 
-    // FDN output → speaker routing (pre-computed)
-    // fdn_gains[fdn_line][speaker_index]
-    fdn_gains: Vec<Vec<f32>>,
+    // FDN output → speaker routing (flattened row-major):
+    // [fdn_line * out_ch + speaker_index]
+    fdn_gains: Vec<f32>,
 
     // Direct signal panning gains (stereo L/R to front speakers)
     direct_gains_l: Vec<f32>,
@@ -203,8 +203,8 @@ impl AaePlugin {
             ),
             lfe_filter_state: 0.0,
             lfe_filter_coeff: compute_lp_coeff(LFE_CROSSOVER_HZ, sr as f32),
-            er_gains: vec![vec![0.0; num_output_channels]; early_reflections::MAX_TAPS],
-            fdn_gains: vec![vec![0.0; num_output_channels]; FDN_SIZE],
+            er_gains: vec![0.0; early_reflections::MAX_TAPS * num_output_channels],
+            fdn_gains: vec![0.0; FDN_SIZE * num_output_channels],
             direct_gains_l: vec![0.0; num_output_channels],
             direct_gains_r: vec![0.0; num_output_channels],
             er_tap_buffer: vec![0.0; early_reflections::MAX_TAPS],
@@ -287,7 +287,7 @@ impl AaePlugin {
             normalize_gains_l2(row);
         }
         er.resize(early_reflections::MAX_TAPS, vec![0.0; n_ch]);
-        self.er_gains = er;
+        self.er_gains = er.into_iter().flat_map(|row| row.into_iter()).collect();
 
         // FDN outputs: distributed across speakers with envelopment bias.
         // Lines 0-2: more front, lines 3-7: more surround/rear. Line 7 is overhead.
@@ -325,7 +325,7 @@ impl AaePlugin {
             }
             normalize_gains_l2(row);
         }
-        self.fdn_gains = fdn;
+        self.fdn_gains = fdn.into_iter().flat_map(|row| row.into_iter()).collect();
     }
 
     fn update_cached_parameter(&mut self, id: &ParameterId, value: &ParameterValue) {
@@ -838,12 +838,14 @@ impl Plugin for AaePlugin {
         // Bypass: copy L/R to front L/R, silence rest
         if self.params.bypass {
             for frame in 0..num_frames {
-                let l = input[frame * in_ch];
-                let r = input[frame * in_ch + 1];
+                let in_base = frame * in_ch;
+                let out_base = frame * out_ch;
+                let l = input[in_base];
+                let r = input[in_base + 1];
                 // Find front left and front right channels
                 if out_ch >= 2 {
-                    output[frame * out_ch] = l;
-                    output[frame * out_ch + 1] = r;
+                    output[out_base] = l;
+                    output[out_base + 1] = r;
                 }
             }
             return Ok(num_frames);
@@ -873,8 +875,10 @@ impl Plugin for AaePlugin {
             .find(|s| s.is_lfe)
             .map(|s| s.channel);
         for frame in 0..num_frames {
-            let l = input[frame * in_ch];
-            let r = input[frame * in_ch + 1];
+            let in_base = frame * in_ch;
+            let out_base = frame * out_ch;
+            let l = input[in_base];
+            let r = input[in_base + 1];
             let wet_duck = self.dialogue_duck_for_frame(l, r);
 
             // ── Direct path: pan stereo to front speakers ────────────
@@ -885,7 +889,7 @@ impl Plugin for AaePlugin {
                     .zip(self.direct_gains_r.iter())
                     .enumerate()
                 {
-                    output[frame * out_ch + ch_idx] += dry_gain * (l * gl + r * gr);
+                    output[out_base + ch_idx] += dry_gain * (l * gl + r * gr);
                 }
             }
 
@@ -914,26 +918,26 @@ impl Plugin for AaePlugin {
                 self.early_reflections
                     .process(diffused, &mut self.er_tap_buffer);
 
-                // `er_gains` has MAX_TAPS rows, `tap_idx` is bounded by
-                // `num_er_taps ≤ MAX_TAPS`, so the bounds check is impossible at
-                // runtime — replaced with a debug assertion.
+                // `er_gains` has MAX_TAPS * out_ch entries and `tap_idx` is bounded
+                // by `num_er_taps ≤ MAX_TAPS`.
                 debug_assert!(
-                    self.er_gains.len() >= num_er_taps,
-                    "er_gains.len()={} < num_er_taps={num_er_taps}",
+                    self.er_gains.len() == early_reflections::MAX_TAPS * out_ch,
+                    "er_gains size mismatch: {}",
                     self.er_gains.len()
                 );
                 for (tap_idx, &tap_val) in self.er_tap_buffer[..num_er_taps].iter().enumerate() {
                     if tap_val.abs() < 1e-10 {
                         continue;
                     }
-                    let gains = &self.er_gains[tap_idx];
+                    let row_start = tap_idx * out_ch;
+                    let gains = &self.er_gains[row_start..row_start + out_ch];
                     let source_scaled = tap_val * er_gain;
                     let scaled = source_scaled * wet_duck;
                     lfe_wet_sum += source_scaled;
                     lfe_wet_energy += source_scaled * source_scaled;
                     lfe_wet_sources += 1;
                     for (ch_idx, &g) in gains.iter().enumerate() {
-                        output[frame * out_ch + ch_idx] += scaled * g;
+                        output[out_base + ch_idx] += scaled * g;
                     }
                 }
             }
@@ -952,21 +956,22 @@ impl Plugin for AaePlugin {
                 // so `line_idx >= fdn_gains.len()` is impossible at runtime.
                 debug_assert_eq!(
                     self.fdn_gains.len(),
-                    FDN_SIZE,
+                    FDN_SIZE * out_ch,
                     "fdn_gains must have FDN_SIZE rows"
                 );
                 for (line_idx, &line_val) in fdn_outputs.iter().enumerate() {
                     if line_val.abs() < 1e-10 {
                         continue;
                     }
-                    let gains = &self.fdn_gains[line_idx];
+                    let row_start = line_idx * out_ch;
+                    let gains = &self.fdn_gains[row_start..row_start + out_ch];
                     let source_scaled = line_val * late_gain;
                     let scaled = source_scaled * wet_duck;
                     lfe_wet_sum += source_scaled;
                     lfe_wet_energy += source_scaled * source_scaled;
                     lfe_wet_sources += 1;
                     for (ch_idx, &g) in gains.iter().enumerate() {
-                        output[frame * out_ch + ch_idx] += scaled * g;
+                        output[out_base + ch_idx] += scaled * g;
                     }
                 }
             }
@@ -980,7 +985,7 @@ impl Plugin for AaePlugin {
                 let lp_coeff = self.lfe_filter_coeff;
                 self.lfe_filter_state =
                     lp_coeff * self.lfe_filter_state + (1.0 - lp_coeff) * lfe_source;
-                output[frame * out_ch + lfe_idx] += self.lfe_filter_state * lfe_gain * wet_duck;
+                output[out_base + lfe_idx] += self.lfe_filter_state * lfe_gain * wet_duck;
             }
         }
 
@@ -1016,28 +1021,30 @@ fn smoothing_coeff_for_samples(time_ms: f32, sample_rate: f32, samples: usize) -
 
 /// Compute one-pole low-pass filter coefficient from cutoff frequency.
 fn compute_lp_coeff(cutoff_hz: f32, sample_rate: f32) -> f32 {
-    let w = (2.0 * std::f32::consts::PI * cutoff_hz / sample_rate).min(0.99);
-    (-w).exp()
+    debug_assert!(sample_rate > 0.0);
+    let nyquist = 0.5 * sample_rate;
+    let max_cutoff = nyquist * 0.25;
+    debug_assert!(
+        (0.0..=max_cutoff).contains(&cutoff_hz),
+        "cutoff_hz {cutoff_hz} is outside valid one-pole range (0..={max_cutoff}) for sample_rate {sample_rate}"
+    );
+
+    let cutoff_hz = cutoff_hz.clamp(1e-6, max_cutoff);
+    let w = std::f32::consts::PI * cutoff_hz / nyquist;
+    (1.0 - w.sin()) / w.cos()
 }
 
 fn ms_to_samples(time_ms: f32, sample_rate: u32) -> usize {
     (time_ms * 0.001 * sample_rate as f32).round().max(1.0) as usize
 }
 
-fn signed_rms(sum: f32, energy: f32, count: usize, polarity_hint: f32) -> f32 {
+fn signed_rms(_sum: f32, energy: f32, count: usize, _polarity_hint: f32) -> f32 {
     if count == 0 || energy <= 0.0 {
         return 0.0;
     }
 
     let rms = (energy / count as f32).sqrt();
-    let polarity = if sum.abs() > 1e-12 {
-        sum
-    } else if polarity_hint.abs() > 1e-12 {
-        polarity_hint
-    } else {
-        1.0
-    };
-    rms.copysign(polarity)
+    rms
 }
 
 #[cfg(test)]
@@ -1097,6 +1104,21 @@ mod tests {
 
         let max = output.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
         assert!(max < 1e-6, "Silence in should give silence out, max={max}");
+    }
+
+    #[test]
+    fn test_compute_lp_coeff_uses_bilinear_formula() {
+        let coeff = compute_lp_coeff(LFE_CROSSOVER_HZ, 48000.0);
+        let w = std::f32::consts::PI * LFE_CROSSOVER_HZ / (48000.0 * 0.5);
+        let expected = (1.0 - w.sin()) / w.cos();
+        assert!(
+            (coeff - expected).abs() < 1e-6,
+            "compute_lp_coeff should match documented bilinear form: got {coeff}, expected {expected}"
+        );
+        assert!(
+            (0.0..1.0).contains(&coeff),
+            "LFE coefficient should stay positive and < 1"
+        );
     }
 
     #[test]
@@ -1317,6 +1339,21 @@ mod tests {
 
         p.params.content_aware = false;
         assert_eq!(p.dialogue_duck_for_frame(0.5, 0.5), 1.0);
+    }
+
+    #[test]
+    fn test_signed_rms_keeps_energy_unsigned() {
+        // Sum can cancel to zero for symmetric content; polarity hints should not
+        // flip LFE polarity.
+        let sum = 0.0;
+        let count = 4;
+        let samples = [-1.0, 1.0, -1.0, 1.0];
+        let energy: f32 = samples.iter().map(|s| s * s).sum();
+        let got = signed_rms(sum, energy, count, -0.5);
+        assert!(
+            (got - 1.0).abs() < 1e-6,
+            "LFE extraction should be unsigned RMS-like for decorrelated decorrelation, got {got}"
+        );
     }
 
     #[test]
@@ -1586,8 +1623,8 @@ mod tests {
         let source = signed_rms(0.0, 2.0, 2, -0.5);
 
         assert!(
-            (source + 1.0).abs() < 1e-6,
-            "source-domain LFE energy should survive cancellation and use polarity hint, got {source}"
+            (source - 1.0).abs() < 1e-6,
+            "source-domain LFE energy should use unsigned RMS for decorrelated source energy, got {source}"
         );
     }
 
