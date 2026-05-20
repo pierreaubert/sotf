@@ -1075,7 +1075,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             if is_muted {
                 let off = b * stride;
                 self.band_buffers[off..off + stride].fill(0.0);
-                self.band_levels_db[b] = -100.0;
+                self.band_levels_db[b] = -120.0;
                 continue;
             }
 
@@ -1417,6 +1417,25 @@ mod tests {
         )
         .unwrap();
         assert!(buf.iter().all(|s| s.is_finite()));
+    }
+
+    #[test]
+    fn test_muted_band_meter_uses_silence_floor() {
+        let mut p = MultibandCompressorPlugin::new(2);
+        p.initialize(48000).unwrap();
+        p.band_params[0].solo = true;
+
+        let mut buf = vec![0.25f32; 256 * 2];
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 256,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(p.band_levels_db[1], -120.0);
     }
 
     /// Fix 2.4: lookahead_ms setter must clamp to [0, 10].
@@ -1769,7 +1788,8 @@ mod tests {
         for stub in &stubs {
             assert!(
                 !ids.contains(stub),
-                "Stub parameter '{}' must not appear in parameters()", stub
+                "Stub parameter '{}' must not appear in parameters()",
+                stub
             );
         }
     }
