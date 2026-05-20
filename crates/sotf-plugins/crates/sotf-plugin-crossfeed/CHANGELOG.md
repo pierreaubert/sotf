@@ -1,3 +1,26 @@
+# 0.5.4
+
+## Fixes
+
+- **Multiband feed gain cache** (`src/lib.rs`): Cached `mb_*_feed_db` as
+  linear gains plus the wet normalization factor, avoiding repeated `fast_pow10`
+  work in `process_mb`. Added `test_mb_feed_linear_cache_updates_on_parameter_change`.
+
+- **Multiband gain headroom** (`src/lib.rs`): Normalized the multiband wet
+  direct+crossfeed sum by the largest active feed amount so correlated mono
+  material no longer receives the large default `direct + crossfeed` boost when
+  auto-gain is disabled. Added `test_mb_mono_signal_is_headroom_normalized`.
+
+- **Fractional/high-rate ITD delay line** (`src/lib.rs`): Replaced the fixed
+  `[f32; 96]` integer-sample delay buffer with a dynamically sized `Vec<f32>`
+  and fractional linear interpolation. The advertised 1 ms delay range now
+  works at 96 kHz and 192 kHz, not just 48 kHz-ish rates. Added
+  `test_delay_line_supports_fractional_and_high_sample_rate_delay`.
+
+- **Filter update cleanup** (`src/lib.rs`): Removed duplicate Meier filter
+  recreation inside `update_filters`; the filters are still rebuilt once per
+  sample-rate/filter update.
+
 # 0.5.3
 
 ## Fixes (from code review 2026-05-11)
@@ -45,14 +68,10 @@
 
 ## Deferred (cross-crate or out of scope)
 
-- **Fractional delay interpolation** (review §1 major): Requires changing the `DelayLine`
-  struct interface. Deferred to a dedicated math-audio PR.
 - **`parameters()` Vec clone** (review §3 major): Requires `InPlacePlugin` trait API change
   across all 30+ plugin crates. Deferred.
 - **`Biquad<f64>` → `Biquad<f32>` for Bauer/Meier** (review §3 minor): Requires verifying
   no precision regression; deferred.
-- **`reset()` missing filter state** (review §4 advisory): `Biquad` has no `reset()`
-  method; fixing requires math-iir-fir changes. Deferred.
 - **SIMD interleave** (review §3 major): Located in `math-dsp/simd.rs`, out of scope here.
 - **`set_parameter` allocation** (review §3 minor): Architecture-level; deferred.
 

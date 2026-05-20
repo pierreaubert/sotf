@@ -211,24 +211,20 @@ impl CrossfeedPluginParams {
 // ITD Delay Line — simple fractional-sample delay for interaural time difference
 // ============================================================================
 
-/// A mono delay line supporting up to ~1ms of delay at any common sample rate.
-/// Max capacity: 48 samples (1ms at 48kHz).
+/// A mono delay line supporting fractional delays up to 1 ms at the active sample rate.
 struct DelayLine {
-    buffer: [f32; 96], // 2ms at 48kHz — headroom for high sample rates
+    buffer: Vec<f32>,
     write_pos: usize,
-    delay_samples: usize,
+    delay_samples: f32,
     capacity: usize,
 }
 
 impl DelayLine {
     fn new(delay_ms: f32, sample_rate: u32) -> Self {
-        let capacity = 96;
-        let delay_samples = ((delay_ms / 1000.0) * sample_rate as f32)
-            .round()
-            .max(0.0)
-            .min(capacity as f32 - 1.0) as usize;
+        let capacity = Self::capacity_for_sample_rate(sample_rate);
+        let delay_samples = Self::delay_samples(delay_ms, sample_rate, capacity);
         Self {
-            buffer: [0.0; 96],
+            buffer: vec![0.0; capacity],
             write_pos: 0,
             delay_samples,
             capacity,
@@ -236,25 +232,41 @@ impl DelayLine {
     }
 
     fn set_delay(&mut self, delay_ms: f32, sample_rate: u32) {
-        self.delay_samples = ((delay_ms / 1000.0) * sample_rate as f32)
-            .round()
-            .max(0.0)
-            .min(self.capacity as f32 - 1.0) as usize;
+        let capacity = Self::capacity_for_sample_rate(sample_rate);
+        if capacity != self.capacity {
+            self.buffer.resize(capacity, 0.0);
+            self.capacity = capacity;
+            self.write_pos %= self.capacity;
+        }
+        self.delay_samples = Self::delay_samples(delay_ms, sample_rate, self.capacity);
     }
 
     fn reset(&mut self) {
-        self.buffer = [0.0; 96];
+        self.buffer.fill(0.0);
         self.write_pos = 0;
+    }
+
+    fn capacity_for_sample_rate(sample_rate: u32) -> usize {
+        (sample_rate as f32 * 0.001).ceil() as usize + 2
+    }
+
+    fn delay_samples(delay_ms: f32, sample_rate: u32, capacity: usize) -> f32 {
+        ((delay_ms / 1000.0) * sample_rate as f32)
+            .max(0.0)
+            .min(capacity as f32 - 2.0)
     }
 
     #[inline]
     fn process(&mut self, sample: f32) -> f32 {
-        if self.delay_samples == 0 {
+        if self.delay_samples <= f32::EPSILON {
             return sample;
         }
         self.buffer[self.write_pos] = sample;
-        let read_pos = (self.write_pos + self.capacity - self.delay_samples) % self.capacity;
-        let out = self.buffer[read_pos];
+        let int_delay = self.delay_samples.floor() as usize;
+        let fract = self.delay_samples - int_delay as f32;
+        let read_pos_base = (self.write_pos + self.capacity - int_delay) % self.capacity;
+        let read_pos_next = (read_pos_base + self.capacity - 1) % self.capacity;
+        let out = self.buffer[read_pos_base] * (1.0 - fract) + self.buffer[read_pos_next] * fract;
         self.write_pos = (self.write_pos + 1) % self.capacity;
         out
     }
@@ -289,6 +301,8 @@ pub struct CrossfeedPlugin {
     // Multiband specific buffers (3 bands per channel)
     mb_bands_l: [Vec<f32>; 3],
     mb_bands_r: [Vec<f32>; 3],
+    mb_feed_linear: [f32; 3],
+    mb_wet_norm: f32,
 
     // Auto gain helper
     auto_gain: Option<sotf_host::auto_gain::AutoGain>,
@@ -392,6 +406,12 @@ impl CrossfeedPlugin {
             wet_r: vec![0.0; 4096],
             mb_bands_l: [vec![0.0; 4096], vec![0.0; 4096], vec![0.0; 4096]],
             mb_bands_r: [vec![0.0; 4096], vec![0.0; 4096], vec![0.0; 4096]],
+            mb_feed_linear: [
+                fast_pow10(params.mb_low_feed_db / 20.0),
+                fast_pow10(params.mb_mid_feed_db / 20.0),
+                fast_pow10(params.mb_high_feed_db / 20.0),
+            ],
+            mb_wet_norm: 1.0,
 
             auto_gain: None,
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
@@ -411,6 +431,7 @@ impl CrossfeedPlugin {
                 },
             )?);
         }
+        plugin.update_mb_feed_cache();
         plugin.rebuild_cached_parameters();
 
         Ok(plugin)
@@ -502,6 +523,19 @@ impl CrossfeedPlugin {
         );
     }
 
+    fn update_mb_feed_cache(&mut self) {
+        self.mb_feed_linear = [
+            fast_pow10(self.params.mb_low_feed_db / 20.0),
+            fast_pow10(self.params.mb_mid_feed_db / 20.0),
+            fast_pow10(self.params.mb_high_feed_db / 20.0),
+        ];
+        self.mb_wet_norm = 1.0
+            / (1.0
+                + self.mb_feed_linear[0]
+                    .max(self.mb_feed_linear[1])
+                    .max(self.mb_feed_linear[2]));
+    }
+
     fn update_filters(&mut self) {
         let sr = self.sample_rate as f64;
 
@@ -555,36 +589,6 @@ impl CrossfeedPlugin {
             self.sample_rate as f32,
             1,
         );
-
-        // Meier filters
-        self.meier_lpf_l = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Lowpass,
-            650.0,
-            sr,
-            0.707,
-            0.0,
-        );
-        self.meier_lpf_r = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Lowpass,
-            650.0,
-            sr,
-            0.707,
-            0.0,
-        );
-        self.meier_allpass_l = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::AllPass,
-            1000.0,
-            sr,
-            0.5,
-            0.0,
-        );
-        self.meier_allpass_r = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::AllPass,
-            1000.0,
-            sr,
-            0.5,
-            0.0,
-        );
     }
 
     #[inline(always)]
@@ -631,9 +635,8 @@ impl CrossfeedPlugin {
 
     #[inline(always)]
     fn process_mb(&mut self, nf: usize) {
-        let fl = fast_pow10(self.params.mb_low_feed_db / 20.0);
-        let fm = fast_pow10(self.params.mb_mid_feed_db / 20.0);
-        let fh = fast_pow10(self.params.mb_high_feed_db / 20.0);
+        let [fl, fm, fh] = self.mb_feed_linear;
+        let wet_norm = self.mb_wet_norm;
         let has_itd = self.params.itd_delay_ms > 0.0;
 
         // Resize band buffers if needed (normally pre-allocated in initialize())
@@ -699,9 +702,9 @@ impl CrossfeedPlugin {
                 cross_r = self.itd_delay_r.process(cross_r);
             }
 
-            // Mix crossfeed from opposite channel
-            self.wet_l[i] = (low_l + mid_l + high_l) + cross_r;
-            self.wet_r[i] = (low_r + mid_r + high_r) + cross_l;
+            // Mix crossfeed from opposite channel with headroom normalization.
+            self.wet_l[i] = ((low_l + mid_l + high_l) + cross_r) * wet_norm;
+            self.wet_r[i] = ((low_r + mid_r + high_r) + cross_l) * wet_norm;
         }
     }
 }
@@ -749,6 +752,7 @@ impl InPlacePlugin for CrossfeedPlugin {
             3 => self.mix_smoother.set_target(self.params.mix), // mix
             4 | 5 => self.update_filters(),                     // bauer_fcut_hz, bauer_feed_db
             7 | 8 => self.update_filters(), // mb_low_freq_hz, mb_mid_high_freq_hz
+            9..=11 => self.update_mb_feed_cache(),
             12 => {
                 // itd_delay_ms — delay lines are updated in process_in_place, not here.
             }
@@ -929,6 +933,32 @@ mod tests {
         )
         .unwrap();
         assert!(b[1].abs() > 0.0);
+    }
+
+    #[test]
+    fn test_mb_feed_linear_cache_updates_on_parameter_change() {
+        let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Mb);
+        params.mode = CrossfeedMode::Mb;
+        params.mb_low_feed_db = 0.0;
+        params.mb_mid_feed_db = 6.0;
+        params.mb_high_feed_db = 3.0;
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+
+        let before = p.mb_feed_linear;
+        p.set_parameter(
+            ParameterId::from("mb_mid_feed_db"),
+            ParameterValue::Float(0.0),
+        )
+        .unwrap();
+
+        assert_ne!(
+            before, p.mb_feed_linear,
+            "linear feed cache should change when feed dB changes"
+        );
+        assert!(
+            (p.mb_feed_linear[1] - 1.0).abs() < 1e-4,
+            "0 dB mid feed should cache as unity gain"
+        );
     }
 
     /// Regression: Bauer mode used a plain lowpass on the per-channel crossfeed path,
@@ -1144,6 +1174,38 @@ mod tests {
     }
 
     #[test]
+    fn test_mb_mono_signal_is_headroom_normalized() {
+        let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Mb);
+        params.mode = CrossfeedMode::Mb;
+        params.mix = 1.0;
+        params.autogain_enabled = false;
+
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+        p.initialize(48000).unwrap();
+
+        let n = 4096;
+        let mut buffer: Vec<f32> = (0..n).flat_map(|_| [0.5f32, 0.5f32]).collect();
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+
+        let tail_peak = buffer[(n / 2) * 2..]
+            .iter()
+            .copied()
+            .map(f32::abs)
+            .fold(0.0, f32::max);
+        assert!(
+            tail_peak <= 0.75,
+            "default multiband mono output should stay headroom-normalized, got peak {tail_peak}"
+        );
+    }
+
+    #[test]
     fn test_itd_delay() {
         let params = CrossfeedPluginParams {
             mode: CrossfeedMode::Bauer,
@@ -1203,6 +1265,27 @@ mod tests {
         .unwrap();
         // Should still work and produce crossfeed
         assert!(buffer[1].is_finite());
+    }
+
+    #[test]
+    fn test_delay_line_supports_fractional_and_high_sample_rate_delay() {
+        let mut delay = DelayLine::new(1.0, 192000);
+        assert!(
+            delay.capacity >= 194,
+            "1ms at 192kHz needs at least 192 samples plus interpolation headroom"
+        );
+
+        delay.set_delay(0.5, 48000);
+        assert!(
+            (delay.delay_samples - 24.0).abs() < 1e-5,
+            "0.5ms at 48kHz should be represented as 24 samples"
+        );
+
+        delay.set_delay(0.25, 44100);
+        assert!(
+            delay.delay_samples.fract() > 0.0,
+            "0.25ms at 44.1kHz should preserve a fractional delay"
+        );
     }
 
     #[test]
@@ -1571,8 +1654,17 @@ mod tests {
         p2.initialize(sr).unwrap();
 
         // Run p1 for one block to warm up filter state
-        let mut block1: Vec<f32> = (0..n).flat_map(|i| [(i as f32 * 0.01).sin(), 0.0f32]).collect();
-        p1.process_in_place(&mut block1, &ProcessContext { sample_rate: sr, num_frames: n }).unwrap();
+        let mut block1: Vec<f32> = (0..n)
+            .flat_map(|i| [(i as f32 * 0.01).sin(), 0.0f32])
+            .collect();
+        p1.process_in_place(
+            &mut block1,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames: n,
+            },
+        )
+        .unwrap();
 
         // Reset p1 — after this it should behave like a fresh p2
         p1.reset();
@@ -1582,8 +1674,22 @@ mod tests {
         impulse1[0] = 1.0;
         let mut impulse2 = impulse1.clone();
 
-        p1.process_in_place(&mut impulse1, &ProcessContext { sample_rate: sr, num_frames: n }).unwrap();
-        p2.process_in_place(&mut impulse2, &ProcessContext { sample_rate: sr, num_frames: n }).unwrap();
+        p1.process_in_place(
+            &mut impulse1,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+        p2.process_in_place(
+            &mut impulse2,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames: n,
+            },
+        )
+        .unwrap();
 
         // Outputs should match exactly (or very closely)
         for i in 0..(n * 2) {
