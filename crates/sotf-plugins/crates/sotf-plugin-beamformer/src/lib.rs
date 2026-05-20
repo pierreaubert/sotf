@@ -353,21 +353,8 @@ impl Plugin for BeamformerPlugin {
                             BeamformerType::Mvdr => {
                                 self.mvdr.update_noise_covariance(&self.stft_channels);
                                 self.mvdr.compute_weights(&self.steering_vectors);
-                                // Apply weights: output[k] = w[k]^H * x[k]
-                                // Dimensions are pre-validated (both sized to spectrum_size × num_mics)
-                                // so the inner bounds checks are always true; keep them for safety.
-                                for k in 0..spectrum_size {
-                                    let mut sum = Complex::new(0.0, 0.0);
-                                    for m in 0..self.num_mics {
-                                        if k < self.stft_channels[m].len()
-                                            && m < self.mvdr.weights_buf[k].len()
-                                        {
-                                            sum += self.mvdr.weights_buf[k][m].conj()
-                                                * self.stft_channels[m][k];
-                                        }
-                                    }
-                                    self.fft.freq_buffer[k] = sum;
-                                }
+                                let beamformed = self.mvdr.apply_weights_into(&self.stft_channels);
+                                self.fft.freq_buffer[..spectrum_size].copy_from_slice(beamformed);
                             }
                             BeamformerType::Superdirective => {
                                 if let Some(ref mut sd) = self.superdirective {
@@ -643,5 +630,33 @@ mod tests {
                 "bin {k}: covariance was incorrectly updated during high-energy frame"
             );
         }
+    }
+
+    #[test]
+    fn test_mvdr_process_uses_preallocated_weight_application() {
+        let mut plugin = BeamformerPlugin::new(2, 48000);
+        plugin.beamformer_type = BeamformerType::Mvdr;
+
+        let nf = FFT_SIZE * 2;
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
+        let mut input = vec![0.0_f32; nf * 2];
+        for frame in 0..nf {
+            let sample =
+                (2.0 * std::f32::consts::PI * 1000.0 * frame as f32 / 48000.0).sin() * 0.25;
+            input[frame * 2] = sample;
+            input[frame * 2 + 1] = sample;
+        }
+        let mut output = vec![0.0_f32; nf];
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        assert!(
+            plugin.mvdr.output_buf.iter().any(|c| c.norm_sqr() > 0.0),
+            "MVDR preallocated output buffer should be populated by process()"
+        );
+        assert!(output.iter().all(|s| s.is_finite()));
     }
 }

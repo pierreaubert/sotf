@@ -1,3 +1,12 @@
+# 0.5.2
+
+## Fixes
+
+- **§3.4 Dead code `apply_weights_into`** (`src/lib.rs`, `src/mvdr.rs`):
+  MVDR processing now calls the pre-allocated `MvdrBeamformer::apply_weights_into`
+  helper instead of inlining the same loop in `process()`. New regression test:
+  `test_mvdr_process_uses_preallocated_weight_application`.
+
 # 0.5.1
 
 ## Fixes
@@ -77,10 +86,6 @@
 - **§3.2 Redundant bounds checks in MVDR hot loop**: Pre-allocated buffers
   guarantee the checks are always true; removing them is a minor micro-
   optimisation. Deferred.
-
-- **§3.4 Dead code `apply_weights_into`**: Method is pre-allocated and
-  zero-allocation but not called from `process`. Marked for clean-up in a
-  future PR rather than deleted here to preserve the public API surface.
 
 - **§4.3 RT-safety of `set_parameter`**: `update_steering` allocates
   `Vec`s on the audio thread. Pre-computing a steering grid or off-thread
