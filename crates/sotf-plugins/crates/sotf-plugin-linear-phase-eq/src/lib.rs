@@ -183,6 +183,10 @@ pub struct LinearPhaseEqPlugin {
     // Per-channel overlap-add tail
     overlap: Vec<Vec<f32>>,
 
+    // FIR design scratch, reused across parameter changes.
+    design_freqs: Vec<f64>,
+    design_magnitudes_db: Vec<f64>,
+
     // Dry buffer for mix
     dry_buf: Vec<f32>,
 
@@ -316,7 +320,9 @@ impl LinearPhaseEqPlugin {
             freq_buf: vec![Complex::new(0.0, 0.0); freq_size],
             fft_scratch_fwd,
             fft_scratch_inv,
-            overlap: vec![vec![0.0; fft_size]; channels],
+            overlap: vec![vec![0.0; fir_length.saturating_sub(1)]; channels],
+            design_freqs: Vec::new(),
+            design_magnitudes_db: Vec::new(),
             dry_buf: vec![0.0; max_buf],
             mix_smoother: Smoother::new(mix, 20.0, sample_rate),
             cached_parameters: Vec::new(),
@@ -332,6 +338,25 @@ impl LinearPhaseEqPlugin {
         fir_length_from_index(self.fir_length_index)
     }
 
+    fn band_contribution_db(bands: &[EqBand], freq: f64) -> f64 {
+        let mut combined_db = 0.0;
+        for band in bands {
+            if !band.active {
+                continue;
+            }
+            match band.filter_type {
+                BiquadFilterType::Lowpass | BiquadFilterType::Highpass => {
+                    combined_db += band.biquad.log_result(freq);
+                }
+                _ if band.gain_db.abs() > 1e-6 => {
+                    combined_db += band.biquad.log_result(freq);
+                }
+                _ => {}
+            }
+        }
+        combined_db
+    }
+
     /// Rebuild FIR coefficients from current band settings.
     fn rebuild_fir(&mut self) {
         let sr = self.sample_rate as f64;
@@ -342,32 +367,16 @@ impl LinearPhaseEqPlugin {
         // For an N-tap FIR we need at least 2*N frequency samples; round to a
         // power-of-two for consistency and clamp to a minimum of MAG_RESPONSE_POINTS.
         let num_points = MAG_RESPONSE_POINTS.max(fir_length * 2).next_power_of_two();
-        let mut freqs = Vec::with_capacity(num_points);
-        let mut magnitudes_db = Vec::with_capacity(num_points);
-
-        let band_contribution = |freq: f64| -> f64 {
-            let mut combined_db = 0.0;
-            for band in &self.bands {
-                if !band.active {
-                    continue;
-                }
-                match band.filter_type {
-                    BiquadFilterType::Lowpass | BiquadFilterType::Highpass => {
-                        combined_db += band.biquad.log_result(freq);
-                    }
-                    _ if band.gain_db.abs() > 1e-6 => {
-                        combined_db += band.biquad.log_result(freq);
-                    }
-                    _ => {}
-                }
-            }
-            combined_db
-        };
+        self.design_freqs.clear();
+        self.design_magnitudes_db.clear();
+        self.design_freqs.reserve(num_points);
+        self.design_magnitudes_db.reserve(num_points);
 
         // Include DC (1 Hz to avoid log-space interpolation issues with 0)
         // while still using the real combined response at the low end.
-        freqs.push(1.0);
-        magnitudes_db.push(band_contribution(1.0));
+        self.design_freqs.push(1.0);
+        self.design_magnitudes_db
+            .push(Self::band_contribution_db(&self.bands, 1.0));
 
         let log_min = 1.0_f64.ln();
         let log_max = nyquist.ln();
@@ -375,9 +384,10 @@ impl LinearPhaseEqPlugin {
         for i in 1..num_points {
             let t = i as f64 / (num_points - 1) as f64;
             let freq = (log_min + t * (log_max - log_min)).exp();
-            freqs.push(freq);
+            self.design_freqs.push(freq);
 
-            magnitudes_db.push(band_contribution(freq));
+            self.design_magnitudes_db
+                .push(Self::band_contribution_db(&self.bands, freq));
         }
 
         // Generate the linear-phase FIR
@@ -389,7 +399,8 @@ impl LinearPhaseEqPlugin {
             ..Default::default()
         };
 
-        let fir_f64 = generate_fir_from_response(&freqs, &magnitudes_db, &config);
+        let fir_f64 =
+            generate_fir_from_response(&self.design_freqs, &self.design_magnitudes_db, &config);
 
         // Convert to f32 and store
         self.fir_coeffs.resize(fir_f64.len(), 0.0);
@@ -534,10 +545,12 @@ impl LinearPhaseEqPlugin {
                 .resize(self.fft_forward.get_scratch_len(), Complex::new(0.0, 0.0));
             self.fft_scratch_inv
                 .resize(self.fft_inverse.get_scratch_len(), Complex::new(0.0, 0.0));
-            for ch_overlap in &mut self.overlap {
-                ch_overlap.resize(fft_size, 0.0);
-                ch_overlap.fill(0.0);
-            }
+        }
+
+        let overlap_len = fir_length.saturating_sub(1);
+        for ch_overlap in &mut self.overlap {
+            ch_overlap.resize(overlap_len, 0.0);
+            ch_overlap.fill(0.0);
         }
     }
 }
@@ -733,9 +746,11 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
             return Ok(nf);
         }
 
-        // Guard: frame count must be less than FFT size for overlap-add to work
-        if nf >= self.fft_size {
-            let max_chunk_frames = self.fft_size - 1;
+        // Guard: FFT convolution is only valid while `nf + fir_len - 1 <= fft_size`.
+        // Larger blocks must be chunked before the transform or the FIR tail wraps
+        // circularly into the current block.
+        let max_chunk_frames = self.fft_size.saturating_sub(self.fir_length() - 1);
+        if nf > max_chunk_frames {
             let mut frame = 0;
             while frame < nf {
                 let chunk_frames = (nf - frame).min(max_chunk_frames);
@@ -802,43 +817,28 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
                 *s *= norm;
             }
 
-            // Overlap-add:
-            // 1. Add old overlap tail to the first nf samples of output
-            // 2. New tail = output_buf[nf..] + old overlap[nf..] (if any remains)
+            // Overlap-add. The overlap buffer stores exactly `fir_len - 1`
+            // pending tail samples, shifted forward by each processed block.
             let fir_len = self.fir_length();
-            let fft_size = self.fft_size;
+            let tail_len = fir_len.saturating_sub(1);
             let overlap_buf = &mut self.overlap[ch];
-            let overlap_total = overlap_buf.len();
+            debug_assert_eq!(overlap_buf.len(), tail_len);
 
-            // Add old overlap to output (first nf samples)
-            let add_len = nf.min(overlap_total);
+            // Add old overlap to output (first nf samples).
+            let add_len = nf.min(tail_len);
             for (i, &ov) in overlap_buf.iter().enumerate().take(add_len) {
                 self.output_buf[i] += ov;
             }
 
-            // Compute the new tail from output_buf[nf..]
-            let new_tail_len = (fir_len - 1).min(fft_size.saturating_sub(nf));
-
-            // Add old overlap beyond nf to the new tail
-            let old_remaining = overlap_total.saturating_sub(nf);
-            let add_old = old_remaining.min(new_tail_len);
-            for i in 0..new_tail_len {
+            // Store the new convolution tail plus any unconsumed old tail.
+            for i in 0..tail_len {
                 let new_val = self.output_buf[nf + i];
-                let old_val = if i < add_old {
+                let old_val = if nf + i < tail_len {
                     overlap_buf[nf + i]
                 } else {
                     0.0
                 };
                 overlap_buf[i] = new_val + old_val;
-            }
-
-            // Clear rest of overlap buffer
-            for ov in overlap_buf
-                .iter_mut()
-                .take(overlap_total)
-                .skip(new_tail_len)
-            {
-                *ov = 0.0;
             }
 
             // Write back to interleaved buffer with dry/wet mix
@@ -1054,6 +1054,114 @@ mod tests {
             changed,
             "large blocks must be processed, not passed through"
         );
+    }
+
+    #[test]
+    fn test_large_block_ola_matches_small_chunks() {
+        let channels = 1;
+        let sr = 48000;
+        let params = LinearPhaseEqPluginParams {
+            num_filters: 1,
+            fir_length_index: 0, // 1024 taps, fft_size 2048, max valid block 1025
+            auto_gain: false,
+            mix: 1.0,
+            filters: vec![BandConfig {
+                filter_type: "Peak".to_string(),
+                frequency: 1000.0,
+                q: 0.7,
+                gain_db: 9.0,
+                active: true,
+            }],
+        };
+        let mut one_block = LinearPhaseEqPlugin::from_params(channels, sr, params.clone()).unwrap();
+        let mut chunked = LinearPhaseEqPlugin::from_params(channels, sr, params).unwrap();
+
+        let num_frames = 1500;
+        assert!(num_frames < one_block.fft_size);
+        assert!(num_frames > one_block.fft_size - (one_block.fir_length() - 1));
+
+        let mut input = vec![0.0f32; num_frames];
+        for (i, sample) in input.iter_mut().enumerate() {
+            let t = i as f32 / sr as f32;
+            *sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.2
+                + (2.0 * std::f32::consts::PI * 3000.0 * t).sin() * 0.1;
+        }
+
+        let mut large_buffer = input.clone();
+        one_block
+            .process_in_place(
+                &mut large_buffer,
+                &ProcessContext {
+                    sample_rate: sr,
+                    num_frames,
+                },
+            )
+            .unwrap();
+
+        let mut small_buffer = input.clone();
+        for chunk in small_buffer.chunks_mut(512) {
+            chunked
+                .process_in_place(
+                    chunk,
+                    &ProcessContext {
+                        sample_rate: sr,
+                        num_frames: chunk.len(),
+                    },
+                )
+                .unwrap();
+        }
+
+        let max_diff = large_buffer
+            .iter()
+            .zip(small_buffer.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_diff < 1.0e-4,
+            "large-block OLA output should match explicit small chunks; max diff {max_diff}"
+        );
+    }
+
+    #[test]
+    fn test_overlap_buffers_match_fir_tail_length() {
+        let channels = 3;
+        let sr = 48000;
+        let mut plugin = LinearPhaseEqPlugin::new(channels, sr);
+
+        let expected_tail = plugin.fir_length() - 1;
+        assert!(expected_tail < plugin.fft_size);
+        for overlap in &plugin.overlap {
+            assert_eq!(overlap.len(), expected_tail);
+        }
+
+        plugin
+            .set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(3))
+            .unwrap();
+        let expected_tail = plugin.fir_length() - 1;
+        assert!(expected_tail < plugin.fft_size);
+        for overlap in &plugin.overlap {
+            assert_eq!(overlap.len(), expected_tail);
+        }
+    }
+
+    #[test]
+    fn test_rebuild_fir_reuses_design_scratch_vectors() {
+        let channels = 1;
+        let sr = 48000;
+        let mut plugin = LinearPhaseEqPlugin::new(channels, sr);
+
+        let initial_freq_capacity = plugin.design_freqs.capacity();
+        let initial_mag_capacity = plugin.design_magnitudes_db.capacity();
+        assert!(initial_freq_capacity >= plugin.design_freqs.len());
+        assert!(initial_mag_capacity >= plugin.design_magnitudes_db.len());
+
+        plugin
+            .set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(6.0))
+            .unwrap();
+        plugin.rebuild_fir();
+
+        assert_eq!(plugin.design_freqs.capacity(), initial_freq_capacity);
+        assert_eq!(plugin.design_magnitudes_db.capacity(), initial_mag_capacity);
     }
 
     #[test]

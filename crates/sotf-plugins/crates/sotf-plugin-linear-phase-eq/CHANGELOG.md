@@ -1,3 +1,24 @@
+# 0.5.5
+
+## Fixes
+
+- Simplified overlap-add tail management by sizing per-channel overlap buffers
+  to exactly `fir_len - 1` instead of `fft_size`. Added
+  `test_overlap_buffers_match_fir_tail_length`.
+- Reused FIR-design frequency and magnitude scratch vectors across rebuilds
+  instead of allocating fresh vectors each time. Added
+  `test_rebuild_fir_reuses_design_scratch_vectors`.
+- Documented that Auto Gain normalizes DC gain to unity; it is a stable
+  reference-point correction, not perceptual loudness matching.
+
+# 0.5.4
+
+## Fixes
+
+- Corrected the overlap-add chunking guard to use `fft_size - (fir_len - 1)` as the maximum
+  valid block size. Blocks that fit below `fft_size` but exceed the convolution-safe length are
+  now chunked, preventing circular-convolution tail wrap.
+
 # 0.5.3
 
 ## Fixes
