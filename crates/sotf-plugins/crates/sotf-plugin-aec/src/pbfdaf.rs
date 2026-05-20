@@ -115,8 +115,10 @@ impl Pbfdaf {
         self.output_buf.fill(Complex::new(0.0, 0.0));
         for p in 0..self.num_partitions {
             let fdl_idx = (self.fdl_head + p) % self.num_partitions;
-            for k in 0..self.fft_size {
-                self.output_buf[k] += self.weights[p][k] * self.fdl[fdl_idx][k];
+            let weights = &self.weights[p];
+            let fdl = &self.fdl[fdl_idx];
+            for (out, (&w, &x)) in self.output_buf.iter_mut().zip(weights.iter().zip(fdl)) {
+                *out += w * x;
             }
         }
 
@@ -145,8 +147,8 @@ impl Pbfdaf {
         self.power_sum.fill(0.0);
         for p in 0..self.num_partitions {
             let fdl_idx = (self.fdl_head + p) % self.num_partitions;
-            for k in 0..self.fft_size {
-                self.power_sum[k] += self.fdl[fdl_idx][k].norm_sqr();
+            for (sum, x) in self.power_sum.iter_mut().zip(&self.fdl[fdl_idx]) {
+                *sum += x.norm_sqr();
             }
         }
 
@@ -158,10 +160,13 @@ impl Pbfdaf {
         let leak = 1.0 - 1e-3;
         for p in 0..self.num_partitions {
             let fdl_idx = (self.fdl_head + p) % self.num_partitions;
-            for k in 0..self.fft_size {
-                let norm = self.power_sum[k] + self.delta;
-                let update = self.error_freq[k] * self.fdl[fdl_idx][k].conj() * self.mu / norm;
-                let w = &mut self.weights[p][k];
+            for ((w, (&power, &error)), &fdl) in self.weights[p]
+                .iter_mut()
+                .zip(self.power_sum.iter().zip(&self.error_freq))
+                .zip(&self.fdl[fdl_idx])
+            {
+                let norm = power + self.delta;
+                let update = error * fdl.conj() * self.mu / norm;
                 *w = (*w + update) * leak;
                 // Prevent NaN propagation
                 if !w.re.is_finite() {
