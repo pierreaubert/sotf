@@ -492,6 +492,9 @@ impl Plugin for MonoToStereoPlugin {
     }
 
     fn latency_samples(&self) -> usize {
+        // Report only the STFT pipeline latency. The optional Haas delay is a
+        // deliberate right-channel widening effect; host latency compensation
+        // must not time-align it away.
         FFT_SIZE
     }
 }
@@ -580,6 +583,26 @@ mod tests {
             "Output should not be zero in the middle of the stream"
         );
         assert!(any_differ, "L and R should differ at width=1.0");
+    }
+
+    #[test]
+    fn test_haas_delay_is_not_reported_as_host_latency() {
+        let mut p = MonoToStereoPlugin::new();
+        p.initialize(48000).unwrap();
+        let base_latency = p.latency_samples();
+
+        p.set_parameter(
+            ParameterId::from("haas_delay_ms"),
+            ParameterValue::Float(20.0),
+        )
+        .unwrap();
+
+        assert!(p.haas_delay_samples > 0);
+        assert_eq!(
+            p.latency_samples(),
+            base_latency,
+            "Haas delay is an intentional right-channel effect, not host-compensated latency"
+        );
     }
 
     /// Verify that mono-to-stereo energy compensation keeps output RMS within 3 dB

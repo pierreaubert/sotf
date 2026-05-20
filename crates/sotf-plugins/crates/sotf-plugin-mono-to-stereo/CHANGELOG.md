@@ -1,3 +1,10 @@
+# 0.5.5
+
+## Fixes
+
+- Documented that Haas delay is an intentional right-channel widening effect and is not included in
+  host-reported latency. Added regression coverage so host latency remains the STFT latency only.
+
 # 0.5.4
 
 ## Fixes
