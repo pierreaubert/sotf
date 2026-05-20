@@ -12,24 +12,29 @@ Fixes applied to `plugins-denoiser::transient::TransientSuppressor` based on cod
   envelope at its pre-burst value; now it adapts continuously so each click in a burst is evaluated
   against a current threshold.
 
+- **Fix (review issue 5, medium)**: Added a high-curvature discriminator to prevent smooth ramps from being
+  treated like clicks. The suppressor now compares second-order slope before clamping, preserving
+  musical transients that are fast but continuous while still suppressing abrupt spikes.
+
 - **Fix (review issue 3, medium)**: `slope_envelope` is initialised to `1e-6` (non-zero floor) in
   both `new()` and `reset()`. The old `== 0.0` exact-float guard is removed. This eliminates the
   discontinuous jump on the first sample after `reset()` and removes the risk of FP denormal
   accumulation at exactly zero.
+
+- **Fix (review issue 4, medium)**: `TransientSuppressor` decay is now sample-rate-aware and slower for musical content.
+  A 20 ms release target is used by default, and `set_sample_rate` computes
+  `decay`/`one_minus_decay` from sample rate so release behavior is much less
+  aggressive than the old fixed `decay=0.99`.
+- **Fix (review issue 7, low)**: `plugins-denoiser::TransientSuppressor` now deinterleaves
+  multi-channel audio into planar scratch buffers and processes each channel slice in parallel
+  (`process` uses Rayon), replacing the pure single-threaded per-frame interleaved loop
+  for channels > 1.
 
 Deferred / out-of-scope (noted from review):
 
 - **Review issue 1 (high, acoustics)**: Replacing slew-rate limiting with median-filter or AR
   interpolation is a fundamental algorithm replacement, not a bug fix. Deferred to a future
   feature PR.
-- **Review issue 4 (medium)**: Making the decay coefficient sample-rate-dependent or two-stage
-  (fast attack / slow release) requires a plugin API change (`initialize` must propagate
-  sample rate to the suppressor). Deferred.
-- **Review issue 5 (medium)**: Adding a high-pass pre-emphasis stage for frequency discrimination
-  is an algorithm enhancement. Deferred.
-- **Review issue 7 (low)**: SIMD parallelisation of the per-channel loop is a performance
-  enhancement; the current scalar code is adequate for all supported channel counts. Deferred.
-
 # 0.5.4
 
 - Initial release. Split out of `sotf-plugin-denoiser` into a dedicated time-domain click and transient repair plugin.

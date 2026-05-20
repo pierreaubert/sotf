@@ -103,7 +103,8 @@ impl InPlacePlugin for DeclickPlugin {
         param_bridge::get_parameter(DC, id, |i| self.param_value(i))
     }
 
-    fn initialize(&mut self, _sample_rate: u32) -> PluginResult<()> {
+    fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        self.suppressor.set_sample_rate(sample_rate);
         Ok(())
     }
 
