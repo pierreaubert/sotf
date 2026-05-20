@@ -1,3 +1,22 @@
+# 0.5.25
+
+## Fixes
+
+- **STFT coefficient smoothing advances per FFT hop** — the phase-coherent path
+  now advances coefficient smoothers as each FFT hop is processed instead of
+  bulk-advancing once at the end of `process`. Added
+  `test_stft_path_advances_coeff_smoothers_per_fft_block`.
+
+# 0.5.24
+
+## Fixes
+
+- **LFE lookup state simplified** (`lib.rs`): replaced the per-channel
+  `Vec<Option<usize>>` lookup with channel-indexed boolean flags and
+  channel-indexed LFE filter state. This keeps the hot path O(1) without an
+  unnecessary indirection and adds `test_lfe_lookup_uses_channel_indexed_flags`
+  to pin the 5.1 LFE mapping.
+
 # 0.5.23
 
 ## Fixes
