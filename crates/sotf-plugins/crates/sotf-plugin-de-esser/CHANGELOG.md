@@ -1,3 +1,19 @@
+# 0.5.6
+
+## Fixes
+
+- **Detection Q now reaches the sidechain filters** (`src/lib.rs`): The user Q
+  parameter is passed to both highpass and lowpass `BiquadBank` construction
+  and updates, so Q affects actual sidechain filter shape in addition to
+  bandwidth edge calculation.
+
+## Review Notes
+
+- Clarified `review-plugin-de-esser.md` issue 3: `Lr4Crossover::new` is always
+  LR4; its third argument is channel count, not filter order. The de-esser's
+  `1` value is correct because it builds one single-channel crossover per
+  plugin channel.
+
 # 0.5.5
 
 ## Fixes
@@ -9,26 +25,26 @@
   processing loop so the mix transitions smoothly sample-by-sample.
   `src/lib.rs` lines 538–606 (both wideband and split-band paths).
 
-## Deferred / Reviewed Claims
+- **Filter precision + vectorization (review issues 4, 6)**: wideband sidechain filtering
+  now uses f32 `BiquadBank::process_interleaved_frame` over reusable per-frame
+  scratch buffers (`sidechain_frame`), and the final wideband wet/dry multiply now uses
+  `apply_per_channel_gain_simd` on `frame_gains`. This removes the per-sample
+  f64↔f32 conversion overhead and moves part of the hot loop into a
+  channel-vectorized path.
+  `src/lib.rs` lines 565–606.
 
-- **Review issue 3 — Crossover "order=1"**: The review claims `Lr4Crossover::new(freq, sr, 1)`
-  uses `order=1` (6 dB/octave). This is incorrect. The third argument is `channels`, not
-  `order`. `Lr4Crossover` always implements a true LR4 filter by cascading two second-order
-  Butterworth biquads per band (24 dB/octave). The value `1` is the per-crossover channel
-  count, which is correct because each channel has its own `Lr4Crossover` instance. No fix
-  needed.
+- **Monitoring write cadence (review issue 5)**: moved `monitoring_gr` updates from per-sample
+  writes to final-frame writes in both processing modes, reducing unnecessary stores in the
+  inner loop while keeping the cache contract unchanged.
+  `src/lib.rs` lines 590 and 629.
+
+## Deferred / Reviewed Claims
 
 - **Review issue 2 — Q parameter labeling**: The user-facing Q parameter controls detection
   bandwidth via `bandpass_edges()`, while the actual biquad poles are fixed at Butterworth
   Q (≈0.707). The behavior is documented in `bandpass_edges` comments. Renaming the
   parameter to "Bandwidth" is a UI/API-breaking change deferred to a follow-up that
   updates the corresponding GPUI/TUI parameter wiring.
-
-- **Review issues 4, 5 — f64↔f32 conversion overhead, monitoring_gr write frequency**:
-  Low-severity performance items. Benchmarks do not yet show these as bottlenecks.
-  Deferred.
-
-- **Review issue 6 — SIMD vectorization**: Cross-crate refactor; deferred.
 
 ---
 
@@ -46,4 +62,3 @@
 ## Fixes
 - Fixed block-constant mix smoother: replaced `next_n(num_frames)` with per-frame linear ramp to prevent zipper noise during mix automation.
 - Fixed split-band crossover order: changed from 1st-order (6 dB/octave) to 4th-order (24 dB/octave) for proper band isolation.
-

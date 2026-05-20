@@ -6,7 +6,7 @@ pub mod params;
 
 use crate::params::{MODES, PARAMS as DE};
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use math_audio_iir_fir::{Biquad, BiquadBank, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::dynamics_core::DynamicsCore;
@@ -15,7 +15,7 @@ use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
-use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
+use sotf_host::simd::{apply_per_channel_gain_simd, enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::sync::Arc;
@@ -108,10 +108,16 @@ pub struct DeEsserPlugin {
     frequency: f32,
     param_q: ParameterId,
     q: f32,
-    /// Highpass filter per channel (lower bound of sidechain BPF)
-    hp_filters: Vec<Biquad>,
-    /// Lowpass filter per channel (upper bound of sidechain BPF)
-    lp_filters: Vec<Biquad>,
+    /// Highpass filter bank per channel (lower bound of sidechain BPF)
+    hp_filters: BiquadBank<f32>,
+    /// Lowpass filter bank per channel (upper bound of sidechain BPF)
+    lp_filters: BiquadBank<f32>,
+
+    /// Reusable per-frame sidechain scratch buffer.
+    sidechain_frame: Vec<f32>,
+
+    /// Reusable per-frame gain multipliers for SIMD path.
+    frame_gains: Vec<f32>,
 
     // Dynamics (one DynamicsCore per channel)
     cores: Vec<DynamicsCore>,
@@ -163,6 +169,8 @@ impl DeEsserPlugin {
             q,
             hp_filters: Self::make_hp_filters(channels, freq, q, sr),
             lp_filters: Self::make_lp_filters(channels, freq, q, sr),
+            sidechain_frame: vec![0.0; channels],
+            frame_gains: vec![0.0; channels],
 
             cores: (0..channels)
                 .map(|_| DynamicsCore::new(DynamicsMode::Compress, 1, sr))
@@ -175,7 +183,7 @@ impl DeEsserPlugin {
             param_mode: ParameterId::from("mode"),
             mode_index: 1, // default: split-band
             crossovers: (0..channels)
-                .map(|_| Lr4Crossover::new(freq, sr as f32, 4))
+                .map(|_| Lr4Crossover::new(freq, sr as f32, 1))
                 .collect(),
 
             param_mix: ParameterId::from("mix"),
@@ -253,41 +261,24 @@ impl DeEsserPlugin {
         (f_low, f_high)
     }
 
-    fn make_hp_filters(channels: usize, freq: f32, q: f32, sr: u32) -> Vec<Biquad> {
+    fn make_hp_filters(channels: usize, freq: f32, q: f32, sr: u32) -> BiquadBank<f32> {
         let (f_low, _) = Self::bandpass_edges(freq, q);
-        (0..channels)
-            .map(|_| {
-                Biquad::new(
-                    BiquadFilterType::Highpass,
-                    f_low as f64,
-                    sr as f64,
-                    std::f64::consts::FRAC_1_SQRT_2,
-                    0.0,
-                )
-            })
-            .collect()
+        let template = Biquad::new(BiquadFilterType::Highpass, f_low, sr as f32, q, 0.0);
+        BiquadBank::new(&template, channels)
     }
 
-    fn make_lp_filters(channels: usize, freq: f32, q: f32, sr: u32) -> Vec<Biquad> {
+    fn make_lp_filters(channels: usize, freq: f32, q: f32, sr: u32) -> BiquadBank<f32> {
         let (_, f_high) = Self::bandpass_edges(freq, q);
-        (0..channels)
-            .map(|_| {
-                Biquad::new(
-                    BiquadFilterType::Lowpass,
-                    f_high as f64,
-                    sr as f64,
-                    std::f64::consts::FRAC_1_SQRT_2,
-                    0.0,
-                )
-            })
-            .collect()
+        let template = Biquad::new(BiquadFilterType::Lowpass, f_high, sr as f32, q, 0.0);
+        BiquadBank::new(&template, channels)
     }
 
     fn rebuild_detection_filters(&mut self) {
-        self.hp_filters =
-            Self::make_hp_filters(self.channels, self.frequency, self.q, self.sample_rate);
-        self.lp_filters =
-            Self::make_lp_filters(self.channels, self.frequency, self.q, self.sample_rate);
+        let (f_low, f_high) = Self::bandpass_edges(self.frequency, self.q);
+        self.hp_filters
+            .update_params(f_low, self.sample_rate as f32, self.q, 0.0);
+        self.lp_filters
+            .update_params(f_high, self.sample_rate as f32, self.q, 0.0);
     }
 
     fn rebuild_crossovers(&mut self) {
@@ -535,24 +526,29 @@ impl InPlacePlugin for DeEsserPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
+        if self.channels == 0 {
+            return Ok(num_frames);
+        }
 
         if self.mode_index == 0 {
             // ============================================================
             // Wideband mode
             // ============================================================
             for frame in 0..num_frames {
+                let frame_offset = frame * self.channels;
+                // Process sidechain in a scratch frame to keep the main buffer as output.
+                let frame_samples = &mut self.sidechain_frame[..self.channels];
+                frame_samples.copy_from_slice(&buffer[frame_offset..frame_offset + self.channels]);
+                self.hp_filters.process_interleaved_frame(frame_samples);
+                self.lp_filters.process_interleaved_frame(frame_samples);
+
                 // Advance mix smoother once per frame (not per channel) to avoid
                 // block-constant mix that would cause zipper noise during automation.
                 let mix = self.mix_smoother.advance();
                 let dry_mix = 1.0 - mix;
                 for ch in 0..self.channels {
-                    let idx = frame * self.channels + ch;
-                    let input = buffer[idx];
-
                     // Sidechain: HP then LP to form bandpass
-                    let hp_out = self.hp_filters[ch].process(input as f64) as f32;
-                    let sidechain = self.lp_filters[ch].process(hp_out as f64) as f32;
-
+                    let sidechain = frame_samples[ch];
                     // Level detection
                     let level = self.cores[ch].detect_level(0, sidechain);
                     let level_db = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
@@ -566,24 +562,30 @@ impl InPlacePlugin for DeEsserPlugin {
                     );
                     let smoothed_gr = self.cores[ch].apply_envelope(0, gr);
                     let gain = fast_pow10(-smoothed_gr / DB_CONVERSION_FACTOR);
+                    self.frame_gains[ch] = dry_mix + mix * gain;
 
-                    let wet = input * gain;
-                    buffer[idx] = dry_mix * input + mix * wet;
-
-                    self.monitoring_gr[ch] = smoothed_gr;
+                    if frame + 1 == num_frames {
+                        self.monitoring_gr[ch] = smoothed_gr;
+                    }
                 }
+                apply_per_channel_gain_simd(
+                    &mut buffer[frame_offset..frame_offset + self.channels],
+                    self.channels,
+                    &self.frame_gains,
+                );
             }
         } else {
             // ============================================================
             // Split-band mode
             // ============================================================
             for frame in 0..num_frames {
+                let frame_offset = frame * self.channels;
                 // Advance mix smoother once per frame (not per channel) to avoid
                 // block-constant mix that would cause zipper noise during automation.
                 let mix = self.mix_smoother.advance();
                 let dry_mix = 1.0 - mix;
                 for ch in 0..self.channels {
-                    let idx = frame * self.channels + ch;
+                    let idx = frame_offset + ch;
                     let input = buffer[idx];
 
                     // Split into low and high bands
@@ -606,7 +608,9 @@ impl InPlacePlugin for DeEsserPlugin {
                     let wet = low + high * gain;
                     buffer[idx] = dry_mix * input + mix * wet;
 
-                    self.monitoring_gr[ch] = smoothed_gr;
+                    if frame + 1 == num_frames {
+                        self.monitoring_gr[ch] = smoothed_gr;
+                    }
                 }
             }
         }
@@ -687,6 +691,78 @@ mod tests {
             "8kHz signal should be reduced: input_rms={:.4}, output_rms={:.4}",
             input_rms,
             output_rms
+        );
+    }
+
+    #[test]
+    fn test_wideband_reduction_is_channel_specific() {
+        let sr = 48000u32;
+        let num_frames = 48000; // 1 second
+        let sample_count = num_frames * 2;
+        let amplitude = 0.5;
+
+        let mut plugin = DeEsserPlugin::from_params(
+            2,
+            DeEsserPluginParams {
+                frequency: 7000.0,
+                q: 1.5,
+                threshold: -35.0,
+                ratio: 10.0,
+                attack_ms: 0.5,
+                release_ms: 20.0,
+                mode: "Wideband".to_string(),
+                mix: 1.0,
+            },
+        );
+        plugin.initialize(sr).unwrap();
+
+        let mut buf = Vec::with_capacity(sample_count);
+        let mut low_input = Vec::with_capacity(num_frames);
+        let mut high_input = Vec::with_capacity(num_frames);
+        for i in 0..num_frames {
+            let low = amplitude * (2.0 * std::f32::consts::PI * 200.0 * i as f32 / sr as f32).sin();
+            let high =
+                amplitude * (2.0 * std::f32::consts::PI * 8000.0 * i as f32 / sr as f32).sin();
+            buf.push(low);
+            buf.push(high);
+            low_input.push(low);
+            high_input.push(high);
+        }
+
+        let input_low_rms = rms(&low_input);
+        let input_high_rms = rms(&high_input);
+
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames,
+        };
+        plugin.process_in_place(&mut buf, &ctx).unwrap();
+
+        let mut low_output = Vec::with_capacity(num_frames);
+        let mut high_output = Vec::with_capacity(num_frames);
+        for frame in 0..num_frames {
+            low_output.push(buf[frame * 2]);
+            high_output.push(buf[frame * 2 + 1]);
+        }
+
+        let output_low_rms = rms(&low_output);
+        let output_high_rms = rms(&high_output);
+
+        assert!(
+            output_low_rms > input_low_rms * 0.9,
+            "Low band should remain mostly untouched: input={:.4}, output={:.4}",
+            input_low_rms,
+            output_low_rms
+        );
+        assert!(
+            output_high_rms < input_high_rms * 0.7,
+            "High band should be reduced by sidechain: input={:.4}, output={:.4}",
+            input_high_rms,
+            output_high_rms
+        );
+        assert!(
+            plugin.monitoring_gr[0].is_finite() && plugin.monitoring_gr[1].is_finite(),
+            "Monitoring values should remain finite after processing.",
         );
     }
 
