@@ -45,15 +45,19 @@ pub struct HalOutputPlugin {
     /// 100.0 means all samples were accepted; lower values indicate back-pressure.
     write_success_ratio: f32,
 
-    /// Total buffer capacity in samples (for computing fill percentage).
-    /// Only used on macOS with the HAL feature enabled.
-    #[allow(dead_code)]
+    /// Cached HAL buffer capacity in samples.
+    #[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
     buffer_capacity: usize,
 
+    /// Cached HAL connection status.
+    is_connected: bool,
+
     /// Block counter used to rate-limit partial-write log warnings.
-    /// Only read inside the `hal`-feature block.
-    #[allow(dead_code)]
+    #[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
     last_warn_block: u64,
+
+    /// Cached back-pressure state, useful as a diagnostic signal for downstream UI/host.
+    is_backpressured: bool,
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
     /// HAL output writer
@@ -85,8 +89,13 @@ impl HalOutputPlugin {
                 channels,
                 underrun_counter: Arc::new(AtomicU64::new(0)),
                 write_success_ratio: 100.0,
-                buffer_capacity: 0,
+                buffer_capacity: writer
+                    .as_ref()
+                    .map(|w| w.buffer_frames() as usize)
+                    .unwrap_or(0),
+                is_connected: writer.as_ref().is_some_and(HalOutputWriter::is_connected),
                 last_warn_block: 0,
+                is_backpressured: false,
                 writer,
             })
         }
@@ -155,6 +164,14 @@ impl Plugin for HalOutputPlugin {
             )
             .with_group("Diagnostics")
             .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool("is_connected", "Connected", self.is_connected)
+                .with_description("HAL output writer currently connected to shared memory")
+                .with_group("Diagnostics")
+                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool("is_backpressured", "Backpressure", self.is_backpressured)
+                .with_description("HAL output reported a partial write in the last process block")
+                .with_group("Diagnostics")
+                .with_importance(ParameterImportance::FineTuning),
         ]
     }
 
@@ -169,6 +186,10 @@ impl Plugin for HalOutputPlugin {
             ))
         } else if id.0 == "write_success_ratio" {
             Some(ParameterValue::Float(self.write_success_ratio))
+        } else if id.0 == "is_connected" {
+            Some(ParameterValue::Bool(self.is_connected))
+        } else if id.0 == "is_backpressured" {
+            Some(ParameterValue::Bool(self.is_backpressured))
         } else {
             None
         }
@@ -194,12 +215,15 @@ impl Plugin for HalOutputPlugin {
         {
             // Try to write to HAL
             if let Some(ref mut writer) = self.writer {
+                self.is_connected = writer.is_connected();
+                self.buffer_capacity = writer.buffer_frames() as usize;
                 let samples_written = writer.write(input);
 
                 // Update write success ratio diagnostic (100% = all samples accepted).
                 if !input.is_empty() {
                     self.write_success_ratio =
                         (samples_written as f32 / input.len() as f32) * 100.0;
+                    self.is_backpressured = samples_written < input.len();
                 }
 
                 if samples_written < input.len() {
@@ -224,6 +248,17 @@ impl Plugin for HalOutputPlugin {
         }
 
         Ok(context.num_frames)
+    }
+
+    fn latency_samples(&self) -> usize {
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        {
+            self.buffer_capacity
+        }
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
+        {
+            0
+        }
     }
 }
 
@@ -314,6 +349,33 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_parameters_include_connection_and_backpressure() {
+        let plugin = make_test_plugin();
+        let ids: Vec<String> = plugin.parameters().iter().map(|p| p.id.0.clone()).collect();
+        assert!(ids.contains(&"is_connected".to_string()));
+        assert!(ids.contains(&"is_backpressured".to_string()));
+    }
+
+    #[test]
+    fn get_parameter_connection_and_backpressure_defaults_to_expected_values() {
+        let plugin = make_test_plugin();
+        assert_eq!(
+            plugin.get_parameter(&ParameterId("is_connected".to_string())),
+            Some(ParameterValue::Bool(false))
+        );
+        assert_eq!(
+            plugin.get_parameter(&ParameterId("is_backpressured".to_string())),
+            Some(ParameterValue::Bool(false))
+        );
+    }
+
+    #[test]
+    fn latency_samples_reports_cached_buffer_capacity() {
+        let plugin = make_test_plugin();
+        assert_eq!(plugin.latency_samples(), 0);
+    }
+
+    #[test]
     fn process_rejects_mismatched_buffer() {
         let mut plugin = make_test_plugin();
         let ctx = ProcessContext {
@@ -335,7 +397,9 @@ mod tests {
             underrun_counter: Arc::new(AtomicU64::new(0)),
             write_success_ratio: 100.0,
             buffer_capacity: 0,
+            is_connected: false,
             last_warn_block: 0,
+            is_backpressured: false,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             writer: None,
         }

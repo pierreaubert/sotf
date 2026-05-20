@@ -12,12 +12,13 @@
   the current block (100 % = all samples accepted).
 - `src/lib.rs`: Rate-limited partial-write log warnings to the first underrun and then every
   1 000 blocks, preventing log floods when the HAL writer is continuously back-pressured.
+- `src/lib.rs`: Added `is_connected` and `is_backpressured` diagnostics in
+  `parameters()`, `get_parameter()`, and process state updates (`writer.is_connected()` and
+  write-success ratio / partial-write state). Added `latency_samples()` to report cached HAL buffer
+  frames (`HalOutputWriter::buffer_frames`).
 
 ## Deferred
 
-- Adding a `running`/`connected` diagnostic parameter requires API changes to `driver_hal`
-  (`HalOutputWriter`) — deferred as a cross-crate refactor.
-- Graceful back-pressure signalling to the engine requires engine-layer changes — deferred.
 - Mock `HalOutputWriter` for cross-platform integration tests — deferred (requires a new
   trait abstraction in `driver_hal`, cross-crate change).
 
