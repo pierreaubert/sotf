@@ -1,3 +1,21 @@
+# 0.5.11
+
+## Fixes
+
+- **Make `link_amount` effective** — partial linking now blends the detector
+  from average channel peak toward the strict linked maximum. Previously the
+  code took `max()` after per-channel blending, which always returned the
+  linked maximum and made every nonzero setting behave like full linking.
+  Added `test_link_amount_interpolates_average_to_peak_detection`.
+
+# 0.5.10
+
+## Fixes
+
+- Preallocate lookahead audio/peak storage to the configured maximum for the current sample rate.
+  Runtime lookahead changes now update the active window length without resizing the backing buffers
+  inside the audio path.
+
 # 0.5.9
 
 ## Fixes
@@ -29,23 +47,24 @@
   Channels 33+ were silently excluded from peak detection and would clip without gain reduction.
   Replaced with `vec![0.0f32; self.channels]` to support any channel count.
 
+- **Mix and threshold smoothers are now advanced per frame** (`src/lib.rs:413-470`):
+  `mix` and `threshold` previously advanced once per block, which made parameter automation
+  within a block effectively stepwise. They are now advanced per-frame inside the processing
+  loop so smoother ramps progress continuously at sample resolution.
+
 ## Deferred
 
-- **Issue #6 (set_parameter clones Vec<Parameter>)**: The `self.parameters()` call in
-  `set_parameter` allocates a 10-element Vec for validation. Negligible cost (parameter
-  changes are infrequent); fixing requires storing parameters in a `LazyLock`/static ref
-  which is a cross-crate refactor of the parameter system. Deferred.
+- **set_parameter validation now uses cached definitions** (`src/lib.rs:314-326`):
+  Parameter lookup is now done directly from `self.cached_parameters` so we no longer
+  allocate a fresh parameter `Vec` inside `set_parameter` just for validation.
 
-- **Issue #5 (stale monitoring_isp_linear)**: When `use_true_peak` is false, the
-  `monitoring_isp_linear` array retains values from previous blocks but is not copied to
-  the cache (guarded by `use_true_peak` check). Harmless; no observable incorrect data
-  is exposed. Deferred as low-priority cleanup.
+- **ISP meter now floors whenever true peak is inactive** (`src/lib.rs:626-646`):
+  `monitoring_isp_linear` is reset each block, and cache updates now explicitly write
+  `-120.0 dB` when `true_peak`/`isp_mode` are disabled. This avoids stale per-channel
+  ISP values persisting after toggling modes.
 
-- **Issue #7 (smoother advances once per block)**: The threshold and mix smoothers advance
-  once per block, not per sample. This is intentional — an explicit code comment explains
-  that per-sample advance caused double-advancing. The correct fix is `next_n(num_frames)`
-  returning a sample-accurate ramp, which requires a smoother API change. Deferred as a
-  cross-crate refactor.
+- **Issue #7 (smoother advances once per block)**: resolved (`src/lib.rs:413-470`) by
+  advancing smoothers per sample inside the processing loop.
 
 # 0.5.8
 
@@ -69,4 +88,3 @@
 - Fixed catastrophic CPU waste in feed-forward lookahead scan: replaced O(lookahead_len × channels) per-sample scan with amortized O(1) running-max update.
 - Fixed 32-channel hard cap: `ch_peaks` now dynamically sized to `channels`, so all channels are analyzed.
 - Fixed ISP correction decay operating in wrong domain: decay now happens in linear gain space before converting back to dB, matching the release time constant.
-
