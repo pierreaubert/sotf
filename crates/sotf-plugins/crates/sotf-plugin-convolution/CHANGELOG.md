@@ -1,3 +1,32 @@
+# 0.5.8
+
+## Fixes
+
+- **[11] Resampler chunk allocation cleanup** (`src/lib.rs`): `resample_ir`
+  now reuses pre-allocated input/output chunk buffers instead of allocating
+  `to_vec()` chunks for every channel on every resampler iteration.
+
+- **[9] End-to-end NUPC IR loading coverage** (`src/lib.rs`): Added a regression
+  test that writes a WAV IR, loads it through `from_params` with `use_nupc=true`,
+  verifies NUPC engines are built, and processes a block successfully.
+
+- **[10] Right-sized Rayon accumulator pool** (`src/lib.rs`): Capped the
+  per-thread accumulator pool by `num_partitions`, avoiding oversized zeroing and
+  merge work when the Rayon thread count exceeds the partition count.
+
+- **[12] `head_taps` setter clamps before casting** (`src/lib.rs`, `src/params.rs`):
+  `head_taps` is consistently `usize`; incoming `f64` values are clamped to the
+  PARAMS range before conversion. Added a regression test for low/high clamps.
+
+- **[13] UPC stereo IR mapping cycles channels** (`src/lib.rs`): Added a
+  regression test proving UPC maps a stereo IR across multichannel output as
+  L/R/L/R instead of clamping all extra channels to the final IR channel.
+
+- **[15] Removed aggressive final denormal threshold flush** (`src/lib.rs`):
+  The callback still enables FTZ/DAZ, but no longer calls
+  `flush_denormals_inplace` with the shared `1e-30` threshold. Added a test that
+  preserves tiny normal samples below that old cleanup threshold.
+
 # 0.5.7
 
 ## Fixes
@@ -34,19 +63,8 @@
 
 ## Deferred
 
-- **Issue #4 (IR loading on audio thread)**: Moving `load_ir` to a background
-  thread requires cross-crate infrastructure changes and is deferred.
-
-- **Issue #5 (Rebuild IR on sample-rate change in `initialize()`)**: Depends
-  on the background-thread mechanism from issue #4; deferred.
-
-- **Issue #7 (Store original time-domain IR)**: Medium refactor; deferred.
-
-- **Issue #8 (Misleading comment in `plugins-spatial/src/nupc.rs`)**: In
-  `plugins-spatial` crate, outside scope of this crate's review.
-
-- **Issues #10–15 (nits and advisory improvements)**: Skipped per review
-  priority policy.
+- **Issue #14 (automatic IR gain normalization)**: Optional product behavior;
+  deferred until the host/UI has a clear opt-in control.
 
 ---
 

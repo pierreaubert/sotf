@@ -146,7 +146,7 @@ impl PluginParamDef for Params {
             2 => self.gain_db = value,
             3 => self.use_nupc = value > 0.5,
             4 => self.zero_latency_head = value > 0.5,
-            5 => self.head_taps = value as usize,
+            5 => self.head_taps = value.clamp(PARAMS[5].min_f64(), PARAMS[5].max_f64()) as usize,
             _ => {}
         }
     }
@@ -186,6 +186,17 @@ mod tests {
         assert_eq!(original.mix, restored.mix);
         assert_eq!(original.gain_db, restored.gain_db);
         assert_eq!(original.use_nupc, restored.use_nupc);
+        assert_eq!(original.head_taps, restored.head_taps);
+    }
+
+    #[test]
+    fn head_taps_setter_clamps_to_spec_range() {
+        let mut p = Params::default();
+        p.set_param_value(5, -1.0);
+        assert_eq!(p.head_taps, pk(PARAMS, "head_taps").min_f64() as usize);
+
+        p.set_param_value(5, 9999.0);
+        assert_eq!(p.head_taps, pk(PARAMS, "head_taps").max_f64() as usize);
     }
 
     #[test]
