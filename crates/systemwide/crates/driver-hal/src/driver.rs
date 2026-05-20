@@ -438,7 +438,10 @@ mod tests {
             .expect("Expected config buffer")
             .header();
         assert_eq!(header.requested_sample_rate.load(Ordering::Acquire), 44_100);
-        assert_eq!(header.requested_buffer_frames.load(Ordering::Acquire), 1_024);
+        assert_eq!(
+            header.requested_buffer_frames.load(Ordering::Acquire),
+            1_024
+        );
         assert_eq!(header.config_source.load(Ordering::Acquire), 2);
         assert_eq!(header.config_changed.load(Ordering::Acquire), 0);
         assert_eq!(header.config_status.load(Ordering::Acquire), 1);

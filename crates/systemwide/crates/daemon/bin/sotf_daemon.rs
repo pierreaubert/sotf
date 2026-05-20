@@ -20,12 +20,7 @@ mod security;
 use driver_manager::{DriverManager, get_driver_status};
 use security::{
     KeyManager, PeerClass, classify_peer, current_uid as security_current_uid,
-<<<<<<< HEAD
     ensure_secure_socket_dir, get_secure_socket_path, peer_allows_command, verify_peer_credentials,
-=======
-    ensure_secure_socket_dir, get_secure_socket_path, peer_allows_command,
-    verify_peer_credentials,
->>>>>>> worktree-agent-adf7db20fb3a45a35
 };
 
 use driver_common::DriverConfig;
@@ -233,7 +228,6 @@ fn serialize_response_safely(response: &Response) -> String {
     }
 }
 
-<<<<<<< HEAD
 #[derive(Debug, PartialEq, Eq)]
 enum IpcLine {
     Eof,
@@ -291,9 +285,6 @@ fn read_ipc_line_bounded<R: BufRead>(
         Ok(IpcLine::Line(line.to_string()))
     }
 }
-
-=======
->>>>>>> worktree-agent-adf7db20fb3a45a35
 fn loudness_data_to_json(info: &sotf_audio::LoudnessData) -> Value {
     serde_json::json!({
         "momentary": info.momentary_lufs,
@@ -1307,14 +1298,9 @@ impl AudioDaemon {
                         log::error!("Failed to write response: {}", e);
                         break;
                     }
-<<<<<<< HEAD
                 }
                 Ok(IpcLine::Line(command_line)) => {
                     let response = match serde_json::from_str::<Command>(&command_line) {
-=======
-
-                    let response = match serde_json::from_str::<Command>(trimmed) {
->>>>>>> worktree-agent-adf7db20fb3a45a35
                         Ok(cmd) => {
                             // Defense-in-depth: gate which commands the
                             // peer's UID class may invoke. The macOS HAL
@@ -2170,10 +2156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod ipc_safety_tests {
     use super::*;
-<<<<<<< HEAD
     use std::io::Cursor;
-=======
->>>>>>> worktree-agent-adf7db20fb3a45a35
 
     /// `serialize_response_safely` must produce valid JSON on the OK
     /// path with no behavioural change versus the original
@@ -2252,7 +2235,6 @@ mod ipc_safety_tests {
         let _ = serialize_response_safely(&r); // must not panic
     }
 
-<<<<<<< HEAD
     #[test]
     fn read_ipc_line_bounded_accepts_normal_command() {
         let input = Cursor::new(b"  {\"command\":\"status\"}  \n");
@@ -2305,9 +2287,6 @@ mod ipc_safety_tests {
             IpcLine::TooLarge
         );
     }
-
-=======
->>>>>>> worktree-agent-adf7db20fb3a45a35
     /// `Command::name()` must stay in sync with `#[serde(rename)]`,
     /// because `peer_allows_command` matches on these exact strings.
     #[test]
