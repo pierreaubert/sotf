@@ -40,7 +40,7 @@ pub use math_audio_dsp::{
 };
 
 // Re-export math-iir-fir modules
-pub use math_audio_iir_fir::{fir_crossover, lr4_crossover};
+pub use math_audio_iir_fir::{fir_crossover, lr4_crossover, lr8_crossover};
 
 // Re-export gpui-design
 pub use gpui_design as design_system;
@@ -82,6 +82,7 @@ pub use math_audio_dsp::simd::enable_ftz_daz;
 pub use math_audio_dsp::true_peak::TruePeakDetector;
 pub use math_audio_iir_fir::fir_crossover::{FirCrossover, MultibandFirCrossover};
 pub use math_audio_iir_fir::lr4_crossover::{Lr4Crossover, MultibandLr4Crossover};
+pub use math_audio_iir_fir::lr8_crossover::{Lr8Crossover, MultibandLr8Crossover};
 pub use multichannel_auto_gain::MultichannelAutoGain;
 pub use oversampling::{
     AutoOversampledPlugin, OversampledPlugin, Oversampler, interleaved_to_planar,
