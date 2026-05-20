@@ -1,3 +1,32 @@
+# 0.5.26
+
+## Fixes
+
+- **Review §1.3 multiband group-delay docs** (`math-iir-fir/src/lr4_crossover.rs`):
+  `MultibandLr4Crossover` now documents that cascaded LR4 bands are not
+  group-delay aligned and are not a phase-perfect linear-phase split.
+
+- **Review §2.4 Biquad magnitude-response coverage** (`math-iir-fir/src/iir/biquad.rs`):
+  Added `test_result_matches_complex_response_magnitude`, cross-validating the
+  precomputed `result()` formula against `complex_response().norm()`.
+
+- **Review §2.3 LogSmoother large-block overflow** (`math-dsp/src/smoothing.rs`):
+  `LogSmoother::next_n` now advances in log space and clamps to the supported
+  frequency range, avoiding `powi(n)` overflow during large offline-render
+  blocks. Added `test_log_smoother_large_block_stays_finite`.
+
+- **Review §3.2 Multiband LR4 copy-vs-swap** (`math-iir-fir/src/lr4_crossover.rs`):
+  `MultibandLr4Crossover::process_frame` now swaps `carry` and `scratch`
+  between stages instead of copying scratch into carry every frame.
+
+- **Review §4.6 buffer bounds assertions** (`src/lib.rs`): Added debug assertions
+  for input/output buffer sizes at `process()` entry to catch host contract bugs
+  early in debug builds.
+
+- **Review §1.2 denormal threshold status** (`math-dsp/src/simd.rs`): Confirmed
+  the shared denormal threshold uses `f32::MIN_POSITIVE`, with coverage for
+  subnormal zeroing and preserving tiny normal values.
+
 # 0.5.25
 
 ## Added

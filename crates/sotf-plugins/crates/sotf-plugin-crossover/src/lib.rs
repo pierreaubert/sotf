@@ -755,6 +755,16 @@ impl Plugin for CrossoverPlugin {
         let num_frames = context.num_frames;
         let in_ch = self.num_channels;
         let out_ch = self.output_channels();
+        debug_assert_eq!(
+            input.len(),
+            num_frames * in_ch,
+            "Input buffer size mismatch"
+        );
+        debug_assert_eq!(
+            output.len(),
+            num_frames * out_ch,
+            "Output buffer size mismatch"
+        );
 
         if self.is_per_channel() {
             // Per-channel mode: each channel is processed independently by
