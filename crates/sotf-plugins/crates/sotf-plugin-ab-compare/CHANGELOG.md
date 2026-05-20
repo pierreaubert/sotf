@@ -2,6 +2,8 @@
 
 ## Fixes
 
+- Added `test_band_mask_reduces_out_of_band_energy`, covering the review gap for
+  band-mask attenuation when the passband is narrowed.
 - **Issue #5 (high):** Removed hard 4096-frame cap on internal processing buffers (`src/lib.rs`).
   Buffers now grow dynamically when the host block size exceeds the pre-allocated capacity,
   allowing offline renderers and non-standard hosts that use large blocks to work without error.
@@ -17,16 +19,23 @@
   `band_mask_active()` with named associated constants `BAND_MASK_MIN_HZ`,
   `BAND_MASK_MAX_HZ`, and `BAND_MASK_EDGE_EPSILON` with explanatory doc-comments
   (`src/lib.rs`). Behaviour is unchanged.
+- **Issue #6 (low):** Added a cached equal-power gain for the empty-path fast path
+  (`empty_path_fast_gain`) and recompute points when mix target changes. The fast
+  processing branch now reuses the cached gain and uses the short-circuit empty-path
+  route when eligible (`src/lib.rs:162`, `src/lib.rs:255`, `src/lib.rs:493`),
+  reducing repeated trig calls per block.
+- **Issue #7 (low):** `validate_parameter()` now validates against cached parameter
+  metadata directly instead of cloning the vector through the trait default, while
+  `parameters()` remains a clone-returning API because that is part of the current
+  `Plugin` trait contract.
 
 ## Deferred / Skipped
 
 - **Issue #1** (rename `gain` to `mixed_gain` in the fast path): The referenced function
   `process_empty_path_fast` does not exist in this version's code. Review claim does not
   match the actual implementation — skipped.
-- **Issue #6** (cache trig computation in fast path): Same as #1 — `process_empty_path_fast`
-  and `can_use_empty_path_fast_path` are absent from this codebase. Skipped.
-- **Issue #7** (avoid `Vec` clone in `parameters()`): Cosmetic / speculative optimization
-  requiring cross-crate `Arc<Vec<Parameter>>` changes. Deferred.
+- **Issue #7**: Full `Arc<Vec<Parameter>>` migration for zero-copy parameter list
+  delivery is deferred; that would require trait/API changes across the plugin host.
 
 # 0.5.3
 

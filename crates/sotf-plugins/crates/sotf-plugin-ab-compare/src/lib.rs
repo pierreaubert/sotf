@@ -162,6 +162,8 @@ pub struct ABComparePlugin {
     // Cached peak values
     last_peak_a: f64,
     last_peak_b: f64,
+    /// Cached equal-power gain for empty empty-path fast path.
+    empty_path_fast_gain: f32,
 
     cache: RealTimeCache<ABCompareData>,
     cache_update_counter: usize,
@@ -253,12 +255,21 @@ impl ABComparePlugin {
             buffer_b: vec![0.0; 48000 * num_channels],
             last_peak_a: 0.0,
             last_peak_b: 0.0,
+            empty_path_fast_gain: 0.0,
             cache: RealTimeCache::new(ABCompareData::default()),
             cache_update_counter: 0,
             cached_parameters: Vec::new(),
         };
+        p.recompute_empty_path_fast_gain();
         p.rebuild_cached_parameters();
         Ok(p)
+    }
+
+    /// Cache the equal-power mix gain used by the empty-path fast path.
+    fn recompute_empty_path_fast_gain(&mut self) {
+        let mix_01 = (self.mix_smoother.target() + 1.0) * 0.5;
+        let angle = mix_01 * std::f32::consts::FRAC_PI_2;
+        self.empty_path_fast_gain = angle.cos() + angle.sin();
     }
 
     fn rebuild_cached_parameters(&mut self) {
@@ -480,9 +491,13 @@ impl ABComparePlugin {
         }
 
         let current_mix = self.mix_smoother.current();
-        let mix_01 = (current_mix + 1.0) * 0.5;
-        let angle = mix_01 * std::f32::consts::FRAC_PI_2;
-        let gain = angle.cos() + angle.sin();
+        let gain = if (current_mix - self.mix_smoother.target()).abs() < 1e-5 {
+            self.empty_path_fast_gain
+        } else {
+            let mix_01 = (current_mix + 1.0) * 0.5;
+            let angle = mix_01 * std::f32::consts::FRAC_PI_2;
+            angle.cos() + angle.sin()
+        };
 
         if (gain - 1.0).abs() < 1e-6 {
             output.copy_from_slice(input);
@@ -629,6 +644,14 @@ impl Plugin for ABComparePlugin {
         self.cached_parameters.clone()
     }
 
+    fn validate_parameter(&self, id: &ParameterId, value: &ParameterValue) -> PluginResult<()> {
+        if let Some(param) = self.cached_parameters.iter().find(|p| p.id == *id) {
+            param.validate(value).map_err(|e| format!("{}: {}", id, e))
+        } else {
+            Err(format!("Unknown parameter: {}", id))
+        }
+    }
+
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
         match id.0.as_str() {
@@ -639,6 +662,7 @@ impl Plugin for ABComparePlugin {
                 if v.is_finite() {
                     self.mix = v.clamp(-1.0, 1.0);
                     self.mix_smoother.set_target(self.mix);
+                    self.recompute_empty_path_fast_gain();
                 }
             }
             "mix_mode" => {
@@ -660,6 +684,7 @@ impl Plugin for ABComparePlugin {
                 if self.mix_mode == MixMode::Binary {
                     let target = if self.selected_path == 0 { -1.0 } else { 1.0 };
                     self.mix_smoother.set_target(target);
+                    self.recompute_empty_path_fast_gain();
                 }
             }
             "bypass" => {
@@ -812,6 +837,7 @@ impl Plugin for ABComparePlugin {
 
         // Reset mix smoother with new sample rate
         self.mix_smoother = Smoother::new(self.mix, self.mix_transition_ms, sample_rate);
+        self.recompute_empty_path_fast_gain();
 
         // Rebuild band mask filters for new sample rate
         self.rebuild_band_mask_filters();
@@ -899,6 +925,11 @@ impl Plugin for ABComparePlugin {
             return Ok(context.num_frames);
         }
 
+        if self.can_use_empty_path_fast_path() {
+            self.process_empty_path_fast(input, output, context.num_frames)?;
+            return Ok(context.num_frames);
+        }
+
         // Grow internal buffers if the host block size exceeds the pre-allocated
         // capacity. This can happen with offline renderers or non-standard hosts
         // that use blocks larger than 4096. Growing here (not in initialize())
@@ -959,6 +990,7 @@ impl Plugin for ABComparePlugin {
         };
         if (self.mix_smoother.target() - target_mix).abs() > f32::EPSILON {
             self.mix_smoother.set_target(target_mix);
+            self.recompute_empty_path_fast_gain();
         }
 
         // Phase inversion signs
