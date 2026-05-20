@@ -68,19 +68,21 @@ fn main() {
 
     let start = std::time::Instant::now();
     let mut pos = 0;
+    let mut out_pos = 0;
     while pos < bench_frames {
         let end = (pos + rt_block).min(bench_frames);
         let ctx = ProcessContext {
             sample_rate: input_sr,
             num_frames: end - pos,
         };
-        plugin
+        let produced = plugin
             .process(
                 &bench_input[pos * channels..end * channels],
-                &mut bench_output[..rt_max_out * channels],
+                &mut bench_output[out_pos * channels..],
                 &ctx,
             )
             .unwrap();
+        out_pos += produced;
         pos = end;
     }
     let duration = start.elapsed();
