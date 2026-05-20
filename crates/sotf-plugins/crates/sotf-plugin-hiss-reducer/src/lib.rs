@@ -152,18 +152,19 @@ impl InPlacePlugin for HissReducerPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
+        let expected = context
+            .num_frames
+            .checked_mul(self.channels)
+            .ok_or_else(|| "Frame/channel count overflow".to_string())?;
+        if buffer.len() != expected {
+            return Err(format!(
+                "Buffer size mismatch: expected {}, got {}",
+                expected,
+                buffer.len()
+            ));
+        }
+
         if self.params.enabled {
-            let expected = context
-                .num_frames
-                .checked_mul(self.channels)
-                .ok_or_else(|| "Frame/channel count overflow".to_string())?;
-            if buffer.len() != expected {
-                return Err(format!(
-                    "Buffer size mismatch: expected {}, got {}",
-                    expected,
-                    buffer.len()
-                ));
-            }
             self.reducer.process(buffer);
         }
         Ok(context.num_frames)
