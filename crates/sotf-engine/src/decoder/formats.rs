@@ -4,12 +4,12 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use symphonia::core::audio::{Audio, GenericAudioBufferRef};
-use symphonia::core::codecs::CodecParameters;
 use symphonia::core::codecs::audio::{
-    AudioCodecId, AudioCodecParameters, AudioDecoder as SymphoniaAudioDecoder, AudioDecoderOptions,
-    CODEC_ID_NULL_AUDIO, well_known,
+    well_known, AudioCodecId, AudioCodecParameters, AudioDecoder as SymphoniaAudioDecoder,
+    AudioDecoderOptions, CODEC_ID_NULL_AUDIO,
 };
 use symphonia::core::codecs::registry::CodecRegistry;
+use symphonia::core::codecs::CodecParameters;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::{Hint, Probe};
 use symphonia::core::formats::{FormatOptions, FormatReader, Track, TrackType};
@@ -581,14 +581,14 @@ impl AudioDecoder for SymphoniaDecoder {
     }
 
     fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize> {
-        if self.eof {
-            return Ok(0);
-        }
-
         // Clear destination samples but keep capacity
         dest.samples.clear();
         dest.frame_position = self.position;
         dest.spec = self.spec.clone(); // Ensure spec matches
+
+        if self.eof {
+            return Ok(0);
+        }
 
         if let Some(pending) = self.pending_decoded.take() {
             let frame_count = pending.frame_count();

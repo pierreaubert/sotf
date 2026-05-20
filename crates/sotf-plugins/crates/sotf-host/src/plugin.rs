@@ -50,6 +50,16 @@ pub struct ProcessContext {
     pub num_frames: usize,
 }
 
+impl ProcessContext {
+    /// Create a basic processing context.
+    pub const fn new(sample_rate: u32, num_frames: usize) -> Self {
+        Self {
+            sample_rate,
+            num_frames,
+        }
+    }
+}
+
 /// Result type for plugin operations
 pub type PluginResult<T> = Result<T, String>;
 

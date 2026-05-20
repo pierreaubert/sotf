@@ -86,8 +86,14 @@ pub trait AudioDecoder {
     /// Get the audio format
     fn format(&self) -> AudioFormat;
 
-    /// Decode the next chunk of audio data into the provided buffer
-    /// Returns the number of frames decoded (0 indicates end of stream)
+    /// Decode the next chunk of audio data into the provided buffer.
+    ///
+    /// Implementations must overwrite `dest`: clear `dest.samples` before
+    /// appending decoded data, update `dest.spec`, and set
+    /// `dest.frame_position` to the first decoded frame. Callers may reuse the
+    /// same `DecodedAudio` allocation across calls.
+    ///
+    /// Returns the number of frames decoded (0 indicates end of stream).
     fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize>;
 
     /// Decode the next chunk of audio data (allocates new buffer)
