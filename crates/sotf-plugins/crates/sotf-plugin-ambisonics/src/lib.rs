@@ -322,9 +322,11 @@ impl Plugin for AmbisonicsDecoderPlugin {
         }
 
         if self.dual_band
-            && self.basic_matrix.is_some()
-            && self.crossover.is_some()
-            && self.decode_matrix.is_some()
+            && let (Some(dm_ref), Some(basic_ref), Some(crossover)) = (
+                self.decode_matrix.as_ref(),
+                self.basic_matrix.as_ref(),
+                self.crossover.as_mut(),
+            )
         {
             // Dual-band path: split each ambisonics channel into LF and HF,
             // apply the basic matrix to LF and the max-rE matrix to HF, then sum.
@@ -352,9 +354,6 @@ impl Plugin for AmbisonicsDecoderPlugin {
             );
 
             // --- Phase 1: crossover split ---
-            // take() avoids a double-borrow between self.crossover (&mut) and
-            // self.lf_buffer / self.hf_buffer in the same loop body.
-            let mut crossover = self.crossover.take().expect("checked is_some above");
             // The crossover has `in_ch` filter banks (one per ambisonics channel).
             // Input layout: interleaved [frame * in_ch + ch].
             for frame in 0..num_frames {
@@ -365,16 +364,7 @@ impl Plugin for AmbisonicsDecoderPlugin {
                     self.hf_buffer[off + ch] = hf;
                 }
             }
-            self.crossover = Some(crossover);
-
             // --- Phase 2: matrix decode + accumulate ---
-            // All three Options are Some — verified in the outer if condition.
-            let (Some(dm_ref), Some(basic_ref)) =
-                (self.decode_matrix.as_ref(), self.basic_matrix.as_ref())
-            else {
-                unreachable!("checked is_some above");
-            };
-
             // Per-frame scratch vectors for summing LF and HF contributions.
             // out_ch is at most 16 in practice (9.1.6 layout).
             // Use pre-allocated per-frame scratch (no heap allocation)
@@ -409,6 +399,11 @@ impl Plugin for AmbisonicsDecoderPlugin {
     }
 
     fn latency_samples(&self) -> usize {
+        // The plugin reports no host-compensated latency because both single-band
+        // and dual-band paths are direct frame-to-frame transforms. In dual-band
+        // mode the LR4 crossover still has frequency-dependent group delay near
+        // the 700 Hz crossover, but the complementary LF/HF sum has no fixed
+        // linear-phase delay to report to the host.
         0 // Pure matrix multiply — no latency
     }
 
@@ -603,6 +598,18 @@ mod tests {
     #[test]
     fn test_latency() {
         let plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
+        assert_eq!(plugin.latency_samples(), 0);
+    }
+
+    #[test]
+    fn test_dual_band_reports_no_fixed_host_latency() {
+        let config = AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "5.1".to_owned(),
+            max_re_weighting: true,
+            dual_band: true,
+        };
+        let plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
         assert_eq!(plugin.latency_samples(), 0);
     }
 

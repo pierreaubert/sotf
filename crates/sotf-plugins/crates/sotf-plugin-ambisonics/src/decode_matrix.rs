@@ -72,10 +72,12 @@ impl DecodeMatrix {
         // Build the Y matrix [num_speakers × ambi_ch]
         // Y[s][n] = Y_n(azimuth_s, elevation_s)
         let mut y_matrix = vec![0.0_f64; num_speakers * ambi_ch];
+        let mut sh_buffer = vec![0.0_f64; ambi_ch];
         for (s, spk) in speakers.iter().enumerate() {
             let az = deg_to_rad(spk.azimuth as f64);
             let el = deg_to_rad(spk.elevation as f64);
-            let sh = spherical_harmonics_vector(order, az, el);
+            spherical_harmonics_vector(order, az, el, &mut sh_buffer);
+            let sh = &sh_buffer;
             for (n, &val) in sh.iter().enumerate() {
                 y_matrix[s * ambi_ch + n] = val;
             }
@@ -125,13 +127,16 @@ impl DecodeMatrix {
         debug_assert!(input.len() >= self.ambi_channels);
         debug_assert!(output.len() >= self.speaker_count);
 
-        for (s, out_sample) in output.iter_mut().enumerate().take(self.speaker_count) {
+        let input = &input[..self.ambi_channels];
+        for s in 0..self.speaker_count {
             let row_offset = s * self.ambi_channels;
             let mut sum = 0.0_f32;
-            for (n, &in_sample) in input.iter().enumerate().take(self.ambi_channels) {
-                sum = self.matrix[row_offset + n].mul_add(in_sample, sum);
+            let row = &self.matrix[row_offset..row_offset + self.ambi_channels];
+
+            for (coef, &in_sample) in row.iter().zip(input.iter()) {
+                sum = coef.mul_add(in_sample, sum);
             }
-            *out_sample = sum;
+            output[s] = sum;
         }
     }
 }
