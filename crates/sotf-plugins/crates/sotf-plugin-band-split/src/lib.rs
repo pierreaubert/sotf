@@ -7,11 +7,66 @@ pub mod params;
 use crate::params::{CROSSOVER_TYPES, PARAMS as BS};
 use serde::{Deserialize, Serialize};
 use sotf_host::lr4_crossover::MultibandLr4Crossover;
+use sotf_host::lr8_crossover::MultibandLr8Crossover;
 use sotf_host::param_bridge;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::{LinearSmoother, LogSmoother};
+
+enum CrossoverMode {
+    LR24(MultibandLr4Crossover<f32>),
+    LR48(MultibandLr8Crossover<f32>),
+}
+
+impl CrossoverMode {
+    fn new(frequencies: &[f32], sample_rate: u32, channels: usize, kind: usize) -> Self {
+        match kind {
+            1 => Self::LR48(MultibandLr8Crossover::new(
+                frequencies,
+                sample_rate as f32,
+                channels,
+            )),
+            _ => Self::LR24(MultibandLr4Crossover::new(
+                frequencies,
+                sample_rate as f32,
+                channels,
+            )),
+        }
+    }
+
+    fn set_frequency(&mut self, index: usize, freq: f32) {
+        match self {
+            Self::LR24(crossover) => crossover.set_frequency(index, freq),
+            Self::LR48(crossover) => crossover.set_frequency(index, freq),
+        }
+    }
+
+    fn process_frame(&mut self, input: &[f32], bands: &mut [&mut [f32]]) {
+        match self {
+            Self::LR24(crossover) => crossover.process_frame(input, bands),
+            Self::LR48(crossover) => crossover.process_frame(input, bands),
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::LR24(crossover) => crossover.reset(),
+            Self::LR48(crossover) => crossover.reset(),
+        }
+    }
+
+    fn reinit(&mut self, freqs: &[f32], sample_rate: u32, channels: usize, kind: usize) {
+        *self = Self::new(freqs, sample_rate, channels, kind);
+    }
+}
+
+fn parse_crossover_type_index(input: &str) -> usize {
+    CROSSOVER_TYPES
+        .iter()
+        .position(|t| t.eq_ignore_ascii_case(input))
+        .unwrap_or(0)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BandSplitPluginParams {
@@ -51,7 +106,7 @@ pub struct BandSplitPlugin {
     input_channels: usize,
     sample_rate: u32,
     num_bands: usize,
-    crossover: MultibandLr4Crossover<f32>,
+    crossover: CrossoverMode,
     freq_smoothers: Vec<LogSmoother>,
     /// Per-band gain in dB (one per band, up to MAX_BANDS). Default 0.0 dB.
     band_gains_db: [f32; MAX_BANDS],
@@ -78,7 +133,7 @@ impl BandSplitPlugin {
     pub fn new_multiband(
         input_channels: usize,
         frequencies: &[f64],
-        _crossover_type: &str,
+        crossover_type: &str,
     ) -> Result<Self, String> {
         if frequencies.is_empty() {
             return Err("At least one crossover frequency is required".to_string());
@@ -108,16 +163,18 @@ impl BandSplitPlugin {
             LinearSmoother::new(1.0, 20.0, sr),
         ];
 
+        let crossover_type_index = parse_crossover_type_index(crossover_type);
+
         let mut p = Self {
             input_channels,
             sample_rate: sr,
             num_bands,
-            crossover: MultibandLr4Crossover::new(&freq_f32, sr as f32, input_channels),
+            crossover: CrossoverMode::new(&freq_f32, sr, input_channels, crossover_type_index),
             freq_smoothers: smoothers,
             band_gains_db: [0.0; MAX_BANDS],
             band_gains_linear: [1.0; MAX_BANDS],
             band_gain_smoothers: gain_smoothers,
-            crossover_type_index: 0, // LR24 default
+            crossover_type_index,
             cached_parameters: Vec::new(),
             band_flat: vec![0.0f32; num_bands * input_channels],
         };
@@ -136,16 +193,16 @@ impl BandSplitPlugin {
             match params.num_bands {
                 2 => vec![params.frequency],
                 3 => {
-                    // Default 3-band: split at frequency and frequency * 8
+                    // Default 3-band: split at frequency and two octaves up.
                     let f1 = params.frequency;
-                    let f2 = (f1 * 8.0).min(20000.0);
+                    let f2 = (f1 * 4.0).min(20000.0);
                     vec![f1, f2]
                 }
                 4 => {
-                    // Default 4-band: geometric spread
+                    // Default 4-band: two octaves per split.
                     let f1 = params.frequency;
-                    let f2 = (f1 * 4.0).min(18000.0);
-                    let f3 = (f2 * 3.0).min(20000.0);
+                    let f2 = (f1 * 4.0).min(20000.0);
+                    let f3 = (f2 * 4.0).min(20000.0);
                     vec![f1, f2, f3]
                 }
                 n => return Err(format!("Unsupported num_bands: {} (must be 2-4)", n)),
@@ -234,6 +291,7 @@ impl Plugin for BandSplitPlugin {
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         let name = &id.0;
+        let previous_crossover_type = self.crossover_type_index;
 
         // Try static PARAMS first (frequency at index 0, crossover_type at index 1)
         if let Ok(idx) =
@@ -242,6 +300,14 @@ impl Plugin for BandSplitPlugin {
             // Side effect: frequency change needs to propagate to crossover
             if idx == 0 {
                 // frequency was already set via set_param_value -> smoother.set_target
+            } else if idx == 1 && self.crossover_type_index != previous_crossover_type {
+                let freqs: Vec<f32> = self.freq_smoothers.iter().map(|s| s.target()).collect();
+                self.crossover.reinit(
+                    &freqs,
+                    self.sample_rate,
+                    self.input_channels,
+                    self.crossover_type_index,
+                );
             }
             self.rebuild_cached_parameters();
             return Ok(());
@@ -324,8 +390,12 @@ impl Plugin for BandSplitPlugin {
         for (i, s) in self.band_gain_smoothers.iter_mut().enumerate() {
             *s = LinearSmoother::new(self.band_gains_linear[i], 20.0, sample_rate);
         }
-        self.crossover
-            .reinit(&freqs, sample_rate as f32, self.input_channels);
+        self.crossover.reinit(
+            &freqs,
+            sample_rate,
+            self.input_channels,
+            self.crossover_type_index,
+        );
         Ok(())
     }
     fn reset(&mut self) {
@@ -365,11 +435,9 @@ impl Plugin for BandSplitPlugin {
             {
                 let flat = &mut self.band_flat[..nb * in_ch];
                 let mut band_slices: [&mut [f32]; MAX_BANDS] = [&mut [], &mut [], &mut [], &mut []];
-                let mut remaining = flat;
-                for slot in band_slices.iter_mut().take(nb) {
-                    let (chunk, rest) = remaining.split_at_mut(in_ch);
-                    *slot = chunk;
-                    remaining = rest;
+                let mut chunks = flat.chunks_exact_mut(in_ch);
+                for band in band_slices.iter_mut().take(nb) {
+                    *band = chunks.next().unwrap();
                 }
                 self.crossover
                     .process_frame(frame_input, &mut band_slices[..nb]);
@@ -497,6 +565,84 @@ mod tests {
         };
         let p = BandSplitPlugin::from_params(1, &params).unwrap();
         assert_eq!(p.output_channels(), 4);
+    }
+
+    #[test]
+    fn test_band_split_from_params_frequency_spread_is_geometric() {
+        let params = BandSplitPluginParams {
+            frequencies: vec![],
+            frequency: 500.0,
+            num_bands: 3,
+            crossover_type: "LR24".to_string(),
+        };
+        let p = BandSplitPlugin::from_params(1, &params).unwrap();
+        let freq2 = p
+            .get_parameter(&ParameterId("frequency_2".to_string()))
+            .and_then(|v| v.as_float())
+            .expect("frequency_2 parameter should exist");
+        assert!((freq2 - 2000.0).abs() < 1.0);
+
+        let params = BandSplitPluginParams {
+            frequencies: vec![],
+            frequency: 500.0,
+            num_bands: 4,
+            crossover_type: "LR24".to_string(),
+        };
+        let p = BandSplitPlugin::from_params(1, &params).unwrap();
+        let freq2 = p
+            .get_parameter(&ParameterId("frequency_2".to_string()))
+            .and_then(|v| v.as_float())
+            .expect("frequency_2 parameter should exist");
+        let freq3 = p
+            .get_parameter(&ParameterId("frequency_3".to_string()))
+            .and_then(|v| v.as_float())
+            .expect("frequency_3 parameter should exist");
+        assert!((freq2 - 2000.0).abs() < 1.0);
+        assert!((freq3 - 8000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_crossover_type_lr24_vs_lr48_produces_different_low_band_rolloff() {
+        let n = 16000usize;
+        let sr = 48000.0f32;
+        let input: Vec<f32> = (0..n)
+            .map(|i| {
+                let t = i as f32 / sr;
+                let phase = 2.0 * std::f32::consts::PI * 2000.0 * t;
+                phase.sin()
+            })
+            .collect();
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: n,
+        };
+
+        let mut p_lr24 = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
+        p_lr24.initialize(48000).unwrap();
+        let mut p_lr48 = BandSplitPlugin::new(1, 1000.0, "LR48").unwrap();
+        p_lr48.initialize(48000).unwrap();
+
+        let mut out_lr24 = vec![0.0; n * 2];
+        let mut out_lr48 = vec![0.0; n * 2];
+        p_lr24.process(&input, &mut out_lr24, &ctx).unwrap();
+        p_lr48.process(&input, &mut out_lr48, &ctx).unwrap();
+
+        // Compare settled low-band energy from band 0 after initial transient.
+        let start = 512;
+        let mut e_lr24 = 0.0f32;
+        let mut e_lr48 = 0.0f32;
+        for idx in start..n {
+            let low_24 = out_lr24[idx * 2];
+            let low_48 = out_lr48[idx * 2];
+            e_lr24 += low_24 * low_24;
+            e_lr48 += low_48 * low_48;
+        }
+        let ratio = (e_lr48 / (n - start) as f32) / (e_lr24 / (n - start) as f32);
+        assert!(
+            ratio < 0.5,
+            "LR48 should attenuate low band above crossover more: ratio {}",
+            ratio
+        );
     }
 
     #[test]
