@@ -94,6 +94,8 @@ pub struct StereoImagerPlugin {
 
     // Smoothers for click-free parameter changes
     width_smoother: Smoother,
+    low_mid_freq_smoother: Smoother,
+    mid_high_freq_smoother: Smoother,
     low_width_smoother: Smoother,
     mid_width_smoother: Smoother,
     high_width_smoother: Smoother,
@@ -127,6 +129,8 @@ impl StereoImagerPlugin {
             dry_buf: Vec::new(),
 
             width_smoother: Smoother::new(params.width, SMOOTHING_MS, sr),
+            low_mid_freq_smoother: Smoother::new(params.low_mid_freq, SMOOTHING_MS, sr),
+            mid_high_freq_smoother: Smoother::new(params.mid_high_freq, SMOOTHING_MS, sr),
             low_width_smoother: Smoother::new(params.low_width, SMOOTHING_MS, sr),
             mid_width_smoother: Smoother::new(params.mid_width, SMOOTHING_MS, sr),
             high_width_smoother: Smoother::new(params.high_width, SMOOTHING_MS, sr),
@@ -200,7 +204,7 @@ impl StereoImagerPlugin {
 
 impl InPlacePlugin for StereoImagerPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("StereoImager", "1.0.0", "SotF")
+        PluginInfo::new("StereoImager", env!("CARGO_PKG_VERSION"), "SotF")
             .with_description("Multi-band M/S stereo width control")
     }
 
@@ -260,14 +264,14 @@ impl InPlacePlugin for StereoImagerPlugin {
             "low_mid_freq" => {
                 if let Some(v) = value.as_float() {
                     self.low_mid_freq = v;
-                    self.crossover_low.set_frequency(v);
+                    self.low_mid_freq_smoother.set_target(v);
                     update_cached!(id, ParameterValue::Float(v));
                 }
             }
             "mid_high_freq" => {
                 if let Some(v) = value.as_float() {
                     self.mid_high_freq = v;
-                    self.crossover_high.set_frequency(v);
+                    self.mid_high_freq_smoother.set_target(v);
                     update_cached!(id, ParameterValue::Float(v));
                 }
             }
@@ -335,6 +339,8 @@ impl InPlacePlugin for StereoImagerPlugin {
 
         // Reset smoothers at the new sample rate
         self.width_smoother = Smoother::new(self.width, SMOOTHING_MS, sample_rate);
+        self.low_mid_freq_smoother = Smoother::new(self.low_mid_freq, SMOOTHING_MS, sample_rate);
+        self.mid_high_freq_smoother = Smoother::new(self.mid_high_freq, SMOOTHING_MS, sample_rate);
         self.low_width_smoother = Smoother::new(self.low_width, SMOOTHING_MS, sample_rate);
         self.mid_width_smoother = Smoother::new(self.mid_width, SMOOTHING_MS, sample_rate);
         self.high_width_smoother = Smoother::new(self.high_width, SMOOTHING_MS, sample_rate);
@@ -353,6 +359,8 @@ impl InPlacePlugin for StereoImagerPlugin {
         // Snap all smoothers to their current target values so a reset
         // during a parameter transition does not resume the ramp.
         self.width_smoother.reset(self.width);
+        self.low_mid_freq_smoother.reset(self.low_mid_freq);
+        self.mid_high_freq_smoother.reset(self.mid_high_freq);
         self.low_width_smoother.reset(self.low_width);
         self.mid_width_smoother.reset(self.mid_width);
         self.high_width_smoother.reset(self.high_width);
@@ -366,10 +374,21 @@ impl InPlacePlugin for StereoImagerPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
 
+        if self.sample_rate != context.sample_rate {
+            self.initialize(context.sample_rate)?;
+        }
+
         let nf = context.num_frames;
 
         // Stereo only -- pass through unchanged for non-stereo
         if self.channels != 2 {
+            return Ok(nf);
+        }
+
+        // Fully dry path: no need to allocate/copy dry buffers or run any DSP.
+        let mix_is_zero = self.mix_smoother.target() <= f32::EPSILON
+            && self.mix_smoother.current() <= f32::EPSILON;
+        if mix_is_zero {
             return Ok(nf);
         }
 
@@ -390,7 +409,7 @@ impl InPlacePlugin for StereoImagerPlugin {
 
         // Hoist mono_bass out of the per-sample loop — it changes extremely rarely
         // and checking a bool every sample wastes branch prediction budget.
-        let mono_bass = self.mono_bass;
+        let low_side_enable = if self.mono_bass { 0.0 } else { 1.0 };
 
         for frame in 0..nf {
             let idx = frame * 2;
@@ -400,6 +419,17 @@ impl InPlacePlugin for StereoImagerPlugin {
             // M/S encode
             let mid = (l + r) * 0.5;
             let side = (l - r) * 0.5;
+
+            // Smooth crossover automation. Retuning the LR4 filters in small
+            // per-frame frequency steps avoids the large coefficient jumps that
+            // caused zipper clicks when set_parameter() updated them instantly.
+            let mut low_mid_freq = self.low_mid_freq_smoother.advance();
+            let mut mid_high_freq = self.mid_high_freq_smoother.advance();
+            if low_mid_freq > mid_high_freq {
+                std::mem::swap(&mut low_mid_freq, &mut mid_high_freq);
+            }
+            self.crossover_low.set_frequency(low_mid_freq);
+            self.crossover_high.set_frequency(mid_high_freq);
 
             // Split mid and side into bands via cascaded crossovers.
             // crossover_low: channel 0 = mid signal, channel 1 = side signal
@@ -416,8 +446,7 @@ impl InPlacePlugin for StereoImagerPlugin {
             let hw = self.high_width_smoother.advance();
 
             // Apply per-band width scaling to side signal.
-            // mono_bass is hoisted above the loop — no per-sample branch.
-            let low_side = if mono_bass { 0.0 } else { side_low * lw * gw };
+            let low_side = side_low * lw * gw * low_side_enable;
             let mid_side_scaled = side_mid * mw * gw;
             let high_side_scaled = side_high * hw * gw;
 
@@ -500,6 +529,36 @@ mod tests {
                 buffer[idx + 1]
             );
         }
+    }
+
+    #[test]
+    fn test_crossover_frequency_changes_are_smoothed() {
+        let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+        plugin.initialize(48000).unwrap();
+
+        let initial = plugin.crossover_low.frequency();
+        plugin
+            .set_parameter(
+                ParameterId::from("low_mid_freq"),
+                ParameterValue::Float(1000.0),
+            )
+            .unwrap();
+
+        assert!(
+            (plugin.crossover_low.frequency() - initial).abs() < 1e-3,
+            "set_parameter should retarget the frequency smoother, not retune LR4 coefficients instantly"
+        );
+
+        let mut buffer = vec![0.25f32; 256 * 2];
+        plugin
+            .process_in_place(&mut buffer, &make_context(256))
+            .unwrap();
+
+        let after = plugin.crossover_low.frequency();
+        assert!(
+            after > initial && after < 1000.0,
+            "frequency should move gradually during processing: initial={initial}, after={after}"
+        );
     }
 
     /// mono_bass=false: the per-sample mono_bass branch must not change output
@@ -812,6 +871,12 @@ mod tests {
             plugin.get_parameter(&ParameterId::from("nonexistent")),
             None
         );
+    }
+
+    #[test]
+    fn test_plugin_info_version_matches_manifest() {
+        let plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+        assert_eq!(plugin.info().version, env!("CARGO_PKG_VERSION"));
     }
 
     /// Non-stereo channels should pass through unchanged
