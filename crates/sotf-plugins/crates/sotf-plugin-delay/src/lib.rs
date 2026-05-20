@@ -320,15 +320,30 @@ impl DelayPlugin {
     /// Read a sample from the delay buffer at a given position and channel.
     #[inline]
     fn read_buffer(&self, pos: usize, ch: usize) -> f32 {
-        self.buffer[pos * self.channels + ch]
+        self.buffer[ch * self.max_samples + pos]
     }
 
     /// Compute the effective delay in samples for a given frame, including LFO modulation.
     #[inline]
     fn effective_delay_samples(&self, base_delay_samples: f32, lfo_val: f32) -> f32 {
-        let lfo_offset = lfo_val * self.lfo_depth_ms * self.sample_rate as f32 / 1000.0;
-        // Clamp to valid range: at least 1 sample (for interpolation guard), at most max_samples-3
-        (base_delay_samples + lfo_offset).clamp(1.0, (self.max_samples - 3) as f32)
+        let mut lfo_offset_samples = lfo_val * self.lfo_depth_ms * self.sample_rate as f32 / 1000.0;
+
+        let min_delay = 1.0_f32;
+        let max_delay = (self.max_samples - 3) as f32;
+
+        let headroom_down = (base_delay_samples - min_delay).max(0.0);
+        let headroom_up = (max_delay - base_delay_samples).max(0.0);
+        let max_lfo_depth = headroom_down.min(headroom_up);
+        if max_lfo_depth.is_finite() && max_lfo_depth < lfo_offset_samples.abs() {
+            let sign = if lfo_offset_samples.is_sign_negative() {
+                -1.0
+            } else {
+                1.0
+            };
+            lfo_offset_samples = sign * max_lfo_depth;
+        }
+
+        (base_delay_samples + lfo_offset_samples).clamp(min_delay, max_delay)
     }
 }
 
@@ -542,11 +557,9 @@ impl InPlacePlugin for DelayPlugin {
                 0.0
             };
 
-            // Legacy parity: the global delay smoother is advanced twice per
-            // frame (matching prior code). In per-channel mode the value is
-            // unused, but the smoother still advances so its time constant
-            // stays consistent if the user later switches back.
-            let _ = self.delay_smoother.advance();
+            // Keep the global smoother moving once per frame. In per-channel
+            // mode the value is unused, but it still tracks its target so its
+            // time constant stays consistent if callers switch back.
             let global_base_delay = self.delay_smoother.advance();
 
             for ch in 0..self.channels {
@@ -586,7 +599,7 @@ impl InPlacePlugin for DelayPlugin {
                     delayed * fb
                 };
 
-                self.buffer[self.write_pos * self.channels + ch] = input + feedback_signal;
+                self.buffer[ch * self.max_samples + self.write_pos] = input + feedback_signal;
                 buffer[idx] = input * (1.0 - mix) + delayed * mix;
             }
             self.write_pos = (self.write_pos + 1) & (self.max_samples - 1);
@@ -692,6 +705,44 @@ mod tests {
     }
 
     #[test]
+    fn test_effective_delay_samples_scales_depth_to_preserve_symmetry() {
+        let mut p = DelayPlugin::new(1, 100.0, 0.0, 1.0);
+        p.initialize(48000).unwrap();
+        p.lfo_depth_ms = 10.0;
+        p.delay_smoother.set_target(100.0 * 48.0);
+
+        let base_delay = 100.0 * 48.0;
+        let up = p.effective_delay_samples(base_delay, 1.0);
+        let down = p.effective_delay_samples(base_delay, -1.0);
+        let delta = up - base_delay;
+        let neg_delta = down - base_delay;
+        assert!(
+            (delta.abs() - neg_delta.abs()).abs() < 1e-5,
+            "LFO depth should scale symmetrically around base delay (up={up}, down={down})"
+        );
+        assert!(delta < 0.0 && neg_delta > 0.0 || delta > 0.0 && neg_delta < 0.0);
+    }
+
+    #[test]
+    fn test_effective_delay_samples_degenerate_near_min_delay() {
+        let mut p = DelayPlugin::new(1, 0.0, 0.0, 1.0);
+        p.initialize(48000).unwrap();
+        p.lfo_depth_ms = 10.0;
+
+        let base_delay = 1.0;
+        assert!(
+            p.effective_delay_samples(base_delay, 1.0).to_bits()
+                == p.effective_delay_samples(base_delay, -1.0).to_bits(),
+            "when near minimum delay, LFO depth should be reduced to avoid asymmetry"
+        );
+        assert_eq!(
+            p.effective_delay_samples(base_delay, 1.0),
+            base_delay,
+            "degenerate lower-bound case should still satisfy interpolation guard"
+        );
+    }
+
+    #[test]
     fn test_allpass_feedback() {
         let mut p = DelayPlugin::new(1, 10.0, 0.5, 0.5);
         p.initialize(48000).unwrap();
@@ -738,6 +789,33 @@ mod tests {
         assert!((y1 - 0.75).abs() < 1e-6, "y1={}", y1);
         // y[2] = 0.5*0 + 0 - 0.5*0.75 = -0.375
         assert!((y2 - (-0.375)).abs() < 1e-6, "y2={}", y2);
+    }
+
+    #[test]
+    fn test_delay_buffer_is_deinterleaved() {
+        let mut p = DelayPlugin::new(2, 5.0, 0.0, 0.0);
+        p.initialize(48_000).unwrap();
+        p.reset();
+
+        let mut buffer = vec![0.0f32; 2];
+        buffer[0] = 1.23;
+        buffer[1] = -0.77;
+
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: 48_000,
+                num_frames: 1,
+            },
+        )
+        .unwrap();
+
+        // Deinterleaved layout stores channels in separate contiguous segments:
+        // [ch0 samples..., ch1 samples..., ...].
+        assert_eq!(p.buffer[0], 1.23);
+        assert_eq!(p.buffer[p.max_samples], -0.77);
+        assert_eq!(p.buffer[1], 0.0);
+        assert_eq!(p.buffer[p.max_samples + 1], 0.0);
     }
 
     #[test]
@@ -1049,27 +1127,19 @@ mod tests {
         );
     }
 
-    /// Verify that the delay smoother advances per-sample (no block-constant pitch jump).
-    ///
-    /// When the delay target changes, the actual delay time should ramp
-    /// smoothly sample-by-sample rather than jumping at the block boundary.
-    /// This test confirms that the smoother internal state moves N steps
-    /// after processing N frames — not just 1 step for the whole block.
+    /// Verify that the delay smoother advances exactly once per processed frame.
     #[test]
-    fn test_delay_smoother_per_sample_advance() {
-        // Feed an impulse at sample 0. Record the smoother current value
-        // immediately before and immediately after a 64-frame block.
-        // With per-sample advance the smoother will have moved 64 steps;
-        // with block-constant it moves only 1 step (= next_n(1)).
+    fn test_delay_smoother_advances_once_per_frame() {
         let sr = 48000u32;
         let mut p = DelayPlugin::new(1, 100.0, 0.0, 1.0); // mix=1 to hear delay
         p.initialize(sr).unwrap();
 
-        // Change delay target so the smoother needs to ramp
+        let mut expected = sotf_host::smoothing::Smoother::new(100.0 * 48.0, 50.0, sr);
+        expected.set_target(200.0 * 48.0);
+
         p.set_parameter(ParameterId::from("delay_ms"), ParameterValue::Float(200.0))
             .unwrap();
 
-        // Snapshot the smoother position after processing 64 frames
         let num_frames = 64usize;
         let mut buf = vec![0.0f32; num_frames];
         p.process_in_place(
@@ -1081,23 +1151,15 @@ mod tests {
         )
         .unwrap();
 
-        // After 64 frames, the smoother current should have moved 64 steps
-        // toward the target (200 ms * sr = 9600 samples).
-        // We verify indirectly: the smoother must have advanced at least 64 steps,
-        // meaning it consumed exactly num_frames advances.  The Smoother::advance()
-        // uses coeff^1 per step, while next_n(64) uses coeff^64 in one call.
-        // Both converge in the same direction, but with block-constant the internal
-        // `current` after the block reflects only coeff^64 applied once, whereas
-        // with per-sample it reflects coeff^1 applied 64 times — identical math,
-        // but per-sample the *intermediate* values used for each frame differ.
-        // The observable difference: in the per-sample path, each frame uses its own
-        // smoother value, so the delay read position changes every sample.
-        // We confirm the smoother advanced the right number of steps by checking
-        // that its final value after 64 frames matches coeff^64 behavior, which
-        // per-sample achieves by accumulation.  Here we simply check the plugin
-        // compiled and ran without assertion errors (the ramp test above is the
-        // definitive behavioral check). We just guard against regression.
-        let _ = buf; // consumed
+        for _ in 0..num_frames {
+            expected.advance();
+        }
+        let actual = p.delay_smoother.current();
+        let expected = expected.current();
+        assert!(
+            (actual - expected).abs() < 1e-4,
+            "delay smoother should advance once per frame: actual={actual}, expected={expected}"
+        );
     }
 
     #[test]
@@ -1108,7 +1170,8 @@ mod tests {
 
         // The parameter must exist
         assert!(
-            p.get_parameter(&ParameterId::from("allpass_coeff")).is_some(),
+            p.get_parameter(&ParameterId::from("allpass_coeff"))
+                .is_some(),
             "allpass_coeff parameter should exist"
         );
 

@@ -249,9 +249,6 @@ mod tests {
             p.allpass_feedback,
             pk(PARAMS, "allpass_feedback").default_bool()
         );
-        assert_eq!(
-            p.allpass_coeff,
-            pk(PARAMS, "allpass_coeff").default_f64()
-        );
+        assert_eq!(p.allpass_coeff, pk(PARAMS, "allpass_coeff").default_f64());
     }
 }
