@@ -1,3 +1,20 @@
+# 0.5.6
+
+## Fixes
+
+- **Avoid tiny per-frame SIMD calls** — global and per-channel gain now use
+  scalar frame helpers for channel counts up to four, keeping the SIMD path
+  for larger frames. Added `test_small_frame_gain_helpers_match_expected_scalar_results`.
+
+# 0.5.5
+
+## Fixes
+
+- Added regression coverage for calling `set_channel_gain_db()` before
+  `initialize()`: `initialize()` recalculates per-channel smoother coefficients
+  at the real host sample rate while preserving the pre-set target. Documented
+  that this call order is supported.
+
 # 0.5.4
 
 ## Fixes
