@@ -374,7 +374,11 @@ impl DynEqBand {
 
 /// Compute bandpass edges from center frequency and Q.
 fn bandpass_edges(freq: f32, q: f32) -> (f32, f32) {
-    let half_bw = (1.0 / (2.0 * q.max(0.1))).exp2();
+    // Exact peaking-EQ Q <-> octave-bandwidth relation:
+    // BW_oct = 2 * asinh(1 / (2Q)) / ln(2).
+    let inv_2q = 1.0 / (2.0 * q.max(0.1));
+    let bw_oct = 2.0 * inv_2q.asinh() / std::f32::consts::LN_2;
+    let half_bw = (bw_oct * 0.5).exp2();
     let f_low = (freq / half_bw).max(20.0);
     let f_high = (freq * half_bw).min(20000.0);
     (f_low, f_high)
@@ -646,6 +650,11 @@ impl InPlacePlugin for DynamicEqPlugin {
             if v.is_finite() {
                 self.threshold_db = v.clamp(-60.0, 0.0);
                 self.threshold_smoother.set_target(self.threshold_db);
+                for band in &mut self.bands {
+                    if (band.band_threshold - self.threshold_db).abs() <= 0.01 {
+                        band.use_band_threshold = false;
+                    }
+                }
             }
         } else if id == self.param_ratio {
             let v = value
@@ -653,6 +662,11 @@ impl InPlacePlugin for DynamicEqPlugin {
                 .unwrap_or(pk(DQ, "ratio").default_f64() as f32);
             if v.is_finite() {
                 self.ratio = v.clamp(1.0, 20.0);
+                for band in &mut self.bands {
+                    if (band.band_ratio - self.ratio).abs() <= 0.01 {
+                        band.use_band_ratio = false;
+                    }
+                }
             }
         } else if id == self.param_attack {
             let v = value
@@ -725,13 +739,14 @@ impl InPlacePlugin for DynamicEqPlugin {
                         "threshold" => {
                             if let Some(v) = value.as_float() {
                                 band.band_threshold = v.clamp(-60.0, 0.0);
-                                band.use_band_threshold = true;
+                                band.use_band_threshold =
+                                    (band.band_threshold - self.threshold_db).abs() > 0.01;
                             }
                         }
                         "ratio" => {
                             if let Some(v) = value.as_float() {
                                 band.band_ratio = v.clamp(1.0, 20.0);
-                                band.use_band_ratio = true;
+                                band.use_band_ratio = (band.band_ratio - self.ratio).abs() > 0.01;
                             }
                         }
                         "active" => {
@@ -1323,6 +1338,52 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_band_threshold_ratio_overrides_can_return_to_global() {
+        let mut plugin = DynamicEqPlugin::new(1);
+        plugin.initialize(48000).unwrap();
+
+        plugin
+            .set_parameter(
+                ParameterId::from("band_0_threshold"),
+                ParameterValue::Float(-30.0),
+            )
+            .unwrap();
+        assert!(plugin.bands[0].use_band_threshold);
+        assert_eq!(plugin.bands[0].get_effective_threshold(-20.0), -30.0);
+
+        plugin
+            .set_parameter(
+                ParameterId::from("band_0_threshold"),
+                ParameterValue::Float(plugin.threshold_db),
+            )
+            .unwrap();
+        assert!(
+            !plugin.bands[0].use_band_threshold,
+            "setting a band threshold equal to the global threshold should clear the override"
+        );
+
+        plugin
+            .set_parameter(
+                ParameterId::from("band_0_ratio"),
+                ParameterValue::Float(8.0),
+            )
+            .unwrap();
+        assert!(plugin.bands[0].use_band_ratio);
+        assert_eq!(plugin.bands[0].get_effective_ratio(2.0), 8.0);
+
+        plugin
+            .set_parameter(
+                ParameterId::from("ratio"),
+                ParameterValue::Float(plugin.bands[0].band_ratio),
+            )
+            .unwrap();
+        assert!(
+            !plugin.bands[0].use_band_ratio,
+            "setting the global ratio equal to a band ratio should clear the override"
+        );
+    }
+
     /// `reset()` must rebuild EQ filters to reflect the current `target_gain_db`.
     ///
     /// We set target_gain_db = 0.0 (passthrough) but manually build the filter at
@@ -1359,6 +1420,35 @@ mod tests {
         assert!(
             (output_rms / input_rms - 1.0).abs() < 0.05,
             "reset should restore neutral EQ: input={input_rms:.4}, output={output_rms:.4}"
+        );
+    }
+
+    #[test]
+    fn test_bandpass_edges_use_exact_q_to_octave_bandwidth() {
+        let (low_q1, high_q1) = bandpass_edges(1000.0, 1.0);
+        assert!(
+            (low_q1 - 618.0).abs() < 2.0,
+            "Q=1 low edge should use exact octave relation, got {low_q1}"
+        );
+        assert!(
+            (high_q1 - 1618.0).abs() < 2.0,
+            "Q=1 high edge should use exact octave relation, got {high_q1}"
+        );
+
+        let (low_q10, high_q10) = bandpass_edges(1000.0, 10.0);
+        assert!(
+            (low_q10 - 951.0).abs() < 2.0,
+            "Q=10 low edge should stay narrow, got {low_q10}"
+        );
+        assert!(
+            (high_q10 - 1051.0).abs() < 2.0,
+            "Q=10 high edge should stay narrow, got {high_q10}"
+        );
+
+        let product = low_q10 * high_q10;
+        assert!(
+            (product / 1_000_000.0 - 1.0).abs() < 0.01,
+            "band edges should remain geometrically centered around freq, product={product}"
         );
     }
 

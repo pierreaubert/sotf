@@ -1,3 +1,20 @@
+# 0.5.8
+
+## Fixes
+
+- **Exact sidechain bandpass edge math** — `bandpass_edges` now uses the
+  exact peaking-EQ Q-to-octave-bandwidth relation instead of the `1/Q`
+  approximation. Added `test_bandpass_edges_use_exact_q_to_octave_bandwidth`.
+
+# 0.5.7
+
+## Fixes
+
+- **Per-band override flags can clear again** — setting a band threshold/ratio
+  equal to the current global value now disables that override, and setting a
+  global threshold/ratio equal to an existing band value clears matching band
+  overrides. Added `test_band_threshold_ratio_overrides_can_return_to_global`.
+
 # 0.5.6
 
 ## Fixes
