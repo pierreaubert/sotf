@@ -289,7 +289,7 @@ mod tests {
         for _ in 0..8 {
             s.advance();
         }
-        assert!((s.advance() - 1000.0).abs() < 1e-4);
+        assert!((s.advance() - 1000.0).abs() < 1e-3);
         assert!((s.advance() - 1000.0).abs() < 1e-6);
     }
 

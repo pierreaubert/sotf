@@ -157,7 +157,12 @@ impl<S: TestScenario> E2ERunner<S> {
         let _ = window.update(&mut visual_cx, |_, window, _| {
             window.remove_window();
         });
+        visual_cx
+            .executor()
+            .advance_clock(std::time::Duration::from_millis(500));
         visual_cx.run_until_parked();
+        drop(visual_cx);
+        cx.run_until_parked();
 
         Ok(())
     }

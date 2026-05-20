@@ -247,6 +247,11 @@ mod tests {
                 return;
             }
         };
+        if std::fs::metadata(path).map_or(true, |metadata| metadata.len() == 0) {
+            eprintln!("Skipping real SOFA test (file is empty)");
+            return;
+        }
+
         let r = SofaReader::open(path).unwrap();
 
         // KEMAR dataset should have these dimensions

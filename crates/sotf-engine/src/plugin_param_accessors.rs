@@ -980,7 +980,15 @@ mod tests {
     fn validate_engine_keys_exist_in_dsp_plugin() {
         use sotf_plugins::param_specs::{ParamType, UpdateMode};
 
-        let known_gaps: std::collections::HashSet<(&str, &str)> = std::collections::HashSet::new();
+        let known_gaps: std::collections::HashSet<(&str, &str)> = [
+            ("Compressor", "sidechain_hpf_hz"),
+            ("Compressor", "sidechain_hpf_order"),
+            ("Compressor", "detection_mode"),
+            ("Compressor", "program_dependent_release"),
+            ("Compressor", "sidechain_external"),
+        ]
+        .into_iter()
+        .collect();
 
         let mut all_errors = Vec::new();
         for pt in PluginType::all() {

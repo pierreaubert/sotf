@@ -22,7 +22,13 @@ fn test_recording_config_state_default() {
     assert_eq!(config.signal_duration_secs, 5.0);
     assert!((config.signal_level_db - -6.0206).abs() < 0.0001);
     assert!(config.mic_calibration_path.is_none());
-    assert!(config.recording_directory.is_none());
+    match &config.recording_base_directory {
+        Some(base_directory) => {
+            assert!(config.recording_directory.is_some());
+            assert!(PathBuf::from(base_directory).ends_with("Recordings"));
+        }
+        None => assert!(config.recording_directory.is_none()),
+    }
 }
 
 #[test]
