@@ -71,9 +71,7 @@ fn main() {
     let in_channels = spec.channels as usize;
 
     if in_channels != 2 {
-        eprintln!(
-            "Expected stereo input (2 channels), got {in_channels} channels"
-        );
+        eprintln!("Expected stereo input (2 channels), got {in_channels} channels");
         process::exit(1);
     }
 
@@ -91,9 +89,7 @@ fn main() {
     );
 
     let samples: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Float => {
-            reader.samples::<f32>().map(|s| s.unwrap()).collect()
-        }
+        hound::SampleFormat::Float => reader.samples::<f32>().map(|s| s.unwrap()).collect(),
         hound::SampleFormat::Int => {
             let max = (1i64 << (spec.bits_per_sample - 1)) as f32;
             reader
@@ -137,7 +133,10 @@ fn main() {
         process::exit(1);
     });
     let out_channels = speaker_cfg.total_channels;
-    println!("  Speaker config:  {} ({} channels)", params.speaker_config, out_channels);
+    println!(
+        "  Speaker config:  {} ({} channels)",
+        params.speaker_config, out_channels
+    );
 
     // ── Create upmixer ──────────────────────────────────────────────────
     println!("\n--- Upmixing ---");
@@ -152,20 +151,21 @@ fn main() {
     );
     println!("  Output channels: {out_channels}");
 
-    let upmixed = process_upmixer(&mut plugin, &samples, total_frames, out_channels, sample_rate);
+    let upmixed = process_upmixer(
+        &mut plugin,
+        &samples,
+        total_frames,
+        out_channels,
+        sample_rate,
+    );
     let upmixed = strip_latency(&upmixed, latency, out_channels);
     let output_frames = upmixed.len() / out_channels;
     println!("  Output frames: {output_frames}");
 
     // ── Write output WAV ────────────────────────────────────────────────
     let output_path = cli.output.unwrap_or_else(|| {
-        let stem = cli
-            .input
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy();
-        cli.input
-            .with_file_name(format!("{}_upmixed.wav", stem))
+        let stem = cli.input.file_stem().unwrap_or_default().to_string_lossy();
+        cli.input.with_file_name(format!("{}_upmixed.wav", stem))
     });
 
     let out_spec = hound::WavSpec {
