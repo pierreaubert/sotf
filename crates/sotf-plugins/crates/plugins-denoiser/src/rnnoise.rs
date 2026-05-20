@@ -120,8 +120,8 @@ impl RnnoiseBackend {
                         }
                     }
                 } else {
-                    let mut ch0_input_power = 0.0f32;
-                    let mut ch0_output_power = 0.0f32;
+                    let mut input_power_sum = 0.0f32;
+                    let mut output_power_sum = 0.0f32;
 
                     if ch_count == 2 {
                         // Stereo: downmix to mono, process once, apply linked gain
@@ -135,7 +135,8 @@ impl RnnoiseBackend {
                             .process_frame(&mut self.scratch_output[0], &self.scratch_input[0]);
 
                         for i in 0..RNNOISE_FRAME_SIZE {
-                            let mono_in = (self.accum_buffers[0][i] + self.accum_buffers[1][i]) * 0.5;
+                            let mono_in =
+                                (self.accum_buffers[0][i] + self.accum_buffers[1][i]) * 0.5;
                             let mono_out = self.scratch_output[0][i] / 32768.0;
                             let gain = if mono_in.abs() > 1e-10 {
                                 mono_out / mono_in
@@ -143,22 +144,14 @@ impl RnnoiseBackend {
                                 1.0
                             };
                             let ring_size = self.output_buffers[0].len();
-                            self.output_buffers[0][(self.output_write_pos + i) % ring_size] =
-                                self.accum_buffers[0][i] * gain;
-                            self.output_buffers[1][(self.output_write_pos + i) % ring_size] =
-                                self.accum_buffers[1][i] * gain;
+                            let left = self.accum_buffers[0][i] * gain;
+                            let right = self.accum_buffers[1][i] * gain;
+                            self.output_buffers[0][(self.output_write_pos + i) % ring_size] = left;
+                            self.output_buffers[1][(self.output_write_pos + i) % ring_size] = right;
+                            input_power_sum += self.accum_buffers[0][i] * self.accum_buffers[0][i]
+                                + self.accum_buffers[1][i] * self.accum_buffers[1][i];
+                            output_power_sum += left * left + right * right;
                         }
-
-                        ch0_input_power = self.accum_buffers[0].iter().map(|x| x * x).sum::<f32>()
-                            / RNNOISE_FRAME_SIZE as f32;
-                        ch0_output_power = self.output_buffers[0]
-                            [(self.output_write_pos % self.output_buffers[0].len())
-                                ..((self.output_write_pos + RNNOISE_FRAME_SIZE)
-                                    % self.output_buffers[0].len())]
-                            .iter()
-                            .map(|x| x * x)
-                            .sum::<f32>()
-                            / RNNOISE_FRAME_SIZE as f32;
                     } else {
                         // Mono or >2 channels: fall back to independent processing.
                         for ch in 0..ch_count {
@@ -167,36 +160,33 @@ impl RnnoiseBackend {
                                 *s *= 32768.0;
                             }
 
-                            self.denoisers[ch]
-                                .process_frame(&mut self.scratch_output[ch], &self.scratch_input[ch]);
+                            self.denoisers[ch].process_frame(
+                                &mut self.scratch_output[ch],
+                                &self.scratch_input[ch],
+                            );
 
                             for s in &mut self.scratch_output[ch] {
                                 *s /= 32768.0;
                             }
-
-                            if ch == 0 {
-                                ch0_input_power = self.accum_buffers[0]
-                                    .iter()
-                                    .map(|x| x * x)
-                                    .sum::<f32>()
-                                    / RNNOISE_FRAME_SIZE as f32;
-                                ch0_output_power = self.scratch_output[0]
-                                    .iter()
-                                    .map(|x| x * x)
-                                    .sum::<f32>()
-                                    / RNNOISE_FRAME_SIZE as f32;
-                            }
+                            input_power_sum +=
+                                self.accum_buffers[ch].iter().map(|x| x * x).sum::<f32>();
+                            output_power_sum +=
+                                self.scratch_output[ch].iter().map(|x| x * x).sum::<f32>();
 
                             let ring_size = self.output_buffers[ch].len();
                             for (i, &s) in self.scratch_output[ch].iter().enumerate() {
-                                self.output_buffers[ch][(self.output_write_pos + i) % ring_size] = s;
+                                self.output_buffers[ch][(self.output_write_pos + i) % ring_size] =
+                                    s;
                             }
                         }
                     }
 
-                    if ch0_input_power > 1e-10 {
+                    let denom = (RNNOISE_FRAME_SIZE * ch_count) as f32;
+                    let input_power = input_power_sum / denom;
+                    let output_power = output_power_sum / denom;
+                    if input_power > 1e-10 {
                         self.avg_reduction_db = 0.9 * self.avg_reduction_db
-                            + 0.1 * 10.0 * (ch0_input_power / ch0_output_power.max(1e-10)).log10();
+                            + 0.1 * 10.0 * (input_power / output_power.max(1e-10)).log10();
                     }
                 }
                 if !self.first_frame_discarded {
@@ -399,13 +389,19 @@ mod tests {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 2).unwrap();
 
-        let ptrs_before: Vec<*const nnnoiseless::DenoiseState> =
-            backend.denoisers.iter().map(|d| d.as_ref() as *const _).collect();
+        let ptrs_before: Vec<*const nnnoiseless::DenoiseState> = backend
+            .denoisers
+            .iter()
+            .map(|d| d.as_ref() as *const _)
+            .collect();
 
         backend.reset();
 
-        let ptrs_after: Vec<*const nnnoiseless::DenoiseState> =
-            backend.denoisers.iter().map(|d| d.as_ref() as *const _).collect();
+        let ptrs_after: Vec<*const nnnoiseless::DenoiseState> = backend
+            .denoisers
+            .iter()
+            .map(|d| d.as_ref() as *const _)
+            .collect();
 
         assert_eq!(
             ptrs_before, ptrs_after,
