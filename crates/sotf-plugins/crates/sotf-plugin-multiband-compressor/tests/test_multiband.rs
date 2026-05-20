@@ -36,10 +36,7 @@ fn test_multiband_compressor_processing() {
     let mut offset = 0;
     while offset < num_frames {
         let end = (offset + chunk_size).min(num_frames);
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: end - offset,
-        };
+        let context = ProcessContext::new(48000, end - offset);
         plugin
             .process_in_place(&mut input[offset * 2..end * 2], &context)
             .unwrap();
@@ -80,10 +77,7 @@ fn test_multiband_compressor_ms_mode_roundtrip() {
     }
     let original = signal.clone();
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: block,
-    };
+    let context = ProcessContext::new(48000, block);
 
     // Process both blocks; the second block is in the settled region.
     plugin

@@ -31,10 +31,7 @@ fn main() {
     // Test 1: Peak boost at 1kHz — process in blocks to handle STFT latency
     println!("\n[Test 1] Peak Boost (+6dB at 1kHz)");
     let block_size = 1024;
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames: block_size,
-    };
+    let ctx = ProcessContext::new(sample_rate, block_size);
 
     // Warm up: process enough blocks for the FIR pipeline to fill
     for _ in 0..20 {

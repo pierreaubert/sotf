@@ -334,10 +334,7 @@ fn process_upmixer(
         let input_block = &input[input_offset..input_offset + fft_size * 2];
         let mut output_block = vec![0.0_f32; fft_size * num_output_channels];
 
-        let context = ProcessContext {
-            sample_rate,
-            num_frames: fft_size,
-        };
+        let context = ProcessContext::new(sample_rate, fft_size);
 
         plugin
             .process(input_block, &mut output_block, &context)

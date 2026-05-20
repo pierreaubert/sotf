@@ -117,10 +117,7 @@ fn bench_upmixer_5_1_block_sizes(c: &mut Criterion) {
 
                     let input = generate_realistic_input(block_size, sample_rate, true);
                     let mut output = vec![0.0f32; block_size * upmixer.output_channels()];
-                    let context = ProcessContext {
-                        num_frames: block_size,
-                        sample_rate,
-                    };
+                    let context = ProcessContext::new(sample_rate, block_size);
 
                     // Warmup to prime PCA/coherence/spectral flux state
                     warmup_plugin(&mut upmixer, &input, &mut output, &context, 8);
@@ -163,10 +160,7 @@ fn bench_upmixer_configs(c: &mut Criterion) {
 
             let input = generate_realistic_input(block_size, sample_rate, true);
             let mut output = vec![0.0f32; block_size * upmixer.output_channels()];
-            let context = ProcessContext {
-                num_frames: block_size,
-                sample_rate,
-            };
+            let context = ProcessContext::new(sample_rate, block_size);
 
             warmup_plugin(&mut upmixer, &input, &mut output, &context, 8);
 
@@ -205,10 +199,7 @@ fn bench_upmixer_fft_sizes(c: &mut Criterion) {
                 upmixer.initialize(sample_rate).unwrap();
                 let input = generate_realistic_input(block_size, sample_rate, true);
                 let mut output = vec![0.0f32; block_size * upmixer.output_channels()];
-                let context = ProcessContext {
-                    num_frames: block_size,
-                    sample_rate,
-                };
+                let context = ProcessContext::new(sample_rate, block_size);
 
                 warmup_plugin(&mut upmixer, &input, &mut output, &context, 8);
 
@@ -251,10 +242,7 @@ fn bench_upmixer_production_config(c: &mut Criterion) {
 
             let input = generate_realistic_input(block_size, sample_rate, true);
             let mut output = vec![0.0f32; block_size * upmixer.output_channels()];
-            let context = ProcessContext {
-                num_frames: block_size,
-                sample_rate,
-            };
+            let context = ProcessContext::new(sample_rate, block_size);
 
             warmup_plugin(&mut upmixer, &input, &mut output, &context, 8);
 

@@ -31,10 +31,7 @@ fn test_xtc_processing() {
     }
 
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames,
-    };
+    let context = ProcessContext::new(44100, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 

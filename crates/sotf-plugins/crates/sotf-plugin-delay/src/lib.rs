@@ -619,14 +619,8 @@ mod tests {
         let mut p = DelayPlugin::new(1, 10.0, 0.5, 0.5);
         p.initialize(48000).unwrap();
         let mut b = vec![1.0; 1000];
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(48000, 1000))
+            .unwrap();
         assert!(b[999] != 1.0);
     }
 
@@ -682,14 +676,8 @@ mod tests {
         // Process an impulse and collect output
         let mut b = vec![0.0; 48000];
         b[0] = 1.0;
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 48000,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(48000, 48000))
+            .unwrap();
 
         // The delayed impulse should appear with time-varying position due to LFO
         // Find the peak in the output (after the initial impulse at sample 0)
@@ -756,14 +744,8 @@ mod tests {
 
         let mut b = vec![0.0; 2000];
         b[0] = 1.0;
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2000,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(48000, 2000))
+            .unwrap();
 
         // With feedback and allpass, we should see repeated taps with spectral coloring
         // Check that there is signal beyond the first delay tap
@@ -801,14 +783,8 @@ mod tests {
         buffer[0] = 1.23;
         buffer[1] = -0.77;
 
-        p.process_in_place(
-            &mut buffer,
-            &ProcessContext {
-                sample_rate: 48_000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 1))
+            .unwrap();
 
         // Deinterleaved layout stores channels in separate contiguous segments:
         // [ch0 samples..., ch1 samples..., ...].
@@ -898,14 +874,8 @@ mod tests {
         buf[0] = 1.0;
         buf[1] = 1.0;
 
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(sr, num_frames))
+            .unwrap();
 
         // Skip frame 0 (carries the dry input contribution); find the peak in
         // each channel's tail. With smoothers snapped to target, the delayed
@@ -984,14 +954,8 @@ mod tests {
         let num_frames = 1000;
         let original: Vec<f32> = (0..num_frames).map(|i| (i as f32 * 0.1).sin()).collect();
         let mut buffer = original.clone();
-        p.process_in_place(
-            &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buffer, &ProcessContext::new(48000, num_frames))
+            .unwrap();
 
         // With mix=0, output = input * (1-0) + delayed * 0 = input
         for (i, (&out, &inp)) in buffer.iter().zip(original.iter()).enumerate() {
@@ -1019,14 +983,8 @@ mod tests {
         let mut buffer = vec![0.0f32; num_frames];
         buffer[0] = 1.0; // impulse
 
-        p.process_in_place(
-            &mut buffer,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buffer, &ProcessContext::new(sr, num_frames))
+            .unwrap();
 
         // With mix=1 and feedback=0:
         // output = input * (1-1) + delayed * 1 = delayed only
@@ -1089,14 +1047,8 @@ mod tests {
         let num_frames = 64usize;
         let input: Vec<f32> = (0..num_frames).map(|n| (n + 1) as f32).collect();
         let mut buf = input.clone();
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(sr, num_frames))
+            .unwrap();
 
         // Compute effective mix per sample: mix[n] = 1 - output[n]/input[n]
         let ratios: Vec<f32> = buf
@@ -1142,14 +1094,8 @@ mod tests {
 
         let num_frames = 64usize;
         let mut buf = vec![0.0f32; num_frames];
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(sr, num_frames))
+            .unwrap();
 
         for _ in 0..num_frames {
             expected.advance();
@@ -1185,14 +1131,8 @@ mod tests {
         // Process impulse with coeff=0.5 (default)
         let mut b1 = vec![0.0; 2000];
         b1[0] = 1.0;
-        p.process_in_place(
-            &mut b1,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2000,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b1, &ProcessContext::new(48000, 2000))
+            .unwrap();
 
         // Change coefficient to 0.8
         p.set_parameter(
@@ -1208,14 +1148,8 @@ mod tests {
         // Process identical impulse with coeff=0.8
         let mut b2 = vec![0.0; 2000];
         b2[0] = 1.0;
-        p.process_in_place(
-            &mut b2,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2000,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b2, &ProcessContext::new(48000, 2000))
+            .unwrap();
 
         // The outputs must differ because the allpass coefficient changed
         let diff: f32 = b1.iter().zip(b2.iter()).map(|(a, b)| (a - b).abs()).sum();

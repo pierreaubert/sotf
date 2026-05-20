@@ -31,10 +31,7 @@ fn test_eq_plugin_basic() {
 
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process
     plugin.process(&input, &mut output, &context).unwrap();
@@ -83,10 +80,7 @@ fn test_eq_plugin_parametric() {
 
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -125,10 +119,7 @@ fn test_eq_plugin_filter_update() {
     let input = vec![0.5_f32; num_frames * 2];
     let mut output1 = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output1, &context).unwrap();
 
@@ -198,10 +189,7 @@ fn test_eq_plugin_multi_channel() {
 
     let mut output = vec![0.0_f32; num_frames * 5];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 

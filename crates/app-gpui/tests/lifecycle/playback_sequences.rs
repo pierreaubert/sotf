@@ -69,6 +69,7 @@ fn test_multi_album_playback_preserves_state() {
             }
             QueuePlaybackEffect::Stop => break,
             QueuePlaybackEffect::None => panic!("Unexpected None effect"),
+            QueuePlaybackEffect::Reload(_) => panic!("Unexpected Reload effect"),
         }
 
         if tracks_played > expected_total_tracks + 1 {

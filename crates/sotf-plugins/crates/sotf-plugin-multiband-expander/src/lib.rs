@@ -1804,10 +1804,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 let chunk_frames = (nf - processed).min(MAX_BLOCK_FRAMES);
                 let sample_start = processed * self.channels;
                 let sample_end = sample_start + chunk_frames * self.channels;
-                let chunk_ctx = ProcessContext {
-                    sample_rate: context.sample_rate,
-                    num_frames: chunk_frames,
-                };
+                let chunk_ctx = ProcessContext::new(context.sample_rate, chunk_frames);
                 self.process_in_place(&mut buffer[sample_start..sample_end], &chunk_ctx)?;
                 processed += chunk_frames;
             }
@@ -2085,14 +2082,8 @@ mod tests {
         let mut p = MultibandExpanderPlugin::new(1);
         p.initialize(48000).unwrap();
         let mut b = vec![0.1; 1000];
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(48000, 1000))
+            .unwrap();
         assert!(b[999].is_finite());
     }
 
@@ -2130,10 +2121,7 @@ mod tests {
         let mut loud: Vec<f32> = (0..nf)
             .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0).sin())
             .collect();
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(48000, nf);
         p.process_in_place(&mut loud, &ctx).unwrap();
 
         // Verify the loud signal passed through with reasonable level
@@ -2205,14 +2193,8 @@ mod tests {
         for i in 0..9600 {
             loud.push(0.5 * (i as f32 * 0.3).sin());
         }
-        p.process_in_place(
-            &mut loud,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 9600,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut loud, &ProcessContext::new(48000, 9600))
+            .unwrap();
 
         // Feed quiet broadband signal — gates should close fast with 1ms attack
         let quiet_peak = 0.001f32;
@@ -2222,14 +2204,8 @@ mod tests {
         }
         let quiet_rms_in: f32 =
             (quiet.iter().map(|s| s * s).sum::<f32>() / quiet.len() as f32).sqrt();
-        p.process_in_place(
-            &mut quiet,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2400,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut quiet, &ProcessContext::new(48000, 2400))
+            .unwrap();
 
         // After 50ms with 1ms attack (and 0ms hold), the signal should be attenuated.
         let quiet_rms_out: f32 =
@@ -2264,14 +2240,8 @@ mod tests {
             input[i * 2 + 1] = val;
         }
         let mut output = input.clone();
-        p.process_in_place(
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 4800,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut output, &ProcessContext::new(48000, 4800))
+            .unwrap();
 
         // After settling (crossover filter delay), output should be close to input.
         // Allow for crossover phase shift but RMS should be similar.
@@ -2326,14 +2296,8 @@ mod tests {
         }
 
         let mut buf = signal.clone();
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+            .unwrap();
 
         // All output samples must be finite
         for (i, &s) in buf.iter().enumerate() {
@@ -2379,10 +2343,7 @@ mod tests {
 
         let input_rms = amp; // DC: RMS == amplitude
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         p.process_in_place(&mut buffer, &ctx).unwrap();
 
         // Measure RMS of the second half to let the expander settle
@@ -2443,10 +2404,7 @@ mod tests {
         let mut sp_plugin = MultibandExpanderPlugin::with_params(1, make_params("spectral"));
         sp_plugin.initialize(sr).unwrap();
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(sr, nf);
 
         let mut td_buf = signal.clone();
         td_plugin.process_in_place(&mut td_buf, &ctx).unwrap();
@@ -2496,14 +2454,8 @@ mod tests {
         let mut p = MultibandExpanderPlugin::with_params(2, params);
         p.initialize(48000).unwrap();
         let mut buf = vec![0.1f32; 4096 * 2];
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 4096,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 4096))
+            .unwrap();
         assert!(
             buf.iter().all(|s| s.is_finite()),
             "All samples must be finite"
@@ -2537,13 +2489,7 @@ mod tests {
         let frames = MAX_BLOCK_FRAMES + 1;
         let mut buf = vec![0.0f32; frames * 2];
         let processed = p
-            .process_in_place(
-                &mut buf,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames: frames,
-                },
-            )
+            .process_in_place(&mut buf, &ProcessContext::new(48000, frames))
             .unwrap();
 
         assert_eq!(processed, frames);
@@ -2593,14 +2539,8 @@ mod tests {
                 [s, s * 0.7]
             })
             .collect();
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+            .unwrap();
         assert!(
             buf.iter().all(|s| s.is_finite()),
             "Stereo measured auto-makeup must not produce NaN/inf"
@@ -2617,14 +2557,8 @@ mod tests {
         // Run a loud signal to drive up envelope state
         let nf = 4800usize;
         let mut loud: Vec<f32> = (0..nf * 2).map(|_| 0.8).collect();
-        p.process_in_place(
-            &mut loud,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut loud, &ProcessContext::new(48000, nf))
+            .unwrap();
 
         // Re-initialize (simulates host sample-rate change)
         p.initialize(48000).unwrap();
@@ -2632,14 +2566,8 @@ mod tests {
         // Feed silence — if state was not cleared, residual envelope might still be active.
         // The output must be finite (not NaN/inf from a contaminated envelope).
         let mut silent = vec![0.0f32; nf * 2];
-        p.process_in_place(
-            &mut silent,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut silent, &ProcessContext::new(48000, nf))
+            .unwrap();
         assert!(
             silent.iter().all(|s| s.is_finite()),
             "Output after re-initialize must be finite"
@@ -2670,14 +2598,8 @@ mod tests {
         let mut buf = vec![0.0f32; nf];
         buf[la_samples] = 1.0;
 
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(sr, nf))
+            .unwrap();
 
         // With latency-compensated dry path and mix=0:
         // The impulse at input[la_samples] should appear at output[la_samples + la_samples],

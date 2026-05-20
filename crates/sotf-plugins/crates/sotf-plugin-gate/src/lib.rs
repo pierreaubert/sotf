@@ -683,14 +683,8 @@ mod tests {
         let mut p = GatePlugin::new(1, -20.0, 100.0, 1.0, 10.0, 50.0);
         p.initialize(48000).unwrap();
         let mut b = vec![0.05; 1000];
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(48000, 1000))
+            .unwrap();
         assert!(b[999] < 0.05);
     }
 
@@ -719,20 +713,14 @@ mod tests {
         // Close the gate with very quiet signal (-100 dBFS)
         let quiet_len = sr as usize;
         let mut quiet = vec![0.00001f32; quiet_len];
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: quiet_len,
-        };
+        let ctx = ProcessContext::new(sr, quiet_len);
         p.process_in_place(&mut quiet, &ctx).unwrap();
 
         // Switch to loud signal (-6 dBFS, well above threshold)
         let loud_len = sr as usize / 10; // 100 ms
         let input_level = 0.5f32;
         let mut loud = vec![input_level; loud_len];
-        let ctx2 = ProcessContext {
-            sample_rate: sr,
-            num_frames: loud_len,
-        };
+        let ctx2 = ProcessContext::new(sr, loud_len);
         p.process_in_place(&mut loud, &ctx2).unwrap();
 
         // With fast attack (1 ms) the gate should be essentially fully open
@@ -758,20 +746,14 @@ mod tests {
         // Open the gate with loud signal (-6 dBFS)
         let loud_len = sr as usize;
         let mut loud = vec![0.5f32; loud_len];
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: loud_len,
-        };
+        let ctx = ProcessContext::new(sr, loud_len);
         p.process_in_place(&mut loud, &ctx).unwrap();
 
         // Switch to very quiet signal (-60 dBFS, well below threshold)
         let quiet_len = sr as usize / 10; // 100 ms
         let quiet_input = 0.001f32;
         let mut quiet = vec![quiet_input; quiet_len];
-        let ctx2 = ProcessContext {
-            sample_rate: sr,
-            num_frames: quiet_len,
-        };
+        let ctx2 = ProcessContext::new(sr, quiet_len);
         p.process_in_place(&mut quiet, &ctx2).unwrap();
 
         // With fast release (1 ms) the gate should be essentially fully closed
@@ -817,10 +799,7 @@ mod tests {
         let quiet = vec![0.0001f32; block_size * 2];
         for _ in 0..num_blocks {
             let mut buf = quiet.clone();
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: block_size,
-            };
+            let ctx = ProcessContext::new(sr, block_size);
             p.process_in_place(&mut buf, &ctx).unwrap();
         }
 
@@ -871,10 +850,7 @@ mod tests {
             *sample = amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / sr as f32).sin();
         }
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         p_low.process_in_place(&mut buf_low, &ctx).unwrap();
 
         // The 50 Hz signal should be significantly attenuated because the HPF
@@ -983,10 +959,7 @@ mod tests {
             })
             .collect();
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         p.process_in_place(&mut buffer, &ctx).unwrap();
 
         // Count how many times the output crosses a "gate closed" boundary.
@@ -1060,10 +1033,7 @@ mod tests {
         let input_level = 0.1f32;
         let frames = sr as usize / 10;
         let mut buf = vec![input_level; frames];
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(sr, frames);
         p.process_in_place(&mut buf, &ctx).unwrap();
 
         let tail_start = frames - sr as usize / 100;

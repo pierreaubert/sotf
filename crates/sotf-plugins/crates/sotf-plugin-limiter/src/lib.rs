@@ -673,14 +673,8 @@ mod tests {
         let mut p = LimiterPlugin::new(1, -1.0, 50.0, 5.0, false);
         p.initialize(48000).unwrap();
         let mut b = vec![2.0; 1000];
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(48000, 1000))
+            .unwrap();
         let thresh_lin = fast_pow10(-1.0 / 20.0);
         for &s in &b[500..] {
             assert!(s.abs() <= thresh_lin * 1.05);
@@ -697,10 +691,7 @@ mod tests {
 
         // Feed loud signal to establish steady-state
         let mut b = vec![1.0f32; 4800];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 4800,
-        };
+        let ctx = ProcessContext::new(48000, 4800);
         p.process_in_place(&mut b, &ctx).unwrap();
         let _output_before = b[4799];
 
@@ -712,14 +703,8 @@ mod tests {
         // With proper 5ms smoothing, the threshold should NOT have fully
         // transitioned after just 1ms.
         let mut b2 = vec![1.0f32; 48];
-        p.process_in_place(
-            &mut b2,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 48,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b2, &ProcessContext::new(48000, 48))
+            .unwrap();
         let output_after_1ms = b2[47];
 
         // The new threshold (-20 dB = 0.1) is much lower than old (-6 dB = 0.5).
@@ -752,14 +737,8 @@ mod tests {
 
         // Warm up so the smoother is actually at mix=0.
         let mut warmup = vec![0.9f32; 4800];
-        p.process_in_place(
-            &mut warmup,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 4800,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut warmup, &ProcessContext::new(48000, 4800))
+            .unwrap();
 
         // Ramp mix toward full wet.
         p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
@@ -767,14 +746,8 @@ mod tests {
 
         // 5 ms at 48 kHz.
         let mut output = vec![0.9f32; 240];
-        p.process_in_place(
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 240,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut output, &ProcessContext::new(48000, 240))
+            .unwrap();
 
         let first = output[0].abs();
         let last = output[239].abs();
@@ -798,10 +771,7 @@ mod tests {
             b[frame * 2] = val;
             b[frame * 2 + 1] = val;
         }
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 2048,
-        };
+        let ctx = ProcessContext::new(48000, 2048);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         // After lookahead fills (=5ms = 240 samples), all output should be
@@ -833,10 +803,7 @@ mod tests {
         for (i, sample) in b.iter_mut().enumerate() {
             *sample = if i % 2 == 0 { 0.8 } else { -0.8 };
         }
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         // With true peak, the limiter should detect the inter-sample overshoot
@@ -897,10 +864,7 @@ mod tests {
         for (i, sample) in b.iter_mut().enumerate() {
             *sample = 0.9 * (i as f32 * 0.1).sin();
         }
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         let thresh_lin = fast_pow10(-6.0 / 20.0);
@@ -961,10 +925,7 @@ mod tests {
         let warmup = 4800; // 100ms
         let mut warmup_buf_dry = vec![0.0f32; warmup];
         let mut warmup_buf_wet = vec![0.0f32; warmup];
-        let warmup_ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: warmup,
-        };
+        let warmup_ctx = ProcessContext::new(sr, warmup);
         p_dry
             .process_in_place(&mut warmup_buf_dry, &warmup_ctx)
             .unwrap();
@@ -982,10 +943,7 @@ mod tests {
         };
         let mut buf_dry = make_signal();
         let mut buf_wet = make_signal();
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         p_dry.process_in_place(&mut buf_dry, &ctx).unwrap();
         p_wet.process_in_place(&mut buf_wet, &ctx).unwrap();
 
@@ -1021,10 +979,7 @@ mod tests {
 
         let num_frames = 4096;
         let mut buf = vec![1.0f32; num_frames]; // 0 dBFS
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         p.process_in_place(&mut buf, &ctx).unwrap();
 
         let thresh_lin = fast_pow10(-6.0 / 20.0);
@@ -1056,10 +1011,7 @@ mod tests {
         }
 
         // Process enough blocks to trigger cache update (>= CACHE_UPDATE_THROTTLE)
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         for _ in 0..CACHE_UPDATE_THROTTLE + 1 {
             p.process_in_place(&mut b, &ctx).unwrap();
         }
@@ -1096,10 +1048,7 @@ mod tests {
 
         let frames = 512;
         let mut b = vec![0.5f32; frames];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         for _ in 0..CACHE_UPDATE_THROTTLE + 1 {
             p.process_in_place(&mut b, &ctx).unwrap();
         }
@@ -1123,10 +1072,7 @@ mod tests {
 
         let frames = 512;
         let mut b = vec![0.8f32; frames];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
 
         // First, gather non-floor ISP data.
         for _ in 0..(CACHE_UPDATE_THROTTLE + 1) {
@@ -1174,10 +1120,7 @@ mod tests {
             b[i] = 0.65 * (2.0 * std::f32::consts::PI * 12000.0 * i as f32 / 48000.0).sin();
         }
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         // Verify output ISP with an independent detector (not the plugin's own)
@@ -1231,10 +1174,7 @@ mod tests {
             // Alternating signal creates ISP overshoots
             *sample = if i % 2 == 0 { 0.7 } else { -0.7 };
         }
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         // Process enough blocks to trigger cache update (>= CACHE_UPDATE_THROTTLE)
         for _ in 0..CACHE_UPDATE_THROTTLE + 1 {
             b.fill(0.0);
@@ -1272,10 +1212,7 @@ mod tests {
         // Feed a DC signal exactly at threshold for enough frames to converge
         let frames = 8192;
         let mut b = vec![thresh_lin; frames];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         p_soft.process_in_place(&mut b, &ctx).unwrap();
 
         // After settling, all output samples should be at or above 0.95*thresh
@@ -1304,10 +1241,7 @@ mod tests {
         let frames = 4096;
         let mut b_hard = vec![thresh_lin; frames];
         let mut b_soft = vec![thresh_lin; frames];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         p_hard.process_in_place(&mut b_hard, &ctx).unwrap();
         p_soft.process_in_place(&mut b_soft, &ctx).unwrap();
 
@@ -1345,10 +1279,7 @@ mod tests {
             // High-freq alternating signal causes ISP above sample peaks
             b[i] = 0.75 * (2.0 * std::f32::consts::PI * 15000.0 * i as f32 / sr as f32).sin();
         }
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(sr, frames);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         // Now the correction should be > 0.  Feed silence to let it decay.
@@ -1361,10 +1292,7 @@ mod tests {
         if correction_before > 0.1 {
             let samples_silence = 4096usize;
             let mut silence = vec![0.0f32; samples_silence];
-            let sctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: samples_silence,
-            };
+            let sctx = ProcessContext::new(sr, samples_silence);
             p.process_in_place(&mut silence, &sctx).unwrap();
 
             // Release coeff = exp(-1 / (release_ms * 0.001 * sr))
@@ -1408,10 +1336,7 @@ mod tests {
                 b[frame * ch + c] = 0.9;
             }
         }
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         // Every channel (including #33) must be limited
@@ -1469,27 +1394,15 @@ mod tests {
         linked.initialize(sr).unwrap();
         let mut linked_buf = make_input();
         linked
-            .process_in_place(
-                &mut linked_buf,
-                &ProcessContext {
-                    sample_rate: sr,
-                    num_frames: frames,
-                },
-            )
+            .process_in_place(&mut linked_buf, &ProcessContext::new(sr, frames))
             .unwrap();
 
         let mut half = LimiterPlugin::new(2, threshold_db, 50.0, 0.0, false);
         half.link_amount = 0.5;
         half.initialize(sr).unwrap();
         let mut half_buf = make_input();
-        half.process_in_place(
-            &mut half_buf,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames: frames,
-            },
-        )
-        .unwrap();
+        half.process_in_place(&mut half_buf, &ProcessContext::new(sr, frames))
+            .unwrap();
 
         assert!(
             half.monitoring_gr_db < linked.monitoring_gr_db,
@@ -1509,10 +1422,7 @@ mod tests {
 
         // Process some audio to build up state
         let mut b = vec![0.9f32; 2 * 1024];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1024,
-        };
+        let ctx = ProcessContext::new(48000, 1024);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         p.reset();

@@ -73,10 +73,7 @@ fn bench_aae_block_sizes(c: &mut Criterion) {
 
                     let input = generate_realistic_input(block_size, sample_rate);
                     let mut output = vec![0.0f32; block_size * plugin.output_channels()];
-                    let context = ProcessContext {
-                        num_frames: block_size,
-                        sample_rate,
-                    };
+                    let context = ProcessContext::new(sample_rate, block_size);
 
                     warmup_plugin(&mut plugin, &input, &mut output, &context, 8);
 
@@ -119,10 +116,7 @@ fn bench_aae_configs(c: &mut Criterion) {
 
             let input = generate_realistic_input(block_size, sample_rate);
             let mut output = vec![0.0f32; block_size * plugin.output_channels()];
-            let context = ProcessContext {
-                num_frames: block_size,
-                sample_rate,
-            };
+            let context = ProcessContext::new(sample_rate, block_size);
 
             warmup_plugin(&mut plugin, &input, &mut output, &context, 8);
 
@@ -166,10 +160,7 @@ fn bench_aae_room_presets(c: &mut Criterion) {
 
                 let input = generate_realistic_input(block_size, sample_rate);
                 let mut output = vec![0.0f32; block_size * plugin.output_channels()];
-                let context = ProcessContext {
-                    num_frames: block_size,
-                    sample_rate,
-                };
+                let context = ProcessContext::new(sample_rate, block_size);
 
                 warmup_plugin(&mut plugin, &input, &mut output, &context, 8);
 
@@ -214,10 +205,7 @@ fn bench_aae_production(c: &mut Criterion) {
 
             let input = generate_realistic_input(block_size, sample_rate);
             let mut output = vec![0.0f32; block_size * plugin.output_channels()];
-            let context = ProcessContext {
-                num_frames: block_size,
-                sample_rate,
-            };
+            let context = ProcessContext::new(sample_rate, block_size);
 
             warmup_plugin(&mut plugin, &input, &mut output, &context, 4);
 

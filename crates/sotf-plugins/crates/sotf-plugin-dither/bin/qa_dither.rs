@@ -23,10 +23,7 @@ fn main() {
     println!("\n[Test 1] 16-bit quantization");
     let num_frames = 4800;
     let mut buffer = vec![0.1234567f32; num_frames * channels];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
 
     // All output values should be finite

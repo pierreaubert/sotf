@@ -15,10 +15,7 @@ fn disabled_is_transparent() {
         .map(|i| ((i % 100) as f32 - 50.0) / 100.0)
         .collect();
     let input = buffer.clone();
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 960,
-    };
+    let context = ProcessContext::new(48000, 960);
     let written = plugin.process_in_place(&mut buffer, &context).unwrap();
     // First frame discarded, so only 480 frames written.
     assert_eq!(written, 480);
@@ -44,10 +41,7 @@ fn rejects_non_multiple_of_480() {
     plugin.initialize(48000).expect("initialize");
 
     let mut buffer = vec![0.0f32; 512];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 512,
-    };
+    let context = ProcessContext::new(48000, 512);
     let result = plugin.process_in_place(&mut buffer, &context);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("480"));
@@ -112,10 +106,7 @@ fn process_rejects_non_multiple_of_480_when_enabled() {
 
     for &bad_size in &[64usize, 128, 256, 512, 1024] {
         let mut buffer = vec![0.0f32; bad_size];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: bad_size,
-        };
+        let ctx = ProcessContext::new(48000, bad_size);
         assert!(
             plugin.process_in_place(&mut buffer, &ctx).is_err(),
             "Block size {bad_size} (not a multiple of 480) must be rejected"
@@ -134,10 +125,7 @@ fn process_accepts_multiples_of_480() {
 
     for &good_size in &[480usize, 960, 1440] {
         let mut buffer = vec![0.0f32; good_size];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: good_size,
-        };
+        let ctx = ProcessContext::new(48000, good_size);
         assert!(
             plugin.process_in_place(&mut buffer, &ctx).is_ok(),
             "Block size {good_size} must be accepted"
@@ -156,10 +144,7 @@ fn process_rejects_undersized_buffer() {
 
     // buffer has 480 samples but context claims 960 frames (needs 960 samples for 1 ch)
     let mut buffer = vec![0.0f32; 480];
-    let ctx = ProcessContext {
-        sample_rate: 48000,
-        num_frames: 960,
-    };
+    let ctx = ProcessContext::new(48000, 960);
     assert!(
         plugin.process_in_place(&mut buffer, &ctx).is_err(),
         "Undersized buffer must be rejected"

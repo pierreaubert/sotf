@@ -710,10 +710,7 @@ mod tests {
         let max_output_frames = resampler.output_frames_for_input(num_frames);
         let mut output = vec![0.0_f32; max_output_frames * 2];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
 
         // Process
         resampler.process(&input, &mut output, &context).unwrap();
@@ -743,10 +740,7 @@ mod tests {
         let input = vec![0.25_f32; num_frames * 2];
         let max_output_frames = resampler.output_frames_for_input(num_frames);
         let mut output = vec![0.0_f32; max_output_frames * 2];
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
 
         let produced = resampler.process(&input, &mut output, &context).unwrap();
 
@@ -775,10 +769,7 @@ mod tests {
         let max_output_frames = resampler.output_frames_for_input(num_frames);
         let mut output = vec![0.0_f32; max_output_frames * 2];
 
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let context = ProcessContext::new(48000, num_frames);
 
         resampler.process(&input, &mut output, &context).unwrap();
 
@@ -818,10 +809,7 @@ mod tests {
         let max_output_frames = resampler.output_frames_for_input(num_frames);
         let mut output = vec![0.0_f32; max_output_frames * 5];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
 
         resampler.process(&input, &mut output, &context).unwrap();
 
@@ -854,10 +842,7 @@ mod tests {
         let output_frames = resampler.output_frames_for_input(num_frames);
         let mut output = vec![0.0_f32; output_frames * 2];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
 
         // Process
         resampler.process(&input, &mut output, &context).unwrap();
@@ -881,10 +866,7 @@ mod tests {
         resampler.initialize(44100).unwrap();
 
         let num_frames = 1024;
-        let ctx = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(44100, num_frames);
 
         // Process a loud signal
         let loud_input: Vec<f32> = (0..num_frames * 2)
@@ -1029,10 +1011,7 @@ mod tests {
             let max_output = resampler.output_frames_for_input(num_frames);
             let mut output = vec![0.0_f32; max_output * 2];
 
-            let context = ProcessContext {
-                sample_rate: 44100,
-                num_frames,
-            };
+            let context = ProcessContext::new(44100, num_frames);
             resampler.process(&input, &mut output, &context).unwrap();
 
             let expected_frames = (num_frames as f64 * 48000.0 / 44100.0) as usize;
@@ -1078,10 +1057,7 @@ mod tests {
         let input = vec![0.5_f32; num_frames * 2];
         let max_output = resampler.output_frames_for_input(num_frames);
         let mut output = vec![0.0_f32; max_output * 2];
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
         resampler.process(&input, &mut output, &context).unwrap();
     }
 
@@ -1200,10 +1176,7 @@ mod tests {
             .collect();
         let max_out = resampler.output_frames_for_input(block_size);
         let mut output = vec![0.0_f32; max_out * 2];
-        let ctx = ProcessContext {
-            sample_rate: 44100,
-            num_frames: block_size,
-        };
+        let ctx = ProcessContext::new(44100, block_size);
         let produced = resampler.process(&input, &mut output, &ctx).unwrap();
         assert_eq!(
             produced, 0,
@@ -1237,10 +1210,7 @@ mod tests {
         let input = vec![0.5_f32; block_size * 2];
         let max_out = resampler.output_frames_for_input(block_size);
         let mut output = vec![0.0_f32; max_out * 2];
-        let ctx = ProcessContext {
-            sample_rate: 44100,
-            num_frames: block_size,
-        };
+        let ctx = ProcessContext::new(44100, block_size);
 
         // First 3 blocks: buffered, no output.
         for i in 0..3 {
@@ -1270,10 +1240,7 @@ mod tests {
         let input = vec![0.5_f32; block_size * 2];
         let max_out = resampler.output_frames_for_input(block_size);
         let mut output = vec![0.0_f32; max_out * 2];
-        let ctx = ProcessContext {
-            sample_rate: 44100,
-            num_frames: block_size,
-        };
+        let ctx = ProcessContext::new(44100, block_size);
 
         let produced = resampler.process(&input, &mut output, &ctx).unwrap();
         // 1500 frames = 1 full chunk (1024) + 476 residual.
@@ -1298,10 +1265,7 @@ mod tests {
 
         let input: Vec<f32> = vec![];
         let mut output = vec![0.0_f32; 256 * 2];
-        let ctx = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 0,
-        };
+        let ctx = ProcessContext::new(44100, 0);
         let produced = resampler.process(&input, &mut output, &ctx).unwrap();
         assert_eq!(
             produced, 0,
@@ -1321,10 +1285,7 @@ mod tests {
         let input = vec![0.5_f32; chunk_size * 2];
         let max_out = resampler.output_frames_for_input(chunk_size);
         let mut output = vec![0.0_f32; max_out * 2];
-        let ctx = ProcessContext {
-            sample_rate: 44100,
-            num_frames: chunk_size,
-        };
+        let ctx = ProcessContext::new(44100, chunk_size);
 
         let mut total_output = 0usize;
         let num_blocks = total_input_frames / chunk_size;
@@ -1457,10 +1418,7 @@ mod tests {
 
         let max_output = resampler.output_frames_for_input(num_frames);
         let mut output = vec![0.0_f32; max_output];
-        let ctx = ProcessContext {
-            sample_rate: input_sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(input_sr, num_frames);
         let produced = resampler.process(&input, &mut output, &ctx).unwrap();
 
         let max_flush = resampler.output_frames_for_input(0);
@@ -1514,10 +1472,7 @@ fn test_flush_produces_trailing_output() {
     let input = vec![0.5_f32; num_frames * 2];
     let max_output = resampler.output_frames_for_input(num_frames);
     let mut output = vec![0.0_f32; max_output * 2];
-    let ctx = ProcessContext {
-        sample_rate: 44100,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(44100, num_frames);
     let produced = resampler.process(&input, &mut output, &ctx).unwrap();
     assert_eq!(produced, 0, "Partial chunk should produce no output yet");
 

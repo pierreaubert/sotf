@@ -1651,10 +1651,7 @@ mod tests {
             0.0,
             RoomModel::default(),
         );
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 32,
-        };
+        let ctx = ProcessContext::new(48000, 32);
 
         let short_input = vec![0.0_f32; 32 * 5 - 1];
         let mut output = vec![0.0_f32; 32 * 2];
@@ -1880,10 +1877,7 @@ mod tests {
         let num_frames = 4096;
         let input = vec![0.1f32; num_frames * 2]; // stereo
         let mut output = vec![0.0f32; num_frames * 2];
-        let context = ProcessContext {
-            num_frames,
-            sample_rate: 48000,
-        };
+        let context = ProcessContext::new(48000, num_frames);
 
         let processed = plugin.process(&input, &mut output, &context).unwrap();
         assert_eq!(processed, num_frames);
@@ -1924,10 +1918,7 @@ mod tests {
             })
             .collect();
         let mut output = vec![0.0f32; num_frames * 2];
-        let context = ProcessContext {
-            num_frames,
-            sample_rate: 48000,
-        };
+        let context = ProcessContext::new(48000, num_frames);
 
         let processed = plugin.process(&input, &mut output, &context).unwrap();
         assert_eq!(processed, num_frames);
@@ -2330,10 +2321,7 @@ mod tests {
             .map(|i| (i as f32 * 0.01).sin() * 0.5)
             .collect();
         let mut output = vec![0.0f32; num_frames * 2];
-        let context = ProcessContext {
-            num_frames,
-            sample_rate: 44100,
-        };
+        let context = ProcessContext::new(44100, num_frames);
 
         let processed = plugin.process(&input, &mut output, &context).unwrap();
         assert_eq!(processed, num_frames);
@@ -2421,10 +2409,7 @@ mod tests {
             })
             .collect();
         let mut output_warmup = vec![0.0f32; num_frames * 2];
-        let ctx = ProcessContext {
-            num_frames,
-            sample_rate,
-        };
+        let ctx = ProcessContext::new(sample_rate, num_frames);
         linear_plugin
             .process(&input, &mut output_warmup, &ctx)
             .unwrap();

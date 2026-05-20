@@ -35,10 +35,7 @@ fn main() {
     println!("\n[Test 1] Channel mute (Ch0 muted, Ch1 pass)");
     let num_frames = 24000; // 500ms for fade convergence
     let mut buffer = vec![1.0f32; num_frames * channels];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
 
     assert_no_allocs("ChannelMuteSoloPlugin::process_in_place", || {
         inner.process_in_place(&mut buffer, &ctx).unwrap();

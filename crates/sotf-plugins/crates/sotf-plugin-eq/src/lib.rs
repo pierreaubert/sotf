@@ -1291,14 +1291,8 @@ mod tests {
         let mut p = EqPlugin::new(2, vec![]);
         InPlacePlugin::initialize(&mut p, 48000).unwrap();
         let mut b = vec![0.5; 2048];
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1024,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(48000, 1024))
+            .unwrap();
         assert_eq!(b, vec![0.5; 2048]);
     }
 
@@ -1321,14 +1315,8 @@ mod tests {
         .unwrap();
         let mut b: Vec<f32> = (0..1024).map(|k| (k as f32 * 0.1).sin()).collect();
         let i = b.clone();
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1024,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(48000, 1024))
+            .unwrap();
         // Check a sample after some settling
         assert!(b[100].abs() > i[100].abs());
     }
@@ -1353,10 +1341,7 @@ mod tests {
         let input = signal_gen.generate(4800 * channels);
 
         let mut expected_output = vec![0.0; input.len()];
-        let ctx = ProcessContext {
-            sample_rate: sample_rate as u32,
-            num_frames: 4800,
-        };
+        let ctx = ProcessContext::new(sample_rate as u32, 4800);
         plugin.process(&input, &mut expected_output, &ctx).unwrap();
 
         plugin.reset();
@@ -1419,14 +1404,8 @@ mod tests {
 
         let mut buf: Vec<f32> = (0..2048).map(|i| (i as f32 * 0.11).sin() * 0.25).collect();
         let input = buf.clone();
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2048,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 2048))
+            .unwrap();
 
         assert!(buf.iter().all(|s| s.is_finite()));
         let diff: f32 = buf
@@ -1471,14 +1450,8 @@ mod tests {
 
         let mut buf: Vec<f32> = (0..4096).map(|i| (i as f32 * 0.013).sin() * 0.25).collect();
         let input = buf.clone();
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 4096,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 4096))
+            .unwrap();
 
         assert!(buf.iter().all(|s| s.is_finite()));
         let diff: f32 = buf
@@ -1500,10 +1473,7 @@ mod tests {
 
         let input = vec![0.1; 512 * channels];
         let mut output = vec![0.0; 512 * channels];
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: 512,
-        };
+        let ctx = ProcessContext::new(sample_rate, 512);
 
         // Warm up
         for _ in 0..10 {
@@ -1577,14 +1547,8 @@ mod tests {
         for (i, sample) in buf.iter_mut().enumerate() {
             *sample = (i as f32 * 0.1).sin() * 0.5;
         }
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, num_frames))
+            .unwrap();
 
         // Transition should be complete after 512 samples (> 240)
         assert!(p.transitions[0].is_none());
@@ -1610,14 +1574,8 @@ mod tests {
 
         // Process some audio to build up filter state
         let mut buf: Vec<f32> = (0..256).map(|k| (k as f32 * 0.1).sin()).collect();
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 44100,
-                num_frames: 256,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(44100, 256))
+            .unwrap();
 
         // Re-initialize at new sample rate - should use update_params, not new
         // (filter params should stay the same, just recompute coeffs for new rate)
@@ -1652,14 +1610,8 @@ mod tests {
 
         // Process some warmup
         let mut warmup = vec![0.5f32; 1024];
-        p.process_in_place(
-            &mut warmup,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1024,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut warmup, &ProcessContext::new(48000, 1024))
+            .unwrap();
 
         // Now change gain to +12dB
         InPlacePlugin::set_parameter(
@@ -1671,14 +1623,8 @@ mod tests {
 
         // Process during transition with DC signal
         let mut buf = vec![0.5f32; 512];
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 512,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 512))
+            .unwrap();
 
         // All output samples should be finite
         for (i, &s) in buf.iter().enumerate() {
@@ -1789,14 +1735,8 @@ mod tests {
 
         // Warm up — process multiple blocks
         for _ in 0..10 {
-            p.process_in_place(
-                &mut signal,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames,
-                },
-            )
-            .unwrap();
+            p.process_in_place(&mut signal, &ProcessContext::new(48000, num_frames))
+                .unwrap();
         }
 
         // All output samples must be finite
@@ -1841,14 +1781,8 @@ mod tests {
 
         // Warm up
         for _ in 0..10 {
-            p.process_in_place(
-                &mut signal,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames,
-                },
-            )
-            .unwrap();
+            p.process_in_place(&mut signal, &ProcessContext::new(48000, num_frames))
+                .unwrap();
         }
 
         for (i, &s) in signal.iter().enumerate() {
@@ -1923,14 +1857,8 @@ mod tests {
         let num_frames = 512;
         let nc = 2;
         let mut signal = vec![0.5f32; num_frames * nc];
-        p.process_in_place(
-            &mut signal,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut signal, &ProcessContext::new(48000, num_frames))
+            .unwrap();
 
         // Reset should clear residuals — after reset, processing silence yields silence
         InPlacePlugin::reset(&mut p);
@@ -1938,14 +1866,8 @@ mod tests {
         let mut silence = vec![0.0f32; num_frames * nc];
         // Process enough blocks to flush any stale state
         for _ in 0..10 {
-            p.process_in_place(
-                &mut silence,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames,
-                },
-            )
-            .unwrap();
+            p.process_in_place(&mut silence, &ProcessContext::new(48000, num_frames))
+                .unwrap();
         }
         for (i, &s) in silence.iter().enumerate() {
             assert!(s.abs() < 1e-6, "sample {} not silent after reset: {}", i, s);
@@ -2092,14 +2014,8 @@ mod tests {
 
         // Put non-zero state into the biquad before reset.
         let mut buf = vec![0.5f32; 128];
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 128,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 128))
+            .unwrap();
 
         InPlacePlugin::reset(&mut p);
         let after = p.filters[0][0][0].coefficients();
@@ -2145,14 +2061,8 @@ mod tests {
 
         // Warmup
         let mut buf = vec![0.5f32; 256];
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 256,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 256))
+            .unwrap();
 
         // Trigger transition
         InPlacePlugin::set_parameter(
@@ -2164,14 +2074,8 @@ mod tests {
 
         // Process during transition
         let mut buf = vec![0.5f32; 512];
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 512,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 512))
+            .unwrap();
 
         for (i, &s) in buf.iter().enumerate() {
             assert!(
@@ -2213,10 +2117,7 @@ mod tests {
         // Process enough frames to trigger the oversampling chunk path (>= OS_CHUNK_SIZE)
         let frames = 512;
         let mut buffer = vec![0.5f32; frames * nc];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         // Should not panic with 12 channels
         p.process_in_place(&mut buffer, &ctx).unwrap();
         assert!(buffer.iter().all(|s| s.is_finite()));

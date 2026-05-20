@@ -182,10 +182,7 @@ fn test_audio_output_equivalence() {
         let signal = test_signal(NUM_FRAMES, CHANNELS);
         let mut buf_direct = signal.clone();
         let mut buf_bridge = signal.clone();
-        let ctx = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: NUM_FRAMES,
-        };
+        let ctx = ProcessContext::new(SAMPLE_RATE, NUM_FRAMES);
 
         // Process multiple blocks to let both converge past any transient differences
         for _ in 0..4 {
@@ -355,10 +352,7 @@ fn test_state_save_load_roundtrip() {
         let signal = test_signal(NUM_FRAMES, CHANNELS);
         let mut buf1 = signal.clone();
         let mut buf2 = signal.clone();
-        let ctx = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: NUM_FRAMES,
-        };
+        let ctx = ProcessContext::new(SAMPLE_RATE, NUM_FRAMES);
         plugin.process(&signal, &mut buf1, &ctx).ok();
         plugin2.process(&signal, &mut buf2, &ctx).ok();
 

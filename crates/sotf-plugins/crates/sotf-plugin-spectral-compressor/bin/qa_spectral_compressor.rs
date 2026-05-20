@@ -19,10 +19,7 @@ fn main() {
     println!("\n[Test 1] STFT processing passthrough");
     let num_frames = 48000; // 1 second for STFT convergence
     let mut buffer = vec![0.5f32; num_frames * channels];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
 
     // Output should be finite

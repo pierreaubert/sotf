@@ -924,14 +924,8 @@ mod tests {
         let mut p = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
         p.initialize(48000).unwrap();
         let mut b = vec![1.0, 0.0, 1.0, 0.0];
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(48000, 2))
+            .unwrap();
         assert!(b[1].abs() > 0.0);
     }
 
@@ -975,14 +969,8 @@ mod tests {
 
         let n = 4000;
         let mut buf: Vec<f32> = (0..n).flat_map(|_| [0.5f32, 0.5]).collect();
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, n))
+            .unwrap();
 
         let last_l = buf[(n - 1) * 2];
         let last_r = buf[(n - 1) * 2 + 1];
@@ -1014,14 +1002,8 @@ mod tests {
             .collect();
         let mut p = CrossfeedPlugin::new(params.clone()).unwrap();
         p.initialize(sr).unwrap();
-        p.process_in_place(
-            &mut buf_lf,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf_lf, &ProcessContext::new(sr, n))
+            .unwrap();
 
         let tail_start = (n - 2000) * 2;
         let diff_rms_lf: f32 = buf_lf[tail_start..]
@@ -1050,14 +1032,8 @@ mod tests {
             .collect();
         let mut p2 = CrossfeedPlugin::new(params).unwrap();
         p2.initialize(sr).unwrap();
-        p2.process_in_place(
-            &mut buf_hf,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p2.process_in_place(&mut buf_hf, &ProcessContext::new(sr, n))
+            .unwrap();
 
         let diff_rms_hf: f32 = buf_hf[tail_start..]
             .chunks(2)
@@ -1084,14 +1060,8 @@ mod tests {
         p.initialize(48000).unwrap();
 
         let mut buffer = vec![1.0, 0.0, 0.0, 1.0];
-        p.process_in_place(
-            &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buffer, &ProcessContext::new(48000, 2))
+            .unwrap();
 
         assert!(buffer[1].abs() > 0.0);
     }
@@ -1110,14 +1080,8 @@ mod tests {
         // DC signal: all energy in left channel
         let n = 4000;
         let mut dc_buf: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0]).collect();
-        p.process_in_place(
-            &mut dc_buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut dc_buf, &ProcessContext::new(48000, n))
+            .unwrap();
 
         // After settling, DC should bleed significantly into right channel via LPF crossfeed
         let last_r = dc_buf[(n - 1) * 2 + 1];
@@ -1136,14 +1100,8 @@ mod tests {
         p.initialize(48000).unwrap();
 
         let mut buffer = vec![1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
-        p.process_in_place(
-            &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 4,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buffer, &ProcessContext::new(48000, 4))
+            .unwrap();
         assert!(buffer[1].abs() > 0.0);
     }
 
@@ -1156,14 +1114,8 @@ mod tests {
 
         let n = 100;
         let mut buffer: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0]).collect();
-        p.process_in_place(
-            &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buffer, &ProcessContext::new(48000, n))
+            .unwrap();
         // Right channel should get some crossfeed
         let last_r = buffer[(n - 1) * 2 + 1];
         assert!(
@@ -1185,14 +1137,8 @@ mod tests {
 
         let n = 4096;
         let mut buffer: Vec<f32> = (0..n).flat_map(|_| [0.5f32, 0.5f32]).collect();
-        p.process_in_place(
-            &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buffer, &ProcessContext::new(48000, n))
+            .unwrap();
 
         let tail_peak = buffer[(n / 2) * 2..]
             .iter()
@@ -1220,14 +1166,8 @@ mod tests {
         let mut buffer = vec![0.0f32; n * 2];
         buffer[0] = 1.0; // impulse at frame 0, left channel
 
-        p.process_in_place(
-            &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buffer, &ProcessContext::new(48000, n))
+            .unwrap();
 
         // The crossfeed to right channel should be delayed by ~24 samples
         // Check that right channel has near-zero for the first few frames
@@ -1255,14 +1195,8 @@ mod tests {
 
         let n = 100;
         let mut buffer: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0]).collect();
-        p.process_in_place(
-            &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buffer, &ProcessContext::new(48000, n))
+            .unwrap();
         // Should still work and produce crossfeed
         assert!(buffer[1].is_finite());
     }
@@ -1327,14 +1261,8 @@ mod tests {
             let mut buffer = vec![0.0f32; n * 2];
             buffer[0] = 1.0; // impulse at frame 0, L channel
 
-            p.process_in_place(
-                &mut buffer,
-                &ProcessContext {
-                    sample_rate: sr,
-                    num_frames: n,
-                },
-            )
-            .unwrap();
+            p.process_in_place(&mut buffer, &ProcessContext::new(sr, n))
+                .unwrap();
 
             // Find the first frame where |R| > threshold
             let threshold = 0.001;
@@ -1383,14 +1311,8 @@ mod tests {
 
         let mut buffer = vec![1.0, 0.5, 0.3, 0.7];
         let original = buffer.clone();
-        p.process_in_place(
-            &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buffer, &ProcessContext::new(48000, 2))
+            .unwrap();
         assert_eq!(
             buffer, original,
             "Disabled crossfeed should pass through unchanged"
@@ -1404,10 +1326,7 @@ mod tests {
         // crossfeed leaks into the right channel at each frequency.
         let sr = 48000u32;
         let n = 10000; // frames
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: n,
-        };
+        let ctx = ProcessContext::new(sr, n);
 
         let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
         params.mode = CrossfeedMode::Bauer;
@@ -1475,14 +1394,8 @@ mod tests {
                     [s, 0.0f32]
                 })
                 .collect();
-            p.process_in_place(
-                &mut buf,
-                &ProcessContext {
-                    sample_rate: sr,
-                    num_frames: n,
-                },
-            )
-            .unwrap();
+            p.process_in_place(&mut buf, &ProcessContext::new(sr, n))
+                .unwrap();
 
             let tail_start = (n * 3 / 4) * 2;
             let rms: f32 = buf[tail_start..]
@@ -1542,14 +1455,8 @@ mod tests {
                 buffer[1] = 1.0;
             }
 
-            p.process_in_place(
-                &mut buffer,
-                &ProcessContext {
-                    sample_rate: sr,
-                    num_frames: n,
-                },
-            )
-            .unwrap();
+            p.process_in_place(&mut buffer, &ProcessContext::new(sr, n))
+                .unwrap();
 
             let threshold = 0.001;
             for f in 0..n {
@@ -1594,14 +1501,8 @@ mod tests {
 
         // Warm-up block to settle smoother at mix=0
         let mut warmup = vec![0.5f32; n * 2];
-        p.process_in_place(
-            &mut warmup,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut warmup, &ProcessContext::new(sr, n))
+            .unwrap();
 
         // Jump mix to 1.0
         p.set_parameter(
@@ -1612,14 +1513,8 @@ mod tests {
 
         // Process DC on L only
         let mut buf: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0f32]).collect();
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(sr, n))
+            .unwrap();
 
         // Right channel: dry_r=0, wet_r>0 (crossfeed).  With a ramp, early < late.
         let first_r = buf[1].abs();
@@ -1657,14 +1552,8 @@ mod tests {
         let mut block1: Vec<f32> = (0..n)
             .flat_map(|i| [(i as f32 * 0.01).sin(), 0.0f32])
             .collect();
-        p1.process_in_place(
-            &mut block1,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p1.process_in_place(&mut block1, &ProcessContext::new(sr, n))
+            .unwrap();
 
         // Reset p1 — after this it should behave like a fresh p2
         p1.reset();
@@ -1674,22 +1563,10 @@ mod tests {
         impulse1[0] = 1.0;
         let mut impulse2 = impulse1.clone();
 
-        p1.process_in_place(
-            &mut impulse1,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames: n,
-            },
-        )
-        .unwrap();
-        p2.process_in_place(
-            &mut impulse2,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p1.process_in_place(&mut impulse1, &ProcessContext::new(sr, n))
+            .unwrap();
+        p2.process_in_place(&mut impulse2, &ProcessContext::new(sr, n))
+            .unwrap();
 
         // Outputs should match exactly (or very closely)
         for i in 0..(n * 2) {

@@ -133,10 +133,7 @@ fn test_roomeq_recommended_matrix_supports_more_than_two_speakers() {
         .process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48_000,
-                num_frames,
-            },
+            &ProcessContext::new(48_000, num_frames),
         )
         .unwrap();
     assert!(produced > 0);
@@ -168,10 +165,7 @@ fn test_xtc_bypass() {
     }
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -197,10 +191,7 @@ fn test_xtc_processing() {
     }
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -296,10 +287,7 @@ fn test_energy_preservation() {
     let block_size = 4096;
     let num_blocks = 8;
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: block_size,
-    };
+    let context = ProcessContext::new(48000, block_size);
 
     let mut last_output = vec![0.0_f32; block_size * 2];
     for block in 0..num_blocks {
@@ -356,10 +344,7 @@ fn test_mono_signal_behavior() {
     }
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -414,10 +399,7 @@ fn test_continuous_processing() {
         }
         let mut output = vec![0.0_f32; block_size * 2];
 
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: block_size,
-        };
+        let context = ProcessContext::new(48000, block_size);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -483,10 +465,7 @@ fn test_xtc_denormal_flushing() {
     }
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -996,10 +975,7 @@ fn test_energy_preservation_with_reflections() {
     }
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1077,10 +1053,7 @@ fn test_stft_passthrough_unity() {
     }
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1114,10 +1087,7 @@ fn test_auto_gain_prevents_clipping() {
     let block_size = 4096;
     let num_blocks = 12; // Enough for auto-gain to converge
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: block_size,
-    };
+    let context = ProcessContext::new(48000, block_size);
 
     let mut peak_output = 0.0_f32;
     for block in 0..num_blocks {
@@ -1247,10 +1217,7 @@ fn test_limiter_smooth_attack() {
         prime_in[i * 2] = phase.sin() * 0.1;
         prime_in[i * 2 + 1] = phase.cos() * 0.1;
     }
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: prime_frames,
-    };
+    let context = ProcessContext::new(48000, prime_frames);
     plugin.process(&prime_in, &mut prime_out, &context).unwrap();
 
     // Now feed a loud signal that will trigger the limiter
@@ -1262,10 +1229,7 @@ fn test_limiter_smooth_attack() {
         input[i * 2 + 1] = phase.cos() * 0.8;
     }
     let mut output = vec![0.0_f32; test_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: test_frames,
-    };
+    let context = ProcessContext::new(48000, test_frames);
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Check that consecutive samples don't have huge gain jumps.
@@ -1523,10 +1487,7 @@ fn test_pinna_model_does_not_saturate() {
     let block_size = 4096;
     let num_blocks = 16; // Enough for auto-gain to converge
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: block_size,
-    };
+    let context = ProcessContext::new(48000, block_size);
 
     let mut peak_output = 0.0_f32;
     for block in 0..num_blocks {
@@ -1713,10 +1674,7 @@ fn test_itd_explicit_delay_stable_output() {
         input[i * 2 + 1] = phase.cos() * 0.5;
     }
     let mut output = vec![0.0_f32; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 

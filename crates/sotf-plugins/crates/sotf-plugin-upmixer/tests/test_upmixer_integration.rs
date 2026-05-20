@@ -210,10 +210,7 @@ fn test_upmixer_synthesis_windowing_no_crackling() {
     // Process using Plugin trait (which handles overlap-add internally)
     let output_channels = 6;
     let mut output = vec![0.0; total_samples * output_channels];
-    let context = sotf_host::ProcessContext {
-        sample_rate,
-        num_frames: total_samples,
-    };
+    let context = sotf_host::ProcessContext::new(sample_rate, total_samples);
     plugin
         .process(&continuous_input, &mut output, &context)
         .unwrap();
@@ -310,10 +307,7 @@ fn test_upmixer_hr_direct_increases_front_energy() {
 
     let mut out_off = vec![0.0_f32; num_frames * output_channels];
     let mut out_on = vec![0.0_f32; num_frames * output_channels];
-    let context = sotf_host::ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = sotf_host::ProcessContext::new(sample_rate, num_frames);
 
     plugin_off.process(&input, &mut out_off, &context).unwrap();
     plugin_on.process(&input, &mut out_on, &context).unwrap();
@@ -391,10 +385,7 @@ fn test_upmixer_channel_normalization_no_clipping() {
 
     let output_channels = 6;
     let mut output = vec![0.0; num_samples * output_channels];
-    let context = sotf_host::ProcessContext {
-        sample_rate,
-        num_frames: num_samples,
-    };
+    let context = sotf_host::ProcessContext::new(sample_rate, num_samples);
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Check for clipping (values exceeding [-1.0, 1.0])
@@ -469,10 +460,7 @@ fn test_upmixer_denormal_flushing() {
 
     let output_channels = 6;
     let mut output = vec![0.0; num_samples * output_channels];
-    let context = sotf_host::ProcessContext {
-        sample_rate,
-        num_frames: num_samples,
-    };
+    let context = sotf_host::ProcessContext::new(sample_rate, num_samples);
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Count true f32 subnormal samples. Values below 1e-30 are still normal
@@ -541,10 +529,7 @@ fn test_upmixer_subharmonic_smoothing() {
 
     let output_channels = 6;
     let mut output = vec![0.0; total_samples * output_channels];
-    let context = sotf_host::ProcessContext {
-        sample_rate,
-        num_frames: total_samples,
-    };
+    let context = sotf_host::ProcessContext::new(sample_rate, total_samples);
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Extract LFE channel (channel 3 in 5.1 configuration)

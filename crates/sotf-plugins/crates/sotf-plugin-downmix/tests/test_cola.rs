@@ -33,10 +33,7 @@ fn test_pure_tone_no_ola_flutter() {
             input[i * 2] = sample;
             input[i * 2 + 1] = sample;
         }
-        let ctx = ProcessContext {
-            num_frames: block_size,
-            sample_rate: 48000,
-        };
+        let ctx = ProcessContext::new(48000, block_size);
         plugin.process(&input, &mut output, &ctx).unwrap();
     }
 
@@ -49,10 +46,7 @@ fn test_pure_tone_no_ola_flutter() {
             input[i * 2] = sample;
             input[i * 2 + 1] = sample;
         }
-        let ctx = ProcessContext {
-            num_frames: block_size,
-            sample_rate: 48000,
-        };
+        let ctx = ProcessContext::new(48000, block_size);
         plugin.process(&input, &mut output, &ctx).unwrap();
 
         // Measure peak amplitude of left channel in this block

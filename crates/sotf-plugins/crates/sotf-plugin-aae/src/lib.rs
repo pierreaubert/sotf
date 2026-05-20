@@ -1072,15 +1072,8 @@ mod tests {
 
         let input = vec![0.5, -0.3]; // one frame, stereo
         let mut output = vec![0.0; 6]; // 5.1
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, 1))
+            .unwrap();
 
         assert!((output[0] - 0.5).abs() < 1e-6, "L should pass through");
         assert!((output[1] - (-0.3)).abs() < 1e-6, "R should pass through");
@@ -1092,15 +1085,8 @@ mod tests {
         let n = 1024;
         let input = vec![0.0; n * 2];
         let mut output = vec![0.0; n * 6];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, n))
+            .unwrap();
 
         let max = output.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
         assert!(max < 1e-6, "Silence in should give silence out, max={max}");
@@ -1131,15 +1117,8 @@ mod tests {
         // Impulse frame
         let input_impulse = vec![1.0, 1.0];
         let mut out = vec![0.0; 6];
-        p.process(
-            &input_impulse,
-            &mut out,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process(&input_impulse, &mut out, &ProcessContext::new(48000, 1))
+            .unwrap();
         all_output.extend_from_slice(&out);
 
         // Process 2 seconds of silence
@@ -1150,10 +1129,7 @@ mod tests {
             p.process(
                 &input_silence,
                 &mut out_chunk,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames: chunk,
-                },
+                &ProcessContext::new(48000, chunk),
             )
             .unwrap();
             all_output.extend_from_slice(&out_chunk);
@@ -1181,15 +1157,8 @@ mod tests {
         let n = 4096;
         let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.8).collect();
         let mut output = vec![0.0; n * 6];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, n))
+            .unwrap();
 
         for (i, v) in output.iter().enumerate() {
             assert!(v.is_finite(), "Output[{i}] is not finite: {v}");
@@ -1292,28 +1261,14 @@ mod tests {
         let input = vec![0.0; 1];
         let mut output = vec![0.0; 6];
         let err = p
-            .process(
-                &input,
-                &mut output,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames: 1,
-                },
-            )
+            .process(&input, &mut output, &ProcessContext::new(48000, 1))
             .unwrap_err();
         assert!(err.contains("input size mismatch"));
 
         let input = vec![0.0; 2];
         let mut output = vec![0.0; 5];
         let err = p
-            .process(
-                &input,
-                &mut output,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames: 1,
-                },
-            )
+            .process(&input, &mut output, &ProcessContext::new(48000, 1))
             .unwrap_err();
         assert!(err.contains("output size mismatch"));
     }
@@ -1448,15 +1403,8 @@ mod tests {
         let n = 512;
         let input = vec![0.1; n * 2];
         let mut output = vec![0.0; n * 6];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, n))
+            .unwrap();
         assert!(output.iter().all(|v| v.is_finite()));
     }
 
@@ -1469,15 +1417,8 @@ mod tests {
         let n = 4096;
         let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
         let mut output = vec![0.0; n * 6];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, n))
+            .unwrap();
 
         // Should produce some output (ER only)
         let energy: f32 = output.iter().map(|v| v * v).sum();
@@ -1494,30 +1435,16 @@ mod tests {
         let n = 2048;
         let input: Vec<f32> = (0..n * 2).map(|_| 0.5).collect();
         let mut output = vec![0.0; n * 6];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, n))
+            .unwrap();
 
         p.reset();
 
         // After reset, silence in should give silence out
         let input_silent = vec![0.0; n * 2];
         let mut output2 = vec![0.0; n * 6];
-        p.process(
-            &input_silent,
-            &mut output2,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process(&input_silent, &mut output2, &ProcessContext::new(48000, n))
+            .unwrap();
 
         let max = output2.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
         assert!(max < 1e-6, "After reset, should be silent, max={max}");
@@ -1590,10 +1517,7 @@ mod tests {
         input[0] = 1.0;
         input[1] = 1.0;
         let mut output = vec![0.0_f32; chunk * p.num_output_channels];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: chunk,
-        };
+        let context = ProcessContext::new(48000, chunk);
 
         let mut late_lfe_energy = 0.0_f32;
         let mut frame_offset = 0usize;
@@ -1646,15 +1570,8 @@ mod tests {
         let n = 4096;
         let input = vec![2.0_f32; n * 2];
         let mut output = vec![0.0; n * p.output_channels()];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, n))
+            .unwrap();
 
         let max = output.iter().copied().map(f32::abs).fold(0.0, f32::max);
         assert!(
@@ -1683,15 +1600,8 @@ mod tests {
         let n = 4096;
         let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
         let mut output = vec![0.0; n * 6];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, n))
+            .unwrap();
 
         let input_energy: f32 = input.iter().map(|v| v * v).sum();
         let output_energy: f32 = output.iter().map(|v| v * v).sum();

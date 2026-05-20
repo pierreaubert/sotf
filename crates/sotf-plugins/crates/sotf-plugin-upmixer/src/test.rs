@@ -44,10 +44,7 @@ mod upmixer_tests {
         assert_eq!(plugin.output_channels(), 2);
 
         let num_frames = 4096;
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
         let mut input = vec![0.0_f32; num_frames * 2];
         for i in 0..num_frames {
             let t = i as f32 / context.sample_rate as f32;
@@ -206,10 +203,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; num_frames * 6];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -430,10 +424,7 @@ mod upmixer_tests {
             }
 
             let mut output = vec![0.0f32; num_frames * plugin.num_output_channels];
-            let context = ProcessContext {
-                sample_rate: 44100,
-                num_frames,
-            };
+            let context = ProcessContext::new(44100, num_frames);
             plugin.process(&input, &mut output, &context).unwrap();
 
             // 5.1 layout: channel 2 is Center.
@@ -572,10 +563,7 @@ mod upmixer_tests {
         }
 
         let mut output = vec![0.0f32; num_frames * plugin.num_output_channels];
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
 
         // Process a few blocks to get past latency
         for _ in 0..5 {
@@ -627,10 +615,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * num_blocks * 6];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048 * num_blocks,
-        };
+        let context = ProcessContext::new(44100, 2048 * num_blocks);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -705,10 +690,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 6];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         // Process multiple blocks to let it settle
         for _ in 0..10 {
@@ -782,10 +764,7 @@ mod upmixer_tests {
                 }
 
                 let mut output = vec![0.0_f32; chunk_size * 6];
-                let context = ProcessContext {
-                    sample_rate: 44100,
-                    num_frames: chunk_size,
-                };
+                let context = ProcessContext::new(44100, chunk_size);
 
                 plugin.process(&input, &mut output, &context).unwrap();
                 all_output.extend_from_slice(&output);
@@ -839,10 +818,7 @@ mod upmixer_tests {
             total_input_energy += input.iter().map(|x| x * x).sum::<f32>();
 
             let mut output = vec![0.0_f32; buffer_size * 6];
-            let context = ProcessContext {
-                sample_rate: 44100,
-                num_frames: buffer_size,
-            };
+            let context = ProcessContext::new(44100, buffer_size);
 
             plugin.process(&input, &mut output, &context).unwrap();
 
@@ -901,10 +877,7 @@ mod upmixer_tests {
             }
 
             let mut output = vec![0.0_f32; buffer_size * 6];
-            let context = ProcessContext {
-                sample_rate: 44100,
-                num_frames: buffer_size,
-            };
+            let context = ProcessContext::new(44100, buffer_size);
 
             plugin.process(&input, &mut output, &context).unwrap();
 
@@ -998,10 +971,7 @@ mod upmixer_tests {
         }
 
         let mut output = vec![0.0_f32; 2048 * 10];
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         // Process multiple blocks to overcome latency and let filters settle
         for _ in 0..10 {
@@ -1274,10 +1244,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 6];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1313,10 +1280,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 6];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1350,10 +1314,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 12];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1385,10 +1346,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 6];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1423,10 +1381,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 12];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1457,10 +1412,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 6];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1492,10 +1444,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 12];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1525,10 +1474,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 12];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1562,10 +1508,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 6];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1595,10 +1538,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 12];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1659,10 +1599,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 6];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1692,10 +1629,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 6];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1741,10 +1675,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0_f32; 2048 * 12];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1802,10 +1733,7 @@ mod upmixer_tests {
         }
 
         let mut output = vec![0.0_f32; buffer_size * plugin.output_channels()];
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: buffer_size,
-        };
+        let context = ProcessContext::new(44100, buffer_size);
 
         plugin.process(&input, &mut output, &context).unwrap();
 
@@ -1877,10 +1805,7 @@ mod upmixer_tests {
         plugin.hr_sharpen.set_target(1.0);
 
         let buffer_size = 1024;
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: buffer_size,
-        };
+        let context = ProcessContext::new(44100, buffer_size);
 
         // --- Phase 1: Establish a low-energy baseline ---
         // Use a quiet signal (not silence) so the flux smoother has a real baseline.
@@ -1951,10 +1876,7 @@ mod upmixer_tests {
             .unwrap();
 
         let buffer_size = 1024;
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: buffer_size,
-        };
+        let context = ProcessContext::new(44100, buffer_size);
 
         // Create a stereo sine wave input
         let mut input = vec![0.0_f32; buffer_size * 2];
@@ -2022,10 +1944,7 @@ mod upmixer_tests {
             )
             .unwrap();
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 64,
-        };
+        let context = ProcessContext::new(44100, 64);
         let short_input = vec![0.0_f32; context.num_frames * 2 - 1];
         let mut output = vec![0.0_f32; context.num_frames * plugin.output_channels()];
         let err = plugin
@@ -2131,10 +2050,7 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0f32; num_frames * num_ch];
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
         plugin.process(&input, &mut output, &context).unwrap();
 
         // Check peak in the last block only (limiter fully engaged)
@@ -2181,10 +2097,7 @@ mod upmixer_tests {
             input[i * 2 + 1] = (right * 0.55).tanh() * 0.98;
         }
 
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
 
         for &config in SPEAKER_CONFIGS.iter().filter(|&&config| config != "2.0") {
             let mut plugin = UpmixerPlugin::new(
@@ -2220,10 +2133,7 @@ mod upmixer_tests {
         let fft_size = 2048;
         let prime_block = 127;
         let total_blocks = 160;
-        let context = ProcessContext {
-            sample_rate,
-            num_frames: prime_block,
-        };
+        let context = ProcessContext::new(sample_rate, prime_block);
 
         for &config in SPEAKER_CONFIGS.iter().filter(|&&config| config != "2.0") {
             let mut plugin = UpmixerPlugin::new(
@@ -2292,10 +2202,7 @@ mod upmixer_tests {
                 input[i * 2 + 1] = bass;
             }
             let mut output = vec![0.0_f32; num_frames * 6];
-            let context = ProcessContext {
-                sample_rate: 44100,
-                num_frames,
-            };
+            let context = ProcessContext::new(44100, num_frames);
             plugin.process(&input, &mut output, &context).unwrap();
         }
 
@@ -2308,10 +2215,7 @@ mod upmixer_tests {
             input[i * 2 + 1] = bass;
         }
         let mut output = vec![0.0_f32; num_frames * 6];
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
         plugin.process(&input, &mut output, &context).unwrap();
 
         // Extract LFE channel
@@ -2358,10 +2262,7 @@ mod upmixer_tests {
             }
 
             let mut output = vec![0.0_f32; buffer_size * 6];
-            let context = ProcessContext {
-                sample_rate: 44100,
-                num_frames: buffer_size,
-            };
+            let context = ProcessContext::new(44100, buffer_size);
             plugin.process(&input, &mut output, &context).unwrap();
 
             if iteration >= 4 {
@@ -2754,10 +2655,7 @@ mod upmixer_tests {
 
         let num_frames = 2048;
         let sr = 44100.0;
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames,
-        };
+        let context = ProcessContext::new(44100, num_frames);
 
         // Phase 1: Process blocks of strong bass to charge the envelope
         for _ in 0..20 {

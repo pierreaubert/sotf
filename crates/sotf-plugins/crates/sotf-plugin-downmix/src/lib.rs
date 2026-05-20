@@ -1113,15 +1113,8 @@ mod tests {
             i[k * 2] = (k as f32 * 0.01).sin();
             i[k * 2 + 1] = (k as f32 * 0.02).sin();
         }
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 44100,
-                num_frames: 1024,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(44100, 1024))
+            .unwrap();
         assert!(o.iter().any(|&s| s.abs() > 1e-5));
     }
     #[test]
@@ -1134,15 +1127,8 @@ mod tests {
         for k in 0..100 {
             i[k * 6 + 2] = 1.0;
         }
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 44100,
-                num_frames: 100,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(44100, 100))
+            .unwrap();
         assert!(o[0].abs() > 0.01);
     }
 
@@ -1175,15 +1161,8 @@ mod tests {
 
         let input = vec![0.0f32; FFT_SIZE * p.input_ch];
         let mut output = vec![0.0f32; FFT_SIZE * 2];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: FFT_SIZE,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, FFT_SIZE))
+            .unwrap();
 
         let after = p.coeff_smoothers[smoother_index].current();
         assert!(
@@ -1216,15 +1195,8 @@ mod tests {
             input[k * input_ch + channel] = 1.0;
         }
         let mut output = vec![0.0f32; num_frames * 2];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
 
         // Return the last frame (after smoother settles)
         let l = output[(num_frames - 1) * 2];
@@ -1344,15 +1316,8 @@ mod tests {
         }
 
         let mut output = vec![0.0f32; num_frames * 2];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
 
         // For center-only content, L and R should be approximately equal
         // (center is mixed equally to both channels).
@@ -1528,10 +1493,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate,
-                num_frames,
-            },
+            &ProcessContext::new(sample_rate, num_frames),
         )
         .unwrap();
 

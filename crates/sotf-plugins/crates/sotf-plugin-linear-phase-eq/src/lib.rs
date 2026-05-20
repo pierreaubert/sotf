@@ -921,7 +921,7 @@ fn index_to_filter_type(index: usize) -> BiquadFilterType {
 mod tests {
     use super::*;
 
-    fn make_context(num_frames: usize) -> ProcessContext {
+    fn make_context(num_frames: usize) -> ProcessContext<'static> {
         ProcessContext::new(DEFAULT_SAMPLE_RATE, num_frames)
     }
 
@@ -1080,25 +1080,13 @@ mod tests {
 
         let mut large_buffer = input.clone();
         one_block
-            .process_in_place(
-                &mut large_buffer,
-                &ProcessContext {
-                    sample_rate: sr,
-                    num_frames,
-                },
-            )
+            .process_in_place(&mut large_buffer, &ProcessContext::new(sr, num_frames))
             .unwrap();
 
         let mut small_buffer = input.clone();
         for chunk in small_buffer.chunks_mut(512) {
             chunked
-                .process_in_place(
-                    chunk,
-                    &ProcessContext {
-                        sample_rate: sr,
-                        num_frames: chunk.len(),
-                    },
-                )
+                .process_in_place(chunk, &ProcessContext::new(sr, chunk.len()))
                 .unwrap();
         }
 

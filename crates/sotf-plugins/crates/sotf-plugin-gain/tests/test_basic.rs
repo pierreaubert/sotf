@@ -10,10 +10,7 @@ fn test_gain_plugin() {
     gain.initialize(44100).unwrap();
 
     let mut buffer = vec![0.5; 100];
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames: 50,
-    };
+    let context = ProcessContext::new(44100, 50);
 
     gain.process_in_place(&mut buffer, &context).unwrap();
 

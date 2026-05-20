@@ -1266,14 +1266,8 @@ mod tests {
         let mut p = MultibandCompressorPlugin::new(1);
         p.initialize(48000).unwrap();
         let mut b = vec![0.5; 1000];
-        p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut b, &ProcessContext::new(48000, 1000))
+            .unwrap();
         assert!(b[999].is_finite());
     }
 
@@ -1299,10 +1293,7 @@ mod tests {
             .map(|i| 0.3 * (i as f32 * 0.1).sin() + 0.1 * (i as f32 * 0.5).sin())
             .collect();
         let mut output = signal.clone();
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: block,
-        };
+        let ctx = ProcessContext::new(48000, block);
         p.process_in_place(&mut output[..block], &ctx).unwrap();
         p.process_in_place(&mut output[block..], &ctx).unwrap();
         let input = &signal[block..]; // settled second half
@@ -1327,10 +1318,7 @@ mod tests {
         p.initialize(48000).unwrap();
 
         let nf = 2400;
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(48000, nf);
 
         // Process a block with default crossover
         let mut b1: Vec<f32> = (0..nf).map(|i| 0.3 * (i as f32 * 0.1).sin()).collect();
@@ -1408,14 +1396,8 @@ mod tests {
         let mut p = p;
         p.initialize(48000).unwrap();
         let mut buf = vec![0.0f32; 256 * 2];
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 256,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 256))
+            .unwrap();
         assert!(buf.iter().all(|s| s.is_finite()));
     }
 
@@ -1426,14 +1408,8 @@ mod tests {
         p.band_params[0].solo = true;
 
         let mut buf = vec![0.25f32; 256 * 2];
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 256,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 256))
+            .unwrap();
 
         assert_eq!(p.band_levels_db[1], -120.0);
     }
@@ -1492,26 +1468,14 @@ mod tests {
         let mut buf = vec![0.0f32; nf * 2];
         buf[0] = 1.0;
         buf[1] = 1.0;
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+            .unwrap();
 
         // reset() must clear tilt state; a silence block after reset should give near-zero output
         p.reset();
         let mut silence = vec![0.0f32; nf * 2];
-        p.process_in_place(
-            &mut silence,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut silence, &ProcessContext::new(48000, nf))
+            .unwrap();
         let max_abs = silence.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
         assert!(
             max_abs < 1e-6,
@@ -1523,14 +1487,8 @@ mod tests {
             .unwrap();
         // Process should not panic or produce NaN
         let mut buf2 = vec![0.3f32; nf * 2];
-        p.process_in_place(
-            &mut buf2,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf2, &ProcessContext::new(48000, nf))
+            .unwrap();
         assert!(
             buf2.iter().all(|s| s.is_finite()),
             "After num_bands increase with tilt enabled, output must be finite"
@@ -1590,10 +1548,7 @@ mod tests {
         let input_val = 0.5f32;
 
         let mut p_mono = make_plugin(1);
-        let ctx_mono = ProcessContext {
-            sample_rate: 48000,
-            num_frames: block,
-        };
+        let ctx_mono = ProcessContext::new(48000, block);
         let mut buf_mono = vec![input_val; block];
         for _ in 0..2 {
             buf_mono.fill(input_val);
@@ -1601,10 +1556,7 @@ mod tests {
         }
 
         let mut p_stereo = make_plugin(2);
-        let ctx_stereo = ProcessContext {
-            sample_rate: 48000,
-            num_frames: block,
-        };
+        let ctx_stereo = ProcessContext::new(48000, block);
         let mut buf_stereo = vec![input_val; block * 2];
         for _ in 0..2 {
             buf_stereo.fill(input_val);
@@ -1643,14 +1595,8 @@ mod tests {
         // 4096 frames is the pre-allocation limit — must work without resize
         let nf = 4096usize;
         let mut buf = vec![0.1f32; nf * 2];
-        p.process_in_place(
-            &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+            .unwrap();
         assert!(buf.iter().all(|s| s.is_finite()));
     }
 
@@ -1672,10 +1618,7 @@ mod tests {
         // Use four 2400-frame blocks to stay within the 4096-frame pre-alloc limit.
         let block = 2400usize;
         let input_val = 0.5f32; // -6 dBFS
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: block,
-        };
+        let ctx = ProcessContext::new(48000, block);
         let mut last_block = vec![input_val; block];
         for _ in 0..4 {
             last_block.fill(input_val);
@@ -1695,13 +1638,7 @@ mod tests {
         let mut p = MultibandCompressorPlugin::new(1);
         p.initialize(48000).unwrap();
         let mut b = vec![0.5; 5000];
-        let result = p.process_in_place(
-            &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 5000,
-            },
-        );
+        let result = p.process_in_place(&mut b, &ProcessContext::new(48000, 5000));
         assert!(
             result.is_err(),
             "Should reject blocks larger than 4096 frames"

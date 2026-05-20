@@ -438,10 +438,7 @@ impl PndPlugin {
                 let chunk_frames = (num_frames - processed).min(capacity);
                 let sample_start = processed * self.channels;
                 let sample_end = sample_start + chunk_frames * self.channels;
-                let chunk_ctx = ProcessContext {
-                    sample_rate: context.sample_rate,
-                    num_frames: chunk_frames,
-                };
+                let chunk_ctx = ProcessContext::new(context.sample_rate, chunk_frames);
                 self.process_phase_vocoder(
                     &input[sample_start..sample_end],
                     &mut output[sample_start..sample_end],
@@ -1065,10 +1062,7 @@ mod tests {
         p.initialize(48000).unwrap();
 
         let nf = RESAMPLER_CHUNK_SIZE;
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(48000, nf);
 
         // Process several blocks and track how current_ratio evolves
         let mut ratios = Vec::new();
@@ -1108,10 +1102,7 @@ mod tests {
             p.initialize(48000).unwrap();
 
             let nf = RESAMPLER_CHUNK_SIZE;
-            let ctx = ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(48000, nf);
 
             let input: Vec<f32> = (0..nf * 2).map(|i| 0.3 * (i as f32 * 0.01).sin()).collect();
             let mut output = vec![0.0f32; nf * 2];
@@ -1148,10 +1139,7 @@ mod tests {
         let mut p = PndPlugin::new(2);
         p.initialize(48000).unwrap();
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 64,
-        };
+        let ctx = ProcessContext::new(48000, 64);
         let input = vec![0.0f32; ctx.num_frames * p.input_channels()];
         let mut short_output = vec![0.0f32; ctx.num_frames * p.output_channels() - 1];
         let err = p.process(&input, &mut short_output, &ctx).unwrap_err();
@@ -1169,10 +1157,7 @@ mod tests {
         p.initialize(48000).unwrap();
 
         let frames = RESAMPLER_CHUNK_SIZE * 5;
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames);
         let input = vec![0.0f32; frames * p.input_channels()];
         let mut output = vec![0.0f32; frames * p.output_channels()];
         let err = p.process(&input, &mut output, &ctx).unwrap_err();
@@ -1219,10 +1204,7 @@ mod tests {
 
         // Process some audio to get internal resampler state dirty
         let nf = RESAMPLER_CHUNK_SIZE;
-        let ctx = ProcessContext {
-            sample_rate: 44100,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(44100, nf);
         let input: Vec<f32> = (0..nf * 2)
             .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
             .collect();
@@ -1267,10 +1249,7 @@ mod tests {
         .unwrap();
 
         let nf = 512;
-        let ctx = ProcessContext {
-            sample_rate: 44100,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(44100, nf);
         let input: Vec<f32> = (0..nf * 2)
             .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
             .collect();
@@ -1317,10 +1296,7 @@ mod tests {
         .unwrap();
 
         let frames = RESAMPLER_CHUNK_SIZE + 256;
-        let ctx = ProcessContext {
-            sample_rate: 44100,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(44100, frames);
         let input: Vec<f32> = (0..frames * 2)
             .map(|i| 0.25 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
             .collect();

@@ -465,10 +465,7 @@ mod tests {
         let mut plugin = BeamformerPlugin::new(2, 48000);
         plugin.beamformer_type = BeamformerType::Gsc;
 
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 256,
-        };
+        let context = ProcessContext::new(48000, 256);
         let input = vec![0.1f32; 256 * 2];
         let mut output = vec![0.0f32; 256];
 
@@ -481,10 +478,7 @@ mod tests {
         let mut plugin = BeamformerPlugin::new(2, 48000);
         plugin.beamformer_type = BeamformerType::Mvdr;
 
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 512,
-        };
+        let context = ProcessContext::new(48000, 512);
         let input = vec![0.1f32; 512 * 2];
         let mut output = vec![0.0f32; 512];
 
@@ -497,10 +491,7 @@ mod tests {
         let mut plugin = BeamformerPlugin::new(2, 48000);
         plugin.beamformer_type = BeamformerType::Superdirective;
 
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 512,
-        };
+        let context = ProcessContext::new(48000, 512);
         let input = vec![0.1f32; 512 * 2];
         let mut output = vec![0.0f32; 512];
 
@@ -523,10 +514,7 @@ mod tests {
         // Feed exactly hop samples at a time over several calls.
         // With the buggy trigger each call after the first would fire a frame;
         // with the correct trigger only every other call fires one.
-        let block = ProcessContext {
-            sample_rate: 48000,
-            num_frames: hop,
-        };
+        let block = ProcessContext::new(48000, hop);
         let input = vec![0.1f32; hop * 2];
         let mut output = vec![0.0f32; hop];
 
@@ -555,10 +543,7 @@ mod tests {
         plugin.beamformer_type = BeamformerType::Mvdr;
 
         let nf = 512usize;
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: nf,
-        };
+        let context = ProcessContext::new(48000, nf);
         // Sine wave at 440 Hz, same on both channels
         let input: Vec<f32> = (0..nf * 2)
             .map(|n| (2.0 * std::f32::consts::PI * 440.0 * (n / 2) as f32 / 48000.0).sin() * 0.5)
@@ -638,10 +623,7 @@ mod tests {
         plugin.beamformer_type = BeamformerType::Mvdr;
 
         let nf = FFT_SIZE * 2;
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: nf,
-        };
+        let context = ProcessContext::new(48000, nf);
         let mut input = vec![0.0_f32; nf * 2];
         for frame in 0..nf {
             let sample =

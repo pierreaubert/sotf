@@ -11,10 +11,7 @@ fn disabled_is_transparent() {
 
     let mut buffer = vec![0.0, 0.25, 4.0, 0.25];
     let input = buffer.clone();
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: buffer.len(),
-    };
+    let context = ProcessContext::new(48000, buffer.len());
     assert_eq!(plugin.process_in_place(&mut buffer, &context).unwrap(), 4);
     assert_eq!(buffer, input);
 }
@@ -34,10 +31,7 @@ fn click_is_reduced() {
     buffer.push(2.0);
     buffer.extend([0.0; 10]);
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames: buffer.len(),
-    };
+    let context = ProcessContext::new(48000, buffer.len());
     plugin.process_in_place(&mut buffer, &context).unwrap();
     assert!(buffer[click_idx] < 2.0);
 }

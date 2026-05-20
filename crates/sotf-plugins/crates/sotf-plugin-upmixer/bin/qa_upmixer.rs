@@ -136,10 +136,7 @@ fn run_diagnostic(args: Vec<String>) -> Result<(), String> {
         let frames = opts.block_size.min(total_frames - pos);
         let input_slice = &input.samples[pos * 2..(pos + frames) * 2];
         let mut output = vec![0.0_f32; frames * out_channels];
-        let context = ProcessContext {
-            sample_rate: input.sample_rate,
-            num_frames: frames,
-        };
+        let context = ProcessContext::new(input.sample_rate, frames);
         let produced = plugin.process(input_slice, &mut output, &context)?;
         let diag = plugin.diagnostics();
 
@@ -1288,10 +1285,7 @@ fn run_isolation_variant(
         let frames = block_size.min(analysis_frames - pos);
         let input_slice = &input.samples[pos * 2..(pos + frames) * 2];
         let mut output = vec![0.0_f32; frames * out_channels];
-        let context = ProcessContext {
-            sample_rate: input.sample_rate,
-            num_frames: frames,
-        };
+        let context = ProcessContext::new(input.sample_rate, frames);
         let produced = plugin.process(input_slice, &mut output, &context)?;
         let diag = plugin.diagnostics();
 
@@ -1605,10 +1599,7 @@ fn run_self_qa() {
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(sample_rate, end - pos);
         plugin
             .process(
                 &input[pos * 2..end * 2],
@@ -1651,10 +1642,7 @@ fn run_self_qa() {
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(sample_rate, end - pos);
         plugin
             .process(
                 &input[pos * 2..end * 2],

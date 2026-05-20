@@ -508,15 +508,8 @@ mod tests {
         p.initialize(48000).unwrap();
         let i = vec![0.5; 1024];
         let mut o = vec![0.0; 2048];
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1024,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(48000, 1024))
+            .unwrap();
         assert!(o[2047].is_finite());
     }
 
@@ -532,10 +525,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: total_frames,
-            },
+            &ProcessContext::new(48000, total_frames),
         )
         .unwrap();
         for frame in (FFT_SIZE * 5)..(FFT_SIZE * 6) {
@@ -559,10 +549,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: total_frames,
-            },
+            &ProcessContext::new(48000, total_frames),
         )
         .unwrap();
         let mut any_differ = false;
@@ -625,10 +612,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: total_frames,
-            },
+            &ProcessContext::new(48000, total_frames),
         )
         .unwrap();
 
@@ -683,10 +667,7 @@ mod tests {
             p.process(
                 &input,
                 &mut output,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames: total_frames,
-                },
+                &ProcessContext::new(48000, total_frames),
             )
             .unwrap();
 
@@ -767,10 +748,7 @@ mod tests {
             p.process(
                 &input,
                 &mut output,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames: total_frames,
-                },
+                &ProcessContext::new(48000, total_frames),
             )
             .unwrap();
 
@@ -844,10 +822,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: total_frames,
-            },
+            &ProcessContext::new(48000, total_frames),
         )
         .unwrap();
 
@@ -885,15 +860,8 @@ mod tests {
         for i in 0..total_frames {
             let sample = (i as f32 * 0.1).sin();
             let mut out = vec![99.0_f32; 2]; // pre-fill with sentinel
-            p.process(
-                &[sample],
-                &mut out,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames: 1,
-                },
-            )
-            .unwrap();
+            p.process(&[sample], &mut out, &ProcessContext::new(48000, 1))
+                .unwrap();
             // Output must never contain the sentinel value — it must have been written.
             assert!(
                 out[0] != 99.0 || out[1] != 99.0 || out[0].is_finite(),
@@ -932,10 +900,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: total_frames,
-            },
+            &ProcessContext::new(48000, total_frames),
         )
         .unwrap();
 

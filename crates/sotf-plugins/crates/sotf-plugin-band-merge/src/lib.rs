@@ -335,15 +335,8 @@ mod tests {
         let mut p = BandMergePlugin::new(2, 2).unwrap();
         let i = vec![1.0, 2.0, 3.0, 4.0];
         let mut o = vec![0.0, 0.0];
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(48000, 1))
+            .unwrap();
         assert_eq!(o, vec![4.0, 6.0]);
     }
 
@@ -366,15 +359,8 @@ mod tests {
         let mut o_block = vec![0.0f32; block];
         let mut last = 0.0f32;
         for _ in 0..100 {
-            p.process(
-                &i_block,
-                &mut o_block,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames: block,
-                },
-            )
-            .unwrap();
+            p.process(&i_block, &mut o_block, &ProcessContext::new(48000, block))
+                .unwrap();
             last = o_block[block - 1];
         }
         // After settling: Band 0 * 2.0 + Band 1 * 1.0 = 3.0
@@ -390,15 +376,8 @@ mod tests {
 
         let i = vec![1.0, 2.0, 3.0, 4.0];
         let mut o = vec![0.0, 0.0];
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(48000, 1))
+            .unwrap();
         // Only band 0 contributes: [1.0, 2.0]
         assert_eq!(o, vec![1.0, 2.0]);
     }
@@ -425,15 +404,8 @@ mod tests {
         let mut o_block = vec![0.0f32; block];
         let mut last = 0.0f32;
         for _ in 0..100 {
-            p.process(
-                &i_block,
-                &mut o_block,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames: block,
-                },
-            )
-            .unwrap();
+            p.process(&i_block, &mut o_block, &ProcessContext::new(48000, block))
+                .unwrap();
             last = o_block[block - 1];
         }
         // After settling: band0 muted, band1 * 1.0 + band2 * 2.0 = 3.0
@@ -486,15 +458,8 @@ mod tests {
         // band0=1.0 * ~2.0, band1=1.0 muted, band2=1.0 * ~0.001
         let i = vec![1.0, 1.0, 1.0];
         let mut o = vec![0.0];
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(48000, 1))
+            .unwrap();
         // ~2.0 + 0 + ~0.001 ≈ 2.001
         assert!((o[0] - 2.0).abs() < 0.05, "got {}", o[0]);
     }
@@ -520,15 +485,8 @@ mod tests {
         }
         let mut output = vec![0.0f32; nf * out_ch];
         let _ = p.get_parameter(&ParameterId::from("reconstruction_error_db"));
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, nf))
+            .unwrap();
 
         // Get reconstruction_error_db via get_parameter
         let err = p
@@ -558,15 +516,8 @@ mod tests {
 
         let input = vec![1.0f32, 1.0];
         let mut output = vec![0.0f32];
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, 1))
+            .unwrap();
 
         // No diagnostic read was requested yet, so the value should still be the
         // default 0 dB in-place (no on-demand work performed this frame).
@@ -583,15 +534,8 @@ mod tests {
         );
 
         // Next process should perform the diagnostic now that the host requested it.
-        p.process(
-            &input,
-            &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process(&input, &mut output, &ProcessContext::new(48000, 1))
+            .unwrap();
 
         let err_after = match p
             .get_parameter(&ParameterId::from("reconstruction_error_db"))
@@ -628,15 +572,8 @@ mod tests {
         // the smoother at 1.0 (unity).
         let i_unity = vec![1.0f32, 1.0]; // band0=1.0, band1=1.0
         let mut o = vec![0.0f32];
-        p.process(
-            &i_unity,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process(&i_unity, &mut o, &ProcessContext::new(48000, 1))
+            .unwrap();
         assert!((o[0] - 2.0).abs() < 1e-4, "baseline unity: got {}", o[0]);
 
         // Now apply a +6 dB step to band 0.  The linear gain jumps from 1.0 → ~2.0.
@@ -650,15 +587,8 @@ mod tests {
         // At 48 kHz with a 10 ms time constant the gain after 1 sample is
         // approximately 1.002 — strictly between 1.0 and 2.0.
         let mut o_step = vec![0.0f32];
-        p.process(
-            &i_unity,
-            &mut o_step,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process(&i_unity, &mut o_step, &ProcessContext::new(48000, 1))
+            .unwrap();
 
         // band0_smoothed (≈1.002) + band1_gain (1.0) = ≈2.002, well below 3.0
         assert!(
@@ -691,15 +621,8 @@ mod tests {
         // Input: [band0=1.0, band1=1.0]; expected output: 2.0*1.0 + 1.0*1.0 = 3.0.
         let i = vec![1.0f32, 1.0]; // 2 bands, 1 channel, 1 frame
         let mut o = vec![0.0f32];
-        p.process(
-            &i,
-            &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
-        )
-        .unwrap();
+        p.process(&i, &mut o, &ProcessContext::new(48000, 1))
+            .unwrap();
         assert!(
             (o[0] - 3.0).abs() < 0.01,
             "after reset(), first frame should equal settled output (~3.0), got {}",
