@@ -1,3 +1,10 @@
+# 0.5.90
+
+## Fixes
+
+- Removed the per-block `ch_gains_buffer.fill(1.0)` pass. The channel-gain scratch buffer now writes
+  every frame/channel slot exactly once, using smoother output when available and `1.0` otherwise.
+
 # 0.5.89
 
 ## Fixes

@@ -693,15 +693,15 @@ impl Plugin for MatrixPlugin {
             self.ch_gains_buffer.resize(buffer_size, 1.0f32);
         }
 
-        // Fill buffer with 1.0 default (in case some channels have no smoother)
-        self.ch_gains_buffer[..buffer_size].fill(1.0);
-
-        for ch in 0..self.channel_state_smoothers.len() {
-            if ch < out_channels {
-                for frame in 0..num_frames {
-                    self.ch_gains_buffer[frame * out_channels + ch] =
-                        self.channel_state_smoothers[ch].advance();
-                }
+        for frame in 0..num_frames {
+            let base = frame * out_channels;
+            for ch in 0..out_channels {
+                self.ch_gains_buffer[base + ch] =
+                    if let Some(smoother) = self.channel_state_smoothers.get_mut(ch) {
+                        smoother.advance()
+                    } else {
+                        1.0
+                    };
             }
         }
 
@@ -989,6 +989,27 @@ mod tests {
         assert_eq!(got_states.len(), 2);
         assert!(got_states[0].muted);
         assert!(got_states[1].dimmed);
+    }
+
+    #[test]
+    fn test_channel_gain_scratch_defaults_are_written_without_fill() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        plugin.ch_gains_buffer = vec![0.0; 4];
+        plugin.channel_state_smoothers.clear();
+
+        let input = vec![1.0, 2.0, 3.0, 4.0];
+        let mut output = vec![0.0; 4];
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 2,
+        };
+
+        for _ in 0..5000 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+
+        assert_eq!(output, input);
+        assert_eq!(&plugin.ch_gains_buffer[..4], &[1.0, 1.0, 1.0, 1.0]);
     }
 
     #[test]
