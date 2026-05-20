@@ -63,6 +63,9 @@ pub struct ChannelMuteSoloPlugin {
     /// Number of channels
     channels: usize,
     /// Whether the plugin is enabled (if false, audio passes through unchanged)
+    ///
+    /// When false, all channels are faded toward unity gain (bypass),
+    /// ignoring per-channel mute/solo/dim state until enabled again.
     enabled: bool,
     /// Per-channel mute/solo state
     channel_states: Vec<ChannelState>,
@@ -173,9 +176,9 @@ impl ChannelMuteSoloPlugin {
     }
 
     /// Set all channel states at once
-    pub fn set_channel_states(&mut self, states: Vec<ChannelState>) {
+    pub fn set_channel_states(&mut self, states: &[ChannelState]) {
         if states.len() == self.channels {
-            self.channel_states = states;
+            self.channel_states.clone_from_slice(states);
             self.update_smoother_targets();
             self.mark_params_dirty();
         }
@@ -361,7 +364,7 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
             if let Some(json_str) = value.as_string() {
                 let states: Vec<ChannelState> =
                     serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-                self.set_channel_states(states);
+                self.set_channel_states(&states);
                 self.mark_params_dirty();
                 Ok(())
             } else {
@@ -1057,5 +1060,31 @@ mod tests {
             plugin.get_channel_state(0).unwrap().muted,
             "set_parameter mute_0=true must mute channel 0"
         );
+    }
+
+    /// Fix 3.3: set_channel_states should accept a borrowed slice to avoid needless Vec allocation.
+    #[test]
+    fn test_set_channel_states_accepts_slice() {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        let states = [
+            ChannelState {
+                muted: true,
+                soloed: false,
+                dimmed: false,
+            },
+            ChannelState {
+                muted: false,
+                soloed: true,
+                dimmed: true,
+            },
+        ];
+
+        plugin.set_channel_states(&states);
+
+        let ch0 = plugin.get_channel_state(0).unwrap();
+        let ch1 = plugin.get_channel_state(1).unwrap();
+        assert!(ch0.muted);
+        assert!(ch1.soloed);
+        assert!(ch1.dimmed);
     }
 }

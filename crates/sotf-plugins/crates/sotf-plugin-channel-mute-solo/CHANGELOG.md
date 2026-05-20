@@ -1,3 +1,24 @@
+# 0.5.62
+
+## Fixes
+
+- **[2.2] params.rs now uses `f32` for runtime parameters** (`src/params.rs`):
+  `Params.dim_gain_db` and `Params.fade_ms` now use `f32` to match DSP storage.
+  `PluginParamDef` still exposes `f64` through casting in `param_value`/`set_param_value`.
+  Added regression assertions in `param` serde tests.
+
+- **[3.3] set_channel_states accepts a borrowed slice** (`src/lib.rs`):
+  Replaced `Vec<ChannelState>` by `&[ChannelState]` in `set_channel_states` to avoid
+  unnecessary ownership transfer and allocation opportunities.
+  Added `test_set_channel_states_accepts_slice`.
+
+- **[4.4] qa_channel_mute_solo now checks allocator usage** (`bin/qa_channel_mute_solo.rs`):
+  Wrapped the hot-path `process_in_place` call in `assert_no_allocs` so QA explicitly
+  verifies zero allocations in the checked block.
+
+- **[4.5] enabled docstring now documents bypass behavior** (`src/lib.rs`):
+  Clarified that disabled state bypasses per-channel state and fades channels to unity gain.
+
 # 0.5.61
 
 ## Fixes
@@ -38,22 +59,14 @@
 
 ## Deferred
 
-- **[2.2] f64 vs f32 in params.rs Params struct**: `PluginParamDef` trait contract requires
-  `f64`; changing to `f32` is a cross-crate API change. Deferred.
-
 - **[2.5] SIMD only for stereo**: `apply_per_channel_gain_simd` in `math-dsp/simd.rs` only has
   AVX2/NEON paths for `channels == 2`. Cross-crate fix needed. Deferred.
-
-- **[3.3] set_channel_states takes Vec by value**: API change; callers would need updating.
-  Deferred.
 
 - **[4.1] Fast "all unity" bypass**: improvement, not a bug. Deferred.
 
 - **[4.3] param_specs.rs dead code**: module is not `mod`-declared in lib.rs. It defines the
   correct constants (FADE_MS_DEFAULT = 5.0) that params.rs had wrong. Now that the default
   is fixed in params.rs, param_specs.rs remains standalone. Cross-crate clean-up deferred.
-
-- **[4.4] qa_channel_mute_solo.rs allocator assertion**: improvement to QA tooling. Deferred.
 
 # 0.5.60
 
