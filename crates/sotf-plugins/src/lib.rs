@@ -21,6 +21,14 @@ pub use sotf_host::automation;
 pub use sotf_host::error;
 pub use sotf_host::layout_solver;
 pub use sotf_host::param_registry;
+pub use sotf_host::{ExternalHostingBackend, ExternalPlugin, PluginDescriptor, PluginFormat, PluginScanner};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub use sotf_host::{
+    ExternalPluginSandboxPolicy, ExternalPluginSandboxStatus, ExternalPluginSandboxTiming,
+    ExternalPluginTrust, ExternalPluginWorkerCommand, ExternalPluginProcessEvent,
+    IsolatedExternalPlugin, IsolatedExternalPluginConfig, IsolatedExternalPluginWorkerReport,
+    PluginSandboxBackendCode, PluginSandboxStatusCode, enter_external_plugin_sandbox,
+};
 /// Parameter specifications: types from `sotf-host`, per-plugin definitions
 /// from individual plugin crates.
 ///
@@ -306,6 +314,7 @@ pub use sotf_host::analyzer_spectrum::{
     TiltReferenceFreq,
 };
 pub use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use sotf_host::host::{DawHost, GraphEdge, Host};
 pub use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 pub use sotf_host::plugin::{

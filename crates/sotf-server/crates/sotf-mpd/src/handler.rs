@@ -210,12 +210,7 @@ pub trait PlayerAdapter: Send + Sync + 'static {
     }
 
     /// Stream search/find results to a callback.
-    fn for_each_search(
-        &self,
-        filters: &[FilterExpr],
-        exact: bool,
-        f: &mut dyn FnMut(MpdSongInfo),
-    ) {
+    fn for_each_search(&self, filters: &[FilterExpr], exact: bool, f: &mut dyn FnMut(MpdSongInfo)) {
         for song in self.search(filters, exact) {
             f(song);
         }
@@ -341,7 +336,10 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
                 };
                 kvs.push(kv("elapsed", format!("{:.3}", elapsed)));
                 kvs.push(kv("duration", format!("{:.3}", duration)));
-                kvs.push(kv("time", format!("{}:{}", elapsed as u64, duration as u64)));
+                kvs.push(kv(
+                    "time",
+                    format!("{}:{}", elapsed as u64, duration as u64),
+                ));
             }
             if let Some(ref audio) = s.audio {
                 kvs.push(kv("audio", audio));

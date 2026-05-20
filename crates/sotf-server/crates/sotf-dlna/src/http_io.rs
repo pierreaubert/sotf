@@ -87,7 +87,10 @@ pub async fn read_http_request<R: AsyncRead + Unpin>(
             Some(k) => k.trim().to_string(),
             None => continue,
         };
-        let value = split.next().map(|v| v.trim().to_string()).unwrap_or_default();
+        let value = split
+            .next()
+            .map(|v| v.trim().to_string())
+            .unwrap_or_default();
         let key_lc = key.to_ascii_lowercase();
         if key_lc == "content-length" {
             // Parse early so we can reject before allocating the body.

@@ -103,6 +103,15 @@ impl PluginPreset {
         self.plugin_id == plugin_id
     }
 
+    /// Returns true when this preset can be loaded by this host for the current
+    /// plugin version.
+    ///
+    /// Compatibility requires both a matching plugin identifier and a compatible
+    /// major-version check.
+    pub fn is_loadable_for(&self, plugin_id: &str, current_version: &str) -> bool {
+        self.is_compatible(plugin_id) && self.is_version_compatible(current_version)
+    }
+
     /// Returns true when the preset was saved by a plugin version whose major
     /// component matches `current_version`. Semantic-versioning convention:
     /// only major-version bumps break preset format compatibility.
@@ -136,6 +145,17 @@ impl PluginPreset {
     pub fn set_comment(&mut self, comment: impl Into<String>) {
         self.metadata.comment = Some(comment.into());
     }
+}
+
+/// Error classification when resolving a preset for version-aware loading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresetLoadError {
+    /// Preset name does not exist in the bank.
+    MissingPreset,
+    /// Preset exists but is for a different plugin.
+    PluginMismatch,
+    /// Preset exists for plugin, but major version is incompatible.
+    VersionMismatch,
 }
 
 /// Extract the major-version component (`<MAJOR>` in `MAJOR.MINOR.PATCH`)
@@ -242,6 +262,37 @@ impl PresetBank {
     /// Find a preset by name
     pub fn find_preset(&self, name: &str) -> Option<&PluginPreset> {
         self.presets.iter().find(|p| p.name == name)
+    }
+
+    /// Find all presets that match both plugin and major-version compatibility.
+    pub fn presets_for_plugin_version<'a>(
+        &'a self,
+        plugin_id: &str,
+        current_version: &str,
+    ) -> Vec<&'a PluginPreset> {
+        self.presets
+            .iter()
+            .filter(|p| p.is_loadable_for(plugin_id, current_version))
+            .collect()
+    }
+
+    /// Find a preset by name while keeping plugin/version compatibility explicit.
+    pub fn find_preset_for_load(
+        &self,
+        name: &str,
+        plugin_id: &str,
+        current_version: &str,
+    ) -> Result<&PluginPreset, PresetLoadError> {
+        let preset = self
+            .find_preset(name)
+            .ok_or(PresetLoadError::MissingPreset)?;
+        if !preset.is_compatible(plugin_id) {
+            return Err(PresetLoadError::PluginMismatch);
+        }
+        if !preset.is_version_compatible(current_version) {
+            return Err(PresetLoadError::VersionMismatch);
+        }
+        Ok(preset)
     }
 
     /// Get presets by tag
@@ -501,5 +552,73 @@ mod tests {
         bank.add_preset(preset("Warm Analog Bus", "sotf-eq", &["mix"]));
 
         assert!(bank.search("  ").is_empty());
+    }
+
+    #[test]
+    fn is_version_compatible_major_only() {
+        let mut bank = PresetBank::new("Factory");
+        bank.add_preset(PluginPreset::new(
+            "Legacy".into(),
+            "sotf-eq".into(),
+            "2.4.0".into(),
+        ));
+        bank.add_preset(PluginPreset::new(
+            "Next".into(),
+            "sotf-eq".into(),
+            "3.0.0".into(),
+        ));
+
+        let presets = bank.presets_for_plugin_version("sotf-eq", "2.9.7");
+        assert_eq!(presets.len(), 1);
+        assert_eq!(presets[0].name, "Legacy");
+    }
+
+    #[test]
+    fn find_preset_for_load_reports_errors() {
+        let mut bank = PresetBank::new("Factory");
+        let mut mismatch = preset("EQPreset", "sotf-eq", &[]);
+        mismatch.version = "1.2.9".into();
+        bank.add_preset(mismatch);
+        bank.add_preset(preset("Comp", "sotf-compressor", &[]));
+
+        assert_eq!(
+            bank.find_preset_for_load("Nope", "sotf-eq", "1.2.3"),
+            Err(PresetLoadError::MissingPreset)
+        );
+        assert_eq!(
+            bank.find_preset_for_load("EQPreset", "sotf-compressor", "1.2.3"),
+            Err(PresetLoadError::PluginMismatch)
+        );
+        assert_eq!(
+            bank.find_preset_for_load("EQPreset", "sotf-eq", "2.0.0"),
+            Err(PresetLoadError::VersionMismatch)
+        );
+        assert!(
+            bank.find_preset_for_load("EQPreset", "sotf-eq", "1.2.9")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn presets_for_plugin_version_only_matches_plugin_and_major() {
+        let mut bank = PresetBank::new("Factory");
+        bank.add_preset(preset("Good", "sotf-eq", &[]));
+        bank.add_preset(preset("BadPlugin", "sotf-compressor", &[]));
+        let mut incompatible = preset("OtherMajor", "sotf-eq", &[]);
+        incompatible.version = "9.8.7".into();
+        bank.add_preset(incompatible);
+
+        let mut good = preset("Another", "sotf-eq", &[]);
+        good.version = "1.0.0".into();
+        bank.add_preset(good);
+
+        let mut names: Vec<_> = bank
+            .presets_for_plugin_version("sotf-eq", "1.2.3")
+            .into_iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        names.sort_unstable();
+
+        assert_eq!(names, vec!["Another", "Good"]);
     }
 }

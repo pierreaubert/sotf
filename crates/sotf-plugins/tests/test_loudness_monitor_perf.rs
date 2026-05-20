@@ -11,10 +11,7 @@ fn test_loudness_monitor_performance_96khz() {
 
     let input = vec![0.1; frame_size * channels];
     let mut output = vec![0.0; frame_size * channels];
-    let context = ProcessContext {
-        sample_rate,
-        num_frames: frame_size,
-    };
+    let context = ProcessContext::new(sample_rate, frame_size);
 
     // Warm up
     for _ in 0..100 {

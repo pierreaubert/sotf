@@ -19,6 +19,7 @@ pub struct IamfAudioDecoder {
     decoder: sotf_iamf::IamfDecoder,
     spec: AudioSpec,
     eof: bool,
+    decode_buf: Vec<f32>,
 }
 
 impl IamfAudioDecoder {
@@ -52,6 +53,7 @@ impl IamfAudioDecoder {
             decoder,
             spec,
             eof: false,
+            decode_buf: Vec::new(),
         })
     }
 
@@ -72,28 +74,28 @@ impl AudioDecoder for IamfAudioDecoder {
     }
 
     fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize> {
+        let frame_position = self.decoder.position();
+        Self::prepare_decode_dest(dest, &self.spec, frame_position);
+
         if self.eof {
             return Ok(0);
         }
-
-        let frame_position = self.decoder.position();
-        Self::prepare_decode_dest(dest, &self.spec, frame_position);
 
         let iamf_spec = self.decoder.spec();
         let max_frames = iamf_spec.num_samples_per_frame as usize;
         let out_ch = self.spec.channels as usize;
         let buf_size = max_frames * out_ch;
+        self.decode_buf.resize(buf_size, 0.0);
 
-        let mut buf = vec![0.0_f32; buf_size];
-
-        match self.decoder.decode_next(&mut buf) {
+        match self.decoder.decode_next(&mut self.decode_buf) {
             Ok(frames) => {
                 if frames == 0 {
                     self.eof = true;
                     return Ok(0);
                 }
                 dest.frame_position = self.decoder.position().saturating_sub(frames as u64);
-                dest.samples.extend_from_slice(&buf[..frames * out_ch]);
+                dest.samples
+                    .extend_from_slice(&self.decode_buf[..frames * out_ch]);
                 Ok(frames)
             }
             Err(sotf_iamf::error::IamfError::EndOfStream) => {

@@ -116,11 +116,7 @@ impl DecayCurve {
             .iter()
             .map(|&e| {
                 let r = e * inv_total;
-                if r <= 0.0 {
-                    -300.0
-                } else {
-                    10.0 * r.log10()
-                }
+                if r <= 0.0 { -300.0 } else { 10.0 * r.log10() }
             })
             .collect();
 
@@ -134,20 +130,14 @@ impl DecayCurve {
     /// First sample index at which the curve is `≤ threshold_db`. Returns
     /// `None` if the curve never reaches the threshold.
     pub fn first_crossing(&self, threshold_db: f64) -> Option<usize> {
-        self.samples
-            .iter()
-            .position(|&v| v <= threshold_db)
+        self.samples.iter().position(|&v| v <= threshold_db)
     }
 
     /// Least-squares fit of the decay between two dB thresholds.
     ///
     /// Returns `(slope_db_per_s, intercept_db, r_squared)`. `None` if either
     /// threshold is never reached or fewer than two samples lie in the band.
-    pub fn fit_db_range(
-        &self,
-        upper_db: f64,
-        lower_db: f64,
-    ) -> Option<(f64, f64, f64)> {
+    pub fn fit_db_range(&self, upper_db: f64, lower_db: f64) -> Option<(f64, f64, f64)> {
         debug_assert!(upper_db > lower_db);
         let i_upper = self.first_crossing(upper_db)?;
         let i_lower = self.first_crossing(lower_db)?;
@@ -442,12 +432,7 @@ mod tests {
         // The Schroeder integral of any non-negative envelope is
         // monotonically non-increasing.
         for w in curve.samples.windows(2) {
-            assert!(
-                w[1] <= w[0] + 1e-9,
-                "non-monotonic: {} -> {}",
-                w[0],
-                w[1]
-            );
+            assert!(w[1] <= w[0] + 1e-9, "non-monotonic: {} -> {}", w[0], w[1]);
         }
         // First sample must be 0 dB by construction.
         assert!(curve.samples[0].abs() < 1e-9);

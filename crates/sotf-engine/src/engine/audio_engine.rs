@@ -179,9 +179,28 @@ impl AudioEngine {
         self.send_expect_ok(ManagerCommand::BypassProcessing(bypass))
     }
 
+    /// Poll isolated external plugin worker status.
+    ///
+    /// This does not start or restart worker processes from the realtime processing
+    /// thread; crashed workers are reported and audio falls back to passthrough.
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    pub fn maintain_isolated_external_plugin_workers(&self) -> Result<(), String> {
+        self.send_expect_ok(ManagerCommand::MaintainIsolatedExternalPluginWorkers)
+    }
+
     /// Get current engine state
     pub fn get_state(&self) -> AudioEngineState {
         self.manager.get_state()
+    }
+
+    /// Get the latest isolated external plugin worker statuses.
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    pub fn get_isolated_external_plugin_worker_statuses(
+        &self,
+    ) -> Vec<sotf_types::IsolatedExternalPluginWorkerStatus> {
+        self.manager
+            .get_state()
+            .isolated_external_plugin_worker_statuses
     }
 
     /// Get current position in seconds

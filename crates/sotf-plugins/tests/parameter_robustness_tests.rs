@@ -214,10 +214,7 @@ fn test_parameter_bounds_and_types() {
         // 4. Verify no crash after processing
         let input = vec![0.1f32; BUFFER_SIZE * plugin.input_channels()];
         let mut output = vec![0.0f32; BUFFER_SIZE * plugin.output_channels()];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
 
         let _ = plugin.initialize(SAMPLE_RATE);
         let result = plugin.process(&input, &mut output, &context);
@@ -242,10 +239,7 @@ fn test_parameter_change_during_processing() {
             continue;
         }
 
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
         let input = vec![0.1f32; BUFFER_SIZE * plugin.input_channels()];
         let mut output = vec![0.0f32; BUFFER_SIZE * plugin.output_channels()];
 

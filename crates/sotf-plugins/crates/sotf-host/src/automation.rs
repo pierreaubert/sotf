@@ -187,8 +187,23 @@ pub struct ParameterSmoother {
     /// Smoothing coefficient (0.0 = no smoothing, 1.0 = infinite smoothing)
     coeff: f32,
 
+    /// Smoothing duration expressed in samples.
+    smoothing_samples: f32,
+
     /// Smoothing mode
     mode: SmoothingMode,
+
+    /// Step per sample for linear mode.
+    linear_step: f32,
+
+    /// Velocity term used by the critically damped mode.
+    critical_velocity: f32,
+
+    /// Initial error at the moment the critical damping target was set.
+    critical_initial_error: f32,
+
+    /// Number of processed samples since the last critical damping target update.
+    critical_elapsed_samples: u32,
 }
 
 /// Smoothing algorithm modes
@@ -213,17 +228,20 @@ impl ParameterSmoother {
     /// * `time_ms` - Smoothing time in milliseconds
     /// * `sample_rate` - Sample rate in Hz
     pub fn new(initial_value: f32, time_ms: f32, sample_rate: f32) -> Self {
-        let coeff = if time_ms > 0.0 {
-            1.0 - (-1.0 / (time_ms * sample_rate / 1000.0)).exp()
-        } else {
-            0.0
-        };
+        let smoothing_samples = smoothing_samples(time_ms, sample_rate);
+        let coeff = smoothing_coeff(smoothing_samples);
 
         Self {
             current: initial_value,
             target: initial_value,
             coeff,
+            smoothing_samples,
             mode: SmoothingMode::Exponential,
+            linear_step: 0.0,
+            // critical_damping starts from rest
+            critical_velocity: 0.0,
+            critical_initial_error: 0.0,
+            critical_elapsed_samples: 0,
         }
     }
 
@@ -233,17 +251,29 @@ impl ParameterSmoother {
     /// * `time_ms` - Smoothing time in milliseconds
     /// * `sample_rate` - Sample rate in Hz
     pub fn set_time(&mut self, time_ms: f32, sample_rate: f32) {
-        self.coeff = if time_ms > 0.0 {
-            1.0 - (-1.0 / (time_ms * sample_rate / 1000.0)).exp()
-        } else {
-            0.0
-        };
+        self.smoothing_samples = smoothing_samples(time_ms, sample_rate);
+        self.coeff = smoothing_coeff(self.smoothing_samples);
+        self.reset_critical_damping_state();
+        self.recompute_linear_step();
+    }
+
+    /// Set smoothing mode.
+    pub fn set_mode(&mut self, mode: SmoothingMode) {
+        if self.mode != mode {
+            self.mode = mode;
+            self.critical_velocity = 0.0;
+            self.reset_critical_damping_state();
+            self.recompute_linear_step();
+        }
     }
 
     /// Set the target value
     #[inline]
     pub fn set_target(&mut self, value: f32) {
         self.target = value;
+        self.critical_velocity = 0.0;
+        self.reset_critical_damping_state();
+        self.recompute_linear_step();
     }
 
     /// Process one sample
@@ -252,17 +282,18 @@ impl ParameterSmoother {
     #[inline]
     pub fn process(&mut self) -> f32 {
         self.current = match self.mode {
-            SmoothingMode::Exponential | SmoothingMode::CriticalDamping => {
-                self.current + self.coeff * (self.target - self.current)
-            }
+            SmoothingMode::Exponential => self.current + self.coeff * (self.target - self.current),
             SmoothingMode::Linear => {
-                let diff = self.target - self.current;
-                if diff.abs() < self.coeff {
+                if self.coeff == 0.0 {
+                    self.target
+                } else if (self.target - self.current).abs() <= self.linear_step.abs() {
+                    self.linear_step = 0.0;
                     self.target
                 } else {
-                    self.current + diff.signum() * self.coeff
+                    self.current + self.linear_step
                 }
             }
+            SmoothingMode::CriticalDamping => self.process_critical_damped(),
         };
         self.current
     }
@@ -278,6 +309,70 @@ impl ParameterSmoother {
     pub fn reset(&mut self, value: f32) {
         self.current = value;
         self.target = value;
+        self.linear_step = 0.0;
+        self.critical_velocity = 0.0;
+        self.reset_critical_damping_state();
+    }
+
+    fn reset_critical_damping_state(&mut self) {
+        self.critical_initial_error = self.target - self.current;
+        self.critical_elapsed_samples = 0;
+    }
+
+    fn process_critical_damped(&mut self) -> f32 {
+        let damping_rate = if self.smoothing_samples > 0.0 {
+            10.0 / self.smoothing_samples
+        } else {
+            0.0
+        };
+
+        if damping_rate == 0.0 || self.critical_initial_error == 0.0 {
+            self.critical_initial_error = 0.0;
+            self.critical_elapsed_samples = 0;
+            return self.target;
+        }
+
+        self.critical_elapsed_samples = self.critical_elapsed_samples.saturating_add(1);
+        let t = self.critical_elapsed_samples as f32 * damping_rate;
+        let damping = (1.0 + t) * (-t).exp();
+        let error = damping * self.critical_initial_error;
+        let previous = self.current;
+        let next = self.target - error;
+
+        self.current = next;
+        self.critical_velocity = next - previous;
+
+        if (next - self.target).abs() < 1e-6 {
+            self.critical_initial_error = 0.0;
+            self.critical_elapsed_samples = 0;
+            return self.target;
+        } else {
+            self.current
+        }
+    }
+
+    fn recompute_linear_step(&mut self) {
+        if self.mode == SmoothingMode::Linear && self.coeff != 0.0 {
+            self.linear_step = (self.target - self.current) / self.smoothing_samples.max(1.0);
+        } else {
+            self.linear_step = 0.0;
+        }
+    }
+}
+
+fn smoothing_samples(time_ms: f32, sample_rate: f32) -> f32 {
+    if time_ms > 0.0 && sample_rate > 0.0 {
+        (time_ms * sample_rate / 1000.0).max(1.0)
+    } else {
+        0.0
+    }
+}
+
+fn smoothing_coeff(samples: f32) -> f32 {
+    if samples > 0.0 {
+        1.0 - (-1.0 / samples).exp()
+    } else {
+        0.0
     }
 }
 
@@ -299,9 +394,12 @@ pub mod automation_utils {
                 values,
                 samples_per_step,
             } => {
-                let step = sample
-                    .checked_div(*samples_per_step)
-                    .unwrap_or_else(|| sample / num_frames);
+                let step_len = if *samples_per_step > 0 {
+                    *samples_per_step
+                } else {
+                    num_frames.max(1)
+                };
+                let step = sample / step_len;
                 values
                     .get(step)
                     .copied()
@@ -314,9 +412,13 @@ pub mod automation_utils {
                 if values.len() == 1 {
                     return values[0];
                 }
+                if num_frames == 0 {
+                    return values[0];
+                }
                 let num_segments = values.len() - 1;
-                let segment = (sample * num_segments / num_frames).min(num_segments);
-                let t = (sample * num_segments % num_frames) as f32 / num_frames as f32;
+                let clamped_sample = sample.min(num_frames - 1);
+                let segment = (clamped_sample * num_segments / num_frames).min(num_segments - 1);
+                let t = (clamped_sample * num_segments % num_frames) as f32 / num_frames as f32;
                 let start = values[segment];
                 let end = values[segment + 1];
                 start + (end - start) * t
@@ -325,10 +427,35 @@ pub mod automation_utils {
                 if points.is_empty() {
                     return 0.0;
                 }
-                // Simple Bezier evaluation - find surrounding points
-                let pos = sample * points.len() / num_frames;
-                let point = points.get(pos).or(points.last()).unwrap();
-                point.value
+                if points.len() == 1 {
+                    return points[0].value;
+                }
+
+                if sample <= points[0].position {
+                    return points[0].value;
+                }
+
+                let last = &points[points.len() - 1];
+                if sample >= last.position {
+                    return last.value;
+                }
+
+                for segment in 0..points.len() - 1 {
+                    let left = &points[segment];
+                    let right = &points[segment + 1];
+                    if sample <= right.position {
+                        let span = (right.position.saturating_sub(left.position)).max(1) as f32;
+                        let t =
+                            (sample.saturating_sub(left.position) as f32 / span).clamp(0.0, 1.0);
+                        let y0 = left.value;
+                        let y1 = right.value;
+                        let m0 = left.handle_right;
+                        let m1 = right.handle_left;
+                        return cubic_hermite(y0, m0, y1, m1, t);
+                    }
+                }
+
+                points[points.len() - 1].value
             }
             AutomationCurve::Exponential { values, min_value } => {
                 if values.is_empty() {
@@ -337,9 +464,13 @@ pub mod automation_utils {
                 if values.len() == 1 {
                     return values[0].max(*min_value);
                 }
+                if num_frames == 0 {
+                    return values[0].max(*min_value);
+                }
                 let num_segments = values.len() - 1;
-                let segment = (sample * num_segments / num_frames).min(num_segments);
-                let t = (sample * num_segments % num_frames) as f32 / num_frames as f32;
+                let clamped_sample = sample.min(num_frames - 1);
+                let segment = (clamped_sample * num_segments / num_frames).min(num_segments - 1);
+                let t = (clamped_sample * num_segments % num_frames) as f32 / num_frames as f32;
                 let start = values[segment].max(*min_value).ln();
                 let end = values[segment + 1].max(*min_value).ln();
                 (start + (end - start) * t).exp()
@@ -349,6 +480,14 @@ pub mod automation_utils {
 
     /// Create a linear automation curve from start to end value
     pub fn linear_ramp(start_value: f32, end_value: f32, num_steps: usize) -> AutomationCurve {
+        if num_steps == 0 {
+            return AutomationCurve::Linear { values: Vec::new() };
+        }
+        if num_steps == 1 {
+            return AutomationCurve::Linear {
+                values: vec![start_value],
+            };
+        }
         let values: Vec<f32> = (0..num_steps)
             .map(|i| start_value + (end_value - start_value) * i as f32 / (num_steps - 1) as f32)
             .collect();
@@ -361,6 +500,16 @@ pub mod automation_utils {
             values,
             samples_per_step,
         }
+    }
+
+    fn cubic_hermite(y0: f32, m0: f32, y1: f32, m1: f32, t: f32) -> f32 {
+        let t2 = t * t;
+        let t3 = t2 * t;
+        let h00 = 2.0 * t3 - 3.0 * t2 + 1.0;
+        let h10 = t3 - 2.0 * t2 + t;
+        let h01 = -2.0 * t3 + 3.0 * t2;
+        let h11 = t3 - t2;
+        h00 * y0 + h10 * m0 + h01 * y1 + h11 * m1
     }
 }
 
@@ -448,6 +597,17 @@ mod tests {
     }
 
     #[test]
+    fn test_linear_ramp_single_step_is_finite() {
+        let curve = linear_ramp(3.5, 9.0, 1);
+        match curve {
+            AutomationCurve::Linear { values } => {
+                assert_eq!(values, vec![3.5]);
+            }
+            _ => panic!("linear_ramp should produce AutomationCurve::Linear"),
+        }
+    }
+
+    #[test]
     fn test_parameter_smoother_exponential() {
         let mut smoother = ParameterSmoother::new(0.0, 10.0, 48000.0);
         smoother.set_target(1.0);
@@ -508,5 +668,83 @@ mod tests {
             );
             prev = val;
         }
+    }
+
+    #[test]
+    fn test_linear_smoothing_uses_remaining_delta() {
+        let mut smoother = ParameterSmoother::new(0.0, 1000.0, 1000.0);
+        smoother.mode = SmoothingMode::Linear;
+        smoother.set_target(1.0);
+
+        let mut values = [0.0f32; 5];
+        for value in &mut values {
+            *value = smoother.process();
+        }
+
+        assert!(
+            (values[0] - 0.001).abs() < 1e-6,
+            "first step should be one-thousandth, got {}",
+            values[0]
+        );
+        assert!(
+            (values[4] - 0.005).abs() < 1e-6,
+            "fifth step should be five-thousandths, got {}",
+            values[4]
+        );
+    }
+
+    #[test]
+    fn test_critical_damping_no_overshoot() {
+        let mut smoother = ParameterSmoother::new(0.0, 20.0, 48000.0);
+        smoother.mode = SmoothingMode::CriticalDamping;
+        smoother.set_target(1.0);
+
+        let mut max = smoother.value();
+        for _ in 0..500 {
+            let v = smoother.process();
+            if v > max {
+                max = v;
+            }
+        }
+
+        assert!(
+            max <= 1.0001,
+            "critical mode should not overshoot, max={max}"
+        );
+        assert!((smoother.value() - 1.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_bezier_curve_supports_in_between_segments() {
+        let curve = AutomationCurve::Bezier {
+            points: vec![
+                BezierPoint {
+                    position: 0,
+                    value: 0.0,
+                    handle_left: 0.0,
+                    handle_right: 1.0,
+                },
+                BezierPoint {
+                    position: 50,
+                    value: 1.0,
+                    handle_left: -1.0,
+                    handle_right: 0.0,
+                },
+                BezierPoint {
+                    position: 100,
+                    value: 0.0,
+                    handle_left: -1.0,
+                    handle_right: 0.0,
+                },
+            ],
+        };
+
+        assert_eq!(eval_curve(&curve, 0, 100), 0.0);
+        let middle = eval_curve(&curve, 25, 100);
+        assert!(
+            (middle - 0.75).abs() < 1e-5,
+            "middle value changed unexpectedly: {middle}"
+        );
+        assert_eq!(eval_curve(&curve, 100, 100), 0.0);
     }
 }

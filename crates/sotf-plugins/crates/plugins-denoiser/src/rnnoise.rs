@@ -357,13 +357,19 @@ mod tests {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 2).unwrap();
 
-        let ptrs_before: Vec<*const nnnoiseless::DenoiseState> =
-            backend.denoisers.iter().map(|d| d.as_ref() as *const _).collect();
+        let ptrs_before: Vec<*const nnnoiseless::DenoiseState> = backend
+            .denoisers
+            .iter()
+            .map(|d| d.as_ref() as *const _)
+            .collect();
 
         backend.reset();
 
-        let ptrs_after: Vec<*const nnnoiseless::DenoiseState> =
-            backend.denoisers.iter().map(|d| d.as_ref() as *const _).collect();
+        let ptrs_after: Vec<*const nnnoiseless::DenoiseState> = backend
+            .denoisers
+            .iter()
+            .map(|d| d.as_ref() as *const _)
+            .collect();
 
         assert_eq!(
             ptrs_before, ptrs_after,

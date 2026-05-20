@@ -1108,7 +1108,8 @@ mod tests {
 
         // The parameter must exist
         assert!(
-            p.get_parameter(&ParameterId::from("allpass_coeff")).is_some(),
+            p.get_parameter(&ParameterId::from("allpass_coeff"))
+                .is_some(),
             "allpass_coeff parameter should exist"
         );
 

@@ -55,10 +55,7 @@ impl TofuVerifier {
 
     /// Create a verifier that scopes TOFU entries to the given target port.
     pub fn with_port(store: Arc<Mutex<TofuStore>>, target_port: u16) -> Self {
-        Self {
-            store,
-            target_port,
-        }
+        Self { store, target_port }
     }
 }
 

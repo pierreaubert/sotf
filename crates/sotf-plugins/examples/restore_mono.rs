@@ -286,10 +286,7 @@ fn process_plugin_mono(
         let frames = BLOCK_SIZE.min(total_frames - pos);
         let block_in = &input[pos..pos + frames];
         let mut block_out = vec![0.0_f32; frames];
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(sample_rate, frames);
         plugin
             .process(block_in, &mut block_out, &ctx)
             .expect("denoiser process failed");
@@ -316,10 +313,7 @@ fn process_plugin_variable(
         let end = start + frames * in_ch;
         let block_in = &input[start..end];
         let mut block_out = vec![0.0_f32; frames * out_ch];
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(sample_rate, frames);
         plugin
             .process(block_in, &mut block_out, &ctx)
             .expect("plugin process failed");

@@ -276,10 +276,7 @@ async fn handle_media(
         .await
         .map_err(|e| e.to_string())?;
     if method == "GET" {
-        writer
-            .write_all(&bytes)
-            .await
-            .map_err(|e| e.to_string())?;
+        writer.write_all(&bytes).await.map_err(|e| e.to_string())?;
     }
     Ok(())
 }

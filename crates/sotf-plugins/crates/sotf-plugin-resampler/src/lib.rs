@@ -7,8 +7,8 @@
 
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
-    calculate_cutoff, Async, FixedAsync, Resampler, SincInterpolationParameters,
-    SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction, calculate_cutoff,
 };
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
@@ -1376,9 +1376,21 @@ mod tests {
         let high = ResamplerQuality::High.f_cutoff();
 
         // All values must be in (0, 1)
-        assert!(fast > 0.0 && fast < 1.0, "Fast f_cutoff out of range: {}", fast);
-        assert!(medium > 0.0 && medium < 1.0, "Medium f_cutoff out of range: {}", medium);
-        assert!(high > 0.0 && high < 1.0, "High f_cutoff out of range: {}", high);
+        assert!(
+            fast > 0.0 && fast < 1.0,
+            "Fast f_cutoff out of range: {}",
+            fast
+        );
+        assert!(
+            medium > 0.0 && medium < 1.0,
+            "Medium f_cutoff out of range: {}",
+            medium
+        );
+        assert!(
+            high > 0.0 && high < 1.0,
+            "High f_cutoff out of range: {}",
+            high
+        );
 
         // Shorter kernels need lower cutoffs to keep the transition band feasible
         assert!(

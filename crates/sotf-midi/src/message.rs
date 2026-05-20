@@ -188,9 +188,7 @@ impl MidiMessage {
             return Self::from_bytes(bytes);
         }
         let status = running_status.ok_or_else(|| {
-            MidiError::InvalidMessage(
-                "Data-only bytes without running status context".to_string(),
-            )
+            MidiError::InvalidMessage("Data-only bytes without running status context".to_string())
         })?;
         if status & 0x80 == 0 {
             return Err(MidiError::InvalidMessage(format!(
@@ -211,7 +209,11 @@ impl MidiMessage {
     /// caller can fall back to `to_bytes()`.
     pub fn write_to(&self, out: &mut [u8]) -> usize {
         match self {
-            MidiMessage::NoteOff { channel, note, velocity } => {
+            MidiMessage::NoteOff {
+                channel,
+                note,
+                velocity,
+            } => {
                 if out.len() >= 3 {
                     out[0] = 0x80 | (channel & 0x0F);
                     out[1] = note & 0x7F;
@@ -219,7 +221,11 @@ impl MidiMessage {
                 }
                 3
             }
-            MidiMessage::NoteOn { channel, note, velocity } => {
+            MidiMessage::NoteOn {
+                channel,
+                note,
+                velocity,
+            } => {
                 if out.len() >= 3 {
                     out[0] = 0x90 | (channel & 0x0F);
                     out[1] = note & 0x7F;
@@ -227,7 +233,11 @@ impl MidiMessage {
                 }
                 3
             }
-            MidiMessage::PolyphonicAftertouch { channel, note, pressure } => {
+            MidiMessage::PolyphonicAftertouch {
+                channel,
+                note,
+                pressure,
+            } => {
                 if out.len() >= 3 {
                     out[0] = 0xA0 | (channel & 0x0F);
                     out[1] = note & 0x7F;
@@ -235,7 +245,11 @@ impl MidiMessage {
                 }
                 3
             }
-            MidiMessage::ControlChange { channel, controller, value } => {
+            MidiMessage::ControlChange {
+                channel,
+                controller,
+                value,
+            } => {
                 if out.len() >= 3 {
                     out[0] = 0xB0 | (channel & 0x0F);
                     out[1] = controller & 0x7F;
@@ -440,7 +454,11 @@ mod tests {
     fn test_from_bytes_rejects_data_only() {
         // Data-only bytes (no status byte) must be rejected, not silently parsed as Raw.
         let result = MidiMessage::from_bytes(&[0x40, 0x7F]);
-        assert!(result.is_err(), "expected error for data-only bytes, got {:?}", result);
+        assert!(
+            result.is_err(),
+            "expected error for data-only bytes, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -454,7 +472,11 @@ mod tests {
         let msg = MidiMessage::from_bytes_with_status(&[7, 100], Some(0xB0)).unwrap();
         assert_eq!(
             msg,
-            MidiMessage::ControlChange { channel: 0, controller: 7, value: 100 }
+            MidiMessage::ControlChange {
+                channel: 0,
+                controller: 7,
+                value: 100
+            }
         );
     }
 
@@ -466,7 +488,11 @@ mod tests {
 
     #[test]
     fn test_write_to_note_on() {
-        let msg = MidiMessage::NoteOn { channel: 0, note: 60, velocity: 100 };
+        let msg = MidiMessage::NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        };
         let mut buf = [0u8; 3];
         let n = msg.write_to(&mut buf);
         assert_eq!(n, 3);

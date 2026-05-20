@@ -1042,8 +1042,7 @@ mod tests {
         p.process_in_place(&mut buf, &ctx).unwrap();
 
         let tail_start = frames - sr as usize / 100;
-        let avg_output: f32 =
-            buf[tail_start..].iter().sum::<f32>() / (frames - tail_start) as f32;
+        let avg_output: f32 = buf[tail_start..].iter().sum::<f32>() / (frames - tail_start) as f32;
         assert!(
             (avg_output - input_level).abs() < 0.001,
             "Gate should stay open for signal at exact threshold (linear comparison), \

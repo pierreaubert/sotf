@@ -22,6 +22,8 @@ const PLUGIN_INIT_TIMEOUT_MS: u64 = 10000; // 10 seconds for plugin initializati
 const MAX_CONFIG_QUEUE_SIZE: usize = 5; // Maximum pending config updates
 const PROCESSING_COMMAND_TIMEOUT_MS: u64 = 100;
 const DECODER_COMMAND_TIMEOUT_MS: u64 = 1000;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+const EXTERNAL_PLUGIN_MAINTENANCE_INTERVAL_MS: u64 = 1000;
 
 /// Priority for config updates
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -623,10 +625,31 @@ fn run_manager_thread(
         None
     };
 
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    let mut next_external_worker_maintenance = std::time::Instant::now()
+        + std::time::Duration::from_millis(EXTERNAL_PLUGIN_MAINTENANCE_INTERVAL_MS);
+
     log::debug!("[Manager Thread] All threads started");
 
     // Main loop
     loop {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            let now = std::time::Instant::now();
+            if now >= next_external_worker_maintenance {
+                if let Err(e) = processing_thread
+                    .send_command(ProcessingCommand::PollIsolatedExternalPluginWorkers)
+                {
+                    log::trace!(
+                        "[Manager Thread] Failed to enqueue external plugin maintenance command: {}",
+                        e
+                    );
+                }
+                next_external_worker_maintenance =
+                    now + std::time::Duration::from_millis(EXTERNAL_PLUGIN_MAINTENANCE_INTERVAL_MS);
+            }
+        }
+
         // Check for thread events (non-blocking)
         if let Ok(event) = event_rx.try_recv() {
             handle_thread_event(event, &state);
@@ -816,6 +839,12 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
                     (latency_samples as f64 - old_latency as f64) / new_state.sample_rate as f64;
                 new_state.position = (new_state.position - delta_sec).max(0.0);
             }
+            state.store(Arc::new(new_state));
+        }
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        ThreadEvent::IsolatedExternalPluginWorkerStatuses(reports) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.isolated_external_plugin_worker_statuses = reports;
             state.store(Arc::new(new_state));
         }
         ThreadEvent::SeekComplete => {
@@ -1857,6 +1886,17 @@ fn handle_command(
                 Err(e) => ManagerResponse::Error(e),
             }
         }
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        ManagerCommand::MaintainIsolatedExternalPluginWorkers => {
+            log::trace!("[Manager Thread] Manual external plugin worker status poll requested");
+
+            if let Err(e) =
+                processing.send_command(ProcessingCommand::PollIsolatedExternalPluginWorkers)
+            {
+                return ManagerResponse::Error(e);
+            }
+            ManagerResponse::Ok
+        }
         ManagerCommand::GetState => ManagerResponse::State((**state.load()).clone()),
         ManagerCommand::GetPosition => ManagerResponse::Position(state.load().position),
         ManagerCommand::GetPluginData(index) => {
@@ -2064,6 +2104,25 @@ mod tests {
                 parameters: serde_json::json!({"filters": []}),
             },
         ];
+        assert!(validate_plugin_configs(&configs).is_ok());
+    }
+
+    #[test]
+    fn test_validate_plugin_configs_accepts_external_plugin_type() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin_path = dir.path().join("sotf-external-test-plugin.clap");
+        std::fs::write(&plugin_path, b"stub plugin").unwrap();
+
+        let configs = vec![super::super::PluginConfig {
+            plugin_type: "external".to_string(),
+            parameters: serde_json::json!({
+                "path": plugin_path.to_string_lossy(),
+                "audio_inputs": 2,
+                "audio_outputs": 2,
+                "format": "clap",
+            }),
+        }];
+
         assert!(validate_plugin_configs(&configs).is_ok());
     }
 
@@ -2291,6 +2350,65 @@ mod tests {
         assert_eq!(s.last_error.as_deref(), Some("channel rebuild fallback"));
         // ...but NOT change playback state to Stopped
         assert_eq!(s.playback_state, PlaybackState::Playing);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn test_handle_thread_event_updates_isolated_external_plugin_worker_statuses() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+        let initial_status = sotf_types::IsolatedExternalPluginWorkerStatus {
+            plugin_index: 1,
+            node_id: 77,
+            event: Some(sotf_types::IsolatedExternalPluginWorkerEvent::NotRunning),
+            error: Some("transient".to_string()),
+            worker_start_count: 1,
+            worker_exit_count: 2,
+            worker_launch_failure_count: 3,
+            block_timeout_count: 4,
+            block_worker_failure_count: 5,
+            block_wrong_sequence_count: 6,
+            sandbox_status: sotf_types::IsolatedExternalPluginSandboxStatus::Unknown,
+            sandbox_backend: sotf_types::IsolatedExternalPluginSandboxBackend::Unknown,
+            sandbox_reason: None,
+        };
+
+        handle_thread_event(
+            ThreadEvent::IsolatedExternalPluginWorkerStatuses(vec![initial_status.clone()]),
+            &state,
+        );
+
+        let current = state.load();
+        assert_eq!(
+            current.isolated_external_plugin_worker_statuses,
+            vec![initial_status]
+        );
+
+        let replacement_status = sotf_types::IsolatedExternalPluginWorkerStatus {
+            plugin_index: 2,
+            node_id: 99,
+            event: Some(sotf_types::IsolatedExternalPluginWorkerEvent::Started { pid: 42 }),
+            error: None,
+            worker_start_count: 10,
+            worker_exit_count: 20,
+            worker_launch_failure_count: 30,
+            block_timeout_count: 40,
+            block_worker_failure_count: 50,
+            block_wrong_sequence_count: 60,
+            sandbox_status: sotf_types::IsolatedExternalPluginSandboxStatus::Enforced,
+            sandbox_backend: sotf_types::IsolatedExternalPluginSandboxBackend::LinuxLandlock,
+            sandbox_reason: None,
+        };
+
+        handle_thread_event(
+            ThreadEvent::IsolatedExternalPluginWorkerStatuses(vec![replacement_status.clone()]),
+            &state,
+        );
+
+        let current = state.load();
+        assert_eq!(
+            current.isolated_external_plugin_worker_statuses,
+            vec![replacement_status]
+        );
     }
 
     #[test]

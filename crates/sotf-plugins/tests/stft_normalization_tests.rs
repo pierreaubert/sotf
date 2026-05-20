@@ -25,10 +25,7 @@ fn test_xtc_stft_roundtrip_gain() {
     }
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -70,10 +67,7 @@ fn test_upmixer_stft_roundtrip_gain() {
     // Upmixer output can have many channels, but in bypass we check if original L/R are preserved
     let mut output = vec![0.0_f32; num_frames * plugin.output_channels()];
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 

@@ -93,7 +93,11 @@ fn param_change_preserves_state() {
 #[test]
 fn latency_is_zero_for_iir_filter() {
     let plugin = HissReducerPlugin::new(2);
-    assert_eq!(plugin.latency_samples(), 0, "IIR-based HissReducer has zero latency");
+    assert_eq!(
+        plugin.latency_samples(),
+        0,
+        "IIR-based HissReducer has zero latency"
+    );
 }
 
 /// Bug fix: the plugin used to store sample_rate=44100 before initialize() was

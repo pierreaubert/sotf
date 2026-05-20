@@ -11,6 +11,10 @@ use sotf_audio::engine::{
     AudioEngineState, AudioFrame, DecoderCommand, DecoderMessage, PlaybackCommand, PlaybackState,
     PluginConfig, ProcessingMessage, ThreadEvent,
 };
+use sotf_types::{
+    IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
+    IsolatedExternalPluginWorkerEvent, IsolatedExternalPluginWorkerStatus,
+};
 use std::path::PathBuf;
 
 // ============================================================================
@@ -305,6 +309,7 @@ fn test_audio_engine_state_default() {
     assert_eq!(state.underruns, 0);
     assert_eq!(state.last_error, None);
     assert!(!state.seeking);
+    assert!(state.isolated_external_plugin_worker_statuses.is_empty());
 }
 
 #[test]
@@ -329,6 +334,36 @@ fn test_audio_engine_state_serialization() {
     assert_eq!(deserialized.duration, Some(180.0));
     assert!((deserialized.volume - 0.8).abs() < 0.001);
     assert!(deserialized.muted);
+    assert!(deserialized.isolated_external_plugin_worker_statuses.is_empty());
+}
+
+#[test]
+fn test_audio_engine_state_deserializes_without_worker_statuses_field() {
+    let mut state = AudioEngineState::default();
+    state.playback_state = PlaybackState::Playing;
+    state.current_file = Some(PathBuf::from("/path/to/file.flac"));
+    state.position = 12.5;
+    state.sample_rate = 44100;
+    state.num_channels = 6;
+    state.duration = Some(321.0);
+    state.last_error = Some("none".to_string());
+
+    let mut value = serde_json::to_value(&state).unwrap();
+    value
+        .as_object_mut()
+        .expect("state json object")
+        .remove("isolated_external_plugin_worker_statuses");
+
+    let deserialized: AudioEngineState = serde_json::from_value(value).unwrap();
+
+    assert_eq!(deserialized.playback_state, PlaybackState::Playing);
+    assert_eq!(deserialized.current_file, Some(PathBuf::from("/path/to/file.flac")));
+    assert!((deserialized.position - 12.5).abs() < 0.001);
+    assert_eq!(deserialized.sample_rate, 44100);
+    assert_eq!(deserialized.num_channels, 6);
+    assert_eq!(deserialized.duration, Some(321.0));
+    assert_eq!(deserialized.last_error.as_deref(), Some("none"));
+    assert!(deserialized.isolated_external_plugin_worker_statuses.is_empty());
 }
 
 #[test]
@@ -390,6 +425,34 @@ fn test_thread_event_seek_complete() {
     let event = ThreadEvent::SeekComplete;
 
     assert!(matches!(event, ThreadEvent::SeekComplete));
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[test]
+fn test_thread_event_isolated_external_plugin_worker_statuses() {
+    let status = IsolatedExternalPluginWorkerStatus {
+        plugin_index: 0,
+        node_id: 11,
+        event: Some(IsolatedExternalPluginWorkerEvent::Started { pid: 1234 }),
+        error: Some("timeout".to_string()),
+        worker_start_count: 1,
+        worker_exit_count: 0,
+        worker_launch_failure_count: 2,
+        block_timeout_count: 3,
+        block_worker_failure_count: 4,
+        block_wrong_sequence_count: 5,
+        sandbox_status: IsolatedExternalPluginSandboxStatus::Unsupported,
+        sandbox_backend: IsolatedExternalPluginSandboxBackend::MacosProcessIsolation,
+        sandbox_reason: Some("sandbox backend unavailable".to_string()),
+    };
+    let event = ThreadEvent::IsolatedExternalPluginWorkerStatuses(vec![status.clone()]);
+
+    if let ThreadEvent::IsolatedExternalPluginWorkerStatuses(statuses) = event {
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(status, statuses[0]);
+    } else {
+        panic!("Expected IsolatedExternalPluginWorkerStatuses event");
+    }
 }
 
 // ============================================================================

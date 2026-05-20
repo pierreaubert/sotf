@@ -71,10 +71,10 @@ pub fn compute_diffuse_field_eq(
     let mut right_power = vec![0.0f32; freq_size];
 
     for m in 0..sofa.num_measurements {
-        if let Some(hrtf) = sofa.get_hrtf(m) {
+        if let Some((_, left, right)) = sofa.get_hrtf_slices(m) {
             // Convert IRs to frequency domain (returns freq_size bins)
-            let left_fft = ir_to_freq(&hrtf.ir_left, fft_size, fft_r2c);
-            let right_fft = ir_to_freq(&hrtf.ir_right, fft_size, fft_r2c);
+            let left_fft = ir_to_freq(left, fft_size, fft_r2c);
+            let right_fft = ir_to_freq(right, fft_size, fft_r2c);
 
             // Accumulate power (magnitude squared)
             for k in 0..freq_size {

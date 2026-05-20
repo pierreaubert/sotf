@@ -10,6 +10,19 @@ pub mod auto_gain;
 pub mod automation;
 pub mod custom_views;
 pub mod error;
+pub mod external_plugin;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub mod external_plugin_host;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub mod external_plugin_ipc;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub mod external_plugin_isolated;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub mod external_plugin_process;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub mod external_plugin_sandbox;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub mod external_plugin_worker;
 pub mod host;
 pub mod layout_solver;
 pub mod lufs_target;
@@ -67,6 +80,31 @@ pub use analyzer_spectrum::{
     TiltReferenceFreq,
 };
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
+pub use external_plugin::{
+    ExternalHostingBackend, ExternalPlugin, PluginDescriptor, PluginFormat, PluginScanner,
+};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub use external_plugin_host::{ExternalPluginHostBlockStatus, ExternalPluginHostProxy};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub use external_plugin_ipc::{
+    PluginIpcLayout, PluginSandboxBackendCode, PluginSandboxRuntimeStatus,
+    PluginSandboxStatusCode, SecurePluginSharedMemory,
+};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub use external_plugin_isolated::{IsolatedExternalPlugin, IsolatedExternalPluginConfig};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub use external_plugin_process::{
+    ExternalPluginProcessEvent, ExternalPluginProcessSupervisor, ExternalPluginWorkerCommand,
+};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub use external_plugin_sandbox::{
+    ExternalPluginSandboxPolicy, ExternalPluginSandboxStatus, ExternalPluginSandboxTiming,
+    ExternalPluginTrust, enter_external_plugin_sandbox,
+};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub use external_plugin_worker::{ExternalPluginWorker, ExternalPluginWorkerStep};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub use host::IsolatedExternalPluginWorkerReport;
 pub use host::{DawHost, GraphEdge, GraphMutationSender, Host, ParameterEventSender};
 pub use lufs_target::LufsTarget;
 pub use math_audio_dsp::auto_makeup::MeasuredMakeup;
@@ -89,7 +127,8 @@ pub use oversampling::{
 };
 pub use parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 pub use plugin::{
-    InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
+    InPlacePlugin, InPlacePluginAdapter, LoopRange, MidiEvent, MidiMessage, Plugin, PluginInfo,
+    PluginResult, ProcessContext, TimeSignature, TransportInfo,
 };
 
 #[cfg(feature = "qa")]
