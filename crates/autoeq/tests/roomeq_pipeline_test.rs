@@ -1,9 +1,9 @@
 use autoeq::roomeq::{
-    CtcConfig, CtcMeasurementConfig, CtcMeasurementFileConfig, CtcRegularizationConfig,
-    CtcWindowConfig, MeasurementSource, OptimizerConfig, PipelineControl, PipelineEvent,
-    PipelineObserver, PipelineStepId, PipelineStepStatus, ProcessingMode, RoomConfig, RoomPipeline,
-    RoomPipelineRequest, SpeakerConfig, SystemConfig, SystemModel, default_config_version,
-    optimize_room, optimize_room_with_probe_arrivals,
+    default_config_version, optimize_room, optimize_room_with_probe_arrivals, CtcConfig,
+    CtcMeasurementConfig, CtcMeasurementFileConfig, CtcRegularizationConfig, CtcWindowConfig,
+    MeasurementSource, OptimizerConfig, PipelineControl, PipelineEvent, PipelineObserver,
+    PipelineStepId, PipelineStepStatus, ProcessingMode, RoomConfig, RoomPipeline,
+    RoomPipelineRequest, SpeakerConfig, SystemConfig, SystemModel,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -115,10 +115,21 @@ fn topology_workflow_emits_live_iteration_progress() {
     let (events, result) = collect_events(&config);
     result.expect("workflow pipeline optimization");
 
+    event_index(
+        &events,
+        PipelineStepId::TopologyWorkflowExecution,
+        PipelineStepStatus::Started,
+    );
+    event_index(
+        &events,
+        PipelineStepId::TopologyWorkflowExecution,
+        PipelineStepStatus::Completed,
+    );
+
     let progress_events: Vec<&PipelineEvent> = events
         .iter()
         .filter(|event| {
-            event.step_id == PipelineStepId::TopologyWorkflowExecution
+            event.step_id == PipelineStepId::GenericChannelOptimization
                 && event.status == PipelineStepStatus::InProgress
                 && event.iteration.unwrap_or(0) > 0
         })
@@ -126,30 +137,26 @@ fn topology_workflow_emits_live_iteration_progress() {
 
     assert!(
         !progress_events.is_empty(),
-        "workflow optimization should emit per-iteration progress events"
+        "workflow channel optimization should emit per-iteration progress events"
     );
-    assert!(
-        progress_events
-            .iter()
-            .all(|event| event.channel.as_ref().is_some_and(|name| !name.is_empty()))
-    );
+    assert!(progress_events
+        .iter()
+        .all(|event| event.channel.as_ref().is_some_and(|name| !name.is_empty())));
     assert!(progress_events.iter().any(|event| {
         event
             .loss
             .is_some_and(|loss| loss.is_finite() && loss > 0.0)
     }));
-    assert!(
-        progress_events
-            .iter()
-            .any(|event| event.overall_progress > 0.0)
-    );
+    assert!(progress_events
+        .iter()
+        .any(|event| event.overall_progress > 0.0));
 }
 
 #[test]
 fn topology_workflow_iteration_progress_can_cancel_run() {
     let config = workflow_stereo_config();
     let observer: Box<dyn PipelineObserver> = Box::new(|event: &PipelineEvent| {
-        if event.step_id == PipelineStepId::TopologyWorkflowExecution
+        if event.step_id == PipelineStepId::GenericChannelOptimization
             && event.status == PipelineStepStatus::InProgress
             && event.iteration.unwrap_or(0) > 0
         {
@@ -168,12 +175,10 @@ fn topology_workflow_iteration_progress_can_cancel_run() {
     .run(Some(observer));
 
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("stopped by observer")
-    );
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("stopped by observer"));
 }
 
 #[test]
@@ -259,12 +264,10 @@ fn pipeline_observer_can_cancel_run() {
     .run(Some(observer));
 
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("stopped by observer")
-    );
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("stopped by observer"));
 }
 
 #[test]
