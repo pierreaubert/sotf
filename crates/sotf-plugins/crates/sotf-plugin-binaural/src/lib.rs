@@ -173,6 +173,12 @@ impl BinauralDecoderPlugin {
         lfe_level: f32,
         room_model: RoomModel,
     ) -> Self {
+        assert!(
+            fft_size.is_power_of_two(),
+            "{}",
+            BinauralError::InvalidFftSize(fft_size)
+        );
+
         let hop_size = fft_size / 4;
         let sr = 44100;
         let freq_size = fft_size / 2 + 1;
@@ -2663,6 +2669,24 @@ mod tests {
             "lfe_gain should be {:.4} (distance only), got {:.4}",
             expected,
             lfe_gain
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid FFT size: 1000 (must be power of 2)")]
+    fn test_constructor_rejects_non_power_of_two_fft_size() {
+        let _ = BinauralDecoderPlugin::new(
+            2,
+            1000,
+            None,
+            false,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
         );
     }
 
