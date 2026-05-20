@@ -428,11 +428,28 @@ impl PndPlugin {
             ));
         }
         if self.planar_input.iter().any(|ch| ch.len() < num_frames) {
-            return Err(format!(
-                "Phase vocoder block too large: {} frames exceeds prepared capacity {}",
-                num_frames,
-                self.planar_input.first().map_or(0, Vec::len)
-            ));
+            let capacity = self.planar_input.first().map_or(0, Vec::len);
+            if capacity == 0 {
+                return Err("Phase vocoder has no prepared input capacity".to_string());
+            }
+
+            let mut processed = 0;
+            while processed < num_frames {
+                let chunk_frames = (num_frames - processed).min(capacity);
+                let sample_start = processed * self.channels;
+                let sample_end = sample_start + chunk_frames * self.channels;
+                let chunk_ctx = ProcessContext {
+                    sample_rate: context.sample_rate,
+                    num_frames: chunk_frames,
+                };
+                self.process_phase_vocoder(
+                    &input[sample_start..sample_end],
+                    &mut output[sample_start..sample_end],
+                    &chunk_ctx,
+                )?;
+                processed += chunk_frames;
+            }
+            return Ok(num_frames);
         }
 
         // Deinterleave input into planar buffers for analysis
@@ -1287,6 +1304,32 @@ mod tests {
         // would be "in motion" — both bounds bracket 0.0 < smoother < 1.0 would
         // require a multi-step test, so we just confirm no crash and finite output.
         // The structural fix is verified by code inspection plus this no-panic test.
+    }
+
+    #[test]
+    fn test_phase_vocoder_accepts_blocks_larger_than_planar_capacity() {
+        let mut p = PndPlugin::new(2);
+        p.initialize(44100).unwrap();
+        p.set_parameter(
+            ParameterId::from("phase_vocoder"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+
+        let frames = RESAMPLER_CHUNK_SIZE + 256;
+        let ctx = ProcessContext {
+            sample_rate: 44100,
+            num_frames: frames,
+        };
+        let input: Vec<f32> = (0..frames * 2)
+            .map(|i| 0.25 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
+            .collect();
+        let mut output = vec![0.0f32; frames * 2];
+
+        let processed = p.process(&input, &mut output, &ctx).unwrap();
+
+        assert_eq!(processed, frames);
+        assert!(output.iter().all(|s| s.is_finite()));
     }
 
     /// Verify set_parameter / get_parameter round-trip for drift_smoothing.
