@@ -1,3 +1,10 @@
+# 0.5.6
+
+## Fixed
+
+- `time_to_coeff` now handles zero/negative time constants and zero sample rates defensively by
+  returning instant tracking (`1.0`) instead of producing infinities.
+
 # 0.5.5
 
 ## Fixed
