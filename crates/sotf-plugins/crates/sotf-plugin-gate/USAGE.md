@@ -16,6 +16,7 @@ Reduces gain when the input signal falls below the threshold. The ratio controls
 |-----------|-------|---------|------|-------------|
 | Threshold | -80 to 0 | -40 | dB | Level below which the gate begins attenuating |
 | Ratio | 1:1 to 100:1 | 10:1 | :1 | Attenuation depth. 1:1 = no gating, 100:1 ≈ full silence below threshold |
+| Knee | 0 to 20 | 0 | dB | Width of a quadratic soft-knee transition around the threshold |
 
 ### Timing
 

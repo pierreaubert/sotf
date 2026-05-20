@@ -1,3 +1,19 @@
+# 0.5.7
+
+## Fixes
+
+- **Document and test soft-knee shape** — `USAGE.md` now describes the Knee
+  parameter as a quadratic soft-knee transition around threshold, the code
+  documents the boundary behavior, and
+  `test_soft_knee_curve_is_continuous_at_boundaries` verifies continuity.
+
+# 0.5.6
+
+## Fixes
+
+- Precompute hold time in samples at initialization/sample-rate changes and when the Hold parameter is
+  updated, using rounded sample conversion instead of truncating every audio block.
+
 # 0.5.5
 
 ## Fixes
@@ -21,8 +37,6 @@
 - New parameter: `rms_window_ms` to expose the RMS detection window. Requires a new parameter slot and
   schema migration. Deferred.
 - New feature: sidechain listen/solo. Deferred.
-- Hold time sub-sample precision. Deferred (truncation to integer samples is acceptable at typical
-  sample rates).
 
 ---
 
