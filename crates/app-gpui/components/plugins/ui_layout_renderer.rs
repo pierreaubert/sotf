@@ -718,6 +718,7 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_toggle(
+                    d,
                     entity,
                     plugin_idx,
                     idx,
@@ -843,8 +844,8 @@ fn render_param_as_knob(
         )
         .into_any_element(),
         _ => {
-            // Bool/Choice as knob — fall back to toggle
-            render_param_as_toggle(
+            // Bool/Choice as knob — fall back to the legacy inline toggle.
+            render_param_as_inline_toggle(
                 entity,
                 plugin_idx,
                 idx,
@@ -852,7 +853,6 @@ fn render_param_as_knob(
                 value,
                 is_editing,
                 selected_param,
-                KnobSize::Sm,
                 theme,
             )
         }
@@ -925,6 +925,7 @@ fn render_param_as_slider(
 
 /// Render a param as a toggle (for Bool and Choice types).
 fn render_param_as_toggle(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     idx: usize,
@@ -933,6 +934,71 @@ fn render_param_as_toggle(
     is_editing: bool,
     selected_param: usize,
     knob_size: KnobSize,
+    theme: &Theme,
+) -> AnyElement {
+    match param.param_type {
+        ParamType::Bool {
+            true_label,
+            false_label,
+            ..
+        } => {
+            let is_on = value > 0.5;
+            let labels = [false_label, true_label];
+            render_param_as_button_set(
+                d,
+                entity,
+                plugin_idx,
+                idx,
+                param,
+                if is_on { 1.0 } else { 0.0 },
+                &labels,
+                true,
+                is_editing,
+                selected_param,
+                theme,
+            )
+            .into_any_element()
+        }
+        ParamType::Choice { labels, .. } => render_param_as_button_set(
+            d,
+            entity,
+            plugin_idx,
+            idx,
+            param,
+            value,
+            labels,
+            true,
+            is_editing,
+            selected_param,
+            theme,
+        )
+        .into_any_element(),
+        _ => {
+            // Float/Int as toggle doesn't make sense, render as knob
+            render_param_as_knob(
+                entity,
+                plugin_idx,
+                idx,
+                param,
+                value,
+                is_editing,
+                selected_param,
+                pot_size(knob_size),
+                theme,
+            )
+        }
+    }
+}
+
+/// Legacy inline fallback for unusual Bool/Choice controls rendered as knobs.
+fn render_param_as_inline_toggle(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    idx: usize,
+    param: &ParamSpec,
+    value: f64,
+    is_editing: bool,
+    selected_param: usize,
     theme: &Theme,
 ) -> AnyElement {
     match param.param_type {
@@ -974,20 +1040,7 @@ fn render_param_as_toggle(
             )
             .into_any_element()
         }
-        _ => {
-            // Float/Int as toggle doesn't make sense, render as knob
-            render_param_as_knob(
-                entity,
-                plugin_idx,
-                idx,
-                param,
-                value,
-                is_editing,
-                selected_param,
-                pot_size(knob_size),
-                theme,
-            )
-        }
+        _ => div().into_any_element(),
     }
 }
 
@@ -1046,6 +1099,7 @@ fn render_param_as_selector(
         }
         // Non-choice params: fall back to toggle
         _ => render_param_as_toggle(
+            d,
             entity,
             plugin_idx,
             idx,
@@ -1067,7 +1121,7 @@ fn render_param_as_button_set(
     idx: usize,
     param: &ParamSpec,
     value: f64,
-    labels: &'static [&'static str],
+    labels: &[&str],
     show_label: bool,
     is_editing: bool,
     selected_param: usize,
@@ -1124,7 +1178,7 @@ fn render_param_as_button_set(
             .flex_col()
             .items_stretch()
             .gap(d.grid)
-            .min_w(px(130.0))
+            .w(px(130.0))
             .rounded(d.r_md)
             .when(is_sel, |el| el.border_1().border_color(theme.accent))
             .child(
