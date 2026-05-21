@@ -28,6 +28,7 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::audio::potentiometer::PotentiometerSize;
+use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::layout_solver::{KnobSize, SolvedLayout, solve_layout};
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
@@ -53,6 +54,8 @@ pub fn render_from_layout(
     active_tab: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
+    config_width_override: Option<f32>,
+    output_width_override: Option<f32>,
     theme: &Theme,
     plugin_theme: &PluginTheme,
     spider_snapshot: Option<crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
@@ -90,6 +93,9 @@ pub fn render_from_layout(
         selected_param,
         active_tab,
         plugin_data,
+        available_width,
+        config_width_override,
+        output_width_override,
         &chassis_theme,
         spider_snapshot.as_ref(),
     )
@@ -98,6 +104,52 @@ pub fn render_from_layout(
 // ============================================================================
 // Internal Rendering
 // ============================================================================
+
+const AUTO_COLUMN_MIN_SIDE_WIDTH: f32 = 96.0;
+const AUTO_COLUMN_MIN_MAIN_WIDTH: f32 = 260.0;
+const AUTO_COLUMN_DIVIDER_WIDTH: f32 = 6.0;
+
+fn auto_side_max_width(available_width: f32, other_side_width: f32, divider_total: f32) -> f32 {
+    (available_width - other_side_width - divider_total - AUTO_COLUMN_MIN_MAIN_WIDTH)
+        .max(AUTO_COLUMN_MIN_SIDE_WIDTH)
+}
+
+fn clamp_auto_side_width(
+    width: f32,
+    available_width: f32,
+    other_side_width: f32,
+    divider_total: f32,
+) -> f32 {
+    width.clamp(
+        AUTO_COLUMN_MIN_SIDE_WIDTH,
+        auto_side_max_width(available_width, other_side_width, divider_total),
+    )
+}
+
+fn auto_column_divider(
+    id: &'static str,
+    plugin_idx: usize,
+    divider_type: crate::app::state::DividerType,
+    start_width: f32,
+    theme: PaneDividerTheme,
+    entity: Entity<AppState>,
+) -> impl IntoElement {
+    PaneDivider::vertical(
+        SharedString::from(format!("plugin-auto-{plugin_idx}-{id}")),
+        CollapseDirection::Left,
+    )
+    .theme(theme)
+    .thickness(px(AUTO_COLUMN_DIVIDER_WIDTH))
+    .on_drag_start(move |pos, _window, cx| {
+        entity.update(cx, |state, _| {
+            state.app.dragging_divider = Some(crate::app::state::DividerDragState {
+                divider_type,
+                start_x: pos,
+                start_width,
+            });
+        });
+    })
+}
 
 #[allow(clippy::too_many_arguments)]
 fn render_solved_layout(
@@ -113,69 +165,198 @@ fn render_solved_layout(
     selected_param: usize,
     active_tab: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    available_width: f32,
+    config_width_override: Option<f32>,
+    output_width_override: Option<f32>,
     theme: &Theme,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
 ) -> AnyElement {
     let mut root = div().flex().flex_col().gap(d.section);
 
-    // Build the main row (columns side-by-side, centered)
-    let mut row = div().flex().gap(d.section).items_start().justify_center();
+    let has_config_column = solved
+        .columns
+        .iter()
+        .any(|col| col.role == ColumnRole::Config && layout.has_config());
+    let has_output_column = solved
+        .columns
+        .iter()
+        .any(|col| col.role == ColumnRole::Output && layout.has_output());
+    let divider_count = usize::from(has_config_column) + usize::from(has_output_column);
+    let divider_total = AUTO_COLUMN_DIVIDER_WIDTH * divider_count as f32;
+    let solved_config_width = solved.column_width(ColumnRole::Config).unwrap_or(0.0);
+    let solved_output_width = solved.column_width(ColumnRole::Output).unwrap_or(0.0);
 
-    for col in &solved.columns {
-        match col.role {
-            ColumnRole::Config if layout.has_config() => {
-                row = row.child(render_config_column(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    layout.config,
-                    params,
-                    values,
-                    file_paths,
-                    is_editing,
-                    selected_param,
-                    col.width,
-                    solved.knob_size,
-                    theme,
-                ));
+    let output_width = if has_output_column {
+        clamp_auto_side_width(
+            output_width_override.unwrap_or(solved_output_width),
+            available_width,
+            solved_config_width,
+            divider_total,
+        )
+    } else {
+        0.0
+    };
+    let config_width = if has_config_column {
+        clamp_auto_side_width(
+            config_width_override.unwrap_or(solved_config_width),
+            available_width,
+            output_width,
+            divider_total,
+        )
+    } else {
+        0.0
+    };
+    let main_width = (available_width - config_width - output_width - divider_total)
+        .max(AUTO_COLUMN_MIN_MAIN_WIDTH);
+
+    let divider_theme = PaneDividerTheme {
+        background: theme.background,
+        background_hover: theme.surface_hover,
+        background_collapsed: theme.surface,
+        foreground: theme.text_muted,
+        foreground_hover: theme.text_secondary,
+        border: theme.border,
+    };
+
+    let row_entity = entity.clone();
+    let mut row = div()
+        .flex()
+        .items_start()
+        .justify_center()
+        .w_full()
+        .on_mouse_move(move |event, _window, cx| {
+            let mouse_x: f32 = event.position.x.into();
+            row_entity.update(cx, |state, _| {
+                let Some(drag) = state.app.dragging_divider.clone() else {
+                    return;
+                };
+                match drag.divider_type {
+                    crate::app::state::DividerType::PluginAutoConfig { plugin_idx: idx }
+                        if idx == plugin_idx =>
+                    {
+                        let current_output = state
+                            .app
+                            .plugin_auto_output_width
+                            .get(&plugin_idx)
+                            .copied()
+                            .unwrap_or(output_width);
+                        let max_width =
+                            auto_side_max_width(available_width, current_output, divider_total);
+                        let new_width = (drag.start_width + mouse_x - drag.start_x)
+                            .clamp(AUTO_COLUMN_MIN_SIDE_WIDTH, max_width);
+                        state
+                            .app
+                            .plugin_auto_config_width
+                            .insert(plugin_idx, new_width);
+                    }
+                    crate::app::state::DividerType::PluginAutoOutput { plugin_idx: idx }
+                        if idx == plugin_idx =>
+                    {
+                        let current_config = state
+                            .app
+                            .plugin_auto_config_width
+                            .get(&plugin_idx)
+                            .copied()
+                            .unwrap_or(config_width);
+                        let max_width =
+                            auto_side_max_width(available_width, current_config, divider_total);
+                        let new_width = (drag.start_width - (mouse_x - drag.start_x))
+                            .clamp(AUTO_COLUMN_MIN_SIDE_WIDTH, max_width);
+                        state
+                            .app
+                            .plugin_auto_output_width
+                            .insert(plugin_idx, new_width);
+                    }
+                    _ => {}
+                }
+            });
+        })
+        .on_mouse_up(MouseButton::Left, {
+            let entity = entity.clone();
+            move |_event, _window, cx| {
+                entity.update(cx, |state, _| {
+                    if matches!(
+                        state.app.dragging_divider.as_ref().map(|drag| drag.divider_type),
+                        Some(crate::app::state::DividerType::PluginAutoConfig { plugin_idx: idx })
+                            if idx == plugin_idx
+                    ) || matches!(
+                        state.app.dragging_divider.as_ref().map(|drag| drag.divider_type),
+                        Some(crate::app::state::DividerType::PluginAutoOutput { plugin_idx: idx })
+                            if idx == plugin_idx
+                    ) {
+                        state.app.dragging_divider = None;
+                    }
+                });
             }
-            ColumnRole::Main => {
-                row = row.child(render_main_column(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    layout,
-                    params,
-                    values,
-                    file_paths,
-                    solved,
-                    is_editing,
-                    selected_param,
-                    active_tab,
-                    plugin_data,
-                    spider_snapshot,
-                    theme,
-                ));
-            }
-            ColumnRole::Output if layout.has_output() => {
-                row = row.child(render_output_column(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    layout.output,
-                    params,
-                    values,
-                    file_paths,
-                    is_editing,
-                    selected_param,
-                    plugin_data,
-                    col.width,
-                    solved.knob_size,
-                    theme,
-                ));
-            }
-            _ => {}
-        }
+        });
+
+    if has_config_column {
+        row = row.child(render_config_column(
+            d,
+            entity.clone(),
+            plugin_idx,
+            layout.config,
+            params,
+            values,
+            file_paths,
+            is_editing,
+            selected_param,
+            config_width,
+            solved.knob_size,
+            theme,
+        ));
+        row = row.child(auto_column_divider(
+            "config-main",
+            plugin_idx,
+            crate::app::state::DividerType::PluginAutoConfig { plugin_idx },
+            config_width,
+            divider_theme.clone(),
+            entity.clone(),
+        ));
+    }
+
+    row = row.child(render_main_column(
+        d,
+        entity.clone(),
+        plugin_idx,
+        layout,
+        params,
+        values,
+        file_paths,
+        solved,
+        main_width,
+        is_editing,
+        selected_param,
+        active_tab,
+        plugin_data,
+        spider_snapshot,
+        theme,
+    ));
+
+    if has_output_column {
+        row = row.child(auto_column_divider(
+            "main-output",
+            plugin_idx,
+            crate::app::state::DividerType::PluginAutoOutput { plugin_idx },
+            output_width,
+            divider_theme,
+            entity.clone(),
+        ));
+        row = row.child(render_output_column(
+            d,
+            entity.clone(),
+            plugin_idx,
+            layout.output,
+            params,
+            values,
+            file_paths,
+            is_editing,
+            selected_param,
+            plugin_data,
+            output_width,
+            solved.knob_size,
+            theme,
+        ));
     }
 
     root = root.child(row);
@@ -270,6 +451,7 @@ fn render_main_column(
     values: &[f64],
     file_paths: &HashMap<usize, String>,
     solved: &SolvedLayout,
+    main_width: f32,
     is_editing: bool,
     selected_param: usize,
     active_tab: usize,
@@ -277,7 +459,12 @@ fn render_main_column(
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
     theme: &Theme,
 ) -> impl IntoElement {
-    let mut center = div().flex().flex_col().gap(d.section).flex_none();
+    let mut center = div()
+        .flex()
+        .flex_col()
+        .gap(d.section)
+        .w(px(main_width))
+        .flex_none();
 
     // Detect a "mode selector" group: an untitled main group containing a single
     // ButtonSet bound to a Choice param whose labels alias other group titles.
@@ -315,39 +502,11 @@ fn render_main_column(
             }
         }
 
-        let groups_container =
-            if solved.group_direction == sotf_plugins::layout_solver::Direction::Row {
-                div().flex().gap(d.section).items_start().justify_center()
-            } else {
-                div().flex().flex_col().gap(d.section)
-            };
+        let (visible_groups, overflow_groups) =
+            partition_main_groups(layout, values, solved, mode.as_ref(), main_width);
 
-        // Active mode label (uppercased) for visibility filtering.
-        let active_label_upper: Option<String> = mode.as_ref().and_then(|info| {
-            let v = values.get(info.param_idx).copied().unwrap_or(0.0) as usize;
-            info.labels.get(v).map(|s| s.to_uppercase())
-        });
-
-        let mut container = groups_container;
-        for (i, group) in layout.main.iter().enumerate() {
-            // Skip the mode selector group itself — it's been lifted to the toolbar.
-            if let Some(info) = mode.as_ref()
-                && info.main_idx == i
-            {
-                continue;
-            }
-            // Apply visibility filter: groups whose uppercased title matches one
-            // of the mode labels are exclusive — show only the active one.
-            if let Some(info) = mode.as_ref() {
-                let title_upper = group.title.to_uppercase();
-                let is_exclusive = info
-                    .labels
-                    .iter()
-                    .any(|l| l.eq_ignore_ascii_case(&title_upper));
-                if is_exclusive && active_label_upper.as_deref() != Some(title_upper.as_str()) {
-                    continue;
-                }
-            }
+        let mut container = div().flex().gap(d.section).items_start().justify_center();
+        for group in &visible_groups {
             container = container.child(render_group(
                 d,
                 entity.clone(),
@@ -366,98 +525,93 @@ fn render_main_column(
             ));
         }
         center = center.child(container);
-    }
 
-    // Collect all tabs: explicit layout tabs + collapsed column tabs
-    let all_tabs = collect_all_tabs(layout, solved);
+        let all_tabs = collect_all_tabs(layout, solved, &overflow_groups);
 
-    if !all_tabs.is_empty() {
-        let clamped_tab = active_tab.min(all_tabs.len().saturating_sub(1));
+        if !all_tabs.is_empty() {
+            let clamped_tab = active_tab.min(all_tabs.len().saturating_sub(1));
 
-        // Tab bar (underline style)
-        let mut tab_bar = div()
-            .flex()
-            .justify_center()
-            .border_b_1()
-            .border_color(theme.border);
-        for (i, (tab_name, _)) in all_tabs.iter().enumerate() {
-            let is_active = i == clamped_tab;
-            let tab_entity = entity.clone();
-            let tab_plugin_idx = plugin_idx;
-            let tab_idx = i;
-            tab_bar = tab_bar.child(
-                div()
-                    // Match the size used by Potentiometer titles (e.g.
-                    // "LFE Gain") so the tab labels read as peer headings,
-                    // not chart labels.
-                    .text_size(d.text_sm)
-                    .px(d.card)
-                    // intentional: asymmetric 6px bottom / 4px top for tab underline spacing
-                    .pb(px(6.0))
-                    .pt(spacing::SM)
-                    .cursor_pointer()
-                    .id(SharedString::from(format!("layout-tab-{plugin_idx}-{i}")))
-                    .font_weight(if is_active {
-                        FontWeight::BOLD
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .text_color(if is_active {
-                        theme.accent
-                    } else {
-                        theme.text_muted
-                    })
-                    .border_b_2()
-                    .border_color(if is_active {
-                        theme.accent
-                    } else {
-                        gpui::Rgba {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 0.0,
-                        }
-                    })
-                    .hover(|s| {
-                        s.text_color(theme.text_primary).border_color(if is_active {
+            // Tab bar (underline style)
+            let mut tab_bar = div()
+                .flex()
+                .justify_center()
+                .border_b_1()
+                .border_color(theme.border);
+            for (i, tab) in all_tabs.iter().enumerate() {
+                let is_active = i == clamped_tab;
+                let tab_entity = entity.clone();
+                let tab_plugin_idx = plugin_idx;
+                let tab_idx = i;
+                tab_bar = tab_bar.child(
+                    div()
+                        // Match the size used by Potentiometer titles (e.g.
+                        // "LFE Gain") so the tab labels read as peer headings,
+                        // not chart labels.
+                        .text_size(d.text_sm)
+                        .px(d.card)
+                        // intentional: asymmetric 6px bottom / 4px top for tab underline spacing
+                        .pb(px(6.0))
+                        .pt(spacing::SM)
+                        .cursor_pointer()
+                        .id(SharedString::from(format!("layout-tab-{plugin_idx}-{i}")))
+                        .font_weight(if is_active {
+                            FontWeight::BOLD
+                        } else {
+                            FontWeight::NORMAL
+                        })
+                        .text_color(if is_active {
                             theme.accent
                         } else {
                             theme.text_muted
                         })
-                    })
-                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                        tab_entity.update(cx, |state, _| {
-                            state.app.plugin_auto_tab.insert(tab_plugin_idx, tab_idx);
-                        });
-                    })
-                    .child(tab_name.to_string()),
-            );
-        }
-        center = center.child(tab_bar);
+                        .border_b_2()
+                        .border_color(if is_active {
+                            theme.accent
+                        } else {
+                            gpui::Rgba {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 0.0,
+                            }
+                        })
+                        .hover(|s| {
+                            s.text_color(theme.text_primary).border_color(if is_active {
+                                theme.accent
+                            } else {
+                                theme.text_muted
+                            })
+                        })
+                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                            tab_entity.update(cx, |state, _| {
+                                state.app.plugin_auto_tab.insert(tab_plugin_idx, tab_idx);
+                            });
+                        })
+                        .child(tab.name.to_string()),
+                );
+            }
+            center = center.child(tab_bar);
 
-        // Active tab content
-        if let Some((_, tab_content)) = all_tabs.get(clamped_tab) {
-            let mut tab_div = div().flex().flex_wrap().justify_center().gap(d.section);
-            for spec in *tab_content {
-                if spec.hidden {
-                    continue;
-                }
-                tab_div = tab_div.child(render_control(
+            // Active tab content
+            if let Some(tab) = all_tabs.get(clamped_tab) {
+                let tab_div = render_layout_tab_content(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    spec,
+                    tab.content,
+                    layout,
                     params,
                     values,
                     file_paths,
                     is_editing,
                     selected_param,
-                    None,
-                    solved.knob_size,
+                    solved,
+                    plugin_data,
                     theme,
-                ));
+                    spider_snapshot,
+                );
+                center = center.child(tab_div);
             }
-            center = center.child(tab_div);
         }
     }
 
@@ -557,8 +711,9 @@ fn render_group(
         }
         col = col.child(slider_row);
     } else {
-        // Knobs/toggles: wrap in a flex-wrap container
-        let mut knob_row = div().flex().flex_wrap().gap(d.gap);
+        // Knobs/toggles: groups are vertical columns. Whole groups overflow
+        // into tabs; individual controls should not turn the group into a row.
+        let mut knob_row = div().flex().flex_col().gap(d.gap);
         for spec in group.controls {
             if spec.hidden {
                 continue;
@@ -1463,6 +1618,99 @@ struct ModeSelectorInfo {
     labels: &'static [&'static str],
 }
 
+#[derive(Clone, Copy)]
+enum LayoutTabContent {
+    Controls(&'static [ControlSpec]),
+    Group(&'static ControlGroup),
+}
+
+struct LayoutTab {
+    name: &'static str,
+    content: LayoutTabContent,
+}
+
+fn group_column_width(group: &ControlGroup, knob_size: KnobSize) -> f32 {
+    if group
+        .controls
+        .iter()
+        .any(|c| matches!(c.control_type, ControlType::VerticalSlider))
+    {
+        let visible = group.controls.iter().filter(|c| !c.hidden).count().max(1);
+        return 72.0 * visible as f32;
+    }
+
+    match knob_size {
+        KnobSize::Xs => 130.0,
+        KnobSize::Sm => 150.0,
+        KnobSize::Md => 170.0,
+    }
+}
+
+fn mode_visible_groups(
+    layout: &'static PluginLayout,
+    values: &[f64],
+    mode: Option<&ModeSelectorInfo>,
+) -> Vec<&'static ControlGroup> {
+    let active_label_upper: Option<String> = mode.and_then(|info| {
+        let v = values.get(info.param_idx).copied().unwrap_or(0.0) as usize;
+        info.labels.get(v).map(|s| s.to_uppercase())
+    });
+
+    let mut groups = Vec::new();
+    for (i, group) in layout.main.iter().enumerate() {
+        if let Some(info) = mode
+            && info.main_idx == i
+        {
+            continue;
+        }
+
+        if let Some(info) = mode {
+            let title_upper = group.title.to_uppercase();
+            let is_exclusive = info
+                .labels
+                .iter()
+                .any(|l| l.eq_ignore_ascii_case(&title_upper));
+            if is_exclusive && active_label_upper.as_deref() != Some(title_upper.as_str()) {
+                continue;
+            }
+        }
+
+        groups.push(group);
+    }
+    groups
+}
+
+fn partition_main_groups(
+    layout: &'static PluginLayout,
+    values: &[f64],
+    solved: &SolvedLayout,
+    mode: Option<&ModeSelectorInfo>,
+    main_width: f32,
+) -> (Vec<&'static ControlGroup>, Vec<&'static ControlGroup>) {
+    let groups = mode_visible_groups(layout, values, mode);
+    let gap = 16.0;
+    let mut used = 0.0;
+    let mut visible = Vec::new();
+    let mut overflow = Vec::new();
+
+    for group in groups {
+        let width = group_column_width(group, solved.knob_size);
+        let next_used = if visible.is_empty() {
+            width
+        } else {
+            used + gap + width
+        };
+        if visible.is_empty() || next_used <= main_width {
+            visible.push(group);
+            used = next_used;
+        } else {
+            overflow.push(group);
+        }
+    }
+
+    (visible, overflow)
+}
+
 /// Detect a "mode selector" pattern in `layout.main`:
 /// the first untitled `ControlGroup` containing a single `ButtonSet`
 /// whose bound param is a `Choice`. The labels of that Choice are
@@ -1506,26 +1754,109 @@ fn detect_mode_selector(
 fn collect_all_tabs(
     layout: &'static PluginLayout,
     solved: &SolvedLayout,
-) -> Vec<(&'static str, &'static [ControlSpec])> {
-    let mut tabs: Vec<(&'static str, &'static [ControlSpec])> = Vec::new();
+    overflow_groups: &[&'static ControlGroup],
+) -> Vec<LayoutTab> {
+    let mut tabs: Vec<LayoutTab> = Vec::new();
 
     // Explicit tabs from the layout
     for tab in layout.tabs {
-        tabs.push((tab.name, tab.controls));
+        tabs.push(LayoutTab {
+            name: tab.name,
+            content: LayoutTabContent::Controls(tab.controls),
+        });
+    }
+
+    for group in overflow_groups {
+        if !group.title.is_empty() {
+            tabs.push(LayoutTab {
+                name: group.title,
+                content: LayoutTabContent::Group(group),
+            });
+        }
     }
 
     // Collapsed columns become tabs
     for collapsed in &solved.collapsed_tabs {
         match collapsed.role {
             ColumnRole::Config if layout.has_config() => {
-                tabs.push(("Config", layout.config));
+                tabs.push(LayoutTab {
+                    name: "Config",
+                    content: LayoutTabContent::Controls(layout.config),
+                });
             }
             ColumnRole::Output if layout.has_output() => {
-                tabs.push(("Output", layout.output));
+                tabs.push(LayoutTab {
+                    name: "Output",
+                    content: LayoutTabContent::Controls(layout.output),
+                });
             }
             _ => {}
         }
     }
 
     tabs
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_layout_tab_content(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    content: LayoutTabContent,
+    layout: &'static PluginLayout,
+    params: &[ParamSpec],
+    values: &[f64],
+    file_paths: &HashMap<usize, String>,
+    is_editing: bool,
+    selected_param: usize,
+    solved: &SolvedLayout,
+    plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    theme: &Theme,
+    spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
+) -> AnyElement {
+    match content {
+        LayoutTabContent::Controls(controls) => {
+            let mut tab_div = div().flex().flex_wrap().justify_center().gap(d.section);
+            for spec in controls {
+                if spec.hidden {
+                    continue;
+                }
+                tab_div = tab_div.child(render_control(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    spec,
+                    params,
+                    values,
+                    file_paths,
+                    is_editing,
+                    selected_param,
+                    plugin_data,
+                    solved.knob_size,
+                    theme,
+                ));
+            }
+            tab_div.into_any_element()
+        }
+        LayoutTabContent::Group(group) => div()
+            .flex()
+            .justify_center()
+            .child(render_group(
+                d,
+                entity,
+                plugin_idx,
+                group,
+                layout,
+                params,
+                values,
+                file_paths,
+                is_editing,
+                selected_param,
+                solved,
+                plugin_data,
+                theme,
+                spider_snapshot,
+            ))
+            .into_any_element(),
+    }
 }

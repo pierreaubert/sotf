@@ -232,6 +232,8 @@ impl PlayerView {
                                 let new_width = (drag.start_width - delta_x).max(60.0);
                                 state.app.output_meter_width = new_width;
                             }
+                            DividerType::PluginAutoConfig { .. }
+                            | DividerType::PluginAutoOutput { .. } => {}
                         }
                     });
                     cx.notify();

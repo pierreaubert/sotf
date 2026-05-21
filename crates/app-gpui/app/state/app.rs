@@ -111,6 +111,8 @@ pub struct VolumeDragState {
 pub enum DividerType {
     InputMeter,
     OutputMeter,
+    PluginAutoConfig { plugin_idx: usize },
+    PluginAutoOutput { plugin_idx: usize },
 }
 
 /// State for tracking divider drag operations
@@ -293,6 +295,10 @@ pub struct App {
     pub show_add_plugin_menu: bool,
     /// Active secondary tab index for auto-layout plugins (per-plugin, keyed by plugin_idx)
     pub plugin_auto_tab: std::collections::HashMap<usize, usize>,
+    /// User-resized config column width for auto-layout plugins.
+    pub plugin_auto_config_width: std::collections::HashMap<usize, f32>,
+    /// User-resized output column width for auto-layout plugins.
+    pub plugin_auto_output_width: std::collections::HashMap<usize, f32>,
 
     // Rack panel collapse states
     pub rack_detail_collapsed: bool, // Horizontal divider between rack and detail
@@ -465,6 +471,8 @@ impl App {
             spectrum_reference_select_open: false,
             show_add_plugin_menu: false,
             plugin_auto_tab: std::collections::HashMap::new(),
+            plugin_auto_config_width: std::collections::HashMap::new(),
+            plugin_auto_output_width: std::collections::HashMap::new(),
             rack_detail_collapsed: false,
             input_meter_collapsed: false,
             output_meter_collapsed: false,
