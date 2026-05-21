@@ -299,6 +299,7 @@ fn render_main_column(
                     param,
                     value,
                     info.labels,
+                    false,
                     is_editing,
                     selected_param,
                     theme,
@@ -742,6 +743,7 @@ fn render_control(
                     param,
                     value,
                     labels,
+                    true,
                     is_editing,
                     selected_param,
                     theme,
@@ -1063,9 +1065,10 @@ fn render_param_as_button_set(
     entity: Entity<AppState>,
     plugin_idx: usize,
     idx: usize,
-    _param: &ParamSpec,
+    param: &ParamSpec,
     value: f64,
     labels: &'static [&'static str],
+    show_label: bool,
     is_editing: bool,
     selected_param: usize,
     theme: &Theme,
@@ -1073,11 +1076,12 @@ fn render_param_as_button_set(
     let current = value as usize;
     let is_sel = selected_param == idx && is_editing;
 
-    let mut row = div()
+    let mut choices = div()
         .flex()
+        .flex_wrap()
         .gap(d.grid)
-        .rounded(d.r_md)
-        .when(is_sel, |el| el.border_1().border_color(theme.accent));
+        .justify_end()
+        .items_center();
 
     for (i, label) in labels.iter().enumerate() {
         let is_active = i == current;
@@ -1085,7 +1089,7 @@ fn render_param_as_button_set(
         let btn_idx = idx;
         let btn_plugin_idx = plugin_idx;
         let btn_val = i;
-        row = row.child(
+        choices = choices.child(
             div()
                 .text_size(d.text_xs)
                 .px(d.pad_y)
@@ -1114,7 +1118,30 @@ fn render_param_as_button_set(
         );
     }
 
-    row.into_any_element()
+    if show_label {
+        div()
+            .flex()
+            .flex_col()
+            .items_stretch()
+            .gap(d.grid)
+            .min_w(px(130.0))
+            .rounded(d.r_md)
+            .when(is_sel, |el| el.border_1().border_color(theme.accent))
+            .child(
+                div()
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_muted)
+                    .text_left()
+                    .child(param.name.to_string()),
+            )
+            .child(choices)
+            .into_any_element()
+    } else {
+        choices
+            .rounded(d.r_md)
+            .when(is_sel, |el| el.border_1().border_color(theme.accent))
+            .into_any_element()
+    }
 }
 
 /// Render a gain reduction meter.
