@@ -119,11 +119,7 @@ fn render_solved_layout(
     let mut root = div().flex().flex_col().gap(d.section);
 
     // Build the main row (columns side-by-side, centered)
-    let mut row = div()
-        .flex()
-        .gap(d.section_lg)
-        .items_start()
-        .justify_center();
+    let mut row = div().flex().gap(d.section).items_start().justify_center();
 
     for col in &solved.columns {
         match col.role {
@@ -239,7 +235,7 @@ fn render_config_column(
     knob_size: KnobSize,
     theme: &Theme,
 ) -> impl IntoElement {
-    let mut col = div().flex().flex_col().gap(d.gap).w(px(width));
+    let mut col = div().flex().flex_col().gap(d.gap).w(px(width)).flex_none();
     col = col.child(render_section_title(d, "CONFIG", theme));
     for spec in controls {
         if spec.hidden {
@@ -281,7 +277,7 @@ fn render_main_column(
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
     theme: &Theme,
 ) -> impl IntoElement {
-    let mut center = div().flex().flex_col().gap(d.section).flex_1();
+    let mut center = div().flex().flex_col().gap(d.section).flex_none();
 
     // Detect a "mode selector" group: an untitled main group containing a single
     // ButtonSet bound to a Choice param whose labels alias other group titles.
@@ -320,11 +316,7 @@ fn render_main_column(
 
         let groups_container =
             if solved.group_direction == sotf_plugins::layout_solver::Direction::Row {
-                div()
-                    .flex()
-                    .gap(d.section_lg)
-                    .items_start()
-                    .justify_center()
+                div().flex().gap(d.section).items_start().justify_center()
             } else {
                 div().flex().flex_col().gap(d.section)
             };
@@ -487,7 +479,7 @@ fn render_output_column(
     knob_size: KnobSize,
     theme: &Theme,
 ) -> impl IntoElement {
-    let mut col = div().flex().flex_col().gap(d.gap).w(px(width));
+    let mut col = div().flex().flex_col().gap(d.gap).w(px(width)).flex_none();
     col = col.child(render_section_title(d, "OUTPUT", theme));
     for spec in controls {
         if spec.hidden {
@@ -529,26 +521,14 @@ fn render_group(
     theme: &Theme,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
 ) -> impl IntoElement {
-    // Slider groups (vertical meters) carry their own visual frame via
-    // tick marks and labels, so the chassis-box wrapper is redundant.
-    // Knob groups still get the bordered container for visual separation.
+    // Individual controls carry their own visual frames. The generated group
+    // wrapper should size to content instead of drawing a large empty chassis.
     let has_sliders = group
         .controls
         .iter()
         .any(|c| matches!(c.control_type, ControlType::VerticalSlider));
 
-    let mut col =
-        div()
-            .flex()
-            .flex_col()
-            .gap(d.gap)
-            .when(!group.title.is_empty() && !has_sliders, |el| {
-                el.rounded(d.r_xl)
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
-                    .p(d.pad_x)
-            });
+    let mut col = div().flex().flex_col().gap(d.gap).flex_none();
     if !group.title.is_empty() {
         col = col.child(render_section_title(d, group.title, theme));
     }
