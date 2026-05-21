@@ -112,6 +112,7 @@ actions!(
         QuickAddTransientShaper,
         QuickAddSaturation,
         QuickAddDynamicEq,
+        QuickAddFirDesigner,
         QuickAddLinearPhaseEq,
         QuickAddSpectralCompressor,
         // Level meter actions

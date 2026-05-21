@@ -10792,6 +10792,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-plugin-fir-designer"
+version = "0.5.3"
+dependencies = [
+ "math-iir-fir",
+ "num-complex 0.4.6",
+ "realfft",
+ "serde",
+ "serde_json",
+ "sotf-host",
+]
+
+[[package]]
 name = "sotf-plugin-gain"
 version = "0.5.4"
 dependencies = [
@@ -11093,6 +11105,7 @@ dependencies = [
  "sotf-plugin-downmix",
  "sotf-plugin-dynamic-eq",
  "sotf-plugin-eq",
+ "sotf-plugin-fir-designer",
  "sotf-plugin-gain",
  "sotf-plugin-gate",
  "sotf-plugin-hal-input",

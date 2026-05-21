@@ -21,11 +21,13 @@ pub use sotf_host::automation;
 pub use sotf_host::error;
 pub use sotf_host::layout_solver;
 pub use sotf_host::param_registry;
-pub use sotf_host::{ExternalHostingBackend, ExternalPlugin, PluginDescriptor, PluginFormat, PluginScanner};
+pub use sotf_host::{
+    ExternalHostingBackend, ExternalPlugin, PluginDescriptor, PluginFormat, PluginScanner,
+};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use sotf_host::{
-    ExternalPluginSandboxPolicy, ExternalPluginSandboxStatus, ExternalPluginSandboxTiming,
-    ExternalPluginTrust, ExternalPluginWorkerCommand, ExternalPluginProcessEvent,
+    ExternalPluginProcessEvent, ExternalPluginSandboxPolicy, ExternalPluginSandboxStatus,
+    ExternalPluginSandboxTiming, ExternalPluginTrust, ExternalPluginWorkerCommand,
     IsolatedExternalPlugin, IsolatedExternalPluginConfig, IsolatedExternalPluginWorkerReport,
     PluginSandboxBackendCode, PluginSandboxStatusCode, enter_external_plugin_sandbox,
 };
@@ -137,6 +139,9 @@ pub mod param_specs {
     pub mod eq {
         pub use sotf_plugin_eq::params::*;
     }
+    pub mod fir_designer {
+        pub use sotf_plugin_fir_designer::params::*;
+    }
     pub mod linear_phase_eq {
         pub use sotf_plugin_linear_phase_eq::params::*;
     }
@@ -205,6 +210,7 @@ pub use sotf_plugin_dither;
 pub use sotf_plugin_downmix as plugin_downmix;
 pub use sotf_plugin_dynamic_eq as plugin_dynamic_eq;
 pub use sotf_plugin_eq as plugin_eq;
+pub use sotf_plugin_fir_designer as plugin_fir_designer;
 pub use sotf_plugin_gain as plugin_gain;
 pub use sotf_plugin_gate as plugin_gate;
 pub use sotf_plugin_hiss_reducer as plugin_hiss_reducer;
@@ -258,10 +264,13 @@ pub use plugin_declick::{DeclickPlugin, DeclickPluginParams};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};
-pub use plugin_dynamic_eq::{DynamicEqData, DynamicEqPlugin, DynamicEqPluginParams};
+pub use plugin_dynamic_eq::{
+    DynEqBandParams, DynamicEqData, DynamicEqPlugin, DynamicEqPluginParams,
+};
 pub use plugin_eq::{
     BiquadFilterConfig, EqFilterTopology, EqPlugin, EqPluginParams, KautzSectionConfig,
 };
+pub use plugin_fir_designer::{FirDesignerPlugin, FirDesignerPluginParams};
 pub use plugin_linear_phase_eq::{LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 pub use sotf_plugin_dither::{DitherPlugin, DitherPluginParams};
 pub type ExpanderPlugin = sotf_plugin_multiband_expander::MultibandExpanderPlugin;

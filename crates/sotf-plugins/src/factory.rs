@@ -12,9 +12,10 @@ use crate::{
     CrossoverPlugin, CrossoverPluginParams, DeEsserPlugin, DeEsserPluginParams, DeclickPlugin,
     DeclickPluginParams, DelayPlugin, DelayPluginParams, DenoiserPlugin, DenoiserPluginParams,
     DownmixPlugin, DownmixPluginParams, DynamicEqPlugin, DynamicEqPluginParams, EqPlugin,
-    EqPluginParams, ExpanderPlugin, ExpanderPluginParams, GainPlugin, GainPluginParams, GatePlugin,
-    GatePluginParams, HissReducerPlugin, HissReducerPluginParams, InPlacePluginAdapter,
-    LimiterPlugin, LimiterPluginParams, LinearPhaseEqPlugin, LinearPhaseEqPluginParams,
+    EqPluginParams, ExpanderPlugin, ExpanderPluginParams, FirDesignerPlugin,
+    FirDesignerPluginParams, GainPlugin, GainPluginParams, GatePlugin, GatePluginParams,
+    HissReducerPlugin, HissReducerPluginParams, InPlacePluginAdapter, LimiterPlugin,
+    LimiterPluginParams, LinearPhaseEqPlugin, LinearPhaseEqPluginParams,
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
     MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams, MultibandCompressorPlugin,
     MultibandCompressorPluginParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
@@ -52,6 +53,7 @@ pub const SUPPORTED_PLUGIN_TYPES: &[&str] = &[
     "multiband_expander",
     "de_esser",
     "dynamic_eq",
+    "fir_designer",
     "linear_phase_eq",
     "spectral_compressor",
     "stereo_imager",
@@ -238,6 +240,14 @@ pub fn create_plugin(
             let params: DynamicEqPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse dynamic EQ params: {e}"))?;
             let plugin = DynamicEqPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "fir_designer" => {
+            let params: FirDesignerPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse FIR designer params: {e}"))?;
+            let plugin = FirDesignerPlugin::from_params(channels, sample_rate, params)
+                .map_err(|e| format!("Failed to create FIR designer plugin: {e}"))?;
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 

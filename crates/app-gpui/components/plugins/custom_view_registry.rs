@@ -82,6 +82,7 @@ pub fn plugin_type_key(settings: &PluginSettings) -> &'static str {
         PluginSettings::TransientShaper { .. } => "transient_shaper",
         PluginSettings::Saturation { .. } => "saturation",
         PluginSettings::DynamicEq { .. } => "dynamic_eq",
+        PluginSettings::FirDesigner { .. } => "fir_designer",
         PluginSettings::LinearPhaseEq { .. } => "linear_phase_eq",
         PluginSettings::SpectralCompressor { .. } => "spectral_compressor",
     }
@@ -98,6 +99,8 @@ impl GpuiViewRegistry {
         let mut views: HashMap<&'static str, CustomViewRenderFn> = HashMap::new();
 
         views.insert("eq", render_eq);
+        views.insert("dynamic_eq", render_dynamic_eq);
+        views.insert("fir_designer", render_fir_designer);
         views.insert("linear_phase_eq", render_linear_phase_eq);
         views.insert("spectrum_analyzer", render_spectrum);
         views.insert("channel_mute_solo", render_mute_solo);
@@ -163,6 +166,21 @@ fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> Any
     }
 }
 
+fn render_dynamic_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
+    super::render_dynamic_eq_plugin(
+        ctx.entity.clone(),
+        ctx.plugin_idx,
+        ctx.settings,
+        ctx.is_editing,
+        ctx.selected_param,
+        ctx.selected_band_idx,
+        ctx.plugin_data.clone(),
+        ctx.theme,
+        cx,
+    )
+    .into_any_element()
+}
+
 fn render_linear_phase_eq(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
@@ -210,6 +228,72 @@ fn render_linear_phase_eq(
                     latency_samples,
                     latency_ms,
                     fir_length: fir_len_samples,
+                    auto_gain: *auto_gain,
+                },
+            },
+            ctx.theme,
+            cx,
+        )
+        .into_any_element()
+    } else {
+        Empty.into_any_element()
+    }
+}
+
+fn render_fir_designer(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
+    use super::ui_eq;
+    if let PluginSettings::FirDesigner {
+        fir_length,
+        phase_mode,
+        auto_gain,
+        filters,
+        ..
+    } = ctx.settings
+    {
+        let fir_len_samples: usize = match *fir_length as usize {
+            0 => 1024,
+            1 => 2048,
+            2 => 4096,
+            3 => 8192,
+            _ => 2048,
+        };
+        let phase_mode_label = match *phase_mode as usize {
+            1 => "Minimum",
+            _ => "Linear",
+        };
+        let latency_samples = if phase_mode_label == "Linear" {
+            fir_len_samples.saturating_sub(1) / 2
+        } else {
+            0
+        };
+        let sample_rate = ctx
+            .entity
+            .read(cx)
+            .app
+            .audio_device_state
+            .hal_config
+            .sample_rate
+            .max(1);
+        let latency_ms = (latency_samples as f32) * 1000.0 / (sample_rate as f32);
+
+        let selected_band_idx = ctx.selected_band_idx.min(filters.len().saturating_sub(1));
+        super::render_eq_plugin(
+            ctx.entity.clone(),
+            ctx.plugin_idx,
+            ui_eq::EqRenderState {
+                channels: 2,
+                filters,
+                channel_filters: &None,
+                per_channel_mode: false,
+                is_editing: ctx.is_editing,
+                selected_param: ctx.selected_param,
+                selected_band_idx,
+                midi_overlay: ctx.midi_overlay,
+                mode: ui_eq::EqViewMode::FirDesigner {
+                    latency_samples,
+                    latency_ms,
+                    fir_length: fir_len_samples,
+                    phase_mode: phase_mode_label,
                     auto_gain: *auto_gain,
                 },
             },

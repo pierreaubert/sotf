@@ -480,6 +480,7 @@ impl PlayerView {
                 vec![
                     (PluginType::EQ, "Parametric"),
                     (PluginType::LinearPhaseEq, "Linear Phase"),
+                    (PluginType::FirDesigner, "FIR Designer"),
                     (PluginType::DynamicEq, "Dynamic EQ"),
                 ],
             ),
@@ -693,6 +694,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::TransientShaper => theme.warning,
         PluginType::Saturation => theme.warning,
         PluginType::DynamicEq => theme.warning,
+        PluginType::FirDesigner => theme.success,
         PluginType::LinearPhaseEq => theme.success,
         PluginType::SpectralCompressor => theme.warning,
     }
@@ -787,6 +789,8 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::DynamicEq => (2, 2),
         // Linear-Phase EQ: in-place processing
         PluginType::LinearPhaseEq => (2, 2),
+        // FIR Designer: in-place processing
+        PluginType::FirDesigner => (2, 2),
         // Spectral compressor: in-place processing
         PluginType::SpectralCompressor => (2, 2),
     }
@@ -1148,6 +1152,7 @@ fn build_menu_items(
     items.push(MenuItem::new("eq-header", "EQ").disabled(true));
     items.push(MenuItem::new("plugin-eq", "Parametric EQ"));
     items.push(MenuItem::new("plugin-linear-phase-eq", "Linear-Phase EQ"));
+    items.push(MenuItem::new("plugin-fir-designer", "FIR Designer"));
     items.push(MenuItem::new("plugin-dynamic-eq", "Dynamic EQ"));
 
     items.push(MenuItem::separator());
