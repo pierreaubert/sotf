@@ -151,7 +151,7 @@ pub fn render_plugin_content(
     let registry = GpuiViewRegistry::new();
     let type_key = custom_view_registry::plugin_type_key(settings);
 
-    if let Some(render_fn) = registry.get(type_key) {
+    let content = if let Some(render_fn) = registry.get(type_key) {
         let ctx = CustomViewRenderContext {
             entity: entity.clone(),
             plugin_idx,
@@ -168,11 +168,9 @@ pub fn render_plugin_content(
             plugin_graph,
             midi_overlay,
         };
-        return render_fn(&ctx, cx);
-    }
-
-    // Fallback: generic layout renderer for plugins with PluginLayout definitions
-    if settings.layout().is_some() {
+        render_fn(&ctx, cx)
+    } else if settings.layout().is_some() {
+        // Fallback: generic layout renderer for plugins with PluginLayout definitions.
         let d = Ds::from_cx(cx);
         // Snapshot live audio data for plugins whose layout opts into the
         // spatial-spider visualization. The renderer ignores this when the
@@ -186,7 +184,7 @@ pub fn render_plugin_content(
                 },
             )
         };
-        return ui_layout_renderer::render_from_layout(
+        ui_layout_renderer::render_from_layout(
             &d,
             entity.clone(),
             plugin_idx,
@@ -201,9 +199,14 @@ pub fn render_plugin_content(
             theme,
             &plugin_theme,
             spider_snapshot,
-        );
-    }
+        )
+    } else {
+        gpui::div().into_any_element()
+    };
 
-    // Plugin has neither a custom view nor a layout — render empty placeholder
-    gpui::div().into_any_element()
+    gpui::div()
+        .size_full()
+        .bg(chassis_theme.background)
+        .child(content)
+        .into_any_element()
 }

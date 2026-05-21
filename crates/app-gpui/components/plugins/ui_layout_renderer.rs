@@ -192,7 +192,12 @@ fn render_solved_layout(
     theme: &Theme,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
 ) -> AnyElement {
-    let mut root = div().flex().flex_col().gap(d.section);
+    let mut root = div()
+        .flex()
+        .flex_col()
+        .gap(d.section)
+        .size_full()
+        .bg(theme.background);
 
     let has_config_column = solved
         .columns

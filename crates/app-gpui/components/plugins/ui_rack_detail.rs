@@ -636,6 +636,13 @@ impl PlayerView {
                     } else {
                         state.app.output_meter_width.min(max_meter_width)
                     };
+                    let plugin_bg = state
+                        .app
+                        .plugin_state
+                        .rack_theme_state
+                        .resolved_id(selected_idx)
+                        .theme()
+                        .chassis_bg_top;
 
                     // Create state clones for divider callbacks
                     let state_for_output_toggle = self.state.clone();
@@ -651,6 +658,7 @@ impl PlayerView {
                                 .id("params-scroll")
                                 .flex_1()
                                 .overflow_y_scroll()
+                                .bg(plugin_bg)
                                 .p(d.card)
                                 .child({
                                     // Get plugin-specific real-time data based on plugin type
