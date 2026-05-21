@@ -105,9 +105,21 @@ pub fn render_from_layout(
 // Internal Rendering
 // ============================================================================
 
-const AUTO_COLUMN_MIN_SIDE_WIDTH: f32 = 96.0;
+const AUTO_COLUMN_MIN_SIDE_WIDTH: f32 = 180.0;
 const AUTO_COLUMN_MIN_MAIN_WIDTH: f32 = 260.0;
 const AUTO_COLUMN_DIVIDER_WIDTH: f32 = 6.0;
+
+fn control_column_width(knob_size: KnobSize) -> f32 {
+    match knob_size {
+        KnobSize::Xs => 130.0,
+        KnobSize::Sm => 150.0,
+        KnobSize::Md => 170.0,
+    }
+}
+
+fn visible_control_count(group: &ControlGroup) -> usize {
+    group.controls.iter().filter(|c| !c.hidden).count()
+}
 
 fn auto_side_max_width(available_width: f32, other_side_width: f32, divider_total: f32) -> f32 {
     (available_width - other_side_width - divider_total - AUTO_COLUMN_MIN_MAIN_WIDTH)
@@ -149,6 +161,15 @@ fn auto_column_divider(
             });
         });
     })
+}
+
+fn auto_tab_divider(plugin_idx: usize, theme: PaneDividerTheme) -> impl IntoElement {
+    PaneDivider::horizontal(
+        SharedString::from(format!("plugin-auto-{plugin_idx}-main-tabs")),
+        CollapseDirection::Down,
+    )
+    .theme(theme)
+    .thickness(px(4.0))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -530,6 +551,16 @@ fn render_main_column(
 
         if !all_tabs.is_empty() {
             let clamped_tab = active_tab.min(all_tabs.len().saturating_sub(1));
+            let tab_divider_theme = PaneDividerTheme {
+                background: theme.background,
+                background_hover: theme.surface_hover,
+                background_collapsed: theme.surface,
+                foreground: theme.text_muted,
+                foreground_hover: theme.text_secondary,
+                border: theme.border,
+            };
+
+            center = center.child(auto_tab_divider(plugin_idx, tab_divider_theme));
 
             // Tab bar (underline style)
             let mut tab_bar = div()
@@ -711,9 +742,15 @@ fn render_group(
         }
         col = col.child(slider_row);
     } else {
-        // Knobs/toggles: groups are vertical columns. Whole groups overflow
-        // into tabs; individual controls should not turn the group into a row.
-        let mut knob_row = div().flex().flex_col().gap(d.gap);
+        let visible_count = visible_control_count(group);
+        let base_width = control_column_width(solved.knob_size);
+        let use_two_columns = visible_count >= 4;
+        let two_column_width = base_width * 2.0 + 12.0;
+        let mut knob_row = div()
+            .flex()
+            .gap(d.gap)
+            .when(!use_two_columns, |d| d.flex_col())
+            .when(use_two_columns, |d| d.flex_wrap().w(px(two_column_width)));
         for spec in group.controls {
             if spec.hidden {
                 continue;
@@ -1639,10 +1676,11 @@ fn group_column_width(group: &ControlGroup, knob_size: KnobSize) -> f32 {
         return 72.0 * visible as f32;
     }
 
-    match knob_size {
-        KnobSize::Xs => 130.0,
-        KnobSize::Sm => 150.0,
-        KnobSize::Md => 170.0,
+    let base_width = control_column_width(knob_size);
+    if visible_control_count(group) >= 4 {
+        base_width * 2.0 + 16.0
+    } else {
+        base_width
     }
 }
 
