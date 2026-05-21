@@ -212,6 +212,189 @@ fn player_cli_play_with_loudness_compensation_parses() {
     );
 }
 
+#[test]
+fn player_cli_status_runs_without_panicking() {
+    // The status subcommand does not use the play subcommand's clap-assert
+    // path, so it is safe to run in debug builds.
+    let output = Command::new(cargo_bin("player-cli"))
+        .args(["status"])
+        .output()
+        .expect("failed to spawn player-cli");
+
+    // status may fail when nothing is playing, but it should not panic.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked") && !stderr.contains("assertion failed"),
+        "player-cli status panicked: {stderr}"
+    );
+}
+
+#[test]
+fn player_cli_replay_gain_invalid_file_fails() {
+    let output = Command::new(cargo_bin("player-cli"))
+        .args(["replay-gain", "/nonexistent/file.wav"])
+        .output()
+        .expect("failed to spawn player-cli");
+
+    assert!(
+        !output.status.success(),
+        "expected player-cli replay-gain to fail for nonexistent file"
+    );
+}
+
+#[test]
+#[cfg(not(debug_assertions))]
+fn player_cli_play_with_device_arg_parses() {
+    let demo = demo_audio_path("classical.wav");
+    if !demo.is_file() {
+        eprintln!("skipping: demo audio not found at {}", demo.display());
+        return;
+    }
+
+    let output = Command::new(cargo_bin("player-cli"))
+        .args([
+            "play",
+            demo.to_str().unwrap(),
+            "--duration",
+            "0",
+            "--device",
+            "default",
+        ])
+        .output()
+        .expect("failed to spawn player-cli");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("unexpected argument") && !stderr.contains("error: Found argument"),
+        "argument parsing failed: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(not(debug_assertions))]
+fn player_cli_play_with_start_time_arg_parses() {
+    let demo = demo_audio_path("classical.wav");
+    if !demo.is_file() {
+        eprintln!("skipping: demo audio not found at {}", demo.display());
+        return;
+    }
+
+    let output = Command::new(cargo_bin("player-cli"))
+        .args([
+            "play",
+            demo.to_str().unwrap(),
+            "--duration",
+            "0",
+            "--start-time",
+            "5.0",
+        ])
+        .output()
+        .expect("failed to spawn player-cli");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("unexpected argument") && !stderr.contains("error: Found argument"),
+        "argument parsing failed: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(not(debug_assertions))]
+fn player_cli_play_with_loudness_auto_gain_parses() {
+    let demo = demo_audio_path("classical.wav");
+    if !demo.is_file() {
+        eprintln!("skipping: demo audio not found at {}", demo.display());
+        return;
+    }
+
+    let output = Command::new(cargo_bin("player-cli"))
+        .args([
+            "play",
+            demo.to_str().unwrap(),
+            "--duration",
+            "0",
+            "--loudness-auto-gain",
+            "--loudness-auto-gain-max-db",
+            "12.0",
+            "--loudness-auto-gain-smoothing-ms",
+            "100.0",
+        ])
+        .output()
+        .expect("failed to spawn player-cli");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("unexpected argument") && !stderr.contains("error: Found argument"),
+        "argument parsing failed: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(not(debug_assertions))]
+fn player_cli_play_with_upmixer_args_parses() {
+    let demo = demo_audio_path("classical.wav");
+    if !demo.is_file() {
+        eprintln!("skipping: demo audio not found at {}", demo.display());
+        return;
+    }
+
+    let output = Command::new(cargo_bin("player-cli"))
+        .args([
+            "play",
+            demo.to_str().unwrap(),
+            "--duration",
+            "0",
+            "--upmixer",
+            "--upmixer-gain-front-direct",
+            "1.0",
+            "--upmixer-stereo-width",
+            "1.2",
+        ])
+        .output()
+        .expect("failed to spawn player-cli");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("unexpected argument") && !stderr.contains("error: Found argument"),
+        "argument parsing failed: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(not(debug_assertions))]
+fn player_cli_play_with_compressor_args_parses() {
+    let demo = demo_audio_path("classical.wav");
+    if !demo.is_file() {
+        eprintln!("skipping: demo audio not found at {}", demo.display());
+        return;
+    }
+
+    let output = Command::new(cargo_bin("player-cli"))
+        .args([
+            "play",
+            demo.to_str().unwrap(),
+            "--duration",
+            "0",
+            "--compressor",
+            "--compressor-threshold-db",
+            "-20.0",
+            "--compressor-ratio",
+            "4.0",
+            "--compressor-attack-ms",
+            "10.0",
+            "--compressor-release-ms",
+            "100.0",
+        ])
+        .output()
+        .expect("failed to spawn player-cli");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("unexpected argument") && !stderr.contains("error: Found argument"),
+        "argument parsing failed: {stderr}"
+    );
+}
+
 // ============================================================================
 // sotf-recorder-cli
 // ============================================================================
@@ -304,10 +487,72 @@ fn recorder_cli_tone_signal_dry_run() {
     );
 }
 
+#[test]
+fn recorder_cli_sweep_signal_dry_run() {
+    let output = Command::new(cargo_bin("sotf-recorder-cli"))
+        .args([
+            "--signal", "sweep",
+            "--start-freq", "20",
+            "--end-freq", "20000",
+            "--duration", "0.5",
+            "--hwaudio-send-to", "0",
+            "--hwaudio-record-from", "0",
+        ])
+        .output()
+        .expect("failed to spawn sotf-recorder-cli");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Signal Recording and Analysis") || stdout.contains("Configuration:"),
+        "expected config header in stdout, got: {stdout}"
+    );
+}
+
+#[test]
+fn recorder_cli_pink_noise_signal_dry_run() {
+    let output = Command::new(cargo_bin("sotf-recorder-cli"))
+        .args([
+            "--signal", "pink-noise",
+            "--duration", "0.5",
+            "--hwaudio-send-to", "0",
+            "--hwaudio-record-from", "0",
+        ])
+        .output()
+        .expect("failed to spawn sotf-recorder-cli");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Signal Recording and Analysis") || stdout.contains("Configuration:"),
+        "expected config header in stdout, got: {stdout}"
+    );
+}
+
+#[test]
+fn recorder_cli_custom_sample_rate_parses() {
+    let output = Command::new(cargo_bin("sotf-recorder-cli"))
+        .args([
+            "--signal", "tone",
+            "--freq", "1000",
+            "--duration", "0.5",
+            "--sample-rate", "44100",
+            "--hwaudio-send-to", "0",
+            "--hwaudio-record-from", "0",
+        ])
+        .output()
+        .expect("failed to spawn sotf-recorder-cli");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Signal Recording and Analysis") || stdout.contains("Configuration:"),
+        "expected config header in stdout, got: {stdout}"
+    );
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
 
+#[allow(dead_code)]
 fn stdout_contains(output: &std::process::Output, needle: &str) -> bool {
     String::from_utf8_lossy(&output.stdout).contains(needle)
 }

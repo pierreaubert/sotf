@@ -1,0 +1,26 @@
+# GPUI Plugin Rack — quick-add, reorder, and toggle plugins.
+#
+# Covers: QuickAddEQ, QuickAddGain, MovePluginUp, MovePluginDown, TogglePlugin
+
+focus       plugin_graph
+assert      screen.focused == "PluginGraph"
+
+# Quick-add a few plugins.
+action      QuickAddEQ
+sleep       200ms
+action      QuickAddGain
+sleep       200ms
+action      QuickAddLimiter
+sleep       200ms
+
+# Reorder and toggle.
+action      MovePluginUp
+sleep       100ms
+action      MovePluginDown
+sleep       100ms
+action      TogglePlugin
+sleep       100ms
+
+# Switch to studio to verify the chain is reflected there too.
+focus       studio
+assert      screen.focused == "Studio"

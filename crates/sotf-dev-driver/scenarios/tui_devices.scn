@@ -1,0 +1,25 @@
+# TUI Devices screen — navigation, selection, rescan.
+#
+# Covers: SwitchToDevices, device navigation, rescan key.
+
+focus devices
+assert screen.focused == "Devices"
+assert input_mode == "Normal"
+
+# Query device counts.
+query audio.output_device_count
+query cast.device_count
+
+# Navigate devices.
+key down
+sleep 50ms
+key up
+sleep 50ms
+
+# Rescan devices.
+key r
+sleep 100ms
+
+# Return to library.
+focus library
+assert screen.focused == "Library"

@@ -1,0 +1,51 @@
+# TUI Configure → Room EQ wizard navigation.
+#
+# Covers: RoomEq sub-screen, step tab navigation, Process mode selection.
+
+focus configure
+assert screen.focused == "Configure"
+assert input_mode == "Configure"
+
+# Enter Room EQ sub-screen.
+key 3
+sleep 100ms
+assert input_mode == "ConfigureRoomEq"
+assert configure.sub_screen == "RoomEq"
+assert roomeq.step == "LoadData"
+
+# Navigate step tab bar forward.
+key right
+sleep 100ms
+assert roomeq.step == "Delay"
+
+key right
+sleep 100ms
+assert roomeq.step == "Process"
+
+# In Process step, select Full wizard mode (2).
+key 2
+sleep 50ms
+
+# Navigate to Configure step.
+key right
+sleep 100ms
+assert roomeq.step == "Configure"
+
+# BackTab from Configure goes back to Process.
+key backtab
+sleep 100ms
+assert roomeq.step == "Process"
+
+# Esc chain: content → step tab → configure tab.
+key esc
+sleep 100ms
+assert input_mode == "ConfigureRoomEq"
+
+key esc
+sleep 100ms
+assert input_mode == "Configure"
+assert screen.focused == "Configure"
+
+# Return to library.
+focus library
+assert screen.focused == "Library"

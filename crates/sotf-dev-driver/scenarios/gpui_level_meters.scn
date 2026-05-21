@@ -1,0 +1,27 @@
+# GPUI Level Meters — meter group navigation and mute/solo/dim toggles.
+#
+# Covers: SelectNextMeterGroup, SelectPrevMeterGroup, ToggleMeterMute,
+#         ToggleMeterSolo, ToggleMeterDim, ClearMeterMutesSolos
+
+focus       studio
+assert      screen.focused == "Studio"
+
+# Cycle through meter groups.
+action      SelectNextMeterGroup
+sleep       100ms
+action      SelectPrevMeterGroup
+sleep       100ms
+
+# Toggle mute/solo/dim on the current group.
+action      ToggleMeterMute
+sleep       100ms
+action      ToggleMeterSolo
+sleep       100ms
+action      ToggleMeterDim
+sleep       100ms
+
+# Clear all mutes/solos/dims.
+action      ClearMeterMutesSolos
+sleep       100ms
+
+assert      screen.focused == "Studio"

@@ -1,29 +1,36 @@
-# Full test matrix for all SOTF applications.
+# Full GPUI test matrix.
 #
-# This suite delegates to per-app suite files. Run the entire matrix with:
+# This suite covers all GPUI screens and major action groups.
+# Run with:
 #   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/full_matrix.toml -v
 #
-# Individual app suites can also be run standalone:
-#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/smoke.toml -v
-#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/tui.toml -v
+# For TUI scenarios see suites/tui.toml.
 
 [runner]
 app_bin = "target/debug/sotf-desktop"
 readiness_timeout = "20s"
 
-# ── GPUI scenarios ──────────────────────────────────────────────────────────
+# ── Smoke & basic navigation ────────────────────────────────────────────────
 
 [[scenario]]
 name = "gpui-smoke"
 path = "crates/sotf-dev-driver/scenarios/smoke.scn"
 timeout = "30s"
-tags = ["gpui"]
+tags = ["gpui", "smoke"]
 
 [[scenario]]
 name = "gpui-library"
 path = "crates/sotf-dev-driver/scenarios/library.scn"
 timeout = "10s"
 tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-transport"
+path = "crates/sotf-dev-driver/scenarios/gpui_transport.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+# ── Screens ─────────────────────────────────────────────────────────────────
 
 [[scenario]]
 name = "gpui-studio"
@@ -34,6 +41,12 @@ tags = ["gpui"]
 [[scenario]]
 name = "gpui-plugin-graph"
 path = "crates/sotf-dev-driver/scenarios/plugin_graph.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-plugin-rack"
+path = "crates/sotf-dev-driver/scenarios/gpui_plugin_rack.scn"
 timeout = "10s"
 tags = ["gpui"]
 
@@ -61,34 +74,32 @@ path = "crates/sotf-dev-driver/scenarios/spinorama.scn"
 timeout = "10s"
 tags = ["gpui"]
 
-# ── TUI scenarios ───────────────────────────────────────────────────────────
+[[scenario]]
+name = "gpui-spectrum"
+path = "crates/sotf-dev-driver/scenarios/gpui_spectrum.scn"
+timeout = "10s"
+tags = ["gpui"]
 
 [[scenario]]
-name = "tui-smoke"
-path = "crates/sotf-dev-driver/scenarios/tui_smoke.scn"
+name = "gpui-devices"
+path = "crates/sotf-dev-driver/scenarios/gpui_devices.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-settings"
+path = "crates/sotf-dev-driver/scenarios/gpui_settings.scn"
 timeout = "30s"
-tags = ["tui"]
+tags = ["gpui"]
 
 [[scenario]]
-name = "tui-library"
-path = "crates/sotf-dev-driver/scenarios/tui_library.scn"
+name = "gpui-playlists"
+path = "crates/sotf-dev-driver/scenarios/gpui_playlists.scn"
 timeout = "10s"
-tags = ["tui"]
+tags = ["gpui"]
 
 [[scenario]]
-name = "tui-queue"
-path = "crates/sotf-dev-driver/scenarios/tui_queue.scn"
+name = "gpui-level-meters"
+path = "crates/sotf-dev-driver/scenarios/gpui_level_meters.scn"
 timeout = "10s"
-tags = ["tui"]
-
-[[scenario]]
-name = "tui-plugins"
-path = "crates/sotf-dev-driver/scenarios/tui_plugins.scn"
-timeout = "10s"
-tags = ["tui"]
-
-[[scenario]]
-name = "tui-configure"
-path = "crates/sotf-dev-driver/scenarios/tui_configure.scn"
-timeout = "10s"
-tags = ["tui"]
+tags = ["gpui"]

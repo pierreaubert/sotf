@@ -1,0 +1,43 @@
+# GPUI Transport controls — play/stop/next/prev/volume/mute.
+#
+# Covers: PlayPause, Stop, NextTrack, PrevTrack, VolumeUp, VolumeDown,
+#         ToggleMute, VolumeMax, VolumeMin
+
+focus       library
+assert      screen.focused == "Library"
+assert      playback.is_playing == false
+
+# Playback controls.
+action      PlayPause
+sleep       100ms
+assert      playback.is_playing == true
+
+action      Stop
+sleep       100ms
+assert      playback.is_playing == false
+
+action      NextTrack
+sleep       100ms
+action      PrevTrack
+sleep       100ms
+
+# Volume nudges.
+action      VolumeUp
+sleep       100ms
+action      VolumeDown
+sleep       100ms
+
+# Mute toggle.
+action      ToggleMute
+sleep       100ms
+assert      playback.muted == true
+
+action      ToggleMute
+sleep       100ms
+assert      playback.muted == false
+
+# Volume extremes.
+action      VolumeMax
+sleep       100ms
+action      VolumeMin
+sleep       100ms

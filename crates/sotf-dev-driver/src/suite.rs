@@ -545,10 +545,10 @@ mod tests {
         assert_eq!(roomeq.scenarios.len(), 24);
 
         let tui: SuiteFile = toml::from_str(include_str!("../suites/tui.toml")).unwrap();
-        assert!(!tui.scenarios.is_empty());
+        assert_eq!(tui.scenarios.len(), 18);
 
         let full: SuiteFile =
             toml::from_str(include_str!("../suites/full_matrix.toml")).unwrap();
-        assert!(!full.scenarios.is_empty());
+        assert_eq!(full.scenarios.len(), 15);
     }
 }

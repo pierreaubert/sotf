@@ -1,0 +1,10 @@
+# GPUI Spectrum screen — basic focus.
+#
+# Covers: SwitchToSpectrum
+
+focus       spectrum
+assert      screen.focused == "Spectrum"
+
+# Return to library.
+focus       library
+assert      screen.focused == "Library"

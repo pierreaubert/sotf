@@ -1,0 +1,38 @@
+# TUI Playlists screen — list mode, create, rename, tracks, back.
+#
+# Covers: SwitchToPlaylists, playlist list navigation, create mode transition.
+
+focus playlists
+assert screen.focused == "Playlists"
+assert input_mode == "Normal"
+
+# Query playlist count.
+query playlists.count
+
+# Navigate playlists.
+key down
+sleep 50ms
+key up
+sleep 50ms
+
+# Enter create mode.
+key n
+sleep 100ms
+# In create mode, typing chars appends to name.
+key t
+sleep 50ms
+key e
+sleep 50ms
+key s
+sleep 50ms
+key t
+sleep 50ms
+
+# Cancel create with Esc.
+key esc
+sleep 100ms
+assert screen.focused == "Playlists"
+
+# Return to library.
+focus library
+assert screen.focused == "Library"

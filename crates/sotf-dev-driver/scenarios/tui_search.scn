@@ -1,0 +1,35 @@
+# TUI Library search mode — enter, type, exit.
+#
+# Covers: Search mode transition via `/`, Esc exit, Enter exit.
+
+focus library
+assert screen.focused == "Library"
+assert input_mode == "Normal"
+
+# Enter search mode.
+key /
+sleep 100ms
+assert input_mode == "Search"
+
+# Type a query (synthetic keys).
+key a
+sleep 50ms
+key b
+sleep 50ms
+key c
+sleep 50ms
+
+# Exit search with Enter (resets selection to top).
+key enter
+sleep 100ms
+assert input_mode == "Normal"
+assert screen.focused == "Library"
+
+# Re-enter search and exit with Esc (preserves query).
+key /
+sleep 100ms
+assert input_mode == "Search"
+
+key esc
+sleep 100ms
+assert input_mode == "Normal"

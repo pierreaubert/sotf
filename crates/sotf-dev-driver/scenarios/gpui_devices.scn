@@ -1,0 +1,10 @@
+# GPUI Devices screen — basic focus.
+#
+# Covers: SwitchToDevices
+
+focus       devices
+assert      screen.focused == "Devices"
+
+# Return to library.
+focus       library
+assert      screen.focused == "Library"

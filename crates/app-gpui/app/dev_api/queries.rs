@@ -116,6 +116,23 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             json!(room_eq_export_summary().and_then(|s| s.filter_count))
         }
         "roomeq.export.version" => json!(room_eq_export_summary().and_then(|s| s.version)),
+
+        // Settings / preferences
+        "settings.theme" => json!(format!("{:?}", app.ui_state.theme_id)),
+        "settings.language" => json!(format!("{:?}", app.ui_state.language)),
+        "settings.active_tab" => json!(format!("{:?}", app.ui_state.active_settings_tab)),
+        "settings.font_scale" => json!(app.ui_state.font_scale),
+        "settings.design_language" => json!(app.ui_state.design_language.as_deref().unwrap_or("default")),
+
+        // Playback preferences
+        "playback.replay_gain_enabled" => json!(app.playback.replay_gain_enabled),
+        "playback.replay_gain_mode" => json!(format!("{:?}", app.playback.replay_gain_mode)),
+
+        // Audio devices
+        "audio.output_device" => json!(app.audio_device_state.current_output_device_name),
+        "audio.output_device_count" => json!(app.audio_device_state.output_devices.len()),
+        "audio.input_device_count" => json!(app.audio_device_state.input_devices.len()),
+
         other => return Err(anyhow!("unknown query path: `{other}`")),
     })
 }
