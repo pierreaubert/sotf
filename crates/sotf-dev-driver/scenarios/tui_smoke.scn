@@ -1,0 +1,32 @@
+# TUI smoke test
+# Verifies the dev-api is reachable and basic screen switching works.
+
+focus library
+assert screen.focused == "Library"
+
+action PlayPause
+assert playback.is_playing == true
+
+action PlayPause
+assert playback.is_playing == false
+
+action VolumeUp
+query playback.volume
+
+action SwitchToQueue
+assert screen.focused == "Queue"
+
+action SwitchToConfigure
+assert screen.focused == "Configure"
+
+action SwitchToPlugins
+assert screen.focused == "Plugins"
+
+action SwitchToDevices
+assert screen.focused == "Devices"
+
+action SwitchToPlaylists
+assert screen.focused == "Playlists"
+
+action SwitchToLibrary
+assert screen.focused == "Library"

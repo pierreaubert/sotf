@@ -18,6 +18,8 @@ onnx = ["sotf-plugins/onnx"]
 iamf = ["sotf-engine/iamf", "sotf-plugins/iamf"]
 tidal = ["dep:sotf-services", "sotf-services/tidal"]
 spotify = ["dep:sotf-services", "sotf-services/spotify"]
+# QA/debug-only HTTP API for scripted E2E testing.
+dev-api = []
 
 [dependencies]
 # Shared audio player library (provides business logic, database, plugins, etc.)
@@ -77,6 +79,7 @@ env_logger = { workspace = true }
 tokio = { workspace = true }
 
 # Utilities
+anyhow = { workspace = true }
 chrono = { workspace = true }
 directories = { workspace = true }
 thiserror = { workspace = true }
@@ -113,3 +116,8 @@ path = "main.rs"
 [[test]]
 name = "tests_parameter_sync"
 path = "tests/tests_parameter_sync.rs"
+
+[[test]]
+name = "test_dev_api"
+path = "tests/test_dev_api.rs"
+required-features = ["dev-api"]

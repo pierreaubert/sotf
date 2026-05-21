@@ -1,0 +1,34 @@
+# TUI scenario suite
+# Run with:
+#   cargo build -p sotf-tui --features dev-api --bin sotf-tui
+#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/tui.toml -v
+
+[runner]
+app_bin = "target/debug/sotf-tui"
+app_args = []
+readiness_timeout = "10s"
+
+[[scenario]]
+name = "tui-smoke"
+path = "crates/sotf-dev-driver/scenarios/tui_smoke.scn"
+timeout = "30s"
+
+[[scenario]]
+name = "tui-library"
+path = "crates/sotf-dev-driver/scenarios/tui_library.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-queue"
+path = "crates/sotf-dev-driver/scenarios/tui_queue.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-plugins"
+path = "crates/sotf-dev-driver/scenarios/tui_plugins.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-configure"
+path = "crates/sotf-dev-driver/scenarios/tui_configure.scn"
+timeout = "10s"

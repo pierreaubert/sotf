@@ -1,5 +1,5 @@
 use crossterm::event::{
-    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    KeyEvent, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -16,6 +16,8 @@ use sotf_audio_player_tui::events::{
     poll_probe_capture, poll_recording, poll_room_eq_optimization, poll_save_recordings,
     poll_spinorama_optimization, poll_spinorama_speaker_load, poll_spl_calibration_capture,
 };
+#[cfg(feature = "dev-api")]
+use sotf_audio_player_tui::dev_api::{DevCommand, DevQueryReply, DevReply};
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::ui;
 use sotf_media_controls::{MediaPlayback, MediaPosition};
@@ -345,8 +347,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         t_startup.elapsed().as_secs_f64() * 1000.0
     );
 
+    // Start dev-api server if requested (QA/debug builds only)
+    #[cfg(feature = "dev-api")]
+    let dev_api_rx = std::env::var("SOTF_DEV_API_PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .map(|port| sotf_audio_player_tui::dev_api::start(port));
+
+    #[cfg(not(feature = "dev-api"))]
+    let dev_api_rx: Option<DevApiRx> = None;
+
     // Main loop
-    let result = run_app(&mut terminal, &mut app, &mut player, &mut media_controls);
+    let result = run_app(&mut terminal, &mut app, &mut player, &mut media_controls, dev_api_rx);
 
     // Save configuration before exit (skip in read-only mode)
     if !app.read_only
@@ -380,12 +392,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::process::exit(if result.is_ok() { 0 } else { 1 });
 }
 
+#[cfg(feature = "dev-api")]
+type DevApiRx = mpsc::Receiver<DevCommand>;
+#[cfg(not(feature = "dev-api"))]
+type DevApiRx = ();
+
 fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     player: &mut Player,
     media_controls: &mut Option<TuiMediaControls>,
+    dev_api_rx: Option<DevApiRx>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Silence unused-variable warning when dev-api is disabled.
+    let _ = dev_api_rx;
+
     // Initial media control update (important for macOS to see the app as a media player)
     update_media_controls(app, player, media_controls);
 
@@ -774,6 +795,15 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
             }
         }
 
+        // Process dev-api commands (debug builds only)
+        #[cfg(feature = "dev-api")]
+        if let Some(ref rx) = dev_api_rx {
+            while let Ok(cmd) = rx.try_recv() {
+                app.needs_redraw = true;
+                process_dev_command(app, player, media_controls, cmd);
+            }
+        }
+
         if app.should_quit {
             break;
         }
@@ -1062,3 +1092,173 @@ fn update_media_controls(
 
     mc.set_playback(playback);
 }
+
+#[cfg(feature = "dev-api")]
+fn process_dev_command(
+    app: &mut App,
+    player: &mut Player,
+    media_controls: &mut Option<TuiMediaControls>,
+    cmd: DevCommand,
+) {
+    use sotf_audio_player_tui::events::handle_key_event;
+
+    match cmd {
+        DevCommand::Action { name, payload: _, reply } => {
+            let result = dispatch_tui_action(app, &name);
+            let dev_reply = match result {
+                Ok(()) => DevReply::ok(),
+                Err(e) => DevReply::err(format!("{e:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::Query { path, reply } => {
+            let result = sotf_audio_player_tui::dev_api::queries::resolve(&path, app);
+            let dev_reply = match result {
+                Ok(value) => DevQueryReply::ok(value),
+                Err(e) => DevQueryReply::err(format!("{e:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::Key { keystroke, reply } => {
+            let result = parse_keystroke(&keystroke)
+                .map(|key| {
+                    if let Some(cmd) = handle_key_event(app, key) {
+                        if let Err(e) = handle_player_command(player, app, cmd) {
+                            log::error!("[dev-api] Player command error: {}", e);
+                            app.error_message = Some(e.to_string());
+                            app.enter_overlay_mode(InputMode::ShowError);
+                            app.is_playing = false;
+                        }
+                        update_media_controls(app, player, media_controls);
+                    }
+                    Ok(())
+                })
+                .unwrap_or_else(|e| Err(e));
+            let dev_reply = match result {
+                Ok(()) => DevReply::ok(),
+                Err(e) => DevReply::err(format!("{e:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::Health { reply } => {
+            let payload = serde_json::json!({
+                "ok": true,
+                "pid": std::process::id(),
+                "screen": format!("{:?}", app.current_screen),
+                "queue_length": app.queue.len(),
+            });
+            let _ = reply.send(DevQueryReply::ok(payload));
+        }
+        DevCommand::Quit { reply } => {
+            app.should_quit = true;
+            let _ = reply.send(DevReply::ok());
+        }
+        DevCommand::QaSeed { reply } => {
+            let _ = reply.send(DevReply::err("qa seed not yet implemented for TUI"));
+        }
+    }
+}
+
+#[cfg(feature = "dev-api")]
+fn dispatch_tui_action(app: &mut App, name: &str) -> anyhow::Result<()> {
+    match name {
+        "PlayPause" => {
+            app.is_playing = !app.is_playing;
+        }
+        "Stop" => {
+            app.is_playing = false;
+        }
+        "VolumeUp" => {
+            app.volume = (app.volume + 0.05).min(1.0);
+        }
+        "VolumeDown" => {
+            app.volume = (app.volume - 0.05).max(0.0);
+        }
+        "Mute" => {
+            app.muted = !app.muted;
+        }
+        "SwitchToLibrary" => {
+            app.current_screen = Screen::Library;
+            app.input_mode = InputMode::Normal;
+        }
+        "SwitchToQueue" => {
+            app.current_screen = Screen::Queue;
+            app.input_mode = InputMode::Normal;
+        }
+        "SwitchToConfigure" => {
+            app.current_screen = Screen::Configure;
+            app.input_mode = InputMode::Configure;
+        }
+        "SwitchToPlugins" => {
+            app.current_screen = Screen::Plugins;
+            app.input_mode = InputMode::Normal;
+        }
+        "SwitchToDevices" => {
+            app.current_screen = Screen::Devices;
+            app.input_mode = InputMode::Normal;
+        }
+        "SwitchToPlaylists" => {
+            app.current_screen = Screen::Playlists;
+            app.input_mode = InputMode::Normal;
+        }
+        _ => return Err(anyhow::anyhow!("unknown action: `{name}`")),
+    }
+    Ok(())
+}
+
+#[cfg(feature = "dev-api")]
+fn parse_keystroke(s: &str) -> anyhow::Result<KeyEvent> {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let mut modifiers = KeyModifiers::empty();
+    let mut code_str = s;
+
+    // Parse modifier prefixes (e.g. "ctrl-a", "shift-up")
+    if let Some(rest) = s.strip_prefix("ctrl-") {
+        modifiers |= KeyModifiers::CONTROL;
+        code_str = rest;
+    } else if let Some(rest) = s.strip_prefix("shift-") {
+        modifiers |= KeyModifiers::SHIFT;
+        code_str = rest;
+    } else if let Some(rest) = s.strip_prefix("alt-") {
+        modifiers |= KeyModifiers::ALT;
+        code_str = rest;
+    }
+
+    let code = match code_str {
+        "enter" | "return" => KeyCode::Enter,
+        "esc" | "escape" => KeyCode::Esc,
+        "tab" => KeyCode::Tab,
+        "backtab" => KeyCode::BackTab,
+        "space" => KeyCode::Char(' '),
+        "up" => KeyCode::Up,
+        "down" => KeyCode::Down,
+        "left" => KeyCode::Left,
+        "right" => KeyCode::Right,
+        "home" => KeyCode::Home,
+        "end" => KeyCode::End,
+        "pageup" => KeyCode::PageUp,
+        "pagedown" => KeyCode::PageDown,
+        "delete" | "del" => KeyCode::Delete,
+        "backspace" | "bs" => KeyCode::Backspace,
+        "insert" => KeyCode::Insert,
+        "f1" => KeyCode::F(1),
+        "f2" => KeyCode::F(2),
+        "f3" => KeyCode::F(3),
+        "f4" => KeyCode::F(4),
+        "f5" => KeyCode::F(5),
+        "f6" => KeyCode::F(6),
+        "f7" => KeyCode::F(7),
+        "f8" => KeyCode::F(8),
+        "f9" => KeyCode::F(9),
+        "f10" => KeyCode::F(10),
+        "f11" => KeyCode::F(11),
+        "f12" => KeyCode::F(12),
+        c if c.len() == 1 => KeyCode::Char(c.chars().next().unwrap()),
+        _ => return Err(anyhow::anyhow!("unknown keystroke: `{s}`")),
+    };
+
+    Ok(KeyEvent::new(code, modifiers))
+}
+
+

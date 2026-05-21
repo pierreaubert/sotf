@@ -1,8 +1,13 @@
 # sotf-dev-driver
 
-Scenario driver for the SotF GPUI dev API. Reads a line-based `.scn`
+Scenario driver for the SotF dev API. Reads a line-based `.scn`
 script and translates each verb into an HTTP call against a running
-`SotF` instance with the `dev-api` feature enabled.
+SotF instance with the `dev-api` feature enabled.
+
+Supported apps:
+- **GPUI** (`sotf-desktop`) — desktop GUI app (primary target)
+- **TUI** (`sotf-tui`) — terminal UI app (requires `dev-api` feature)
+- **CLI** (`player-cli`, `sotf-recorder-cli`) — tested via Rust integration tests in `crates/app-cli/tests/`
 
 ## Run a scenario
 
@@ -25,10 +30,30 @@ only start the HTTP endpoint when `--qa <dir>` is present.
 Override the URL with `--url http://127.0.0.1:9999`. Override the
 server port with `SOTF_DEV_API_PORT=9999`.
 
+## Run a TUI scenario
+
+The TUI app also exposes a dev API when compiled with the `dev-api`
+feature. Scenarios use the same `.scn` DSL as GPUI, but actions map to
+TUI state transitions instead of GPUI actions.
+
+```bash
+# Terminal 1: launch TUI with dev API
+cargo run -p sotf-tui --features dev-api --bin sotf-tui -- --qa "$QA_DIR"
+
+# Terminal 2: drive a scenario
+cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/tui_smoke.scn --url http://127.0.0.1:7777 -v
+```
+
+TUI-specific notes:
+- `action SwitchTo<Screen>` transitions between TUI screens (Library, Queue, Configure, Plugins, Devices, Playlists).
+- `key <keystroke>` synthesises crossterm key events (e.g. `enter`, `esc`, `ctrl-c`, `space`).
+- No `click` verb — TUI is keyboard-driven.
+- The suite runner supports TUI via `app_bin = "target/debug/sotf-tui"` in the suite TOML.
+
 ## Run a suite
 
-Suites start a fresh `sotf-desktop --qa <dir>` process per scenario,
-assign a free dev-api port, seed fixtures, run the `.scn`, collect app
+Suites start a fresh app process per scenario, assign a free dev-api
+port, seed fixtures (GPUI only), run the `.scn`, collect app
 stdout/stderr under `target/qa-gpui`, and then call `/quit`.
 
 ```bash
@@ -78,6 +103,25 @@ max_iter = 20
 population = 24
 start = true
 ```
+
+## CLI integration tests
+
+The CLI binaries (`player-cli` and `sotf-recorder-cli`) are tested via
+Rust integration tests in `crates/app-cli/tests/integration_tests.rs`.
+These tests invoke the actual compiled binaries and assert on exit codes,
+stdout, and stderr.
+
+```bash
+cargo test -p app-cli --test integration_tests
+```
+
+Covered commands:
+- `player-cli devices` — lists audio devices
+- `player-cli replay-gain <file>` — analyzes ReplayGain
+- `player-cli play <file>` — argument parsing with filters, rack, LUFS, loudness compensation
+- `player-cli play /nonexistent` — error handling
+- `sotf-recorder-cli --list-devices` — lists devices
+- `sotf-recorder-cli` — missing-arg validation, channel-config validation
 
 ## Per-screen scenarios
 

@@ -7,7 +7,7 @@ description = "tvOS (Apple TV) app shell for SOTF music player"
 
 [lib]
 name = "sotf_tvos"
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 gpui = { workspace = true }

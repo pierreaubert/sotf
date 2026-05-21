@@ -11227,6 +11227,7 @@ dependencies = [
 name = "sotf-tui"
 version = "0.5.205"
 dependencies = [
+ "anyhow",
  "autoeq",
  "chrono",
  "clap",

@@ -1,0 +1,94 @@
+# Full test matrix for all SOTF applications.
+#
+# This suite delegates to per-app suite files. Run the entire matrix with:
+#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/full_matrix.toml -v
+#
+# Individual app suites can also be run standalone:
+#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/smoke.toml -v
+#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/tui.toml -v
+
+[runner]
+app_bin = "target/debug/sotf-desktop"
+readiness_timeout = "20s"
+
+# ── GPUI scenarios ──────────────────────────────────────────────────────────
+
+[[scenario]]
+name = "gpui-smoke"
+path = "crates/sotf-dev-driver/scenarios/smoke.scn"
+timeout = "30s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-library"
+path = "crates/sotf-dev-driver/scenarios/library.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-studio"
+path = "crates/sotf-dev-driver/scenarios/studio.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-plugin-graph"
+path = "crates/sotf-dev-driver/scenarios/plugin_graph.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-recording"
+path = "crates/sotf-dev-driver/scenarios/recording.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-room-eq"
+path = "crates/sotf-dev-driver/scenarios/room_eq.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-headphone-eq"
+path = "crates/sotf-dev-driver/scenarios/headphone_eq.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-spinorama"
+path = "crates/sotf-dev-driver/scenarios/spinorama.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+# ── TUI scenarios ───────────────────────────────────────────────────────────
+
+[[scenario]]
+name = "tui-smoke"
+path = "crates/sotf-dev-driver/scenarios/tui_smoke.scn"
+timeout = "30s"
+tags = ["tui"]
+
+[[scenario]]
+name = "tui-library"
+path = "crates/sotf-dev-driver/scenarios/tui_library.scn"
+timeout = "10s"
+tags = ["tui"]
+
+[[scenario]]
+name = "tui-queue"
+path = "crates/sotf-dev-driver/scenarios/tui_queue.scn"
+timeout = "10s"
+tags = ["tui"]
+
+[[scenario]]
+name = "tui-plugins"
+path = "crates/sotf-dev-driver/scenarios/tui_plugins.scn"
+timeout = "10s"
+tags = ["tui"]
+
+[[scenario]]
+name = "tui-configure"
+path = "crates/sotf-dev-driver/scenarios/tui_configure.scn"
+timeout = "10s"
+tags = ["tui"]
