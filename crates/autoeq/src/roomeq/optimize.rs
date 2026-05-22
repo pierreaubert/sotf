@@ -100,7 +100,7 @@ type MixedModeResult = (
 /// within the measurement range and is tricked into returning a deep
 /// mid-band null. First-above / last-above indices are robust to both
 /// failure modes.
-/// B3 — warn when the optimizer frequency range is outside the measurement data.
+/// Warn when the optimizer frequency range is outside the measurement data.
 ///
 /// Filters can only be placed within the frequency span the measurement
 /// actually covers. If `min_freq` falls below the lowest measured frequency,
@@ -761,7 +761,7 @@ fn optimizer_progress_iterations(config: &RoomConfig) -> usize {
     }
 }
 
-/// I6 — debug-only sanity invariants on the final `RoomOptimizationResult`.
+/// Debug-only sanity invariants on the final `RoomOptimizationResult`.
 ///
 /// Catches silent corruption bugs that would otherwise produce garbage DSP
 /// chains (misaligned indexing, NaN fallout from the optimiser). A full
@@ -1858,9 +1858,9 @@ fn optimize_room_impl(
         .min(config.optimizer.max_iter.max(1));
     let pop_multiplier = desired_pop.div_ceil(n_free).max(4);
     let population_size = pop_multiplier * n_free;
-    // B6 — only apply the 5000-generation floor when the user's budget
-    // actually supports it; otherwise honour the requested max_iter so
-    // QA / benchmark runs don't silently exceed their evaluation budget.
+    // Only apply the 5000-generation floor when the user's budget actually
+    // supports it; otherwise honour the requested max_iter so QA / benchmark
+    // runs don't silently exceed their evaluation budget.
     // Mirrors `derive_de_budget` in `optim_de.rs`.
     const DE_GENERATIONS_FLOOR: usize = 5000;
     let computed_generations =

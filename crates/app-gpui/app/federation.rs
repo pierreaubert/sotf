@@ -8,6 +8,53 @@ use sotf_audio_player::federation_config::{
 };
 
 impl App {
+    fn save_federation_source_or_revert(
+        &mut self,
+        index: usize,
+        previous: FederationSourceEntry,
+        action: &str,
+    ) -> bool {
+        let result = self
+            .library_state
+            .library
+            .get_database()
+            .map(|db| db.save_federation_source(&self.federation.sources[index]))
+            .unwrap_or(Ok(()));
+
+        if let Err(e) = result {
+            self.federation.sources[index] = previous;
+            self.ui_state.toast_message = Some(ToastMessage::error(format!(
+                "Failed to {action}; restored previous source settings: {e}"
+            )));
+            return false;
+        }
+
+        true
+    }
+
+    fn persist_source_availability(
+        &mut self,
+        source_id: &str,
+        available: bool,
+        action: &str,
+    ) -> bool {
+        let result = self
+            .library_state
+            .library
+            .get_database()
+            .map(|db| db.set_source_availability(source_id, available))
+            .unwrap_or(Ok(()));
+
+        if let Err(e) = result {
+            self.ui_state.toast_message = Some(ToastMessage::error(format!(
+                "Failed to {action}; source availability was not saved: {e}"
+            )));
+            return false;
+        }
+
+        true
+    }
+
     /// Add a new federation source of the given type and persist to database.
     pub fn add_federation_source(&mut self, type_name: &str) {
         let source_id = format!("{}_{}", type_name, chrono::Utc::now().timestamp_millis());
@@ -59,12 +106,11 @@ impl App {
             return;
         }
 
+        let previous = self.federation.sources[index].clone();
         let source = &mut self.federation.sources[index];
         source.is_enabled = !source.is_enabled;
 
-        if let Some(db) = self.library_state.library.get_database() {
-            let _ = db.save_federation_source(source);
-        }
+        self.save_federation_source_or_revert(index, previous, "toggle federation source");
     }
 
     /// Update a field value on a federation source connection config.
@@ -78,12 +124,11 @@ impl App {
             return;
         }
 
+        let previous = self.federation.sources[source_index].clone();
         let source = &mut self.federation.sources[source_index];
         source.connection.set_field_value(field_index, value);
 
-        if let Some(db) = self.library_state.library.get_database() {
-            let _ = db.save_federation_source(source);
-        }
+        self.save_federation_source_or_revert(source_index, previous, "update federation source");
     }
 
     /// Update the display name of a federation source.
@@ -92,11 +137,10 @@ impl App {
             return;
         }
 
+        let previous = self.federation.sources[index].clone();
         self.federation.sources[index].display_name = name.to_string();
 
-        if let Some(db) = self.library_state.library.get_database() {
-            let _ = db.save_federation_source(&self.federation.sources[index]);
-        }
+        self.save_federation_source_or_revert(index, previous, "rename federation source");
     }
 
     /// Toggle MPD server enabled state and persist.
@@ -202,10 +246,7 @@ impl App {
             source.is_available = Some(available);
         }
 
-        // Persist to database
-        if let Some(db) = self.library_state.library.get_database() {
-            let _ = db.set_source_availability(source_id, available);
-        }
+        self.persist_source_availability(source_id, available, "save federation source status");
 
         self.federation
             .source_statuses
@@ -312,9 +353,11 @@ impl App {
             {
                 source.is_available = Some(false);
             }
-            if let Some(db) = self.library_state.library.get_database() {
-                let _ = db.set_source_availability(&result.source_id, false);
-            }
+            self.persist_source_availability(
+                &result.source_id,
+                false,
+                "save failed federation scan status",
+            );
         } else {
             self.ui_state.toast_message = Some(ToastMessage::success(format!(
                 "Scan complete: {} albums, {} tracks merged.",
@@ -328,9 +371,22 @@ impl App {
             {
                 source.is_available = Some(true);
             }
-            if let Some(db) = self.library_state.library.get_database() {
-                let _ = db.set_source_availability(&result.source_id, true);
-                let _ = db.update_federation_source_sync_time(&result.source_id);
+            if self.persist_source_availability(
+                &result.source_id,
+                true,
+                "save successful federation scan status",
+            ) {
+                let sync_result = self
+                    .library_state
+                    .library
+                    .get_database()
+                    .map(|db| db.update_federation_source_sync_time(&result.source_id))
+                    .unwrap_or(Ok(()));
+                if let Err(e) = sync_result {
+                    self.ui_state.toast_message = Some(ToastMessage::error(format!(
+                        "Scan completed, but failed to save source sync time: {e}"
+                    )));
+                }
             }
             if let Err(e) = self.load_library_from_database() {
                 log::error!("Failed to reload library after federation scan: {e}");

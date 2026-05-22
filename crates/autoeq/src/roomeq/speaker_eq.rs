@@ -264,7 +264,7 @@ pub(super) fn process_single_speaker(
         curve.freq[curve.freq.len() - 1]
     );
 
-    // B3 — warn when optimizer.{min,max}_freq falls outside the measurement.
+    // Warn when optimizer.{min,max}_freq falls outside the measurement.
     super::optimize::warn_if_optimizer_bounds_exceed_data(
         channel_name,
         &curve,

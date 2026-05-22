@@ -1013,7 +1013,7 @@ fn test_uuid_null_by_default() {
 }
 
 #[test]
-fn test_migration_19_in_history() {
+fn test_federation_migrations_in_history() {
     let (_temp_dir, db_path) = fixtures::temp_database();
     let db = MusicDatabase::open_for_testing(&db_path).unwrap();
 
@@ -1022,6 +1022,11 @@ fn test_migration_19_in_history() {
     assert!(
         versions.contains(&19),
         "Migration 19 should be in history, got: {:?}",
+        versions
+    );
+    assert!(
+        versions.contains(&20),
+        "Migration 20 should be in history, got: {:?}",
         versions
     );
 }
