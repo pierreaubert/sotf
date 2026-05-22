@@ -1849,6 +1849,7 @@ fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
         PluginType::TransientShaper => "transient_shaper",
         PluginType::Saturation => "saturation",
         PluginType::DynamicEq => "dynamic_eq",
+        PluginType::FirDesigner => "fir_designer",
         PluginType::LinearPhaseEq => "linear_phase_eq",
         PluginType::SpectralCompressor => "spectral_compressor",
     }
@@ -1890,6 +1891,7 @@ fn plugin_type_category(pt: &PluginType) -> &'static str {
         PluginType::TransientShaper => "Dynamics",
         PluginType::Saturation => "Effects",
         PluginType::DynamicEq => "Dynamics",
+        PluginType::FirDesigner => "EQ & Tone",
         PluginType::LinearPhaseEq => "EQ",
         PluginType::SpectralCompressor => "Dynamics",
     }
