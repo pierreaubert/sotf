@@ -69,6 +69,16 @@ type SpeakerProcessResult = std::result::Result<
     AutoeqError,
 >;
 
+struct GenericChannelCollection {
+    channel_chains: HashMap<String, ChannelDspChain>,
+    channel_results: HashMap<String, ChannelOptimizationResult>,
+    pre_scores: Vec<f64>,
+    post_scores: Vec<f64>,
+    curves: HashMap<String, crate::Curve>,
+    channel_means: HashMap<String, f64>,
+    channel_arrivals: HashMap<String, f64>,
+}
+
 /// Result type for mixed mode processing
 /// Returns: (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms, fir_coeffs)
 type MixedModeResult = (
@@ -737,6 +747,15 @@ fn progress_event(
     event
 }
 
+fn send_progress(
+    observer: &SharedPipelineObserver,
+    step_id: PipelineStepId,
+    status: PipelineStepStatus,
+    progress: &RoomOptimizationProgress,
+) -> Result<()> {
+    emit_pipeline_event(observer, progress_event(step_id, status, progress))
+}
+
 fn optimizer_progress_iterations(config: &RoomConfig) -> usize {
     let params_per_filter = match config.optimizer.peq_model.as_str() {
         "free" | "ls-pk-hs" => 4,
@@ -759,6 +778,489 @@ fn optimizer_progress_iterations(config: &RoomConfig) -> usize {
     } else {
         computed_generations.max(1)
     }
+}
+
+fn prepare_room_config(config: &RoomConfig) -> RoomConfig {
+    let mut config = config.clone();
+
+    // Resolve `TargetShape::FromMeasurement` slope once, system-wide,
+    // from a full-range reference channel — see
+    // `resolve_from_measurement_slope` for the picking rules. Lifting
+    // this out of the per-channel loop prevents band-limited channels
+    // (LFE, sub) from deriving a junk slope from their own rolled-off
+    // skirts.
+    if config
+        .optimizer
+        .target_response
+        .as_ref()
+        .is_some_and(|t| t.shape == TargetShape::FromMeasurement)
+        && config.optimizer.from_measurement_slope_override.is_none()
+    {
+        let resolved = resolve_from_measurement_slope(&config);
+        config.optimizer.from_measurement_slope_override = Some(resolved);
+    }
+
+    // Pre-fetch CEA2034 data for all speakers when speaker pre-correction is enabled
+    if config
+        .optimizer
+        .cea2034_correction
+        .as_ref()
+        .is_some_and(|c| c.enabled)
+    {
+        let cache = super::cea2034_correction::pre_fetch_all_cea2034(&config);
+        if !cache.is_empty() {
+            info!(
+                "  CEA2034 cache: loaded data for {} speaker(s)",
+                cache.len()
+            );
+            config.cea2034_cache = Some(cache);
+        }
+    }
+
+    config
+}
+
+fn validate_room_config_or_fail(config: &RoomConfig) -> Result<()> {
+    let validation = validate_room_config(config);
+    validation.print_results();
+    if !validation.is_valid {
+        return Err(AutoeqError::OptimizationFailed {
+            message: format!(
+                "Configuration validation failed with {} errors",
+                validation.errors.len()
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn channels_for_generic_optimization(config: &RoomConfig) -> Vec<(String, SpeakerConfig)> {
+    if let Some(sys) = &config.system {
+        info!("Using SystemConfig for channel mapping");
+        sys.speakers
+            .iter()
+            .filter_map(|(role, key)| match config.speakers.get(key) {
+                Some(cfg) => Some((role.clone(), cfg.clone())),
+                None => {
+                    warn!(
+                        "System config references missing speaker key '{}' for role '{}'",
+                        key, role
+                    );
+                    None
+                }
+            })
+            .collect()
+    } else {
+        config
+            .speakers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+}
+
+fn compute_shared_mean_spl(
+    config: &RoomConfig,
+    channels_to_process: &[(String, SpeakerConfig)],
+) -> Option<f64> {
+    if channels_to_process.len() <= 1 {
+        return None;
+    }
+
+    let min_freq = config.optimizer.min_freq;
+    let max_freq = config.optimizer.max_freq;
+    let mut channel_means: Vec<f64> = Vec::new();
+    let mut excluded_group_count = 0_usize;
+
+    for (_name, speaker_config) in channels_to_process {
+        if let SpeakerConfig::Single(source) = speaker_config
+            && let Ok(curve) = crate::read::load_source(source)
+        {
+            let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
+            let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
+            let mean = compute_average_response(
+                &freqs_f32,
+                &spl_f32,
+                Some((min_freq as f32, max_freq as f32)),
+            ) as f64;
+            channel_means.push(mean);
+        } else if !matches!(speaker_config, SpeakerConfig::Single(_)) {
+            excluded_group_count += 1;
+        }
+    }
+
+    if excluded_group_count > 0 {
+        info!(
+            "Shared mean pre-pass: {} non-Single speaker(s) excluded (Group/MultiSub/DBA/Cardioid)",
+            excluded_group_count
+        );
+    }
+
+    if channel_means.len() > 1 {
+        let avg = shared_target_level(&channel_means);
+        info!(
+            "Shared target level: {:.1} dB (robust center of {} channels)",
+            avg,
+            channel_means.len()
+        );
+        Some(avg)
+    } else {
+        None
+    }
+}
+
+fn generic_channel_progress_iterations(config: &RoomConfig) -> usize {
+    let params_per_filter = match config.optimizer.peq_model.as_str() {
+        "free" | "ls-pk-hs" => 4,
+        _ => 3,
+    };
+    let n_params = config.optimizer.num_filters * params_per_filter;
+    let n_free = n_params.max(1); // all params are free in standard EQ
+    let desired_pop = config
+        .optimizer
+        .population
+        .max(1)
+        .min(config.optimizer.max_iter.max(1));
+    let pop_multiplier = desired_pop.div_ceil(n_free).max(4);
+    let population_size = pop_multiplier * n_free;
+    // Only apply the 5000-generation floor when the user's budget actually
+    // supports it; otherwise honour the requested max_iter so QA / benchmark
+    // runs don't silently exceed their evaluation budget.
+    // Mirrors `derive_de_budget` in `optim_de.rs`.
+    const DE_GENERATIONS_FLOOR: usize = 5000;
+    let computed_generations =
+        config.optimizer.max_iter.saturating_sub(population_size) / population_size;
+    let budget_supports_floor =
+        config.optimizer.max_iter >= DE_GENERATIONS_FLOOR.saturating_mul(population_size);
+    let max_iterations = if budget_supports_floor {
+        computed_generations.max(DE_GENERATIONS_FLOOR)
+    } else {
+        let capped = computed_generations.max(1);
+        if config.optimizer.max_iter > 0 && capped < DE_GENERATIONS_FLOOR {
+            warn!(
+                "DE budget: max_iter={} with population_size={} is below the {} generation floor × pop. \
+                 Running {} generations — expect degraded convergence. Raise max_iter to {} to regain the floor.",
+                config.optimizer.max_iter,
+                population_size,
+                DE_GENERATIONS_FLOOR,
+                capped,
+                DE_GENERATIONS_FLOOR.saturating_mul(population_size),
+            );
+        }
+        capped
+    };
+    info!(
+        "DE budget: {} params, population_size={}, max_generations={} (from max_iter={}, floor={} when budget allows)",
+        n_params, population_size, max_iterations, config.optimizer.max_iter, DE_GENERATIONS_FLOOR,
+    );
+    max_iterations
+}
+
+fn process_generic_channels(
+    channels_to_process: Vec<(String, SpeakerConfig)>,
+    config: &RoomConfig,
+    sample_rate: f64,
+    output_dir: Option<&Path>,
+    shared_mean_spl: Option<f64>,
+    probe_arrival_overrides: Option<&HashMap<String, f64>>,
+    observer_shared: &SharedPipelineObserver,
+) -> Result<Vec<SpeakerProcessResult>> {
+    let total_speakers = channels_to_process.len();
+
+    send_progress(
+        observer_shared,
+        PipelineStepId::GenericChannelOptimization,
+        PipelineStepStatus::Started,
+        &RoomOptimizationProgress {
+            current_speaker: String::new(),
+            speaker_index: 0,
+            total_speakers,
+            iteration: 0,
+            max_iterations: 0,
+            loss: 0.0,
+            overall_progress: 0.0,
+            message: Some(format!(
+                "Starting optimization for {} channels",
+                total_speakers
+            )),
+            epa_preference: None,
+            step_id: None,
+            step_status: None,
+        },
+    )?;
+
+    // Compute actual DE generation budget for accurate progress display.
+    // The DE callback reports generation numbers, not function evals.
+    // Formula mirrors optim_de::derive_de_budget.
+    let max_iterations = generic_channel_progress_iterations(config);
+
+    let mut results: Vec<SpeakerProcessResult> = Vec::with_capacity(total_speakers);
+    for (speaker_idx, (channel_name, speaker_config)) in channels_to_process.into_iter().enumerate()
+    {
+        info!("Processing channel: {}", channel_name);
+
+        send_progress(
+            observer_shared,
+            PipelineStepId::GenericChannelOptimization,
+            PipelineStepStatus::InProgress,
+            &RoomOptimizationProgress {
+                current_speaker: channel_name.clone(),
+                speaker_index: speaker_idx,
+                total_speakers,
+                iteration: 0,
+                max_iterations: 0,
+                loss: 0.0,
+                overall_progress: speaker_idx as f64 / total_speakers as f64,
+                message: Some(format!("Processing channel: {}", channel_name)),
+                epa_preference: None,
+                step_id: None,
+                step_status: None,
+            },
+        )?;
+
+        let eq_callback: Option<crate::optim::OptimProgressCallback> = {
+            let observer = Arc::clone(observer_shared);
+            let name = channel_name.clone();
+            let si = speaker_idx;
+            let ts = total_speakers;
+            let mi = max_iterations;
+            Some(Box::new(move |iter: usize, loss: f64, epa: Option<f64>| {
+                let base_progress = si as f64 / ts as f64;
+                let speaker_progress = if mi > 0 { iter as f64 / mi as f64 } else { 0.0 };
+                let overall = (base_progress + speaker_progress / ts as f64).min(1.0);
+
+                match send_progress(
+                    &observer,
+                    PipelineStepId::GenericChannelOptimization,
+                    PipelineStepStatus::InProgress,
+                    &RoomOptimizationProgress {
+                        current_speaker: name.clone(),
+                        speaker_index: si,
+                        total_speakers: ts,
+                        iteration: iter,
+                        max_iterations: mi,
+                        loss,
+                        overall_progress: overall,
+                        message: None,
+                        epa_preference: epa,
+                        step_id: None,
+                        step_status: None,
+                    },
+                ) {
+                    Ok(()) => crate::de::CallbackAction::Continue,
+                    Err(_) => crate::de::CallbackAction::Stop,
+                }
+            }))
+        };
+
+        let result = process_speaker_internal(
+            &channel_name,
+            &speaker_config,
+            config,
+            sample_rate,
+            output_dir,
+            eq_callback,
+            shared_mean_spl,
+            probe_arrival_overrides,
+        );
+
+        match result {
+            Ok((
+                chain,
+                pre_score,
+                post_score,
+                initial_curve,
+                final_curve,
+                biquads,
+                mean_spl,
+                arrival_time_ms,
+                fir_coeffs,
+            )) => {
+                send_progress(
+                    observer_shared,
+                    PipelineStepId::GenericChannelOptimization,
+                    PipelineStepStatus::InProgress,
+                    &RoomOptimizationProgress {
+                        current_speaker: channel_name.clone(),
+                        speaker_index: speaker_idx,
+                        total_speakers,
+                        iteration: 0,
+                        max_iterations: 0,
+                        loss: post_score,
+                        overall_progress: (speaker_idx + 1) as f64 / total_speakers as f64,
+                        message: Some(format!(
+                            "Channel {}: {:.4} -> {:.4}",
+                            channel_name, pre_score, post_score
+                        )),
+                        epa_preference: None,
+                        step_id: None,
+                        step_status: None,
+                    },
+                )?;
+
+                results.push(Ok((
+                    channel_name,
+                    chain,
+                    pre_score,
+                    post_score,
+                    initial_curve,
+                    final_curve,
+                    biquads,
+                    mean_spl,
+                    arrival_time_ms,
+                    fir_coeffs,
+                )));
+            }
+            Err(e) => {
+                results.push(Err(e));
+            }
+        }
+    }
+
+    send_progress(
+        observer_shared,
+        PipelineStepId::GenericChannelOptimization,
+        PipelineStepStatus::Completed,
+        &RoomOptimizationProgress {
+            current_speaker: String::new(),
+            speaker_index: total_speakers,
+            total_speakers,
+            iteration: 0,
+            max_iterations: 0,
+            loss: 0.0,
+            overall_progress: 0.90,
+            message: Some(format!("Optimized {} channels", total_speakers)),
+            epa_preference: None,
+            step_id: None,
+            step_status: None,
+        },
+    )?;
+
+    Ok(results)
+}
+
+fn collect_generic_channel_results(
+    results: Vec<SpeakerProcessResult>,
+    config: &RoomConfig,
+    sample_rate: f64,
+    output_dir: Option<&Path>,
+    total_speakers: usize,
+    observer_shared: &SharedPipelineObserver,
+) -> Result<GenericChannelCollection> {
+    let mut channel_chains: HashMap<String, ChannelDspChain> = HashMap::new();
+    let mut channel_results: HashMap<String, ChannelOptimizationResult> = HashMap::new();
+    let mut pre_scores: Vec<f64> = Vec::new();
+    let mut post_scores: Vec<f64> = Vec::new();
+    let mut curves: HashMap<String, crate::Curve> = HashMap::new();
+    let mut channel_means: HashMap<String, f64> = HashMap::new();
+    let mut channel_arrivals: HashMap<String, f64> = HashMap::new();
+
+    for res in results {
+        let (
+            channel_name,
+            chain,
+            pre_score,
+            post_score,
+            initial_curve,
+            final_curve,
+            biquads,
+            mean_spl,
+            arrival_time_ms,
+            fir_coeffs,
+        ) = res?;
+
+        channel_chains.insert(channel_name.clone(), chain);
+        curves.insert(channel_name.clone(), final_curve.clone());
+        pre_scores.push(pre_score);
+        post_scores.push(post_score);
+        channel_means.insert(channel_name.clone(), mean_spl);
+        if let Some(arrival_ms) = arrival_time_ms {
+            channel_arrivals.insert(channel_name.clone(), arrival_ms);
+        }
+
+        // Post-generate FIR coefficients for channels that need them but don't have them
+        // (e.g., speaker groups that only support IIR internally)
+        let mut post_generated_fir: Option<Vec<f64>> = None;
+        let fir_coeffs = if fir_coeffs.is_none()
+            && !matches!(
+                config.optimizer.processing_mode,
+                ProcessingMode::LowLatency | ProcessingMode::MixedPhase
+            ) {
+            send_progress(
+                observer_shared,
+                PipelineStepId::FirGeneration,
+                PipelineStepStatus::Started,
+                &RoomOptimizationProgress {
+                    current_speaker: format!("FIR: {}", channel_name),
+                    speaker_index: 0,
+                    total_speakers,
+                    iteration: 0,
+                    max_iterations: 0,
+                    loss: 0.0,
+                    overall_progress: 0.95,
+                    message: Some(format!(
+                        "Generating FIR coefficients for {}...",
+                        channel_name
+                    )),
+                    epa_preference: None,
+                    step_id: None,
+                    step_status: None,
+                },
+            )?;
+            let generated = post_generate_fir(
+                &channel_name,
+                &initial_curve,
+                &final_curve,
+                &config.optimizer,
+                config.target_curve.as_ref(),
+                sample_rate,
+                output_dir,
+            );
+            post_generated_fir = generated.clone();
+            generated
+        } else {
+            fir_coeffs
+        };
+
+        channel_results.insert(
+            channel_name.clone(),
+            ChannelOptimizationResult {
+                name: channel_name.clone(),
+                pre_score,
+                post_score,
+                initial_curve,
+                final_curve,
+                biquads,
+                fir_coeffs,
+            },
+        );
+
+        if let Some(coeffs) = post_generated_fir {
+            if let Some(chain) = channel_chains.get_mut(&channel_name) {
+                let filename = format!("{}_fir.wav", channel_name);
+                chain
+                    .plugins
+                    .push(super::output::create_convolution_plugin(&filename));
+            }
+            sync_reported_fir_adjustment(
+                &channel_name,
+                &mut channel_results,
+                &mut channel_chains,
+                &coeffs,
+                sample_rate,
+            );
+        }
+    }
+
+    Ok(GenericChannelCollection {
+        curves: collect_current_final_curves(&channel_results),
+        channel_chains,
+        channel_results,
+        pre_scores,
+        post_scores,
+        channel_means,
+        channel_arrivals,
+    })
 }
 
 /// Debug-only sanity invariants on the final `RoomOptimizationResult`.
@@ -978,41 +1480,7 @@ fn optimize_room_impl(
         ),
     )?;
 
-    let mut config = config.clone();
-
-    // Resolve `TargetShape::FromMeasurement` slope once, system-wide,
-    // from a full-range reference channel — see
-    // `resolve_from_measurement_slope` for the picking rules. Lifting
-    // this out of the per-channel loop prevents band-limited channels
-    // (LFE, sub) from deriving a junk slope from their own rolled-off
-    // skirts.
-    if config
-        .optimizer
-        .target_response
-        .as_ref()
-        .is_some_and(|t| t.shape == TargetShape::FromMeasurement)
-        && config.optimizer.from_measurement_slope_override.is_none()
-    {
-        let resolved = resolve_from_measurement_slope(&config);
-        config.optimizer.from_measurement_slope_override = Some(resolved);
-    }
-
-    // Pre-fetch CEA2034 data for all speakers when speaker pre-correction is enabled
-    if config
-        .optimizer
-        .cea2034_correction
-        .as_ref()
-        .is_some_and(|c| c.enabled)
-    {
-        let cache = super::cea2034_correction::pre_fetch_all_cea2034(&config);
-        if !cache.is_empty() {
-            info!(
-                "  CEA2034 cache: loaded data for {} speaker(s)",
-                cache.len()
-            );
-            config.cea2034_cache = Some(cache);
-        }
-    }
+    let config = prepare_room_config(config);
 
     emit_pipeline_event(
         &observer_shared,
@@ -1029,30 +1497,11 @@ fn optimize_room_impl(
         &observer_shared,
         PipelineEvent::started(PipelineStepId::Validation, "Validating room configuration"),
     )?;
-    let validation = validate_room_config(config);
-    validation.print_results();
-    if !validation.is_valid {
-        return Err(AutoeqError::OptimizationFailed {
-            message: format!(
-                "Configuration validation failed with {} errors",
-                validation.errors.len()
-            ),
-        });
-    }
+    validate_room_config_or_fail(config)?;
     emit_pipeline_event(
         &observer_shared,
         PipelineEvent::completed(PipelineStepId::Validation, "Room configuration validated"),
     )?;
-
-    /// Helper to invoke the observer if present.
-    fn send_progress(
-        observer: &SharedPipelineObserver,
-        step_id: PipelineStepId,
-        status: PipelineStepStatus,
-        progress: &RoomOptimizationProgress,
-    ) -> Result<()> {
-        emit_pipeline_event(observer, progress_event(step_id, status, progress))
-    }
 
     emit_pipeline_event(
         &observer_shared,
@@ -1737,408 +2186,37 @@ fn optimize_room_impl(
         ),
     )?;
 
-    // Determine channels to process based on system config or legacy config
-    // Returns list of (output_channel_name, speaker_config)
-    let channels_to_process: Vec<(String, SpeakerConfig)> = if let Some(sys) = &config.system {
-        info!("Using SystemConfig for channel mapping");
-        sys.speakers
-            .iter()
-            .filter_map(|(role, key)| match config.speakers.get(key) {
-                Some(cfg) => Some((role.clone(), cfg.clone())),
-                None => {
-                    warn!(
-                        "System config references missing speaker key '{}' for role '{}'",
-                        key, role
-                    );
-                    None
-                }
-            })
-            .collect()
-    } else {
-        config
-            .speakers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect()
-    };
-
+    let channels_to_process = channels_for_generic_optimization(config);
     let total_speakers = channels_to_process.len();
     info!("Processing {} channels", total_speakers);
 
-    // ========================================================================
-    // Pre-pass: compute shared average response level across all channels
-    // ========================================================================
-    // When multiple channels are present, load each Single-channel measurement
-    // and compute its mean SPL. The cross-channel average becomes a shared
-    // target reference level so every channel optimizes toward the SAME level,
-    // naturally reducing inter-channel deviation at the source.
-    let shared_mean_spl: Option<f64> = if total_speakers > 1 {
-        let min_freq = config.optimizer.min_freq;
-        let max_freq = config.optimizer.max_freq;
-        let mut channel_means: Vec<f64> = Vec::new();
-        let mut excluded_group_count = 0_usize;
-
-        for (_name, speaker_config) in &channels_to_process {
-            if let SpeakerConfig::Single(source) = speaker_config
-                && let Ok(curve) = crate::read::load_source(source)
-            {
-                let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
-                let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
-                let mean = compute_average_response(
-                    &freqs_f32,
-                    &spl_f32,
-                    Some((min_freq as f32, max_freq as f32)),
-                ) as f64;
-                channel_means.push(mean);
-            } else if !matches!(speaker_config, SpeakerConfig::Single(_)) {
-                excluded_group_count += 1;
-            }
-        }
-
-        if excluded_group_count > 0 {
-            info!(
-                "Shared mean pre-pass: {} non-Single speaker(s) excluded (Group/MultiSub/DBA/Cardioid)",
-                excluded_group_count
-            );
-        }
-
-        if channel_means.len() > 1 {
-            let avg = shared_target_level(&channel_means);
-            info!(
-                "Shared target level: {:.1} dB (robust center of {} channels)",
-                avg,
-                channel_means.len()
-            );
-            Some(avg)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    send_progress(
+    let shared_mean_spl = compute_shared_mean_spl(config, &channels_to_process);
+    let results = process_generic_channels(
+        channels_to_process,
+        config,
+        sample_rate,
+        output_dir,
+        shared_mean_spl,
+        probe_arrival_overrides,
         &observer_shared,
-        PipelineStepId::GenericChannelOptimization,
-        PipelineStepStatus::Started,
-        &RoomOptimizationProgress {
-            current_speaker: String::new(),
-            speaker_index: 0,
-            total_speakers,
-            iteration: 0,
-            max_iterations: 0,
-            loss: 0.0,
-            overall_progress: 0.0,
-            message: Some(format!(
-                "Starting optimization for {} channels",
-                total_speakers
-            )),
-            epa_preference: None,
-            step_id: None,
-            step_status: None,
-        },
     )?;
 
-    // Process each speaker sequentially so we can report progress.
-    // Wrap the observer in Arc<Mutex> so we can create per-speaker OptimProgressCallbacks.
-    //
-    // Compute actual DE generation budget for accurate progress display.
-    // The DE callback reports generation numbers, not function evals.
-    // Formula mirrors optim_de::derive_de_budget.
-    let params_per_filter = match config.optimizer.peq_model.as_str() {
-        "free" | "ls-pk-hs" => 4,
-        _ => 3,
-    };
-    let n_params = config.optimizer.num_filters * params_per_filter;
-    let n_free = n_params.max(1); // all params are free in standard EQ
-    let desired_pop = config
-        .optimizer
-        .population
-        .max(1)
-        .min(config.optimizer.max_iter.max(1));
-    let pop_multiplier = desired_pop.div_ceil(n_free).max(4);
-    let population_size = pop_multiplier * n_free;
-    // Only apply the 5000-generation floor when the user's budget actually
-    // supports it; otherwise honour the requested max_iter so QA / benchmark
-    // runs don't silently exceed their evaluation budget.
-    // Mirrors `derive_de_budget` in `optim_de.rs`.
-    const DE_GENERATIONS_FLOOR: usize = 5000;
-    let computed_generations =
-        config.optimizer.max_iter.saturating_sub(population_size) / population_size;
-    let budget_supports_floor =
-        config.optimizer.max_iter >= DE_GENERATIONS_FLOOR.saturating_mul(population_size);
-    let max_iterations = if budget_supports_floor {
-        computed_generations.max(DE_GENERATIONS_FLOOR)
-    } else {
-        let capped = computed_generations.max(1);
-        if config.optimizer.max_iter > 0 && capped < DE_GENERATIONS_FLOOR {
-            warn!(
-                "DE budget: max_iter={} with population_size={} is below the {} generation floor × pop. \
-                 Running {} generations — expect degraded convergence. Raise max_iter to {} to regain the floor.",
-                config.optimizer.max_iter,
-                population_size,
-                DE_GENERATIONS_FLOOR,
-                capped,
-                DE_GENERATIONS_FLOOR.saturating_mul(population_size),
-            );
-        }
-        capped
-    };
-    info!(
-        "DE budget: {} params, population_size={}, max_generations={} (from max_iter={}, floor={} when budget allows)",
-        n_params, population_size, max_iterations, config.optimizer.max_iter, DE_GENERATIONS_FLOOR,
-    );
-
-    let mut results: Vec<SpeakerProcessResult> = Vec::with_capacity(total_speakers);
-    for (speaker_idx, (channel_name, speaker_config)) in channels_to_process.into_iter().enumerate()
-    {
-        info!("Processing channel: {}", channel_name);
-
-        send_progress(
-            &observer_shared,
-            PipelineStepId::GenericChannelOptimization,
-            PipelineStepStatus::InProgress,
-            &RoomOptimizationProgress {
-                current_speaker: channel_name.clone(),
-                speaker_index: speaker_idx,
-                total_speakers,
-                iteration: 0,
-                max_iterations: 0,
-                loss: 0.0,
-                overall_progress: speaker_idx as f64 / total_speakers as f64,
-                message: Some(format!("Processing channel: {}", channel_name)),
-                epa_preference: None,
-                step_id: None,
-                step_status: None,
-            },
-        )?;
-
-        // Create a per-speaker OptimProgressCallback that forwards to the pipeline observer.
-        let eq_callback: Option<crate::optim::OptimProgressCallback> = {
-            let observer = Arc::clone(&observer_shared);
-            let name = channel_name.clone();
-            let si = speaker_idx;
-            let ts = total_speakers;
-            let mi = max_iterations;
-            Some(Box::new(move |iter: usize, loss: f64, epa: Option<f64>| {
-                let base_progress = si as f64 / ts as f64;
-                let speaker_progress = if mi > 0 { iter as f64 / mi as f64 } else { 0.0 };
-                let overall = (base_progress + speaker_progress / ts as f64).min(1.0);
-
-                match send_progress(
-                    &observer,
-                    PipelineStepId::GenericChannelOptimization,
-                    PipelineStepStatus::InProgress,
-                    &RoomOptimizationProgress {
-                        current_speaker: name.clone(),
-                        speaker_index: si,
-                        total_speakers: ts,
-                        iteration: iter,
-                        max_iterations: mi,
-                        loss,
-                        overall_progress: overall,
-                        message: None,
-                        epa_preference: epa,
-                        step_id: None,
-                        step_status: None,
-                    },
-                ) {
-                    Ok(()) => crate::de::CallbackAction::Continue,
-                    Err(_) => crate::de::CallbackAction::Stop,
-                }
-            }))
-        };
-
-        let result = process_speaker_internal(
-            &channel_name,
-            &speaker_config,
-            config,
-            sample_rate,
-            output_dir,
-            eq_callback,
-            shared_mean_spl,
-            probe_arrival_overrides,
-        );
-
-        match result {
-            Ok((
-                chain,
-                pre_score,
-                post_score,
-                initial_curve,
-                final_curve,
-                biquads,
-                mean_spl,
-                arrival_time_ms,
-                fir_coeffs,
-            )) => {
-                send_progress(
-                    &observer_shared,
-                    PipelineStepId::GenericChannelOptimization,
-                    PipelineStepStatus::InProgress,
-                    &RoomOptimizationProgress {
-                        current_speaker: channel_name.clone(),
-                        speaker_index: speaker_idx,
-                        total_speakers,
-                        iteration: 0,
-                        max_iterations: 0,
-                        loss: post_score,
-                        overall_progress: (speaker_idx + 1) as f64 / total_speakers as f64,
-                        message: Some(format!(
-                            "Channel {}: {:.4} -> {:.4}",
-                            channel_name, pre_score, post_score
-                        )),
-                        epa_preference: None,
-                        step_id: None,
-                        step_status: None,
-                    },
-                )?;
-
-                results.push(Ok((
-                    channel_name,
-                    chain,
-                    pre_score,
-                    post_score,
-                    initial_curve,
-                    final_curve,
-                    biquads,
-                    mean_spl,
-                    arrival_time_ms,
-                    fir_coeffs,
-                )));
-            }
-            Err(e) => {
-                results.push(Err(e));
-            }
-        }
-    }
-
-    send_progress(
+    let GenericChannelCollection {
+        mut channel_chains,
+        mut channel_results,
+        pre_scores,
+        post_scores,
+        mut curves,
+        channel_means,
+        mut channel_arrivals,
+    } = collect_generic_channel_results(
+        results,
+        config,
+        sample_rate,
+        output_dir,
+        total_speakers,
         &observer_shared,
-        PipelineStepId::GenericChannelOptimization,
-        PipelineStepStatus::Completed,
-        &RoomOptimizationProgress {
-            current_speaker: String::new(),
-            speaker_index: total_speakers,
-            total_speakers,
-            iteration: 0,
-            max_iterations: 0,
-            loss: 0.0,
-            overall_progress: 0.90,
-            message: Some(format!("Optimized {} channels", total_speakers)),
-            epa_preference: None,
-            step_id: None,
-            step_status: None,
-        },
     )?;
-
-    // Collect results
-    let mut channel_chains: HashMap<String, ChannelDspChain> = HashMap::new();
-    let mut channel_results: HashMap<String, ChannelOptimizationResult> = HashMap::new();
-    let mut pre_scores: Vec<f64> = Vec::new();
-    let mut post_scores: Vec<f64> = Vec::new();
-    let mut curves: HashMap<String, crate::Curve> = HashMap::new();
-    let mut channel_means: HashMap<String, f64> = HashMap::new();
-    let mut channel_arrivals: HashMap<String, f64> = HashMap::new();
-
-    for res in results {
-        let (
-            channel_name,
-            chain,
-            pre_score,
-            post_score,
-            initial_curve,
-            final_curve,
-            biquads,
-            mean_spl,
-            arrival_time_ms,
-            fir_coeffs,
-        ) = res?;
-
-        channel_chains.insert(channel_name.clone(), chain);
-        curves.insert(channel_name.clone(), final_curve.clone());
-        pre_scores.push(pre_score);
-        post_scores.push(post_score);
-        channel_means.insert(channel_name.clone(), mean_spl);
-        if let Some(arrival_ms) = arrival_time_ms {
-            channel_arrivals.insert(channel_name.clone(), arrival_ms);
-        }
-
-        // Post-generate FIR coefficients for channels that need them but don't have them
-        // (e.g., speaker groups that only support IIR internally)
-        let mut post_generated_fir: Option<Vec<f64>> = None;
-        let fir_coeffs = if fir_coeffs.is_none()
-            && !matches!(
-                config.optimizer.processing_mode,
-                ProcessingMode::LowLatency | ProcessingMode::MixedPhase
-            ) {
-            send_progress(
-                &observer_shared,
-                PipelineStepId::FirGeneration,
-                PipelineStepStatus::Started,
-                &RoomOptimizationProgress {
-                    current_speaker: format!("FIR: {}", channel_name),
-                    speaker_index: 0,
-                    total_speakers,
-                    iteration: 0,
-                    max_iterations: 0,
-                    loss: 0.0,
-                    overall_progress: 0.95,
-                    message: Some(format!(
-                        "Generating FIR coefficients for {}...",
-                        channel_name
-                    )),
-                    epa_preference: None,
-                    step_id: None,
-                    step_status: None,
-                },
-            )?;
-            let generated = post_generate_fir(
-                &channel_name,
-                &initial_curve,
-                &final_curve,
-                &config.optimizer,
-                config.target_curve.as_ref(),
-                sample_rate,
-                output_dir,
-            );
-            post_generated_fir = generated.clone();
-            generated
-        } else {
-            fir_coeffs
-        };
-
-        channel_results.insert(
-            channel_name.clone(),
-            ChannelOptimizationResult {
-                name: channel_name.clone(),
-                pre_score,
-                post_score,
-                initial_curve,
-                final_curve,
-                biquads,
-                fir_coeffs,
-            },
-        );
-
-        if let Some(coeffs) = post_generated_fir {
-            if let Some(chain) = channel_chains.get_mut(&channel_name) {
-                let filename = format!("{}_fir.wav", channel_name);
-                chain
-                    .plugins
-                    .push(super::output::create_convolution_plugin(&filename));
-            }
-            sync_reported_fir_adjustment(
-                &channel_name,
-                &mut channel_results,
-                &mut channel_chains,
-                &coeffs,
-                sample_rate,
-            );
-        }
-    }
-
-    curves = collect_current_final_curves(&channel_results);
 
     // Auto IR sync: if no WAV-based arrivals were collected, estimate from phase data.
     // Runs unconditionally (does not require allow_delay = true).
