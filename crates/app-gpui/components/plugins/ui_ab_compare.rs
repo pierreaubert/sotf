@@ -6,7 +6,7 @@
 use crate::app::state::plugin::ABPathTarget;
 use crate::components::design::Ds;
 use crate::components::plugins::actions::{
-    ABPathAddPlugin, ABPathMovePlugin, ABPathRemovePlugin, ABPathToggleAddMenu,
+    ABPathAddPlugin, ABPathMovePlugin, ABPathRemovePlugin, ABPathToggleAddMenu, OpenAbConfigFile,
 };
 use crate::components::plugins::custom_view_registry::CustomViewRenderContext;
 use crate::theme::Theme;
@@ -26,6 +26,8 @@ pub fn render_ab_compare(
     let plugin_idx = ctx.plugin_idx;
     let path_a = state.app.plugin_state.ab_path_a.clone();
     let path_b = state.app.plugin_state.ab_path_b.clone();
+    let path_a_file = state.app.plugin_state.ab_compare_file_a.clone();
+    let path_b_file = state.app.plugin_state.ab_compare_file_b.clone();
     let add_menu_target = state.app.plugin_state.ab_add_menu_target;
 
     div()
@@ -43,6 +45,7 @@ pub fn render_ab_compare(
                     0,
                     plugin_idx,
                     &path_a,
+                    path_a_file.as_deref(),
                     add_menu_target == Some(ABPathTarget::A),
                     ctx.theme,
                     cx,
@@ -52,6 +55,7 @@ pub fn render_ab_compare(
                     1,
                     plugin_idx,
                     &path_b,
+                    path_b_file.as_deref(),
                     add_menu_target == Some(ABPathTarget::B),
                     ctx.theme,
                     cx,
@@ -65,6 +69,7 @@ fn render_path_section(
     path: u8,
     plugin_idx: usize,
     plugins: &[PluginInRack],
+    loaded_config_file: Option<&str>,
     add_menu_open: bool,
     theme: &Theme,
     cx: &mut Context<PlayerView>,
@@ -87,30 +92,76 @@ fn render_path_section(
             .flex()
             .items_center()
             .justify_between()
-            .child(Text::eyebrow(label.to_string()).color(theme.text_primary))
-            .child(Text::caption(format!(
-                "{} plugin{}",
-                plugins.len(),
-                if plugins.len() == 1 { "" } else { "s" }
-            )))
             .child(
-                Button::new(SharedString::from(format!("ab-add-{path}")), "+")
-                    .aria_label("Add plugin for comparison")
-                    .variant(if add_menu_open {
-                        ButtonVariant::Primary
-                    } else {
-                        ButtonVariant::Secondary
-                    })
-                    .size(ButtonSize::Xs)
-                    .theme(theme.to_button_theme())
-                    .on_click_event(cx.listener(move |_view, _: &ClickEvent, window, cx| {
-                        window.dispatch_action(
-                            Box::new(ABPathToggleAddMenu { plugin_idx, path }),
-                            cx,
-                        );
-                    })),
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(Text::eyebrow(label.to_string()).color(theme.text_primary))
+                    .child(Text::caption(format!(
+                        "{} plugin{}",
+                        plugins.len(),
+                        if plugins.len() == 1 { "" } else { "s" }
+                    ))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(d.grid)
+                    .child(
+                        Button::new(SharedString::from(format!("ab-load-{path}")), "Load")
+                            .aria_label(format!("{label} config file"))
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(
+                                move |_view, _: &ClickEvent, window, cx| {
+                                    window.dispatch_action(
+                                        Box::new(OpenAbConfigFile {
+                                            plugin_idx,
+                                            path_id: if path == 0 {
+                                                "a".to_string()
+                                            } else {
+                                                "b".to_string()
+                                            },
+                                        }),
+                                        cx,
+                                    );
+                                },
+                            )),
+                    )
+                    .child(
+                        Button::new(SharedString::from(format!("ab-add-{path}")), "+")
+                            .aria_label("Add plugin for comparison")
+                            .variant(if add_menu_open {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Secondary
+                            })
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(
+                                move |_view, _: &ClickEvent, window, cx| {
+                                    window.dispatch_action(
+                                        Box::new(ABPathToggleAddMenu { plugin_idx, path }),
+                                        cx,
+                                    );
+                                },
+                            )),
+                    ),
             ),
     );
+
+    if let Some(file_path) = loaded_config_file.filter(|path| !path.is_empty()) {
+        section = section.child(
+            div()
+                .text_size(d.text_xs)
+                .text_color(theme.text_muted)
+                .overflow_hidden()
+                .text_ellipsis()
+                .child(format!("Loaded: {}", display_file_name(file_path))),
+        );
+    }
 
     // Add menu dropdown
     if add_menu_open {
@@ -136,6 +187,13 @@ fn render_path_section(
     }
 
     section
+}
+
+fn display_file_name(path: &str) -> &str {
+    path.rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(path)
 }
 
 fn render_add_menu(
