@@ -103,6 +103,35 @@ fn daemon_metering_returns_channel_sized_fallbacks() {
 }
 
 #[test]
+fn daemon_status_exposes_toolbar_device_and_playback_diagnostics() {
+    let source = include_str!("../bin/sotf_daemon.rs");
+
+    assert!(
+        source.contains("\"selected_device\": selected_device")
+            && source.contains("\"channels\": engine_state.num_channels")
+            && source.contains("\"playback_callback_count\": engine_state.playback_callback_count")
+            && source.contains(
+                "\"playback_buffer_fill_percent\": engine_state.playback_buffer_fill_percent"
+            )
+            && source.contains("\"playback_frames_written\": engine_state.playback_frames_written"),
+        "status should expose daemon-owned device/channel state and playback hardware diagnostics"
+    );
+}
+
+#[test]
+fn configbar_reconciles_device_picker_from_daemon_status() {
+    let source = include_str!("../configbar/src/ConfigBar.swift");
+
+    assert!(
+        source.contains("let selectedDevice: String?")
+            && source.contains("data[\"selected_device\"]?.value as? String")
+            && source.contains("applyLoadedDevices(daemonSelectedDevice: status.selectedDevice)")
+            && source.contains("programmaticDeviceSelection = daemonDevice"),
+        "toolbar should parse selected_device from status and update its picker without re-owning daemon state"
+    );
+}
+
+#[test]
 fn daemon_pkg_preinstall_quiesces_running_daemon_before_upgrade() {
     let source = include_str!("../../../../../scripts/build-systemwide.sh");
     let preinstall_start = source

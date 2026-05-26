@@ -244,6 +244,16 @@ pub enum ThreadEvent {
     /// Decoder error
     DecoderError(String),
     PlaybackChannelsChanged(usize),
+    /// Playback thread hardware-consumption diagnostics changed.
+    PlaybackStats {
+        callback_count: u64,
+        buffer_fill_percent: u64,
+        stream_error_count: u64,
+        frames_received: u64,
+        frames_written: u64,
+        frames_dropped: u64,
+        effective_sample_rate: u64,
+    },
     /// Playback thread has fully drained its ring buffer after end-of-stream
     PlaybackDrained,
     /// Playback buffer underrun count update

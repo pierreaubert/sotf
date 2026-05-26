@@ -1167,6 +1167,19 @@ fn run_playback_thread(
                 frames_received,
                 output_format,
             );
+            send_playback_event(
+                &event_tx,
+                ThreadEvent::PlaybackStats {
+                    callback_count: total_cb,
+                    buffer_fill_percent: fill as u64,
+                    stream_error_count: state.stream_error_count.load(Ordering::Relaxed),
+                    frames_received,
+                    frames_written,
+                    frames_dropped,
+                    effective_sample_rate: effective_hz,
+                },
+                "playback stats",
+            );
             last_diagnostic_log = std::time::Instant::now();
         }
 

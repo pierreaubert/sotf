@@ -320,21 +320,77 @@ class AudioEngineClient {
         return nil
     }
 
-    func getStatus() -> (state: AudioState, volume: Float, muted: Bool) {
+    struct Status {
+        let state: AudioState
+        let volume: Float
+        let muted: Bool
+        let selectedDevice: String?
+        let sampleRate: Int?
+        let channels: Int?
+        let playbackCallbackCount: Int?
+        let playbackBufferFillPercent: Int?
+        let playbackStreamErrorCount: Int?
+        let playbackFramesReceived: Int?
+        let playbackFramesWritten: Int?
+        let playbackFramesDropped: Int?
+        let playbackEffectiveSampleRate: Int?
+
+        static let fallback = Status(
+            state: .idle,
+            volume: 1.0,
+            muted: false,
+            selectedDevice: nil,
+            sampleRate: nil,
+            channels: nil,
+            playbackCallbackCount: nil,
+            playbackBufferFillPercent: nil,
+            playbackStreamErrorCount: nil,
+            playbackFramesReceived: nil,
+            playbackFramesWritten: nil,
+            playbackFramesDropped: nil,
+            playbackEffectiveSampleRate: nil
+        )
+    }
+
+    func getStatus() -> Status {
         let command = ["command": "status"]
 
         guard let response = sendCommand(command),
               response.success,
               let data = response.data else {
-            return (.idle, 1.0, false)
+            return .fallback
         }
 
         let stateStr = data["state"]?.value as? String ?? "Idle"
         let state = AudioState(rawValue: stateStr) ?? .idle
         let volume = (data["volume"]?.value as? Double).map { Float($0) } ?? 1.0
         let muted = data["muted"]?.value as? Bool ?? false
+        let selectedDevice = data["selected_device"]?.value as? String
+        let sampleRate = data["sample_rate"]?.value as? Int
+        let channels = data["channels"]?.value as? Int
+        let playbackCallbackCount = data["playback_callback_count"]?.value as? Int
+        let playbackBufferFillPercent = data["playback_buffer_fill_percent"]?.value as? Int
+        let playbackStreamErrorCount = data["playback_stream_error_count"]?.value as? Int
+        let playbackFramesReceived = data["playback_frames_received"]?.value as? Int
+        let playbackFramesWritten = data["playback_frames_written"]?.value as? Int
+        let playbackFramesDropped = data["playback_frames_dropped"]?.value as? Int
+        let playbackEffectiveSampleRate = data["playback_effective_sample_rate"]?.value as? Int
 
-        return (state, volume, muted)
+        return Status(
+            state: state,
+            volume: volume,
+            muted: muted,
+            selectedDevice: selectedDevice,
+            sampleRate: sampleRate,
+            channels: channels,
+            playbackCallbackCount: playbackCallbackCount,
+            playbackBufferFillPercent: playbackBufferFillPercent,
+            playbackStreamErrorCount: playbackStreamErrorCount,
+            playbackFramesReceived: playbackFramesReceived,
+            playbackFramesWritten: playbackFramesWritten,
+            playbackFramesDropped: playbackFramesDropped,
+            playbackEffectiveSampleRate: playbackEffectiveSampleRate
+        )
     }
 
     struct AudioDevice: Codable {
@@ -1079,12 +1135,13 @@ class StatusBarController: NSObject, ObservableObject {
         statusRequestInFlight = true
 
         DispatchQueue.global(qos: .utility).async {
-            let (state, _, _) = AudioEngineClient().getStatus()
+            let status = AudioEngineClient().getStatus()
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.statusRequestInFlight = false
 
+                let state = status.state
                 if self.currentState != state {
                     self.currentState = state
                     self.updateIcon()
@@ -1426,6 +1483,10 @@ struct ConfigurationView: View {
     @State private var meteringTimer: Timer? = nil
     @State private var meteringRequestInFlight = false
     @State private var loadingDevices = false
+    @State private var daemonStatusTimer: Timer? = nil
+    @State private var daemonStatusRequestInFlight = false
+    @State private var lastDaemonSelectedDevice: String? = nil
+    @State private var programmaticDeviceSelection: String? = nil
 
     // Encryption state
     @State private var encryptionEnabled: Bool = true
@@ -1617,6 +1678,11 @@ struct ConfigurationView: View {
                         .pickerStyle(.menu)
                         .onChange(of: selectedDevice) { _, newDevice in
                             guard !newDevice.isEmpty else { return }
+                            if programmaticDeviceSelection == newDevice {
+                                programmaticDeviceSelection = nil
+                                syncOutputChannelsToSelectedDevice(applyChange: false)
+                                return
+                            }
                             guard !isVirtualDevice(newDevice) else {
                                 errorMessage = "Virtual audio devices cannot be used as Systemwide speaker output. Select hardware speakers/headphones here, and select SotF Virtual Audio in macOS Sound Output."
                                 showingError = true
@@ -1952,9 +2018,12 @@ struct ConfigurationView: View {
         .frame(minWidth: 820, minHeight: 600)
         .onAppear {
             loadDevices()
+            updateDaemonStatus()
+            startDaemonStatusTimer()
             startMeteringTimer()
         }
         .onDisappear {
+            stopDaemonStatusTimer()
             stopMeteringTimer()
         }
         .alert("Configuration Error", isPresented: $showingError) {
@@ -1997,6 +2066,53 @@ struct ConfigurationView: View {
     private func stopMeteringTimer() {
         meteringTimer?.invalidate()
         meteringTimer = nil
+    }
+
+    private func startDaemonStatusTimer() {
+        guard daemonStatusTimer == nil else { return }
+        daemonStatusTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            updateDaemonStatus()
+        }
+    }
+
+    private func stopDaemonStatusTimer() {
+        daemonStatusTimer?.invalidate()
+        daemonStatusTimer = nil
+    }
+
+    private func updateDaemonStatus() {
+        guard !daemonStatusRequestInFlight else { return }
+        daemonStatusRequestInFlight = true
+
+        DispatchQueue.global(qos: .utility).async {
+            let status = AudioEngineClient().getStatus()
+
+            DispatchQueue.main.async {
+                daemonStatusRequestInFlight = false
+                applyDaemonStatus(status)
+            }
+        }
+    }
+
+    private func applyDaemonStatus(_ status: AudioEngineClient.Status) {
+        if let channels = status.channels, channels > 0, channels != halOutputChannels {
+            halOutputChannels = min(max(channels, 1), 32)
+            syncMeterArrays(outputChannels: halOutputChannels)
+        }
+
+        guard let daemonDevice = status.selectedDevice,
+              !daemonDevice.isEmpty,
+              !isVirtualDevice(daemonDevice),
+              physicalOutputDevices.contains(where: { $0.name == daemonDevice }) else {
+            return
+        }
+
+        lastDaemonSelectedDevice = daemonDevice
+        guard selectedDevice != daemonDevice else { return }
+
+        programmaticDeviceSelection = daemonDevice
+        selectedDevice = daemonDevice
+        syncOutputChannelsToSelectedDevice(applyChange: false)
     }
 
     private func updateMetering() {
@@ -2145,6 +2261,7 @@ struct ConfigurationView: View {
 
         DispatchQueue.global(qos: .utility).async {
             var loadedDevices = AudioEngineClient().listDevices()
+            let status = AudioEngineClient().getStatus()
             if loadedDevices.isEmpty {
                 loadedDevices = detectOutputDevicesViaCoreAudio()
             }
@@ -2152,18 +2269,32 @@ struct ConfigurationView: View {
             DispatchQueue.main.async {
                 loadingDevices = false
                 devices = loadedDevices
-                applyLoadedDevices()
+                applyLoadedDevices(daemonSelectedDevice: status.selectedDevice)
+                applyDaemonStatus(status)
             }
         }
     }
 
-    private func applyLoadedDevices() {
+    private func applyLoadedDevices(daemonSelectedDevice: String? = nil) {
         // Filter out virtual devices for output selection
         let physicalDevices = physicalOutputDevices
         let previousDevice = selectedDevice
+        var selectedFromDaemon = false
 
-        // Follow the current system default output device when CoreAudio reports one.
-        if let physicalDefault = physicalDevices.first(where: { $0.is_default }) {
+        if let daemonSelectedDevice,
+           !daemonSelectedDevice.isEmpty,
+           !isVirtualDevice(daemonSelectedDevice),
+           physicalDevices.contains(where: { $0.name == daemonSelectedDevice }) {
+            programmaticDeviceSelection = daemonSelectedDevice
+            selectedDevice = daemonSelectedDevice
+            lastDaemonSelectedDevice = daemonSelectedDevice
+            selectedFromDaemon = true
+        } else if let lastDaemonSelectedDevice,
+                  physicalDevices.contains(where: { $0.name == lastDaemonSelectedDevice }) {
+            programmaticDeviceSelection = lastDaemonSelectedDevice
+            selectedDevice = lastDaemonSelectedDevice
+            selectedFromDaemon = true
+        } else if let physicalDefault = physicalDevices.first(where: { $0.is_default }) {
             selectedDevice = physicalDefault.name
         } else if !previousDevice.isEmpty,
                   physicalDevices.contains(where: { $0.name == previousDevice }) {
@@ -2175,7 +2306,7 @@ struct ConfigurationView: View {
             selectedDevice = ""
         }
 
-        syncOutputChannelsToSelectedDevice(applyChange: true)
+        syncOutputChannelsToSelectedDevice(applyChange: !selectedFromDaemon)
 
         // Also detect available audio sources
         detectAvailableSources()

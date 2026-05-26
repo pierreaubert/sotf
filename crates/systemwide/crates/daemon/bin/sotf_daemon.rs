@@ -569,6 +569,13 @@ impl AudioDaemon {
             "sample_rate": engine_state.sample_rate,
             "channels": engine_state.num_channels,
             "underruns": engine_state.underruns,
+            "playback_callback_count": engine_state.playback_callback_count,
+            "playback_buffer_fill_percent": engine_state.playback_buffer_fill_percent,
+            "playback_stream_error_count": engine_state.playback_stream_error_count,
+            "playback_frames_received": engine_state.playback_frames_received,
+            "playback_frames_written": engine_state.playback_frames_written,
+            "playback_frames_dropped": engine_state.playback_frames_dropped,
+            "playback_effective_sample_rate": engine_state.playback_effective_sample_rate,
             "last_error": engine_state.last_error,
         }))
     }
