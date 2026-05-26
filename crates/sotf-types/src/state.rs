@@ -176,6 +176,9 @@ pub struct AudioEngineState {
     pub processing_bypassed: bool,
     /// Number of buffer underruns
     pub underruns: u64,
+    /// Output device actually resolved by the playback stream.
+    #[serde(default)]
+    pub playback_output_device: Option<String>,
     /// Number of hardware output callbacks observed by the playback stream.
     #[serde(default)]
     pub playback_callback_count: u64,
@@ -222,6 +225,7 @@ impl Default for AudioEngineState {
             muted: false,
             processing_bypassed: false,
             underruns: 0,
+            playback_output_device: None,
             playback_callback_count: 0,
             playback_buffer_fill_percent: 0,
             playback_stream_error_count: 0,

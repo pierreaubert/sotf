@@ -109,6 +109,7 @@ fn daemon_status_exposes_toolbar_device_and_playback_diagnostics() {
     assert!(
         source.contains("\"selected_device\": selected_device")
             && source.contains("\"channels\": engine_state.num_channels")
+            && source.contains("\"playback_output_device\": engine_state.playback_output_device")
             && source.contains("\"playback_callback_count\": engine_state.playback_callback_count")
             && source.contains(
                 "\"playback_buffer_fill_percent\": engine_state.playback_buffer_fill_percent"

@@ -244,6 +244,7 @@ pub enum ThreadEvent {
     /// Decoder error
     DecoderError(String),
     PlaybackChannelsChanged(usize),
+    PlaybackOutputDeviceChanged(String),
     /// Playback thread hardware-consumption diagnostics changed.
     PlaybackStats {
         callback_count: u64,

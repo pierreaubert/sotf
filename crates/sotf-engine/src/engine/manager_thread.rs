@@ -767,6 +767,11 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             new_state.num_channels = channels;
             state.store(Arc::new(new_state));
         }
+        ThreadEvent::PlaybackOutputDeviceChanged(device_name) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.playback_output_device = Some(device_name);
+            state.store(Arc::new(new_state));
+        }
         ThreadEvent::PlaybackStats {
             callback_count,
             buffer_fill_percent,
@@ -2254,6 +2259,21 @@ mod tests {
 
         handle_thread_event(ThreadEvent::PlaybackChannelsChanged(2), &state);
         assert_eq!(state.load().num_channels, 2);
+    }
+
+    #[test]
+    fn test_handle_thread_event_updates_playback_output_device() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+
+        handle_thread_event(
+            ThreadEvent::PlaybackOutputDeviceChanged("ADAM Audio D3V".to_string()),
+            &state,
+        );
+
+        assert_eq!(
+            state.load().playback_output_device.as_deref(),
+            Some("ADAM Audio D3V")
+        );
     }
 
     #[test]

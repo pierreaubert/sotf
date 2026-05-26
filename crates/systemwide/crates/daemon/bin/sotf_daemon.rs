@@ -569,6 +569,7 @@ impl AudioDaemon {
             "sample_rate": engine_state.sample_rate,
             "channels": engine_state.num_channels,
             "underruns": engine_state.underruns,
+            "playback_output_device": engine_state.playback_output_device,
             "playback_callback_count": engine_state.playback_callback_count,
             "playback_buffer_fill_percent": engine_state.playback_buffer_fill_percent,
             "playback_stream_error_count": engine_state.playback_stream_error_count,

@@ -263,17 +263,15 @@ fn select_playback_device(
                 Ok(dev)
             }
             Err(e) => {
-                log::info!(
-                    "[Playback Thread] Device '{}' not found (error: {}), using fallback output device",
+                log::warn!(
+                    "[Playback Thread] Explicit output device '{}' was not found: {}",
                     device_identifier,
                     e
                 );
-                find_fallback().map_err(|fallback_err| {
-                    format!(
-                        "Failed to find fallback output device after lookup error '{}': {}",
-                        e, fallback_err
-                    )
-                })
+                Err(format!(
+                    "Selected output device '{}' is not available: {}",
+                    device_identifier, e
+                ))
             }
         }
     } else {
@@ -551,6 +549,11 @@ fn run_playback_thread(
         .map(|d| d.name().to_string())
         .unwrap_or_else(|_| "Unknown".to_string());
     let mut coreaudio_device_id = coreaudio_output_device_id(&device_name);
+    send_playback_event(
+        &event_tx,
+        ThreadEvent::PlaybackOutputDeviceChanged(device_name.clone()),
+        "initial playback output device",
+    );
 
     log::info!(
         "[Playback Thread] Started - {}Hz, {} channels, format: {:?}, device: '{}'",
@@ -1118,6 +1121,11 @@ fn run_playback_thread(
                             &event_tx,
                             ThreadEvent::PlaybackChannelsChanged(channels),
                             "playback channels changed",
+                        );
+                        send_playback_event(
+                            &event_tx,
+                            ThreadEvent::PlaybackOutputDeviceChanged(device_name.clone()),
+                            "playback output device changed",
                         );
                         continue;
                     }
@@ -2033,6 +2041,24 @@ mod tests {
                 && source.contains("CoreAudio device id changed")
                 && source.contains("rebuild_playback_stream("),
             "playback should rebuild the output stream when macOS resurrects a named device under a new CoreAudio device id"
+        );
+    }
+
+    #[test]
+    fn explicit_output_device_lookup_does_not_silently_fallback() {
+        let source = include_str!("playback_thread.rs");
+        let explicit_lookup = source
+            .split("match crate::devices::find_device(host, device_identifier, false)")
+            .nth(1)
+            .expect("explicit lookup branch should exist")
+            .split("} else {")
+            .next()
+            .expect("explicit lookup branch should end before default-device branch");
+
+        assert!(
+            explicit_lookup.contains("Selected output device")
+                && !explicit_lookup.contains("find_fallback()"),
+            "an explicit user-selected output must fail loudly instead of falling back to another physical device"
         );
     }
 

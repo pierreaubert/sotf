@@ -307,6 +307,7 @@ fn test_audio_engine_state_default() {
     assert!(!state.muted);
     assert!(!state.processing_bypassed);
     assert_eq!(state.underruns, 0);
+    assert_eq!(state.playback_output_device, None);
     assert_eq!(state.playback_callback_count, 0);
     assert_eq!(state.playback_buffer_fill_percent, 0);
     assert_eq!(state.playback_stream_error_count, 0);
