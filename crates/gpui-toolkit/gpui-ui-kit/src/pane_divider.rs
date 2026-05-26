@@ -327,17 +327,11 @@ impl PaneDivider {
 
         let mut base = if is_vertical {
             // Collapsed vertical divider - becomes a narrow vertical bar with rotated text
-            let label_chars: Vec<char> = label.chars().collect();
-            let label_elements: Vec<AnyElement> = label_chars
-                .into_iter()
-                .map(|c| {
-                    div()
-                        .text_color(theme.foreground)
-                        .text_size(px(11.0))
-                        .child(c.to_string())
-                        .into_any_element()
-                })
-                .collect();
+            let label_text = label.to_string();
+            let label_canvas_height = collapsed_vertical_label_height(&label_text);
+            let label_svg = rotated_vertical_label_svg(&label_text);
+            let label_path = SharedString::from(format!("pane-divider-label:{label_text}"));
+            let label_color = theme.foreground;
 
             div()
                 .id(id)
@@ -359,15 +353,23 @@ impl PaneDivider {
                         .text_size(px(10.0))
                         .child(arrows),
                 )
-                // Vertical label (each char stacked)
+                // Vertical label
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .gap(px(2.0))
-                        .py_2()
-                        .children(label_elements),
+                    canvas(
+                        move |_bounds, _window, _cx| label_svg,
+                        move |bounds, label_svg, window, cx| {
+                            let _ = window.paint_svg(
+                                bounds,
+                                label_path,
+                                Some(label_svg.as_bytes()),
+                                TransformationMatrix::unit(),
+                                Hsla::from(label_color),
+                                cx,
+                            );
+                        },
+                    )
+                    .w(px(18.0))
+                    .h(label_canvas_height),
                 )
                 // Bottom arrows
                 .child(
@@ -428,6 +430,34 @@ impl PaneDivider {
 
         base
     }
+}
+
+fn collapsed_vertical_label_height(label: &str) -> Pixels {
+    px((label.chars().count() as f32 * 7.0 + 24.0).clamp(56.0, 160.0))
+}
+
+fn rotated_vertical_label_svg(label: &str) -> String {
+    let escaped = escape_svg_text(label);
+    format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="18" height="120" viewBox="0 0 18 120">
+<text x="0" y="0" transform="translate(9 60) rotate(-90)" text-anchor="middle" dominant-baseline="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" font-weight="600" fill="black">{escaped}</text>
+</svg>"#
+    )
+}
+
+fn escape_svg_text(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&apos;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 impl IntoElement for PaneDivider {
