@@ -1,6 +1,6 @@
 [package]
 name = "gpui-ui-kit"
-version = "0.6.20"
+version = "0.6.21"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -64,4 +64,3 @@ path = "src/lib.rs"
 [[example]]
 name = "qr_debug"
 required-features = ["camera"]
-
