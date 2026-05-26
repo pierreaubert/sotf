@@ -58,7 +58,7 @@ fn daemon_plugin_reload_uses_hot_update_path() {
         "daemon should build the injected metering chain in one shared helper"
     );
     assert!(
-        reload_body.contains("manager.update_plugin_chain(final_plugins)"),
+        reload_body.contains("manager.update_plugin_chain(plan.runtime_plugins.clone())"),
         "plugin add/remove/update/reorder should hot-update the running engine"
     );
     assert!(
@@ -78,13 +78,13 @@ fn daemon_load_plugins_carries_hal_input_channels() {
     );
     assert!(
         source.contains("input_channels: usize")
-            && source.contains("current_input_channels")
-            && source.contains("channel_count: driver_input_channels as u32"),
+            && source.contains("PipelineSupervisor")
+            && source.contains("channel_count: plan.spec.input_channels as u32"),
         "load_plugins should carry requested HAL input channels into driver config"
     );
     assert!(
         source.contains("start_hal_playback_with_driver_config(")
-            && source.contains("driver_input_channels"),
+            && source.contains("plan.spec.input_channels"),
         "driver playback should be restarted with the resolved HAL input channel count"
     );
 }

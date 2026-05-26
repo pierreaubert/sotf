@@ -69,16 +69,34 @@ classDiagram
     class AudioDaemon {
         manager: AudioEngineManager
         driver_manager: DriverManager
-        selected_device: Option~String~
+        pipeline: PipelineSupervisor
         key_manager: KeyManager
-        current_plugins: Vec~PluginConfig~
-        current_input_channels: usize
-        current_output_channels: usize
-        input_loudness_index: Option~usize~
-        output_loudness_index: Option~usize~
         +handle_command(Command)
         +handle_load_plugins_with_channels()
         +reload_plugins()
+    }
+
+    class PipelineSupervisor {
+        desired: PipelineSpec
+        applied: AppliedPipeline
+        generation: u64
+        +prepare_plan() PipelinePlan
+        +prepare_with_selected_device() PipelinePlan
+        +commit_applied(plan)
+    }
+
+    class PipelineSpec {
+        output_device: Option~String~
+        user_plugins: Vec~PluginConfig~
+        input_channels: usize
+        output_channels: usize
+    }
+
+    class PipelinePlan {
+        spec: PipelineSpec
+        runtime_plugins: Vec~PluginConfig~
+        input_loudness_index: usize
+        output_loudness_index: usize
     }
 
     class AudioEngineManager {
@@ -138,6 +156,8 @@ classDiagram
     DaemonManager --> AudioDaemon : process lifecycle
     AudioDaemon --> AudioEngineManager
     AudioDaemon --> DriverManager
+    AudioDaemon --> PipelineSupervisor
+    PipelineSupervisor --> PipelinePlan
     AudioDaemon --> KeyManager
     DriverManager --> AudioDriver
     AudioDriver <|.. HalDriver
@@ -221,24 +241,38 @@ The command enum currently covers:
 
 ## Current State Ownership Review
 
-The current implementation works, but several pieces of state are mirrored
-across components.
+The first control point added by this branch is `PipelineSupervisor`. It is the
+daemon-owned state owner for the user-facing audio graph: selected physical
+output device, user plugin list, requested HAL input channels, requested output
+channels, applied runtime chain generation, and the metering tap indices derived
+from that applied runtime chain.
+
+The important distinction is desired versus applied state:
+
+- `PipelineSpec` is what the daemon wants next.
+- `PipelinePlan` is a validated, derived transition: user plugins sanitized,
+  loudness monitors injected, channel counts checked, and output device filtered.
+- `AppliedPipeline` is committed only after the engine accepts the transition.
+
+This removes the previous independent daemon mutexes for `selected_device`,
+`current_plugins`, channel counts, and meter indices.
 
 | State | Current owner or cache | Notes |
 | --- | --- | --- |
 | Playback engine state, volume, mute, plugin runtime | `AudioEngineManager` | Authoritative for the actual engine stream and cached plugin data. |
-| Desired user plugin list | `AudioDaemon.current_plugins` | User plugins only; daemon injects input/output loudness monitors when building the runtime chain. |
-| Runtime plugin chain | `AudioEngineManager` | Receives the daemon-built chain. This means desired chain and applied chain are separate. |
-| Output device selection | `AudioDaemon.selected_device`, `ConfigurationView.selectedDevice` | Toolbar stores UI selection; daemon stores desired output device and restarts playback on change. |
+| Desired user plugin list | `PipelineSupervisor.desired.user_plugins` | User plugins only; daemon injects input/output loudness monitors when building a `PipelinePlan`. |
+| Runtime plugin chain | `PipelinePlan.runtime_plugins`, then `AudioEngineManager` | Derived from desired state and committed to `AppliedPipeline` only after the engine accepts it. |
+| Output device selection | `PipelineSupervisor.desired.output_device`, `ConfigurationView.selectedDevice` | Toolbar stores a UI cache; daemon stores and validates the authoritative desired output device. |
 | Driver status/config | `DriverManager`, `HalDriver.config_buffer`, shared-memory header, Swift HAL `DriverState` | Status and config are protocol state in shared memory plus local state on both Rust and Swift sides. |
-| Input/output channel counts | `AudioDaemon.current_input_channels`, `AudioDaemon.current_output_channels`, shared-memory header, toolbar `@State` | Needed for UX and pipeline construction, but currently copied at several layers. |
-| Metering indices | `AudioDaemon.input_loudness_index`, `AudioDaemon.output_loudness_index`, `AudioEngineManager` plugin cache | Derived from plugin chain construction and should not be independently editable state. |
+| Input/output channel counts | `PipelineSupervisor.desired`, shared-memory header, toolbar `@State` | Daemon desired channel counts now have one owner; shared memory reports negotiated transport state. |
+| Metering indices | `AppliedPipeline.input_loudness_index`, `AppliedPipeline.output_loudness_index`, `AudioEngineManager` plugin cache | Derived from the applied plugin chain and no longer independently mutable. |
 | Encryption enabled/fingerprint | `KeyManager`, shared-memory header, Swift toolbar cache, HAL reader/writer cached cipher | `KeyManager` owns the desired key state; shared memory publishes the active transport state. |
 | Daemon process lifecycle | Toolbar `DaemonManager`, daemon `running` flag | Toolbar owns the child process it started; daemon owns its accept-loop shutdown flag. |
 
-The most important architectural smell is that `AudioDaemon` has become an
-implicit state store made of many independent `Arc<Mutex<T>>` fields. This makes
-lock ordering, derived state, and replay/debugging harder than necessary.
+The remaining architectural smell is that command handlers still directly
+orchestrate several effects: driver config, engine restart/hot update, shared
+memory encryption sync, and response building. `PipelineSupervisor` is a first
+state-owner step, not yet the full controller/reducer boundary.
 
 ## Use Case: User Starts The Toolbar
 
@@ -339,19 +373,25 @@ sequenceDiagram
     participant Rack as PluginRackView
     participant Client as AudioEngineClient
     participant Daemon as AudioDaemon
+    participant Pipeline as PipelineSupervisor
     participant Engine as AudioEngineManager
 
     User->>Rack: Choose plugin in AddPluginSheet
     Rack->>Client: addPlugin(type, parameters, nil)
     Client->>Daemon: {"command":"add_plugin", ...}
-    Daemon->>Daemon: mutate current_plugins
-    Daemon->>Daemon: build_driver_plugin_chain()
-    Note over Daemon: input loudness monitor + user plugins + output loudness monitor
-    Daemon->>Engine: update_plugin_chain(final_plugins)
+    Daemon->>Pipeline: clone desired plugins and prepare_plan()
+    Pipeline-->>Daemon: PipelinePlan
+    Note over Pipeline: sanitize user plugins + inject input/output loudness monitors
+    Daemon->>Engine: update_plugin_chain(plan.runtime_plugins)
     alt Engine is running
         Engine-->>Daemon: hot update ok
+        Daemon->>Pipeline: commit_applied(plan)
     else No engine running
         Daemon->>Engine: start_hal_playback_with_driver_config(...)
+        Engine-->>Daemon: start ok
+        Daemon->>Pipeline: commit_applied(plan)
+    else Engine rejects transition
+        Note over Daemon,Pipeline: no commit; desired/applied state unchanged
     end
     Daemon-->>Client: success or error
     Rack->>Client: getPlugins()
@@ -410,14 +450,21 @@ sequenceDiagram
     participant Shm as SharedAudioBuffer
     participant Watcher as daemon config watcher
     participant Driver as DriverManager/HalDriver
+    participant Pipeline as PipelineSupervisor
     participant Engine as AudioEngineManager
 
     HAL->>Shm: request config change(source=HAL)
     Watcher->>Driver: poll_config_change()
     Driver->>Shm: read requested rate/frames/channels
     Watcher->>Watcher: validate and negotiate
-    Watcher->>Engine: stop and restart driver playback
-    Watcher->>Driver: set_engine_ready(true)
+    Watcher->>Pipeline: prepare_plan(existing plugins, requested channels)
+    alt Engine is idle
+        Watcher->>Pipeline: update desired spec only
+    else Engine is active
+        Watcher->>Engine: stop and restart driver playback
+        Watcher->>Pipeline: commit_applied(plan)
+        Watcher->>Driver: set_engine_ready(true)
+    end
     Driver->>Shm: acknowledge_config_change(actual, result)
     HAL->>Shm: observe ack and active format
 ```
@@ -431,8 +478,9 @@ the HAL side to acknowledge them.
 
 ### 1. Introduce A Single Daemon State Owner
 
-Create a `SystemwideState` owned by one daemon component, for example
-`SystemwideController`:
+`PipelineSupervisor` now owns the audio pipeline subset of daemon state. The
+next step is to lift the same idea into a broader `SystemwideController` that
+owns all desired daemon state and serializes effects:
 
 ```mermaid
 classDiagram
@@ -482,8 +530,8 @@ would become small command adapters:
 4. Let the controller run effects against the engine, driver, and shared memory.
 5. Return a snapshot or command result.
 
-This would replace many independent `Arc<Mutex<T>>` fields with one state owner
-and a smaller number of effect locks.
+The controller would replace the remaining effect-heavy command handlers with
+one state owner and a smaller number of effect locks.
 
 ### 2. Separate Desired State From Observed Runtime State
 
@@ -585,7 +633,7 @@ to `/Library`, the real per-user daemon socket, or the real system audio output.
 
 | Piece | Purpose |
 | --- | --- |
-| `FakeAudioDriver` | Implements `AudioDriver` with deterministic sine/noise/multichannel fixtures and controllable config-change events. |
+| `FakeAudioDriver` | Implements `AudioDriver` with deterministic sine/noise/multichannel fixtures and controllable config-change events. A first in-process fake driver now exists in daemon tests through `DriverManager::from_driver`. |
 | HAL simulator | Opens `audio.shm`, writes/reads frames, toggles `driver_ready`, sends config changes, validates encryption fingerprints. Can be Rust or Swift command-line code. |
 | `sotf-daemon --socket-path` | Lets tests bind to a temp socket instead of per-user or legacy paths. |
 | `sotf-daemon --shared-memory-path` | Lets tests avoid `/tmp/sotf-{uid}/audio.shm`. |
@@ -610,6 +658,17 @@ flowchart TB
 
 Manual installed-HAL testing should become the smallest layer. Most regressions
 should be caught before a developer installs anything.
+
+Current branch coverage starts the lower middle of that pyramid:
+
+- `PipelineSupervisor` unit tests prove planning is pure, channel validation
+  happens before mutation, and monitor indices are derived from the runtime
+  chain.
+- Fake-driver daemon tests prove `DriverManager` can be injected and driver
+  status/config paths can be exercised without the installed HAL bundle.
+- Unix-stream IPC tests send real JSON lines through `AudioDaemon::handle_client`
+  and assert state is unchanged when an invalid channel-count transition is
+  rejected.
 
 ### Useful Debug Commands
 

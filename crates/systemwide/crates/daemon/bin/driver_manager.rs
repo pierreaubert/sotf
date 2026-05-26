@@ -19,6 +19,11 @@ impl DriverManager {
         }
     }
 
+    #[cfg(test)]
+    pub fn from_driver(driver: Box<dyn AudioDriver>) -> Self {
+        Self { driver }
+    }
+
     /// Initialize the driver and verify connectivity.
     pub fn initialize(&mut self) -> Result<(), String> {
         self.driver.initialize()
