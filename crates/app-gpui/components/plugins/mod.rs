@@ -158,6 +158,7 @@ pub fn render_plugin_content(
             entity: entity.clone(),
             plugin_idx,
             settings,
+            available_width,
             is_editing,
             selected_param,
             selected_band_idx,

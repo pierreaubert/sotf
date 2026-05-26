@@ -20,6 +20,7 @@ pub struct CustomViewRenderContext<'a> {
     pub entity: Entity<AppState>,
     pub plugin_idx: usize,
     pub settings: &'a PluginSettings,
+    pub available_width: f32,
     pub is_editing: bool,
     pub selected_param: usize,
     pub selected_band_idx: usize,

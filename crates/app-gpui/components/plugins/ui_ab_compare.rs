@@ -9,6 +9,7 @@ use crate::components::plugins::actions::{
     ABPathAddPlugin, ABPathMovePlugin, ABPathRemovePlugin, ABPathToggleAddMenu, OpenAbConfigFile,
 };
 use crate::components::plugins::custom_view_registry::CustomViewRenderContext;
+use crate::components::plugins::ui_layout_renderer;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -35,6 +36,17 @@ pub fn render_ab_compare(
         .flex_col()
         .gap(d.section)
         .w_full()
+        .child(ui_layout_renderer::render_main_controls_from_layout(
+            &d,
+            ctx.entity.clone(),
+            plugin_idx,
+            ctx.settings,
+            ctx.is_editing,
+            ctx.selected_param,
+            ctx.plugin_data.as_ref(),
+            ctx.available_width,
+            ctx.theme,
+        ))
         .child(
             div()
                 .flex()
