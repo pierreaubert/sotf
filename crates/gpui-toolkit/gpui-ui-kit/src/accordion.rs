@@ -15,10 +15,16 @@ pub struct AccordionTheme {
     pub header_bg: Rgba,
     #[theme(default = 0x2a2a2a, from = surface_hover)]
     pub header_hover_bg: Rgba,
+    #[theme(default = 0x007acc33, from = accent_muted)]
+    pub header_active_bg: Rgba,
     #[theme(default = 0x1e1e1e, from = background)]
     pub content_bg: Rgba,
     #[theme(default = 0x3a3a3a, from = border)]
     pub border: Rgba,
+    #[theme(default = 0x007acc33, from = accent_muted)]
+    pub accent_tint: Rgba,
+    #[theme(default = 0x007acc, from = accent)]
+    pub accent: Rgba,
     #[theme(default = 0xffffff, from = text_primary)]
     pub title_color: Rgba,
     #[theme(default = 0x888888, from = text_muted)]
@@ -218,10 +224,14 @@ impl Accordion {
                 .id(SharedString::from(format!("accordion-header-{}", item_id)))
                 .flex()
                 .items_center()
-                .justify_between()
+                .gap_2()
                 .px_4()
                 .py_3()
-                .bg(theme.header_bg)
+                .bg(if is_expanded {
+                    theme.header_active_bg
+                } else {
+                    theme.header_bg
+                })
                 .cursor_pointer();
 
             // Add border based on orientation
@@ -237,8 +247,13 @@ impl Accordion {
                 header = header.opacity(0.5).cursor_not_allowed();
             } else {
                 let hover_bg = theme.header_hover_bg;
-                header =
-                    header.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
+                let hover_accent = theme.accent_tint;
+                header = header.hover(move |style| {
+                    style
+                        .bg(hover_bg)
+                        .border_color(hover_accent)
+                        .shadow(glow_shadow(hover_bg))
+                });
 
                 // Click handler
                 if let Some(handler) = on_change.clone() {
@@ -250,9 +265,17 @@ impl Accordion {
                 }
             }
 
+            let rail_bg = if is_expanded {
+                theme.accent
+            } else {
+                theme.accent_tint
+            };
+            header = header.child(div().w(px(3.0)).h(px(22.0)).rounded(px(1.5)).bg(rail_bg));
+
             // Title
             header = header.child(
                 div()
+                    .flex_1()
                     .text_sm()
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.title_color)
@@ -270,7 +293,11 @@ impl Accordion {
             header = header.child(
                 div()
                     .text_xs()
-                    .text_color(theme.indicator_color)
+                    .text_color(if is_expanded {
+                        theme.accent
+                    } else {
+                        theme.indicator_color
+                    })
                     .child(indicator),
             );
 
@@ -283,7 +310,11 @@ impl Accordion {
                     .py_3()
                     .bg(theme.content_bg)
                     .border_t_1()
-                    .border_color(theme.border);
+                    .border_color(if is_expanded {
+                        theme.accent_tint
+                    } else {
+                        theme.border
+                    });
 
                 item_wrapper = item_wrapper.child(content_div.child(content));
             }
@@ -327,12 +358,17 @@ impl Accordion {
                     "accordion-header-side-{}",
                     item_id
                 )))
+                .relative()
                 .flex()
                 .items_center()
                 .justify_center()
-                .w(px(40.0))
-                .py_4()
-                .bg(theme.header_bg)
+                .w(px(42.0))
+                .h(side_label_height(&item.title))
+                .bg(if is_expanded {
+                    theme.header_active_bg
+                } else {
+                    theme.header_bg
+                })
                 .cursor_pointer();
 
             if !is_first {
@@ -340,15 +376,20 @@ impl Accordion {
             }
 
             if is_expanded {
-                header = header.bg(theme.header_hover_bg);
+                header = header.bg(theme.header_active_bg);
             }
 
             if item.disabled {
                 header = header.opacity(0.5).cursor_not_allowed();
             } else {
                 let hover_bg = theme.header_hover_bg;
-                header =
-                    header.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
+                let hover_accent = theme.accent_tint;
+                header = header.hover(move |style| {
+                    style
+                        .bg(hover_bg)
+                        .border_color(hover_accent)
+                        .shadow(glow_shadow(hover_bg))
+                });
 
                 // Click handler
                 if let Some(handler) = on_change.clone() {
@@ -360,38 +401,43 @@ impl Accordion {
                 }
             }
 
-            // Vertical text - display each character on its own line
-            let mut text_container = div().flex().flex_col().items_center().gap_1();
-
-            // Show full text vertically when expanded, abbreviated when closed
-            if is_expanded {
-                // Show full text vertically
-                for ch in item.title.chars() {
-                    text_container = text_container.child(
-                        div()
-                            .text_xs()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme.title_color)
-                            .child(ch.to_string()),
-                    );
-                }
+            let label_text = item.title.to_string();
+            let label_height = side_label_height(&item.title);
+            let label_svg = rotated_side_label_svg(&label_text);
+            let label_path =
+                SharedString::from(format!("accordion-side-label:{item_id}:{label_text}"));
+            let label_color = if is_expanded {
+                theme.accent
             } else {
-                // Show first character only when closed
-                let label_text = if !item.title.is_empty() {
-                    item.title.chars().next().unwrap().to_string()
-                } else {
-                    String::from("?")
-                };
-                text_container = text_container.child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.title_color)
-                        .child(label_text),
-                );
-            }
+                theme.title_color
+            };
 
-            header = header.child(text_container);
+            header =
+                header
+                    .child(div().absolute().top_0().bottom_0().left_0().w(px(3.0)).bg(
+                        if is_expanded {
+                            theme.accent
+                        } else {
+                            theme.accent_tint
+                        },
+                    ))
+                    .child(
+                        canvas(
+                            move |_bounds, _window, _cx| label_svg,
+                            move |bounds, label_svg, window, cx| {
+                                let _ = window.paint_svg(
+                                    bounds,
+                                    label_path,
+                                    Some(label_svg.as_bytes()),
+                                    TransformationMatrix::unit(),
+                                    Hsla::from(label_color),
+                                    cx,
+                                );
+                            },
+                        )
+                        .w(px(18.0))
+                        .h(label_height),
+                    );
 
             headers_container = headers_container.child(header);
         }
@@ -422,6 +468,34 @@ impl Accordion {
 
         container
     }
+}
+
+fn side_label_height(label: &str) -> Pixels {
+    px((label.chars().count() as f32 * 6.0 + 28.0).clamp(54.0, 126.0))
+}
+
+fn rotated_side_label_svg(label: &str) -> String {
+    let escaped = escape_side_label_svg_text(label);
+    format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="18" height="126" viewBox="0 0 18 126">
+<text x="0" y="0" transform="translate(9 63) rotate(-90)" text-anchor="middle" dominant-baseline="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" font-weight="600" fill="black">{escaped}</text>
+</svg>"#
+    )
+}
+
+fn escape_side_label_svg_text(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&apos;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 impl Default for Accordion {
