@@ -75,7 +75,10 @@ struct SharedAudioHeader {
 
     // Encryption fields (version 2+)
     var encrypted: UInt32       // 0 = disabled, 1 = enabled
-    var keyFingerprint: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) // First 8 bytes of SHA256
+    // First 8 bytes of SHA256, stored as a UInt64 with canonical big-endian
+    // conversion. This mirrors Rust's AtomicU64 field and keeps the offset
+    // aligned at byte 64.
+    var keyFingerprint: UInt64
     var frameCounter: UInt64    // Frame counter for nonce generation
 
     // Config negotiation fields (version 3+)
@@ -335,15 +338,17 @@ final class SharedAudioBuffer {
         halLog("updateSampleRate: requested \(sampleRate)Hz via config negotiation")
     }
 
-    private func fingerprintMatches(_ headerFingerprint: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8), _ cipherFingerprint: [UInt8]) -> Bool {
-        return headerFingerprint.0 == cipherFingerprint[0] &&
-               headerFingerprint.1 == cipherFingerprint[1] &&
-               headerFingerprint.2 == cipherFingerprint[2] &&
-               headerFingerprint.3 == cipherFingerprint[3] &&
-               headerFingerprint.4 == cipherFingerprint[4] &&
-               headerFingerprint.5 == cipherFingerprint[5] &&
-               headerFingerprint.6 == cipherFingerprint[6] &&
-               headerFingerprint.7 == cipherFingerprint[7]
+    private func fingerprintMatches(_ headerFingerprint: UInt64, _ cipherFingerprint: [UInt8]) -> Bool {
+        guard cipherFingerprint.count == 8 else { return false }
+
+        for index in 0..<8 {
+            let shift = UInt64((7 - index) * 8)
+            let byte = UInt8((headerFingerprint >> shift) & 0xff)
+            if byte != cipherFingerprint[index] {
+                return false
+            }
+        }
+        return true
     }
 
     private func cipherMatchingHeader(_ header: UnsafeMutablePointer<SharedAudioHeader>) -> AudioCipher? {

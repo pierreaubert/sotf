@@ -414,9 +414,10 @@ mod encryption_impl {
             // permissive umask. This is the canonical post-write
             // permission.
             fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+            grant_coreaudiod_key_access(&path);
 
             log::info!(
-                "Published HAL-readable encryption key at {} (mode 0600)",
+                "Published HAL-readable encryption key at {} (mode 0600 + _coreaudiod ACL)",
                 path.display()
             );
             Ok(())
@@ -680,6 +681,14 @@ mod tests {
         assert_eq!(targets[0].1, "_coreaudiod allow search,readattr");
         assert_eq!(targets[1].0, key_path);
         assert_eq!(targets[1].1, "_coreaudiod allow read,readattr");
+
+        let hal_key_path = get_hal_key_path();
+        let hal_targets = encryption_impl::coreaudiod_acl_targets(&hal_key_path);
+        assert_eq!(
+            hal_targets[0].0,
+            hal_key_path.parent().expect("HAL key path has parent")
+        );
+        assert_eq!(hal_targets[1].0, hal_key_path);
     }
 
     #[test]
