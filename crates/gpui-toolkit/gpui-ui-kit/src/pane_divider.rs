@@ -81,6 +81,12 @@ pub struct PaneDividerTheme {
     /// Border color
     #[theme(default = 0x3a3a3a, from = border)]
     pub border: Rgba,
+    /// Accent tint for the centered resize rail
+    #[theme(default = 0x007acc33, from = accent_muted)]
+    pub tint: Rgba,
+    /// Accent tint used while hovering or pressing the divider
+    #[theme(default = 0x007acc99, from = accent)]
+    pub tint_hover: Rgba,
 }
 
 /// Interactive pane divider with collapse support
@@ -92,7 +98,7 @@ pub struct PaneDividerTheme {
 /// 2. Handle `on_mouse_move` on a parent element that covers the full drag area
 /// 3. Handle `on_mouse_up` to clear drag state
 ///
-/// The divider itself is too thin (6px) to reliably receive mouse move events during
+/// The divider itself is too narrow to reliably receive mouse move events during
 /// a drag, so the parent must handle tracking. See the `pane_divider_debug` example.
 pub struct PaneDivider {
     id: SharedString,
@@ -129,8 +135,8 @@ impl PaneDivider {
             on_toggle: None,
             on_drag_start: None,
             theme: PaneDividerTheme::default(),
-            thickness: px(6.0),
-            collapsed_size: px(24.0),
+            thickness: px(10.0),
+            collapsed_size: px(26.0),
         }
     }
 
@@ -148,8 +154,8 @@ impl PaneDivider {
             on_toggle: None,
             on_drag_start: None,
             theme: PaneDividerTheme::default(),
-            thickness: px(6.0),
-            collapsed_size: px(24.0),
+            thickness: px(10.0),
+            collapsed_size: px(26.0),
         }
     }
 
@@ -218,6 +224,7 @@ impl PaneDivider {
         let id = self.id.clone();
         let on_toggle = self.on_toggle;
         let on_drag_start = self.on_drag_start;
+        let rail_color = theme.tint;
 
         let cursor = if is_vertical {
             CursorStyle::ResizeLeftRight
@@ -238,16 +245,14 @@ impl PaneDivider {
                 .flex_col()
                 .items_center()
                 .justify_center()
+                .gap(px(4.0))
                 .bg(theme.background)
+                .text_color(theme.foreground)
                 .border_x_1()
                 .border_color(theme.border)
                 .cursor(cursor)
-                .child(
-                    div()
-                        .text_color(theme.foreground)
-                        .text_size(px(10.0))
-                        .child(arrow),
-                )
+                .child(div().w(px(2.0)).h(px(32.0)).rounded(px(1.0)).bg(rail_color))
+                .child(div().text_size(px(10.0)).child(arrow))
         } else {
             // Horizontal divider (between top/bottom panels)
             div()
@@ -257,22 +262,33 @@ impl PaneDivider {
                 .flex()
                 .items_center()
                 .justify_center()
+                .gap(px(4.0))
                 .bg(theme.background)
+                .text_color(theme.foreground)
                 .border_y_1()
                 .border_color(theme.border)
                 .cursor(cursor)
-                .child(
-                    div()
-                        .text_color(theme.foreground)
-                        .text_size(px(10.0))
-                        .child(arrow),
-                )
+                .child(div().w(px(32.0)).h(px(2.0)).rounded(px(1.0)).bg(rail_color))
+                .child(div().text_size(px(10.0)).child(arrow))
         };
 
         // Hover styling
         let hover_bg = theme.background_hover;
         let hover_fg = theme.foreground_hover;
-        base = base.hover(move |style| style.bg(hover_bg).text_color(hover_fg));
+        let hover_tint = theme.tint_hover;
+        base = base
+            .hover(move |style| {
+                style
+                    .bg(hover_bg)
+                    .border_color(hover_tint)
+                    .text_color(hover_fg)
+            })
+            .active(move |style| {
+                style
+                    .bg(hover_bg)
+                    .border_color(hover_tint)
+                    .text_color(hover_fg)
+            });
 
         // Double-click toggle (uses on_click for correct click_count() method)
         if let Some(toggle_cb) = on_toggle {

@@ -242,6 +242,11 @@ fn render_solved_layout(
         foreground: theme.text_muted,
         foreground_hover: theme.text_secondary,
         border: theme.border,
+        tint: Rgba {
+            a: 0.42,
+            ..theme.accent
+        },
+        tint_hover: theme.accent,
     };
 
     let row_entity = entity.clone();
@@ -563,6 +568,11 @@ fn render_main_column(
                 foreground: theme.text_muted,
                 foreground_hover: theme.text_secondary,
                 border: theme.border,
+                tint: Rgba {
+                    a: 0.42,
+                    ..theme.accent
+                },
+                tint_hover: theme.accent,
             };
 
             center = center.child(auto_tab_divider(plugin_idx, tab_divider_theme));

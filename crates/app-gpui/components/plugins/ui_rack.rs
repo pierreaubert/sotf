@@ -312,6 +312,11 @@ impl PlayerView {
                                 foreground: theme.text_muted,
                                 foreground_hover: theme.text_secondary,
                                 border: theme.border,
+                                tint: Rgba {
+                                    a: 0.42,
+                                    ..theme.accent
+                                },
+                                tint_hover: theme.accent,
                             };
                             let state = self.state.clone();
                             let is_collapsed = self.state.read(cx).app.rack_detail_collapsed;
@@ -2128,6 +2133,11 @@ impl PlayerView {
                         foreground: theme.text_muted,
                         foreground_hover: theme.text_secondary,
                         border: theme.border,
+                        tint: Rgba {
+                            a: 0.42,
+                            ..theme.accent
+                        },
+                        tint_hover: theme.accent,
                     };
 
                     let output_collapsed = state.app.output_meter_collapsed;

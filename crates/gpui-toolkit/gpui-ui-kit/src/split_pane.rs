@@ -33,6 +33,12 @@ pub enum SplitDirection {
 /// Theme colors for split pane styling
 #[derive(Debug, Clone, ComponentTheme)]
 pub struct SplitPaneTheme {
+    /// Divider gutter background
+    #[theme(default = 0x2d2d2dff, from = surface)]
+    pub divider_gutter: Rgba,
+    /// Divider gutter background when hovered
+    #[theme(default = 0x3a3a3aff, from = surface_hover)]
+    pub divider_gutter_hover: Rgba,
     /// Divider color
     #[theme(default = 0x3a3a3aff, from = border)]
     pub divider: Rgba,
@@ -80,7 +86,7 @@ impl SplitPane {
             ratio: 0.5,
             min_first: px(100.0),
             min_second: px(100.0),
-            divider_width: px(4.0),
+            divider_width: px(10.0),
             on_resize: None,
         }
     }
@@ -135,9 +141,11 @@ impl SplitPane {
 
     /// Build the split pane with theme
     pub fn build_with_theme(self, theme: &SplitPaneTheme) -> Stateful<Div> {
+        let divider_gutter = theme.divider_gutter;
+        let divider_gutter_hover = theme.divider_gutter_hover;
         let divider_color = theme.divider;
         let divider_hover = theme.divider_hover;
-        let _divider_active = theme.divider_active;
+        let divider_active = theme.divider_active;
 
         let mut container = div()
             .id(self.id.clone())
@@ -174,18 +182,44 @@ impl SplitPane {
                 .id("split-divider")
                 .w(self.divider_width)
                 .h_full()
+                .flex()
+                .items_center()
+                .justify_center()
                 .flex_shrink_0()
-                .bg(divider_color)
+                .bg(divider_gutter)
+                .border_x_1()
+                .border_color(divider_color)
                 .cursor_col_resize()
-                .hover(move |s| s.bg(divider_hover)),
+                .child(
+                    div()
+                        .w(px(2.0))
+                        .h(px(32.0))
+                        .rounded(px(1.0))
+                        .bg(divider_color),
+                )
+                .hover(move |s| s.bg(divider_gutter_hover).border_color(divider_hover))
+                .active(move |s| s.bg(divider_gutter_hover).border_color(divider_active)),
             SplitDirection::Vertical => div()
                 .id("split-divider")
                 .h(self.divider_width)
                 .w_full()
+                .flex()
+                .items_center()
+                .justify_center()
                 .flex_shrink_0()
-                .bg(divider_color)
+                .bg(divider_gutter)
+                .border_y_1()
+                .border_color(divider_color)
                 .cursor_row_resize()
-                .hover(move |s| s.bg(divider_hover)),
+                .child(
+                    div()
+                        .w(px(32.0))
+                        .h(px(2.0))
+                        .rounded(px(1.0))
+                        .bg(divider_color),
+                )
+                .hover(move |s| s.bg(divider_gutter_hover).border_color(divider_hover))
+                .active(move |s| s.bg(divider_gutter_hover).border_color(divider_active)),
         };
 
         // Drag start
