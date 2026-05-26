@@ -1,3 +1,11 @@
+# 0.6.22
+
+## Improvements
+
+- **Wizard**: make horizontal step indicators responsive. At medium widths only
+  the current step keeps its label; at very narrow widths the header collapses
+  to the current step icon.
+
 # 0.6.21
 
 ## Improvements
