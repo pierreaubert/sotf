@@ -1,3 +1,27 @@
+# 0.6.22
+
+## Improvements
+
+- **Wizard**: make horizontal step indicators responsive. At medium widths only
+  the current step keeps its label; at very narrow widths the header collapses
+  to the current step icon.
+
+# 0.6.21
+
+## Improvements
+
+- **PaneDivider**: make separators more visible and professional with wider
+  gutters, theme-controlled foreground/background/border colors, and accent
+  tint rails for hover and active states.
+- **PaneDivider**: rotate collapsed vertical labels instead of rendering one
+  character per line.
+- **Accordion**: add active tint and accent rails to headers, plus accent
+  indicators for expanded sections.
+- **Accordion**: make horizontal content span the full accordion width below
+  the tab row.
+- **Accordion**: rework side orientation into split vertical bars around the
+  active content while preserving rotated labels.
+
 # 0.6.20
 
 ## Fixes

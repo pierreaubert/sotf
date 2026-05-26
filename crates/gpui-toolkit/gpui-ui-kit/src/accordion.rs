@@ -15,15 +15,24 @@ pub struct AccordionTheme {
     pub header_bg: Rgba,
     #[theme(default = 0x2a2a2a, from = surface_hover)]
     pub header_hover_bg: Rgba,
+    #[theme(default = 0x007acc33, from = accent_muted)]
+    pub header_active_bg: Rgba,
     #[theme(default = 0x1e1e1e, from = background)]
     pub content_bg: Rgba,
     #[theme(default = 0x3a3a3a, from = border)]
     pub border: Rgba,
+    #[theme(default = 0x007acc33, from = accent_muted)]
+    pub accent_tint: Rgba,
+    #[theme(default = 0x007acc, from = accent)]
+    pub accent: Rgba,
     #[theme(default = 0xffffff, from = text_primary)]
     pub title_color: Rgba,
     #[theme(default = 0x888888, from = text_muted)]
     pub indicator_color: Rgba,
 }
+
+type AccordionChangeHandler =
+    std::rc::Rc<Box<dyn Fn(&SharedString, bool, &mut Window, &mut App) + 'static>>;
 
 /// A single accordion item
 pub struct AccordionItem {
@@ -173,9 +182,7 @@ impl Accordion {
         // Use self.theme if provided, otherwise clone the passed theme
         let theme = self.theme.unwrap_or_else(|| theme.clone());
 
-        // Handle Side layout separately since it needs different structure
-        let is_side = matches!(self.orientation, AccordionOrientation::Side);
-        if is_side {
+        if matches!(self.orientation, AccordionOrientation::Side) {
             let Accordion {
                 items,
                 expanded,
@@ -186,95 +193,41 @@ impl Accordion {
             return Self::build_side_layout_static(items, expanded, theme, on_change);
         }
 
-        let on_change = self.on_change.map(|h| std::rc::Rc::new(h));
-        let is_vertical = matches!(self.orientation, AccordionOrientation::Vertical);
+        if matches!(self.orientation, AccordionOrientation::Horizontal) {
+            let Accordion {
+                items,
+                expanded,
+                on_change,
+                ..
+            } = self;
+            let on_change = on_change.map(|h| std::rc::Rc::new(h));
+            return Self::build_horizontal_layout_static(items, expanded, theme, on_change);
+        }
 
+        let on_change = self.on_change.map(|h| std::rc::Rc::new(h));
         let mut container = div()
             .flex()
+            .flex_col()
             .border_1()
             .border_color(theme.border)
             .rounded_lg();
-
-        // Set flex direction based on orientation
-        container = if is_vertical {
-            container.flex_col()
-        } else {
-            container.flex_row()
-        };
 
         for (idx, item) in self.items.into_iter().enumerate() {
             let is_expanded = self.expanded.contains(&item.id);
             let item_id = item.id.clone();
             let is_first = idx == 0;
 
-            // Create item wrapper for horizontal layout
-            let mut item_wrapper = div();
-            if !is_vertical {
-                item_wrapper = item_wrapper.flex().flex_col();
-            }
-
-            // Header
-            let mut header = div()
-                .id(SharedString::from(format!("accordion-header-{}", item_id)))
-                .flex()
-                .items_center()
-                .justify_between()
-                .px_4()
-                .py_3()
-                .bg(theme.header_bg)
-                .cursor_pointer();
-
-            // Add border based on orientation
-            if !is_first {
-                header = if is_vertical {
-                    header.border_t_1().border_color(theme.border)
-                } else {
-                    header.border_l_1().border_color(theme.border)
-                };
-            }
-
-            if item.disabled {
-                header = header.opacity(0.5).cursor_not_allowed();
-            } else {
-                let hover_bg = theme.header_hover_bg;
-                header =
-                    header.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
-
-                // Click handler
-                if let Some(handler) = on_change.clone() {
-                    let id = item_id.clone();
-                    let new_state = !is_expanded;
-                    header = header.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                        (handler)(&id, new_state, window, cx);
-                    });
-                }
-            }
-
-            // Title
-            header = header.child(
-                div()
-                    .text_sm()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(theme.title_color)
-                    .child(item.title),
+            let header = Self::build_header_static(
+                item_id,
+                item.title,
+                is_expanded,
+                item.disabled,
+                is_first,
+                true,
+                &theme,
+                on_change.clone(),
             );
-
-            // Expand/collapse indicator (different for vertical vs horizontal)
-            let indicator = if is_vertical {
-                if is_expanded { "▼" } else { "▶" }
-            } else if is_expanded {
-                "▼"
-            } else {
-                "▲"
-            };
-            header = header.child(
-                div()
-                    .text_xs()
-                    .text_color(theme.indicator_color)
-                    .child(indicator),
-            );
-
-            item_wrapper = item_wrapper.child(header);
+            let mut item_wrapper = div().child(header);
 
             // Content (only if expanded)
             if is_expanded && let Some(content) = item.content {
@@ -283,7 +236,11 @@ impl Accordion {
                     .py_3()
                     .bg(theme.content_bg)
                     .border_t_1()
-                    .border_color(theme.border);
+                    .border_color(if is_expanded {
+                        theme.accent_tint
+                    } else {
+                        theme.border
+                    });
 
                 item_wrapper = item_wrapper.child(content_div.child(content));
             }
@@ -294,134 +251,357 @@ impl Accordion {
         container
     }
 
-    /// Build side layout: headers vertically on left, content expands to right
-    fn build_side_layout_static(
+    /// Build horizontal layout: tab headers on top, full-width content below
+    fn build_horizontal_layout_static(
         items: Vec<AccordionItem>,
         expanded: Vec<SharedString>,
         theme: AccordionTheme,
-        on_change: Option<
-            std::rc::Rc<Box<dyn Fn(&SharedString, bool, &mut Window, &mut App) + 'static>>,
-        >,
+        on_change: Option<AccordionChangeHandler>,
     ) -> Div {
         let mut container = div()
             .flex()
-            .flex_row()
+            .flex_col()
             .border_1()
             .border_color(theme.border)
             .rounded_lg();
 
-        // Left side: vertical header tabs
-        let mut headers_container = div()
-            .flex()
-            .flex_col()
-            .border_r_1()
-            .border_color(theme.border);
+        let mut headers_container = div().flex().flex_row().w_full();
+        let mut content_container = div().flex().flex_col().w_full();
 
-        for (idx, item) in items.iter().enumerate() {
+        for (idx, item) in items.into_iter().enumerate() {
             let is_expanded = expanded.contains(&item.id);
             let item_id = item.id.clone();
-            let is_first = idx == 0;
 
-            let mut header = div()
-                .id(SharedString::from(format!(
-                    "accordion-header-side-{}",
-                    item_id
-                )))
-                .flex()
-                .items_center()
-                .justify_center()
-                .w(px(40.0))
-                .py_4()
-                .bg(theme.header_bg)
-                .cursor_pointer();
-
-            if !is_first {
-                header = header.border_t_1().border_color(theme.border);
-            }
-
-            if is_expanded {
-                header = header.bg(theme.header_hover_bg);
-            }
-
-            if item.disabled {
-                header = header.opacity(0.5).cursor_not_allowed();
-            } else {
-                let hover_bg = theme.header_hover_bg;
-                header =
-                    header.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
-
-                // Click handler
-                if let Some(handler) = on_change.clone() {
-                    let id = item_id.clone();
-                    let new_state = !is_expanded;
-                    header = header.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                        (handler)(&id, new_state, window, cx);
-                    });
-                }
-            }
-
-            // Vertical text - display each character on its own line
-            let mut text_container = div().flex().flex_col().items_center().gap_1();
-
-            // Show full text vertically when expanded, abbreviated when closed
-            if is_expanded {
-                // Show full text vertically
-                for ch in item.title.chars() {
-                    text_container = text_container.child(
-                        div()
-                            .text_xs()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme.title_color)
-                            .child(ch.to_string()),
-                    );
-                }
-            } else {
-                // Show first character only when closed
-                let label_text = if !item.title.is_empty() {
-                    item.title.chars().next().unwrap().to_string()
-                } else {
-                    String::from("?")
-                };
-                text_container = text_container.child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.title_color)
-                        .child(label_text),
-                );
-            }
-
-            header = header.child(text_container);
-
+            let header = Self::build_header_static(
+                item_id,
+                item.title,
+                is_expanded,
+                item.disabled,
+                idx == 0,
+                false,
+                &theme,
+                on_change.clone(),
+            );
             headers_container = headers_container.child(header);
-        }
-
-        container = container.child(headers_container);
-
-        // Right side: content area - show all expanded items side by side
-        let mut content_container = div().flex().flex_row().flex_1();
-
-        for item in items.into_iter() {
-            let is_expanded = expanded.contains(&item.id);
 
             if is_expanded && let Some(content) = item.content {
                 let content_div = div()
-                    .flex_1()
+                    .w_full()
                     .px_4()
                     .py_3()
                     .bg(theme.content_bg)
-                    .border_r_1()
-                    .border_color(theme.border)
+                    .border_t_1()
+                    .border_color(theme.accent_tint)
                     .child(content);
 
                 content_container = content_container.child(content_div);
             }
         }
 
-        container = container.child(content_container);
+        container = container.child(headers_container).child(content_container);
 
         container
     }
+
+    fn build_header_static(
+        item_id: SharedString,
+        title: SharedString,
+        is_expanded: bool,
+        disabled: bool,
+        is_first: bool,
+        is_vertical: bool,
+        theme: &AccordionTheme,
+        on_change: Option<AccordionChangeHandler>,
+    ) -> Stateful<Div> {
+        let mut header = div()
+            .id(SharedString::from(format!("accordion-header-{}", item_id)))
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_4()
+            .py_3()
+            .bg(if is_expanded {
+                theme.header_active_bg
+            } else {
+                theme.header_bg
+            })
+            .cursor_pointer();
+
+        if !is_vertical {
+            header = header.flex_1();
+        }
+
+        if !is_first {
+            header = if is_vertical {
+                header.border_t_1().border_color(theme.border)
+            } else {
+                header.border_l_1().border_color(theme.border)
+            };
+        }
+
+        if disabled {
+            header = header.opacity(0.5).cursor_not_allowed();
+        } else {
+            let hover_bg = theme.header_hover_bg;
+            let hover_accent = theme.accent_tint;
+            header = header.hover(move |style| {
+                style
+                    .bg(hover_bg)
+                    .border_color(hover_accent)
+                    .shadow(glow_shadow(hover_bg))
+            });
+
+            if let Some(handler) = on_change {
+                let id = item_id.clone();
+                let new_state = !is_expanded;
+                header = header.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                    (handler)(&id, new_state, window, cx);
+                });
+            }
+        }
+
+        let rail_bg = if is_expanded {
+            theme.accent
+        } else {
+            theme.accent_tint
+        };
+        header = header.child(div().w(px(3.0)).h(px(22.0)).rounded(px(1.5)).bg(rail_bg));
+
+        header = header.child(
+            div()
+                .flex_1()
+                .text_sm()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(theme.title_color)
+                .child(title),
+        );
+
+        let indicator = if is_vertical {
+            if is_expanded { "▼" } else { "▶" }
+        } else if is_expanded {
+            "▼"
+        } else {
+            "▲"
+        };
+        header.child(
+            div()
+                .text_xs()
+                .text_color(if is_expanded {
+                    theme.accent
+                } else {
+                    theme.indicator_color
+                })
+                .child(indicator),
+        )
+    }
+
+    /// Build side layout: vertical tab bars split around the active content
+    fn build_side_layout_static(
+        items: Vec<AccordionItem>,
+        expanded: Vec<SharedString>,
+        theme: AccordionTheme,
+        on_change: Option<AccordionChangeHandler>,
+    ) -> Div {
+        let active_index = items
+            .iter()
+            .position(|item| expanded.contains(&item.id))
+            .unwrap_or(usize::MAX);
+        let mut container = div()
+            .flex()
+            .flex_row()
+            .min_h(px(120.0))
+            .border_1()
+            .border_color(theme.border)
+            .rounded_lg();
+
+        let mut left_tabs = div().flex().flex_row().h_full();
+        let mut right_tabs = div().flex().flex_row().h_full();
+        let mut content_container = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .h_full()
+            .bg(theme.content_bg)
+            .border_x_1()
+            .border_color(theme.accent_tint);
+        let mut left_count = 0;
+        let mut right_count = 0;
+
+        for (idx, item) in items.into_iter().enumerate() {
+            let is_expanded = expanded.contains(&item.id);
+            let item_id = item.id.clone();
+            let goes_left = active_index == usize::MAX || idx <= active_index;
+            let is_first_in_group = if goes_left {
+                left_count == 0
+            } else {
+                right_count == 0
+            };
+
+            let tab = Self::build_side_tab_static(
+                item_id,
+                item.title,
+                is_expanded,
+                item.disabled,
+                is_first_in_group,
+                !goes_left,
+                &theme,
+                on_change.clone(),
+            );
+
+            if goes_left {
+                left_tabs = left_tabs.child(tab);
+                left_count += 1;
+            } else {
+                right_tabs = right_tabs.child(tab);
+                right_count += 1;
+            }
+
+            if is_expanded && let Some(content) = item.content {
+                let content_div = div()
+                    .w_full()
+                    .px_4()
+                    .py_3()
+                    .bg(theme.content_bg)
+                    .child(content);
+
+                content_container = content_container.child(content_div);
+            }
+        }
+
+        container = container
+            .child(left_tabs)
+            .child(content_container)
+            .child(right_tabs);
+
+        container
+    }
+
+    fn build_side_tab_static(
+        item_id: SharedString,
+        title: SharedString,
+        is_expanded: bool,
+        disabled: bool,
+        is_first_in_group: bool,
+        rail_on_right: bool,
+        theme: &AccordionTheme,
+        on_change: Option<AccordionChangeHandler>,
+    ) -> Stateful<Div> {
+        let mut header = div()
+            .id(SharedString::from(format!(
+                "accordion-header-side-{}",
+                item_id
+            )))
+            .relative()
+            .flex()
+            .items_center()
+            .justify_center()
+            .w(px(42.0))
+            .h_full()
+            .min_h(px(120.0))
+            .bg(if is_expanded {
+                theme.header_active_bg
+            } else {
+                theme.header_bg
+            })
+            .cursor_pointer();
+
+        if !is_first_in_group {
+            header = header.border_l_1().border_color(theme.border);
+        }
+
+        if disabled {
+            header = header.opacity(0.5).cursor_not_allowed();
+        } else {
+            let hover_bg = theme.header_hover_bg;
+            let hover_accent = theme.accent_tint;
+            header = header.hover(move |style| {
+                style
+                    .bg(hover_bg)
+                    .border_color(hover_accent)
+                    .shadow(glow_shadow(hover_bg))
+            });
+
+            if let Some(handler) = on_change {
+                let id = item_id.clone();
+                let new_state = !is_expanded;
+                header = header.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                    (handler)(&id, new_state, window, cx);
+                });
+            }
+        }
+
+        let label_text = title.to_string();
+        let label_height = side_label_height(&title);
+        let label_svg = rotated_side_label_svg(&label_text);
+        let label_path = SharedString::from(format!("accordion-side-label:{item_id}:{label_text}"));
+        let label_color = if is_expanded {
+            theme.accent
+        } else {
+            theme.title_color
+        };
+
+        let mut rail = div()
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .w(px(3.0))
+            .bg(if is_expanded {
+                theme.accent
+            } else {
+                theme.accent_tint
+            });
+        rail = if rail_on_right {
+            rail.right_0()
+        } else {
+            rail.left_0()
+        };
+
+        header.child(rail).child(
+            canvas(
+                move |_bounds, _window, _cx| label_svg,
+                move |bounds, label_svg, window, cx| {
+                    let _ = window.paint_svg(
+                        bounds,
+                        label_path,
+                        Some(label_svg.as_bytes()),
+                        TransformationMatrix::unit(),
+                        Hsla::from(label_color),
+                        cx,
+                    );
+                },
+            )
+            .w(px(18.0))
+            .h(label_height),
+        )
+    }
+}
+
+fn side_label_height(label: &str) -> Pixels {
+    px((label.chars().count() as f32 * 6.0 + 28.0).clamp(54.0, 126.0))
+}
+
+fn rotated_side_label_svg(label: &str) -> String {
+    let escaped = escape_side_label_svg_text(label);
+    format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="18" height="126" viewBox="0 0 18 126">
+<text x="0" y="0" transform="translate(9 63) rotate(-90)" text-anchor="middle" dominant-baseline="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="11" font-weight="600" fill="black">{escaped}</text>
+</svg>"#
+    )
+}
+
+fn escape_side_label_svg_text(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&apos;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 impl Default for Accordion {
