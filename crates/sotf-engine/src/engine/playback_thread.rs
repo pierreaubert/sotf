@@ -294,6 +294,16 @@ fn select_playback_device(
     }
 }
 
+#[cfg(target_os = "macos")]
+fn coreaudio_output_device_id(name: &str) -> Option<u32> {
+    coreaudio::audio_unit::macos_helpers::get_device_id_from_name(name, false)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn coreaudio_output_device_id(_name: &str) -> Option<u32> {
+    None
+}
+
 struct RebuiltPlaybackStream {
     device: Device,
     device_name: String,
@@ -540,6 +550,7 @@ fn run_playback_thread(
         .description()
         .map(|d| d.name().to_string())
         .unwrap_or_else(|_| "Unknown".to_string());
+    let mut coreaudio_device_id = coreaudio_output_device_id(&device_name);
 
     log::info!(
         "[Playback Thread] Started - {}Hz, {} channels, format: {:?}, device: '{}'",
@@ -597,6 +608,8 @@ fn run_playback_thread(
         .checked_sub(std::time::Duration::from_secs(10))
         .unwrap_or_else(std::time::Instant::now);
     let recovery_retry_interval = std::time::Duration::from_millis(500);
+    let mut last_device_identity_check = std::time::Instant::now();
+    let device_identity_check_interval = std::time::Duration::from_secs(2);
     let mut last_reported_underruns: u64 = 0;
 
     // Main loop: read from queue and write to ring buffer
@@ -988,7 +1001,26 @@ fn run_playback_thread(
         {
             let current_stream_errors = state.stream_error_count.load(Ordering::Relaxed);
             let current_callbacks = state.callback_count.load(Ordering::Relaxed);
-            let recovery_reason = if current_stream_errors != last_stream_error_count {
+            let coreaudio_identity_reason =
+                if last_device_identity_check.elapsed() > device_identity_check_interval {
+                    last_device_identity_check = std::time::Instant::now();
+                    let current_device_id = coreaudio_output_device_id(&device_name);
+                    if current_device_id.is_some() && current_device_id != coreaudio_device_id {
+                        let previous_device_id = coreaudio_device_id;
+                        coreaudio_device_id = current_device_id;
+                        Some(format!(
+                            "CoreAudio device id changed for '{}' ({:?} -> {:?})",
+                            device_name, previous_device_id, current_device_id
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+            let recovery_reason = if let Some(reason) = coreaudio_identity_reason {
+                Some(reason)
+            } else if current_stream_errors != last_stream_error_count {
                 last_stream_error_count = current_stream_errors;
                 Some(format!(
                     "stream error reported by CoreAudio ({} total)",
@@ -1073,6 +1105,8 @@ fn run_playback_thread(
                         output_format = rebuilt.output_format;
                         channels = rebuilt.channels;
                         buffer_capacity = rebuilt.buffer_capacity;
+                        coreaudio_device_id = coreaudio_output_device_id(&device_name);
+                        last_device_identity_check = std::time::Instant::now();
                         last_callback_count = 0;
                         last_stream_error_count = 0;
                         last_callback_check = std::time::Instant::now();
@@ -1987,6 +2021,18 @@ mod tests {
         assert!(
             source.contains("if crate::rate_limit::allow(&EVENT_GATE, 5_000_000_000)"),
             "playback stream-error callbacks must rate-limit event formatting/sending"
+        );
+    }
+
+    #[test]
+    fn macos_playback_recovers_when_coreaudio_device_id_changes() {
+        let source = include_str!("playback_thread.rs");
+
+        assert!(
+            source.contains("coreaudio_output_device_id(&device_name)")
+                && source.contains("CoreAudio device id changed")
+                && source.contains("rebuild_playback_stream("),
+            "playback should rebuild the output stream when macOS resurrects a named device under a new CoreAudio device id"
         );
     }
 
