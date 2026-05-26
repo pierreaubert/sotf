@@ -4,6 +4,9 @@ System-wide audio processing subsystem for SOTF. Captures audio from the OS mixe
 
 ## Architecture
 
+For a full component review, state-ownership analysis, and Mermaid use-case
+diagrams, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ```text
 macOS Audio Apps (Safari, Spotify, ...)
          |
