@@ -7,17 +7,23 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sotf_dlna::{DlnaDevice, DlnaMediaServer, MediaServerAdapter};
 use sotf_mpd::{
     FilterExpr, MpdAuthMode, MpdDirEntry, MpdPlayState, MpdServer, MpdServerConfig, MpdSongInfo,
     MpdStatus, PlayerAdapter,
 };
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
-use crate::federation_config::{self, ServerConfig};
+use crate::federation_config::{self, ServerConfig, SotfApiSettings};
 use crate::library::MusicLibrary;
 use crate::player::Player;
 use crate::queue::Queue;
+
+const API_MAX_REQUEST_BYTES: usize = 64 * 1024;
+const API_MAX_BODY_BYTES: usize = 32 * 1024;
 
 /// Shared state for the headless server adapters.
 struct ServerState {
@@ -473,6 +479,394 @@ impl MediaServerAdapter for DlnaLibraryAdapter {
 }
 
 // ---------------------------------------------------------------------------
+// SOTF LAN control API
+// ---------------------------------------------------------------------------
+
+#[derive(Debug)]
+struct ApiRequest {
+    method: String,
+    path: String,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+}
+
+async fn run_sotf_api_server(
+    settings: SotfApiSettings,
+    state: Arc<ServerState>,
+    mut cancel: tokio::sync::watch::Receiver<bool>,
+) -> Result<(), String> {
+    let auth_token = validate_sotf_api_token(&settings)?;
+    let bind_addr = format!("{}:{}", settings.bind_address, settings.port);
+    let listener = TcpListener::bind(&bind_addr)
+        .await
+        .map_err(|e| format!("bind {bind_addr}: {e}"))?;
+
+    loop {
+        tokio::select! {
+            changed = cancel.changed() => {
+                if changed.is_err() || *cancel.borrow() {
+                    break;
+                }
+            }
+            accepted = listener.accept() => {
+                let (stream, _) = accepted.map_err(|e| format!("accept: {e}"))?;
+                let state = Arc::clone(&state);
+                let settings = settings.clone();
+                let auth_token = auth_token.clone();
+                tokio::spawn(async move {
+                    handle_sotf_api_connection(stream, state, settings, auth_token).await;
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_sotf_api_connection(
+    mut stream: TcpStream,
+    state: Arc<ServerState>,
+    settings: SotfApiSettings,
+    auth_token: String,
+) {
+    let response = match read_api_request(&mut stream).await {
+        Ok(request) => handle_sotf_api_request(request, &state, &settings, &auth_token),
+        Err(err) => api_error_response(400, &err),
+    };
+
+    let _ = stream.write_all(&response).await;
+    let _ = stream.shutdown().await;
+}
+
+async fn read_api_request(stream: &mut TcpStream) -> Result<ApiRequest, String> {
+    let mut buf = Vec::with_capacity(4096);
+    let mut chunk = [0u8; 2048];
+
+    loop {
+        if buf.len() > API_MAX_REQUEST_BYTES {
+            return Err("request too large".to_string());
+        }
+
+        if let Some(header_end) = find_header_end(&buf) {
+            let content_length = api_content_length_from_headers(&buf[..header_end])?;
+            if content_length > API_MAX_BODY_BYTES {
+                return Err("request body too large".to_string());
+            }
+            let required = header_end + content_length;
+            while buf.len() < required {
+                let read = stream
+                    .read(&mut chunk)
+                    .await
+                    .map_err(|e| format!("read request body: {e}"))?;
+                if read == 0 {
+                    return Err("connection closed before request body completed".to_string());
+                }
+                buf.extend_from_slice(&chunk[..read]);
+                if buf.len() > API_MAX_REQUEST_BYTES {
+                    return Err("request too large".to_string());
+                }
+            }
+            return parse_api_request(&buf[..required], header_end);
+        }
+
+        let read = stream
+            .read(&mut chunk)
+            .await
+            .map_err(|e| format!("read request: {e}"))?;
+        if read == 0 {
+            return Err("connection closed before request headers completed".to_string());
+        }
+        buf.extend_from_slice(&chunk[..read]);
+    }
+}
+
+fn parse_api_request(buf: &[u8], header_end: usize) -> Result<ApiRequest, String> {
+    let header_text = std::str::from_utf8(&buf[..header_end])
+        .map_err(|_| "request headers are not valid UTF-8".to_string())?;
+    let mut lines = header_text.split("\r\n");
+    let request_line = lines
+        .next()
+        .ok_or_else(|| "missing request line".to_string())?;
+    let mut parts = request_line.split_whitespace();
+    let method = parts
+        .next()
+        .ok_or_else(|| "missing request method".to_string())?;
+    let path = parts
+        .next()
+        .ok_or_else(|| "missing request path".to_string())?;
+    let version = parts
+        .next()
+        .ok_or_else(|| "missing HTTP version".to_string())?;
+
+    if !version.starts_with("HTTP/1.") {
+        return Err("unsupported HTTP version".to_string());
+    }
+
+    let mut headers = Vec::new();
+    for line in lines {
+        if line.is_empty() {
+            continue;
+        }
+        let (name, value) = line
+            .split_once(':')
+            .ok_or_else(|| "malformed request header".to_string())?;
+        headers.push((name.trim().to_ascii_lowercase(), value.trim().to_string()));
+    }
+
+    let content_length = api_content_length(&headers)?;
+    let body_start = header_end;
+    let body_end = body_start + content_length;
+    Ok(ApiRequest {
+        method: method.to_ascii_uppercase(),
+        path: path.to_string(),
+        headers,
+        body: buf[body_start..body_end].to_vec(),
+    })
+}
+
+fn handle_sotf_api_request(
+    request: ApiRequest,
+    state: &Arc<ServerState>,
+    settings: &SotfApiSettings,
+    auth_token: &str,
+) -> Vec<u8> {
+    let route = request.path.split('?').next().unwrap_or(&request.path);
+
+    match (request.method.as_str(), route) {
+        ("GET", "/api/v1/health") => {
+            return api_json_response(
+                200,
+                json!({
+                    "ok": true,
+                    "service": "sotf",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "auth_required": true,
+                }),
+            );
+        }
+        ("GET", "/api/v1/discovery") => {
+            return api_json_response(
+                200,
+                json!({
+                    "service": "sotf",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "friendly_name": settings.friendly_name.clone(),
+                    "api_version": 1,
+                    "base_path": "/api/v1",
+                    "auth": "bearer",
+                    "auth_required": true,
+                }),
+            );
+        }
+        _ => {}
+    }
+
+    if !api_auth_valid(&request.headers, auth_token) {
+        return api_error_response(401, "missing or invalid bearer token");
+    }
+
+    let adapter = MpdPlayerAdapter {
+        state: Arc::clone(state),
+    };
+
+    match (request.method.as_str(), route) {
+        ("GET", "/api/v1/state") => api_json_response(200, api_state_json(state, &adapter)),
+        ("GET", "/api/v1/queue") => api_json_response(200, api_queue_json(&adapter)),
+        ("POST", "/api/v1/play") => api_command_response("play", adapter.play(None)),
+        ("POST", "/api/v1/pause") => api_command_response("pause", adapter.pause(Some(true))),
+        ("POST", "/api/v1/resume") => api_command_response("resume", adapter.pause(Some(false))),
+        ("POST", "/api/v1/stop") => api_command_response("stop", adapter.stop()),
+        ("POST", "/api/v1/next") => api_command_response("next", adapter.next()),
+        ("POST", "/api/v1/previous") => api_command_response("previous", adapter.previous()),
+        ("POST", "/api/v1/seek") => match api_json_body(&request).and_then(|body| {
+            let position = body
+                .get("position_secs")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| "position_secs is required".to_string())?;
+            if !position.is_finite() || position < 0.0 {
+                return Err("position_secs must be a non-negative finite number".to_string());
+            }
+            let player = state.player.lock();
+            player.seek(position).map_err(|e| e.to_string())
+        }) {
+            Ok(()) => api_json_response(200, json!({ "ok": true, "command": "seek" })),
+            Err(err) => api_error_response(400, &err),
+        },
+        ("POST", "/api/v1/volume") => match api_json_body(&request).and_then(|body| {
+            let volume = body
+                .get("volume")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| "volume is required".to_string())?;
+            if volume > 100 {
+                return Err("volume must be between 0 and 100".to_string());
+            }
+            adapter.set_volume(volume as u8)
+        }) {
+            Ok(()) => api_json_response(200, json!({ "ok": true, "command": "volume" })),
+            Err(err) => api_error_response(400, &err),
+        },
+        _ if route.starts_with("/api/v1/") => api_error_response(404, "unknown API route"),
+        _ => api_error_response(404, "not found"),
+    }
+}
+
+fn api_state_json(state: &Arc<ServerState>, adapter: &MpdPlayerAdapter) -> Value {
+    let status = adapter.status();
+    let current_song = adapter.current_song().map(|song| mpd_song_json(&song));
+    let (album_count, track_count) = {
+        let library = state.library.lock();
+        let track_count = library
+            .albums
+            .iter()
+            .map(|album| album.tracks.len())
+            .sum::<usize>();
+        (library.albums.len(), track_count)
+    };
+
+    json!({
+        "playback": {
+            "state": mpd_state_name(&status.state),
+            "position_secs": status.elapsed,
+            "duration_secs": status.duration,
+            "volume": status.volume,
+            "current_index": status.song,
+            "playlist_length": status.playlist_length,
+            "playlist_version": status.playlist_version,
+            "audio": status.audio,
+        },
+        "current_song": current_song,
+        "library": {
+            "albums": album_count,
+            "tracks": track_count,
+        },
+    })
+}
+
+fn api_queue_json(adapter: &MpdPlayerAdapter) -> Value {
+    let songs: Vec<_> = adapter
+        .playlist_info(None)
+        .iter()
+        .map(mpd_song_json)
+        .collect();
+    json!({ "items": songs })
+}
+
+fn api_command_response(command: &str, result: Result<(), String>) -> Vec<u8> {
+    match result {
+        Ok(()) => api_json_response(200, json!({ "ok": true, "command": command })),
+        Err(err) => api_error_response(400, &err),
+    }
+}
+
+fn api_json_body(request: &ApiRequest) -> Result<Value, String> {
+    if request.body.is_empty() {
+        return Err("JSON body is required".to_string());
+    }
+    serde_json::from_slice(&request.body).map_err(|e| format!("invalid JSON body: {e}"))
+}
+
+fn mpd_song_json(song: &MpdSongInfo) -> Value {
+    json!({
+        "file": &song.file,
+        "title": &song.title,
+        "artist": &song.artist,
+        "album": &song.album,
+        "track": &song.track,
+        "date": &song.date,
+        "genre": &song.genre,
+        "duration_secs": song.duration,
+        "pos": song.pos,
+        "id": song.id,
+    })
+}
+
+fn mpd_state_name(state: &MpdPlayState) -> &'static str {
+    match state {
+        MpdPlayState::Play => "play",
+        MpdPlayState::Pause => "pause",
+        MpdPlayState::Stop => "stop",
+    }
+}
+
+fn api_json_response(status: u16, body: Value) -> Vec<u8> {
+    let body = serde_json::to_vec(&body).unwrap_or_else(|_| b"{\"error\":\"json\"}".to_vec());
+    let headers = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        status,
+        api_status_text(status),
+        body.len()
+    );
+    let mut response = headers.into_bytes();
+    response.extend_from_slice(&body);
+    response
+}
+
+fn api_error_response(status: u16, error: &str) -> Vec<u8> {
+    api_json_response(status, json!({ "ok": false, "error": error }))
+}
+
+fn api_status_text(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        404 => "Not Found",
+        _ => "Error",
+    }
+}
+
+fn api_auth_valid(headers: &[(String, String)], auth_token: &str) -> bool {
+    let Some(value) = api_header(headers, "authorization") else {
+        return false;
+    };
+    value.trim() == format!("Bearer {auth_token}")
+}
+
+fn api_header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(header, _)| header == name)
+        .map(|(_, value)| value.as_str())
+}
+
+fn api_content_length_from_headers(header_bytes: &[u8]) -> Result<usize, String> {
+    let header_text = std::str::from_utf8(header_bytes)
+        .map_err(|_| "request headers are not valid UTF-8".to_string())?;
+    let headers: Vec<_> = header_text
+        .split("\r\n")
+        .skip(1)
+        .filter_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            Some((name.trim().to_ascii_lowercase(), value.trim().to_string()))
+        })
+        .collect();
+    api_content_length(&headers)
+}
+
+fn api_content_length(headers: &[(String, String)]) -> Result<usize, String> {
+    match api_header(headers, "content-length") {
+        Some(value) => value
+            .parse::<usize>()
+            .map_err(|_| "invalid Content-Length".to_string()),
+        None => Ok(0),
+    }
+}
+
+fn find_header_end(buf: &[u8]) -> Option<usize> {
+    buf.windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|pos| pos + 4)
+}
+
+fn validate_sotf_api_token(settings: &SotfApiSettings) -> Result<String, String> {
+    let token = settings.auth_token.as_deref().unwrap_or_default().trim();
+    if token.is_empty() {
+        return Err("SOTF API requires a non-empty auth_token when enabled".to_string());
+    }
+    Ok(token.to_string())
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -620,12 +1014,12 @@ fn get_local_ipv4() -> Ipv4Addr {
 pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     let config = crate::config::load_server_config()?;
 
-    if !config.mpd.enabled && !config.dlna.enabled {
+    if !config.mpd.enabled && !config.dlna.enabled && !config.api.enabled {
         eprintln!(
             "error: No servers are enabled in the configuration.\n\
              \n\
              Configure servers in ~/.config/sotf/servers.json or use the\n\
-             Configure > Servers screen in the UI to enable MPD and/or DLNA,\n\
+             Configure > Servers screen in the UI to enable MPD, DLNA, and/or the SOTF API,\n\
              then re-run with --server."
         );
         std::process::exit(1);
@@ -652,6 +1046,11 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         None
     };
+
+    if config.api.enabled {
+        validate_sotf_api_token(&config.api)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    }
 
     // Build a tokio runtime for the async servers
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -716,6 +1115,25 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
                 if let Err(e) = server.run(local_ip, cancel).await {
                     log::error!("[server] DLNA server error: {}", e);
                     eprintln!("DLNA server error: {}", e);
+                }
+            }));
+        }
+
+        // Start SOTF LAN control API
+        if config.api.enabled {
+            let api_config = config.api.clone();
+            let cancel = shutdown_rx.clone();
+            let api_state = Arc::clone(&state);
+
+            eprintln!(
+                "SOTF API '{}' listening on {}:{}",
+                api_config.friendly_name, api_config.bind_address, api_config.port
+            );
+
+            handles.push(tokio::spawn(async move {
+                if let Err(e) = run_sotf_api_server(api_config, api_state, cancel).await {
+                    log::error!("[server] SOTF API server error: {}", e);
+                    eprintln!("SOTF API server error: {}", e);
                 }
             }));
         }
@@ -802,4 +1220,51 @@ fn build_mpd_tls_acceptor(
         cert_store.server_fingerprint()
     );
     Ok(tokio_rustls::TlsAcceptor::from(tls_config))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn api_settings(token: Option<&str>) -> SotfApiSettings {
+        SotfApiSettings {
+            enabled: true,
+            bind_address: "127.0.0.1".to_string(),
+            port: 8732,
+            friendly_name: "Test SOTF".to_string(),
+            auth_token: token.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn sotf_api_requires_non_empty_token() {
+        assert!(validate_sotf_api_token(&api_settings(None)).is_err());
+        assert!(validate_sotf_api_token(&api_settings(Some("   "))).is_err());
+        assert_eq!(
+            validate_sotf_api_token(&api_settings(Some("secret"))).unwrap(),
+            "secret"
+        );
+    }
+
+    #[test]
+    fn sotf_api_auth_accepts_only_bearer_token() {
+        let headers = vec![("authorization".to_string(), "Bearer secret".to_string())];
+        assert!(api_auth_valid(&headers, "secret"));
+        assert!(!api_auth_valid(&headers, "other"));
+
+        let headers = vec![("authorization".to_string(), "Basic secret".to_string())];
+        assert!(!api_auth_valid(&headers, "secret"));
+    }
+
+    #[test]
+    fn sotf_api_parses_request_with_body() {
+        let raw =
+            b"POST /api/v1/volume HTTP/1.1\r\nHost: localhost\r\nContent-Length: 13\r\n\r\n{\"volume\":42}";
+        let header_end = find_header_end(raw).unwrap();
+        let request = parse_api_request(raw, header_end).unwrap();
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.path, "/api/v1/volume");
+        assert_eq!(api_header(&request.headers, "host"), Some("localhost"));
+        assert_eq!(request.body, br#"{"volume":42}"#);
+    }
 }
