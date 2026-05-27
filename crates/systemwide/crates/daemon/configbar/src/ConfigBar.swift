@@ -1166,19 +1166,14 @@ class StatusBarController: NSObject, ObservableObject {
     private func updateIcon() {
         guard let button = statusItem.button else { return }
 
-        // For menubar template icons, don't set contentTintColor as it breaks
-        // the automatic light/dark adaptation. Instead, use different symbols
-        // or keep it monochrome and show status in the menu.
-
-        // Only tint when actively playing (green) or error (red)
+        // Keep startup/idle visually quiet and make active audio stand out.
         switch currentState {
         case .playing:
-            button.contentTintColor = .systemGreen
+            button.contentTintColor = .white
         case .error:
             button.contentTintColor = .systemRed
         default:
-            // Let system handle the color for template images
-            button.contentTintColor = nil
+            button.contentTintColor = .black
         }
     }
 

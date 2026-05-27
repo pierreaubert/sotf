@@ -341,6 +341,26 @@ fn configbar_hal_stream_status_wording_matches_signal_scope() {
 }
 
 #[test]
+fn configbar_menu_bar_icon_uses_active_light_idle_dark() {
+    let configbar = include_str!("../configbar/src/ConfigBar.swift");
+    let playing_tint = configbar
+        .find("case .playing:\n            button.contentTintColor = .white")
+        .expect("playing toolbar icon should be explicitly light");
+    let idle_tint = configbar
+        .find("default:\n            button.contentTintColor = .black")
+        .expect("startup/idle toolbar icon should be explicitly dark");
+
+    assert!(
+        playing_tint < idle_tint,
+        "toolbar icon tint mapping should keep playing active/light and startup idle/dark"
+    );
+    assert!(
+        !configbar.contains("button.contentTintColor = .systemGreen"),
+        "working toolbar icon should no longer turn green/black instead of white"
+    );
+}
+
+#[test]
 fn configbar_plugin_edit_sheet_batches_parameter_edits_until_apply_or_close() {
     let source = include_str!("../configbar/src/PluginRackView.swift");
     let sheet_start = source
