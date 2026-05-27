@@ -265,6 +265,28 @@ fn configbar_output_device_refresh_tracks_channel_limits() {
 }
 
 #[test]
+fn configbar_hal_stream_status_wording_matches_signal_scope() {
+    let configbar = include_str!("../configbar/src/ConfigBar.swift");
+    let shared_memory = include_str!("../../driver-hal/swift/Sources/SharedMemory.swift");
+
+    assert!(
+        configbar.contains("HAL Stream Active")
+            && configbar.contains("HAL Stream Idle")
+            && !configbar.contains("\"No Audio\""),
+        "HAL status should describe the virtual HAL stream, not imply the whole system has no audio"
+    );
+    assert!(
+        shared_memory.contains("if header.pointee.active == 0")
+            && shared_memory.contains("header.pointee.active = 1")
+            && shared_memory
+                .contains("header.pointee.writePosition = writePos + UInt64(samplesToWrite)")
+            && shared_memory
+                .contains("header.pointee.writePosition = writePos + UInt64(floatCount)"),
+        "successful HAL shared-memory writes should mark the HAL stream active even if StartIO state was stale"
+    );
+}
+
+#[test]
 fn configbar_plugin_edit_sheet_batches_parameter_edits_until_apply_or_close() {
     let source = include_str!("../configbar/src/PluginRackView.swift");
     let sheet_start = source

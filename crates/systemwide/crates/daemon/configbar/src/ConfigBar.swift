@@ -1869,7 +1869,7 @@ struct ConfigurationView: View {
                         HStack(spacing: 4) {
                             Image(systemName: halConfig.active ? "waveform" : "waveform.slash")
                                 .foregroundColor(halConfig.active ? .green : .secondary)
-                            Text(halConfig.active ? "Audio Active" : "No Audio")
+                            Text(halConfig.active ? "HAL Stream Active" : "HAL Stream Idle")
                                 .font(.caption)
                                 .foregroundColor(halConfig.active ? .primary : .secondary)
                         }

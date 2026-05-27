@@ -541,6 +541,9 @@ final class SharedAudioBuffer {
 
         // Update write position atomically
         OSMemoryBarrier()
+        if header.pointee.active == 0 {
+            header.pointee.active = 1
+        }
         header.pointee.writePosition = writePos + UInt64(samplesToWrite)
 
         // TRACE: Log successful write to shared memory ring buffer
@@ -611,6 +614,9 @@ final class SharedAudioBuffer {
         }
         
         OSMemoryBarrier()
+        if header.pointee.active == 0 {
+            header.pointee.active = 1
+        }
         header.pointee.writePosition = writePos + UInt64(floatCount)
         
         return originalFrameCount
