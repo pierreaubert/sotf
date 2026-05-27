@@ -10,6 +10,11 @@ use gpui_ui_kit::theme::ThemeState as UiKitThemeState;
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use std::time::Duration;
 
+#[cfg(target_os = "ios")]
+unsafe extern "C" {
+    fn sotf_ios_pop_remote_command() -> i32;
+}
+
 // Re-export all actions for backward compatibility
 pub use crate::app::actions::*;
 use crate::components::plugins::actions::{
@@ -294,6 +299,9 @@ impl PlayerView {
                         for event in &media_events {
                             Self::handle_media_control_event(state, event);
                         }
+
+                        #[cfg(target_os = "ios")]
+                        Self::drain_ios_remote_commands(state);
 
                         if state.app.playback.is_playing && playback_state.is_playing {
                             state.app.check_and_record_play();
@@ -771,6 +779,57 @@ impl PlayerView {
         if let Some(stats) = pending {
             state.app.library_stats = stats;
             state.app.library_stats_computing = false;
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    fn drain_ios_remote_commands(state: &mut AppState) {
+        for _ in 0..32 {
+            // SAFETY: implemented by the iOS crate in the final app binary.
+            // It returns one small integer command and never hands out Rust
+            // references across the FFI boundary.
+            match unsafe { sotf_ios_pop_remote_command() } {
+                0 => break,
+                1 => Self::handle_ios_queue_navigation(state, true),
+                2 => Self::handle_ios_queue_navigation(state, false),
+                3 => {
+                    log::debug!("[iOS] imported files command consumed by remote drain");
+                }
+                other => {
+                    log::warn!("[iOS] unknown remote command code: {other}");
+                    break;
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    fn handle_ios_queue_navigation(state: &mut AppState, next: bool) {
+        if let Err(e) = state.player.lock().cancel_next() {
+            log::warn!("Player cancel_next failed: {e}");
+        }
+
+        let from_index = state.app.playback.current_queue_index;
+        let source = if next {
+            state.app.next_track()
+        } else {
+            state.app.previous_track()
+        };
+
+        if let Some(source) = source {
+            Self::play_track(state, source);
+            if let Some(to_index) = state.app.playback.current_queue_index {
+                let trigger = if next {
+                    crate::app::state::TrackChangeTrigger::NextTrack
+                } else {
+                    crate::app::state::TrackChangeTrigger::PrevTrack
+                };
+                state
+                    .app
+                    .record_track_changed(from_index, to_index, trigger);
+            }
+        } else if next {
+            state.app.playback.is_playing = false;
         }
     }
 

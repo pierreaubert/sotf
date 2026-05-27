@@ -380,8 +380,11 @@ impl Theme {
         gpui_ui_kit::AccordionTheme {
             header_bg: self.surface,
             header_hover_bg: self.surface_hover,
+            header_active_bg: self.accent_muted,
             content_bg: self.background,
             border: self.border,
+            accent_tint: self.accent_muted,
+            accent: self.accent,
             title_color: self.text_primary,
             indicator_color: self.text_muted,
         }

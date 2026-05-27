@@ -7,6 +7,7 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use sha2::{Digest, Sha256};
 use sotf_dlna::{DlnaDevice, DlnaMediaServer, MediaServerAdapter};
 use sotf_mpd::{
     FilterExpr, MpdAuthMode, MpdDirEntry, MpdPlayState, MpdServer, MpdServerConfig, MpdSongInfo,
@@ -454,6 +455,21 @@ impl MediaServerAdapter for DlnaLibraryAdapter {
         let library = self.state.library.lock();
         library.albums.len() as u32
     }
+
+    fn media_path(&self, track_id: &str) -> Option<sotf_dlna::MediaSource> {
+        let library = self.state.library.lock();
+        for album in &library.albums {
+            for (i, track) in album.tracks.iter().enumerate() {
+                if media_track_id(track, album, i) == track_id {
+                    return Some(sotf_dlna::MediaSource {
+                        path: track.path.clone(),
+                        mime_type: mime_type_for_path(&track.path).to_string(),
+                    });
+                }
+            }
+        }
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -484,9 +500,26 @@ fn track_to_media_track(
         .id
         .map_or_else(|| album.title.clone(), |id| id.to_string());
 
-    // Guess MIME type from extension
-    let mime = match track
-        .path
+    sotf_dlna::MediaTrack {
+        id: media_track_id(track, album, index),
+        album_id,
+        title: track.title.clone().unwrap_or_default(),
+        artist: track.artist.clone().unwrap_or_default(),
+        album: album.title.clone(),
+        genre: track.genre.clone(),
+        track_number: track.track_number,
+        duration_secs: track.duration_secs.map(|d| d as f64),
+        file_path: track.path.display().to_string(),
+        mime_type: mime_type_for_path(&track.path).to_string(),
+        sample_rate: track.sample_rate,
+        channels: track.channels,
+        bit_depth: track.bit_depth,
+        file_size: std::fs::metadata(&track.path).ok().map(|m| m.len()),
+    }
+}
+
+fn mime_type_for_path(path: &std::path::Path) -> &'static str {
+    match path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
@@ -496,27 +529,51 @@ fn track_to_media_track(
         "flac" => "audio/flac",
         "mp3" => "audio/mpeg",
         "m4a" | "aac" => "audio/mp4",
-        "ogg" => "audio/ogg",
+        "ogg" | "oga" => "audio/ogg",
         "wav" => "audio/wav",
-        _ => "audio/unknown",
-    };
-
-    sotf_dlna::MediaTrack {
-        id: format!("{}-{}", album_id, index),
-        album_id,
-        title: track.title.clone().unwrap_or_default(),
-        artist: track.artist.clone().unwrap_or_default(),
-        album: album.title.clone(),
-        genre: track.genre.clone(),
-        track_number: track.track_number,
-        duration_secs: track.duration_secs.map(|d| d as f64),
-        file_path: track.path.display().to_string(),
-        mime_type: mime.to_string(),
-        sample_rate: track.sample_rate,
-        channels: track.channels,
-        bit_depth: track.bit_depth,
-        file_size: std::fs::metadata(&track.path).ok().map(|m| m.len()),
+        "aif" | "aiff" => "audio/aiff",
+        _ => "application/octet-stream",
     }
+}
+
+fn media_track_id(
+    track: &crate::library::Track,
+    album: &crate::library::Album,
+    index: usize,
+) -> String {
+    if let Some(uuid) = track.uuid.as_deref()
+        && is_safe_media_id(uuid)
+    {
+        return format!("track-{uuid}");
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(album.id.map(|id| id.to_le_bytes()).unwrap_or_default());
+    hasher.update(album.title.as_bytes());
+    hasher.update([0]);
+    hasher.update(index.to_le_bytes());
+    hasher.update([0]);
+    hasher.update(track.path.to_string_lossy().as_bytes());
+    let digest = hasher.finalize();
+    format!("track-{}", hex_prefix(&digest, 24))
+}
+
+fn is_safe_media_id(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+}
+
+fn hex_prefix(bytes: &[u8], chars: usize) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let byte_count = chars.div_ceil(2).min(bytes.len());
+    let mut out = String::with_capacity(byte_count * 2);
+    for &b in &bytes[..byte_count] {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out.truncate(chars);
+    out
 }
 
 /// Flatten the queue into a flat list of MpdSongInfo (one entry per track).
@@ -590,6 +647,12 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
         playlist_version: std::sync::atomic::AtomicU32::new(1),
     });
 
+    let mpd_tls_acceptor = if config.mpd.enabled && config.mpd.tls_enabled {
+        Some(build_mpd_tls_acceptor(&config)?)
+    } else {
+        None
+    };
+
     // Build a tokio runtime for the async servers
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -615,7 +678,10 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
             let adapter: Arc<dyn PlayerAdapter> = Arc::new(MpdPlayerAdapter {
                 state: Arc::clone(&state),
             });
-            let server = MpdServer::with_config(mpd_config, adapter);
+            let mut server = MpdServer::with_config(mpd_config, adapter);
+            if let Some(acceptor) = mpd_tls_acceptor.clone() {
+                server.set_tls_acceptor(acceptor);
+            }
             let cancel = shutdown_rx.clone();
 
             eprintln!(
@@ -668,6 +734,13 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
 /// Convert the persisted `MpdSettings` into the `MpdServerConfig` used by the server.
 fn mpd_settings_to_config(config: &ServerConfig) -> MpdServerConfig {
     let settings = &config.mpd;
+    let trusted_client_fingerprints = std::sync::Arc::new(std::sync::Mutex::new(
+        settings
+            .trusted_client_fingerprints
+            .iter()
+            .cloned()
+            .collect(),
+    ));
     MpdServerConfig {
         bind_address: settings.bind_address.clone(),
         port: settings.port,
@@ -677,5 +750,56 @@ fn mpd_settings_to_config(config: &ServerConfig) -> MpdServerConfig {
             federation_config::MpdAuthMode::Password => MpdAuthMode::Password,
         },
         password: settings.password.clone(),
+        trusted_client_fingerprints,
     }
+}
+
+fn build_mpd_tls_acceptor(
+    config: &ServerConfig,
+) -> Result<tokio_rustls::TlsAcceptor, Box<dyn std::error::Error>> {
+    let cert_store = sotf_tls::CertStore::load_or_generate(
+        &crate::config::get_app_config_dir().ok_or("Could not determine config directory")?,
+    )?;
+
+    let tls_config = match config.mpd.auth_mode {
+        federation_config::MpdAuthMode::Certificate => {
+            if config.mpd.trusted_client_fingerprints.is_empty() {
+                return Err(
+                    "MPD certificate authentication requires at least one trusted client fingerprint"
+                        .into(),
+                );
+            }
+            let trusted = std::sync::Arc::new(std::sync::Mutex::new(
+                config
+                    .mpd
+                    .trusted_client_fingerprints
+                    .iter()
+                    .cloned()
+                    .collect(),
+            ));
+            sotf_tls::build_server_tls_config_mtls(
+                cert_store.cert_clone(),
+                cert_store.key_clone(),
+                trusted,
+            )?
+        }
+        federation_config::MpdAuthMode::Password => {
+            if config
+                .mpd
+                .password
+                .as_deref()
+                .unwrap_or_default()
+                .is_empty()
+            {
+                return Err("MPD password authentication requires a non-empty password".into());
+            }
+            sotf_tls::build_server_tls_config(cert_store.cert_clone(), cert_store.key_clone())?
+        }
+    };
+
+    eprintln!(
+        "MPD TLS certificate fingerprint: {}",
+        cert_store.server_fingerprint()
+    );
+    Ok(tokio_rustls::TlsAcceptor::from(tls_config))
 }
