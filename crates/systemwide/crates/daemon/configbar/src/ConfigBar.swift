@@ -1491,6 +1491,7 @@ struct ConfigurationView: View {
     @State private var meteringTimer: Timer? = nil
     @State private var meteringRequestInFlight = false
     @State private var loadingDevices = false
+    @State private var deviceRecoveryTimer: Timer? = nil
     @State private var daemonStatusTimer: Timer? = nil
     @State private var daemonStatusRequestInFlight = false
     @State private var lastDaemonSelectedDevice: String? = nil
@@ -1663,7 +1664,7 @@ struct ConfigurationView: View {
 
                         Picker("Device", selection: $selectedDevice) {
                             if physicalOutputDevices.isEmpty {
-                                Text("No hardware output devices").tag("")
+                                Text(outputDevicePlaceholderText).tag("")
                             }
 
                             ForEach(physicalOutputDevices, id: \.name) { device in
@@ -2033,6 +2034,7 @@ struct ConfigurationView: View {
         .onDisappear {
             stopDaemonStatusTimer()
             stopMeteringTimer()
+            stopDeviceRecoveryPolling()
         }
         .alert("Configuration Error", isPresented: $showingError) {
             Button("OK", role: .cancel) { }
@@ -2269,6 +2271,28 @@ struct ConfigurationView: View {
         return "2=stereo, 6=5.1, 10=5.1.4, up to 32"
     }
 
+    private var outputDevicePlaceholderText: String {
+        if loadingDevices {
+            return "Refreshing hardware output devices..."
+        }
+        if deviceRecoveryTimer != nil {
+            return "Waiting for CoreAudio hardware devices..."
+        }
+        return "No hardware output devices"
+    }
+
+    private func startDeviceRecoveryPolling() {
+        guard deviceRecoveryTimer == nil else { return }
+        deviceRecoveryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            loadDevices()
+        }
+    }
+
+    private func stopDeviceRecoveryPolling() {
+        deviceRecoveryTimer?.invalidate()
+        deviceRecoveryTimer = nil
+    }
+
     private func loadDevices() {
         guard !loadingDevices else { return }
         loadingDevices = true
@@ -2294,6 +2318,15 @@ struct ConfigurationView: View {
         let physicalDevices = physicalOutputDevices
         let previousDevice = selectedDevice
         var selectedFromDaemon = false
+
+        if physicalDevices.isEmpty {
+            selectedDevice = ""
+            startDeviceRecoveryPolling()
+            detectAvailableSources()
+            return
+        }
+
+        stopDeviceRecoveryPolling()
 
         if let daemonSelectedDevice,
            !daemonSelectedDevice.isEmpty,

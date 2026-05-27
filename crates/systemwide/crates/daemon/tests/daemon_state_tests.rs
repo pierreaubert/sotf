@@ -172,6 +172,13 @@ fn daemon_pkg_preinstall_quiesces_running_daemon_before_upgrade() {
         "preinstall should request a graceful daemon shutdown over the control socket"
     );
     assert!(
+        preinstall_source.contains("quit_systemwide_app")
+            && preinstall_source
+                .contains("tell application id \"org.spinorama.sotf-systemwide\" to quit")
+            && preinstall_source.contains("/usr/bin/pkill -TERM -x \"sotf-systemwide\""),
+        "preinstall should quit the running menu bar app before replacing the app bundle"
+    );
+    assert!(
         preinstall_source.contains("getconf DARWIN_USER_TEMP_DIR")
             && preinstall_source.contains("/tmp/sotf-${console_uid}/daemon.sock")
             && preinstall_source.contains("/tmp/autoeq_audio.sock"),
@@ -189,6 +196,46 @@ fn daemon_pkg_preinstall_quiesces_running_daemon_before_upgrade() {
         preinstall_source.contains("/usr/bin/pkill -TERM -x \"sotf-daemon\"")
             && preinstall_source.contains("/usr/bin/pkill -KILL -x \"sotf-daemon\""),
         "preinstall should escalate from TERM to KILL as a last resort"
+    );
+    assert!(
+        preinstall_source.contains("cleanup_sotf_runtime_files")
+            && preinstall_source.contains("${runtime_dir}/daemon.sock")
+            && preinstall_source.contains("${runtime_dir}/audio.shm")
+            && preinstall_source.contains("${runtime_dir}/session.key"),
+        "preinstall should remove stale daemon socket/shared-memory runtime files after shutdown"
+    );
+}
+
+#[test]
+fn standalone_hal_installer_quiesces_running_system_before_replacing_driver() {
+    let source = include_str!("../../../../../scripts/build-systemwide.sh");
+    let install_start = source
+        .find("cat > \"$DMG_DIR/install-hal.sh\"")
+        .expect("standalone HAL install script should exist");
+    let uninstall_start = source
+        .find("cat > \"$DMG_DIR/uninstall-hal.sh\"")
+        .expect("standalone HAL uninstall script should exist");
+    let install_source = &source[install_start..uninstall_start];
+
+    assert!(
+        install_source.contains("quit_systemwide_app")
+            && install_source.contains("quiesce_sotf_daemon")
+            && install_source.find("quiesce_sotf_daemon").unwrap()
+                < install_source
+                    .find("for bundle in \"${LEGACY_BUNDLES[@]}\"")
+                    .unwrap(),
+        "standalone HAL installer should stop app/daemon before removing existing HAL bundles"
+    );
+    assert!(
+        install_source.contains("{\"command\":\"shutdown\"}")
+            && install_source.contains("sudo /usr/bin/pkill -TERM -x \"sotf-daemon\"")
+            && install_source.contains("sudo /usr/bin/pkill -KILL -x \"sotf-daemon\""),
+        "standalone HAL installer should use graceful daemon shutdown and sudo kill fallback"
+    );
+    assert!(
+        install_source.contains("cleanup_sotf_runtime_files")
+            && install_source.contains("${runtime_dir}/audio.shm"),
+        "standalone HAL installer should clean stale runtime files before replacing the driver"
     );
 }
 
@@ -235,6 +282,13 @@ fn configbar_output_device_refresh_tracks_channel_limits() {
     assert!(
         configbar.contains("syncOutputChannelsToSelectedDevice(applyChange: true)"),
         "device refresh/selection should clamp the channel selection when metadata changes"
+    );
+    assert!(
+        configbar.contains("@State private var deviceRecoveryTimer")
+            && configbar.contains("Waiting for CoreAudio hardware devices...")
+            && configbar.contains("startDeviceRecoveryPolling()")
+            && configbar.contains("stopDeviceRecoveryPolling()"),
+        "toolbar should keep polling while CoreAudio temporarily reports no hardware output devices"
     );
     let default_selection = configbar
         .find("if let physicalDefault = physicalDevices.first(where: { $0.is_default })")
