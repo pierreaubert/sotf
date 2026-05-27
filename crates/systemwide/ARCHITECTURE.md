@@ -4,6 +4,22 @@ This document reviews the current `crates/systemwide` architecture and records a
 direction for making state ownership clearer and the system easier to debug
 without installing the macOS HAL package for every test cycle.
 
+## Maintenance Policy
+
+`ARCHITECTURE.md` is a maintained project document, not a one-time review
+artifact. Keep it current with the same discipline as the systemwide `README`
+and project changelog.
+
+Update this document whenever a change affects:
+
+- component responsibilities or process boundaries;
+- state ownership, desired/applied state, or shared-memory protocol fields;
+- user-visible runtime flows such as startup, playback, plugin loading, key
+  rotation, device recovery, installation, or upgrades;
+- debugging, test strategy, or manual recovery procedures;
+- safety invariants around CoreAudio, real-time callbacks, physical output
+  device selection, encryption, or installer lifecycle.
+
 ## Scope
 
 `systemwide` is the SOTF subsystem that captures operating-system audio,
@@ -16,10 +32,11 @@ The current code is split into four major surfaces:
 
 | Component | Location | Responsibility |
 | --- | --- | --- |
-| Configbar toolbar | `crates/daemon/configbar/src/*.swift` | macOS menu bar app, daemon lifecycle, user commands, plugin rack UI, metering UI |
+| Configbar toolbar | `crates/daemon/configbar/src/*.swift` | macOS menu bar app, daemon lifecycle, user commands, plugin rack UI, metering UI, hardware-device recovery polling, menu bar status icon |
 | Daemon | `crates/daemon/bin/sotf_daemon.rs` | IPC server, command authorization, playback lifecycle, plugin-chain orchestration, output device choice, encryption commands |
 | Driver abstraction | `crates/driver-common/src/lib.rs` | Cross-platform `AudioDriver` trait, `DriverStatus`, `DriverConfig`, `ConfigResult`, `NullDriver` fallback |
 | macOS HAL bridge | `crates/driver-hal/src/*`, `crates/driver-hal/swift/Sources/*` | Shared-memory protocol, encrypted audio records, CoreAudio HAL driver implementation, Rust `HalDriver` adapter |
+| Installer scripts | `scripts/build-systemwide.sh` | App bundle, package/DMG build, running-system quiesce, HAL driver replacement, stale runtime cleanup |
 
 The daemon also depends on the workspace audio engine and plugin stack:
 `sotf_audio::manager::AudioEngineManager`, `sotf-engine`, and `sotf-plugins`.
@@ -289,6 +306,7 @@ sequenceDiagram
 
     User->>App: Launch toolbar app
     App->>Status: applicationDidFinishLaunching()
+    Status->>Status: create NSStatusItem icon
     Status->>Dm: startDaemon()
     Dm->>Dm: resolve daemon path
     Dm->>Dm: kill existing daemons and remove stale sockets
@@ -301,6 +319,13 @@ sequenceDiagram
     Status->>Status: start status monitor timer
     Status->>Daemon: status
     Daemon-->>Status: engine state, volume, selected device
+    Status->>Daemon: list_devices
+    alt CoreAudio reports no physical outputs yet
+        Status->>Status: show "Waiting for CoreAudio hardware devices..."
+        Status->>Daemon: poll list_devices every second
+    else Physical outputs available
+        Status->>Status: stop recovery polling
+    end
 ```
 
 Key observations:
@@ -308,6 +333,11 @@ Key observations:
 - Toolbar startup owns process supervision today.
 - Daemon startup owns driver initialization and initial playback.
 - The toolbar can only infer readiness by polling IPC responses.
+- If CoreAudio is still recovering after install/restart, the toolbar treats an
+  empty physical-output list as a transient recovery state and polls until
+  hardware devices reappear.
+- The menu bar icon is a status signal: startup/idle is explicitly dark,
+  active playback is white, and errors are red.
 
 ## Use Case: User Plays Music
 
@@ -431,6 +461,8 @@ sequenceDiagram
     View->>Client: encryption_status
     Client-->>View: enabled and fingerprint
     HAL->>HAL: reload cipher from non-real-time path
+    Engine->>Reader: detect stale cached cipher fingerprint
+    Reader->>Reader: reload_cipher() before next encrypted read
 ```
 
 Key observations:
@@ -439,8 +471,15 @@ Key observations:
 - Shared memory publishes only transport metadata: encryption enabled flag and
   key fingerprint.
 - HAL input/output readers cache ciphers and intentionally avoid filesystem I/O
-  on audio callbacks. After rotation, audio returns silence until cipher reload
-  happens off the audio thread.
+  on audio callbacks.
+- The daemon-side decoder checks `HalInputReader.needs_cipher_reload()` before
+  reading encrypted HAL input. When the shared-memory fingerprint changes, it
+  calls `reload_cipher()` from the decoder control path before `read()`, so key
+  rotation or startup races do not strand the pipeline in a "playing but silent"
+  state.
+- If cipher reload fails, encrypted reads remain silent rather than emitting
+  unauthenticated audio; retry is throttled to avoid filesystem work on the hot
+  path.
 
 ## Use Case: Driver Reconfiguration
 
@@ -473,6 +512,49 @@ The reverse path also exists: daemon commands such as `set_sample_rate`,
 `set_buffer_frames`, or `load_plugins` can call `DriverManager.request_config`,
 which writes daemon-originated config requests into shared memory and waits for
 the HAL side to acknowledge them.
+
+## Installation And Upgrade Lifecycle
+
+The installer must assume an older systemwide version may already be active.
+Replacing the app bundle or HAL driver while the toolbar, daemon, or CoreAudio
+helper still hold runtime state can leave stale sockets, shared memory, or
+session keys behind and can make the next launch appear healthy while no audio
+flows.
+
+The current package and standalone HAL installer lifecycle is:
+
+```mermaid
+sequenceDiagram
+    participant Installer as package/preinstall or install-hal.sh
+    participant App as sotf-systemwide.app
+    participant Daemon as sotf-daemon
+    participant Runtime as /tmp and DARWIN_USER_TEMP_DIR
+    participant HALDir as /Library/Audio/Plug-Ins/HAL
+    participant CoreAudio as CoreAudio helper
+
+    Installer->>App: request quit by bundle id
+    Installer->>App: pkill known legacy app names
+    Installer->>Daemon: {"command":"shutdown"} over known sockets
+    alt daemon exits
+        Installer->>Runtime: remove stale sockets, audio.shm, session.key
+    else daemon still running
+        Installer->>Daemon: TERM, then KILL as last resort
+        Installer->>Runtime: remove stale sockets, audio.shm, session.key
+    end
+    Installer->>CoreAudio: stop Core-Audio-Driver-Service.helper
+    Installer->>HALDir: remove legacy/new SotF HAL bundles
+    Installer->>HALDir: install replacement HAL bundle
+    Installer->>CoreAudio: let launchd/CoreAudio reload normally
+```
+
+Important details:
+
+- The installer does not rely on `launchctl kickstart` for `coreaudiod`; that
+  is restricted on modern macOS.
+- Runtime cleanup targets the secure daemon socket, legacy socket, `audio.shm`,
+  and HAL-readable `session.key` copy.
+- The toolbar should show a transient hardware-device recovery state after
+  CoreAudio restarts instead of permanently selecting "no hardware devices".
 
 ## Architecture Improvement Proposals
 
@@ -708,6 +790,42 @@ Add a `systemwide doctor` or `systemwidectl doctor` command that collects:
 This gives a single bug-report artifact without requiring a live screen-share or
 manual reproduction notes.
 
+### No-Sound Diagnostic Checklist
+
+When the user reports "music is progressing but no sound", diagnose the live
+pipeline from the outside in before changing code:
+
+1. Confirm CoreAudio can enumerate hardware devices:
+   `system_profiler SPAudioDataType` should list at least one real output.
+   If it returns no devices, the problem is below the toolbar/daemon layer.
+2. Confirm the daemon is reachable on the secure socket and inspect `status`.
+   The important fields are `state`, `selected_device`,
+   `pipeline_applied_output_device`, `playback_output_device`,
+   `playback_frames_received`, `playback_frames_written`,
+   `playback_stream_error_count`, and `last_error`.
+3. Confirm `list_devices` marks `SotF Virtual Audio` as the system default
+   output while the daemon-selected output is a physical device.
+4. Confirm `get_hal_config` reports `driver_installed=true`,
+   `driver_ready=true`, `active=true`, and the expected sample rate, buffer
+   size, and channel count.
+5. Confirm `get_metering` has non-zero input/output peaks while music is
+   playing. If status frames increase but metering is zero, the silence is
+   before or inside the daemon processing path, not at the hardware sink.
+6. Confirm encryption state and fingerprints. A stale HAL input cipher can make
+   encrypted reads return silence while status still reports frames. The
+   current decoder reloads stale ciphers before reading; if diagnosing an older
+   install, temporarily sending `set_encryption=false` can distinguish key
+   mismatch from routing or hardware problems.
+7. Check recent logs for `org.spinorama.sotf-hal`, `coreaudiod`, and
+   `sotf-daemon`, especially `SharedMemory state`, `Loaded encryption key`,
+   `HAL input cipher reload failed`, and CoreAudio `IO_Sender` resync floods.
+
+The 2026-05-27 live failure followed this pattern: `status` showed `Playing`,
+ADAM Audio D3V selected, and frames received/written, but `get_metering` was
+zero. Disabling encryption immediately restored non-zero meters, proving the
+root cause was an encrypted HAL key/cipher mismatch rather than CoreAudio device
+enumeration or output-device selection.
+
 ## Proposed Migration Plan
 
 1. Add read-only `get_snapshot` and `dump_state` commands around the current
@@ -730,9 +848,14 @@ manual reproduction notes.
   Soundflower, or similar virtual devices as the physical output sink.
 - Cross-process shared-memory fields must remain atomic and versioned.
 - Encryption key rotation must not reuse `(key, frame_counter)` pairs.
+- Encryption key changes must not require manual reinstall/restart recovery;
+  stale cached ciphers must be detected and reloaded from non-real-time paths.
 - The daemon must maintain lock ordering or remove the need for multi-lock
   operations through a single controller.
 - `_coreaudiod` must remain restricted to the minimum command set.
+- `ARCHITECTURE.md` must be updated alongside README/changelog changes whenever
+  architecture, operational behavior, debugging strategy, or state ownership
+  changes.
 
 ## Summary
 
