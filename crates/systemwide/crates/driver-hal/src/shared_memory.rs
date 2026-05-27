@@ -1918,6 +1918,23 @@ impl HalInputReader {
         }
     }
 
+    /// Returns true when encrypted shared memory is active but this reader has
+    /// no matching cached cipher.
+    pub fn needs_cipher_reload(&self) -> bool {
+        let Some(buf) = self.buffer.as_ref() else {
+            return false;
+        };
+        if !buf.is_encrypted() {
+            return false;
+        }
+        let header_fingerprint = buf.key_fingerprint();
+        !self
+            .cipher
+            .as_ref()
+            .map(|cipher| cipher.fingerprint() == &header_fingerprint)
+            .unwrap_or(false)
+    }
+
     /// Check if connected to the HAL driver.
     pub fn is_connected(&self) -> bool {
         self.buffer
@@ -2804,6 +2821,50 @@ mod tests {
                 "tail sample {index} mismatch"
             );
         }
+    }
+
+    #[test]
+    fn test_hal_input_reader_reports_cipher_reload_need() {
+        let temp_file = create_mock_shared_memory(48_000, 512, 2);
+        let buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+        let writer_cipher = test_audio_cipher();
+        let stale_cipher = crate::encryption::AudioCipher::new(&[0x43u8; 32]);
+
+        buffer.set_key_fingerprint(*writer_cipher.fingerprint());
+        buffer.set_encrypted(false);
+
+        let mut reader = HalInputReader {
+            buffer: Some(buffer),
+            cipher: Some(stale_cipher),
+            encrypted_samples_buf: Vec::new(),
+            ciphertext_buf: Vec::new(),
+            decrypted_record_buf: Vec::new(),
+            pending_decrypted_samples: Vec::new(),
+            pending_sample_offset: 0,
+        };
+
+        assert!(
+            !reader.needs_cipher_reload(),
+            "unencrypted shared memory should not require a cipher reload"
+        );
+
+        reader.buffer.as_ref().unwrap().set_encrypted(true);
+        assert!(
+            reader.needs_cipher_reload(),
+            "encrypted shared memory should report stale cached cipher"
+        );
+
+        reader.cipher = Some(writer_cipher);
+        assert!(
+            !reader.needs_cipher_reload(),
+            "matching cached cipher should be considered current"
+        );
+
+        reader.cipher = None;
+        assert!(
+            reader.needs_cipher_reload(),
+            "encrypted shared memory without a cached cipher should reload"
+        );
     }
 
     #[test]

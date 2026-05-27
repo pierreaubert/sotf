@@ -6,7 +6,7 @@
 
 use super::{AudioFrame, DecoderCommand, DecoderMessage, DecoderResponse, ThreadEvent};
 use crate::decoder::{
-    create_decoder_from_source, AudioDecoder, AudioSource, AudioSpec, DecodedAudio,
+    AudioDecoder, AudioSource, AudioSpec, DecodedAudio, create_decoder_from_source,
 };
 use sotf_plugins::{Plugin, ProcessContext, ResamplerPlugin};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
@@ -313,6 +313,8 @@ struct DecoderState {
     #[cfg(all(target_os = "macos", feature = "hal"))]
     last_hal_reconnect_attempt: Option<Instant>,
     #[cfg(all(target_os = "macos", feature = "hal"))]
+    last_hal_cipher_reload_attempt: Option<Instant>,
+    #[cfg(all(target_os = "macos", feature = "hal"))]
     last_hal_sample_rate: Option<u32>,
     #[cfg(all(target_os = "macos", feature = "hal"))]
     last_hal_channels: Option<usize>,
@@ -349,6 +351,8 @@ impl DecoderState {
             hal_reader: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             last_hal_reconnect_attempt: None,
+            #[cfg(all(target_os = "macos", feature = "hal"))]
+            last_hal_cipher_reload_attempt: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             last_hal_sample_rate: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -970,6 +974,7 @@ impl DecoderState {
         {
             self.hal_reader = None;
             self.last_hal_reconnect_attempt = None;
+            self.last_hal_cipher_reload_attempt = None;
         }
     }
 
@@ -997,6 +1002,36 @@ impl DecoderState {
             None => {
                 log::debug!("[Decoder Thread] HAL input reader still unavailable");
                 self.hal_reader = None;
+            }
+        }
+    }
+
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn reload_hal_cipher_if_needed(&mut self) -> bool {
+        let Some(reader) = self.hal_reader.as_mut() else {
+            return false;
+        };
+        if !reader.needs_cipher_reload() {
+            return true;
+        }
+
+        let now = Instant::now();
+        if self
+            .last_hal_cipher_reload_attempt
+            .is_some_and(|last| now.duration_since(last) < HAL_RECONNECT_INTERVAL)
+        {
+            return false;
+        }
+        self.last_hal_cipher_reload_attempt = Some(now);
+
+        match reader.reload_cipher() {
+            Ok(()) => {
+                log::info!("[Decoder Thread] Reloaded HAL input cipher after key change");
+                true
+            }
+            Err(e) => {
+                log::warn!("[Decoder Thread] HAL input cipher reload failed: {}", e);
+                false
             }
         }
     }
@@ -1042,6 +1077,11 @@ impl DecoderState {
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         self.try_reconnect_hal_reader(false);
+
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        if self.hal_reader.is_some() && !self.reload_hal_cipher_if_needed() {
+            return Ok((false, None));
+        }
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         if let Some(reader) = &mut self.hal_reader {
@@ -1694,6 +1734,27 @@ mod tests {
         assert!(
             !source.contains(concat!("Err(_) => Vec::", "with_capacity(len)")),
             "decoder frame handoff must use preallocated/recycled buffers instead of allocating on recycle miss"
+        );
+    }
+
+    #[test]
+    fn hal_input_reloads_stale_cipher_before_reading() {
+        let source = include_str!("decoder_thread.rs");
+        let reload_call = source
+            .find("!self.reload_hal_cipher_if_needed()")
+            .expect("HAL input path should refresh stale encryption ciphers");
+        let read_call = source
+            .find("let frames_read = reader.read(&mut self.hal_input_buffer)")
+            .expect("HAL input path should read from the shared-memory reader");
+
+        assert!(
+            source.contains("reader.needs_cipher_reload()")
+                && source.contains("reader.reload_cipher()"),
+            "decoder should detect and reload stale HAL input ciphers"
+        );
+        assert!(
+            reload_call < read_call,
+            "decoder must reload a stale cipher before reading, otherwise key rotation yields silence"
         );
     }
 
