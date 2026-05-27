@@ -85,6 +85,7 @@ pub struct AudioInput {
     /// Number of channels
     pub channels: usize,
     /// The cpal stream handle (kept alive to maintain the stream)
+    #[cfg(not(target_os = "ios"))]
     _stream: Option<Box<dyn cpal::traits::StreamTrait>>,
 }
 
@@ -179,6 +180,7 @@ impl AudioInput {
             state,
             sample_rate,
             channels,
+            #[cfg(not(target_os = "ios"))]
             _stream: Some(Box::new(stream)),
         })
     }
@@ -198,6 +200,7 @@ impl AudioInput {
                 state,
                 sample_rate,
                 channels,
+                #[cfg(not(target_os = "ios"))]
                 _stream: None,
             },
             producer,
