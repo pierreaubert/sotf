@@ -108,6 +108,8 @@ fn daemon_status_exposes_toolbar_device_and_playback_diagnostics() {
 
     assert!(
         source.contains("\"selected_device\": selected_device")
+            && source.contains("\"input_channels\": input_channels")
+            && source.contains("\"output_channels\": output_channels")
             && source.contains("\"channels\": engine_state.num_channels")
             && source.contains("\"playback_output_device\": engine_state.playback_output_device")
             && source.contains("\"playback_callback_count\": engine_state.playback_callback_count")
@@ -126,9 +128,31 @@ fn configbar_reconciles_device_picker_from_daemon_status() {
     assert!(
         source.contains("let selectedDevice: String?")
             && source.contains("data[\"selected_device\"]?.value as? String")
+            && source.contains("let inputChannels: Int?")
+            && source.contains("data[\"input_channels\"]?.value as? Int")
+            && source.contains("let outputChannels: Int?")
+            && source.contains("data[\"output_channels\"]?.value as? Int")
             && source.contains("applyLoadedDevices(daemonSelectedDevice: status.selectedDevice)")
             && source.contains("programmaticDeviceSelection = daemonDevice"),
         "toolbar should parse selected_device from status and update its picker without re-owning daemon state"
+    );
+}
+
+#[test]
+fn configbar_reconciles_daemon_owned_channel_counts_from_status() {
+    let source = include_str!("../configbar/src/ConfigBar.swift");
+
+    assert!(
+        source.contains("if let inputChannels = status.inputChannels")
+            && source.contains("halInputChannels = min(max(inputChannels, 1), 32)")
+            && source.contains("syncMeterArrays(inputChannels: halInputChannels)"),
+        "toolbar status sync should adopt daemon-owned HAL input channels"
+    );
+    assert!(
+        source.contains("let daemonOutputChannels = status.outputChannels ?? status.channels")
+            && source.contains("halOutputChannels = min(max(channels, 1), 32)")
+            && source.contains("syncMeterArrays(outputChannels: halOutputChannels)"),
+        "toolbar status sync should prefer daemon-owned output channels while keeping legacy status.channels fallback"
     );
 }
 
@@ -301,5 +325,29 @@ fn configbar_plugin_edit_sheet_batches_parameter_edits_until_apply_or_close() {
         source.contains("applyPluginUpdate(at: index, parameters: newParams)")
             && source.contains("client.updatePlugin(at: index, parameters: parameters)"),
         "only Apply/Close should send parameters to the daemon"
+    );
+}
+
+#[test]
+fn configbar_plugin_chain_loader_accepts_supported_linear_shapes() {
+    let source = include_str!("../configbar/src/ConfigBar.swift");
+
+    assert!(
+        source.contains("private func normalizedPluginConfigs(from json: Any) throws")
+            && source.contains("if let simplePlugins = json as? [[String: Any]]")
+            && source.contains("if let plugins = configDict[\"plugins\"] as? [[String: Any]]"),
+        "whole-chain loading should accept raw engine plugin arrays and app-GPUI preset plugin arrays"
+    );
+    assert!(
+        source
+            .contains("if let globalPlugins = configDict[\"global_plugins\"] as? [[String: Any]]")
+            && source.contains("if let channels = configDict[\"channels\"] as? [String: Any]")
+            && source.contains("allPlugins.append(contentsOf: channelPlugins)"),
+        "whole-chain loading should accept RoomEQ-style global_plugins plus per-channel plugin maps"
+    );
+    assert!(
+        source.contains("compactMap(normalizedPluginConfigEntry)")
+            && source.contains("isSystemPluginType(type)"),
+        "whole-chain loading should normalize supported plugin records and drop daemon-owned system plugins"
     );
 }

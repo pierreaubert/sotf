@@ -326,6 +326,8 @@ class AudioEngineClient {
         let muted: Bool
         let selectedDevice: String?
         let sampleRate: Int?
+        let inputChannels: Int?
+        let outputChannels: Int?
         let channels: Int?
         let playbackCallbackCount: Int?
         let playbackBufferFillPercent: Int?
@@ -341,6 +343,8 @@ class AudioEngineClient {
             muted: false,
             selectedDevice: nil,
             sampleRate: nil,
+            inputChannels: nil,
+            outputChannels: nil,
             channels: nil,
             playbackCallbackCount: nil,
             playbackBufferFillPercent: nil,
@@ -367,6 +371,8 @@ class AudioEngineClient {
         let muted = data["muted"]?.value as? Bool ?? false
         let selectedDevice = data["selected_device"]?.value as? String
         let sampleRate = data["sample_rate"]?.value as? Int
+        let inputChannels = data["input_channels"]?.value as? Int
+        let outputChannels = data["output_channels"]?.value as? Int
         let channels = data["channels"]?.value as? Int
         let playbackCallbackCount = data["playback_callback_count"]?.value as? Int
         let playbackBufferFillPercent = data["playback_buffer_fill_percent"]?.value as? Int
@@ -382,6 +388,8 @@ class AudioEngineClient {
             muted: muted,
             selectedDevice: selectedDevice,
             sampleRate: sampleRate,
+            inputChannels: inputChannels,
+            outputChannels: outputChannels,
             channels: channels,
             playbackCallbackCount: playbackCallbackCount,
             playbackBufferFillPercent: playbackBufferFillPercent,
@@ -2095,7 +2103,13 @@ struct ConfigurationView: View {
     }
 
     private func applyDaemonStatus(_ status: AudioEngineClient.Status) {
-        if let channels = status.channels, channels > 0, channels != halOutputChannels {
+        if let inputChannels = status.inputChannels, inputChannels > 0, inputChannels != halInputChannels {
+            halInputChannels = min(max(inputChannels, 1), 32)
+            syncMeterArrays(inputChannels: halInputChannels)
+        }
+
+        let daemonOutputChannels = status.outputChannels ?? status.channels
+        if let channels = daemonOutputChannels, channels > 0, channels != halOutputChannels {
             halOutputChannels = min(max(channels, 1), 32)
             syncMeterArrays(outputChannels: halOutputChannels)
         }

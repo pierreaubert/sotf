@@ -718,6 +718,8 @@ impl AudioDaemon {
         let engine_state = manager.get_engine_state();
         let pipeline = self.pipeline.lock();
         let selected_device = pipeline.selected_output_device();
+        let input_channels = pipeline.input_channels();
+        let output_channels = pipeline.output_channels();
         let pipeline_generation = pipeline.applied_generation();
         let pipeline_applied_output_device = pipeline.applied_output_device();
         drop(pipeline);
@@ -730,6 +732,8 @@ impl AudioDaemon {
             "pipeline_generation": pipeline_generation,
             "pipeline_applied_output_device": pipeline_applied_output_device,
             "sample_rate": engine_state.sample_rate,
+            "input_channels": input_channels,
+            "output_channels": output_channels,
             "channels": engine_state.num_channels,
             "underruns": engine_state.underruns,
             "playback_output_device": engine_state.playback_output_device,

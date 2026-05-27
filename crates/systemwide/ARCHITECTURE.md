@@ -558,7 +558,29 @@ These values should be recomputed from the canonical state whenever needed:
 Derived values can be cached for performance, but the cache should have one
 clear invalidation path and should never be separately user-editable.
 
-### 4. Make Shared Memory A Transport, Not A State Store
+### 4. Separate Linear Racks From DSP Graphs
+
+The systemwide toolbar currently loads whole-chain plugin configs into the same
+linear `load_plugins` command used by the rack. It accepts simple engine plugin
+arrays, app-GPUI-style `plugins` arrays, and RoomEQ-style `global_plugins` plus
+per-channel `channels`, but the RoomEQ shape is flattened into one linear list.
+That is acceptable for rack-compatible chains, but it is not a faithful model
+for complex DSP graphs with branches, buses, per-channel subgraphs, fan-in,
+fan-out, or routing metadata.
+
+Recommended rule:
+
+- The rack is an editor for simple ordered plugin chains.
+- Complex DSP exports should remain graph artifacts with explicit topology,
+  channel roles, buses, routes, and render hints.
+- The daemon should eventually accept a `load_graph` or `load_pipeline_artifact`
+  command beside `load_plugins`.
+- The toolbar can render an imported graph as a read-only graph summary or
+  dedicated graph view instead of forcing it into a rack.
+- Editing a graph should happen through graph-aware operations; editing it as a
+  flattened rack should require an explicit destructive conversion.
+
+### 5. Make Shared Memory A Transport, Not A State Store
 
 `SharedAudioBuffer` is the correct owner of the cross-process memory protocol,
 but it should not be treated as the product state owner. The daemon state should
@@ -573,7 +595,7 @@ Recommended rule:
 - Shared memory owns only transport state: ring positions, format handshake
   fields, readiness flags, encryption fingerprint, and heartbeat.
 
-### 5. Replace Polling-Oriented UI With Snapshot Plus Events
+### 6. Replace Polling-Oriented UI With Snapshot Plus Events
 
 The toolbar currently polls status and metering and separately refreshes plugins.
 Keep polling where it is cheap and real-time enough for meters, but add a
@@ -589,7 +611,7 @@ The response should include daemon lifecycle, selected output device, desired
 plugins, available driver format, encryption status, and last errors. Later,
 this can become a subscription/event stream over the same Unix socket.
 
-### 6. Add Correlation IDs To Commands And Logs
+### 7. Add Correlation IDs To Commands And Logs
 
 Every command should carry or receive a generated `command_id`. The same ID
 should appear in toolbar logs, daemon logs, driver config acknowledgements, and
