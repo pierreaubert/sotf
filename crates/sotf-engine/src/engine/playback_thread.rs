@@ -225,7 +225,7 @@ fn select_playback_device(
             .unwrap_or_else(|_| "Unknown".to_string())
     };
 
-    let find_fallback = || -> Result<Device, String> {
+    let find_physical_output = || -> Result<Device, String> {
         let devices = host.output_devices().map_err(|e| e.to_string())?;
         let physical = devices.into_iter().find(|d| {
             let name = get_name(d);
@@ -239,8 +239,7 @@ fn select_playback_device(
             );
             Ok(dev)
         } else {
-            host.default_output_device()
-                .ok_or("No default device found".to_string())
+            Err("No physical output device found".to_string())
         }
     };
 
@@ -251,10 +250,10 @@ fn select_playback_device(
         );
 
         if is_virtual_output_device_name(device_identifier) && !allow_virtual_output {
-            log::info!(
-                "[Playback Thread] Explicit virtual output device '{}' requested; honoring selection",
+            return Err(format!(
+                "Selected output device '{}' is virtual/loopback and cannot be used as speaker output",
                 device_identifier
-            );
+            ));
         }
 
         match crate::devices::find_device(host, device_identifier, false) {
@@ -274,21 +273,17 @@ fn select_playback_device(
                 ))
             }
         }
+    } else if !allow_virtual_output {
+        // In systemwide mode the macOS default output is the SotF virtual
+        // device. Do not open it even transiently: CoreAudio can keep the
+        // daemon registered as an active virtual-device client, which starves
+        // the app-audio ingress path.
+        find_physical_output()
     } else {
         let default_dev = host
             .default_output_device()
             .ok_or("No output device available")?;
-        let name = get_name(&default_dev);
-
-        if is_virtual_output_device_name(&name) && !allow_virtual_output {
-            log::info!(
-                "[Playback Thread] Default device is '{}' (virtual/null) - finding fallback physical device",
-                name
-            );
-            Ok(find_fallback().unwrap_or(default_dev))
-        } else {
-            Ok(default_dev)
-        }
+        Ok(default_dev)
     }
 }
 
@@ -1182,7 +1177,7 @@ fn run_playback_thread(
         }
 
         // Periodic diagnostics: log callback rate and buffer stats every few seconds
-        if last_diagnostic_log.elapsed() > diagnostic_interval && frames_received > 0 {
+        if last_diagnostic_log.elapsed() > diagnostic_interval {
             let elapsed = stream_start_time.elapsed().as_secs_f64();
             let total_cb = state.callback_count.load(Ordering::Relaxed);
             let total_cb_samples = state.total_callback_samples.load(Ordering::Relaxed);
@@ -2059,6 +2054,54 @@ mod tests {
             explicit_lookup.contains("Selected output device")
                 && !explicit_lookup.contains("find_fallback()"),
             "an explicit user-selected output must fail loudly instead of falling back to another physical device"
+        );
+    }
+
+    #[test]
+    fn explicit_virtual_output_device_is_rejected_when_not_allowed() {
+        let source = include_str!("playback_thread.rs");
+
+        assert!(
+            source.contains(
+                "is_virtual_output_device_name(device_identifier) && !allow_virtual_output"
+            ) && source.contains("is virtual/loopback and cannot be used as speaker output"),
+            "explicit virtual output selection must be rejected before device lookup"
+        );
+    }
+
+    #[test]
+    fn default_selection_avoids_opening_virtual_output_when_not_allowed() {
+        let source = include_str!("playback_thread.rs");
+        let default_branch = source
+            .split("} else if !allow_virtual_output {")
+            .nth(1)
+            .expect("safe default branch should exist")
+            .split("} else {")
+            .next()
+            .expect("safe default branch should end before virtual-allowed branch");
+
+        assert!(
+            default_branch.contains("find_physical_output()")
+                && !default_branch.contains("default_output_device()"),
+            "systemwide default selection must scan physical outputs without opening the virtual default device"
+        );
+    }
+
+    #[test]
+    fn playback_stats_publish_even_before_frames_arrive() {
+        let source = include_str!("playback_thread.rs");
+        let diagnostics_block = source
+            .split("// Periodic diagnostics: log callback rate and buffer stats every few seconds")
+            .nth(1)
+            .expect("periodic diagnostics block should exist")
+            .split("// Read from message queue")
+            .next()
+            .expect("periodic diagnostics block should end before queue read");
+
+        assert!(
+            diagnostics_block.contains("if last_diagnostic_log.elapsed() > diagnostic_interval")
+                && !diagnostics_block.contains("frames_received > 0"),
+            "playback stats must report callbacks/underruns during upstream starvation"
         );
     }
 
