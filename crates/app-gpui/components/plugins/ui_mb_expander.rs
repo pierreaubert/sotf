@@ -44,6 +44,8 @@ pub struct MbExpanderRenderState {
     pub bypass: bool,
     pub mix: f64,
     pub link_channels: bool,
+    pub detection_mode: i32,
+    pub lookahead_ms: f64,
     pub is_editing: bool,
     pub selected_param: usize,
     pub selected_band_idx: usize,
@@ -153,6 +155,51 @@ pub fn render_mb_expander_plugin(
             theme,
         ));
     }
+
+    // Missing global params
+    global_col = global_col
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Preset",
+            state.crossover_preset as f64,
+            pk(ME, "crossover_preset").min_f64(),
+            pk(ME, "crossover_preset").max_f64(),
+            "",
+            1,
+            state.selected_param,
+            state.is_editing,
+            Some('p'),
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Detection",
+            state.detection_mode as f64,
+            pk(ME, "detection_mode").min_f64(),
+            pk(ME, "detection_mode").max_f64(),
+            "",
+            16,
+            state.selected_param,
+            state.is_editing,
+            Some('d'),
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Lookahead",
+            state.lookahead_ms,
+            pk(ME, "lookahead_ms").min_f64(),
+            pk(ME, "lookahead_ms").max_f64(),
+            "ms",
+            17,
+            state.selected_param,
+            state.is_editing,
+            Some('l'),
+            theme,
+        ));
 
     // === CENTER COLUMN: Band view ===
     // Band tabs

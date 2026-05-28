@@ -140,6 +140,9 @@ fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> Any
         filters,
         channel_filters,
         per_channel_mode,
+        max_filters,
+        tdf2,
+        topology,
         ..
     } = ctx.settings
     {
@@ -157,6 +160,9 @@ fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> Any
                 selected_band_idx,
                 midi_overlay: ctx.midi_overlay,
                 mode: ui_eq::EqViewMode::Standard,
+                num_filters: *max_filters,
+                tdf2: *tdf2,
+                topology: *topology,
             },
             ctx.theme,
             cx,
@@ -188,8 +194,10 @@ fn render_linear_phase_eq(
 ) -> AnyElement {
     use super::ui_eq;
     if let PluginSettings::LinearPhaseEq {
+        num_filters,
         fir_length,
         auto_gain,
+        mix,
         filters,
         ..
     } = ctx.settings
@@ -230,7 +238,11 @@ fn render_linear_phase_eq(
                     latency_ms,
                     fir_length: fir_len_samples,
                     auto_gain: *auto_gain,
+                    mix: *mix,
                 },
+                num_filters: *num_filters as usize,
+                tdf2: false,
+                topology: 0.0,
             },
             ctx.theme,
             cx,
@@ -244,9 +256,11 @@ fn render_linear_phase_eq(
 fn render_fir_designer(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
     use super::ui_eq;
     if let PluginSettings::FirDesigner {
+        num_filters,
         fir_length,
         phase_mode,
         auto_gain,
+        mix,
         filters,
         ..
     } = ctx.settings
@@ -296,7 +310,11 @@ fn render_fir_designer(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVie
                     fir_length: fir_len_samples,
                     phase_mode: phase_mode_label,
                     auto_gain: *auto_gain,
+                    mix: *mix,
                 },
+                num_filters: *num_filters as usize,
+                tdf2: false,
+                topology: 0.0,
             },
             ctx.theme,
             cx,
@@ -478,6 +496,8 @@ fn render_mute_solo(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>)
     use super::ui_mute_solo;
     if let PluginSettings::ChannelMuteSolo {
         enabled,
+        dim_gain_db,
+        fade_ms,
         channel_states,
         ..
     } = ctx.settings
@@ -488,6 +508,8 @@ fn render_mute_solo(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>)
             ctx.plugin_idx,
             ui_mute_solo::ChannelMuteSoloRenderState {
                 enabled: *enabled,
+                dim_gain_db: *dim_gain_db,
+                fade_ms: *fade_ms,
                 channel_states,
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,
@@ -562,8 +584,11 @@ fn render_mb_compressor(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
         knee_db,
         mix,
         link_channels,
+        per_band_lookahead_ms,
+        ms_mode,
+        sidechain_tilt_db,
+        link_amount,
         bands,
-        ..
     } = ctx.settings
     {
         let selected_band_idx = ctx.selected_band_idx.min(bands.len());
@@ -618,6 +643,10 @@ fn render_mb_compressor(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
                 bypass: db,
                 mix: *mix,
                 link_channels: *link_channels,
+                per_band_lookahead_ms: *per_band_lookahead_ms,
+                ms_mode: *ms_mode,
+                sidechain_tilt_db: *sidechain_tilt_db,
+                link_amount: *link_amount,
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,
                 selected_band_idx,
@@ -650,8 +679,9 @@ fn render_mb_expander(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView
         hold_ms,
         mix,
         link_channels,
+        detection_mode,
+        lookahead_ms,
         bands,
-        ..
     } = ctx.settings
     {
         let selected_band_idx = ctx.selected_band_idx.min(bands.len());
@@ -712,6 +742,8 @@ fn render_mb_expander(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView
                 bypass: db,
                 mix: *mix,
                 link_channels: *link_channels,
+                detection_mode: if detection_mode == "RMS" { 1 } else { 0 },
+                lookahead_ms: *lookahead_ms,
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,
                 selected_band_idx,

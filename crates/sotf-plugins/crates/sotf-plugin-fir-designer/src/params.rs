@@ -79,7 +79,7 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
 
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::selector(0), // num_filters
+        ControlSpec::knob(0),     // num_filters
         ControlSpec::selector(1), // fir_length
         ControlSpec::selector(2), // phase_mode
     ],
