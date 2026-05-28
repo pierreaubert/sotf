@@ -103,6 +103,9 @@ pub struct Accordion {
     on_change: Option<Box<dyn Fn(&SharedString, bool, &mut Window, &mut App) + 'static>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
+    bordered: bool,
+    rounded: bool,
+    content_padding: bool,
 }
 
 impl Accordion {
@@ -117,6 +120,9 @@ impl Accordion {
             on_change: None,
             aria_label: None,
             aria_role: None,
+            bordered: true,
+            rounded: true,
+            content_padding: true,
         }
     }
 
@@ -168,6 +174,24 @@ impl Accordion {
         self
     }
 
+    /// Set whether the accordion draws its outer border.
+    pub fn bordered(mut self, bordered: bool) -> Self {
+        self.bordered = bordered;
+        self
+    }
+
+    /// Set whether the accordion uses rounded outer corners.
+    pub fn rounded(mut self, rounded: bool) -> Self {
+        self.rounded = rounded;
+        self
+    }
+
+    /// Set whether expanded content uses the default internal padding.
+    pub fn content_padding(mut self, content_padding: bool) -> Self {
+        self.content_padding = content_padding;
+        self
+    }
+
     /// Set change handler (receives item ID and new expanded state)
     pub fn on_change(
         mut self,
@@ -187,10 +211,21 @@ impl Accordion {
                 items,
                 expanded,
                 on_change,
+                bordered,
+                rounded,
+                content_padding,
                 ..
             } = self;
             let on_change = on_change.map(|h| std::rc::Rc::new(h));
-            return Self::build_side_layout_static(items, expanded, theme, on_change);
+            return Self::build_side_layout_static(
+                items,
+                expanded,
+                theme,
+                on_change,
+                bordered,
+                rounded,
+                content_padding,
+            );
         }
 
         if matches!(self.orientation, AccordionOrientation::Horizontal) {
@@ -198,19 +233,31 @@ impl Accordion {
                 items,
                 expanded,
                 on_change,
+                bordered,
+                rounded,
+                content_padding,
                 ..
             } = self;
             let on_change = on_change.map(|h| std::rc::Rc::new(h));
-            return Self::build_horizontal_layout_static(items, expanded, theme, on_change);
+            return Self::build_horizontal_layout_static(
+                items,
+                expanded,
+                theme,
+                on_change,
+                bordered,
+                rounded,
+                content_padding,
+            );
         }
 
         let on_change = self.on_change.map(|h| std::rc::Rc::new(h));
-        let mut container = div()
-            .flex()
-            .flex_col()
-            .border_1()
-            .border_color(theme.border)
-            .rounded_lg();
+        let mut container = div().flex().flex_col();
+        if self.bordered {
+            container = container.border_1().border_color(theme.border);
+        }
+        if self.rounded {
+            container = container.rounded_lg();
+        }
 
         for (idx, item) in self.items.into_iter().enumerate() {
             let is_expanded = self.expanded.contains(&item.id);
@@ -231,16 +278,18 @@ impl Accordion {
 
             // Content (only if expanded)
             if is_expanded && let Some(content) = item.content {
-                let content_div = div()
-                    .px_4()
-                    .py_3()
-                    .bg(theme.content_bg)
-                    .border_t_1()
-                    .border_color(if is_expanded {
-                        theme.accent_tint
-                    } else {
-                        theme.border
-                    });
+                let mut content_div =
+                    div()
+                        .bg(theme.content_bg)
+                        .border_t_1()
+                        .border_color(if is_expanded {
+                            theme.accent_tint
+                        } else {
+                            theme.border
+                        });
+                if self.content_padding {
+                    content_div = content_div.px_4().py_3();
+                }
 
                 item_wrapper = item_wrapper.child(content_div.child(content));
             }
@@ -257,13 +306,17 @@ impl Accordion {
         expanded: Vec<SharedString>,
         theme: AccordionTheme,
         on_change: Option<AccordionChangeHandler>,
+        bordered: bool,
+        rounded: bool,
+        content_padding: bool,
     ) -> Div {
-        let mut container = div()
-            .flex()
-            .flex_col()
-            .border_1()
-            .border_color(theme.border)
-            .rounded_lg();
+        let mut container = div().flex().flex_col();
+        if bordered {
+            container = container.border_1().border_color(theme.border);
+        }
+        if rounded {
+            container = container.rounded_lg();
+        }
 
         let mut headers_container = div().flex().flex_row().w_full();
         let mut content_container = div().flex().flex_col().w_full();
@@ -285,16 +338,16 @@ impl Accordion {
             headers_container = headers_container.child(header);
 
             if is_expanded && let Some(content) = item.content {
-                let content_div = div()
+                let mut content_div = div()
                     .w_full()
-                    .px_4()
-                    .py_3()
                     .bg(theme.content_bg)
                     .border_t_1()
-                    .border_color(theme.accent_tint)
-                    .child(content);
+                    .border_color(theme.accent_tint);
+                if content_padding {
+                    content_div = content_div.px_4().py_3();
+                }
 
-                content_container = content_container.child(content_div);
+                content_container = content_container.child(content_div.child(content));
             }
         }
 
@@ -401,18 +454,21 @@ impl Accordion {
         expanded: Vec<SharedString>,
         theme: AccordionTheme,
         on_change: Option<AccordionChangeHandler>,
+        bordered: bool,
+        rounded: bool,
+        content_padding: bool,
     ) -> Div {
         let active_index = items
             .iter()
             .position(|item| expanded.contains(&item.id))
             .unwrap_or(usize::MAX);
-        let mut container = div()
-            .flex()
-            .flex_row()
-            .min_h(px(120.0))
-            .border_1()
-            .border_color(theme.border)
-            .rounded_lg();
+        let mut container = div().flex().flex_row().min_h(px(120.0));
+        if bordered {
+            container = container.border_1().border_color(theme.border);
+        }
+        if rounded {
+            container = container.rounded_lg();
+        }
 
         let mut left_tabs = div().flex().flex_row().h_full();
         let mut right_tabs = div().flex().flex_row().h_full();
@@ -421,9 +477,12 @@ impl Accordion {
             .flex_col()
             .flex_1()
             .h_full()
-            .bg(theme.content_bg)
-            .border_x_1()
-            .border_color(theme.accent_tint);
+            .bg(theme.content_bg);
+        if bordered {
+            content_container = content_container
+                .border_x_1()
+                .border_color(theme.accent_tint);
+        }
         let mut left_count = 0;
         let mut right_count = 0;
 
@@ -457,14 +516,12 @@ impl Accordion {
             }
 
             if is_expanded && let Some(content) = item.content {
-                let content_div = div()
-                    .w_full()
-                    .px_4()
-                    .py_3()
-                    .bg(theme.content_bg)
-                    .child(content);
+                let mut content_div = div().w_full().bg(theme.content_bg);
+                if content_padding {
+                    content_div = content_div.px_4().py_3();
+                }
 
-                content_container = content_container.child(content_div);
+                content_container = content_container.child(content_div.child(content));
             }
         }
 

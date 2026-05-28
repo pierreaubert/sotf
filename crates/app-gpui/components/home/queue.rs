@@ -54,86 +54,32 @@ impl PlayerView {
         // Hide meters when: explicitly collapsed, OR rack is visible in 3-panel layout
         let meters_collapsed = meters_ratio < 0.05 || hide_meters_for_rack;
 
-        // Home button for navigation back to Library
-        let state_for_home = self.state.clone();
-        let text_muted = theme.text_muted;
-        let surface_hover = theme.surface_hover;
+        let divider_theme = PaneDividerTheme {
+            background: theme.background,
+            background_hover: theme.surface_hover,
+            background_collapsed: theme.surface,
+            foreground: theme.text_muted,
+            foreground_hover: theme.text_secondary,
+            border: theme.border,
+            tint: Rgba {
+                a: 0.42,
+                ..theme.accent
+            },
+            tint_hover: theme.accent,
+        };
 
         div()
             .flex()
-            .flex_col()
             .size_full()
-            // Header bar with Home button and title
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .px(d.card)
-                    .py(d.pad_y)
-                    .bg(theme.background_secondary)
-                    .border_b_1()
-                    .border_color(theme.border)
-                    // Home button on the left
-                    .child(
-                        div()
-                            .id("queue-home-button")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .w(rems(2.5))
-                            .h(rems(2.0))
-                            .cursor_pointer()
-                            .rounded(d.r_md)
-                            .hover(move |s| s.bg(surface_hover))
-                            .child(Icon::new(IconName::Home).color(text_muted))
-                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                                state_for_home.update(cx, |state, _cx| {
-                                    state.app.ui_state.current_screen = Screen::Library;
-                                });
-                            }),
-                    )
-                    // Title
-                    .child(
-                        div()
-                            .ml(d.gap)
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.text_primary)
-                            .child(format!(
-                                "{} ({} {})",
-                                translations.queue_title,
-                                state.app.queue_state.len(),
-                                translations.queue_albums
-                            )),
-                    ),
-            )
-            // Main content area
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .overflow_hidden()
-                    // Queue pane: album accordion with expanded album details
-                    .child(self.render_queue_accordion_pane(&translations, cx))
-                    // Separator (Queue <-> Right meters)
+            .overflow_hidden()
+            // Queue pane: album accordion with expanded album details
+            .child(self.render_queue_accordion_pane(&translations, cx))
+            // Separator (Queue <-> Right meters)
             .child({
-                let divider_theme = PaneDividerTheme {
-                    background: theme.background,
-                    background_hover: theme.surface_hover,
-                    background_collapsed: theme.surface,
-                    foreground: theme.text_muted,
-                    foreground_hover: theme.text_secondary,
-                    border: theme.border,
-                    tint: Rgba {
-                        a: 0.42,
-                        ..theme.accent
-                    },
-                    tint_hover: theme.accent,
-                };
                 PaneDivider::vertical("meters-divider", CollapseDirection::Right)
                     .label("Meters")
                     .collapsed(meters_collapsed)
-                    .theme(divider_theme)
+                    .theme(divider_theme.clone())
                     .on_toggle({
                         let state_handle = self.state.clone();
                         move |collapsed, _window, cx| {
@@ -270,6 +216,15 @@ impl PlayerView {
                                     .overflow_hidden()
                                     // LUFS panel on top
                                     .child(self.render_lufs_panel(cx))
+                                    .child(
+                                        PaneDivider::horizontal(
+                                            "lufs-levels-divider",
+                                            CollapseDirection::Down,
+                                        )
+                                        .label("Level Meters")
+                                        .collapsed(false)
+                                        .theme(divider_theme.clone()),
+                                    )
                                     // Level meters below, centered
                                     .child(
                                         div()
@@ -293,8 +248,7 @@ impl PlayerView {
                             )
                         }),
                 )
-            }),
-            )
+            })
     }
 
     // Level meter methods (render_lufs_panel, render_meters_panel, render_meter_group, etc.)
@@ -351,6 +305,10 @@ impl PlayerView {
 
         let accordion_theme = theme.to_accordion_theme();
         let state_handle = self.state.clone();
+        let state_for_home = self.state.clone();
+        let text_muted = theme.text_muted;
+        let surface_hover = theme.surface_hover;
+        let queue_len = queue_items.len();
 
         div()
             .flex()
@@ -359,10 +317,51 @@ impl PlayerView {
             .bg(theme.background_secondary)
             .child(
                 div()
+                    .flex()
+                    .items_center()
+                    .px(d.card)
+                    .py(d.pad_y)
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .child(
+                        div()
+                            .id("queue-home-button")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .w(rems(2.5))
+                            .h(rems(2.0))
+                            .cursor_pointer()
+                            .rounded(d.r_md)
+                            .hover(move |s| s.bg(surface_hover))
+                            .child(Icon::new(IconName::Home).color(text_muted))
+                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                state_for_home.update(cx, |state, _cx| {
+                                    state.app.ui_state.current_screen = Screen::Library;
+                                });
+                            }),
+                    )
+                    .child(
+                        div()
+                            .ml(d.gap)
+                            .flex_1()
+                            .min_w_0()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .child(format!(
+                                "{} ({} {})",
+                                translations.queue_title, queue_len, translations.queue_albums
+                            )),
+                    ),
+            )
+            .child(
+                div()
                     .id("queue-accordion-scroll")
                     .flex_1()
                     .overflow_y_scroll()
-                    .p(d.pad_y)
                     .when(queue_items.is_empty(), |el| {
                         el.flex().items_center().justify_center().child(
                             VStack::new()
@@ -382,6 +381,8 @@ impl PlayerView {
                                 .items(accordion_items)
                                 .mode(AccordionMode::Single)
                                 .expanded(expanded_ids)
+                                .bordered(false)
+                                .rounded(false)
                                 .theme(accordion_theme)
                                 .aria_label(translations.queue_title)
                                 .on_change(move |id, is_expanded, _window, cx| {
