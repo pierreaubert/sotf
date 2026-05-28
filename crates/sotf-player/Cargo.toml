@@ -30,9 +30,11 @@ math-optimisation = { workspace = true }
 autoeq = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
-sotf-mpd = { workspace = true }
+sotf-mpd = { workspace = true, features = ["tls"] }
 sotf-dlna = { workspace = true }
 sotf-federation = { workspace = true }
+sotf-tls = { workspace = true }
+tokio-rustls = "0.26"
 
 # math
 ndarray = { workspace = true }
@@ -51,9 +53,11 @@ thiserror = { workspace = true }
 walkdir = { workspace = true }
 rusqlite = { workspace = true }
 tokio = { workspace = true }
+reqwest = { workspace = true }
 parking_lot = { workspace = true }
 uuid = { workspace = true }
 crossbeam = { workspace = true }
+socket2 = "0.6"
 
 # Image processing for album art thumbnails
 image = { workspace = true }

@@ -103,6 +103,7 @@ impl Platform for IosPlatform {
 
     fn displays(&self) -> Vec<Rc<dyn PlatformDisplay>> {
         IosDisplay::all()
+            .into_iter()
             .map(|display| Rc::new(display) as Rc<dyn PlatformDisplay>)
             .collect()
     }

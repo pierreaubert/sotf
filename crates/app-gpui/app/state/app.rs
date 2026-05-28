@@ -359,6 +359,9 @@ pub struct App {
 
     // Federation & Server configuration
     pub federation: FederationState,
+
+    // Native SOTF remote-control server picker state.
+    pub remote: RemoteState,
 }
 
 /// Play tracking for statistics — records a play after 30s threshold
@@ -420,6 +423,145 @@ pub enum FederationScanMessage {
 }
 
 pub use sotf_audio_player::federation_scan::FederationScanResult;
+
+/// Native SOTF remote-control server picker and discovery state.
+#[derive(Debug)]
+pub struct RemoteState {
+    pub server_store: sotf_audio_player::SotfRemoteServerStore,
+    pub discovered_servers: Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>,
+    pub server_probe_statuses: HashMap<String, RemoteServerProbeStatus>,
+    pub discovery_running: bool,
+    pub discovery_error: Option<String>,
+    pub manual_server_name: String,
+    pub manual_api_base_url: String,
+    pub server_probe_receiver: Option<std::sync::mpsc::Receiver<(String, RemoteServerProbeStatus)>>,
+    pub discovery_receiver: Option<
+        std::sync::mpsc::Receiver<
+            Result<Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>, String>,
+        >,
+    >,
+}
+
+impl Default for RemoteState {
+    fn default() -> Self {
+        Self {
+            server_store: sotf_audio_player::SotfRemoteServerStore::default(),
+            discovered_servers: Vec::new(),
+            server_probe_statuses: HashMap::new(),
+            discovery_running: false,
+            discovery_error: None,
+            manual_server_name: String::new(),
+            manual_api_base_url: String::new(),
+            server_probe_receiver: None,
+            discovery_receiver: None,
+        }
+    }
+}
+
+impl RemoteState {
+    pub fn merge_discovered_servers(
+        &mut self,
+        servers: Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>,
+    ) -> usize {
+        let mut merged = 0;
+        let had_selection = self.server_store.selected_server_id.is_some();
+        let mut first_id = None;
+
+        for discovered in &servers {
+            match sotf_audio_player::SotfRemoteServer::from_discovered(discovered) {
+                Ok(server) => {
+                    first_id.get_or_insert_with(|| server.id.clone());
+                    self.server_store.upsert(server);
+                    merged += 1;
+                }
+                Err(err) => {
+                    log::warn!("Ignoring invalid discovered SOTF server: {err}");
+                }
+            }
+        }
+
+        if !had_selection && let Some(id) = first_id {
+            let _ = self.server_store.select(id);
+        }
+
+        self.discovered_servers = servers;
+        self.discovery_error = None;
+        merged
+    }
+
+    pub fn add_manual_server_record(
+        &mut self,
+        friendly_name: impl Into<String>,
+        api_base_url: impl Into<String>,
+    ) -> Result<String, String> {
+        let server = sotf_audio_player::SotfRemoteServer::manual(friendly_name, api_base_url)
+            .map_err(|err| err.to_string())?;
+        let id = server.id.clone();
+        self.server_store.upsert(server);
+        let _ = self.server_store.select(id.clone());
+        Ok(id)
+    }
+
+    pub fn set_manual_server_name(&mut self, name: impl Into<String>) {
+        self.manual_server_name = name.into();
+    }
+
+    pub fn set_manual_api_base_url(&mut self, api_base_url: impl Into<String>) {
+        self.manual_api_base_url = api_base_url.into();
+    }
+
+    pub fn add_manual_server_from_inputs(&mut self) -> Result<String, String> {
+        let name = self.manual_server_name.trim().to_string();
+        let api_base_url = self.manual_api_base_url.trim().to_string();
+        if api_base_url.is_empty() {
+            return Err("remote server URL must not be empty".to_string());
+        }
+
+        let id = self.add_manual_server_record(name, api_base_url)?;
+        self.manual_server_name.clear();
+        self.manual_api_base_url.clear();
+        Ok(id)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RemoteServerProbeStatus {
+    Testing,
+    Reachable {
+        friendly_name: String,
+        version: String,
+        auth_required: bool,
+        api_version: u32,
+        media_range: bool,
+        events: bool,
+    },
+    Failed(String),
+}
+
+impl RemoteServerProbeStatus {
+    #[must_use]
+    pub fn label(&self) -> String {
+        match self {
+            Self::Testing => "testing".to_string(),
+            Self::Reachable {
+                version,
+                auth_required,
+                media_range,
+                events,
+                ..
+            } => {
+                let media = if *media_range { "media" } else { "no media" };
+                let live = if *events { "events" } else { "polling" };
+                if *auth_required {
+                    format!("reachable, auth required ({version}, {media}, {live})")
+                } else {
+                    format!("reachable ({version}, {media}, {live})")
+                }
+            }
+            Self::Failed(err) => format!("failed: {err}"),
+        }
+    }
+}
 
 /// GPUI-compatible state wrapper
 pub struct AppState {
@@ -501,6 +643,7 @@ impl App {
             last_saved_geometry: None,
 
             federation: FederationState::default(),
+            remote: RemoteState::default(),
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
@@ -1275,6 +1418,17 @@ impl App {
 
         // Restore max CPU cores
         self.ui_state.max_cpu_cores = config.max_cpu_cores;
+
+        // Restore non-secret native remote server records. Bearer tokens live
+        // in platform credential stores keyed by each server's token key.
+        match sotf_audio_player::config::load_remote_server_store() {
+            Ok(store) => {
+                self.remote.server_store = store;
+            }
+            Err(e) => {
+                log::warn!("Could not load remote server store: {e}");
+            }
+        }
 
         Ok(layout_state)
     }

@@ -275,6 +275,11 @@ pub fn get_server_config_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("servers.json"))
 }
 
+/// Get the path to the native remote server store.
+pub fn get_remote_servers_path() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| dir.join("remote_servers.json"))
+}
+
 /// Load server configuration from disk.
 ///
 /// # Errors
@@ -306,6 +311,39 @@ pub fn save_server_config(
         let json = serde_json::to_string_pretty(config)?;
         std::fs::write(path, json)?;
         Ok(())
+    } else {
+        Err("Could not determine config directory".into())
+    }
+}
+
+/// Load native remote server records from disk.
+///
+/// Bearer tokens are intentionally not stored in this file. Use the
+/// platform credential store keyed by `SotfRemoteServer::token_secret_key`.
+pub fn load_remote_server_store()
+-> Result<crate::sotf_remote::SotfRemoteServerStore, Box<dyn std::error::Error>> {
+    if let Some(path) = get_remote_servers_path() {
+        if path.exists() {
+            crate::security::validate_config_read_path(&path)?;
+        }
+        Ok(crate::sotf_remote::SotfRemoteServerStore::load_from_path(
+            &path,
+        )?)
+    } else {
+        Err("Could not determine config directory".into())
+    }
+}
+
+/// Save native remote server records to disk.
+///
+/// Bearer tokens are intentionally not stored in this file. Use the
+/// platform credential store keyed by `SotfRemoteServer::token_secret_key`.
+pub fn save_remote_server_store(
+    store: &crate::sotf_remote::SotfRemoteServerStore,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = get_remote_servers_path() {
+        crate::security::validate_write_path(&path)?;
+        Ok(store.save_to_path(&path)?)
     } else {
         Err("Could not determine config directory".into())
     }
@@ -418,6 +456,16 @@ mod tests {
 
         if let Some(path) = db_path {
             assert!(path.to_string_lossy().ends_with("music.db"));
+        }
+    }
+
+    #[test]
+    fn test_remote_servers_path() {
+        let path = get_remote_servers_path();
+        assert!(path.is_some());
+
+        if let Some(path) = path {
+            assert!(path.to_string_lossy().ends_with("remote_servers.json"));
         }
     }
 

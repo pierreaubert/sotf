@@ -323,7 +323,6 @@ pub use sotf_host::analyzer_spectrum::{
     TiltReferenceFreq,
 };
 pub use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use sotf_host::host::{DawHost, GraphEdge, Host};
 pub use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 pub use sotf_host::plugin::{

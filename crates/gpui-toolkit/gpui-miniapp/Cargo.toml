@@ -32,3 +32,6 @@ gpui_linux = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 gpui_windows = { workspace = true }
+
+[target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
+gpui-ios = { workspace = true }
