@@ -803,7 +803,8 @@ mod tests {
             input[i * 5 + 1] = (2.0 * std::f32::consts::PI * 550.0 * t).sin() * 0.2; // FR
             input[i * 5 + 2] = (2.0 * std::f32::consts::PI * 660.0 * t).sin() * 0.2; // C
             input[i * 5 + 3] = (2.0 * std::f32::consts::PI * 220.0 * t).sin() * 0.2; // RL
-            input[i * 5 + 4] = (2.0 * std::f32::consts::PI * 330.0 * t).sin() * 0.2; // RR
+            input[i * 5 + 4] = (2.0 * std::f32::consts::PI * 330.0 * t).sin() * 0.2;
+            // RR
         }
 
         let max_output_frames = resampler.output_frames_for_input(num_frames);

@@ -1260,5 +1260,3 @@ fn parse_keystroke(s: &str) -> anyhow::Result<KeyEvent> {
 
     Ok(KeyEvent::new(code, modifiers))
 }
-
-

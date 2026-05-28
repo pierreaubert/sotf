@@ -27,7 +27,8 @@ fn test_upmixer_stereo_to_5ch() {
     for i in 0..num_frames {
         let t = i as f32 / 44100.0;
         input_stereo[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5; // 440 Hz left
-        input_stereo[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3; // 880 Hz right
+        input_stereo[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3;
+        // 880 Hz right
     }
 
     let mut output_6ch = vec![0.0; num_frames * 6];
