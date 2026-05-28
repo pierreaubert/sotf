@@ -228,10 +228,14 @@ fn probe_remote_server_public(api_base_url: &str) -> RemoteServerProbeStatus {
                     return Err("health endpoint reported not-ok".to_string());
                 }
                 let discovery = client.discovery().await.map_err(|err| err.to_string())?;
+                let capabilities = client.capabilities().await.map_err(|err| err.to_string())?;
                 Ok(RemoteServerProbeStatus::Reachable {
                     friendly_name: discovery.friendly_name,
                     version: discovery.version,
                     auth_required: discovery.auth_required,
+                    api_version: capabilities.api_version,
+                    media_range: capabilities.features.media_range,
+                    events: capabilities.features.events,
                 })
             })
         });

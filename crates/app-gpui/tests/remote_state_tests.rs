@@ -86,9 +86,12 @@ fn remote_probe_status_labels_are_user_readable() {
             friendly_name: "Desk".to_string(),
             version: "0.6.7".to_string(),
             auth_required: true,
+            api_version: 1,
+            media_range: true,
+            events: true,
         }
         .label(),
-        "reachable, auth required (0.6.7)"
+        "reachable, auth required (0.6.7, media, events)"
     );
     assert_eq!(
         RemoteServerProbeStatus::Failed("connection refused".to_string()).label(),

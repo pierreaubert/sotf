@@ -13,6 +13,8 @@ use std::time::Duration;
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
     fn sotf_ios_pop_remote_command() -> i32;
+    fn sotf_ios_take_imported_files_json() -> *mut std::ffi::c_char;
+    fn sotf_ios_string_free(value: *mut std::ffi::c_char);
 }
 
 // Re-export all actions for backward compatibility
@@ -795,11 +797,76 @@ impl PlayerView {
                 1 => Self::handle_ios_queue_navigation(state, true),
                 2 => Self::handle_ios_queue_navigation(state, false),
                 3 => {
-                    log::debug!("[iOS] imported files command consumed by remote drain");
+                    Self::handle_ios_imported_files(state);
                 }
                 other => {
                     log::warn!("[iOS] unknown remote command code: {other}");
                     break;
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    fn handle_ios_imported_files(state: &mut AppState) {
+        // SAFETY: implemented by app-ios in the final binary. It returns an
+        // owned C string allocated by Rust, or NULL on serialization failure.
+        let raw = unsafe { sotf_ios_take_imported_files_json() };
+        if raw.is_null() {
+            return;
+        }
+        let json = {
+            // SAFETY: `raw` is non-null and points to a NUL-terminated string
+            // until we release it below.
+            unsafe { std::ffi::CStr::from_ptr(raw) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        // SAFETY: release the string returned by `sotf_ios_take_imported_files_json`.
+        unsafe {
+            sotf_ios_string_free(raw);
+        }
+
+        let paths: Vec<String> = match serde_json::from_str(&json) {
+            Ok(paths) => paths,
+            Err(err) => {
+                log::warn!("[iOS] failed to parse imported file paths: {err}");
+                return;
+            }
+        };
+        if paths.is_empty() {
+            return;
+        }
+
+        let mut added = 0usize;
+        for path in paths.iter().map(std::path::PathBuf::from) {
+            let looks_like_file = path.is_file() || path.extension().is_some();
+            let library_path = if looks_like_file {
+                path.parent()
+                    .map(std::path::Path::to_path_buf)
+                    .unwrap_or(path)
+            } else {
+                path
+            };
+            match state.app.library_state.library.add_directory(library_path) {
+                Ok(true) => added += 1,
+                Ok(false) => {}
+                Err(err) => log::debug!("[iOS] imported file library path skipped: {err}"),
+            }
+        }
+
+        if added > 0 {
+            state.app.needs_rescan = true;
+            match state.app.rescan_library() {
+                Ok(()) => {
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
+                        format!("Imported files queued {added} library location(s) for scanning."),
+                    ));
+                }
+                Err(err) => {
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::warning(
+                        format!("Imported files added, but scan could not start: {err}"),
+                    ));
                 }
             }
         }

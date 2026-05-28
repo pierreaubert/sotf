@@ -56,6 +56,40 @@ pub struct SotfApiDiscoveryInfo {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiCapabilities {
+    pub api_version: u32,
+    pub features: SotfApiFeatureFlags,
+    pub endpoints: SotfApiEndpoints,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiFeatureFlags {
+    pub playback_control: bool,
+    pub queue_editing: bool,
+    pub library_browse: bool,
+    pub library_search: bool,
+    pub media_range: bool,
+    pub events: bool,
+    pub outputs: bool,
+    pub plugin_presets: bool,
+    pub room_eq: bool,
+    pub headphone_eq: bool,
+    pub pairing: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiEndpoints {
+    pub health: String,
+    pub discovery: String,
+    pub capabilities: String,
+    pub state: String,
+    pub events: String,
+    pub queue: String,
+    pub library_albums: String,
+    pub media: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct SotfApiState {
     pub playback: SotfApiPlayback,
     pub current_song: Option<SotfApiSong>,
@@ -229,6 +263,10 @@ impl SotfApiClient {
         self.get_public("discovery").await
     }
 
+    pub async fn capabilities(&self) -> SotfApiResult<SotfApiCapabilities> {
+        self.get_public("capabilities").await
+    }
+
     pub async fn state(&self) -> SotfApiResult<SotfApiState> {
         self.get_auth("state").await
     }
@@ -311,6 +349,16 @@ impl SotfApiClient {
 
     pub async fn queue_jump(&self, index: usize) -> SotfApiResult<SotfApiQueueEditResponse> {
         self.post_json("queue/jump", &IndexRequest { index }).await
+    }
+
+    pub fn media_url(&self, track_id: &str) -> SotfApiResult<String> {
+        let track_id = validate_api_path_segment(track_id)?;
+        Ok(self.endpoint_url(&format!("media/{track_id}")))
+    }
+
+    #[must_use]
+    pub fn events_url(&self) -> String {
+        self.endpoint_url("events")
     }
 
     async fn get_public<T: DeserializeOwned>(&self, path: &str) -> SotfApiResult<T> {
@@ -502,6 +550,54 @@ mod tests {
         assert_eq!(state.playback.volume, 42);
         assert_eq!(state.current_song.unwrap().title.as_deref(), Some("A"));
         assert_eq!(state.library.albums, 10);
+    }
+
+    #[test]
+    fn parses_capabilities_response_shape() {
+        let capabilities: SotfApiCapabilities = serde_json::from_str(
+            r#"{
+              "api_version": 1,
+              "features": {
+                "playback_control": true,
+                "queue_editing": true,
+                "library_browse": true,
+                "library_search": false,
+                "media_range": true,
+                "events": true,
+                "outputs": false,
+                "plugin_presets": false,
+                "room_eq": false,
+                "headphone_eq": false,
+                "pairing": false
+              },
+              "endpoints": {
+                "health": "/api/v1/health",
+                "discovery": "/api/v1/discovery",
+                "capabilities": "/api/v1/capabilities",
+                "state": "/api/v1/state",
+                "events": "/api/v1/events",
+                "queue": "/api/v1/queue",
+                "library_albums": "/api/v1/library/albums",
+                "media": "/api/v1/media/{track_id}"
+              }
+            }"#,
+        )
+        .unwrap();
+        assert!(capabilities.features.media_range);
+        assert!(capabilities.features.events);
+        assert!(!capabilities.features.pairing);
+        assert_eq!(capabilities.endpoints.media, "/api/v1/media/{track_id}");
+    }
+
+    #[test]
+    fn builds_media_and_event_urls() {
+        let client = SotfApiClient::new("http://host:8732", "secret").unwrap();
+        assert_eq!(
+            client.media_url("track-abc_123").unwrap(),
+            "http://host:8732/api/v1/media/track-abc_123"
+        );
+        assert_eq!(client.events_url(), "http://host:8732/api/v1/events");
+        assert!(client.media_url("../secret").is_err());
     }
 
     #[test]

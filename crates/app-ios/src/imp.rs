@@ -52,9 +52,14 @@ pub enum RemoteCommand {
 
 static PENDING_REMOTE_COMMANDS: OnceLock<parking_lot::Mutex<VecDeque<RemoteCommand>>> =
     OnceLock::new();
+static PENDING_IMPORTED_FILES: OnceLock<parking_lot::Mutex<Vec<PathBuf>>> = OnceLock::new();
 
 fn pending_queue() -> &'static parking_lot::Mutex<VecDeque<RemoteCommand>> {
     PENDING_REMOTE_COMMANDS.get_or_init(|| parking_lot::Mutex::new(VecDeque::new()))
+}
+
+fn pending_imports() -> &'static parking_lot::Mutex<Vec<PathBuf>> {
+    PENDING_IMPORTED_FILES.get_or_init(|| parking_lot::Mutex::new(Vec::new()))
 }
 
 /// Push a remote command for the GPUI loop to drain.
@@ -85,6 +90,46 @@ pub extern "C" fn sotf_ios_pop_remote_command() -> i32 {
                 paths.len()
             );
             3
+        }
+    })
+}
+
+/// Return and clear imported file paths as a JSON string for GPUI to consume.
+///
+/// The returned pointer must be released with `sotf_ios_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_take_imported_files_json() -> *mut std::ffi::c_char {
+    ffi_guard(|| {
+        let paths: Vec<String> = pending_imports()
+            .lock()
+            .drain(..)
+            .map(|path| path.display().to_string())
+            .collect();
+        let Ok(json) = serde_json::to_string(&paths) else {
+            log::error!("[iOS] failed to serialize imported file paths");
+            return std::ptr::null_mut();
+        };
+        match CString::new(json) {
+            Ok(value) => value.into_raw(),
+            Err(_) => {
+                log::error!("[iOS] imported file JSON contained interior NUL");
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Free a string returned by an iOS Rust FFI function.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_string_free(value: *mut std::ffi::c_char) {
+    ffi_guard(|| {
+        if value.is_null() {
+            return;
+        }
+        // SAFETY: callers may only pass pointers returned by `CString::into_raw`
+        // from this crate, and each pointer is freed at most once.
+        unsafe {
+            let _ = CString::from_raw(value);
         }
     })
 }
@@ -260,13 +305,7 @@ fn get_ios_music_directory() -> Option<PathBuf> {
 /// The JSON payload is an array of absolute paths. Each entry that points to
 /// an audio file is forwarded to the playback queue via `Player::queue_next`,
 /// and the full list is also pushed onto the pending remote-command queue so
-/// the GPUI side can perform a full library import when the drain consumer
-/// lands.
-///
-/// TODO(cross-crate-plumbing): the proper destination is
-/// `App::add_directory_quiet` / a dedicated import API in app-gpui, which can
-/// scan metadata and register the tracks with the library. That requires a
-/// drain consumer in the GPUI event loop — see `drain_pending_remote_commands`.
+/// the GPUI side can register the containing folders for a library scan.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_files_imported(paths_json: *const std::ffi::c_char) {
     ffi_guard(AssertUnwindSafe(|| {
@@ -314,8 +353,8 @@ pub extern "C" fn sotf_ios_files_imported(paths_json: *const std::ffi::c_char) {
             );
         }
 
-        // Also enqueue for the (future) full library-import consumer. See
-        // TODO on `RemoteCommand::ImportFiles`.
+        // Also enqueue for the GPUI library-import consumer.
+        pending_imports().lock().extend(path_bufs.iter().cloned());
         push_remote_command(RemoteCommand::ImportFiles(path_bufs));
     }))
 }
