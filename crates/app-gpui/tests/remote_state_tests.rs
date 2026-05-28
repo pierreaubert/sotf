@@ -56,3 +56,24 @@ fn manual_server_record_is_selected_and_non_secret() {
     assert!(!json.contains("auth_token"));
     assert!(!json.contains("bearer-token"));
 }
+
+#[test]
+fn manual_input_add_clears_fields_and_keeps_json_non_secret() {
+    let mut state = RemoteState::default();
+    state.set_manual_server_name(" Desk ");
+    state.set_manual_api_base_url(" http://desk.local:8732 ");
+
+    let id = state.add_manual_server_from_inputs().unwrap();
+
+    assert_eq!(
+        state.server_store.selected_server_id.as_deref(),
+        Some(id.as_str())
+    );
+    assert!(state.manual_server_name.is_empty());
+    assert!(state.manual_api_base_url.is_empty());
+
+    let json = serde_json::to_string(&state.server_store).unwrap();
+    assert!(json.contains("Desk"));
+    assert!(!json.contains("auth_token"));
+    assert!(!json.contains("bearer-token"));
+}

@@ -431,6 +431,8 @@ pub struct RemoteState {
     pub discovered_servers: Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>,
     pub discovery_running: bool,
     pub discovery_error: Option<String>,
+    pub manual_server_name: String,
+    pub manual_api_base_url: String,
     pub discovery_receiver: Option<
         std::sync::mpsc::Receiver<
             Result<Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>, String>,
@@ -445,6 +447,8 @@ impl Default for RemoteState {
             discovered_servers: Vec::new(),
             discovery_running: false,
             discovery_error: None,
+            manual_server_name: String::new(),
+            manual_api_base_url: String::new(),
             discovery_receiver: None,
         }
     }
@@ -491,6 +495,27 @@ impl RemoteState {
         let id = server.id.clone();
         self.server_store.upsert(server);
         let _ = self.server_store.select(id.clone());
+        Ok(id)
+    }
+
+    pub fn set_manual_server_name(&mut self, name: impl Into<String>) {
+        self.manual_server_name = name.into();
+    }
+
+    pub fn set_manual_api_base_url(&mut self, api_base_url: impl Into<String>) {
+        self.manual_api_base_url = api_base_url.into();
+    }
+
+    pub fn add_manual_server_from_inputs(&mut self) -> Result<String, String> {
+        let name = self.manual_server_name.trim().to_string();
+        let api_base_url = self.manual_api_base_url.trim().to_string();
+        if api_base_url.is_empty() {
+            return Err("remote server URL must not be empty".to_string());
+        }
+
+        let id = self.add_manual_server_record(name, api_base_url)?;
+        self.manual_server_name.clear();
+        self.manual_api_base_url.clear();
         Ok(id)
     }
 }
