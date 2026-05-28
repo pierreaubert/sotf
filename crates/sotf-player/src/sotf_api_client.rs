@@ -75,6 +75,51 @@ pub struct SotfApiQueue {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiAlbumList {
+    pub albums: Vec<SotfApiAlbum>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiAlbum {
+    pub id: String,
+    pub title: String,
+    pub artist: String,
+    pub year: Option<u32>,
+    pub track_count: usize,
+    pub edition: Option<String>,
+    pub dynamic_range: Option<f64>,
+    pub is_favorite: bool,
+    pub play_count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiAlbumTracks {
+    pub album: SotfApiAlbum,
+    pub tracks: Vec<SotfApiTrack>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiTrack {
+    pub id: String,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: String,
+    pub track: Option<u32>,
+    pub duration_secs: Option<u64>,
+    pub genre: Option<String>,
+    pub composer: Option<String>,
+    pub disc_number: Option<u32>,
+    pub conductor: Option<String>,
+    pub performer: Option<String>,
+    pub ensemble: Option<String>,
+    pub channels: Option<u32>,
+    pub sample_rate: Option<u32>,
+    pub bit_depth: Option<u32>,
+    pub is_favorite: bool,
+    pub play_count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct SotfApiSong {
     pub file: String,
     pub title: Option<String>,
@@ -94,9 +139,29 @@ pub struct SotfApiCommandResponse {
     pub command: String,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiQueueEditResponse {
+    pub ok: bool,
+    pub command: String,
+    pub index: Option<usize>,
+    pub was_current: Option<bool>,
+    pub playlist_version: Option<u32>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 struct SotfApiErrorResponse {
     error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AddAlbumRequest {
+    album_id: String,
+    play_now: bool,
+}
+
+#[derive(Serialize)]
+struct IndexRequest {
+    index: usize,
 }
 
 #[derive(Serialize)]
@@ -161,6 +226,16 @@ impl SotfApiClient {
         self.get_auth("queue").await
     }
 
+    pub async fn library_albums(&self) -> SotfApiResult<SotfApiAlbumList> {
+        self.get_auth("library/albums").await
+    }
+
+    pub async fn album_tracks(&self, album_id: &str) -> SotfApiResult<SotfApiAlbumTracks> {
+        let album_id = validate_api_path_segment(album_id)?;
+        self.get_auth(&format!("library/albums/{album_id}/tracks"))
+            .await
+    }
+
     pub async fn play(&self) -> SotfApiResult<SotfApiCommandResponse> {
         self.post_empty("play").await
     }
@@ -201,6 +276,30 @@ impl SotfApiClient {
             ));
         }
         self.post_json("volume", &VolumeRequest { volume }).await
+    }
+
+    pub async fn queue_add_album(
+        &self,
+        album_id: impl Into<String>,
+        play_now: bool,
+    ) -> SotfApiResult<SotfApiQueueEditResponse> {
+        let album_id = album_id.into();
+        validate_api_path_segment(&album_id)?;
+        self.post_json("queue/add-album", &AddAlbumRequest { album_id, play_now })
+            .await
+    }
+
+    pub async fn queue_clear(&self) -> SotfApiResult<SotfApiQueueEditResponse> {
+        self.post_empty("queue/clear").await
+    }
+
+    pub async fn queue_delete(&self, index: usize) -> SotfApiResult<SotfApiQueueEditResponse> {
+        self.post_json("queue/delete", &IndexRequest { index })
+            .await
+    }
+
+    pub async fn queue_jump(&self, index: usize) -> SotfApiResult<SotfApiQueueEditResponse> {
+        self.post_json("queue/jump", &IndexRequest { index }).await
     }
 
     async fn get_public<T: DeserializeOwned>(&self, path: &str) -> SotfApiResult<T> {
@@ -283,6 +382,20 @@ fn endpoint_url(base_url: &str, path: &str) -> String {
     }
 }
 
+fn validate_api_path_segment(segment: &str) -> SotfApiResult<&str> {
+    if !segment.is_empty()
+        && segment
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'-' | b'_'))
+    {
+        Ok(segment)
+    } else {
+        Err(SotfApiClientError::InvalidConfig(
+            "API path segment contains unsupported characters".to_string(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +419,10 @@ mod tests {
     fn client_rejects_invalid_config() {
         assert!(SotfApiClient::new("ftp://host", "secret").is_err());
         assert!(SotfApiClient::new("http://host:8732", " ").is_err());
+        assert!(validate_api_path_segment("id:42").is_ok());
+        assert!(validate_api_path_segment("hash:abc-123_def").is_ok());
+        assert!(validate_api_path_segment("../music").is_err());
+        assert!(validate_api_path_segment("id/42").is_err());
     }
 
     #[test]
@@ -368,5 +485,87 @@ mod tests {
         let error: SotfApiErrorResponse =
             serde_json::from_str(r#"{ "ok": false, "error": "missing token" }"#).unwrap();
         assert_eq!(error.error.as_deref(), Some("missing token"));
+    }
+
+    #[test]
+    fn parses_library_album_response_shapes() {
+        let albums: SotfApiAlbumList = serde_json::from_str(
+            r#"{
+              "albums": [
+                {
+                  "id": "id:42",
+                  "title": "Quartets",
+                  "artist": "Example Ensemble",
+                  "year": 2024,
+                  "track_count": 2,
+                  "edition": "Blu-ray",
+                  "dynamic_range": 14.5,
+                  "is_favorite": true,
+                  "play_count": 3
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(albums.albums[0].id, "id:42");
+        assert_eq!(albums.albums[0].track_count, 2);
+
+        let tracks: SotfApiAlbumTracks = serde_json::from_str(
+            r#"{
+              "album": {
+                "id": "id:42",
+                "title": "Quartets",
+                "artist": "Example Ensemble",
+                "year": 2024,
+                "track_count": 1,
+                "edition": null,
+                "dynamic_range": null,
+                "is_favorite": false,
+                "play_count": 0
+              },
+              "tracks": [
+                {
+                  "id": "uuid:abc",
+                  "title": "I. Allegro",
+                  "artist": "Example Ensemble",
+                  "album": "Quartets",
+                  "track": 1,
+                  "duration_secs": 615,
+                  "genre": "Classical",
+                  "composer": "Composer",
+                  "disc_number": 1,
+                  "conductor": null,
+                  "performer": null,
+                  "ensemble": "Example Ensemble",
+                  "channels": 2,
+                  "sample_rate": 96000,
+                  "bit_depth": 24,
+                  "is_favorite": false,
+                  "play_count": 1
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(tracks.album.title, "Quartets");
+        assert_eq!(tracks.tracks[0].duration_secs, Some(615));
+        assert_eq!(tracks.tracks[0].sample_rate, Some(96000));
+    }
+
+    #[test]
+    fn parses_queue_edit_response_shape() {
+        let response: SotfApiQueueEditResponse = serde_json::from_str(
+            r#"{
+              "ok": true,
+              "command": "queue.delete",
+              "index": 1,
+              "was_current": false,
+              "playlist_version": 8
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(response.index, Some(1));
+        assert_eq!(response.was_current, Some(false));
+        assert_eq!(response.playlist_version, Some(8));
     }
 }
