@@ -672,13 +672,91 @@ impl PipelineSupervisor {
     }
 }
 
+#[derive(Debug, Default)]
+struct SystemwideState {
+    pipeline: PipelineSupervisor,
+}
+
+impl SystemwideState {
+    fn selected_output_device(&self) -> Option<String> {
+        self.pipeline.selected_output_device()
+    }
+
+    fn user_plugins(&self) -> Vec<PluginConfig> {
+        self.pipeline.user_plugins()
+    }
+
+    fn input_channels(&self) -> usize {
+        self.pipeline.input_channels()
+    }
+
+    fn output_channels(&self) -> usize {
+        self.pipeline.output_channels()
+    }
+
+    fn input_loudness_index(&self) -> Option<usize> {
+        self.pipeline.input_loudness_index()
+    }
+
+    fn output_loudness_index(&self) -> Option<usize> {
+        self.pipeline.output_loudness_index()
+    }
+
+    fn applied_generation(&self) -> Option<u64> {
+        self.pipeline.applied_generation()
+    }
+
+    fn applied_output_device(&self) -> Option<String> {
+        self.pipeline.applied_output_device()
+    }
+
+    fn desired_spec(&self) -> PipelineSpec {
+        self.pipeline.desired_spec()
+    }
+
+    fn applied_spec(&self) -> Option<PipelineSpec> {
+        self.pipeline.applied_spec()
+    }
+
+    fn prepare_plan(
+        &self,
+        user_plugins: Vec<PluginConfig>,
+        input_channels: usize,
+        output_channels: usize,
+        driver_input_fallback_channels: usize,
+    ) -> Result<PipelinePlan, String> {
+        self.pipeline.prepare_plan(
+            user_plugins,
+            input_channels,
+            output_channels,
+            driver_input_fallback_channels,
+        )
+    }
+
+    fn prepare_with_selected_device(&self, output_device: String) -> Result<PipelinePlan, String> {
+        self.pipeline.prepare_with_selected_device(output_device)
+    }
+
+    fn commit_applied(&mut self, plan: &PipelinePlan) {
+        self.pipeline.commit_applied(plan);
+    }
+
+    fn set_desired_output_device(&mut self, output_device: Option<String>) -> Result<(), String> {
+        self.pipeline.set_desired_output_device(output_device)
+    }
+
+    fn commit_idle_reconfigure(&mut self, plan: &PipelinePlan) {
+        self.pipeline.commit_idle_reconfigure(plan);
+    }
+}
+
 #[derive(Clone)]
 struct AudioDaemon {
     manager: Arc<Mutex<AudioEngineManager>>,
     running: Arc<Mutex<bool>>,
     driver_manager: Arc<Mutex<DriverManager>>,
-    /// Desired and applied systemwide pipeline state.
-    pipeline: Arc<Mutex<PipelineSupervisor>>,
+    /// Desired and applied systemwide daemon state.
+    system_state: Arc<Mutex<SystemwideState>>,
     /// Encryption key manager
     key_manager: Arc<Mutex<KeyManager>>,
     /// Shared Tokio runtime for async operations
@@ -693,7 +771,7 @@ impl AudioDaemon {
             manager: Arc::new(Mutex::new(AudioEngineManager::new())),
             running: Arc::new(Mutex::new(true)),
             driver_manager: Arc::new(Mutex::new(DriverManager::new())),
-            pipeline: Arc::new(Mutex::new(PipelineSupervisor::default())),
+            system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
             runtime: Arc::new(runtime),
         }
@@ -709,7 +787,7 @@ impl AudioDaemon {
 
             if let Some(device) = output_device {
                 if let Err(e) = daemon
-                    .pipeline
+                    .system_state
                     .lock()
                     .set_desired_output_device(Some(device.clone()))
                 {
@@ -781,7 +859,7 @@ impl AudioDaemon {
 
     fn metering_snapshot(&self) -> Value {
         let manager = self.manager.lock();
-        let pipeline = self.pipeline.lock();
+        let pipeline = self.system_state.lock();
         let input_idx = pipeline.input_loudness_index();
         let output_idx = pipeline.output_loudness_index();
         let fallback_input_channels = pipeline.input_channels();
@@ -831,7 +909,7 @@ impl AudioDaemon {
         let muted = manager.is_muted();
         drop(manager);
 
-        let pipeline = self.pipeline.lock();
+        let pipeline = self.system_state.lock();
         let desired = pipeline.desired_spec();
         let applied = pipeline.applied_spec();
         let applied_generation = pipeline.applied_generation();
@@ -971,7 +1049,7 @@ impl AudioDaemon {
     async fn handle_dump_state(&self) -> Response {
         Response::ok(serde_json::json!({
             "snapshot": self.snapshot_json(),
-            "plugins": self.pipeline.lock().user_plugins(),
+            "plugins": self.system_state.lock().user_plugins(),
         }))
     }
 
@@ -979,7 +1057,7 @@ impl AudioDaemon {
         let manager = self.manager.lock();
         let state = manager.get_state();
         let engine_state = manager.get_engine_state();
-        let pipeline = self.pipeline.lock();
+        let pipeline = self.system_state.lock();
         let selected_device = pipeline.selected_output_device();
         let input_channels = pipeline.input_channels();
         let output_channels = pipeline.output_channels();
@@ -1021,7 +1099,7 @@ impl AudioDaemon {
 
     async fn handle_play(&self) -> Response {
         let mut manager = self.manager.lock();
-        let output_device = self.pipeline.lock().selected_output_device();
+        let output_device = self.system_state.lock().selected_output_device();
         match manager.start_playback(output_device, vec![], 2) {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::err(format!("Failed to start playback: {}", e)),
@@ -1128,7 +1206,7 @@ impl AudioDaemon {
                     512
                 };
                 let plan = match self
-                    .pipeline
+                    .system_state
                     .lock()
                     .prepare_with_selected_device(stored_name.clone())
                 {
@@ -1220,7 +1298,7 @@ impl AudioDaemon {
 
         match result {
             Ok(_) => {
-                self.pipeline.lock().commit_applied(&plan);
+                self.system_state.lock().commit_applied(&plan);
                 log::info!("Driver plugin chain loaded successfully");
 
                 self.driver_manager.lock().set_engine_ready(true);
@@ -1255,7 +1333,7 @@ impl AudioDaemon {
         } else {
             512
         };
-        let stored_input_channels = self.pipeline.lock().input_channels();
+        let stored_input_channels = self.system_state.lock().input_channels();
         let fallback_input_channels = if driver_status.channel_count > 0 {
             driver_status.channel_count as usize
         } else if stored_input_channels > 0 {
@@ -1264,7 +1342,7 @@ impl AudioDaemon {
             2
         };
 
-        let plan = match self.pipeline.lock().prepare_plan(
+        let plan = match self.system_state.lock().prepare_plan(
             plugins,
             input_channels,
             output_channels,
@@ -1299,7 +1377,7 @@ impl AudioDaemon {
     // =========================================================================
 
     async fn handle_get_plugins(&self) -> Response {
-        let plugins = self.pipeline.lock().user_plugins();
+        let plugins = self.system_state.lock().user_plugins();
         let result: Vec<Value> = plugins
             .iter()
             .enumerate()
@@ -1354,7 +1432,7 @@ impl AudioDaemon {
     }
 
     async fn handle_add_plugin(&self, plugin: PluginConfig, index: Option<usize>) -> Response {
-        let mut plugins = self.pipeline.lock().user_plugins();
+        let mut plugins = self.system_state.lock().user_plugins();
         match index {
             Some(i) if i <= plugins.len() => plugins.insert(i, plugin),
             _ => plugins.push(plugin),
@@ -1363,7 +1441,7 @@ impl AudioDaemon {
     }
 
     async fn handle_remove_plugin(&self, index: usize) -> Response {
-        let mut plugins = self.pipeline.lock().user_plugins();
+        let mut plugins = self.system_state.lock().user_plugins();
         if index >= plugins.len() {
             return Response::err(format!(
                 "Plugin index {} out of range (have {})",
@@ -1376,7 +1454,7 @@ impl AudioDaemon {
     }
 
     async fn handle_update_plugin(&self, index: usize, parameters: Value) -> Response {
-        let mut plugins = self.pipeline.lock().user_plugins();
+        let mut plugins = self.system_state.lock().user_plugins();
         if index >= plugins.len() {
             return Response::err(format!(
                 "Plugin index {} out of range (have {})",
@@ -1389,7 +1467,7 @@ impl AudioDaemon {
     }
 
     async fn handle_reorder_plugins(&self, order: Vec<usize>) -> Response {
-        let plugins = self.pipeline.lock().user_plugins();
+        let plugins = self.system_state.lock().user_plugins();
         let n = plugins.len();
 
         if order.len() != n {
@@ -1420,7 +1498,7 @@ impl AudioDaemon {
 
     async fn reload_plugins_with_user_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
         let plan = match {
-            let pipeline = self.pipeline.lock();
+            let pipeline = self.system_state.lock();
             pipeline.prepare_plan(
                 plugins,
                 pipeline.input_channels(),
@@ -1442,7 +1520,7 @@ impl AudioDaemon {
                 self.manager
                     .lock()
                     .set_loudness_plugin_index(plan.output_loudness_index);
-                self.pipeline.lock().commit_applied(&plan);
+                self.system_state.lock().commit_applied(&plan);
                 log::info!("Driver plugin chain hot-updated successfully");
                 Response::ok_empty()
             }
@@ -1744,7 +1822,7 @@ impl AudioDaemon {
             let driver_manager = Arc::clone(&self.driver_manager);
             let audio_manager = Arc::clone(&self.manager);
             let running = Arc::clone(&self.running);
-            let pipeline = Arc::clone(&self.pipeline);
+            let pipeline = Arc::clone(&self.system_state);
             spawn_driver_config_watcher(driver_manager, audio_manager, running, pipeline)
         };
 
@@ -1807,7 +1885,7 @@ impl AudioDaemon {
                         manager: Arc::clone(&self.manager),
                         running: Arc::clone(&self.running),
                         driver_manager: Arc::clone(&self.driver_manager),
-                        pipeline: Arc::clone(&self.pipeline),
+                        system_state: Arc::clone(&self.system_state),
                         key_manager: Arc::clone(&self.key_manager),
                         runtime: Arc::clone(&self.runtime),
                     };
@@ -1912,7 +1990,7 @@ fn spawn_driver_config_watcher(
     driver_manager: Arc<Mutex<DriverManager>>,
     audio_manager: Arc<Mutex<AudioEngineManager>>,
     running: Arc<Mutex<bool>>,
-    pipeline: Arc<Mutex<PipelineSupervisor>>,
+    system_state: Arc<Mutex<SystemwideState>>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         use std::time::Duration;
@@ -1929,7 +2007,7 @@ fn spawn_driver_config_watcher(
             // Poll driver for config changes
             let config_change = driver_manager.lock().poll_config_change();
             if let Some(config) = config_change {
-                handle_driver_config_change(&driver_manager, &audio_manager, config, &pipeline);
+                handle_driver_config_change(&driver_manager, &audio_manager, config, &system_state);
             }
 
             std::thread::sleep(poll_interval);
@@ -1944,7 +2022,7 @@ fn handle_driver_config_change(
     driver_manager: &Arc<Mutex<DriverManager>>,
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
     config: DriverConfig,
-    pipeline: &Arc<Mutex<PipelineSupervisor>>,
+    system_state: &Arc<Mutex<SystemwideState>>,
 ) {
     let requested_rate = config.sample_rate;
     let requested_frames = config.buffer_frames;
@@ -2017,7 +2095,7 @@ fn handle_driver_config_change(
     // Reconfigure audio pipeline
     match reconfigure_audio_pipeline(
         audio_manager,
-        pipeline,
+        system_state,
         actual_rate,
         requested_frames,
         requested_channels as usize,
@@ -2075,17 +2153,17 @@ fn handle_driver_config_change(
 /// Reconfigure the audio pipeline with new sample rate and buffer size
 fn reconfigure_audio_pipeline(
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
-    pipeline: &Arc<Mutex<PipelineSupervisor>>,
+    system_state: &Arc<Mutex<SystemwideState>>,
     hal_sample_rate: u32,
     _buffer_frames: u32,
     input_channels: usize,
 ) -> Result<PipelineReconfigureOutcome, String> {
     let plan = {
-        let pipeline = pipeline.lock();
-        pipeline.prepare_plan(
-            pipeline.user_plugins(),
+        let state = system_state.lock();
+        state.prepare_plan(
+            state.user_plugins(),
             input_channels,
-            pipeline.output_channels(),
+            state.output_channels(),
             input_channels,
         )?
     };
@@ -2095,7 +2173,7 @@ fn reconfigure_audio_pipeline(
     let state = manager.get_state();
     if state == sotf_audio::manager::StreamingState::Idle {
         log::debug!("No active playback, acknowledging config change");
-        pipeline.lock().commit_idle_reconfigure(&plan);
+        system_state.lock().commit_idle_reconfigure(&plan);
         return Ok(PipelineReconfigureOutcome::IdleUpdated);
     }
 
@@ -2122,7 +2200,7 @@ fn reconfigure_audio_pipeline(
         plan.spec.input_channels,
     ) {
         Ok(_) => {
-            pipeline.lock().commit_applied(&plan);
+            system_state.lock().commit_applied(&plan);
             log::info!("Driver playback restarted successfully");
             Ok(PipelineReconfigureOutcome::Restarted)
         }
@@ -2749,7 +2827,7 @@ mod ipc_safety_tests {
             driver_manager: Arc::new(Mutex::new(DriverManager::from_driver(Box::new(
                 FakeDriver::new(state),
             )))),
-            pipeline: Arc::new(Mutex::new(PipelineSupervisor::default())),
+            system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
             runtime: Arc::new(runtime),
         }
@@ -2870,26 +2948,26 @@ mod ipc_safety_tests {
     #[test]
     fn driver_reconfigure_preserves_daemon_selected_output_device_when_idle() {
         let audio_manager = Arc::new(Mutex::new(AudioEngineManager::new()));
-        let pipeline = Arc::new(Mutex::new(PipelineSupervisor::default()));
+        let system_state = Arc::new(Mutex::new(SystemwideState::default()));
 
         {
-            let mut pipeline = pipeline.lock();
-            let plan = pipeline
+            let mut state = system_state.lock();
+            let plan = state
                 .prepare_with_selected_device("ADAM Audio D3V".to_string())
                 .expect("valid device plan");
-            pipeline.commit_applied(&plan);
+            state.commit_applied(&plan);
         }
 
-        reconfigure_audio_pipeline(&audio_manager, &pipeline, 48_000, 512, 6)
+        reconfigure_audio_pipeline(&audio_manager, &system_state, 48_000, 512, 6)
             .expect("idle reconfigure should update desired state");
 
-        let pipeline = pipeline.lock();
+        let state = system_state.lock();
         assert_eq!(
-            pipeline.selected_output_device().as_deref(),
+            state.selected_output_device().as_deref(),
             Some("ADAM Audio D3V")
         );
-        assert_eq!(pipeline.input_channels(), 6);
-        assert_eq!(pipeline.output_channels(), 2);
+        assert_eq!(state.input_channels(), 6);
+        assert_eq!(state.output_channels(), 2);
     }
 
     #[test]
@@ -2929,8 +3007,8 @@ mod ipc_safety_tests {
                 .as_deref()
                 .is_some_and(|e| e.contains("Invalid output channel count"))
         );
-        assert_eq!(daemon.pipeline.lock().output_channels(), 2);
-        assert!(daemon.pipeline.lock().output_loudness_index().is_none());
+        assert_eq!(daemon.system_state.lock().output_channels(), 2);
+        assert!(daemon.system_state.lock().output_loudness_index().is_none());
     }
 
     #[test]
@@ -2949,9 +3027,9 @@ mod ipc_safety_tests {
                 .as_str()
                 .is_some_and(|e| e.contains("Invalid output channel count"))
         );
-        assert_eq!(daemon.pipeline.lock().input_channels(), 2);
-        assert_eq!(daemon.pipeline.lock().output_channels(), 2);
-        assert!(daemon.pipeline.lock().applied_generation().is_none());
+        assert_eq!(daemon.system_state.lock().input_channels(), 2);
+        assert_eq!(daemon.system_state.lock().output_channels(), 2);
+        assert!(daemon.system_state.lock().applied_generation().is_none());
     }
 
     #[test]
@@ -2973,7 +3051,7 @@ mod ipc_safety_tests {
         state.lock().status.channel_count = 6;
         let daemon = test_daemon_with_driver(state);
         {
-            let mut pipeline = daemon.pipeline.lock();
+            let mut pipeline = daemon.system_state.lock();
             pipeline
                 .set_desired_output_device(Some("ADAM Audio D3V".to_string()))
                 .expect("safe device");
@@ -3011,7 +3089,7 @@ mod ipc_safety_tests {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(Arc::clone(&state));
         {
-            let mut pipeline = daemon.pipeline.lock();
+            let mut pipeline = daemon.system_state.lock();
             let plan = pipeline
                 .prepare_with_selected_device("ADAM Audio D3V".to_string())
                 .expect("valid device plan");
@@ -3026,10 +3104,10 @@ mod ipc_safety_tests {
                 buffer_frames: 512,
                 channel_count: 10,
             },
-            &daemon.pipeline,
+            &daemon.system_state,
         );
 
-        let pipeline = daemon.pipeline.lock();
+        let pipeline = daemon.system_state.lock();
         assert_eq!(pipeline.input_channels(), 10);
         assert_eq!(
             pipeline.selected_output_device().as_deref(),
