@@ -331,6 +331,21 @@ The control rule for future changes:
 5. The UI renders daemon snapshots and never repairs daemon state by resending
    locally cached fields.
 
+Implemented first controls:
+
+- `PipelineSupervisor` now exposes reducer-style methods for startup output
+  device adoption and idle HAL reconfiguration. Startup and idle config-change
+  paths no longer write `desired` directly from outside the supervisor.
+- The daemon exposes read-only `get_snapshot` and `dump_state` commands. The
+  snapshot separates desired pipeline state, applied pipeline state, observed
+  engine/driver/encryption state, metering provenance, and diagnostics.
+- `get_metering` remains backward-compatible (`input` and `output` are still at
+  the top level) and now includes `sources.input` / `sources.output` so shaped
+  zero arrays are distinguishable from real loudness-monitor data.
+- Snapshot diagnostics currently flag important contradictions such as
+  `Playing` with no input frames, no output callbacks, no resolved output
+  device, inactive HAL stream, or unsafe virtual/loopback output devices.
+
 ## Use Case: User Starts The Toolbar
 
 ```mermaid
@@ -820,6 +835,12 @@ Current branch coverage starts the lower middle of that pyramid:
 - Unix-stream IPC tests send real JSON lines through `AudioDaemon::handle_client`
   and assert state is unchanged when an invalid channel-count transition is
   rejected.
+- Snapshot IPC tests prove `get_snapshot` separates desired/observed state and
+  exposes metering provenance; `dump_state` packages the snapshot with the user
+  plugin list for doctor-style diagnostics.
+- Reducer tests prove safe output-device adoption, virtual output-device
+  rejection, and idle reconfiguration happen through `PipelineSupervisor`
+  methods without committing an applied generation.
 
 ### Scenario Matrix
 
@@ -909,7 +930,7 @@ enumeration or output-device selection.
 ## Proposed Migration Plan
 
 1. Add read-only `get_snapshot` and `dump_state` commands around the current
-   implementation.
+   implementation. Done for the daemon JSON IPC path.
 2. Introduce `SystemwideState` plus reducer-style methods for every desired
    mutation; remove direct writes to `PipelineSupervisor.desired`.
 3. Convert IPC handlers to typed intents dispatched to a `SystemwideController`.

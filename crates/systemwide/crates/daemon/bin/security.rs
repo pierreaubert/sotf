@@ -249,6 +249,8 @@ pub fn peer_allows_command(class: PeerClass, command_name: &str) -> bool {
                 | "get_driver_config"
                 | "get_hal_config"
                 | "encryption_status"
+                | "get_snapshot"
+                | "snapshot"
                 | "status"
         ),
     }
@@ -740,6 +742,8 @@ mod tests {
             "get_driver_config",
             "get_hal_config",
             "encryption_status",
+            "get_snapshot",
+            "snapshot",
             "status",
         ] {
             assert!(

@@ -64,6 +64,10 @@ fn get_socket_path() -> PathBuf {
 enum Command {
     #[serde(rename = "status")]
     Status,
+    #[serde(rename = "get_snapshot", alias = "snapshot")]
+    GetSnapshot,
+    #[serde(rename = "dump_state")]
+    DumpState,
     #[serde(rename = "load")]
     Load { path: String },
     #[serde(rename = "play")]
@@ -142,6 +146,8 @@ impl Command {
     fn name(&self) -> &'static str {
         match self {
             Command::Status => "status",
+            Command::GetSnapshot => "get_snapshot",
+            Command::DumpState => "dump_state",
             Command::Load { .. } => "load",
             Command::Play => "play",
             Command::Pause => "pause",
@@ -319,6 +325,34 @@ fn empty_loudness_json(channels: usize) -> Value {
         "channel_peaks": vec![0.0; channels],
         "true_peaks_dbtp": vec![-120.0; channels],
         "correlation_lr": null,
+    })
+}
+
+fn metering_source_json(data_present: bool, channels: usize) -> Value {
+    let channels = channels.clamp(1, MAX_HAL_CHANNELS);
+    let (status, source) = if data_present {
+        ("available", "loudness_monitor")
+    } else {
+        ("fallback_zero", "channel_sized_fallback")
+    };
+    serde_json::json!({
+        "status": status,
+        "source": source,
+        "channels": channels,
+    })
+}
+
+fn pipeline_spec_to_json(spec: &PipelineSpec) -> Value {
+    serde_json::json!({
+        "output_device": spec.output_device,
+        "input_channels": spec.input_channels,
+        "output_channels": spec.output_channels,
+        "user_plugin_count": spec.user_plugins.len(),
+        "user_plugin_types": spec
+            .user_plugins
+            .iter()
+            .map(|p| p.plugin_type.as_str())
+            .collect::<Vec<_>>(),
     })
 }
 
@@ -518,6 +552,14 @@ impl PipelineSupervisor {
             .and_then(|p| p.spec.output_device.clone())
     }
 
+    fn desired_spec(&self) -> PipelineSpec {
+        self.desired.clone()
+    }
+
+    fn applied_spec(&self) -> Option<PipelineSpec> {
+        self.applied.as_ref().map(|p| p.spec.clone())
+    }
+
     fn prepare_plan(
         &self,
         user_plugins: Vec<PluginConfig>,
@@ -611,6 +653,23 @@ impl PipelineSupervisor {
             generation: self.generation,
         });
     }
+
+    fn set_desired_output_device(&mut self, output_device: Option<String>) -> Result<(), String> {
+        if let Some(device) = output_device.as_ref()
+            && !is_safe_output_device_name(device)
+        {
+            return Err(format!(
+                "'{}' is a virtual/loopback device and cannot be used as Systemwide speaker output.",
+                device
+            ));
+        }
+        self.desired.output_device = output_device;
+        Ok(())
+    }
+
+    fn commit_idle_reconfigure(&mut self, plan: &PipelinePlan) {
+        self.desired = plan.spec.clone();
+    }
 }
 
 #[derive(Clone)]
@@ -648,8 +707,14 @@ impl AudioDaemon {
             let output_device = configured_output_device_from_env();
             println!("   Output device: {:?}", output_device);
 
-            if let Some(ref device) = output_device {
-                daemon.pipeline.lock().desired.output_device = Some(device.clone());
+            if let Some(device) = output_device {
+                if let Err(e) = daemon
+                    .pipeline
+                    .lock()
+                    .set_desired_output_device(Some(device.clone()))
+                {
+                    println!("   Ignoring configured output device {:?}: {}", device, e);
+                }
             } else {
                 println!("   No output device override; playback thread will choose a safe device");
             }
@@ -670,6 +735,8 @@ impl AudioDaemon {
     async fn handle_command(&self, cmd: Command) -> Response {
         match cmd {
             Command::Status => self.handle_status().await,
+            Command::GetSnapshot => self.handle_get_snapshot().await,
+            Command::DumpState => self.handle_dump_state().await,
             Command::Load { path } => self.handle_load(&path).await,
             Command::Play => self.handle_play().await,
             Command::Pause => self.handle_pause().await,
@@ -710,6 +777,202 @@ impl AudioDaemon {
             Command::SetBufferFrames { frames } => self.handle_set_buffer_frames(frames).await,
             Command::GetDriverConfig => self.handle_get_driver_config().await,
         }
+    }
+
+    fn metering_snapshot(&self) -> Value {
+        let manager = self.manager.lock();
+        let pipeline = self.pipeline.lock();
+        let input_idx = pipeline.input_loudness_index();
+        let output_idx = pipeline.output_loudness_index();
+        let fallback_input_channels = pipeline.input_channels();
+        let fallback_output_channels = manager.get_engine_state().num_channels;
+        drop(pipeline);
+
+        let input_data = input_idx.and_then(|idx| {
+            manager
+                .get_cached_plugin_data(idx)
+                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
+        });
+
+        let output_data = output_idx.and_then(|idx| {
+            manager
+                .get_cached_plugin_data(idx)
+                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
+        });
+
+        let input_json = input_data
+            .as_ref()
+            .map(loudness_data_to_json)
+            .unwrap_or_else(|| empty_loudness_json(fallback_input_channels));
+        let output_json = output_data
+            .as_ref()
+            .map(loudness_data_to_json)
+            .unwrap_or_else(|| empty_loudness_json(fallback_output_channels));
+
+        serde_json::json!({
+            "input": input_json,
+            "output": output_json,
+            "sources": {
+                "input": metering_source_json(input_data.is_some(), fallback_input_channels),
+                "output": metering_source_json(output_data.is_some(), fallback_output_channels),
+            },
+        })
+    }
+
+    fn snapshot_json(&self) -> Value {
+        let driver_status = self.driver_manager.lock().status();
+        let key_status = self.key_manager.lock().status();
+
+        let manager = self.manager.lock();
+        let state = manager.get_state();
+        let state_name = format!("{:?}", state);
+        let engine_state = manager.get_engine_state();
+        let volume = manager.get_volume();
+        let muted = manager.is_muted();
+        drop(manager);
+
+        let pipeline = self.pipeline.lock();
+        let desired = pipeline.desired_spec();
+        let applied = pipeline.applied_spec();
+        let applied_generation = pipeline.applied_generation();
+        let applied_output_device = pipeline.applied_output_device();
+        drop(pipeline);
+
+        let mut faults = Vec::new();
+        if state_name == "Playing" {
+            if driver_status.driver_installed && !driver_status.capture_active {
+                faults.push(serde_json::json!({
+                    "code": "hal_stream_inactive",
+                    "severity": "warning",
+                    "message": "Playback is marked Playing but the HAL stream is not active.",
+                }));
+            }
+            if engine_state.playback_frames_received == 0 {
+                faults.push(serde_json::json!({
+                    "code": "input_frames_missing",
+                    "severity": "error",
+                    "message": "Playback is marked Playing but no frames have reached the playback thread.",
+                }));
+            }
+            if engine_state.playback_callback_count == 0 {
+                faults.push(serde_json::json!({
+                    "code": "output_callbacks_missing",
+                    "severity": "error",
+                    "message": "Playback is marked Playing but no hardware output callbacks have been observed.",
+                }));
+            }
+            if engine_state.playback_frames_received > 0
+                && engine_state.playback_frames_written == 0
+            {
+                faults.push(serde_json::json!({
+                    "code": "output_frames_missing",
+                    "severity": "error",
+                    "message": "The playback thread received frames but has not written any to the hardware ring.",
+                }));
+            }
+            if engine_state.playback_output_device.is_none() {
+                faults.push(serde_json::json!({
+                    "code": "output_device_unresolved",
+                    "severity": "warning",
+                    "message": "Playback is active but no hardware output device has been resolved yet.",
+                }));
+            }
+        }
+
+        if desired
+            .output_device
+            .as_ref()
+            .is_some_and(|device| !is_safe_output_device_name(device))
+        {
+            faults.push(serde_json::json!({
+                "code": "unsafe_desired_output_device",
+                "severity": "error",
+                "message": "Desired output device is virtual/loopback and would create a feedback risk.",
+            }));
+        }
+        if engine_state
+            .playback_output_device
+            .as_ref()
+            .is_some_and(|device| !is_safe_output_device_name(device))
+        {
+            faults.push(serde_json::json!({
+                "code": "unsafe_observed_output_device",
+                "severity": "error",
+                "message": "Observed playback output device is virtual/loopback and risks feedback.",
+            }));
+        }
+
+        let metering = self.metering_snapshot();
+        let health = if faults
+            .iter()
+            .any(|fault| fault["severity"].as_str() == Some("error"))
+        {
+            "fault"
+        } else if faults.is_empty() {
+            "ok"
+        } else {
+            "warning"
+        };
+
+        serde_json::json!({
+            "schema_version": 1,
+            "desired": pipeline_spec_to_json(&desired),
+            "applied": {
+                "generation": applied_generation,
+                "output_device": applied_output_device,
+                "spec": applied.as_ref().map(pipeline_spec_to_json),
+            },
+            "observed": {
+                "engine": {
+                    "state": state_name,
+                    "volume": volume,
+                    "muted": muted,
+                    "sample_rate": engine_state.sample_rate,
+                    "channels": engine_state.num_channels,
+                    "underruns": engine_state.underruns,
+                    "playback_output_device": engine_state.playback_output_device,
+                    "playback_callback_count": engine_state.playback_callback_count,
+                    "playback_buffer_fill_percent": engine_state.playback_buffer_fill_percent,
+                    "playback_stream_error_count": engine_state.playback_stream_error_count,
+                    "playback_frames_received": engine_state.playback_frames_received,
+                    "playback_frames_written": engine_state.playback_frames_written,
+                    "playback_frames_dropped": engine_state.playback_frames_dropped,
+                    "playback_effective_sample_rate": engine_state.playback_effective_sample_rate,
+                    "last_error": engine_state.last_error,
+                },
+                "driver": {
+                    "platform_supported": driver_status.platform_supported,
+                    "driver_installed": driver_status.driver_installed,
+                    "driver_ready": driver_status.driver_ready,
+                    "capture_active": driver_status.capture_active,
+                    "sample_rate": driver_status.sample_rate,
+                    "channel_count": driver_status.channel_count,
+                    "buffer_frames": driver_status.buffer_frames,
+                    "driver_name": driver_status.driver_name,
+                },
+                "encryption": {
+                    "enabled": key_status.enabled,
+                    "fingerprint": key_status.fingerprint,
+                    "key_path": key_status.key_path,
+                },
+                "metering": metering,
+            },
+            "diagnostics": {
+                "health": health,
+                "faults": faults,
+            },
+        })
+    }
+
+    async fn handle_get_snapshot(&self) -> Response {
+        Response::ok(self.snapshot_json())
+    }
+
+    async fn handle_dump_state(&self) -> Response {
+        Response::ok(serde_json::json!({
+            "snapshot": self.snapshot_json(),
+            "plugins": self.pipeline.lock().user_plugins(),
+        }))
     }
 
     async fn handle_status(&self) -> Response {
@@ -1028,39 +1291,7 @@ impl AudioDaemon {
     }
 
     async fn handle_get_metering(&self) -> Response {
-        let manager = self.manager.lock();
-        let pipeline = self.pipeline.lock();
-        let input_idx = pipeline.input_loudness_index();
-        let output_idx = pipeline.output_loudness_index();
-        let fallback_input_channels = pipeline.input_channels();
-        let fallback_output_channels = manager.get_engine_state().num_channels;
-        drop(pipeline);
-
-        let input_data = input_idx.and_then(|idx| {
-            manager
-                .get_cached_plugin_data(idx)
-                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
-        });
-
-        let output_data = output_idx.and_then(|idx| {
-            manager
-                .get_cached_plugin_data(idx)
-                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
-        });
-
-        let input_json = input_data
-            .as_ref()
-            .map(loudness_data_to_json)
-            .unwrap_or_else(|| empty_loudness_json(fallback_input_channels));
-        let output_json = output_data
-            .as_ref()
-            .map(loudness_data_to_json)
-            .unwrap_or_else(|| empty_loudness_json(fallback_output_channels));
-
-        Response::ok(serde_json::json!({
-            "input": input_json,
-            "output": output_json,
-        }))
+        Response::ok(self.metering_snapshot())
     }
 
     // =========================================================================
@@ -1864,7 +2095,7 @@ fn reconfigure_audio_pipeline(
     let state = manager.get_state();
     if state == sotf_audio::manager::StreamingState::Idle {
         log::debug!("No active playback, acknowledging config change");
-        pipeline.lock().desired = plan.spec;
+        pipeline.lock().commit_idle_reconfigure(&plan);
         return Ok(PipelineReconfigureOutcome::IdleUpdated);
     }
 
@@ -2392,6 +2623,15 @@ mod ipc_safety_tests {
         let cmd: Command = serde_json::from_str(r#"{"command":"status"}"#).unwrap();
         assert_eq!(cmd.name(), "status");
 
+        let cmd: Command = serde_json::from_str(r#"{"command":"get_snapshot"}"#).unwrap();
+        assert_eq!(cmd.name(), "get_snapshot");
+
+        let cmd: Command = serde_json::from_str(r#"{"command":"snapshot"}"#).unwrap();
+        assert_eq!(cmd.name(), "get_snapshot");
+
+        let cmd: Command = serde_json::from_str(r#"{"command":"dump_state"}"#).unwrap();
+        assert_eq!(cmd.name(), "dump_state");
+
         let cmd: Command = serde_json::from_str(r#"{"command":"driver_status"}"#).unwrap();
         assert_eq!(cmd.name(), "driver_status");
 
@@ -2600,6 +2840,34 @@ mod ipc_safety_tests {
     }
 
     #[test]
+    fn pipeline_supervisor_reducer_methods_control_desired_mutation() {
+        let mut supervisor = PipelineSupervisor::default();
+
+        supervisor
+            .set_desired_output_device(Some("ADAM Audio D3V".to_string()))
+            .expect("safe device should be accepted");
+        assert_eq!(
+            supervisor.selected_output_device().as_deref(),
+            Some("ADAM Audio D3V")
+        );
+
+        let result = supervisor.set_desired_output_device(Some("SotF Virtual Audio".to_string()));
+        assert!(result.unwrap_err().contains("virtual/loopback"));
+        assert_eq!(
+            supervisor.selected_output_device().as_deref(),
+            Some("ADAM Audio D3V")
+        );
+
+        let plan = supervisor
+            .prepare_plan(vec![test_plugin("eq")], 10, 4, 10)
+            .expect("valid idle reconfigure plan");
+        supervisor.commit_idle_reconfigure(&plan);
+        assert_eq!(supervisor.input_channels(), 10);
+        assert_eq!(supervisor.output_channels(), 4);
+        assert!(supervisor.applied_generation().is_none());
+    }
+
+    #[test]
     fn driver_reconfigure_preserves_daemon_selected_output_device_when_idle() {
         let audio_manager = Arc::new(Mutex::new(AudioEngineManager::new()));
         let pipeline = Arc::new(Mutex::new(PipelineSupervisor::default()));
@@ -2697,6 +2965,45 @@ mod ipc_safety_tests {
         assert_eq!(response["success"], true);
         assert_eq!(response["data"]["driver_name"], "Fake HAL");
         assert_eq!(response["data"]["channel_count"], 12);
+    }
+
+    #[test]
+    fn testkit_snapshot_separates_desired_observed_and_diagnostics() {
+        let state = fake_driver_state();
+        state.lock().status.channel_count = 6;
+        let daemon = test_daemon_with_driver(state);
+        {
+            let mut pipeline = daemon.pipeline.lock();
+            pipeline
+                .set_desired_output_device(Some("ADAM Audio D3V".to_string()))
+                .expect("safe device");
+        }
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"get_snapshot"}"#);
+
+        assert_eq!(response["success"], true);
+        let data = &response["data"];
+        assert_eq!(data["schema_version"], 1);
+        assert_eq!(data["desired"]["output_device"], "ADAM Audio D3V");
+        assert_eq!(data["observed"]["driver"]["channel_count"], 6);
+        assert_eq!(
+            data["observed"]["metering"]["sources"]["input"]["status"],
+            "fallback_zero"
+        );
+        assert_eq!(data["diagnostics"]["health"], "ok");
+        assert!(data["diagnostics"]["faults"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn testkit_dump_state_includes_snapshot_and_plugins() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"dump_state"}"#);
+
+        assert_eq!(response["success"], true);
+        assert_eq!(response["data"]["snapshot"]["schema_version"], 1);
+        assert!(response["data"]["plugins"].as_array().is_some());
     }
 
     #[test]
