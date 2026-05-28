@@ -717,6 +717,7 @@ fn test_engine_auto_advance_after_end_of_stream() {
 
     let device = common::require_virtual_device();
     let mut manager = AudioEngineManager::new();
+    manager.set_allow_virtual_output(true);
 
     // Load and play a short file
     let temp_file1 = common::create_test_wav(0.3, 48000, 2);
