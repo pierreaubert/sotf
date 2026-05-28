@@ -1,6 +1,7 @@
 //! Native SOTF remote connection state for mobile and desktop clients.
 
 use std::fmt;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -11,15 +12,49 @@ use crate::sotf_api_client::{
     SotfApiQueueEditResponse, SotfApiResult, SotfApiState, normalized_api_base_url,
 };
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+const REMOTE_SERVER_STORE_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SotfRemoteServerStore {
+    #[serde(default = "default_remote_server_store_version")]
+    pub version: u32,
     #[serde(default)]
     pub selected_server_id: Option<String>,
     #[serde(default)]
     pub servers: Vec<SotfRemoteServer>,
 }
 
+impl Default for SotfRemoteServerStore {
+    fn default() -> Self {
+        Self {
+            version: REMOTE_SERVER_STORE_VERSION,
+            selected_server_id: None,
+            servers: Vec::new(),
+        }
+    }
+}
+
 impl SotfRemoteServerStore {
+    pub fn load_from_path(path: impl AsRef<Path>) -> SotfApiResult<Self> {
+        let path = path.as_ref();
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let json = std::fs::read_to_string(path)
+            .map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))?;
+        serde_json::from_str(&json).map_err(SotfApiClientError::Json)
+    }
+
+    pub fn save_to_path(&self, path: impl AsRef<Path>) -> SotfApiResult<()> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))?;
+        }
+        let json = serde_json::to_string_pretty(self).map_err(SotfApiClientError::Json)?;
+        std::fs::write(path, json).map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))
+    }
+
     pub fn upsert(&mut self, server: SotfRemoteServer) {
         if let Some(existing) = self
             .servers
@@ -56,6 +91,12 @@ impl SotfRemoteServerStore {
             self.selected_server_id = None;
         }
         Some(self.servers.remove(index))
+    }
+
+    #[must_use]
+    pub fn selected_token_secret_key(&self) -> Option<String> {
+        self.selected_server()
+            .map(SotfRemoteServer::token_secret_key)
     }
 }
 
@@ -131,6 +172,15 @@ impl SotfRemoteServer {
             server: self.clone(),
             client,
         })
+    }
+
+    #[must_use]
+    pub fn token_secret_key(&self) -> String {
+        format!(
+            "{}.remote.{}.bearer-token",
+            crate::config::APP_BUNDLE_ID,
+            self.id.strip_prefix("sotf:").unwrap_or(&self.id)
+        )
     }
 }
 
@@ -279,6 +329,10 @@ fn redacted_token(token: &str) -> String {
     }
 }
 
+fn default_remote_server_store_version() -> u32 {
+    REMOTE_SERVER_STORE_VERSION
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,6 +378,7 @@ mod tests {
     #[test]
     fn server_store_upserts_selects_and_removes_records() {
         let mut store = SotfRemoteServerStore::default();
+        assert_eq!(store.version, REMOTE_SERVER_STORE_VERSION);
         let mut first = SotfRemoteServer::from_discovered(&discovered_server()).unwrap();
         let id = first.id.clone();
         store.upsert(first.clone());
@@ -354,6 +409,39 @@ mod tests {
         assert!(json.contains("Listening Room"));
         assert!(!json.contains("auth_token"));
         assert!(!json.contains("secret"));
+    }
+
+    #[test]
+    fn server_store_deserializes_missing_version_as_current() {
+        let store: SotfRemoteServerStore = serde_json::from_str(r#"{"servers":[]}"#).unwrap();
+        assert_eq!(store.version, REMOTE_SERVER_STORE_VERSION);
+        assert!(store.servers.is_empty());
+    }
+
+    #[test]
+    fn server_store_round_trips_to_json_file_without_token_material() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("remote_servers.json");
+        let mut store = SotfRemoteServerStore::default();
+        let server = SotfRemoteServer::from_discovered(&discovered_server()).unwrap();
+        let key = server.token_secret_key();
+        store.selected_server_id = Some(server.id.clone());
+        store.upsert(server);
+
+        store.save_to_path(&path).unwrap();
+        let json = std::fs::read_to_string(&path).unwrap();
+        assert!(!json.contains("remote_servers.json"));
+        assert!(json.contains("Listening Room"));
+        assert!(!json.contains("very-secret-token"));
+        assert!(!json.contains("auth_token"));
+        assert!(!json.contains(&key));
+
+        let loaded = SotfRemoteServerStore::load_from_path(&path).unwrap();
+        assert_eq!(loaded, store);
+        assert_eq!(
+            loaded.selected_token_secret_key().as_deref(),
+            Some(key.as_str())
+        );
     }
 
     #[test]
