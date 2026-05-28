@@ -223,8 +223,7 @@ fn run(
 
     // Export to external format if requested
     if let Some(format) = export_format {
-        let path =
-            export_path.unwrap_or_else(|| output_path.with_extension(format.default_extension()));
+        let path = export_path.unwrap_or_else(|| format.default_export_path(&output_path));
         info!("Exporting DSP chain to {:?} ({:?})", path, format);
         export_dsp_chain(&dsp_output, format, &path, sample_rate)?;
         info!("Exported to {:?}", path);

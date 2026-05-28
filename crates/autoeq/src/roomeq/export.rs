@@ -10,7 +10,7 @@
 use super::types::{ChannelDspChain, DspChainOutput, PluginConfigWrapper};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use std::fmt::Write as FmtWrite;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Supported export formats for DSP chain output
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -45,6 +45,29 @@ impl ExportFormat {
             ExportFormat::PipeWire => "conf",
             ExportFormat::RoonDsp => "json",
         }
+    }
+
+    pub fn default_file_name(&self) -> &'static str {
+        match self {
+            ExportFormat::CamillaDsp => "room_eq_cdsp.yaml",
+            ExportFormat::EqualizerApo => "room_eq.txt",
+            ExportFormat::EasyEffects => "room_eq.json",
+            ExportFormat::Wavelet => "room_eq.txt",
+            ExportFormat::PipeWire => "room_eq.conf",
+            ExportFormat::RoonDsp => "room_eq.json",
+        }
+    }
+
+    pub fn default_export_path(&self, output_path: &Path) -> PathBuf {
+        if matches!(self, ExportFormat::CamillaDsp)
+            && let Some(stem) = output_path.file_stem().and_then(|stem| stem.to_str())
+        {
+            let mut path = output_path.to_path_buf();
+            path.set_file_name(format!("{stem}_cdsp.{}", self.default_extension()));
+            return path;
+        }
+
+        output_path.with_extension(self.default_extension())
     }
 }
 
@@ -350,18 +373,13 @@ fn export_camilladsp(output: &DspChainOutput, sample_rate: f64) -> anyhow::Resul
 
         // Driver-level filters first
         if let Some(drivers) = &chain.drivers {
-            writeln!(out, "  # Channel: {} (drivers)", ch_name)?;
+            writeln!(out, "# Channel: {} (drivers)", ch_name)?;
             for driver in drivers {
                 let driver_prefix = format!("{}_{}", prefix, driver.name.replace(' ', "_"));
                 let filter_names =
                     collect_camilladsp_filter_names(&driver_prefix, &driver.plugins, "");
                 if !filter_names.is_empty() {
-                    writeln!(out, "  - type: Filter")?;
-                    writeln!(out, "    channels: [{}]", i)?;
-                    writeln!(out, "    names:")?;
-                    for name in &filter_names {
-                        writeln!(out, "      - {name}")?;
-                    }
+                    write_camilladsp_pipeline_filter_step(&mut out, i, &filter_names)?;
                 }
             }
         }
@@ -369,16 +387,27 @@ fn export_camilladsp(output: &DspChainOutput, sample_rate: f64) -> anyhow::Resul
         // Channel-level filters
         let filter_names = collect_camilladsp_filter_names(&prefix, &chain.plugins, "");
         if !filter_names.is_empty() {
-            writeln!(out, "  - type: Filter")?;
-            writeln!(out, "    channels: [{}]", i)?;
-            writeln!(out, "    names:")?;
-            for name in &filter_names {
-                writeln!(out, "      - {name}")?;
-            }
+            write_camilladsp_pipeline_filter_step(&mut out, i, &filter_names)?;
         }
     }
 
     Ok(out)
+}
+
+fn write_camilladsp_pipeline_filter_step(
+    out: &mut String,
+    channel_index: usize,
+    filter_names: &[String],
+) -> anyhow::Result<()> {
+    writeln!(out, "- bypassed: null")?;
+    writeln!(out, "  channels:")?;
+    writeln!(out, "  - {channel_index}")?;
+    writeln!(out, "  names:")?;
+    for name in filter_names {
+        writeln!(out, "  - {name}")?;
+    }
+    writeln!(out, "  type: Filter")?;
+    Ok(())
 }
 
 fn write_camilladsp_filters_for_plugins(
@@ -1282,6 +1311,30 @@ mod tests {
     }
 
     #[test]
+    fn test_camilladsp_pipeline_uses_gui_friendly_steps() {
+        let output = make_test_output();
+        let result = export_camilladsp(&output, 48000.0).unwrap();
+
+        assert!(
+            result.contains(
+                "pipeline:\n- bypassed: null\n  channels:\n  - 0\n  names:\n  - left_gain"
+            ),
+            "Expected pipeline entries to start with bypassed null, got:\n{result}"
+        );
+        assert!(
+            result.contains("  type: Filter\n- bypassed: null"),
+            "Expected type line inside the pipeline step, got:\n{result}"
+        );
+        assert!(
+            !result.contains("  - type: Filter"),
+            "Pipeline step should not start with a dashed type line"
+        );
+        assert!(result.contains("  - left_delay"));
+        assert!(result.contains("  - left_peq_0"));
+        assert!(result.contains("  - right_gain"));
+    }
+
+    #[test]
     fn test_export_equalizer_apo() {
         let output = make_test_output();
         let result = export_equalizer_apo(&output).unwrap();
@@ -1350,6 +1403,18 @@ mod tests {
         assert_eq!(ExportFormat::Wavelet.default_extension(), "txt");
         assert_eq!(ExportFormat::PipeWire.default_extension(), "conf");
         assert_eq!(ExportFormat::RoonDsp.default_extension(), "json");
+        assert_eq!(
+            ExportFormat::CamillaDsp.default_file_name(),
+            "room_eq_cdsp.yaml"
+        );
+        assert_eq!(
+            ExportFormat::CamillaDsp.default_export_path(Path::new("out/room_eq.json")),
+            PathBuf::from("out/room_eq_cdsp.yaml")
+        );
+        assert_eq!(
+            ExportFormat::EqualizerApo.default_export_path(Path::new("out/room_eq.json")),
+            PathBuf::from("out/room_eq.txt")
+        );
     }
 
     #[test]
