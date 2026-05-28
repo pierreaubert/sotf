@@ -25,7 +25,7 @@ use security::{
     ensure_secure_socket_dir, get_secure_socket_path, peer_allows_command, verify_peer_credentials,
 };
 
-use driver_common::DriverConfig;
+use driver_common::{DriverConfig, DriverStatus};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -359,6 +359,144 @@ fn metering_source_json(data_present: bool, channels: usize) -> Value {
         "source": source,
         "channels": channels,
     })
+}
+
+fn transport_snapshot_and_faults(
+    state_name: &str,
+    driver_status: &DriverStatus,
+    engine_state: &sotf_audio::AudioEngineState,
+) -> (Value, Vec<Value>) {
+    let playing = state_name == "Playing";
+    let driver_unavailable =
+        playing && (!driver_status.driver_installed || !driver_status.driver_ready);
+    let hal_stream_inactive = playing && !driver_unavailable && !driver_status.capture_active;
+    let input_frames_missing =
+        playing && !driver_unavailable && engine_state.playback_frames_received == 0;
+    let output_callbacks_missing = playing && engine_state.playback_callback_count == 0;
+    let output_frames_missing = playing
+        && engine_state.playback_frames_received > 0
+        && engine_state.playback_frames_written == 0;
+    let output_device_unresolved = playing && engine_state.playback_output_device.is_none();
+
+    let input_status = if !playing {
+        "idle"
+    } else if driver_unavailable {
+        "driver_unavailable"
+    } else if hal_stream_inactive {
+        "hal_stream_inactive"
+    } else if input_frames_missing {
+        "input_frames_missing"
+    } else {
+        "flowing"
+    };
+
+    let output_status = if !playing {
+        "idle"
+    } else if output_callbacks_missing {
+        "output_callbacks_missing"
+    } else if output_frames_missing {
+        "output_frames_missing"
+    } else if output_device_unresolved {
+        "output_device_unresolved"
+    } else {
+        "flowing"
+    };
+
+    let mut faults = Vec::new();
+    if playing {
+        if driver_unavailable {
+            faults.push(serde_json::json!({
+                "code": "driver_unavailable",
+                "severity": "error",
+                "message": "Playback is marked Playing but the HAL driver is not ready.",
+            }));
+        }
+        if hal_stream_inactive {
+            faults.push(serde_json::json!({
+                "code": "hal_stream_inactive",
+                "severity": "warning",
+                "message": "Playback is marked Playing but the HAL stream is not active.",
+            }));
+        }
+        if input_frames_missing {
+            faults.push(serde_json::json!({
+                "code": "input_frames_missing",
+                "severity": "error",
+                "message": "Playback is marked Playing but no frames have reached the playback thread.",
+            }));
+        }
+
+        if output_callbacks_missing {
+            faults.push(serde_json::json!({
+                "code": "output_callbacks_missing",
+                "severity": "error",
+                "message": "Playback is marked Playing but no hardware output callbacks have been observed.",
+            }));
+        }
+        if output_frames_missing {
+            faults.push(serde_json::json!({
+                "code": "output_frames_missing",
+                "severity": "error",
+                "message": "The playback thread received frames but has not written any to the hardware ring.",
+            }));
+        }
+        if output_device_unresolved {
+            faults.push(serde_json::json!({
+                "code": "output_device_unresolved",
+                "severity": "warning",
+                "message": "Playback is active but no hardware output device has been resolved yet.",
+            }));
+        }
+    }
+
+    (
+        serde_json::json!({
+            "input_status": input_status,
+            "output_status": output_status,
+            "input": {
+                "status": input_status,
+                "frames_received": engine_state.playback_frames_received,
+                "hal_capture_active": driver_status.capture_active,
+                "driver_installed": driver_status.driver_installed,
+                "driver_ready": driver_status.driver_ready,
+            },
+            "output": {
+                "status": output_status,
+                "callbacks": engine_state.playback_callback_count,
+                "frames_written": engine_state.playback_frames_written,
+                "frames_dropped": engine_state.playback_frames_dropped,
+                "device": engine_state.playback_output_device.as_deref(),
+                "effective_sample_rate": engine_state.playback_effective_sample_rate,
+            },
+            "input_frames_received": engine_state.playback_frames_received,
+            "output_callbacks": engine_state.playback_callback_count,
+            "output_frames_written": engine_state.playback_frames_written,
+            "frames_dropped": engine_state.playback_frames_dropped,
+            "hal_capture_active": driver_status.capture_active,
+        }),
+        faults,
+    )
+}
+
+fn push_metering_faults(state_name: &str, metering: &Value, faults: &mut Vec<Value>) {
+    if state_name != "Playing" {
+        return;
+    }
+
+    if metering["sources"]["input"]["status"].as_str() == Some("fallback_zero") {
+        faults.push(serde_json::json!({
+            "code": "input_metering_unavailable",
+            "severity": "warning",
+            "message": "Input meters are channel-shaped fallback zeros, not analyzer data.",
+        }));
+    }
+    if metering["sources"]["output"]["status"].as_str() == Some("fallback_zero") {
+        faults.push(serde_json::json!({
+            "code": "output_metering_unavailable",
+            "severity": "warning",
+            "message": "Output meters are channel-shaped fallback zeros, not analyzer data.",
+        }));
+    }
 }
 
 fn pipeline_spec_to_json(spec: &PipelineSpec) -> Value {
@@ -953,46 +1091,8 @@ impl AudioDaemon {
         let applied_output_device = pipeline.applied_output_device();
         drop(pipeline);
 
-        let mut faults = Vec::new();
-        if state_name == "Playing" {
-            if driver_status.driver_installed && !driver_status.capture_active {
-                faults.push(serde_json::json!({
-                    "code": "hal_stream_inactive",
-                    "severity": "warning",
-                    "message": "Playback is marked Playing but the HAL stream is not active.",
-                }));
-            }
-            if engine_state.playback_frames_received == 0 {
-                faults.push(serde_json::json!({
-                    "code": "input_frames_missing",
-                    "severity": "error",
-                    "message": "Playback is marked Playing but no frames have reached the playback thread.",
-                }));
-            }
-            if engine_state.playback_callback_count == 0 {
-                faults.push(serde_json::json!({
-                    "code": "output_callbacks_missing",
-                    "severity": "error",
-                    "message": "Playback is marked Playing but no hardware output callbacks have been observed.",
-                }));
-            }
-            if engine_state.playback_frames_received > 0
-                && engine_state.playback_frames_written == 0
-            {
-                faults.push(serde_json::json!({
-                    "code": "output_frames_missing",
-                    "severity": "error",
-                    "message": "The playback thread received frames but has not written any to the hardware ring.",
-                }));
-            }
-            if engine_state.playback_output_device.is_none() {
-                faults.push(serde_json::json!({
-                    "code": "output_device_unresolved",
-                    "severity": "warning",
-                    "message": "Playback is active but no hardware output device has been resolved yet.",
-                }));
-            }
-        }
+        let (transport, mut faults) =
+            transport_snapshot_and_faults(&state_name, &driver_status, &engine_state);
 
         if desired
             .output_device
@@ -1018,6 +1118,7 @@ impl AudioDaemon {
         }
 
         let metering = self.metering_snapshot();
+        push_metering_faults(&state_name, &metering, &mut faults);
         let health = if faults
             .iter()
             .any(|fault| fault["severity"].as_str() == Some("error"))
@@ -1070,6 +1171,7 @@ impl AudioDaemon {
                     "fingerprint": key_status.fingerprint,
                     "key_path": key_status.key_path,
                 },
+                "transport": transport,
                 "metering": metering,
             },
             "diagnostics": {
@@ -2918,6 +3020,26 @@ mod ipc_safety_tests {
         }))
     }
 
+    fn healthy_driver_status() -> DriverStatus {
+        DriverStatus {
+            platform_supported: true,
+            driver_installed: true,
+            capture_active: true,
+            sample_rate: 48_000,
+            channel_count: 2,
+            buffer_frames: 512,
+            driver_name: "Fake HAL".to_string(),
+            driver_ready: true,
+        }
+    }
+
+    fn fault_codes(faults: &[Value]) -> Vec<&str> {
+        faults
+            .iter()
+            .filter_map(|fault| fault["code"].as_str())
+            .collect()
+    }
+
     fn test_daemon_with_driver(state: Arc<Mutex<FakeDriverState>>) -> AudioDaemon {
         let runtime = tokio::runtime::Runtime::new().expect("test runtime");
         AudioDaemon {
@@ -3042,6 +3164,58 @@ mod ipc_safety_tests {
         assert_eq!(supervisor.input_channels(), 10);
         assert_eq!(supervisor.output_channels(), 4);
         assert!(supervisor.applied_generation().is_none());
+    }
+
+    #[test]
+    fn transport_snapshot_reports_all_playing_faults_without_hiding_secondary_causes() {
+        let driver_status = healthy_driver_status();
+        let engine_state = sotf_audio::AudioEngineState::default();
+
+        let (transport, faults) =
+            transport_snapshot_and_faults("Playing", &driver_status, &engine_state);
+
+        assert_eq!(transport["input"]["status"], "input_frames_missing");
+        assert_eq!(transport["output"]["status"], "output_callbacks_missing");
+        let codes = fault_codes(&faults);
+        assert!(codes.contains(&"input_frames_missing"));
+        assert!(codes.contains(&"output_callbacks_missing"));
+        assert!(codes.contains(&"output_device_unresolved"));
+    }
+
+    #[test]
+    fn transport_snapshot_reports_flowing_when_input_and_output_are_observed() {
+        let driver_status = healthy_driver_status();
+        let mut engine_state = sotf_audio::AudioEngineState::default();
+        engine_state.playback_frames_received = 1024;
+        engine_state.playback_callback_count = 8;
+        engine_state.playback_frames_written = 1024;
+        engine_state.playback_output_device = Some("ADAM Audio D3V".to_string());
+        engine_state.playback_effective_sample_rate = 48_000;
+
+        let (transport, faults) =
+            transport_snapshot_and_faults("Playing", &driver_status, &engine_state);
+
+        assert_eq!(transport["input"]["status"], "flowing");
+        assert_eq!(transport["output"]["status"], "flowing");
+        assert_eq!(transport["output"]["device"], "ADAM Audio D3V");
+        assert!(faults.is_empty());
+    }
+
+    #[test]
+    fn metering_faults_only_apply_to_playing_fallback_sources() {
+        let metering = serde_json::json!({
+            "sources": {
+                "input": { "status": "fallback_zero" },
+                "output": { "status": "available" }
+            }
+        });
+
+        let mut faults = Vec::new();
+        push_metering_faults("Idle", &metering, &mut faults);
+        assert!(faults.is_empty());
+
+        push_metering_faults("Playing", &metering, &mut faults);
+        assert_eq!(fault_codes(&faults), vec!["input_metering_unavailable"]);
     }
 
     #[test]
@@ -3249,6 +3423,8 @@ mod ipc_safety_tests {
             data["observed"]["metering"]["sources"]["input"]["status"],
             "fallback_zero"
         );
+        assert_eq!(data["observed"]["transport"]["input"]["status"], "idle");
+        assert_eq!(data["observed"]["transport"]["output"]["status"], "idle");
         assert_eq!(data["diagnostics"]["health"], "ok");
         assert!(data["diagnostics"]["faults"].as_array().unwrap().is_empty());
     }

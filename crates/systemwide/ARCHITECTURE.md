@@ -342,9 +342,12 @@ Implemented first controls:
 - `get_metering` remains backward-compatible (`input` and `output` are still at
   the top level) and now includes `sources.input` / `sources.output` so shaped
   zero arrays are distinguishable from real loudness-monitor data.
-- Snapshot diagnostics currently flag important contradictions such as
+- Snapshot diagnostics now include first-class `observed.transport` status for
+  input and output, plus explicit faults for important contradictions such as
   `Playing` with no input frames, no output callbacks, no resolved output
-  device, inactive HAL stream, or unsafe virtual/loopback output devices.
+  device, inactive HAL stream, unavailable metering analyzers, or unsafe
+  virtual/loopback output devices. The transport status picks the primary
+  visible state, while `diagnostics.faults` preserves every active cause.
 - The daemon also exposes patch-style channel commands
   (`set_input_channels`, `set_output_channels`, `set_pipeline_channels`) so
   clients no longer need to replay the plugin list or the opposite channel
@@ -857,6 +860,10 @@ Current branch coverage starts the lower middle of that pyramid:
   channel state instead of replaying stale UI payloads.
 - Artifact-planning tests prove rack-compatible artifacts load and graph-shaped
   artifacts are rejected without flattening.
+- Transport/metering snapshot tests prove `Playing` without frames/callbacks
+  produces machine-readable fault codes, multiple active causes are not hidden
+  by a single UI label, and fallback meters become diagnostics only while
+  playback is active.
 
 ### Scenario Matrix
 
@@ -867,7 +874,7 @@ driver/HAL behavior through fakes, and assert snapshots plus captured audio.
 | Scenario | Simulation | Assertions |
 | --- | --- | --- |
 | Idle start then first playback | Start daemon, set `engine_ready=true`, wait longer than the HAL heartbeat timeout, then have the HAL simulator write sine frames | `daemon_heartbeat_ms` stays fresh, frames received/written increase, input/output meters become non-zero, no manual restart needed. |
-| No writer frames | Daemon starts playback but fake HAL reports active without writing frames | Snapshot marks `Playing` plus `input_frames=0` as `InputSilent` or equivalent, UI can display a transport fault instead of generic "No Audio". |
+| No writer frames | Daemon starts playback but fake HAL reports active without writing frames | Snapshot marks `observed.transport.input.status=input_frames_missing` and emits `input_frames_missing`; UI can display a transport fault instead of generic "No Audio". |
 | Hardware output unavailable | Fake device inventory drops the selected device or returns no hardware outputs after startup | Desired selected device is preserved, observed output becomes unavailable, toolbar shows recovery/polling state, daemon never falls back to a virtual output. |
 | Feedback-loop guard | Present `SotF Virtual Audio`, BlackHole, Loopback, and a hardware device; try selecting each as output sink | Virtual/loopback selections are rejected before engine restart; selected desired device remains the previous safe hardware device. |
 | Channel-count negotiation | HAL simulator requests 2 -> 10 -> 2 input channels while an upmixer or matrix chain is loaded | Daemon desired input channels follow negotiated HAL input channels; toolbar adopts snapshot channels; stale UI apply cannot overwrite them. |
@@ -875,7 +882,7 @@ driver/HAL behavior through fakes, and assert snapshots plus captured audio.
 | Complex DSP artifact | Load RoomEQ-style or graph-style artifact with branches/per-channel routes | Rack-compatible artifacts can be normalized; non-linear graphs are retained as graph artifacts or rejected without flattening silently. |
 | Encryption rotation while playing | Enable encryption, stream known audio, rotate key, continue streaming | Published fingerprint changes, reader/writer reload from non-real-time paths, frame counters do not reuse `(key, nonce)`, meters recover without reinstall. |
 | CoreAudio/helper restart | HAL simulator closes/reopens shared memory while daemon remains alive | Shared-memory geometry and readiness recover, desired daemon state is preserved, stale runtime transport state is not promoted to product state. |
-| Meter analyzer unavailable | Engine runs but loudness plugin data is absent or plugin indices are stale | `get_metering` returns channel-shaped data plus provenance/status; UI can distinguish zero signal from unavailable analyzer. |
+| Meter analyzer unavailable | Engine runs but loudness plugin data is absent or plugin indices are stale | `get_metering` returns channel-shaped data plus provenance/status; `get_snapshot` emits `*_metering_unavailable` only while playback is active, so UI can distinguish zero signal from unavailable analyzer. |
 
 Each scenario should record:
 
@@ -955,7 +962,8 @@ enumeration or output-device selection.
    including explicit "rack chain" versus "graph artifact" outcomes. The first
    `plugin_artifact` planner is in place for `load_plugin_artifact`.
 5. Make metering and transport faults first-class snapshot fields rather than
-   inferred UI labels.
+   inferred UI labels. Done in the daemon snapshot through
+   `observed.transport` and `diagnostics.faults`.
 6. Add `FakeAudioDriver`, HAL simulator, temp socket/shared-memory path
    overrides, and output capture.
 7. Build `just systemwide-lab` around the scenario matrix and make it run in CI
