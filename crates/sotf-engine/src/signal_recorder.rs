@@ -86,13 +86,19 @@ fn write_selected_channel_to_ring(
 }
 
 #[cfg(not(target_os = "ios"))]
-fn write_capture_pairs_to_ring(
+fn write_capture_pairs_to_ring<T>(
     producer: &mut rtrb::Producer<(f32, f32)>,
-    data: &[f32],
+    data: &[T],
     channels: usize,
     input_idx: usize,
     loopback_idx: Option<usize>,
-) -> usize {
+) -> usize
+where
+    T: cpal::Sample,
+    f32: cpal::FromSample<T>,
+{
+    use cpal::Sample;
+
     if channels == 0 || input_idx >= channels || loopback_idx.is_some_and(|idx| idx >= channels) {
         return 0;
     }
@@ -111,8 +117,10 @@ fn write_capture_pairs_to_ring(
     let mut frame_idx = 0;
     for slot in first.iter_mut().chain(second.iter_mut()) {
         let base = frame_idx * channels;
-        let mic_sample = data[base + input_idx];
-        let loopback_sample = loopback_idx.map(|idx| data[base + idx]).unwrap_or(0.0);
+        let mic_sample = f32::from_sample(data[base + input_idx]);
+        let loopback_sample = loopback_idx
+            .map(|idx| f32::from_sample(data[base + idx]))
+            .unwrap_or(0.0);
         slot.write((mic_sample, loopback_sample));
         frame_idx += 1;
     }
@@ -1375,6 +1383,33 @@ struct MeasurementOutputConfig {
 }
 
 #[cfg(not(target_os = "ios"))]
+#[derive(Debug, Clone, Copy)]
+struct MeasurementInputConfig {
+    channels: u16,
+    sample_rate: u32,
+    sample_format: cpal::SampleFormat,
+}
+
+#[cfg(not(target_os = "ios"))]
+fn measurement_sample_format_rank(sample_format: cpal::SampleFormat) -> u8 {
+    match sample_format {
+        cpal::SampleFormat::F32 => 0,
+        cpal::SampleFormat::F64 => 1,
+        cpal::SampleFormat::I32 => 2,
+        cpal::SampleFormat::I24 => 3,
+        cpal::SampleFormat::I16 => 4,
+        cpal::SampleFormat::I8 => 5,
+        cpal::SampleFormat::U32 => 6,
+        cpal::SampleFormat::U24 => 7,
+        cpal::SampleFormat::U16 => 8,
+        cpal::SampleFormat::U8 => 9,
+        cpal::SampleFormat::I64 => 10,
+        cpal::SampleFormat::U64 => 11,
+        _ => 12,
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
 fn choose_measurement_output_config(
     supported: &[cpal::SupportedStreamConfigRange],
     min_channels: u16,
@@ -1396,14 +1431,7 @@ fn choose_measurement_output_config(
         .collect();
 
     candidates.sort_by_key(|config| {
-        let format_rank = match config.sample_format {
-            cpal::SampleFormat::F32 => 0,
-            cpal::SampleFormat::I32 => 1,
-            cpal::SampleFormat::I16 => 2,
-            cpal::SampleFormat::U32 => 3,
-            cpal::SampleFormat::U16 => 4,
-            _ => 5,
-        };
+        let format_rank = measurement_sample_format_rank(config.sample_format);
         (config.channels, format_rank)
     });
 
@@ -1429,6 +1457,35 @@ fn choose_measurement_output_config(
 }
 
 #[cfg(not(target_os = "ios"))]
+fn choose_measurement_input_config(
+    supported: &[cpal::SupportedStreamConfigRange],
+    min_channels: u16,
+    sample_rate: u32,
+) -> Option<MeasurementInputConfig> {
+    let requested_rate = sample_rate;
+    let mut candidates: Vec<MeasurementInputConfig> = supported
+        .iter()
+        .filter(|config| {
+            config.channels() >= min_channels
+                && config.min_sample_rate() <= requested_rate
+                && config.max_sample_rate() >= requested_rate
+        })
+        .map(|config| MeasurementInputConfig {
+            channels: config.channels(),
+            sample_rate: requested_rate,
+            sample_format: config.sample_format(),
+        })
+        .collect();
+
+    candidates.sort_by_key(|config| {
+        let format_rank = measurement_sample_format_rank(config.sample_format);
+        (config.channels, format_rank)
+    });
+
+    candidates.into_iter().next()
+}
+
+#[cfg(not(target_os = "ios"))]
 fn build_measurement_output_stream(
     device: &cpal::Device,
     output_config: &MeasurementOutputConfig,
@@ -1436,39 +1493,31 @@ fn build_measurement_output_stream(
     cursor: Arc<std::sync::atomic::AtomicUsize>,
     log_tag: &str,
 ) -> Result<cpal::Stream, String> {
-    use cpal::traits::DeviceTrait;
-
     let config = cpal::StreamConfig {
         channels: output_config.channels,
         sample_rate: output_config.sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
-    let log_tag_owned = log_tag.to_string();
+    macro_rules! build_typed {
+        ($sample_ty:ty) => {
+            build_measurement_output_stream_typed::<$sample_ty>(
+                device, &config, playback, cursor, log_tag,
+            )
+        };
+    }
     match output_config.sample_format {
-        cpal::SampleFormat::F32 => device
-            .build_output_stream(
-                &config,
-                move |data: &mut [f32], _| fill_measurement_output_f32(data, &playback, &cursor),
-                move |err| log::debug!("[{log_tag_owned}] Output stream error: {}", err),
-                None,
-            )
-            .map_err(|e| format!("[{log_tag}] Failed to build f32 output stream: {}", e)),
-        cpal::SampleFormat::I16 => device
-            .build_output_stream(
-                &config,
-                move |data: &mut [i16], _| fill_measurement_output_i16(data, &playback, &cursor),
-                move |err| log::debug!("[{log_tag_owned}] Output stream error: {}", err),
-                None,
-            )
-            .map_err(|e| format!("[{log_tag}] Failed to build i16 output stream: {}", e)),
-        cpal::SampleFormat::U16 => device
-            .build_output_stream(
-                &config,
-                move |data: &mut [u16], _| fill_measurement_output_u16(data, &playback, &cursor),
-                move |err| log::debug!("[{log_tag_owned}] Output stream error: {}", err),
-                None,
-            )
-            .map_err(|e| format!("[{log_tag}] Failed to build u16 output stream: {}", e)),
+        cpal::SampleFormat::F32 => build_typed!(f32),
+        cpal::SampleFormat::F64 => build_typed!(f64),
+        cpal::SampleFormat::I8 => build_typed!(i8),
+        cpal::SampleFormat::I16 => build_typed!(i16),
+        cpal::SampleFormat::I24 => build_typed!(cpal::I24),
+        cpal::SampleFormat::I32 => build_typed!(i32),
+        cpal::SampleFormat::I64 => build_typed!(i64),
+        cpal::SampleFormat::U8 => build_typed!(u8),
+        cpal::SampleFormat::U16 => build_typed!(u16),
+        cpal::SampleFormat::U24 => build_typed!(cpal::U24),
+        cpal::SampleFormat::U32 => build_typed!(u32),
+        cpal::SampleFormat::U64 => build_typed!(u64),
         other => Err(format!(
             "[{log_tag}] Unsupported measurement output sample format: {other:?}"
         )),
@@ -1476,58 +1525,163 @@ fn build_measurement_output_stream(
 }
 
 #[cfg(not(target_os = "ios"))]
-fn fill_measurement_output_f32(
-    data: &mut [f32],
-    playback: &[f32],
-    cursor: &std::sync::atomic::AtomicUsize,
-) {
-    use std::sync::atomic::Ordering as AtomicOrdering;
+fn build_measurement_output_stream_typed<T>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    playback: Arc<Vec<f32>>,
+    cursor: Arc<std::sync::atomic::AtomicUsize>,
+    log_tag: &str,
+) -> Result<cpal::Stream, String>
+where
+    T: cpal::SizedSample + cpal::FromSample<f32>,
+{
+    use cpal::traits::DeviceTrait;
 
-    let start = cursor.fetch_add(data.len(), AtomicOrdering::Relaxed);
-    let available = playback.len().saturating_sub(start).min(data.len());
-    if available > 0 {
-        data[..available].copy_from_slice(&playback[start..start + available]);
-    }
-    if available < data.len() {
-        data[available..].fill(0.0);
-    }
+    let log_tag_owned = log_tag.to_string();
+    device
+        .build_output_stream(
+            config,
+            move |data: &mut [T], _| fill_measurement_output(data, &playback, &cursor),
+            move |err| log::debug!("[{log_tag_owned}] Output stream error: {}", err),
+            None,
+        )
+        .map_err(|e| {
+            format!(
+                "[{log_tag}] Failed to build {:?} output stream: {}",
+                T::FORMAT,
+                e
+            )
+        })
 }
 
 #[cfg(not(target_os = "ios"))]
-fn fill_measurement_output_i16(
-    data: &mut [i16],
+fn fill_measurement_output<T>(
+    data: &mut [T],
     playback: &[f32],
     cursor: &std::sync::atomic::AtomicUsize,
-) {
+) where
+    T: cpal::Sample + cpal::FromSample<f32>,
+{
     use std::sync::atomic::Ordering as AtomicOrdering;
 
     let start = cursor.fetch_add(data.len(), AtomicOrdering::Relaxed);
     let available = playback.len().saturating_sub(start).min(data.len());
     for i in 0..available {
-        data[i] = (playback[start + i].clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+        data[i] = T::from_sample(playback[start + i].clamp(-1.0, 1.0));
     }
     if available < data.len() {
-        data[available..].fill(0);
+        data[available..].fill(T::from_sample(0.0));
     }
 }
 
 #[cfg(not(target_os = "ios"))]
-fn fill_measurement_output_u16(
-    data: &mut [u16],
-    playback: &[f32],
-    cursor: &std::sync::atomic::AtomicUsize,
-) {
-    use std::sync::atomic::Ordering as AtomicOrdering;
+#[allow(clippy::too_many_arguments)]
+fn build_measurement_input_stream(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    sample_format: cpal::SampleFormat,
+    capture_producer: rtrb::Producer<(f32, f32)>,
+    capture_count_callback: Arc<AtomicUsize>,
+    capture_overruns_callback: Arc<AtomicUsize>,
+    hw_ch: usize,
+    input_ch_idx: usize,
+    loopback_ch_idx: Option<usize>,
+    log_tag: &str,
+) -> Result<cpal::Stream, String> {
+    macro_rules! build_typed {
+        ($sample_ty:ty) => {
+            build_measurement_input_stream_typed::<$sample_ty>(
+                device,
+                config,
+                capture_producer,
+                capture_count_callback,
+                capture_overruns_callback,
+                hw_ch,
+                input_ch_idx,
+                loopback_ch_idx,
+                log_tag,
+            )
+        };
+    }
+    match sample_format {
+        cpal::SampleFormat::F32 => build_typed!(f32),
+        cpal::SampleFormat::F64 => build_typed!(f64),
+        cpal::SampleFormat::I8 => build_typed!(i8),
+        cpal::SampleFormat::I16 => build_typed!(i16),
+        cpal::SampleFormat::I24 => build_typed!(cpal::I24),
+        cpal::SampleFormat::I32 => build_typed!(i32),
+        cpal::SampleFormat::I64 => build_typed!(i64),
+        cpal::SampleFormat::U8 => build_typed!(u8),
+        cpal::SampleFormat::U16 => build_typed!(u16),
+        cpal::SampleFormat::U24 => build_typed!(cpal::U24),
+        cpal::SampleFormat::U32 => build_typed!(u32),
+        cpal::SampleFormat::U64 => build_typed!(u64),
+        other => Err(format!(
+            "[{log_tag}] Unsupported measurement input sample format: {other:?}"
+        )),
+    }
+}
 
-    let start = cursor.fetch_add(data.len(), AtomicOrdering::Relaxed);
-    let available = playback.len().saturating_sub(start).min(data.len());
-    for i in 0..available {
-        let normalized = playback[start + i].clamp(-1.0, 1.0) * 0.5 + 0.5;
-        data[i] = (normalized * u16::MAX as f32) as u16;
-    }
-    if available < data.len() {
-        data[available..].fill(u16::MAX / 2);
-    }
+#[cfg(not(target_os = "ios"))]
+#[allow(clippy::too_many_arguments)]
+fn build_measurement_input_stream_typed<T>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    mut capture_producer: rtrb::Producer<(f32, f32)>,
+    capture_count_callback: Arc<AtomicUsize>,
+    capture_overruns_callback: Arc<AtomicUsize>,
+    hw_ch: usize,
+    input_ch_idx: usize,
+    loopback_ch_idx: Option<usize>,
+    log_tag: &str,
+) -> Result<cpal::Stream, String>
+where
+    T: cpal::SizedSample,
+    f32: cpal::FromSample<T>,
+{
+    use cpal::traits::DeviceTrait;
+
+    let log_tag_for_data = log_tag.to_string();
+    let log_tag_for_error = log_tag.to_string();
+    device
+        .build_input_stream(
+            config,
+            move |data: &[T], _: &cpal::InputCallbackInfo| {
+                let frames = data.len() / hw_ch;
+                let written = write_capture_pairs_to_ring(
+                    &mut capture_producer,
+                    data,
+                    hw_ch,
+                    input_ch_idx,
+                    loopback_ch_idx,
+                );
+                capture_count_callback.fetch_add(written, Ordering::Relaxed);
+                if written < frames {
+                    capture_overruns_callback.fetch_add(1, Ordering::Relaxed);
+                    crate::rate_limited_log!(
+                        warn,
+                        5,
+                        "[{log_tag_for_data}] Input capture ring buffer overrun"
+                    );
+                }
+            },
+            move |err| {
+                crate::rate_limited_log!(
+                    warn,
+                    5,
+                    "[{log_tag_for_error}] Input stream error: {}",
+                    err
+                )
+            },
+            None,
+        )
+        .map_err(|e| {
+            format!(
+                "[{log_tag}] Failed to build {:?} input stream: {}",
+                T::FORMAT,
+                e
+            )
+        })
 }
 
 /// Shared playback + capture scaffolding for both
@@ -1672,28 +1826,29 @@ fn play_per_channel_and_record_mono(
     let default_input_config = input_device
         .default_input_config()
         .map_err(|e| format!("[{log_tag}] Failed to get default input config: {}", e))?;
-    let best_config = input_device
+    let supported_input_configs: Vec<_> = input_device
         .supported_input_configs()
-        .ok()
-        .and_then(|configs| {
-            configs
-                .filter(|c| {
-                    let ch = c.channels() as usize;
-                    ch >= min_input_ch
-                        && c.min_sample_rate() <= sample_rate
-                        && c.max_sample_rate() >= sample_rate
-                })
-                .min_by_key(|c| c.channels())
+        .map(|configs| configs.collect())
+        .unwrap_or_else(|e| {
+            log::warn!("[{log_tag}] Failed to enumerate supported input configs: {e}");
+            Vec::new()
         });
-
-    let (hw_input_ch, input_sr) = if let Some(config) = best_config {
-        (config.channels() as usize, sample_rate)
-    } else {
-        (
-            default_input_config.channels() as usize,
-            default_input_config.sample_rate(),
-        )
-    };
+    let input_config =
+        choose_measurement_input_config(&supported_input_configs, min_input_ch as u16, sample_rate)
+            .unwrap_or_else(|| MeasurementInputConfig {
+                channels: default_input_config.channels(),
+                sample_rate: default_input_config.sample_rate(),
+                sample_format: default_input_config.sample_format(),
+            });
+    if (input_config.channels as usize) < min_input_ch {
+        return Err(format!(
+            "[{log_tag}] Input channel {} exceeds capture input count {}",
+            min_input_ch - 1,
+            input_config.channels
+        ));
+    }
+    let hw_input_ch = input_config.channels as usize;
+    let input_sr = input_config.sample_rate;
 
     // Derive analysis offsets at the mic's actual sample rate so a
     // downstream mismatch (cpal negotiated a different rate than we
@@ -1706,7 +1861,7 @@ fn play_per_channel_and_record_mono(
         .map(|i| analysis_silence_samples + i * analysis_segment_len)
         .collect();
 
-    let input_config = cpal::StreamConfig {
+    let input_stream_config = cpal::StreamConfig {
         channels: hw_input_ch as u16,
         sample_rate: input_sr,
         buffer_size: cpal::BufferSize::Default,
@@ -1716,7 +1871,7 @@ fn play_per_channel_and_record_mono(
     let expected_input_samples = ((total_frames as f64 * input_sr as f64 / sample_rate as f64)
         as usize)
         + (input_sr as usize / 2);
-    let (mut capture_producer, mut capture_consumer) =
+    let (capture_producer, mut capture_consumer) =
         rtrb::RingBuffer::<(f32, f32)>::new(expected_input_samples.max(1024));
     let capture_count = Arc::new(AtomicUsize::new(0));
     let capture_count_callback = Arc::clone(&capture_count);
@@ -1726,41 +1881,18 @@ fn play_per_channel_and_record_mono(
     let input_ch_idx = input_channel as usize;
     let hw_ch = hw_input_ch;
 
-    let log_tag_for_data = log_tag.to_string();
-    let log_tag_for_error = log_tag.to_string();
-    let input_stream = input_device
-        .build_input_stream(
-            &input_config,
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let frames = data.len() / hw_ch;
-                let written = write_capture_pairs_to_ring(
-                    &mut capture_producer,
-                    data,
-                    hw_ch,
-                    input_ch_idx,
-                    loopback_ch_idx,
-                );
-                capture_count_callback.fetch_add(written, AtomicOrdering::Relaxed);
-                if written < frames {
-                    capture_overruns_callback.fetch_add(1, AtomicOrdering::Relaxed);
-                    crate::rate_limited_log!(
-                        warn,
-                        5,
-                        "[{log_tag_for_data}] Input capture ring buffer overrun"
-                    );
-                }
-            },
-            move |err| {
-                crate::rate_limited_log!(
-                    warn,
-                    5,
-                    "[{log_tag_for_error}] Input stream error: {}",
-                    err
-                )
-            },
-            None,
-        )
-        .map_err(|e| format!("[{log_tag}] Failed to build input stream: {}", e))?;
+    let input_stream = build_measurement_input_stream(
+        &input_device,
+        &input_stream_config,
+        input_config.sample_format,
+        capture_producer,
+        capture_count_callback,
+        capture_overruns_callback,
+        hw_ch,
+        input_ch_idx,
+        loopback_ch_idx,
+        log_tag,
+    )?;
 
     input_stream
         .play()
@@ -3432,6 +3564,89 @@ mod tests {
             )),
             "direct capture input stream errors should be visible and rate-limited"
         );
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    fn supported_stream_config(
+        sample_format: cpal::SampleFormat,
+        channels: u16,
+        min_sample_rate: u32,
+        max_sample_rate: u32,
+    ) -> cpal::SupportedStreamConfigRange {
+        cpal::SupportedStreamConfigRange::new(
+            channels,
+            min_sample_rate,
+            max_sample_rate,
+            cpal::SupportedBufferSize::Unknown,
+            sample_format,
+        )
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    #[test]
+    fn measurement_output_config_accepts_pipewire_s24() {
+        let configs = vec![supported_stream_config(
+            cpal::SampleFormat::I24,
+            6,
+            44_100,
+            96_000,
+        )];
+
+        let selected = choose_measurement_output_config(&configs, 6, 96_000)
+            .expect("S24_3LE-style output config should be selectable");
+
+        assert_eq!(selected.channels, 6);
+        assert_eq!(selected.sample_rate, 96_000);
+        assert_eq!(selected.sample_format, cpal::SampleFormat::I24);
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    #[test]
+    fn measurement_input_config_accepts_pipewire_s24() {
+        let configs = vec![supported_stream_config(
+            cpal::SampleFormat::I24,
+            1,
+            48_000,
+            96_000,
+        )];
+
+        let selected = choose_measurement_input_config(&configs, 1, 48_000)
+            .expect("S24_3LE-style input config should be selectable");
+
+        assert_eq!(selected.channels, 1);
+        assert_eq!(selected.sample_rate, 48_000);
+        assert_eq!(selected.sample_format, cpal::SampleFormat::I24);
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    #[test]
+    fn measurement_config_prefers_float_then_24_bit_integer() {
+        let configs = vec![
+            supported_stream_config(cpal::SampleFormat::I16, 2, 48_000, 48_000),
+            supported_stream_config(cpal::SampleFormat::I24, 2, 48_000, 48_000),
+            supported_stream_config(cpal::SampleFormat::F32, 2, 48_000, 48_000),
+        ];
+
+        let selected = choose_measurement_output_config(&configs, 2, 48_000)
+            .expect("output config should be selectable");
+
+        assert_eq!(selected.channels, 2);
+        assert_eq!(selected.sample_format, cpal::SampleFormat::F32);
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    #[test]
+    fn measurement_config_prefers_24_bit_integer_over_16_bit() {
+        let configs = vec![
+            supported_stream_config(cpal::SampleFormat::I16, 2, 48_000, 48_000),
+            supported_stream_config(cpal::SampleFormat::I24, 2, 48_000, 48_000),
+        ];
+
+        let selected = choose_measurement_output_config(&configs, 2, 48_000)
+            .expect("output config should be selectable");
+
+        assert_eq!(selected.channels, 2);
+        assert_eq!(selected.sample_format, cpal::SampleFormat::I24);
     }
 
     #[test]
