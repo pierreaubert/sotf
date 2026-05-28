@@ -29,6 +29,15 @@ jobs:
             "$PR_BASE_REF" \
             "+refs/pull/$PR_NUMBER/head"
 
+      - name: Require OpenAI API key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error title=Missing OPENAI_API_KEY::Configure the OPENAI_API_KEY repository Actions secret to run Codex reviews."
+            exit 1
+          fi
+
       - name: Run Codex review
         id: run_codex
         uses: openai/codex-action@v1
