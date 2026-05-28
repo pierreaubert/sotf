@@ -463,7 +463,11 @@ Key observations:
   write frames because the daemon heartbeat expired before the first audio
   arrived.
 - Output device safety is enforced by rejecting virtual/loopback device names
-  for the physical output side.
+  for the physical output side. When no hardware sink is selected, the engine
+  scans for a physical output without opening the macOS default device first,
+  because the default device is normally `SotF Virtual Audio` in systemwide
+  mode. The daemon must not become a CoreAudio playback client of its own
+  virtual capture device.
 
 ## Use Case: User Adds A Plugin
 
@@ -1004,8 +1008,9 @@ enumeration or output-device selection.
 
 - No filesystem I/O, allocations, or logging-heavy work on CoreAudio real-time
   callbacks.
-- The daemon must never choose the SOTF virtual device, BlackHole, Loopback,
-  Soundflower, or similar virtual devices as the physical output sink.
+- The daemon must never choose or transiently open the SOTF virtual device,
+  BlackHole, Loopback, Soundflower, or similar virtual devices as the physical
+  output sink.
 - Cross-process shared-memory fields must remain atomic and versioned.
 - Encryption key rotation must not reuse `(key, frame_counter)` pairs.
 - Encryption key changes must not require manual reinstall/restart recovery;
