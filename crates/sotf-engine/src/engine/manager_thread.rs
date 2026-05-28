@@ -767,6 +767,30 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             new_state.num_channels = channels;
             state.store(Arc::new(new_state));
         }
+        ThreadEvent::PlaybackOutputDeviceChanged(device_name) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.playback_output_device = Some(device_name);
+            state.store(Arc::new(new_state));
+        }
+        ThreadEvent::PlaybackStats {
+            callback_count,
+            buffer_fill_percent,
+            stream_error_count,
+            frames_received,
+            frames_written,
+            frames_dropped,
+            effective_sample_rate,
+        } => {
+            let mut new_state = (**state.load()).clone();
+            new_state.playback_callback_count = callback_count;
+            new_state.playback_buffer_fill_percent = buffer_fill_percent;
+            new_state.playback_stream_error_count = stream_error_count;
+            new_state.playback_frames_received = frames_received;
+            new_state.playback_frames_written = frames_written;
+            new_state.playback_frames_dropped = frames_dropped;
+            new_state.playback_effective_sample_rate = effective_sample_rate;
+            state.store(Arc::new(new_state));
+        }
         ThreadEvent::PlaybackDrained => {
             log::debug!("[Manager Thread] Playback drained - all audio played");
             let mut new_state = (**state.load()).clone();
@@ -2235,6 +2259,48 @@ mod tests {
 
         handle_thread_event(ThreadEvent::PlaybackChannelsChanged(2), &state);
         assert_eq!(state.load().num_channels, 2);
+    }
+
+    #[test]
+    fn test_handle_thread_event_updates_playback_output_device() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+
+        handle_thread_event(
+            ThreadEvent::PlaybackOutputDeviceChanged("ADAM Audio D3V".to_string()),
+            &state,
+        );
+
+        assert_eq!(
+            state.load().playback_output_device.as_deref(),
+            Some("ADAM Audio D3V")
+        );
+    }
+
+    #[test]
+    fn test_handle_thread_event_updates_playback_stats() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+
+        handle_thread_event(
+            ThreadEvent::PlaybackStats {
+                callback_count: 12,
+                buffer_fill_percent: 75,
+                stream_error_count: 1,
+                frames_received: 40,
+                frames_written: 39,
+                frames_dropped: 1,
+                effective_sample_rate: 48_000,
+            },
+            &state,
+        );
+
+        let s = state.load();
+        assert_eq!(s.playback_callback_count, 12);
+        assert_eq!(s.playback_buffer_fill_percent, 75);
+        assert_eq!(s.playback_stream_error_count, 1);
+        assert_eq!(s.playback_frames_received, 40);
+        assert_eq!(s.playback_frames_written, 39);
+        assert_eq!(s.playback_frames_dropped, 1);
+        assert_eq!(s.playback_effective_sample_rate, 48_000);
     }
 
     #[test]

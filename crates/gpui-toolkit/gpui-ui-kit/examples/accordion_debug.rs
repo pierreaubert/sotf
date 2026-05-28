@@ -71,11 +71,9 @@ impl AccordionDebug {
     /// Toggle side item
     fn toggle_side(&mut self, id: &SharedString, expanded: bool) {
         if expanded {
-            if !self.side_expanded.contains(id) {
-                self.side_expanded.push(id.clone());
-            }
+            self.side_expanded = vec![id.clone()];
         } else {
-            self.side_expanded.retain(|x| x != id);
+            self.side_expanded.clear();
         }
     }
 
@@ -312,7 +310,7 @@ impl Render for AccordionDebug {
                         div().h(px(200.0)).child({
                             let expanded = self.side_expanded.clone();
                             Accordion::new()
-                                .mode(AccordionMode::Multiple)
+                                .mode(AccordionMode::Single)
                                 .orientation(AccordionOrientation::Side)
                                 .expanded(expanded)
                                 .item(

@@ -168,6 +168,26 @@ run-tui-leaks:
 run-tui-leaks:
 	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features onnx
 
+# Run an isolated systemwide daemon with deterministic fake capture.
+# Override SOTF_SYSTEMWIDE_RUNTIME_DIR to choose the socket/shared-memory dir.
+[group('run')]
+systemwide-lab:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	runtime_dir="${SOTF_SYSTEMWIDE_RUNTIME_DIR:-/tmp/sotf-systemwide-lab-${USER:-user}}"
+	driver="${SOTF_SYSTEMWIDE_DRIVER:-lab}"
+	mkdir -p "$runtime_dir"
+	chmod 700 "$runtime_dir"
+	rm -f "$runtime_dir/daemon.sock" "$runtime_dir/audio.shm" "$runtime_dir/session.key"
+	echo "Starting systemwide lab daemon"
+	echo "  runtime: $runtime_dir"
+	echo "  driver:  $driver"
+	echo "  socket:  $runtime_dir/daemon.sock"
+	SOTF_SYSTEMWIDE_RUNTIME_DIR="$runtime_dir" \
+	SOTF_SYSTEMWIDE_DRIVER="$driver" \
+	RUST_LOG="${RUST_LOG:-info}" \
+	cargo run -p sotf-daemon --bin sotf-daemon
+
 # ----------------------------------------------------------------------
 # FORMAT
 # ----------------------------------------------------------------------
@@ -366,4 +386,3 @@ post-install-python:
 	python3 -m venv venv
 	./venv/bin/pip install -U pip
 	./venv/bin/pip install -r ./scripts/requirements.txt
-

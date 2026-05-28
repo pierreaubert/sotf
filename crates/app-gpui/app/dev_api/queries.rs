@@ -122,7 +122,9 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "settings.language" => json!(format!("{:?}", app.ui_state.language)),
         "settings.active_tab" => json!(format!("{:?}", app.ui_state.active_settings_tab)),
         "settings.font_scale" => json!(app.ui_state.font_scale),
-        "settings.design_language" => json!(app.ui_state.design_language.as_deref().unwrap_or("default")),
+        "settings.design_language" => {
+            json!(app.ui_state.design_language.as_deref().unwrap_or("default"))
+        }
 
         // Playback preferences
         "playback.replay_gain_enabled" => json!(app.playback.replay_gain_enabled),

@@ -1603,8 +1603,16 @@ impl PlayerView {
                     // config files are tiny and we're already in a spawned task)
                     match std::fs::read_to_string(&file_path) {
                         Ok(content) => {
-                            // Validate it's valid JSON
-                            if serde_json::from_str::<serde_json::Value>(&content).is_ok() {
+                            // Validate it is an AB Compare path config before applying it.
+                            if serde_json::from_str::<
+                                sotf_audio_player::controllers::ab_compare_path::PathConfig,
+                            >(&content)
+                            .is_ok()
+                            {
+                                let plugins =
+                                    sotf_audio_player::controllers::ab_compare_path::parse_path_config(
+                                        &content,
+                                    );
                                 let param_idx = if path_id == "a" { 9 } else { 10 };
                                 state_entity.update(&mut cx.clone(), |state, cx| {
                                     // AB Compare configs are JSON, not file paths — error won't occur
@@ -1614,13 +1622,18 @@ impl PlayerView {
                                     // Store the source file path for display
                                     if path_id == "a" {
                                         state.app.plugin_state.ab_compare_file_a = Some(file_path);
+                                        state.app.plugin_state.ab_path_a = plugins;
                                     } else {
                                         state.app.plugin_state.ab_compare_file_b = Some(file_path);
+                                        state.app.plugin_state.ab_path_b = plugins;
                                     }
+                                    state.app.plugin_state.ab_add_menu_target = None;
                                     cx.notify();
                                 });
                             } else {
-                                log::warn!("AB Compare: file is not valid JSON: {file_path}");
+                                log::warn!(
+                                    "AB Compare: file is not a valid path config: {file_path}"
+                                );
                             }
                         }
                         Err(e) => {
@@ -1647,8 +1660,10 @@ impl PlayerView {
 
         self.state.update(cx, |state, _cx| {
             let plugins = if action.path == 0 {
+                state.app.plugin_state.ab_compare_file_a = None;
                 &mut state.app.plugin_state.ab_path_a
             } else {
+                state.app.plugin_state.ab_compare_file_b = None;
                 &mut state.app.plugin_state.ab_path_b
             };
             add_path_plugin(plugins, &action.plugin_type);
@@ -1676,8 +1691,10 @@ impl PlayerView {
 
         self.state.update(cx, |state, _cx| {
             let plugins = if action.path == 0 {
+                state.app.plugin_state.ab_compare_file_a = None;
                 &mut state.app.plugin_state.ab_path_a
             } else {
+                state.app.plugin_state.ab_compare_file_b = None;
                 &mut state.app.plugin_state.ab_path_b
             };
             remove_path_plugin(plugins, action.sub_idx);
@@ -1703,8 +1720,10 @@ impl PlayerView {
 
         self.state.update(cx, |state, _cx| {
             let plugins = if action.path == 0 {
+                state.app.plugin_state.ab_compare_file_a = None;
                 &mut state.app.plugin_state.ab_path_a
             } else {
+                state.app.plugin_state.ab_compare_file_b = None;
                 &mut state.app.plugin_state.ab_path_b
             };
             move_path_plugin(plugins, action.from, action.to);

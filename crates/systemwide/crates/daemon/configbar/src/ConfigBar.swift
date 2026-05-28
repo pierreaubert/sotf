@@ -56,8 +56,16 @@ enum AudioSource: String, CaseIterable, Identifiable {
 class AudioEngineClient {
     /// Get the secure socket path (per-user directory)
     private static func getSecureSocketPath() -> String {
+        let environment = ProcessInfo.processInfo.environment
+        if let overridePath = environment["SOTF_DAEMON_SOCKET_PATH"], !overridePath.isEmpty {
+            return overridePath
+        }
+        if let runtimeDir = environment["SOTF_SYSTEMWIDE_RUNTIME_DIR"], !runtimeDir.isEmpty {
+            return (runtimeDir as NSString).appendingPathComponent("daemon.sock")
+        }
+
         // On macOS, TMPDIR is per-user and already secured
-        if let tmpdir = ProcessInfo.processInfo.environment["TMPDIR"] {
+        if let tmpdir = environment["TMPDIR"] {
             return (tmpdir as NSString).appendingPathComponent("sotf-daemon.sock")
         }
         // Fallback to UID-based path
@@ -320,21 +328,85 @@ class AudioEngineClient {
         return nil
     }
 
-    func getStatus() -> (state: AudioState, volume: Float, muted: Bool) {
+    struct Status {
+        let state: AudioState
+        let volume: Float
+        let muted: Bool
+        let selectedDevice: String?
+        let sampleRate: Int?
+        let inputChannels: Int?
+        let outputChannels: Int?
+        let channels: Int?
+        let playbackCallbackCount: Int?
+        let playbackBufferFillPercent: Int?
+        let playbackStreamErrorCount: Int?
+        let playbackFramesReceived: Int?
+        let playbackFramesWritten: Int?
+        let playbackFramesDropped: Int?
+        let playbackEffectiveSampleRate: Int?
+
+        static let fallback = Status(
+            state: .idle,
+            volume: 1.0,
+            muted: false,
+            selectedDevice: nil,
+            sampleRate: nil,
+            inputChannels: nil,
+            outputChannels: nil,
+            channels: nil,
+            playbackCallbackCount: nil,
+            playbackBufferFillPercent: nil,
+            playbackStreamErrorCount: nil,
+            playbackFramesReceived: nil,
+            playbackFramesWritten: nil,
+            playbackFramesDropped: nil,
+            playbackEffectiveSampleRate: nil
+        )
+    }
+
+    func getStatus() -> Status {
         let command = ["command": "status"]
 
         guard let response = sendCommand(command),
               response.success,
               let data = response.data else {
-            return (.idle, 1.0, false)
+            return .fallback
         }
 
         let stateStr = data["state"]?.value as? String ?? "Idle"
         let state = AudioState(rawValue: stateStr) ?? .idle
         let volume = (data["volume"]?.value as? Double).map { Float($0) } ?? 1.0
         let muted = data["muted"]?.value as? Bool ?? false
+        let selectedDevice = data["selected_device"]?.value as? String
+        let sampleRate = data["sample_rate"]?.value as? Int
+        let inputChannels = data["input_channels"]?.value as? Int
+        let outputChannels = data["output_channels"]?.value as? Int
+        let channels = data["channels"]?.value as? Int
+        let playbackCallbackCount = data["playback_callback_count"]?.value as? Int
+        let playbackBufferFillPercent = data["playback_buffer_fill_percent"]?.value as? Int
+        let playbackStreamErrorCount = data["playback_stream_error_count"]?.value as? Int
+        let playbackFramesReceived = data["playback_frames_received"]?.value as? Int
+        let playbackFramesWritten = data["playback_frames_written"]?.value as? Int
+        let playbackFramesDropped = data["playback_frames_dropped"]?.value as? Int
+        let playbackEffectiveSampleRate = data["playback_effective_sample_rate"]?.value as? Int
 
-        return (state, volume, muted)
+        return Status(
+            state: state,
+            volume: volume,
+            muted: muted,
+            selectedDevice: selectedDevice,
+            sampleRate: sampleRate,
+            inputChannels: inputChannels,
+            outputChannels: outputChannels,
+            channels: channels,
+            playbackCallbackCount: playbackCallbackCount,
+            playbackBufferFillPercent: playbackBufferFillPercent,
+            playbackStreamErrorCount: playbackStreamErrorCount,
+            playbackFramesReceived: playbackFramesReceived,
+            playbackFramesWritten: playbackFramesWritten,
+            playbackFramesDropped: playbackFramesDropped,
+            playbackEffectiveSampleRate: playbackEffectiveSampleRate
+        )
     }
 
     struct AudioDevice: Codable {
@@ -1079,12 +1151,13 @@ class StatusBarController: NSObject, ObservableObject {
         statusRequestInFlight = true
 
         DispatchQueue.global(qos: .utility).async {
-            let (state, _, _) = AudioEngineClient().getStatus()
+            let status = AudioEngineClient().getStatus()
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.statusRequestInFlight = false
 
+                let state = status.state
                 if self.currentState != state {
                     self.currentState = state
                     self.updateIcon()
@@ -1101,19 +1174,14 @@ class StatusBarController: NSObject, ObservableObject {
     private func updateIcon() {
         guard let button = statusItem.button else { return }
 
-        // For menubar template icons, don't set contentTintColor as it breaks
-        // the automatic light/dark adaptation. Instead, use different symbols
-        // or keep it monochrome and show status in the menu.
-
-        // Only tint when actively playing (green) or error (red)
+        // Keep startup/idle visually quiet and make active audio stand out.
         switch currentState {
         case .playing:
-            button.contentTintColor = .systemGreen
+            button.contentTintColor = .white
         case .error:
             button.contentTintColor = .systemRed
         default:
-            // Let system handle the color for template images
-            button.contentTintColor = nil
+            button.contentTintColor = .black
         }
     }
 
@@ -1426,6 +1494,11 @@ struct ConfigurationView: View {
     @State private var meteringTimer: Timer? = nil
     @State private var meteringRequestInFlight = false
     @State private var loadingDevices = false
+    @State private var deviceRecoveryTimer: Timer? = nil
+    @State private var daemonStatusTimer: Timer? = nil
+    @State private var daemonStatusRequestInFlight = false
+    @State private var lastDaemonSelectedDevice: String? = nil
+    @State private var programmaticDeviceSelection: String? = nil
 
     // Encryption state
     @State private var encryptionEnabled: Bool = true
@@ -1594,7 +1667,7 @@ struct ConfigurationView: View {
 
                         Picker("Device", selection: $selectedDevice) {
                             if physicalOutputDevices.isEmpty {
-                                Text("No hardware output devices").tag("")
+                                Text(outputDevicePlaceholderText).tag("")
                             }
 
                             ForEach(physicalOutputDevices, id: \.name) { device in
@@ -1617,6 +1690,11 @@ struct ConfigurationView: View {
                         .pickerStyle(.menu)
                         .onChange(of: selectedDevice) { _, newDevice in
                             guard !newDevice.isEmpty else { return }
+                            if programmaticDeviceSelection == newDevice {
+                                programmaticDeviceSelection = nil
+                                syncOutputChannelsToSelectedDevice(applyChange: false)
+                                return
+                            }
                             guard !isVirtualDevice(newDevice) else {
                                 errorMessage = "Virtual audio devices cannot be used as Systemwide speaker output. Select hardware speakers/headphones here, and select SotF Virtual Audio in macOS Sound Output."
                                 showingError = true
@@ -1795,7 +1873,7 @@ struct ConfigurationView: View {
                         HStack(spacing: 4) {
                             Image(systemName: halConfig.active ? "waveform" : "waveform.slash")
                                 .foregroundColor(halConfig.active ? .green : .secondary)
-                            Text(halConfig.active ? "Audio Active" : "No Audio")
+                            Text(halConfig.active ? "HAL Stream Active" : "HAL Stream Idle")
                                 .font(.caption)
                                 .foregroundColor(halConfig.active ? .primary : .secondary)
                         }
@@ -1952,10 +2030,14 @@ struct ConfigurationView: View {
         .frame(minWidth: 820, minHeight: 600)
         .onAppear {
             loadDevices()
+            updateDaemonStatus()
+            startDaemonStatusTimer()
             startMeteringTimer()
         }
         .onDisappear {
+            stopDaemonStatusTimer()
             stopMeteringTimer()
+            stopDeviceRecoveryPolling()
         }
         .alert("Configuration Error", isPresented: $showingError) {
             Button("OK", role: .cancel) { }
@@ -1997,6 +2079,59 @@ struct ConfigurationView: View {
     private func stopMeteringTimer() {
         meteringTimer?.invalidate()
         meteringTimer = nil
+    }
+
+    private func startDaemonStatusTimer() {
+        guard daemonStatusTimer == nil else { return }
+        daemonStatusTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            updateDaemonStatus()
+        }
+    }
+
+    private func stopDaemonStatusTimer() {
+        daemonStatusTimer?.invalidate()
+        daemonStatusTimer = nil
+    }
+
+    private func updateDaemonStatus() {
+        guard !daemonStatusRequestInFlight else { return }
+        daemonStatusRequestInFlight = true
+
+        DispatchQueue.global(qos: .utility).async {
+            let status = AudioEngineClient().getStatus()
+
+            DispatchQueue.main.async {
+                daemonStatusRequestInFlight = false
+                applyDaemonStatus(status)
+            }
+        }
+    }
+
+    private func applyDaemonStatus(_ status: AudioEngineClient.Status) {
+        if let inputChannels = status.inputChannels, inputChannels > 0, inputChannels != halInputChannels {
+            halInputChannels = min(max(inputChannels, 1), 32)
+            syncMeterArrays(inputChannels: halInputChannels)
+        }
+
+        let daemonOutputChannels = status.outputChannels ?? status.channels
+        if let channels = daemonOutputChannels, channels > 0, channels != halOutputChannels {
+            halOutputChannels = min(max(channels, 1), 32)
+            syncMeterArrays(outputChannels: halOutputChannels)
+        }
+
+        guard let daemonDevice = status.selectedDevice,
+              !daemonDevice.isEmpty,
+              !isVirtualDevice(daemonDevice),
+              physicalOutputDevices.contains(where: { $0.name == daemonDevice }) else {
+            return
+        }
+
+        lastDaemonSelectedDevice = daemonDevice
+        guard selectedDevice != daemonDevice else { return }
+
+        programmaticDeviceSelection = daemonDevice
+        selectedDevice = daemonDevice
+        syncOutputChannelsToSelectedDevice(applyChange: false)
     }
 
     private func updateMetering() {
@@ -2139,12 +2274,35 @@ struct ConfigurationView: View {
         return "2=stereo, 6=5.1, 10=5.1.4, up to 32"
     }
 
+    private var outputDevicePlaceholderText: String {
+        if loadingDevices {
+            return "Refreshing hardware output devices..."
+        }
+        if deviceRecoveryTimer != nil {
+            return "Waiting for CoreAudio hardware devices..."
+        }
+        return "No hardware output devices"
+    }
+
+    private func startDeviceRecoveryPolling() {
+        guard deviceRecoveryTimer == nil else { return }
+        deviceRecoveryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            loadDevices()
+        }
+    }
+
+    private func stopDeviceRecoveryPolling() {
+        deviceRecoveryTimer?.invalidate()
+        deviceRecoveryTimer = nil
+    }
+
     private func loadDevices() {
         guard !loadingDevices else { return }
         loadingDevices = true
 
         DispatchQueue.global(qos: .utility).async {
             var loadedDevices = AudioEngineClient().listDevices()
+            let status = AudioEngineClient().getStatus()
             if loadedDevices.isEmpty {
                 loadedDevices = detectOutputDevicesViaCoreAudio()
             }
@@ -2152,18 +2310,41 @@ struct ConfigurationView: View {
             DispatchQueue.main.async {
                 loadingDevices = false
                 devices = loadedDevices
-                applyLoadedDevices()
+                applyLoadedDevices(daemonSelectedDevice: status.selectedDevice)
+                applyDaemonStatus(status)
             }
         }
     }
 
-    private func applyLoadedDevices() {
+    private func applyLoadedDevices(daemonSelectedDevice: String? = nil) {
         // Filter out virtual devices for output selection
         let physicalDevices = physicalOutputDevices
         let previousDevice = selectedDevice
+        var selectedFromDaemon = false
 
-        // Follow the current system default output device when CoreAudio reports one.
-        if let physicalDefault = physicalDevices.first(where: { $0.is_default }) {
+        if physicalDevices.isEmpty {
+            selectedDevice = ""
+            startDeviceRecoveryPolling()
+            detectAvailableSources()
+            return
+        }
+
+        stopDeviceRecoveryPolling()
+
+        if let daemonSelectedDevice,
+           !daemonSelectedDevice.isEmpty,
+           !isVirtualDevice(daemonSelectedDevice),
+           physicalDevices.contains(where: { $0.name == daemonSelectedDevice }) {
+            programmaticDeviceSelection = daemonSelectedDevice
+            selectedDevice = daemonSelectedDevice
+            lastDaemonSelectedDevice = daemonSelectedDevice
+            selectedFromDaemon = true
+        } else if let lastDaemonSelectedDevice,
+                  physicalDevices.contains(where: { $0.name == lastDaemonSelectedDevice }) {
+            programmaticDeviceSelection = lastDaemonSelectedDevice
+            selectedDevice = lastDaemonSelectedDevice
+            selectedFromDaemon = true
+        } else if let physicalDefault = physicalDevices.first(where: { $0.is_default }) {
             selectedDevice = physicalDefault.name
         } else if !previousDevice.isEmpty,
                   physicalDevices.contains(where: { $0.name == previousDevice }) {
@@ -2175,7 +2356,7 @@ struct ConfigurationView: View {
             selectedDevice = ""
         }
 
-        syncOutputChannelsToSelectedDevice(applyChange: true)
+        syncOutputChannelsToSelectedDevice(applyChange: !selectedFromDaemon)
 
         // Also detect available audio sources
         detectAvailableSources()
@@ -2455,13 +2636,8 @@ struct ConfigurationView: View {
             return
         }
 
-        // Preserve the user's processing chain while changing driver output channels.
-        // The daemon auto-injects the input/output loudness monitors.
-        let plugins = client.getPlugins() ?? []
-
         let command: [String: Any] = [
-            "command": "load_plugins",
-            "plugins": plugins,
+            "command": "set_pipeline_channels",
             "input_channels": halInputChannels,
             "output_channels": halOutputChannels
         ]
@@ -2490,20 +2666,15 @@ struct ConfigurationView: View {
             do {
                 let data = try Data(contentsOf: url)
                 let json = try JSONSerialization.jsonObject(with: data)
-                let userPlugins = try normalizedPluginConfigs(from: json)
 
-                // Send plugins to daemon (daemon auto-injects metering)
                 let command: [String: Any] = [
-                    "command": "load_plugins",
-                    "plugins": userPlugins,
-                    "input_channels": halInputChannels,
-                    "output_channels": halOutputChannels
+                    "command": "load_plugin_artifact",
+                    "artifact": json
                 ]
 
                 let response = client.sendCommand(command)
                 if let resp = response, resp.success {
                     print("✅ Plugin configuration loaded from: \(url.path)")
-                    print("   User plugins: \(userPlugins.count)")
                     pluginRackRefreshToken += 1
                 } else {
                     errorMessage = response?.error ?? "Failed to apply plugin configuration"
@@ -2541,91 +2712,6 @@ struct ConfigurationView: View {
                 showingError = true
             }
         }
-    }
-
-    private func normalizedPluginConfigs(from json: Any) throws -> [[String: Any]] {
-        if let simplePlugins = json as? [[String: Any]] {
-            return simplePlugins.compactMap(normalizedPluginConfigEntry)
-        }
-
-        guard let configDict = json as? [String: Any] else {
-            throw pluginConfigError("Invalid configuration format: expected an array or object")
-        }
-
-        if let plugins = configDict["plugins"] as? [[String: Any]] {
-            return plugins.compactMap(normalizedPluginConfigEntry)
-        }
-
-        var allPlugins: [[String: Any]] = []
-        if let globalPlugins = configDict["global_plugins"] as? [[String: Any]] {
-            allPlugins.append(contentsOf: globalPlugins)
-        }
-
-        if let channels = configDict["channels"] as? [String: Any] {
-            for channelName in channels.keys.sorted() {
-                if let channelData = channels[channelName] as? [String: Any],
-                   let channelPlugins = channelData["plugins"] as? [[String: Any]] {
-                    allPlugins.append(contentsOf: channelPlugins)
-                }
-            }
-            print("Found \(channels.count) channel(s) with \(allPlugins.count) total plugin entries")
-        }
-
-        if allPlugins.isEmpty {
-            throw pluginConfigError("No plugins found in configuration")
-        }
-
-        return allPlugins.compactMap(normalizedPluginConfigEntry)
-    }
-
-    private func normalizedPluginConfigEntry(_ entry: [String: Any]) -> [String: Any]? {
-        if let type = (entry["plugin_type"] as? String) ?? (entry["type"] as? String) {
-            if isSystemPluginType(type) {
-                return nil
-            }
-            return [
-                "plugin_type": type,
-                "parameters": entry["parameters"] as? [String: Any] ?? [:],
-            ]
-        }
-
-        guard let settings = entry["settings"] else {
-            return nil
-        }
-
-        let enabled = entry["enabled"] as? Bool ?? true
-        let permanent = entry["permanent"] as? Bool ?? false
-        return pluginConfigFromAppGpuiSettings(settings, enabled: enabled, permanent: permanent)
-    }
-
-    private func pluginConfigFromAppGpuiSettings(_ settings: Any, enabled: Bool, permanent: Bool) -> [String: Any]? {
-        guard enabled, !permanent else {
-            return nil
-        }
-
-        let variant: String
-        let parameters: [String: Any]
-
-        if let variantName = settings as? String {
-            variant = variantName
-            parameters = [:]
-        } else if let settingsDict = settings as? [String: Any],
-                  let first = settingsDict.first {
-            variant = first.key
-            parameters = first.value as? [String: Any] ?? [:]
-        } else {
-            return nil
-        }
-
-        guard let type = appGpuiSettingsVariantToEngineType[variant],
-              !isSystemPluginType(type) else {
-            return nil
-        }
-
-        return [
-            "plugin_type": type,
-            "parameters": parameters,
-        ]
     }
 
     private func appGpuiPreset(from plugins: [[String: Any]]) -> [String: Any] {
@@ -2681,14 +2767,6 @@ struct ConfigurationView: View {
             || type == "hal_output"
             || type == "loudness_monitor"
             || type == "spectrum_analyzer"
-    }
-
-    private func pluginConfigError(_ message: String) -> NSError {
-        NSError(
-            domain: "SotFSystemwidePluginConfig",
-            code: 1,
-            userInfo: [NSLocalizedDescriptionKey: message]
-        )
     }
 
     // MARK: - Encryption Methods

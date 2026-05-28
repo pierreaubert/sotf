@@ -4,6 +4,9 @@ System-wide audio processing subsystem for SOTF. Captures audio from the OS mixe
 
 ## Architecture
 
+For a full component review, state-ownership analysis, and Mermaid use-case
+diagrams, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ```text
 macOS Audio Apps (Safari, Spotify, ...)
          |
@@ -59,6 +62,18 @@ cargo run --bin sotf-daemon --features hal --release
 #   /tmp/sotf-{uid}/daemon.sock  (secure, default)
 #   /tmp/autoeq_audio.sock       (legacy, SOTF_LEGACY_SOCKET=1)
 ```
+
+### Local Lab
+
+Run an isolated daemon without installing the HAL driver:
+
+```bash
+just systemwide-lab
+```
+
+This starts `sotf-daemon` with `SOTF_SYSTEMWIDE_DRIVER=lab` and an isolated
+runtime directory. Override `SOTF_SYSTEMWIDE_RUNTIME_DIR` to choose where
+`daemon.sock` and `audio.shm` are created.
 
 ## IPC protocol
 
