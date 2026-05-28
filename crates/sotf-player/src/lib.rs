@@ -20,6 +20,7 @@ pub mod database;
 pub mod federation_config;
 pub mod federation_scan;
 pub mod headphone_eq_types;
+pub mod lan_discovery;
 pub mod level_meter;
 pub mod library;
 pub mod library_scanner;
