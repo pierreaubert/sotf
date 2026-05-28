@@ -10520,6 +10520,7 @@ dependencies = [
  "num-complex 0.4.6",
  "num_cpus",
  "parking_lot",
+ "reqwest 0.13.3",
  "rubato",
  "rusqlite",
  "serde",

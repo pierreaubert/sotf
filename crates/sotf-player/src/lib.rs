@@ -42,6 +42,7 @@ pub use autoeq as room_eq;
 pub mod library_stats;
 pub mod security;
 pub mod server;
+pub mod sotf_api_client;
 pub mod ui_params;
 pub mod waveform_scanner;
 
