@@ -291,6 +291,46 @@ orchestrate several effects: driver config, engine restart/hot update, shared
 memory encryption sync, and response building. `PipelineSupervisor` is a first
 state-owner step, not yet the full controller/reducer boundary.
 
+### State Mutation Audit
+
+Recent live failures were all state-control failures, not isolated DSP bugs:
+
+- The toolbar cached channel counts and could send stale `input_channels` back
+  through `load_plugins`, overwriting daemon-negotiated HAL input channels.
+- HAL readiness used `engine_ready` plus `daemon_heartbeat_ms`; when the daemon
+  stopped refreshing the heartbeat while idle, HAL accepted a later playback
+  client but refused to write frames to shared memory.
+- Encryption key rotation changed the shared-memory fingerprint while HAL
+  reader/writer ciphers were cached, so audio could be present but decode to
+  silence until ciphers reloaded.
+- The daemon status could report `Playing` while `playback_callback_count` and
+  frame counters stayed at zero; the UI did not surface that contradiction as a
+  distinct pipeline fault.
+- A feedback-loop symptom can occur whenever the physical output sink is not
+  controlled as a hardware-only selection distinct from the virtual system
+  output.
+
+The current controls are better than the original code, but still incomplete:
+
+| Area | Current mutation path | Missing control |
+| --- | --- | --- |
+| Desired audio graph | `PipelineSupervisor.prepare_plan()` and `commit_applied()` own normal plugin/channel/device changes | `spawn_initial_driver_playback()` and idle driver reconfigure still reach into `desired` directly. Add explicit reducer methods such as `set_desired_output_device()` and `commit_idle_reconfigure()` so all desired mutations pass through one API. |
+| Toolbar configuration | Swift `@State` mirrors daemon selected device, input channels, output channels, encryption, and device lists | The UI can still initiate commands from local caches. Move configuration commands to patch-style intents: "set output channels to N", "load this plugin artifact", "set selected device to X"; daemon fills omitted canonical fields from `SystemwideState`. |
+| Driver/HAL transport | `DriverManager` and `SharedAudioBuffer` publish active format, config handshake, readiness, heartbeat, and encryption fingerprint | Shared memory remains both transport and tempting state source. Only `DriverManager`/`HalDriver` should write protocol fields; higher layers should read them through typed status snapshots. |
+| Runtime engine | `AudioEngineManager` owns playback state, stream counters, plugin runtime, volume, mute, and cached plugin data | Command handlers still stop/restart the engine while holding or acquiring other state locks. Move multi-step transitions into one controller with one lock-order policy and rollback/diagnostic output. |
+| Metering | Loudness monitor indices are derived from `AppliedPipeline`; data comes from engine plugin cache | `get_metering` can return correctly shaped zeros without saying whether this is "no audio", "no analyzer data yet", "stale plugin index", or "engine not receiving frames". Add metering provenance/status fields. |
+| Encryption | `KeyManager` owns desired key state; shared memory publishes active fingerprint; readers/writers cache ciphers | Key rotation must be treated as a protocol transition with observable state: requested fingerprint, published fingerprint, reader/writer reload status, and last reload error. |
+| Device discovery | Daemon lists CPAL devices; toolbar also queries CoreAudio directly for UI details | Two enumerators can disagree after CoreAudio churn. Daemon should publish the authoritative device snapshot and a timestamp/error; toolbar-only enumeration should be advisory UI metadata. |
+
+The control rule for future changes:
+
+1. User actions become typed intents.
+2. The daemon controller validates each intent against one desired-state model.
+3. Runtime adapters apply the transition and return observed results.
+4. Desired state is committed only through controller/reducer methods.
+5. The UI renders daemon snapshots and never repairs daemon state by resending
+   locally cached fields.
+
 ## Use Case: User Starts The Toolbar
 
 ```mermaid
@@ -781,6 +821,39 @@ Current branch coverage starts the lower middle of that pyramid:
   and assert state is unchanged when an invalid channel-count transition is
   rejected.
 
+### Scenario Matrix
+
+The E2E lab should be scenario-driven. Each scenario should start from a clean
+temporary runtime directory, send commands over the real JSON socket, simulate
+driver/HAL behavior through fakes, and assert snapshots plus captured audio.
+
+| Scenario | Simulation | Assertions |
+| --- | --- | --- |
+| Idle start then first playback | Start daemon, set `engine_ready=true`, wait longer than the HAL heartbeat timeout, then have the HAL simulator write sine frames | `daemon_heartbeat_ms` stays fresh, frames received/written increase, input/output meters become non-zero, no manual restart needed. |
+| No writer frames | Daemon starts playback but fake HAL reports active without writing frames | Snapshot marks `Playing` plus `input_frames=0` as `InputSilent` or equivalent, UI can display a transport fault instead of generic "No Audio". |
+| Hardware output unavailable | Fake device inventory drops the selected device or returns no hardware outputs after startup | Desired selected device is preserved, observed output becomes unavailable, toolbar shows recovery/polling state, daemon never falls back to a virtual output. |
+| Feedback-loop guard | Present `SotF Virtual Audio`, BlackHole, Loopback, and a hardware device; try selecting each as output sink | Virtual/loopback selections are rejected before engine restart; selected desired device remains the previous safe hardware device. |
+| Channel-count negotiation | HAL simulator requests 2 -> 10 -> 2 input channels while an upmixer or matrix chain is loaded | Daemon desired input channels follow negotiated HAL input channels; toolbar adopts snapshot channels; stale UI apply cannot overwrite them. |
+| Plugin load failure | Send invalid plugin/channel configs and graph-shaped configs that cannot be represented as a rack | Existing applied chain and metering indices remain unchanged; response explains whether the artifact is invalid or unsupported graph topology. |
+| Complex DSP artifact | Load RoomEQ-style or graph-style artifact with branches/per-channel routes | Rack-compatible artifacts can be normalized; non-linear graphs are retained as graph artifacts or rejected without flattening silently. |
+| Encryption rotation while playing | Enable encryption, stream known audio, rotate key, continue streaming | Published fingerprint changes, reader/writer reload from non-real-time paths, frame counters do not reuse `(key, nonce)`, meters recover without reinstall. |
+| CoreAudio/helper restart | HAL simulator closes/reopens shared memory while daemon remains alive | Shared-memory geometry and readiness recover, desired daemon state is preserved, stale runtime transport state is not promoted to product state. |
+| Meter analyzer unavailable | Engine runs but loudness plugin data is absent or plugin indices are stale | `get_metering` returns channel-shaped data plus provenance/status; UI can distinguish zero signal from unavailable analyzer. |
+
+Each scenario should record:
+
+- Command trace with correlation IDs.
+- Snapshots before and after every command.
+- Driver/HAL simulator events and shared-memory header diffs.
+- Audio fixture hashes or RMS/peak summaries.
+- Expected UI-facing fault category.
+
+The first milestone is not perfect audio fidelity; it is making contradictions
+machine-detectable. A test should fail if the daemon says `Playing` while all
+ingress frame counters remain zero for more than a bounded grace period, or if a
+toolbar command can mutate daemon-owned channel/device state using stale local
+values.
+
 ### Useful Debug Commands
 
 Add a `systemwide doctor` or `systemwidectl doctor` command that collects:
@@ -837,15 +910,19 @@ enumeration or output-device selection.
 
 1. Add read-only `get_snapshot` and `dump_state` commands around the current
    implementation.
-2. Extract plugin-chain construction into a pure module with unit tests.
-3. Introduce `SystemwideState` and move desired state fields there while
-   preserving existing command behavior.
-4. Convert IPC handlers to dispatch events to a `SystemwideController`.
-5. Add `FakeAudioDriver` and temp socket/shared-memory path overrides.
-6. Build the local lab script and make it run in CI on macOS without installing
-   the HAL bundle.
-7. Move the toolbar to consume snapshots instead of reconstructing state from
-   multiple commands.
+2. Introduce `SystemwideState` plus reducer-style methods for every desired
+   mutation; remove direct writes to `PipelineSupervisor.desired`.
+3. Convert IPC handlers to typed intents dispatched to a `SystemwideController`.
+4. Extract plugin-chain/artifact planning into a pure module with unit tests,
+   including explicit "rack chain" versus "graph artifact" outcomes.
+5. Make metering and transport faults first-class snapshot fields rather than
+   inferred UI labels.
+6. Add `FakeAudioDriver`, HAL simulator, temp socket/shared-memory path
+   overrides, and output capture.
+7. Build `just systemwide-lab` around the scenario matrix and make it run in CI
+   on macOS without installing the HAL bundle.
+8. Move the toolbar to consume snapshots and send typed intents instead of
+   reconstructing state from multiple commands.
 
 ## Invariants To Preserve
 
@@ -859,6 +936,15 @@ enumeration or output-device selection.
   stale cached ciphers must be detected and reloaded from non-real-time paths.
 - The daemon must maintain lock ordering or remove the need for multi-lock
   operations through a single controller.
+- No component may mutate another component's desired state by replaying a
+  cached copy. Commands either patch one field or submit a complete artifact
+  with an explicit generation/base snapshot.
+- A state transition that changes graph, channel count, output sink, HAL
+  readiness, or encryption must produce one observable snapshot delta and one
+  command trace entry.
+- `Playing` with no input frames, no output callbacks, stale heartbeat, missing
+  hardware output, or unavailable metering analyzer must be represented as
+  distinct diagnostic states.
 - `_coreaudiod` must remain restricted to the minimum command set.
 - `ARCHITECTURE.md` must be updated alongside README/changelog changes whenever
   architecture, operational behavior, debugging strategy, or state ownership
