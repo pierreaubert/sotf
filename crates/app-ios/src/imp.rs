@@ -1,6 +1,6 @@
 use gpui::*;
 use rust_embed::RustEmbed;
-use sotf_audio_player::Player;
+use sotf_audio_player::{Player, SotfRemoteAuthToken, SotfRemoteServer};
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::ui;
@@ -26,6 +26,13 @@ unsafe extern "C" {
         is_playing: bool,
     );
     fn sotf_ios_update_now_playing_position(position: f64, is_playing: bool);
+    #[allow(dead_code)]
+    fn sotf_ios_keychain_save(key: *const std::ffi::c_char, token: *const std::ffi::c_char)
+    -> bool;
+    #[allow(dead_code)]
+    fn sotf_ios_keychain_load(key: *const std::ffi::c_char) -> *const std::ffi::c_char;
+    #[allow(dead_code)]
+    fn sotf_ios_keychain_delete(key: *const std::ffi::c_char) -> bool;
 }
 
 /// Global handle to the player so C FFI callbacks can control playback.
@@ -449,6 +456,53 @@ fn cstring_or_unknown(value: &str, field: &str) -> CString {
             CString::new("<unknown>").expect("static literal has no NUL")
         }
     }
+}
+
+#[allow(dead_code)]
+fn cstring_for_keychain(value: &str, field: &str) -> Option<CString> {
+    match CString::new(value) {
+        Ok(value) => Some(value),
+        Err(_) => {
+            log::warn!("[iOS] interior NUL in remote {field}; refusing Keychain operation");
+            None
+        }
+    }
+}
+
+/// Store a remote server bearer token in the iOS Keychain.
+///
+/// The account name is derived from `SotfRemoteServer::token_secret_key`; the
+/// token is never written to `remote_servers.json`.
+#[allow(dead_code)]
+pub fn save_remote_auth_token(server: &SotfRemoteServer, token: &SotfRemoteAuthToken) -> bool {
+    let Some(key) = cstring_for_keychain(&server.token_secret_key(), "token key") else {
+        return false;
+    };
+    let Some(token) = cstring_for_keychain(token.as_str(), "token") else {
+        return false;
+    };
+    unsafe { sotf_ios_keychain_save(key.as_ptr(), token.as_ptr()) }
+}
+
+/// Load a remote server bearer token from the iOS Keychain.
+#[allow(dead_code)]
+pub fn load_remote_auth_token(server: &SotfRemoteServer) -> Option<SotfRemoteAuthToken> {
+    let key = cstring_for_keychain(&server.token_secret_key(), "token key")?;
+    let token = unsafe { sotf_ios_keychain_load(key.as_ptr()) };
+    if token.is_null() {
+        return None;
+    }
+    let token = unsafe { std::ffi::CStr::from_ptr(token) }.to_str().ok()?;
+    SotfRemoteAuthToken::new(token).ok()
+}
+
+/// Delete a remote server bearer token from the iOS Keychain.
+#[allow(dead_code)]
+pub fn delete_remote_auth_token(server: &SotfRemoteServer) -> bool {
+    let Some(key) = cstring_for_keychain(&server.token_secret_key(), "token key") else {
+        return false;
+    };
+    unsafe { sotf_ios_keychain_delete(key.as_ptr()) }
 }
 
 /// Update the lock screen Now Playing info with full track metadata.
