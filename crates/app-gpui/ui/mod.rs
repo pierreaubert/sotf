@@ -771,6 +771,7 @@ impl PlayerView {
         state.app.update_library_scan();
         state.app.update_federation_scan();
         state.app.update_cast_discovery();
+        state.app.update_remote_server_discovery();
         state.app.update_toast();
 
         state.app.library_state.ensure_cache_valid();

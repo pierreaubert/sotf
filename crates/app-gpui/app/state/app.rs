@@ -359,6 +359,9 @@ pub struct App {
 
     // Federation & Server configuration
     pub federation: FederationState,
+
+    // Native SOTF remote-control server picker state.
+    pub remote: RemoteState,
 }
 
 /// Play tracking for statistics — records a play after 30s threshold
@@ -420,6 +423,77 @@ pub enum FederationScanMessage {
 }
 
 pub use sotf_audio_player::federation_scan::FederationScanResult;
+
+/// Native SOTF remote-control server picker and discovery state.
+#[derive(Debug)]
+pub struct RemoteState {
+    pub server_store: sotf_audio_player::SotfRemoteServerStore,
+    pub discovered_servers: Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>,
+    pub discovery_running: bool,
+    pub discovery_error: Option<String>,
+    pub discovery_receiver: Option<
+        std::sync::mpsc::Receiver<
+            Result<Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>, String>,
+        >,
+    >,
+}
+
+impl Default for RemoteState {
+    fn default() -> Self {
+        Self {
+            server_store: sotf_audio_player::SotfRemoteServerStore::default(),
+            discovered_servers: Vec::new(),
+            discovery_running: false,
+            discovery_error: None,
+            discovery_receiver: None,
+        }
+    }
+}
+
+impl RemoteState {
+    pub fn merge_discovered_servers(
+        &mut self,
+        servers: Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>,
+    ) -> usize {
+        let mut merged = 0;
+        let had_selection = self.server_store.selected_server_id.is_some();
+        let mut first_id = None;
+
+        for discovered in &servers {
+            match sotf_audio_player::SotfRemoteServer::from_discovered(discovered) {
+                Ok(server) => {
+                    first_id.get_or_insert_with(|| server.id.clone());
+                    self.server_store.upsert(server);
+                    merged += 1;
+                }
+                Err(err) => {
+                    log::warn!("Ignoring invalid discovered SOTF server: {err}");
+                }
+            }
+        }
+
+        if !had_selection && let Some(id) = first_id {
+            let _ = self.server_store.select(id);
+        }
+
+        self.discovered_servers = servers;
+        self.discovery_error = None;
+        merged
+    }
+
+    pub fn add_manual_server_record(
+        &mut self,
+        friendly_name: impl Into<String>,
+        api_base_url: impl Into<String>,
+    ) -> Result<String, String> {
+        let server = sotf_audio_player::SotfRemoteServer::manual(friendly_name, api_base_url)
+            .map_err(|err| err.to_string())?;
+        let id = server.id.clone();
+        self.server_store.upsert(server);
+        let _ = self.server_store.select(id.clone());
+        Ok(id)
+    }
+}
 
 /// GPUI-compatible state wrapper
 pub struct AppState {
@@ -501,6 +575,7 @@ impl App {
             last_saved_geometry: None,
 
             federation: FederationState::default(),
+            remote: RemoteState::default(),
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
@@ -1275,6 +1350,17 @@ impl App {
 
         // Restore max CPU cores
         self.ui_state.max_cpu_cores = config.max_cpu_cores;
+
+        // Restore non-secret native remote server records. Bearer tokens live
+        // in platform credential stores keyed by each server's token key.
+        match sotf_audio_player::config::load_remote_server_store() {
+            Ok(store) => {
+                self.remote.server_store = store;
+            }
+            Err(e) => {
+                log::warn!("Could not load remote server store: {e}");
+            }
+        }
 
         Ok(layout_state)
     }

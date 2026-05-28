@@ -207,6 +207,8 @@ pub extern "C" fn sotf_ios_start() {
                             app.add_directory_quiet(music_dir);
                         }
 
+                        app.start_remote_server_discovery();
+
                         AppState {
                             app,
                             layout,
