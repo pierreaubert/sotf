@@ -178,9 +178,7 @@ async fn run_mdns_responder(
     mut cancel: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
     let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, MDNS_PORT);
-    let socket = UdpSocket::bind(bind_addr)
-        .await
-        .map_err(|e| format!("Failed to bind mDNS responder socket: {e}"))?;
+    let socket = bind_mdns_responder_socket(bind_addr)?;
     socket
         .join_multicast_v4(MDNS_MULTICAST, Ipv4Addr::UNSPECIFIED)
         .map_err(|e| format!("Failed to join mDNS multicast group: {e}"))?;
@@ -213,6 +211,45 @@ async fn run_mdns_responder(
     }
 
     Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn bind_mdns_responder_socket(bind_addr: SocketAddrV4) -> Result<UdpSocket, String> {
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV4,
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )
+    .map_err(|e| format!("Failed to create mDNS responder socket: {e}"))?;
+    socket
+        .set_reuse_address(true)
+        .map_err(|e| format!("Failed to enable SO_REUSEADDR for mDNS responder: {e}"))?;
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "ios",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "solaris",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    socket
+        .set_reuse_port(true)
+        .map_err(|e| format!("Failed to enable SO_REUSEPORT for mDNS responder: {e}"))?;
+    socket
+        .bind(&socket2::SockAddr::from(SocketAddr::V4(bind_addr)))
+        .map_err(|e| format!("Failed to bind mDNS responder socket: {e}"))?;
+    socket
+        .set_nonblocking(true)
+        .map_err(|e| format!("Failed to make mDNS responder socket nonblocking: {e}"))?;
+    UdpSocket::from_std(socket.into())
+        .map_err(|e| format!("Failed to create Tokio mDNS responder socket: {e}"))
 }
 
 #[cfg(not(target_os = "macos"))]

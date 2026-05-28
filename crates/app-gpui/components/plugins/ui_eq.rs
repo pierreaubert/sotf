@@ -195,6 +195,8 @@ pub enum EqViewMode {
         fir_length: usize,
         /// Whether auto_gain is enabled
         auto_gain: bool,
+        /// Wet/dry mix
+        mix: f64,
     },
     FirDesigner {
         /// Latency in samples = (fir_length - 1) / 2 in linear mode.
@@ -207,6 +209,8 @@ pub enum EqViewMode {
         phase_mode: &'static str,
         /// Whether auto_gain is enabled.
         auto_gain: bool,
+        /// Wet/dry mix
+        mix: f64,
     },
 }
 
@@ -227,6 +231,12 @@ pub struct EqRenderState<'a> {
     pub midi_overlay: Option<&'a MidiOverlay>,
     /// View variant — Standard biquad EQ or LinearPhase FIR EQ
     pub mode: EqViewMode,
+    /// Number of active filters (for EQ, LinearPhaseEq, FirDesigner)
+    pub num_filters: usize,
+    /// Use Transposed Direct Form II (Standard EQ only)
+    pub tdf2: bool,
+    /// Filter topology: 0 = Biquad, 1 = SVF (Standard EQ only)
+    pub topology: f64,
 }
 
 /// Magnitude (dB) for a single filter at `freq`, branching on the band's
@@ -1491,24 +1501,27 @@ pub fn render_eq_plugin(
             latency_ms,
             fir_length,
             auto_gain,
-        } => Some((latency_samples, latency_ms, fir_length, "Linear", auto_gain)),
+            mix,
+        } => Some((latency_samples, latency_ms, fir_length, "Linear", auto_gain, mix)),
         EqViewMode::FirDesigner {
             latency_samples,
             latency_ms,
             fir_length,
             phase_mode,
             auto_gain,
+            mix,
         } => Some((
             latency_samples,
             latency_ms,
             fir_length,
             phase_mode,
             auto_gain,
+            mix,
         )),
         EqViewMode::Standard => None,
     };
     let lp_header = fir_summary.map(
-        |(latency_samples, latency_ms, fir_length, phase_mode, auto_gain)| {
+        |(latency_samples, latency_ms, fir_length, phase_mode, auto_gain, mix)| {
             div()
                 .flex()
                 .items_center()
@@ -1520,6 +1533,7 @@ pub fn render_eq_plugin(
                 .rounded(ds.r_md)
                 .text_size(ds.text_sm)
                 .text_color(theme.text_secondary)
+                .child(format!("Filters: {}", state.num_filters))
                 .child(format!("FIR length: {fir_length}"))
                 .child(format!("Phase: {phase_mode}"))
                 .child(format!(
@@ -1529,10 +1543,11 @@ pub fn render_eq_plugin(
                     "Auto-gain: {}",
                     if auto_gain { "on" } else { "off" }
                 ))
+                .child(format!("Mix: {:.0}%", mix * 100.0))
         },
     );
     let lp_analysis =
-        fir_summary.map(|(latency_samples, latency_ms, fir_length, phase_mode, _)| {
+        fir_summary.map(|(latency_samples, latency_ms, fir_length, phase_mode, _, _)| {
             render_linear_phase_analysis(
                 &ds,
                 latency_samples,
@@ -1543,6 +1558,32 @@ pub fn render_eq_plugin(
             )
         });
 
+    // Algorithm info bar for Standard EQ
+    let eq_header = if matches!(state.mode, EqViewMode::Standard) {
+        let topo_label = if state.topology > 0.5 { "SVF" } else { "Biquad" };
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap(ds.section)
+                .px(ds.pad_x)
+                .py(ds.pad_y_half)
+                .bg(theme.surface)
+                .rounded(ds.r_md)
+                .text_size(ds.text_sm)
+                .text_color(theme.text_secondary)
+                .child(format!("Filters: {}", state.num_filters))
+                .child(format!("Topology: {topo_label}"))
+                .child(format!(
+                    "TDF-II: {}",
+                    if state.tdf2 { "on" } else { "off" }
+                )),
+        )
+    } else {
+        None
+    };
+
     // Combine sections based on layout mode
 
     div()
@@ -1550,6 +1591,7 @@ pub fn render_eq_plugin(
         .flex_col()
         .items_center()
         .gap(ds.section_xl)
+        .children(eq_header)
         .children(lp_header)
         .child(graph_section)
         .children(lp_analysis)

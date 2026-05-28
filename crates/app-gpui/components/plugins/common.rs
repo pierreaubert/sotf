@@ -6,13 +6,13 @@ use crate::app::AppState;
 use crate::app::constants::spacing;
 use crate::app::state::app::KnobDragState;
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Potentiometer, PotentiometerScale, PotentiometerSize, Toggle, ToggleStyle, VerticalSlider,
-    VerticalSliderTheme,
+    Potentiometer, PotentiometerScale, PotentiometerSize, Toggle, ToggleStyle, VerticalSliderTheme,
 };
 pub use sotf_audio_player::param_index_to_engine_param;
 use sotf_audio_player_midi::PhysicalControlKind;
@@ -527,63 +527,20 @@ pub fn render_vertical_slider_sized(
     _height: Option<f32>,
     theme: &Theme,
 ) -> impl IntoElement {
-    let is_selected = selected_param == idx && is_editing;
-
-    let mut slider = VerticalSlider::new(("slider", plugin_idx * 1000 + idx))
-        .value(value)
-        .min(min)
-        .max(max)
-        .unit(unit.to_string())
-        .label(label.to_string())
-        .selected(is_selected)
-        .theme(theme_to_vertical_slider_theme(theme))
-        .design_tokens(theme.design_tokens.clone())
-        .on_change({
-            let entity = entity.clone();
-            move |new_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value);
-                });
-            }
-        })
-        .on_drag_start({
-            let entity = entity.clone();
-            move |start_y, start_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.knob_drag = Some(KnobDragState {
-                        plugin_idx,
-                        param_idx: idx,
-                        start_y,
-                        start_value,
-                        min,
-                        max,
-                    });
-                });
-            }
-        })
-        .on_select({
-            let entity = entity.clone();
-            move |_, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                    state.app.plugin_state.plugin_param_selection = idx;
-                });
-            }
-        })
-        .on_reset({
-            let entity = entity.clone();
-            move |_, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.reset_plugin_param(plugin_idx, idx);
-                });
-            }
-        });
-
-    if let Some(key) = shortcut_key {
-        slider = slider.shortcut_key(key);
-    }
-
-    div().key_context("plugin-control").child(slider)
+    render_value_stepper_selector(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        theme,
+    )
 }
 
 /// Render a vertical slider with tick marks, custom height, and enhanced visual feedback
@@ -601,68 +558,235 @@ pub fn render_vertical_slider_with_ticks(
     selected_param: usize,
     is_editing: bool,
     shortcut_key: Option<char>,
-    height: f32,
+    _height: f32,
+    theme: &Theme,
+) -> impl IntoElement {
+    render_value_stepper_selector(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        theme,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_value_stepper_selector(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    shortcut_key: Option<char>,
     theme: &Theme,
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
+    let grid = rems(0.25);
+    let pad = rems(0.5);
+    let radius = px(8.0);
+    let radius_sm = px(6.0);
+    let text_xs = rems(0.75);
+    let text_sm = rems(0.875);
+    let step = selector_step(min, max);
+    let can_decrement = value > min;
+    let can_increment = value < max;
+    let label = format_shortcut_label(label, shortcut_key);
 
-    let mut slider = VerticalSlider::new(("slider-ticks", plugin_idx * 1000 + idx))
-        .value(value)
-        .min(min)
-        .max(max)
-        .unit(unit.to_string())
-        .label(label.to_string())
-        .height(height)
-        .with_ticks()
-        .selected(is_selected)
-        .theme(theme_to_vertical_slider_theme(theme))
-        .design_tokens(theme.design_tokens.clone())
-        .on_change({
-            let entity = entity.clone();
-            move |new_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value);
-                });
-            }
+    div()
+        .id(("value-stepper", plugin_idx * 1000 + idx))
+        .key_context("plugin-control")
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(grid)
+        .min_w(rems(5.75))
+        .px(pad)
+        .py(pad)
+        .rounded(radius)
+        .bg(if is_selected {
+            theme.accent_muted
+        } else {
+            theme.surface
         })
-        .on_drag_start({
-            let entity = entity.clone();
-            move |start_y, start_value, _, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.knob_drag = Some(KnobDragState {
-                        plugin_idx,
-                        param_idx: idx,
-                        start_y,
-                        start_value,
-                        min,
-                        max,
-                    });
-                });
-            }
+        .border_1()
+        .border_color(if is_selected {
+            theme.accent
+        } else {
+            theme.border
         })
-        .on_select({
+        .on_click({
             let entity = entity.clone();
-            move |_, cx| {
+            move |_, _, cx| {
                 entity.update(cx, |state, _| {
                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                     state.app.plugin_state.plugin_param_selection = idx;
                 });
             }
         })
-        .on_reset({
-            let entity = entity.clone();
-            move |_, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.reset_plugin_param(plugin_idx, idx);
-                });
-            }
-        });
+        .child(
+            div()
+                .text_size(text_xs)
+                .text_color(if is_selected {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                })
+                .font_weight(if is_selected {
+                    FontWeight::MEDIUM
+                } else {
+                    FontWeight::NORMAL
+                })
+                .child(label),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(grid)
+                .child(render_stepper_button(
+                    ("value-stepper-minus", plugin_idx * 1000 + idx),
+                    IconName::Minus,
+                    can_decrement,
+                    theme,
+                    {
+                        let entity = entity.clone();
+                        move |cx| {
+                            let new_value = (value - step).clamp(min, max);
+                            entity.update(cx, |state, _| {
+                                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                                state.app.plugin_state.plugin_param_selection = idx;
+                                state.app.set_plugin_param(plugin_idx, idx, new_value);
+                            });
+                        }
+                    },
+                ))
+                .child(
+                    div()
+                        .min_w(rems(3.0))
+                        .px(pad)
+                        .py(px(2.0))
+                        .rounded(radius_sm)
+                        .bg(theme.background_secondary)
+                        .text_size(text_sm)
+                        .font_weight(FontWeight::BOLD)
+                        .text_align(TextAlign::Center)
+                        .text_color(theme.text_primary)
+                        .child(format_selector_value(value, unit, step)),
+                )
+                .child(render_stepper_button(
+                    ("value-stepper-plus", plugin_idx * 1000 + idx),
+                    IconName::Plus,
+                    can_increment,
+                    theme,
+                    move |cx| {
+                        let new_value = (value + step).clamp(min, max);
+                        entity.update(cx, |state, _| {
+                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                            state.app.plugin_state.plugin_param_selection = idx;
+                            state.app.set_plugin_param(plugin_idx, idx, new_value);
+                        });
+                    },
+                )),
+        )
+}
 
-    if let Some(key) = shortcut_key {
-        slider = slider.shortcut_key(key);
+fn render_stepper_button(
+    id: impl Into<ElementId>,
+    icon: IconName,
+    enabled: bool,
+    theme: &Theme,
+    on_activate: impl Fn(&mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .justify_center()
+        .w(rems(1.75))
+        .h(rems(1.75))
+        .rounded_full()
+        .bg(if enabled {
+            theme.surface_hover
+        } else {
+            theme.background_secondary
+        })
+        .border_1()
+        .border_color(theme.border)
+        .cursor_pointer()
+        .opacity(if enabled { 1.0 } else { 0.45 })
+        .child(Icon::new(icon).size(IconSize::Xs).color(if enabled {
+            theme.text_primary
+        } else {
+            theme.text_muted
+        }))
+        .on_click(move |_, _, cx| {
+            if enabled {
+                on_activate(cx);
+            }
+        })
+}
+
+fn selector_step(min: f64, max: f64) -> f64 {
+    let range = (max - min).abs();
+    if !range.is_finite() || range <= f64::EPSILON {
+        return 1.0;
     }
 
-    div().key_context("plugin-control").child(slider)
+    let rough = range / 100.0;
+    let magnitude = 10_f64.powf(rough.log10().floor());
+    let normalized = rough / magnitude;
+    let nice = if normalized <= 1.0 {
+        1.0
+    } else if normalized <= 2.0 {
+        2.0
+    } else if normalized <= 5.0 {
+        5.0
+    } else {
+        10.0
+    };
+    nice * magnitude
+}
+
+fn format_selector_value(value: f64, unit: &str, step: f64) -> String {
+    if unit == "%" {
+        return format!("{:.0}%", value * 100.0);
+    }
+    if unit == ":1" {
+        return format!("{:.1}:1", value);
+    }
+
+    let precision = selector_precision(step);
+    if unit.is_empty() {
+        format!("{value:.precision$}")
+    } else {
+        format!("{value:.precision$} {unit}")
+    }
+}
+
+fn selector_precision(step: f64) -> usize {
+    if step >= 1.0 {
+        0
+    } else if step >= 0.1 {
+        1
+    } else if step >= 0.01 {
+        2
+    } else if step >= 0.001 {
+        3
+    } else {
+        4
+    }
 }
 
 /// Render a simple transfer curve visualization (input vs output)

@@ -58,7 +58,7 @@ fn daemon_plugin_reload_uses_hot_update_path() {
         "daemon should build the injected metering chain in one shared helper"
     );
     assert!(
-        reload_body.contains("manager.update_plugin_chain(final_plugins)"),
+        reload_body.contains("manager.update_plugin_chain(plan.runtime_plugins.clone())"),
         "plugin add/remove/update/reorder should hot-update the running engine"
     );
     assert!(
@@ -78,13 +78,13 @@ fn daemon_load_plugins_carries_hal_input_channels() {
     );
     assert!(
         source.contains("input_channels: usize")
-            && source.contains("current_input_channels")
-            && source.contains("channel_count: driver_input_channels as u32"),
+            && source.contains("PipelineSupervisor")
+            && source.contains("channel_count: plan.spec.input_channels as u32"),
         "load_plugins should carry requested HAL input channels into driver config"
     );
     assert!(
         source.contains("start_hal_playback_with_driver_config(")
-            && source.contains("driver_input_channels"),
+            && source.contains("plan.spec.input_channels"),
         "driver playback should be restarted with the resolved HAL input channel count"
     );
 }
@@ -99,6 +99,60 @@ fn daemon_metering_returns_channel_sized_fallbacks() {
             && source.contains("empty_loudness_json(fallback_input_channels)")
             && source.contains("empty_loudness_json(fallback_output_channels)"),
         "get_metering should return zeroed N-channel meter payloads until analyzer data is available"
+    );
+}
+
+#[test]
+fn daemon_status_exposes_toolbar_device_and_playback_diagnostics() {
+    let source = include_str!("../bin/sotf_daemon.rs");
+
+    assert!(
+        source.contains("\"selected_device\": selected_device")
+            && source.contains("\"input_channels\": input_channels")
+            && source.contains("\"output_channels\": output_channels")
+            && source.contains("\"channels\": engine_state.num_channels")
+            && source.contains("\"playback_output_device\": engine_state.playback_output_device")
+            && source.contains("\"playback_callback_count\": engine_state.playback_callback_count")
+            && source.contains(
+                "\"playback_buffer_fill_percent\": engine_state.playback_buffer_fill_percent"
+            )
+            && source.contains("\"playback_frames_written\": engine_state.playback_frames_written"),
+        "status should expose daemon-owned device/channel state and playback hardware diagnostics"
+    );
+}
+
+#[test]
+fn configbar_reconciles_device_picker_from_daemon_status() {
+    let source = include_str!("../configbar/src/ConfigBar.swift");
+
+    assert!(
+        source.contains("let selectedDevice: String?")
+            && source.contains("data[\"selected_device\"]?.value as? String")
+            && source.contains("let inputChannels: Int?")
+            && source.contains("data[\"input_channels\"]?.value as? Int")
+            && source.contains("let outputChannels: Int?")
+            && source.contains("data[\"output_channels\"]?.value as? Int")
+            && source.contains("applyLoadedDevices(daemonSelectedDevice: status.selectedDevice)")
+            && source.contains("programmaticDeviceSelection = daemonDevice"),
+        "toolbar should parse selected_device from status and update its picker without re-owning daemon state"
+    );
+}
+
+#[test]
+fn configbar_reconciles_daemon_owned_channel_counts_from_status() {
+    let source = include_str!("../configbar/src/ConfigBar.swift");
+
+    assert!(
+        source.contains("if let inputChannels = status.inputChannels")
+            && source.contains("halInputChannels = min(max(inputChannels, 1), 32)")
+            && source.contains("syncMeterArrays(inputChannels: halInputChannels)"),
+        "toolbar status sync should adopt daemon-owned HAL input channels"
+    );
+    assert!(
+        source.contains("let daemonOutputChannels = status.outputChannels ?? status.channels")
+            && source.contains("halOutputChannels = min(max(channels, 1), 32)")
+            && source.contains("syncMeterArrays(outputChannels: halOutputChannels)"),
+        "toolbar status sync should prefer daemon-owned output channels while keeping legacy status.channels fallback"
     );
 }
 
@@ -118,6 +172,13 @@ fn daemon_pkg_preinstall_quiesces_running_daemon_before_upgrade() {
         "preinstall should request a graceful daemon shutdown over the control socket"
     );
     assert!(
+        preinstall_source.contains("quit_systemwide_app")
+            && preinstall_source
+                .contains("tell application id \"org.spinorama.sotf-systemwide\" to quit")
+            && preinstall_source.contains("/usr/bin/pkill -TERM -x \"sotf-systemwide\""),
+        "preinstall should quit the running menu bar app before replacing the app bundle"
+    );
+    assert!(
         preinstall_source.contains("getconf DARWIN_USER_TEMP_DIR")
             && preinstall_source.contains("/tmp/sotf-${console_uid}/daemon.sock")
             && preinstall_source.contains("/tmp/autoeq_audio.sock"),
@@ -135,6 +196,46 @@ fn daemon_pkg_preinstall_quiesces_running_daemon_before_upgrade() {
         preinstall_source.contains("/usr/bin/pkill -TERM -x \"sotf-daemon\"")
             && preinstall_source.contains("/usr/bin/pkill -KILL -x \"sotf-daemon\""),
         "preinstall should escalate from TERM to KILL as a last resort"
+    );
+    assert!(
+        preinstall_source.contains("cleanup_sotf_runtime_files")
+            && preinstall_source.contains("${runtime_dir}/daemon.sock")
+            && preinstall_source.contains("${runtime_dir}/audio.shm")
+            && preinstall_source.contains("${runtime_dir}/session.key"),
+        "preinstall should remove stale daemon socket/shared-memory runtime files after shutdown"
+    );
+}
+
+#[test]
+fn standalone_hal_installer_quiesces_running_system_before_replacing_driver() {
+    let source = include_str!("../../../../../scripts/build-systemwide.sh");
+    let install_start = source
+        .find("cat > \"$DMG_DIR/install-hal.sh\"")
+        .expect("standalone HAL install script should exist");
+    let uninstall_start = source
+        .find("cat > \"$DMG_DIR/uninstall-hal.sh\"")
+        .expect("standalone HAL uninstall script should exist");
+    let install_source = &source[install_start..uninstall_start];
+
+    assert!(
+        install_source.contains("quit_systemwide_app")
+            && install_source.contains("quiesce_sotf_daemon")
+            && install_source.find("quiesce_sotf_daemon").unwrap()
+                < install_source
+                    .find("for bundle in \"${LEGACY_BUNDLES[@]}\"")
+                    .unwrap(),
+        "standalone HAL installer should stop app/daemon before removing existing HAL bundles"
+    );
+    assert!(
+        install_source.contains("{\"command\":\"shutdown\"}")
+            && install_source.contains("sudo /usr/bin/pkill -TERM -x \"sotf-daemon\"")
+            && install_source.contains("sudo /usr/bin/pkill -KILL -x \"sotf-daemon\""),
+        "standalone HAL installer should use graceful daemon shutdown and sudo kill fallback"
+    );
+    assert!(
+        install_source.contains("cleanup_sotf_runtime_files")
+            && install_source.contains("${runtime_dir}/audio.shm"),
+        "standalone HAL installer should clean stale runtime files before replacing the driver"
     );
 }
 
@@ -182,6 +283,13 @@ fn configbar_output_device_refresh_tracks_channel_limits() {
         configbar.contains("syncOutputChannelsToSelectedDevice(applyChange: true)"),
         "device refresh/selection should clamp the channel selection when metadata changes"
     );
+    assert!(
+        configbar.contains("@State private var deviceRecoveryTimer")
+            && configbar.contains("Waiting for CoreAudio hardware devices...")
+            && configbar.contains("startDeviceRecoveryPolling()")
+            && configbar.contains("stopDeviceRecoveryPolling()"),
+        "toolbar should keep polling while CoreAudio temporarily reports no hardware output devices"
+    );
     let default_selection = configbar
         .find("if let physicalDefault = physicalDevices.first(where: { $0.is_default })")
         .expect("device discovery should prefer the system default output");
@@ -207,6 +315,48 @@ fn configbar_output_device_refresh_tracks_channel_limits() {
             && configbar.contains("private func resizedPeaks")
             && configbar.contains("peaks.prefix(32)"),
         "toolbar meters should resize and clamp to the current N-channel layout"
+    );
+}
+
+#[test]
+fn configbar_hal_stream_status_wording_matches_signal_scope() {
+    let configbar = include_str!("../configbar/src/ConfigBar.swift");
+    let shared_memory = include_str!("../../driver-hal/swift/Sources/SharedMemory.swift");
+
+    assert!(
+        configbar.contains("HAL Stream Active")
+            && configbar.contains("HAL Stream Idle")
+            && !configbar.contains("\"No Audio\""),
+        "HAL status should describe the virtual HAL stream, not imply the whole system has no audio"
+    );
+    assert!(
+        shared_memory.contains("if header.pointee.active == 0")
+            && shared_memory.contains("header.pointee.active = 1")
+            && shared_memory
+                .contains("header.pointee.writePosition = writePos + UInt64(samplesToWrite)")
+            && shared_memory
+                .contains("header.pointee.writePosition = writePos + UInt64(floatCount)"),
+        "successful HAL shared-memory writes should mark the HAL stream active even if StartIO state was stale"
+    );
+}
+
+#[test]
+fn configbar_menu_bar_icon_uses_active_light_idle_dark() {
+    let configbar = include_str!("../configbar/src/ConfigBar.swift");
+    let playing_tint = configbar
+        .find("case .playing:\n            button.contentTintColor = .white")
+        .expect("playing toolbar icon should be explicitly light");
+    let idle_tint = configbar
+        .find("default:\n            button.contentTintColor = .black")
+        .expect("startup/idle toolbar icon should be explicitly dark");
+
+    assert!(
+        playing_tint < idle_tint,
+        "toolbar icon tint mapping should keep playing active/light and startup idle/dark"
+    );
+    assert!(
+        !configbar.contains("button.contentTintColor = .systemGreen"),
+        "working toolbar icon should no longer turn green/black instead of white"
     );
 }
 
@@ -271,5 +421,71 @@ fn configbar_plugin_edit_sheet_batches_parameter_edits_until_apply_or_close() {
         source.contains("applyPluginUpdate(at: index, parameters: newParams)")
             && source.contains("client.updatePlugin(at: index, parameters: parameters)"),
         "only Apply/Close should send parameters to the daemon"
+    );
+}
+
+#[test]
+fn configbar_and_daemon_support_isolated_lab_runtime_paths() {
+    let configbar = include_str!("../configbar/src/ConfigBar.swift");
+    let daemon = include_str!("../bin/sotf_daemon.rs");
+    let security = include_str!("../bin/security.rs");
+    let justfile = include_str!("../../../../../Justfile");
+
+    assert!(
+        configbar.contains("SOTF_DAEMON_SOCKET_PATH")
+            && configbar.contains("SOTF_SYSTEMWIDE_RUNTIME_DIR")
+            && configbar.contains("daemon.sock"),
+        "toolbar should be able to connect to an isolated lab daemon socket"
+    );
+    assert!(
+        daemon.contains("SOTF_DAEMON_SOCKET_PATH")
+            && daemon.contains("SOTF_SYSTEMWIDE_RUNTIME_DIR")
+            && security.contains("secure_socket_path_from_env"),
+        "daemon should bind to explicit lab socket/runtime-dir overrides"
+    );
+    assert!(
+        justfile.contains("systemwide-lab:")
+            && justfile.contains("SOTF_SYSTEMWIDE_DRIVER")
+            && justfile.contains("cargo run -p sotf-daemon --bin sotf-daemon"),
+        "just systemwide-lab should start an isolated daemon with the lab driver"
+    );
+}
+
+#[test]
+fn configbar_plugin_chain_loader_delegates_artifact_planning_to_daemon() {
+    let source = include_str!("../configbar/src/ConfigBar.swift");
+
+    assert!(
+        source.contains("\"command\": \"load_plugin_artifact\"")
+            && source.contains("\"artifact\": json")
+            && !source.contains("private func normalizedPluginConfigs"),
+        "toolbar should send whole plugin artifacts to the daemon instead of normalizing them locally"
+    );
+    assert!(
+        !source.contains("allPlugins.append(contentsOf: channelPlugins)"),
+        "toolbar must not flatten per-channel or graph-style plugin artifacts into a linear rack"
+    );
+}
+
+#[test]
+fn configbar_channel_apply_uses_patch_intent_instead_of_replaying_plugins() {
+    let source = include_str!("../configbar/src/ConfigBar.swift");
+    let apply_start = source
+        .find("private func applyHALConfiguration()")
+        .expect("applyHALConfiguration should exist");
+    let load_start = source
+        .find("private func loadPluginConfig()")
+        .expect("loadPluginConfig should exist");
+    let body = &source[apply_start..load_start];
+
+    assert!(
+        body.contains("\"command\": \"set_pipeline_channels\"")
+            && body.contains("\"input_channels\": halInputChannels")
+            && body.contains("\"output_channels\": halOutputChannels"),
+        "HAL channel apply should use the daemon's typed channel patch command"
+    );
+    assert!(
+        !body.contains("client.getPlugins()") && !body.contains("\"command\": \"load_plugins\""),
+        "HAL channel apply must not replay a stale plugin list"
     );
 }

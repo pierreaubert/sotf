@@ -176,6 +176,30 @@ pub struct AudioEngineState {
     pub processing_bypassed: bool,
     /// Number of buffer underruns
     pub underruns: u64,
+    /// Output device actually resolved by the playback stream.
+    #[serde(default)]
+    pub playback_output_device: Option<String>,
+    /// Number of hardware output callbacks observed by the playback stream.
+    #[serde(default)]
+    pub playback_callback_count: u64,
+    /// Last reported playback ring-buffer fill percentage.
+    #[serde(default)]
+    pub playback_buffer_fill_percent: u64,
+    /// Number of output stream errors observed by the playback stream.
+    #[serde(default)]
+    pub playback_stream_error_count: u64,
+    /// Number of processed frames received by the playback thread.
+    #[serde(default)]
+    pub playback_frames_received: u64,
+    /// Number of processed frames written to the hardware ring buffer.
+    #[serde(default)]
+    pub playback_frames_written: u64,
+    /// Number of processed frames dropped before reaching hardware.
+    #[serde(default)]
+    pub playback_frames_dropped: u64,
+    /// Estimated callback sample rate from hardware consumption.
+    #[serde(default)]
+    pub playback_effective_sample_rate: u64,
     /// Total plugin chain latency in samples (for position compensation)
     pub plugin_latency_samples: usize,
     /// Last error message, if any
@@ -201,6 +225,14 @@ impl Default for AudioEngineState {
             muted: false,
             processing_bypassed: false,
             underruns: 0,
+            playback_output_device: None,
+            playback_callback_count: 0,
+            playback_buffer_fill_percent: 0,
+            playback_stream_error_count: 0,
+            playback_frames_received: 0,
+            playback_frames_written: 0,
+            playback_frames_dropped: 0,
+            playback_effective_sample_rate: 0,
             plugin_latency_samples: 0,
             last_error: None,
             seeking: false,

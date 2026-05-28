@@ -1,4 +1,6 @@
-use math_audio_dsp::analysis::{compute_rt60_broadband, find_db_point};
+use math_audio_dsp::analysis::{
+    compute_rt60_broadband, find_db_point, smooth_response_f32, smooth_response_f64,
+};
 
 #[test]
 fn test_find_db_point_flat() {
@@ -87,6 +89,30 @@ fn test_compute_average_response_log_spacing() {
     // Here we'll just test that it returns a value within range for now
     let avg = compute_average_response(&frequencies, &magnitude_db, None);
     assert!(avg > 0.0 && avg < 20.0);
+}
+
+#[test]
+fn test_smooth_response_f64_handles_extra_values_without_panic() {
+    let frequencies = vec![20.0, 100.0];
+    let values = vec![1.0, 3.0, 5.0];
+
+    let smoothed = smooth_response_f64(&frequencies, &values, 10.0);
+
+    assert_eq!(smoothed.len(), frequencies.len());
+    assert!((smoothed[0] - 2.0).abs() < 1e-9);
+    assert!((smoothed[1] - 2.0).abs() < 1e-9);
+}
+
+#[test]
+fn test_smooth_response_f32_handles_extra_frequencies_without_panic() {
+    let frequencies = vec![20.0, 100.0, 1000.0];
+    let values = vec![1.0, 3.0];
+
+    let smoothed = smooth_response_f32(&frequencies, &values, 0.01);
+
+    assert_eq!(smoothed.len(), values.len());
+    assert!((smoothed[0] - values[0]).abs() < f32::EPSILON);
+    assert!((smoothed[1] - values[1]).abs() < f32::EPSILON);
 }
 
 fn make_exponential_decay(num_samples: usize, sample_rate: f32, rt60_seconds: f32) -> Vec<f32> {

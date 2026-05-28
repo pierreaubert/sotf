@@ -387,6 +387,8 @@ impl Theme {
             accent: self.accent,
             title_color: self.text_primary,
             indicator_color: self.text_muted,
+            accent: self.accent,
+            accent_tint: self.accent,
         }
     }
 

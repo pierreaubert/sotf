@@ -494,13 +494,10 @@ struct ApiRequest {
 async fn run_sotf_api_server(
     settings: SotfApiSettings,
     state: Arc<ServerState>,
+    listener: TcpListener,
     mut cancel: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
     let auth_token = validate_sotf_api_token(&settings)?;
-    let bind_addr = format!("{}:{}", settings.bind_address, settings.port);
-    let listener = TcpListener::bind(&bind_addr)
-        .await
-        .map_err(|e| format!("bind {bind_addr}: {e}"))?;
 
     loop {
         tokio::select! {
@@ -1668,34 +1665,57 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
             let api_config = config.api.clone();
             let cancel = shutdown_rx.clone();
             let api_state = Arc::clone(&state);
-
-            eprintln!(
-                "SOTF API '{}' listening on {}:{}",
-                api_config.friendly_name, api_config.bind_address, api_config.port
-            );
-
-            handles.push(tokio::spawn(async move {
-                if let Err(e) = run_sotf_api_server(api_config, api_state, cancel).await {
-                    log::error!("[server] SOTF API server error: {}", e);
-                    eprintln!("SOTF API server error: {}", e);
+            let api_bind_addr = format!("{}:{}", api_config.bind_address, api_config.port);
+            if let Some(api_listener) = match TcpListener::bind(&api_bind_addr).await {
+                Ok(listener) => Some(listener),
+                Err(e) => {
+                    log::error!("[server] SOTF API bind error: {}", e);
+                    eprintln!("SOTF API bind error on {api_bind_addr}: {e}");
+                    let _ = shutdown_tx.send(true);
+                    None
                 }
-            }));
+            } {
+                eprintln!(
+                    "SOTF API '{}' listening on {}:{}",
+                    api_config.friendly_name, api_config.bind_address, api_config.port
+                );
 
-            let discovery_config = config.api.clone();
-            let discovery_cancel = shutdown_rx.clone();
-            let discovery_ip = get_local_ipv4();
-            eprintln!(
-                "SOTF API discovery advertising _sotf._tcp for {}:{}",
-                discovery_ip, discovery_config.port
-            );
-            handles.push(tokio::spawn(async move {
-                if let Err(e) =
-                    run_sotf_lan_discovery(discovery_config, discovery_ip, discovery_cancel).await
-                {
-                    log::warn!("[server] SOTF API discovery error: {}", e);
-                    eprintln!("SOTF API discovery warning: {}", e);
-                }
-            }));
+                let (api_discovery_tx, api_discovery_rx) = tokio::sync::watch::channel(false);
+                let global_cancel = shutdown_rx.clone();
+                let discovery_cancel_tx = api_discovery_tx.clone();
+                tokio::spawn(async move {
+                    let mut global_cancel = global_cancel;
+                    let _ = global_cancel.changed().await;
+                    let _ = discovery_cancel_tx.send(true);
+                });
+
+                let api_discovery_tx_on_exit = api_discovery_tx.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) =
+                        run_sotf_api_server(api_config, api_state, api_listener, cancel).await
+                    {
+                        log::error!("[server] SOTF API server error: {}", e);
+                        eprintln!("SOTF API server error: {}", e);
+                    }
+                    let _ = api_discovery_tx_on_exit.send(true);
+                }));
+
+                let discovery_config = config.api.clone();
+                let discovery_ip = get_local_ipv4();
+                eprintln!(
+                    "SOTF API discovery advertising _sotf._tcp for {}:{}",
+                    discovery_ip, discovery_config.port
+                );
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) =
+                        run_sotf_lan_discovery(discovery_config, discovery_ip, api_discovery_rx)
+                            .await
+                    {
+                        log::warn!("[server] SOTF API discovery error: {}", e);
+                        eprintln!("SOTF API discovery warning: {}", e);
+                    }
+                }));
+            }
         }
 
         eprintln!("Server mode running. Press Ctrl-C to stop.");

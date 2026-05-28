@@ -9,17 +9,20 @@
 
 // intentional-file: channel strip with embedded level meter geometry
 
-use super::common::{render_section_title, render_toggle};
+use super::common::{render_knob, render_section_title, render_toggle};
 use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_plugins::ChannelState;
+use sotf_plugins::param_specs::{find_by_key as pk, channel_mute_solo::PARAMS as CMS};
 
 /// State for rendering the Channel Mute/Solo plugin
 pub struct ChannelMuteSoloRenderState<'a> {
     pub enabled: bool,
+    pub dim_gain_db: f64,
+    pub fade_ms: f64,
     pub channel_states: &'a [ChannelState],
     pub is_editing: bool,
     pub selected_param: usize,
@@ -62,6 +65,34 @@ pub fn render_mute_solo_plugin(
             state.is_editing,
             theme,
         ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Dim Gain",
+            state.dim_gain_db,
+            pk(CMS, "dim_gain_db").min_f64(),
+            pk(CMS, "dim_gain_db").max_f64(),
+            "dB",
+            1,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Fade Time",
+            state.fade_ms,
+            pk(CMS, "fade_ms").min_f64(),
+            pk(CMS, "fade_ms").max_f64(),
+            "ms",
+            2,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
         .child(
             div()
                 .text_size(d.text_xs)
@@ -81,6 +112,7 @@ pub fn render_mute_solo_plugin(
                 let name = channel_names.get(i).copied().unwrap_or("Ch");
                 let is_muted = s.muted;
                 let is_soloed = s.soloed;
+                let is_dimmed = s.dimmed;
                 let is_active =
                     !is_muted && (!state.channel_states.iter().any(|st| st.soloed) || is_soloed);
 
@@ -183,6 +215,31 @@ pub fn render_mute_solo_plugin(
                                 theme.text_muted
                             })
                             .child("S"),
+                    )
+                    // Dim button
+                    .child(
+                        div()
+                            .w(px(24.0))
+                            .h(px(20.0))
+                            .rounded(d.r_sm)
+                            .bg(if is_dimmed {
+                                theme.accent
+                            } else {
+                                theme.background
+                            })
+                            .border_1()
+                            .border_color(if is_dimmed { theme.accent } else { theme.border })
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(d.text_xs)
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(if is_dimmed {
+                                theme.text_on_accent
+                            } else {
+                                theme.text_muted
+                            })
+                            .child("D"),
                     )
             }),
         ));

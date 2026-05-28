@@ -45,6 +45,10 @@ pub struct MbCompressorRenderState {
     pub bypass: bool,
     pub mix: f64,
     pub link_channels: bool,
+    pub per_band_lookahead_ms: f64,
+    pub ms_mode: bool,
+    pub sidechain_tilt_db: f64,
+    pub link_amount: f64,
     pub is_editing: bool,
     pub selected_param: usize,
     pub selected_band_idx: usize,
@@ -171,6 +175,75 @@ pub fn render_mb_compressor_plugin(
             theme,
         ));
     }
+
+    // Missing global params
+    global_col = global_col
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Preset",
+            state.crossover_preset as f64,
+            pk(MC, "crossover_preset").min_f64(),
+            pk(MC, "crossover_preset").max_f64(),
+            "",
+            1,
+            state.selected_param,
+            state.is_editing,
+            Some('p'),
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Lookahead",
+            state.per_band_lookahead_ms,
+            pk(MC, "per_band_lookahead_ms").min_f64(),
+            pk(MC, "per_band_lookahead_ms").max_f64(),
+            "ms",
+            13,
+            state.selected_param,
+            state.is_editing,
+            Some('l'),
+            theme,
+        ))
+        .child(render_toggle(
+            entity.clone(),
+            plugin_idx,
+            "M/S Mode",
+            state.ms_mode,
+            14,
+            state.selected_param,
+            state.is_editing,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "SC Tilt",
+            state.sidechain_tilt_db,
+            pk(MC, "sidechain_tilt_db").min_f64(),
+            pk(MC, "sidechain_tilt_db").max_f64(),
+            "dB",
+            15,
+            state.selected_param,
+            state.is_editing,
+            Some('t'),
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Link Amt",
+            state.link_amount * 100.0,
+            pk(MC, "link_amount").min_f64() * 100.0,
+            pk(MC, "link_amount").max_f64() * 100.0,
+            "%",
+            16,
+            state.selected_param,
+            state.is_editing,
+            Some('a'),
+            theme,
+        ));
 
     // === CENTER COLUMN: Band view ===
     // Band tabs

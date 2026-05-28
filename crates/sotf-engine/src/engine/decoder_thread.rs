@@ -19,10 +19,60 @@ const SPIN_MS_SLEEP_DECODER: u64 = 1;
 const SEND_OR_INTERRUPT_MAX_RETRIES: usize = 200;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 const HAL_RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
+/// Float PCM in CoreAudio can exceed 1.0 briefly, but values this large are
+/// unsafe and indicate a feedback loop, stale/corrupt shared memory, or a
+/// format/key mismatch. Drop the whole block instead of feeding a runaway path.
+#[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
+const HAL_INPUT_RUNAWAY_PEAK_LIMIT: f32 = 8.0;
 /// Maximum size of resample staging buffer to prevent unbounded growth.
 /// This limits memory usage while ensuring we can handle typical resampling
 /// ratios (e.g., 48kHz→44.1kHz produces ~940-frame blocks, so we allow ~4x that).
 const MAX_RESAMPLE_STAGING_SAMPLES: usize = 1024 * 8 * 4; // 1024 frames * 8 channels * 4x margin
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
+struct HalInputGuardTrip {
+    peak: f32,
+    invalid_samples: usize,
+    over_limit_samples: usize,
+}
+
+#[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
+fn inspect_hal_input_block(samples: &[f32]) -> Option<HalInputGuardTrip> {
+    let mut peak = 0.0f32;
+    let mut invalid_samples = 0usize;
+    let mut over_limit_samples = 0usize;
+
+    for &sample in samples {
+        if !sample.is_finite() {
+            invalid_samples += 1;
+            continue;
+        }
+
+        let abs_sample = sample.abs();
+        peak = peak.max(abs_sample);
+        if abs_sample > HAL_INPUT_RUNAWAY_PEAK_LIMIT {
+            over_limit_samples += 1;
+        }
+    }
+
+    if invalid_samples > 0 || over_limit_samples > 0 {
+        Some(HalInputGuardTrip {
+            peak,
+            invalid_samples,
+            over_limit_samples,
+        })
+    } else {
+        None
+    }
+}
+
+#[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
+fn guard_hal_input_block(samples: &mut [f32]) -> Option<HalInputGuardTrip> {
+    let trip = inspect_hal_input_block(samples)?;
+    samples.fill(0.0);
+    Some(trip)
+}
 
 /// Action returned by decode loop
 enum DecoderLoopAction {
@@ -263,6 +313,8 @@ struct DecoderState {
     #[cfg(all(target_os = "macos", feature = "hal"))]
     last_hal_reconnect_attempt: Option<Instant>,
     #[cfg(all(target_os = "macos", feature = "hal"))]
+    last_hal_cipher_reload_attempt: Option<Instant>,
+    #[cfg(all(target_os = "macos", feature = "hal"))]
     last_hal_sample_rate: Option<u32>,
     #[cfg(all(target_os = "macos", feature = "hal"))]
     last_hal_channels: Option<usize>,
@@ -299,6 +351,8 @@ impl DecoderState {
             hal_reader: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             last_hal_reconnect_attempt: None,
+            #[cfg(all(target_os = "macos", feature = "hal"))]
+            last_hal_cipher_reload_attempt: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             last_hal_sample_rate: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -920,6 +974,7 @@ impl DecoderState {
         {
             self.hal_reader = None;
             self.last_hal_reconnect_attempt = None;
+            self.last_hal_cipher_reload_attempt = None;
         }
     }
 
@@ -947,6 +1002,36 @@ impl DecoderState {
             None => {
                 log::debug!("[Decoder Thread] HAL input reader still unavailable");
                 self.hal_reader = None;
+            }
+        }
+    }
+
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn reload_hal_cipher_if_needed(&mut self) -> bool {
+        let Some(reader) = self.hal_reader.as_mut() else {
+            return false;
+        };
+        if !reader.needs_cipher_reload() {
+            return true;
+        }
+
+        let now = Instant::now();
+        if self
+            .last_hal_cipher_reload_attempt
+            .is_some_and(|last| now.duration_since(last) < HAL_RECONNECT_INTERVAL)
+        {
+            return false;
+        }
+        self.last_hal_cipher_reload_attempt = Some(now);
+
+        match reader.reload_cipher() {
+            Ok(()) => {
+                log::info!("[Decoder Thread] Reloaded HAL input cipher after key change");
+                true
+            }
+            Err(e) => {
+                log::warn!("[Decoder Thread] HAL input cipher reload failed: {}", e);
+                false
             }
         }
     }
@@ -994,6 +1079,11 @@ impl DecoderState {
         self.try_reconnect_hal_reader(false);
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
+        if self.hal_reader.is_some() && !self.reload_hal_cipher_if_needed() {
+            return Ok((false, None));
+        }
+
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         if let Some(reader) = &mut self.hal_reader {
             // Check if we have enough frames available
             if reader.available_read_frames() < frame_size {
@@ -1014,6 +1104,23 @@ impl DecoderState {
 
             if samples_read < buffer_len {
                 self.hal_input_buffer[samples_read..].fill(0.0);
+            }
+
+            if let Some(trip) = guard_hal_input_block(&mut self.hal_input_buffer[..buffer_len]) {
+                static HAL_INPUT_GUARD_LOG_COUNTER: std::sync::atomic::AtomicU64 =
+                    std::sync::atomic::AtomicU64::new(0);
+                let guard_count = HAL_INPUT_GUARD_LOG_COUNTER
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    + 1;
+                if guard_count == 1 || guard_count.is_multiple_of(100) {
+                    log::warn!(
+                        "[Decoder Thread] HAL input guard dropped runaway/corrupt block: peak={:.3}, invalid_samples={}, over_limit_samples={}, trip_count={}",
+                        trip.peak,
+                        trip.invalid_samples,
+                        trip.over_limit_samples,
+                        guard_count
+                    );
+                }
             }
 
             // Check if resampling is needed
@@ -1631,6 +1738,27 @@ mod tests {
     }
 
     #[test]
+    fn hal_input_reloads_stale_cipher_before_reading() {
+        let source = include_str!("decoder_thread.rs");
+        let reload_call = source
+            .find("!self.reload_hal_cipher_if_needed()")
+            .expect("HAL input path should refresh stale encryption ciphers");
+        let read_call = source
+            .find("let frames_read = reader.read(&mut self.hal_input_buffer)")
+            .expect("HAL input path should read from the shared-memory reader");
+
+        assert!(
+            source.contains("reader.needs_cipher_reload()")
+                && source.contains("reader.reload_cipher()"),
+            "decoder should detect and reload stale HAL input ciphers"
+        );
+        assert!(
+            reload_call < read_call,
+            "decoder must reload a stale cipher before reading, otherwise key rotation yields silence"
+        );
+    }
+
+    #[test]
     fn sample_queue_consume_advances_cursor_without_front_memmove() {
         let mut queue = SampleQueue::new();
         queue.extend_from_slice(&[0.0, 1.0, 2.0, 3.0]);
@@ -1657,6 +1785,40 @@ mod tests {
             frames_to_sample_count(frame_size + 1, channels, buffer_len),
             buffer_len
         );
+    }
+
+    #[test]
+    fn hal_input_guard_allows_normal_float_pcm() {
+        let mut samples = vec![-1.25, -0.5, 0.0, 0.5, 1.25, 2.0];
+
+        let trip = guard_hal_input_block(&mut samples);
+
+        assert_eq!(trip, None);
+        assert_eq!(samples, vec![-1.25, -0.5, 0.0, 0.5, 1.25, 2.0]);
+    }
+
+    #[test]
+    fn hal_input_guard_silences_impossible_peak() {
+        let mut samples = vec![0.1, -0.2, 36.4, 0.3];
+
+        let trip = guard_hal_input_block(&mut samples).expect("guard should trip");
+
+        assert_eq!(trip.invalid_samples, 0);
+        assert_eq!(trip.over_limit_samples, 1);
+        assert_eq!(trip.peak, 36.4);
+        assert!(samples.iter().all(|&sample| sample == 0.0));
+    }
+
+    #[test]
+    fn hal_input_guard_silences_non_finite_samples() {
+        let mut samples = vec![0.1, f32::NAN, f32::INFINITY, -0.2];
+
+        let trip = guard_hal_input_block(&mut samples).expect("guard should trip");
+
+        assert_eq!(trip.invalid_samples, 2);
+        assert_eq!(trip.over_limit_samples, 0);
+        assert_eq!(trip.peak, 0.2);
+        assert!(samples.iter().all(|&sample| sample == 0.0));
     }
 
     #[test]
