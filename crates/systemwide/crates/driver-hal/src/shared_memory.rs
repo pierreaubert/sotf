@@ -34,7 +34,7 @@
 
 use std::fs::OpenOptions;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering, fence};
 
 use memmap2::MmapMut;
@@ -413,6 +413,7 @@ fn u64_to_fingerprint(value: u64) -> [u8; 8] {
 /// Shared audio buffer for communication with Swift HAL driver
 pub struct SharedAudioBuffer {
     mmap: MmapMut,
+    path: PathBuf,
     audio_offset: usize,
     audio_capacity: usize,
     /// Maximum audio capacity based on original mmap size (for validation)
@@ -601,6 +602,7 @@ impl SharedAudioBuffer {
         let mmap = unsafe { MmapMut::map_mut(&file)? };
         let mut buffer = Self {
             mmap,
+            path: path.to_path_buf(),
             audio_offset,
             audio_capacity,
             max_audio_capacity,
@@ -620,6 +622,11 @@ impl SharedAudioBuffer {
         }
 
         Ok(buffer)
+    }
+
+    /// Filesystem path backing this shared memory mapping.
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// Create or open the default per-user shared memory file.
@@ -650,6 +657,7 @@ impl SharedAudioBuffer {
 
     /// Open an existing shared memory region created by the Swift HAL driver
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        let path = path.as_ref();
         let file = OpenOptions::new().read(true).write(true).open(path)?;
 
         // SAFETY: see `create_or_open_with_max_geometry`. The file is sized
@@ -736,6 +744,7 @@ impl SharedAudioBuffer {
 
         Ok(Self {
             mmap,
+            path: path.to_path_buf(),
             audio_offset,
             audio_capacity,
             max_audio_capacity,

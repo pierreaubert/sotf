@@ -392,6 +392,11 @@ Key observations:
   in another macOS app.
 - In systemwide mode, `engine_ready` in shared memory gates whether the HAL side
   should feed audio to the daemon.
+- While `engine_ready=true`, the daemon-owned `HalDriver` keeps
+  `daemon_heartbeat_ms` fresh independently of audio reads. This avoids an
+  idle-start deadlock where HAL accepts a later playback client but refuses to
+  write frames because the daemon heartbeat expired before the first audio
+  arrived.
 - Output device safety is enforced by rejecting virtual/loopback device names
   for the physical output side.
 
@@ -676,6 +681,8 @@ Recommended rule:
   constraints.
 - Shared memory owns only transport state: ring positions, format handshake
   fields, readiness flags, encryption fingerprint, and heartbeat.
+- The daemon-side HAL adapter owns heartbeat publication. Audio reads may also
+  refresh the heartbeat, but liveness must not depend on audio already flowing.
 
 ### 6. Replace Polling-Oriented UI With Snapshot Plus Events
 
