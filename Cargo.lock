@@ -3891,6 +3891,7 @@ version = "0.6.0"
 dependencies = [
  "gpui",
  "gpui-design",
+ "gpui-ios",
  "gpui-ui-kit",
  "gpui_linux",
  "gpui_macos",
@@ -10530,6 +10531,7 @@ dependencies = [
  "sotf-mpd",
  "sotf-player",
  "sotf-plugins",
+ "sotf-tls",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",
@@ -10542,6 +10544,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-rustls 0.26.4",
  "unicode-normalization",
  "uuid",
  "walkdir",

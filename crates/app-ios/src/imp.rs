@@ -33,9 +33,7 @@ unsafe extern "C" {
 static GLOBAL_PLAYER: OnceLock<Arc<parking_lot::Mutex<Player>>> = OnceLock::new();
 
 /// Remote control commands that require AppState/Queue access. The GPUI event
-/// loop is expected to drain this queue on each tick (see TODO in
-/// `pending_remote_commands`). Until that drain is wired up, lock-screen
-/// next/prev events are recorded here but do not yet move the queue.
+/// loop drains this queue on each tick through `sotf_ios_pop_remote_command`.
 #[derive(Debug, Clone)]
 pub enum RemoteCommand {
     NextTrack,
@@ -53,11 +51,6 @@ fn pending_queue() -> &'static parking_lot::Mutex<VecDeque<RemoteCommand>> {
 }
 
 /// Push a remote command for the GPUI loop to drain.
-///
-/// TODO(cross-crate-plumbing): the GPUI side (sotf-gpui / AppState) needs to
-/// call `drain_pending_remote_commands()` on each tick and act on the
-/// commands (e.g. `QueueController::next()` / `::prev()` / library import).
-/// That drain consumer cannot be added from this crate alone.
 fn push_remote_command(cmd: RemoteCommand) {
     pending_queue().lock().push_back(cmd);
 }
@@ -66,6 +59,27 @@ fn push_remote_command(cmd: RemoteCommand) {
 #[allow(dead_code)]
 pub fn drain_pending_remote_commands() -> Vec<RemoteCommand> {
     pending_queue().lock().drain(..).collect()
+}
+
+/// Pop one queued command for the iOS GPUI tick.
+///
+/// Return codes are intentionally scalar so `app-gpui` can consume remote
+/// commands without depending on this crate and creating a cycle:
+/// 0 = none, 1 = next track, 2 = previous track, 3 = imported files noticed.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_pop_remote_command() -> i32 {
+    ffi_guard(|| match pending_queue().lock().pop_front() {
+        None => 0,
+        Some(RemoteCommand::NextTrack) => 1,
+        Some(RemoteCommand::PrevTrack) => 2,
+        Some(RemoteCommand::ImportFiles(paths)) => {
+            log::info!(
+                "[iOS] Imported files drain observed {} paths; full library import pending",
+                paths.len()
+            );
+            3
+        }
+    })
 }
 
 /// FFI panic guard. Wrap every `extern "C"` body in this so a Rust panic does
@@ -389,13 +403,12 @@ pub extern "C" fn sotf_ios_remote_toggle_play_pause() {
 ///
 /// Implementation note: track navigation lives on the AppState's
 /// `QueueController`, not on the engine-level `Player`. We therefore push a
-/// `RemoteCommand::NextTrack` onto the pending queue, which the GPUI tick
-/// must drain (see TODO on `drain_pending_remote_commands`). Until the drain
-/// is wired, the command will accumulate but will not advance the queue.
+/// `RemoteCommand::NextTrack` onto the pending queue for the GPUI tick to
+/// drain on the UI thread.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_remote_next_track() {
     ffi_guard(|| {
-        log::info!("[iOS] Remote: next track (enqueued for GPUI drain)");
+        log::info!("[iOS] Remote: next track");
         push_remote_command(RemoteCommand::NextTrack);
     })
 }
@@ -404,7 +417,7 @@ pub extern "C" fn sotf_ios_remote_next_track() {
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_remote_prev_track() {
     ffi_guard(|| {
-        log::info!("[iOS] Remote: prev track (enqueued for GPUI drain)");
+        log::info!("[iOS] Remote: prev track");
         push_remote_command(RemoteCommand::PrevTrack);
     })
 }

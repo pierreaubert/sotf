@@ -30,9 +30,11 @@ math-optimisation = { workspace = true }
 autoeq = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
-sotf-mpd = { workspace = true }
+sotf-mpd = { workspace = true, features = ["tls"] }
 sotf-dlna = { workspace = true }
 sotf-federation = { workspace = true }
+sotf-tls = { workspace = true }
+tokio-rustls = "0.26"
 
 # math
 ndarray = { workspace = true }
