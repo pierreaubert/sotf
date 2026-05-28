@@ -2005,27 +2005,29 @@ fn load_wav_mono(path: &Path) -> Result<Vec<f32>, String> {
 /// Apply octave smoothing to frequency response data (f64 version)
 ///
 /// Frequencies must be sorted in ascending order (as from FFT or log-spaced grids).
+/// If the input slices are mismatched, only paired frequency/value samples are
+/// smoothed and returned.
 /// Uses a prefix sum with two-pointer sliding window for O(n) complexity.
 pub fn smooth_response_f64(frequencies: &[f64], values: &[f64], octaves: f64) -> Vec<f64> {
     if octaves <= 0.0 || frequencies.is_empty() || values.is_empty() {
         return values.to_vec();
     }
 
-    let n = values.len();
+    let paired_len = frequencies.len().min(values.len());
 
     // Prefix sum for O(1) range averages
-    let mut prefix = Vec::with_capacity(n + 1);
+    let mut prefix = Vec::with_capacity(paired_len + 1);
     prefix.push(0.0);
-    for &v in values {
+    for &v in &values[..paired_len] {
         prefix.push(prefix.last().unwrap() + v);
     }
 
     let ratio = 2.0_f64.powf(octaves / 2.0);
-    let mut smoothed = Vec::with_capacity(n);
+    let mut smoothed = Vec::with_capacity(paired_len);
     let mut lo = 0usize;
     let mut hi = 0usize;
 
-    for (i, &center_freq) in frequencies.iter().enumerate() {
+    for (i, &center_freq) in frequencies[..paired_len].iter().enumerate() {
         if center_freq <= 0.0 {
             smoothed.push(values[i]);
             continue;
@@ -2035,11 +2037,11 @@ pub fn smooth_response_f64(frequencies: &[f64], values: &[f64], octaves: f64) ->
         let high_freq = center_freq * ratio;
 
         // Advance lo past frequencies below the window
-        while lo < n && frequencies[lo] < low_freq {
+        while lo < paired_len && frequencies[lo] < low_freq {
             lo += 1;
         }
         // Advance hi to include frequencies within the window
-        while hi < n && frequencies[hi] <= high_freq {
+        while hi < paired_len && frequencies[hi] <= high_freq {
             hi += 1;
         }
 
@@ -2057,27 +2059,29 @@ pub fn smooth_response_f64(frequencies: &[f64], values: &[f64], octaves: f64) ->
 /// Apply octave smoothing to frequency response data (f32 version)
 ///
 /// Frequencies must be sorted in ascending order (as from FFT or log-spaced grids).
+/// If the input slices are mismatched, only paired frequency/value samples are
+/// smoothed and returned.
 /// Uses a prefix sum with two-pointer sliding window for O(n) complexity.
 pub fn smooth_response_f32(frequencies: &[f32], values: &[f32], octaves: f32) -> Vec<f32> {
     if octaves <= 0.0 || frequencies.is_empty() || values.is_empty() {
         return values.to_vec();
     }
 
-    let n = values.len();
+    let paired_len = frequencies.len().min(values.len());
 
     // Prefix sum for O(1) range averages (accumulate in f64 to avoid precision loss)
-    let mut prefix = Vec::with_capacity(n + 1);
+    let mut prefix = Vec::with_capacity(paired_len + 1);
     prefix.push(0.0_f64);
-    for &v in values {
+    for &v in &values[..paired_len] {
         prefix.push(prefix.last().unwrap() + v as f64);
     }
 
     let ratio = 2.0_f32.powf(octaves / 2.0);
-    let mut smoothed = Vec::with_capacity(n);
+    let mut smoothed = Vec::with_capacity(paired_len);
     let mut lo = 0usize;
     let mut hi = 0usize;
 
-    for (i, &center_freq) in frequencies.iter().enumerate() {
+    for (i, &center_freq) in frequencies[..paired_len].iter().enumerate() {
         if center_freq <= 0.0 {
             smoothed.push(values[i]);
             continue;
@@ -2087,11 +2091,11 @@ pub fn smooth_response_f32(frequencies: &[f32], values: &[f32], octaves: f32) ->
         let high_freq = center_freq * ratio;
 
         // Advance lo past frequencies below the window
-        while lo < n && frequencies[lo] < low_freq {
+        while lo < paired_len && frequencies[lo] < low_freq {
             lo += 1;
         }
         // Advance hi to include frequencies within the window
-        while hi < n && frequencies[hi] <= high_freq {
+        while hi < paired_len && frequencies[hi] <= high_freq {
             hi += 1;
         }
 
