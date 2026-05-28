@@ -63,6 +63,18 @@ cargo run --bin sotf-daemon --features hal --release
 #   /tmp/autoeq_audio.sock       (legacy, SOTF_LEGACY_SOCKET=1)
 ```
 
+### Local Lab
+
+Run an isolated daemon without installing the HAL driver:
+
+```bash
+just systemwide-lab
+```
+
+This starts `sotf-daemon` with `SOTF_SYSTEMWIDE_DRIVER=lab` and an isolated
+runtime directory. Override `SOTF_SYSTEMWIDE_RUNTIME_DIR` to choose where
+`daemon.sock` and `audio.shm` are created.
+
 ## IPC protocol
 
 JSON-over-Unix-socket, one object per line. Example:

@@ -905,6 +905,11 @@ values.
 
 Current lab/runtime hooks:
 
+`just systemwide-lab` starts an isolated daemon with these defaults:
+`SOTF_SYSTEMWIDE_RUNTIME_DIR=/tmp/sotf-systemwide-lab-$USER` and
+`SOTF_SYSTEMWIDE_DRIVER=lab`. Override either variable to point tests at a
+specific runtime directory or driver mode.
+
 | Variable | Effect |
 | --- | --- |
 | `SOTF_SYSTEMWIDE_RUNTIME_DIR` | Makes daemon, toolbar, and HAL code use one isolated directory. The daemon socket becomes `daemon.sock`; shared memory becomes `audio.shm`. |
