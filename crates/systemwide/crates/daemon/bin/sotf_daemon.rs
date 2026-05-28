@@ -15,9 +15,11 @@
 
 mod driver_manager;
 mod lock_order;
+mod plugin_artifact;
 mod security;
 
 use driver_manager::{DriverManager, get_driver_status};
+use plugin_artifact::{PluginArtifactPlan, plan_plugin_artifact};
 use security::{
     KeyManager, PeerClass, classify_peer, current_uid as security_current_uid,
     ensure_secure_socket_dir, get_secure_socket_path, peer_allows_command, verify_peer_credentials,
@@ -92,6 +94,8 @@ enum Command {
         #[serde(default = "default_output_channels")]
         output_channels: usize,
     },
+    #[serde(rename = "load_plugin_artifact")]
+    LoadPluginArtifact { artifact: Value },
     #[serde(rename = "set_input_channels")]
     SetInputChannels { channels: usize },
     #[serde(rename = "set_output_channels")]
@@ -168,6 +172,7 @@ impl Command {
             Command::ListDevices => "list_devices",
             Command::SetDevice { .. } => "set_device",
             Command::LoadPlugins { .. } => "load_plugins",
+            Command::LoadPluginArtifact { .. } => "load_plugin_artifact",
             Command::SetInputChannels { .. } => "set_input_channels",
             Command::SetOutputChannels { .. } => "set_output_channels",
             Command::SetPipelineChannels { .. } => "set_pipeline_channels",
@@ -845,6 +850,9 @@ impl AudioDaemon {
                 self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
                     .await
             }
+            Command::LoadPluginArtifact { artifact } => {
+                self.handle_load_plugin_artifact(artifact).await
+            }
             Command::SetInputChannels { channels } => {
                 self.handle_set_pipeline_channels(Some(channels), None)
                     .await
@@ -1387,6 +1395,24 @@ impl AudioDaemon {
             driver_sample_rate,
             driver_buffer_frames,
         )
+    }
+
+    async fn handle_load_plugin_artifact(&self, artifact: Value) -> Response {
+        match plan_plugin_artifact(artifact) {
+            Ok(PluginArtifactPlan::RackChain { plugins }) => {
+                let (input_channels, output_channels) = {
+                    let state = self.system_state.lock();
+                    (state.input_channels(), state.output_channels())
+                };
+                self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
+                    .await
+            }
+            Ok(PluginArtifactPlan::UnsupportedGraph { reason }) => Response::err(format!(
+                "Unsupported graph plugin artifact: {}. Use a graph-aware loader instead of flattening it into the rack.",
+                reason
+            )),
+            Err(e) => Response::err(format!("Invalid plugin artifact: {}", e)),
+        }
     }
 
     async fn handle_set_pipeline_channels(
@@ -2792,6 +2818,10 @@ mod ipc_safety_tests {
                 .unwrap();
         assert_eq!(cmd.name(), "set_pipeline_channels");
 
+        let cmd: Command =
+            serde_json::from_str(r#"{"command":"load_plugin_artifact","artifact":[]}"#).unwrap();
+        assert_eq!(cmd.name(), "load_plugin_artifact");
+
         let cmd: Command = serde_json::from_str(r#"{"command":"shutdown"}"#).unwrap();
         assert_eq!(cmd.name(), "shutdown");
     }
@@ -3125,6 +3155,41 @@ mod ipc_safety_tests {
                 .as_deref()
                 .is_some_and(|e| e.contains("requires input_channels or output_channels"))
         );
+    }
+
+    #[test]
+    fn testkit_load_plugin_artifact_accepts_rack_chain_without_ui_flattening() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(
+            &daemon,
+            r#"{"command":"load_plugin_artifact","artifact":{"plugins":[{"plugin_type":"eq","parameters":{}}]}}"#,
+        );
+
+        assert_eq!(response["success"], true);
+        let state = daemon.system_state.lock();
+        assert_eq!(state.user_plugins().len(), 1);
+        assert_eq!(state.user_plugins()[0].plugin_type, "eq");
+    }
+
+    #[test]
+    fn testkit_load_plugin_artifact_rejects_graph_shape_instead_of_flattening() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(
+            &daemon,
+            r#"{"command":"load_plugin_artifact","artifact":{"global_plugins":[{"plugin_type":"eq","parameters":{}}],"channels":{"L":{"plugins":[{"plugin_type":"gain","parameters":{}}]}}}}"#,
+        );
+
+        assert_eq!(response["success"], false);
+        assert!(
+            response["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("Unsupported graph plugin artifact"))
+        );
+        assert!(daemon.system_state.lock().user_plugins().is_empty());
     }
 
     #[test]

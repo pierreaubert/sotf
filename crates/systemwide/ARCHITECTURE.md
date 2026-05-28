@@ -345,6 +345,10 @@ Implemented first controls:
 - Snapshot diagnostics currently flag important contradictions such as
   `Playing` with no input frames, no output callbacks, no resolved output
   device, inactive HAL stream, or unsafe virtual/loopback output devices.
+- The daemon also exposes patch-style channel commands
+  (`set_input_channels`, `set_output_channels`, `set_pipeline_channels`) so
+  clients no longer need to replay the plugin list or the opposite channel
+  count when changing one field.
 
 ## Use Case: User Starts The Toolbar
 
@@ -722,6 +726,14 @@ Recommended rule:
 - Editing a graph should happen through graph-aware operations; editing it as a
   flattened rack should require an explicit destructive conversion.
 
+Current implementation:
+
+- `load_plugin_artifact` accepts rack-compatible artifacts: a top-level plugin
+  array, `{ "plugins": [...] }`, or `{ "global_plugins": [...] }`.
+- Artifacts with graph topology keys, routes, buses, nodes, edges, or
+  per-channel `channels` are rejected as graph artifacts instead of flattened
+  into the rack. This preserves topology until a graph-aware loader exists.
+
 ### 5. Make Shared Memory A Transport, Not A State Store
 
 `SharedAudioBuffer` is the correct owner of the cross-process memory protocol,
@@ -841,6 +853,10 @@ Current branch coverage starts the lower middle of that pyramid:
 - Reducer tests prove safe output-device adoption, virtual output-device
   rejection, and idle reconfiguration happen through `PipelineSupervisor`
   methods without committing an applied generation.
+- Patch-intent tests prove channel changes preserve daemon-owned plugin and
+  channel state instead of replaying stale UI payloads.
+- Artifact-planning tests prove rack-compatible artifacts load and graph-shaped
+  artifacts are rejected without flattening.
 
 ### Scenario Matrix
 
@@ -932,10 +948,12 @@ enumeration or output-device selection.
 1. Add read-only `get_snapshot` and `dump_state` commands around the current
    implementation. Done for the daemon JSON IPC path.
 2. Introduce `SystemwideState` plus reducer-style methods for every desired
-   mutation; remove direct writes to `PipelineSupervisor.desired`.
+   mutation; remove direct writes to `PipelineSupervisor.desired`. The daemon
+   now owns a `SystemwideState` wrapper around the pipeline supervisor.
 3. Convert IPC handlers to typed intents dispatched to a `SystemwideController`.
 4. Extract plugin-chain/artifact planning into a pure module with unit tests,
-   including explicit "rack chain" versus "graph artifact" outcomes.
+   including explicit "rack chain" versus "graph artifact" outcomes. The first
+   `plugin_artifact` planner is in place for `load_plugin_artifact`.
 5. Make metering and transport faults first-class snapshot fields rather than
    inferred UI labels.
 6. Add `FakeAudioDriver`, HAL simulator, temp socket/shared-memory path
