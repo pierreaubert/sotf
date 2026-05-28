@@ -434,10 +434,18 @@ impl PlayerView {
                 state.app.remote.discovery_error.clone(),
                 state.app.remote.manual_server_name.clone(),
                 state.app.remote.manual_api_base_url.clone(),
+                state.app.remote.server_probe_statuses.clone(),
             )
         };
-        let (store, discovered_count, discovery_running, discovery_error, manual_name, manual_url) =
-            remote;
+        let (
+            store,
+            discovered_count,
+            discovery_running,
+            discovery_error,
+            manual_name,
+            manual_url,
+            probe_statuses,
+        ) = remote;
         let selected_id = store.selected_server_id.clone();
         let server_count = store.servers.len();
         let state_for_name = self.state.clone();
@@ -579,9 +587,11 @@ impl PlayerView {
         } else {
             for server in store.servers {
                 let is_selected = selected_id.as_deref() == Some(server.id.as_str());
+                let probe_status = probe_statuses.get(&server.id).cloned();
                 section = section.child(self.render_remote_sotf_server_row(
                     server,
                     is_selected,
+                    probe_status,
                     theme,
                     d,
                     cx,
@@ -596,12 +606,14 @@ impl PlayerView {
         &self,
         server: sotf_audio_player::SotfRemoteServer,
         is_selected: bool,
+        probe_status: Option<crate::app::state::app::RemoteServerProbeStatus>,
         theme: &crate::app::theme::Theme,
         d: &Ds,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let server_id_for_select = server.id.clone();
         let server_id_for_remove = server.id.clone();
+        let server_id_for_test = server.id.clone();
         let address = server
             .address
             .clone()
@@ -613,6 +625,18 @@ impl PlayerView {
         );
         let auth = server.auth.clone();
         let friendly_name = server.friendly_name.clone();
+        let (status_label, status_color) = match &probe_status {
+            Some(crate::app::state::app::RemoteServerProbeStatus::Testing) => {
+                ("testing".to_string(), theme.warning)
+            }
+            Some(crate::app::state::app::RemoteServerProbeStatus::Reachable { .. }) => {
+                (probe_status.as_ref().unwrap().label(), theme.success)
+            }
+            Some(crate::app::state::app::RemoteServerProbeStatus::Failed(_)) => {
+                (probe_status.as_ref().unwrap().label(), theme.error)
+            }
+            None => ("untested".to_string(), theme.text_muted),
+        };
 
         div()
             .flex()
@@ -668,7 +692,31 @@ impl PlayerView {
                             .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .child(format!("Auth: {auth}")),
+                    )
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(status_color)
+                            .child(format!("Status: {status_label}")),
                     ),
+            )
+            .child(
+                Button::new(
+                    SharedString::from(format!("test-sotf-remote-{server_id_for_test}")),
+                    "Test",
+                )
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(
+                    move |view, _: &ClickEvent, _window, cx| {
+                        let server_id = server_id_for_test.clone();
+                        view.state.update(cx, |state, _cx| {
+                            state.app.start_remote_server_probe(&server_id);
+                        });
+                        cx.notify();
+                    },
+                )),
             )
             .child(
                 Button::new(

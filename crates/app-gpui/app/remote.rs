@@ -4,6 +4,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use crate::app::App;
+use crate::app::state::app::RemoteServerProbeStatus;
 use crate::app::types::ToastMessage;
 
 const DEFAULT_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -77,6 +78,81 @@ impl App {
         }
     }
 
+    pub fn start_remote_server_probe(&mut self, server_id: &str) -> bool {
+        if self.remote.server_probe_receiver.is_some() {
+            self.ui_state.toast_message = Some(ToastMessage::warning(
+                "A SOTF server test is already running.",
+            ));
+            return false;
+        }
+
+        let Some(server) = self
+            .remote
+            .server_store
+            .servers
+            .iter()
+            .find(|server| server.id == server_id)
+            .cloned()
+        else {
+            return false;
+        };
+
+        let server_id = server.id.clone();
+        let api_base_url = server.api_base_url.clone();
+        let (tx, rx) = mpsc::channel();
+        self.remote
+            .server_probe_statuses
+            .insert(server_id.clone(), RemoteServerProbeStatus::Testing);
+        self.remote.server_probe_receiver = Some(rx);
+
+        std::thread::Builder::new()
+            .name("sotf-remote-probe".into())
+            .spawn(move || {
+                let status = probe_remote_server_public(&api_base_url);
+                let _ = tx.send((server_id, status));
+            })
+            .expect("spawn SOTF remote probe thread");
+
+        true
+    }
+
+    pub fn update_remote_server_probe(&mut self) {
+        let Some(rx) = self.remote.server_probe_receiver.as_ref() else {
+            return;
+        };
+
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => (
+                String::new(),
+                RemoteServerProbeStatus::Failed("SOTF server test worker disconnected".to_string()),
+            ),
+        };
+
+        self.remote.server_probe_receiver = None;
+        let (server_id, status) = result;
+        if !server_id.is_empty() {
+            self.remote
+                .server_probe_statuses
+                .insert(server_id, status.clone());
+        }
+
+        match status {
+            RemoteServerProbeStatus::Reachable { friendly_name, .. } => {
+                self.ui_state.toast_message = Some(ToastMessage::success(format!(
+                    "{friendly_name} is reachable."
+                )));
+            }
+            RemoteServerProbeStatus::Failed(err) => {
+                self.ui_state.toast_message = Some(ToastMessage::warning(format!(
+                    "SOTF server test failed: {err}"
+                )));
+            }
+            RemoteServerProbeStatus::Testing => {}
+        }
+    }
+
     pub fn add_manual_remote_server(
         &mut self,
         friendly_name: impl Into<String>,
@@ -121,6 +197,7 @@ impl App {
         if removed.is_none() {
             return false;
         }
+        self.remote.server_probe_statuses.remove(server_id);
         self.save_remote_server_store("remove SOTF server")
     }
 
@@ -133,5 +210,34 @@ impl App {
                 false
             }
         }
+    }
+}
+
+fn probe_remote_server_public(api_base_url: &str) -> RemoteServerProbeStatus {
+    let result = tokio::runtime::Runtime::new()
+        .map_err(|err| format!("Failed to start probe runtime: {err}"))
+        .and_then(|rt| {
+            rt.block_on(async move {
+                let client = sotf_audio_player::sotf_api_client::SotfApiClient::new(
+                    api_base_url,
+                    "public-probe",
+                )
+                .map_err(|err| err.to_string())?;
+                let health = client.health().await.map_err(|err| err.to_string())?;
+                if !health.ok {
+                    return Err("health endpoint reported not-ok".to_string());
+                }
+                let discovery = client.discovery().await.map_err(|err| err.to_string())?;
+                Ok(RemoteServerProbeStatus::Reachable {
+                    friendly_name: discovery.friendly_name,
+                    version: discovery.version,
+                    auth_required: discovery.auth_required,
+                })
+            })
+        });
+
+    match result {
+        Ok(status) => status,
+        Err(err) => RemoteServerProbeStatus::Failed(err),
     }
 }

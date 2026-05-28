@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
 
 use sotf_audio_player::lan_discovery::DiscoveredSotfApiServer;
-use sotf_audio_player_gpui::app::state::app::RemoteState;
+use sotf_audio_player_gpui::app::state::app::{RemoteServerProbeStatus, RemoteState};
 
 fn discovered_server() -> DiscoveredSotfApiServer {
     DiscoveredSotfApiServer {
@@ -76,4 +76,22 @@ fn manual_input_add_clears_fields_and_keeps_json_non_secret() {
     assert!(json.contains("Desk"));
     assert!(!json.contains("auth_token"));
     assert!(!json.contains("bearer-token"));
+}
+
+#[test]
+fn remote_probe_status_labels_are_user_readable() {
+    assert_eq!(RemoteServerProbeStatus::Testing.label(), "testing");
+    assert_eq!(
+        RemoteServerProbeStatus::Reachable {
+            friendly_name: "Desk".to_string(),
+            version: "0.6.7".to_string(),
+            auth_required: true,
+        }
+        .label(),
+        "reachable, auth required (0.6.7)"
+    );
+    assert_eq!(
+        RemoteServerProbeStatus::Failed("connection refused".to_string()).label(),
+        "failed: connection refused"
+    );
 }
