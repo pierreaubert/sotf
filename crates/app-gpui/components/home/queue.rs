@@ -8,8 +8,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui::{InteractiveElement, Styled};
 use gpui_ui_kit::{
-    Button, CollapseDirection, Heading, PaneDivider, PaneDividerTheme, StackSpacing, Text,
-    TextSize, VStack,
+    Accordion, AccordionItem, AccordionMode, Button, CollapseDirection, PaneDivider,
+    PaneDividerTheme, StackSpacing, Text, TextSize, VStack,
 };
 
 use crate::app::types::{MeterDisplayMode, Screen};
@@ -28,8 +28,6 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
 
-        // Use ratios for panel widths (layout will compute actual sizes)
-        let queue_list_ratio = layout.queue_list_ratio;
         let meters_ratio = layout.meters_panel_ratio;
         let meter_display_mode = state.app.level_meters.display_mode;
         let window_height = state.app.ui_state.window_height;
@@ -53,7 +51,6 @@ impl PlayerView {
         // (no toggle switch needed). The queue panel height depends on the layout ratio.
         let meters_panel_tall = window_height > 700.0;
 
-        let queue_collapsed = queue_list_ratio < 0.05;
         // Hide meters when: explicitly collapsed, OR rack is visible in 3-panel layout
         let meters_collapsed = meters_ratio < 0.05 || hide_meters_for_rack;
 
@@ -116,269 +113,9 @@ impl PlayerView {
                     .flex()
                     .flex_1()
                     .overflow_hidden()
-                    // Left panel: Queue list
-                    .when(!queue_collapsed, |el| {
-                el.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .w(relative(queue_list_ratio))
-                        .px(d.pad_y)
-                        .pt(d.pad_y)
-                        .border_r_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .mb(d.gap)
-                                .child(Heading::h4(translations.queue_title.to_string())),
-                        )
-                        .child(
-                            div()
-                                .id("queue-list")
-                                .flex()
-                                .flex_col()
-                                .gap(d.gap)
-                                .flex_1()
-                                .overflow_y_scroll()
-                                .children(state.app.queue_state.iter().enumerate().map(|(idx, item)| {
-                                    let is_current = state.app.playback.current_queue_index == Some(idx);
-                                    let theme = theme.clone();
-                                    let theme_hover = theme.clone();
-                                    let row = div()
-                                        // `on_click` requires a stateful element, hence the id.
-                                        // ElementId::Integer is enough — idx is unique across the
-                                        // visible queue rows.
-                                        .id(("queue-row", idx))
-                                        .p(d.pad_y)
-                                        .rounded(d.r_md)
-                                        .when(is_current, |el| {
-                                            // Current item: accent background, subtle hover
-                                            let mut hover_bg = theme.accent;
-                                            hover_bg.a = 0.8;
-                                            el.bg(theme.accent)
-                                             .hover(move |style| style.bg(hover_bg))
-                                        })
-                                        .when(!is_current, |el| {
-                                            el.bg(theme_hover.surface)
-                                             .hover(|style| style.bg(theme_hover.surface_hover))
-                                        })
-                                        .cursor_pointer()
-                                        // Use `on_click` rather than `on_mouse_up` so that the
-                                        // handler only fires when mouse-down AND mouse-up both
-                                        // landed on this row. `on_mouse_up` was firing on
-                                        // unrelated events whose mouse-up screen-position happened
-                                        // to overlap the row:
-                                        //   1. Releasing a divider drag whose path crossed a row.
-                                        //   2. Selecting an item in the footer's Studio menu
-                                        //      overlay — the dropdown sits on top of queue rows
-                                        //      and mouse-up was double-firing onto both the
-                                        //      menu item AND the row beneath, calling
-                                        //      `play_track` for whichever row happened to be
-                                        //      under the click point and pausing audio while
-                                        //      the new track loaded.
-                                        // `on_click` natively handles both: it requires the
-                                        // mouse-down to have started inside this element and
-                                        // the cursor not to have moved significantly. Replaces
-                                        // both the prior dragging-flag and the staleness
-                                        // guards.
-                                        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                // Bounds-check: queue can mutate between paint and
-                                                // click (clear, magic-radio refill, etc.).
-                                                let current_channels = state
-                                                    .app
-                                                    .playback
-                                                    .current_queue_index
-                                                    .and_then(|queue_idx| state.app.queue_state.get(queue_idx))
-                                                    .and_then(|item| item.current_track())
-                                                    .and_then(|track| track.channels)
-                                                    .unwrap_or(2) as usize;
-                                                let target = state
-                                                    .app
-                                                    .queue_state
-                                                    .get(idx)
-                                                    .and_then(|item| {
-                                                        item.current_track().map(|track| {
-                                                            (
-                                                                track.audio_source(),
-                                                                track.channels.unwrap_or(2) as usize,
-                                                            )
-                                                        })
-                                                    });
-                                                if let Some((source, target_channels)) = target {
-                                                    let prefer_smooth_switch =
-                                                        state.app.playback.is_playing
-                                                            && state.app.playback.current_queue_index
-                                                                != Some(idx)
-                                                            && current_channels == target_channels;
-                                                    state.app.queue_state.current_index = Some(idx);
-                                                    state.app.playback.current_queue_index = Some(idx);
-                                                    if prefer_smooth_switch {
-                                                        Self::play_track_smooth(state, source);
-                                                    } else {
-                                                        Self::play_track(state, source);
-                                                    }
-                                                }
-                                            });
-                                            cx.notify();
-                                        }))
-                                        // Right-click stays on `on_mouse_up` — gpui's `on_click`
-                                        // is left-button only. Spurious right-click-on-overlay
-                                        // is not currently a known issue (no overlay opens via
-                                        // right-click), but the staleness guard still applies.
-                                        .on_mouse_up(
-                                            MouseButton::Right,
-                                            cx.listener(
-                                                move |view, event: &MouseUpEvent, _window, cx| {
-                                                    view.state.update(cx, |state, _cx| {
-                                                        if state.app.queue_state.get(idx).is_none() {
-                                                            return;
-                                                        }
-                                                        state.app.playback.current_queue_index = Some(idx);
-                                                        state.app.ui_state.context_menu =
-                                                        Some(crate::app::ContextMenuState {
-                                                            menu_type:
-                                                                crate::app::ContextMenuType::QueueItem,
-                                                            position_x: event.position.x.into(),
-                                                            position_y: event.position.y.into(),
-                                                            item_index: idx,
-                                                        });
-                                                    });
-                                                    cx.notify();
-                                                },
-                                            ),
-                                        )
-                                        .child({
-                                            // Dynamic truncation based on panel width
-                                            let max_title_chars = state.app.max_chars_queue_list_title(layout);
-                                            let max_artist_chars = state.app.max_chars_queue_list_artist(layout);
-
-                                            let album_title = item.album.title.clone();
-                                            let album_title_truncated = if album_title.chars().count() > max_title_chars {
-                                                album_title.chars().take(max_title_chars).collect::<String>() + "..."
-                                            } else {
-                                                album_title
-                                            };
-
-                                            let artist = item.album.artist();
-                                            let artist_truncated = if artist.chars().count() > max_artist_chars {
-                                                artist.chars().take(max_artist_chars).collect::<String>() + "..."
-                                            } else {
-                                                artist
-                                            };
-
-                                            div()
-                                                .flex()
-                                                .flex_col()
-                                                .child(
-                                                    div()
-                                                        .font_weight(FontWeight::SEMIBOLD)
-                                                        .text_size(d.text_sm)
-                                                        .text_color(if is_current { theme.text_on_accent } else { theme.text_primary })
-                                                        .child(album_title_truncated),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_size(d.text_xs)
-                                                        .text_color(if is_current { theme.text_on_accent_muted } else { theme.text_muted })
-                                                        .child(artist_truncated),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_size(d.text_xs)
-                                                        .text_color(if is_current { theme.text_on_accent_muted } else { theme.text_secondary })
-                                                        .child(format!(
-                                                            "Track {}/{}",
-                                                            item.current_track_index + 1,
-                                                            item.album.tracks.len()
-                                                        )),
-                                                )
-                                        });
-                                    // Publish each row's painted bounds under a stable selector
-                                    // so scenarios/queue_stale_index.scn can fire a synthetic
-                                    // click against `queue.row.<idx>`. Compiled out in release
-                                    // builds where `dev-api` is off — zero runtime cost.
-                                    #[cfg(feature = "dev-api")]
-                                    let row = {
-                                        use crate::app::dev_api::DevTrackExt;
-                                        row.dev_track(format!("queue.row.{idx}"))
-                                    };
-                                    row
-                                })),
-                        )
-                        .child(
-                            div()
-                                .p(d.pad_y)
-                                .child(
-                                    Button::new("magic-radio-btn", "Magic Radio")
-                                        .full_width(true)
-                                        .theme(theme.to_button_theme())
-                                        .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
-                                            log::info!("[Queue] Magic Radio button clicked");
-                                            view.state.update(cx, |state, _cx| {
-                                                match state.app.fill_queue_magic() {
-                                                    Ok(count) => {
-                                                        log::info!("[Queue] Magic Radio added {} tracks", count);
-                                                    }
-                                                    Err(e) => {
-                                                        log::error!("[Queue] Magic Radio error: {}", e);
-                                                    }
-                                                }
-                                            });
-                                            cx.notify();
-                                        })),
-                                ),
-                        ),
-                )
-            })
-            // Separator 1 (Queue <-> Center)
-            .child({
-                let divider_theme = PaneDividerTheme {
-                    background: theme.background,
-                    background_hover: theme.surface_hover,
-                    background_collapsed: theme.surface,
-                    foreground: theme.text_muted,
-                    foreground_hover: theme.text_secondary,
-                    border: theme.border,
-                    tint: Rgba {
-                        a: 0.42,
-                        ..theme.accent
-                    },
-                    tint_hover: theme.accent,
-                };
-                PaneDivider::vertical("queue-list-divider", CollapseDirection::Left)
-                    .label("Queue")
-                    .collapsed(queue_collapsed)
-                    .theme(divider_theme)
-                    .on_toggle({
-                        let state_handle = self.state.clone();
-                        move |collapsed, _window, cx| {
-                            state_handle.update(cx, |state, cx| {
-                                state.layout.update(cx, |layout, _| {
-                                    layout.queue_list_ratio = if collapsed { 0.0 } else { 0.30 };
-                                    let _ = state.app.save_config(layout);
-                                });
-                            });
-                        }
-                    })
-                    .on_drag_start({
-                        let state_handle = self.state.clone();
-                        move |pos, _window, cx| {
-                            state_handle.update(cx, |state, cx| {
-                                state.layout.update(cx, |layout, _| {
-                                    layout.is_dragging_queue_list_divider = true;
-                                    layout.drag_anchor_pos = pos;
-                                    layout.drag_anchor_queue_list_ratio = layout.queue_list_ratio;
-                                });
-                            });
-                        }
-                    })
-            })
-            // Center panel: Now playing info
-            .child(
-                self.render_now_playing_info(&translations, cx)
-            )
-            // Separator 2 (Center <-> Right)
+                    // Queue pane: album accordion with expanded album details
+                    .child(self.render_queue_accordion_pane(&translations, cx))
+                    // Separator (Queue <-> Right meters)
             .child({
                 let divider_theme = PaneDividerTheme {
                     background: theme.background,
@@ -563,28 +300,197 @@ impl PlayerView {
     // Level meter methods (render_lufs_panel, render_meters_panel, render_meter_group, etc.)
     // are now in ui/components/plugins/level_meters.rs
 
-    /// Render the now playing information panel (center)
-    pub(crate) fn render_now_playing_info(
+    fn render_queue_accordion_pane(
         &self,
         translations: &crate::i18n::Translations,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
+        let (theme, queue_items, expanded_idx) = {
+            let state = self.state.read(cx);
+            let queue_len = state.app.queue_state.len();
+            let selected_idx = if queue_len == 0 {
+                None
+            } else {
+                Some(state.app.queue_state.selected_index.min(queue_len - 1))
+            };
+            let expanded_idx = state
+                .app
+                .playback
+                .current_queue_index
+                .filter(|idx| *idx < queue_len)
+                .or(selected_idx);
+
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.queue_state.iter().cloned().collect::<Vec<_>>(),
+                expanded_idx,
+            )
+        };
+
+        let expanded_ids: Vec<SharedString> = expanded_idx
+            .map(|idx| SharedString::from(format!("queue-album-{idx}")))
+            .into_iter()
+            .collect();
+
+        let accordion_items = queue_items
+            .iter()
+            .enumerate()
+            .map(|(idx, item)| {
+                let title = format!(
+                    "{} - {}    Track {}/{}",
+                    item.album.title,
+                    item.album.artist(),
+                    item.current_track_index + 1,
+                    item.album.tracks.len()
+                );
+                AccordionItem::new(format!("queue-album-{idx}"), title)
+                    .content(self.render_queue_album_detail(idx, translations, cx))
+            })
+            .collect::<Vec<_>>();
+
+        let accordion_theme = theme.to_accordion_theme();
+        let state_handle = self.state.clone();
+
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .bg(theme.background_secondary)
+            .child(
+                div()
+                    .id("queue-accordion-scroll")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .p(d.pad_y)
+                    .when(queue_items.is_empty(), |el| {
+                        el.flex().items_center().justify_center().child(
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .child(
+                                    Text::new(translations.queue_empty)
+                                        .size(TextSize::Md)
+                                        .color(theme.text_muted),
+                                )
+                                .child(Text::caption(translations.queue_select_album))
+                                .build(),
+                        )
+                    })
+                    .when(!queue_items.is_empty(), |el| {
+                        el.child(
+                            Accordion::new()
+                                .items(accordion_items)
+                                .mode(AccordionMode::Single)
+                                .expanded(expanded_ids)
+                                .theme(accordion_theme)
+                                .aria_label(translations.queue_title)
+                                .on_change(move |id, is_expanded, _window, cx| {
+                                    if !is_expanded {
+                                        return;
+                                    }
+
+                                    let id = id.to_string();
+                                    let Some(idx) = id
+                                        .strip_prefix("queue-album-")
+                                        .and_then(|suffix| suffix.parse::<usize>().ok())
+                                    else {
+                                        return;
+                                    };
+
+                                    state_handle.update(cx, |state, _cx| {
+                                        if state.app.queue_state.get(idx).is_none() {
+                                            return;
+                                        }
+
+                                        state.app.queue_state.selected_index = idx;
+
+                                        let current_channels = state
+                                            .app
+                                            .playback
+                                            .current_queue_index
+                                            .and_then(|queue_idx| {
+                                                state.app.queue_state.get(queue_idx)
+                                            })
+                                            .and_then(|item| item.current_track())
+                                            .and_then(|track| track.channels)
+                                            .unwrap_or(2)
+                                            as usize;
+                                        let target =
+                                            state.app.queue_state.get(idx).and_then(|item| {
+                                                item.current_track().map(|track| {
+                                                    (
+                                                        track.audio_source(),
+                                                        track.channels.unwrap_or(2) as usize,
+                                                    )
+                                                })
+                                            });
+
+                                        if let Some((source, target_channels)) = target {
+                                            let prefer_smooth_switch =
+                                                state.app.playback.is_playing
+                                                    && state.app.playback.current_queue_index
+                                                        != Some(idx)
+                                                    && current_channels == target_channels;
+                                            state.app.queue_state.current_index = Some(idx);
+                                            state.app.playback.current_queue_index = Some(idx);
+                                            if prefer_smooth_switch {
+                                                Self::play_track_smooth(state, source);
+                                            } else {
+                                                Self::play_track(state, source);
+                                            }
+                                        }
+                                    });
+                                }),
+                        )
+                    }),
+            )
+            .child(
+                div()
+                    .p(d.pad_y)
+                    .border_t_1()
+                    .border_color(theme.border)
+                    .child(
+                        Button::new("magic-radio-btn", "Magic Radio")
+                            .full_width(true)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(
+                                |view, _event: &ClickEvent, _window, cx| {
+                                    log::info!("[Queue] Magic Radio button clicked");
+                                    view.state.update(cx, |state, _cx| {
+                                        match state.app.fill_queue_magic() {
+                                            Ok(count) => {
+                                                log::info!(
+                                                    "[Queue] Magic Radio added {} tracks",
+                                                    count
+                                                );
+                                            }
+                                            Err(e) => {
+                                                log::error!("[Queue] Magic Radio error: {}", e);
+                                            }
+                                        }
+                                    });
+                                    cx.notify();
+                                },
+                            )),
+                    ),
+            )
+    }
+
+    fn render_queue_album_detail(
+        &self,
+        queue_idx: usize,
+        translations: &crate::i18n::Translations,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let layout = state.layout.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        // Clone theme for use in closures (moved into flat_map)
         let theme_for_closure = theme.clone();
         let translations = translations.clone();
+        let is_active_queue_album = state.app.playback.current_queue_index == Some(queue_idx);
 
-        // Get current queue item with all album info
-        let queue_item = state
-            .app
-            .playback
-            .current_queue_index
-            .and_then(|idx| state.app.queue_state.get(idx));
-
-        let content: AnyElement = if let Some(item) = queue_item {
+        if let Some(item) = state.app.queue_state.get(queue_idx) {
             let album = &item.album;
             let current_track_idx = item.current_track_index;
             let current_track = item.current_track();
@@ -680,8 +586,6 @@ impl PlayerView {
             div()
                 .flex()
                 .flex_col()
-                .flex_1()
-                .child(div().mb(d.gap_md).child(Heading::h4(translations.queue_now_playing)))
                 // Top row: Album art (left) + Album info (right)
                 .child(
                     div()
@@ -833,8 +737,10 @@ impl PlayerView {
                         ),
                 )
                 .child(self.render_track_list(
+                    queue_idx,
                     &disc_map,
                     current_track_idx,
+                    is_active_queue_album,
                     &album_title_full,
                     &translations,
                     &theme_for_closure,
@@ -856,30 +762,16 @@ impl PlayerView {
                 .items_center()
                 .justify_center()
                 .into_any_element()
-        };
-
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .p(d.pad_y)
-            .border_r_1()
-            .border_color(theme.border)
-            .bg(theme.background_secondary)
-            .child(
-                div()
-                    .size_full()
-                    .id("now-playing-scroll")
-                    .overflow_y_scroll()
-                    .child(content),
-            )
+        }
     }
 
     /// Render the track list with clickable items
     fn render_track_list(
         &self,
+        queue_idx: usize,
         disc_map: &BTreeMap<u32, Vec<(usize, Track)>>,
         current_track_idx: usize,
+        highlight_current: bool,
         album_title: &str,
         translations: &crate::i18n::Translations,
         theme: &crate::theme::Theme,
@@ -944,11 +836,10 @@ impl PlayerView {
                 };
 
                 let duration = track.duration_secs.unwrap_or(0);
-                let is_current = idx == current_track_idx;
+                let is_current = highlight_current && idx == current_track_idx;
                 let duration_str = format!("{}:{:02}", duration / 60, duration % 60);
                 let theme_c = theme.clone();
-                let track_path = track.audio_source();
-                let target_track_channels = track.channels.unwrap_or(2) as usize;
+                let target_queue_idx = queue_idx;
                 let track_play_count = track.play_count;
                 let track_is_favorite = track.is_favorite;
                 let heart_track_path = track.path.clone();
@@ -970,7 +861,6 @@ impl PlayerView {
                         .on_mouse_up(
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                let path = track_path.clone();
                                 view.state.update(cx, |state, _cx| {
                                     let current_channels = state
                                         .app
@@ -981,20 +871,42 @@ impl PlayerView {
                                         .and_then(|track| track.channels)
                                         .unwrap_or(2)
                                         as usize;
-                                    let prefer_smooth_switch = state.app.playback.is_playing
-                                        && current_track_idx != idx
-                                        && current_channels == target_track_channels;
+                                    let current_queue_idx = state.app.playback.current_queue_index;
+                                    let current_track_idx = current_queue_idx
+                                        .and_then(|queue_idx| state.app.queue_state.get(queue_idx))
+                                        .map(|item| item.current_track_index);
+                                    let target =
+                                        state.app.queue_state.get_mut(target_queue_idx).and_then(
+                                            |item| {
+                                                if idx < item.album.tracks.len() {
+                                                    item.current_track_index = idx;
+                                                    item.current_track().map(|track| {
+                                                        (
+                                                            track.audio_source(),
+                                                            track.channels.unwrap_or(2) as usize,
+                                                        )
+                                                    })
+                                                } else {
+                                                    None
+                                                }
+                                            },
+                                        );
 
-                                    // Update the track index in the current queue item
-                                    if let Some(queue_idx) = state.app.playback.current_queue_index
-                                        && let Some(item) = state.app.queue_state.get_mut(queue_idx)
-                                    {
-                                        item.current_track_index = idx;
-                                    }
-                                    if prefer_smooth_switch {
-                                        Self::play_track_smooth(state, path);
-                                    } else {
-                                        Self::play_track(state, path);
+                                    if let Some((source, target_channels)) = target {
+                                        let prefer_smooth_switch = state.app.playback.is_playing
+                                            && (current_queue_idx != Some(target_queue_idx)
+                                                || current_track_idx != Some(idx))
+                                            && current_channels == target_channels;
+                                        state.app.queue_state.selected_index = target_queue_idx;
+                                        state.app.queue_state.current_index =
+                                            Some(target_queue_idx);
+                                        state.app.playback.current_queue_index =
+                                            Some(target_queue_idx);
+                                        if prefer_smooth_switch {
+                                            Self::play_track_smooth(state, source);
+                                        } else {
+                                            Self::play_track(state, source);
+                                        }
                                     }
                                 });
                                 cx.notify();
@@ -1089,14 +1001,12 @@ impl PlayerView {
             }
         }
 
-        div().flex().flex_col().flex_1().overflow_hidden().child(
+        div().flex().flex_col().child(
             div()
                 .id("track-list")
                 .flex()
                 .flex_col()
                 .gap_0p5()
-                .flex_1()
-                .overflow_y_scroll()
                 .children(all_elements),
         )
     }
