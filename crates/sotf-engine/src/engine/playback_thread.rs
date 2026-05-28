@@ -379,6 +379,39 @@ fn rebuild_playback_stream(
     })
 }
 
+fn playback_recovery_reason(
+    current_stream_errors: u64,
+    last_stream_error_count: &mut u64,
+    current_callbacks: u64,
+    last_callback_count: &mut u64,
+    last_callback_check: &mut std::time::Instant,
+    callback_stall_timeout: std::time::Duration,
+    frames_received: u64,
+    frames_written: u64,
+    coreaudio_identity_reason: Option<String>,
+) -> Option<String> {
+    if current_stream_errors != *last_stream_error_count {
+        *last_stream_error_count = current_stream_errors;
+        Some(format!(
+            "stream error reported by CoreAudio ({} total)",
+            current_stream_errors
+        ))
+    } else if current_callbacks != *last_callback_count {
+        *last_callback_count = current_callbacks;
+        *last_callback_check = std::time::Instant::now();
+        None
+    } else if let Some(reason) = coreaudio_identity_reason {
+        Some(reason)
+    } else if last_callback_check.elapsed() > callback_stall_timeout && frames_received > 0 {
+        Some(format!(
+            "callbacks stalled after {} frames played",
+            frames_written
+        ))
+    } else {
+        None
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FlushMode {
     Normal,
@@ -1016,27 +1049,17 @@ fn run_playback_thread(
                 } else {
                     None
                 };
-            let recovery_reason = if let Some(reason) = coreaudio_identity_reason {
-                Some(reason)
-            } else if current_stream_errors != last_stream_error_count {
-                last_stream_error_count = current_stream_errors;
-                Some(format!(
-                    "stream error reported by CoreAudio ({} total)",
-                    current_stream_errors
-                ))
-            } else if current_callbacks != last_callback_count {
-                last_callback_count = current_callbacks;
-                last_callback_check = std::time::Instant::now();
-                None
-            } else if last_callback_check.elapsed() > callback_stall_timeout && frames_received > 0
-            {
-                Some(format!(
-                    "callbacks stalled after {} frames played",
-                    frames_written
-                ))
-            } else {
-                None
-            };
+            let recovery_reason = playback_recovery_reason(
+                current_stream_errors,
+                &mut last_stream_error_count,
+                current_callbacks,
+                &mut last_callback_count,
+                &mut last_callback_check,
+                callback_stall_timeout,
+                frames_received,
+                frames_written,
+                coreaudio_identity_reason,
+            );
 
             if let Some(reason) = recovery_reason {
                 if last_recovery_attempt.elapsed() < recovery_retry_interval {
@@ -2011,11 +2034,13 @@ where
 mod tests {
     use super::{
         PlaybackState, apply_volume, fallback_output_format, is_virtual_output_device_name,
-        pick_preferred_output_format, playback_buffer_capacity, read_ring_buffer, request_flush,
+        pick_preferred_output_format, playback_buffer_capacity, playback_recovery_reason,
+        read_ring_buffer, request_flush,
     };
     use cpal::SampleFormat;
     use rtrb::RingBuffer;
     use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn playback_stream_error_callbacks_gate_event_formatting() {
@@ -2037,6 +2062,28 @@ mod tests {
                 && source.contains("rebuild_playback_stream("),
             "playback should rebuild the output stream when macOS resurrects a named device under a new CoreAudio device id"
         );
+    }
+
+    #[test]
+    fn playback_recovery_ignores_coreaudio_identity_change_while_callbacks_advance() {
+        let mut last_stream_error_count = 0;
+        let mut last_callback_count = 41;
+        let mut last_callback_check = Instant::now() - Duration::from_secs(10);
+
+        let recovery = playback_recovery_reason(
+            0,
+            &mut last_stream_error_count,
+            42,
+            &mut last_callback_count,
+            &mut last_callback_check,
+            Duration::from_secs(3),
+            100,
+            99,
+            Some("CoreAudio device id changed".to_string()),
+        );
+
+        assert_eq!(recovery, None);
+        assert_eq!(last_callback_count, 42);
     }
 
     #[test]
