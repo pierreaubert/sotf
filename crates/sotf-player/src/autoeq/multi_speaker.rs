@@ -36,6 +36,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::path::Path;
 
 // Re-export roomeq types for convenience
 // Note: Types are re-exported from autoeq::roomeq (not from the private types submodule)
@@ -110,10 +111,21 @@ pub fn run_room_optimization(
     sample_rate: f64,
     callback: Option<RoomOptimizationCallback>,
 ) -> Result<RoomOptimizationResult, String> {
+    run_room_optimization_with_output_dir(config, sample_rate, callback, None)
+}
+
+/// Run room optimization and write generated FIR/convolution artifacts into
+/// `output_dir` when provided.
+pub fn run_room_optimization_with_output_dir(
+    config: &RoomConfig,
+    sample_rate: f64,
+    callback: Option<RoomOptimizationCallback>,
+    output_dir: Option<&Path>,
+) -> Result<RoomOptimizationResult, String> {
     RoomPipeline::new(RoomPipelineRequest {
         config,
         sample_rate,
-        output_dir: None,
+        output_dir,
         probe_arrival_overrides: None,
     })
     .run(callback.map(room_callback_observer))
@@ -136,10 +148,28 @@ pub fn run_room_optimization_with_probe_arrivals(
     callback: Option<RoomOptimizationCallback>,
     probe_arrival_ms: &HashMap<String, f64>,
 ) -> Result<RoomOptimizationResult, String> {
+    run_room_optimization_with_probe_arrivals_and_output_dir(
+        config,
+        sample_rate,
+        callback,
+        None,
+        probe_arrival_ms,
+    )
+}
+
+/// Run room optimization with probe arrivals and an optional artifact output
+/// directory for generated FIR/convolution WAV files.
+pub fn run_room_optimization_with_probe_arrivals_and_output_dir(
+    config: &RoomConfig,
+    sample_rate: f64,
+    callback: Option<RoomOptimizationCallback>,
+    output_dir: Option<&Path>,
+    probe_arrival_ms: &HashMap<String, f64>,
+) -> Result<RoomOptimizationResult, String> {
     RoomPipeline::new(RoomPipelineRequest {
         config,
         sample_rate,
-        output_dir: None,
+        output_dir,
         probe_arrival_overrides: Some(probe_arrival_ms),
     })
     .run(callback.map(room_callback_observer))

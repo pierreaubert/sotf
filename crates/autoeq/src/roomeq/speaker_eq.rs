@@ -15,6 +15,7 @@ use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
 use std::path::Path;
 
+use super::artifacts::{self, ConvolutionArtifactKind};
 use super::auto_tune::{self, AutoOptimizerContext};
 use super::eq;
 use super::excursion;
@@ -1116,8 +1117,12 @@ pub(super) fn process_single_speaker(
                 message: format!("FIR generation failed: {}", e),
             })?;
 
-            let filename = format!("{}_fir.wav", channel_name);
-            let wav_path = output_dir.join(&filename);
+            let (filename, wav_path) = artifacts::reserve_convolution_artifact_path(
+                output_dir,
+                channel_name,
+                ConvolutionArtifactKind::Fir,
+                sample_rate,
+            );
             crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path).map_err(|e| {
                 AutoeqError::OptimizationFailed {
                     message: format!("Failed to save FIR WAV: {}", e),
@@ -1281,8 +1286,12 @@ pub(super) fn process_single_speaker(
                 message: format!("FIR generation failed: {}", e),
             })?;
 
-            let filename = format!("{}_residual_fir.wav", channel_name);
-            let wav_path = output_dir.join(&filename);
+            let (filename, wav_path) = artifacts::reserve_convolution_artifact_path(
+                output_dir,
+                channel_name,
+                ConvolutionArtifactKind::ResidualFir,
+                sample_rate,
+            );
             crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path).map_err(|e| {
                 AutoeqError::OptimizationFailed {
                     message: format!("Failed to save FIR WAV: {}", e),
@@ -1465,8 +1474,12 @@ pub(super) fn process_single_speaker(
                         );
 
                         // Save FIR to WAV
-                        let filename = format!("{}_excess_phase_fir.wav", channel_name);
-                        let wav_path = output_dir.join(&filename);
+                        let (filename, wav_path) = artifacts::reserve_convolution_artifact_path(
+                            output_dir,
+                            channel_name,
+                            ConvolutionArtifactKind::ExcessPhaseFir,
+                            sample_rate,
+                        );
                         if let Err(e) =
                             crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
                         {

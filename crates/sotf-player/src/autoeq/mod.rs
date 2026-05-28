@@ -125,7 +125,9 @@ pub use multi_speaker::{
     optimizer_config_from_args,
     // Functions
     run_room_optimization,
+    run_room_optimization_with_output_dir,
     run_room_optimization_with_probe_arrivals,
+    run_room_optimization_with_probe_arrivals_and_output_dir,
     save_dsp_chain,
     to_single_speaker_results,
 };

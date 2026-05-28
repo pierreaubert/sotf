@@ -444,8 +444,22 @@ pub(super) fn try_run_phase_linear_fir_gd(
 
         ch.fir_coeffs = Some(updated_coeffs.clone());
 
-        let filename = format!("{}_fir.wav", name);
-        let wav_path = out_dir.join(&filename);
+        let existing_filename = channel_chains
+            .get(name.as_str())
+            .and_then(existing_fir_convolution_filename);
+        let (filename, wav_path) = existing_filename
+            .map(|filename| {
+                let path = out_dir.join(&filename);
+                (filename, path)
+            })
+            .unwrap_or_else(|| {
+                crate::roomeq::artifacts::reserve_convolution_artifact_path(
+                    out_dir,
+                    name,
+                    crate::roomeq::artifacts::ConvolutionArtifactKind::Fir,
+                    sample_rate,
+                )
+            });
         if let Err(e) = crate::fir::save_fir_to_wav(&updated_coeffs, sample_rate as u32, &wav_path)
         {
             warn!(
@@ -486,6 +500,24 @@ pub(super) fn try_run_phase_linear_fir_gd(
         summary.mean_coherence = 0.0;
     }
     Some(summary)
+}
+
+fn existing_fir_convolution_filename(chain: &ChannelDspChain) -> Option<String> {
+    chain.plugins.iter().find_map(|plugin| {
+        if plugin.plugin_type != "convolution" {
+            return None;
+        }
+        let ir_file = plugin
+            .parameters
+            .get("ir_file")
+            .and_then(|value| value.as_str())?;
+        let file_name = Path::new(ir_file).file_name()?.to_str()?;
+        let is_full_fir = (file_name.contains("_fir_") || file_name.ends_with("_fir.wav"))
+            && !file_name.contains("residual_fir")
+            && !file_name.contains("excess_phase_fir")
+            && !file_name.contains("band_fir");
+        is_full_fir.then(|| ir_file.to_string())
+    })
 }
 
 fn source_for_output_channel<'a>(
