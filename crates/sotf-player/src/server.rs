@@ -14,7 +14,7 @@ use sotf_mpd::{
     FilterExpr, MpdAuthMode, MpdDirEntry, MpdPlayState, MpdServer, MpdServerConfig, MpdSongInfo,
     MpdStatus, PlayerAdapter,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::federation_config::{self, ServerConfig, SotfApiSettings};
@@ -530,13 +530,56 @@ async fn handle_sotf_api_connection(
     settings: SotfApiSettings,
     auth_token: String,
 ) {
-    let response = match read_api_request(&mut stream).await {
-        Ok(request) => handle_sotf_api_request(request, &state, &settings, &auth_token),
-        Err(err) => api_error_response(400, &err),
-    };
+    match read_api_request(&mut stream).await {
+        Ok(request) => {
+            if let Err(err) =
+                write_sotf_api_response(&mut stream, request, &state, &settings, &auth_token).await
+            {
+                let response = api_error_response(500, &err);
+                let _ = stream.write_all(&response).await;
+            }
+        }
+        Err(err) => {
+            let response = api_error_response(400, &err);
+            let _ = stream.write_all(&response).await;
+        }
+    }
 
-    let _ = stream.write_all(&response).await;
     let _ = stream.shutdown().await;
+}
+
+async fn write_sotf_api_response(
+    stream: &mut TcpStream,
+    request: ApiRequest,
+    state: &Arc<ServerState>,
+    settings: &SotfApiSettings,
+    auth_token: &str,
+) -> Result<(), String> {
+    let route = request.path.split('?').next().unwrap_or(&request.path);
+    if route.starts_with("/api/v1/media/") {
+        if request.method != "GET" && request.method != "HEAD" {
+            let response = api_error_response(405, "method not allowed");
+            return stream
+                .write_all(&response)
+                .await
+                .map_err(|err| err.to_string());
+        }
+        if !api_auth_valid(&request.headers, auth_token) {
+            let response = api_error_response(401, "missing or invalid bearer token");
+            return stream
+                .write_all(&response)
+                .await
+                .map_err(|err| err.to_string());
+        }
+        let range = api_header(&request.headers, "range");
+        return stream_api_media(stream, &request.method, route, range, state).await;
+    }
+
+    let response = handle_sotf_api_request(request, state, settings, auth_token);
+    stream
+        .write_all(&response)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 async fn read_api_request(stream: &mut TcpStream) -> Result<ApiRequest, String> {
@@ -659,6 +702,9 @@ fn handle_sotf_api_request(
                 }),
             );
         }
+        ("GET", "/api/v1/capabilities") => {
+            return api_json_response(200, api_capabilities_json());
+        }
         _ => {}
     }
 
@@ -672,6 +718,7 @@ fn handle_sotf_api_request(
 
     match (request.method.as_str(), route) {
         ("GET", "/api/v1/state") => api_json_response(200, api_state_json(state, &adapter)),
+        ("GET", "/api/v1/events") => api_sse_snapshot_response(api_state_json(state, &adapter)),
         ("GET", "/api/v1/queue") => api_json_response(200, api_queue_json(&adapter)),
         ("GET", "/api/v1/library/albums") => api_json_response(200, api_library_albums_json(state)),
         ("POST", "/api/v1/play") => api_command_response("play", adapter.play(None)),
@@ -732,6 +779,235 @@ fn handle_sotf_api_request(
         _ if route.starts_with("/api/v1/") => api_error_response(404, "unknown API route"),
         _ => api_error_response(404, "not found"),
     }
+}
+
+struct ApiMediaSource {
+    path: std::path::PathBuf,
+    mime_type: String,
+}
+
+async fn stream_api_media(
+    stream: &mut TcpStream,
+    method: &str,
+    route: &str,
+    range_header: Option<&str>,
+    state: &Arc<ServerState>,
+) -> Result<(), String> {
+    let track_id = route
+        .strip_prefix("/api/v1/media/")
+        .ok_or_else(|| "invalid media route".to_string())?;
+    if track_id.is_empty() || track_id.contains('/') || track_id.contains("..") {
+        let response = api_error_response(400, "bad media id");
+        return stream
+            .write_all(&response)
+            .await
+            .map_err(|err| err.to_string());
+    }
+
+    let Some(source) = api_media_source(state, track_id) else {
+        let response = api_error_response(404, "media track not found");
+        return stream
+            .write_all(&response)
+            .await
+            .map_err(|err| err.to_string());
+    };
+
+    let metadata = match tokio::fs::metadata(&source.path).await {
+        Ok(metadata) if metadata.is_file() => metadata,
+        Ok(_) => {
+            let response = api_error_response(404, "media track not found");
+            return stream
+                .write_all(&response)
+                .await
+                .map_err(|err| err.to_string());
+        }
+        Err(err) => {
+            log::warn!(
+                "[server] API media metadata error for {:?}: {}",
+                source.path,
+                err
+            );
+            let response = api_error_response(404, "media track not found");
+            return stream
+                .write_all(&response)
+                .await
+                .map_err(|err| err.to_string());
+        }
+    };
+
+    let file_len = metadata.len();
+    let range = match api_parse_range_header(range_header, file_len) {
+        Ok(range) => range,
+        Err(()) => {
+            let header = format!(
+                "HTTP/1.1 416 Range Not Satisfiable\r\n\
+                 Content-Range: bytes */{}\r\n\
+                 Content-Length: 0\r\n\
+                 Accept-Ranges: bytes\r\n\
+                 Cache-Control: no-store\r\n\
+                 Connection: close\r\n\
+                 \r\n",
+                file_len
+            );
+            return stream
+                .write_all(header.as_bytes())
+                .await
+                .map_err(|err| err.to_string());
+        }
+    };
+
+    let (status, status_text, start, end) = match range {
+        Some((start, end)) => (206, "Partial Content", start, end),
+        None if file_len == 0 => (200, "OK", 0, 0),
+        None => (200, "OK", 0, file_len - 1),
+    };
+    let body_len = if file_len == 0 { 0 } else { end - start + 1 };
+    let content_range = if status == 206 {
+        format!("Content-Range: bytes {}-{}/{}\r\n", start, end, file_len)
+    } else {
+        String::new()
+    };
+    let header = format!(
+        "HTTP/1.1 {} {}\r\n\
+         Content-Type: {}\r\n\
+         Content-Length: {}\r\n\
+         Accept-Ranges: bytes\r\n\
+         Cache-Control: no-store\r\n\
+         {}\
+         Connection: close\r\n\
+         \r\n",
+        status, status_text, source.mime_type, body_len, content_range
+    );
+    stream
+        .write_all(header.as_bytes())
+        .await
+        .map_err(|err| err.to_string())?;
+
+    if method == "GET" && body_len > 0 {
+        stream_api_media_file(stream, &source.path, start, body_len).await?;
+    }
+    Ok(())
+}
+
+async fn stream_api_media_file(
+    stream: &mut TcpStream,
+    path: &std::path::Path,
+    start: u64,
+    len: u64,
+) -> Result<(), String> {
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|err| format!("open media file: {err}"))?;
+    file.seek(std::io::SeekFrom::Start(start))
+        .await
+        .map_err(|err| format!("seek media file: {err}"))?;
+
+    let mut remaining = len;
+    let mut buf = vec![0u8; 64 * 1024];
+    while remaining > 0 {
+        let to_read = remaining.min(buf.len() as u64) as usize;
+        let n = file
+            .read(&mut buf[..to_read])
+            .await
+            .map_err(|err| format!("read media file: {err}"))?;
+        if n == 0 {
+            break;
+        }
+        stream
+            .write_all(&buf[..n])
+            .await
+            .map_err(|err| err.to_string())?;
+        remaining -= n as u64;
+    }
+    Ok(())
+}
+
+fn api_media_source(state: &Arc<ServerState>, track_id: &str) -> Option<ApiMediaSource> {
+    let library = state.library.lock();
+    for album in &library.albums {
+        for (index, track) in album.tracks.iter().enumerate() {
+            if api_track_id(track, album, index) == track_id
+                || media_track_id(track, album, index) == track_id
+            {
+                return Some(ApiMediaSource {
+                    path: track.path.clone(),
+                    mime_type: mime_type_for_path(&track.path).to_string(),
+                });
+            }
+        }
+    }
+    None
+}
+
+fn api_parse_range_header(
+    range_header: Option<&str>,
+    file_len: u64,
+) -> Result<Option<(u64, u64)>, ()> {
+    let Some(raw) = range_header else {
+        return Ok(None);
+    };
+    let Some(spec) = raw.trim().strip_prefix("bytes=") else {
+        return Err(());
+    };
+    if spec.contains(',') || file_len == 0 {
+        return Err(());
+    }
+    let Some((start_raw, end_raw)) = spec.split_once('-') else {
+        return Err(());
+    };
+
+    let (start, end) = if start_raw.is_empty() {
+        let suffix_len = end_raw.parse::<u64>().map_err(|_| ())?;
+        if suffix_len == 0 {
+            return Err(());
+        }
+        (file_len.saturating_sub(suffix_len), file_len - 1)
+    } else {
+        let start = start_raw.parse::<u64>().map_err(|_| ())?;
+        if start >= file_len {
+            return Err(());
+        }
+        let end = if end_raw.is_empty() {
+            file_len - 1
+        } else {
+            end_raw.parse::<u64>().map_err(|_| ())?.min(file_len - 1)
+        };
+        if end < start {
+            return Err(());
+        }
+        (start, end)
+    };
+
+    Ok(Some((start, end)))
+}
+
+fn api_capabilities_json() -> Value {
+    json!({
+        "api_version": 1,
+        "features": {
+            "playback_control": true,
+            "queue_editing": true,
+            "library_browse": true,
+            "library_search": false,
+            "media_range": true,
+            "events": true,
+            "outputs": false,
+            "plugin_presets": false,
+            "room_eq": false,
+            "headphone_eq": false,
+            "pairing": false,
+        },
+        "endpoints": {
+            "health": "/api/v1/health",
+            "discovery": "/api/v1/discovery",
+            "capabilities": "/api/v1/capabilities",
+            "state": "/api/v1/state",
+            "events": "/api/v1/events",
+            "queue": "/api/v1/queue",
+            "library_albums": "/api/v1/library/albums",
+            "media": "/api/v1/media/{track_id}",
+        },
+    })
 }
 
 fn api_state_json(state: &Arc<ServerState>, adapter: &MpdPlayerAdapter) -> Value {
@@ -1055,6 +1331,17 @@ fn api_json_response(status: u16, body: Value) -> Vec<u8> {
     response
 }
 
+fn api_sse_snapshot_response(body: Value) -> Vec<u8> {
+    let body = format!("event: state\ndata: {}\n\n", body);
+    let headers = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    let mut response = headers.into_bytes();
+    response.extend_from_slice(body.as_bytes());
+    response
+}
+
 fn api_error_response(status: u16, error: &str) -> Vec<u8> {
     api_json_response(status, json!({ "ok": false, "error": error }))
 }
@@ -1065,6 +1352,9 @@ fn api_status_text(status: u16) -> &'static str {
         400 => "Bad Request",
         401 => "Unauthorized",
         404 => "Not Found",
+        405 => "Method Not Allowed",
+        416 => "Range Not Satisfiable",
+        500 => "Internal Server Error",
         _ => "Error",
     }
 }
@@ -1536,5 +1826,48 @@ mod tests {
         assert_eq!(request.path, "/api/v1/volume");
         assert_eq!(api_header(&request.headers, "host"), Some("localhost"));
         assert_eq!(request.body, br#"{"volume":42}"#);
+    }
+
+    #[test]
+    fn sotf_api_capabilities_are_public_and_media_aware() {
+        let request = ApiRequest {
+            method: "GET".to_string(),
+            path: "/api/v1/capabilities".to_string(),
+            headers: Vec::new(),
+            body: Vec::new(),
+        };
+        let state = Arc::new(ServerState {
+            player: Mutex::new(Player::new()),
+            library: Mutex::new(MusicLibrary::default()),
+            queue: Mutex::new(Queue::new()),
+            playlist_version: std::sync::atomic::AtomicU32::new(1),
+        });
+        let response =
+            handle_sotf_api_request(request, &state, &api_settings(Some("secret")), "secret");
+        let response = String::from_utf8(response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(response.contains("\"media_range\":true"));
+        assert!(response.contains("\"events\":true"));
+    }
+
+    #[test]
+    fn sotf_api_media_range_parser_handles_common_forms() {
+        assert_eq!(api_parse_range_header(None, 10).unwrap(), None);
+        assert_eq!(
+            api_parse_range_header(Some("bytes=2-5"), 10).unwrap(),
+            Some((2, 5))
+        );
+        assert_eq!(
+            api_parse_range_header(Some("bytes=6-"), 10).unwrap(),
+            Some((6, 9))
+        );
+        assert_eq!(
+            api_parse_range_header(Some("bytes=-4"), 10).unwrap(),
+            Some((6, 9))
+        );
+        assert!(api_parse_range_header(Some("items=0-1"), 10).is_err());
+        assert!(api_parse_range_header(Some("bytes=10-12"), 10).is_err());
+        assert!(api_parse_range_header(Some("bytes=1-0"), 10).is_err());
+        assert!(api_parse_range_header(Some("bytes=0-1,3-4"), 10).is_err());
     }
 }

@@ -531,6 +531,9 @@ pub enum RemoteServerProbeStatus {
         friendly_name: String,
         version: String,
         auth_required: bool,
+        api_version: u32,
+        media_range: bool,
+        events: bool,
     },
     Failed(String),
 }
@@ -543,12 +546,16 @@ impl RemoteServerProbeStatus {
             Self::Reachable {
                 version,
                 auth_required,
+                media_range,
+                events,
                 ..
             } => {
+                let media = if *media_range { "media" } else { "no media" };
+                let live = if *events { "events" } else { "polling" };
                 if *auth_required {
-                    format!("reachable, auth required ({version})")
+                    format!("reachable, auth required ({version}, {media}, {live})")
                 } else {
-                    format!("reachable ({version})")
+                    format!("reachable ({version}, {media}, {live})")
                 }
             }
             Self::Failed(err) => format!("failed: {err}"),

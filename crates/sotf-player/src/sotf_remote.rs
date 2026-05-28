@@ -8,8 +8,9 @@ use sha2::{Digest, Sha256};
 
 use crate::lan_discovery::DiscoveredSotfApiServer;
 use crate::sotf_api_client::{
-    SotfApiAlbumList, SotfApiClient, SotfApiClientError, SotfApiCommandResponse, SotfApiQueue,
-    SotfApiQueueEditResponse, SotfApiResult, SotfApiState, normalized_api_base_url,
+    SotfApiAlbumList, SotfApiCapabilities, SotfApiClient, SotfApiClientError,
+    SotfApiCommandResponse, SotfApiQueue, SotfApiQueueEditResponse, SotfApiResult, SotfApiState,
+    normalized_api_base_url,
 };
 
 const REMOTE_SERVER_STORE_VERSION: u32 = 1;
@@ -223,10 +224,12 @@ impl SotfRemoteConnection {
     pub async fn validate(&self) -> SotfApiResult<SotfRemoteConnectionInfo> {
         let health = self.client.health().await?;
         let discovery = self.client.discovery().await?;
+        let capabilities = self.client.capabilities().await?;
         let state = self.client.state().await?;
         Ok(SotfRemoteConnectionInfo {
             health,
             discovery,
+            capabilities,
             state,
         })
     }
@@ -302,6 +305,7 @@ pub enum SotfRemoteTransportCommand {
 pub struct SotfRemoteConnectionInfo {
     pub health: crate::sotf_api_client::SotfApiHealth,
     pub discovery: crate::sotf_api_client::SotfApiDiscoveryInfo,
+    pub capabilities: SotfApiCapabilities,
     pub state: SotfApiState,
 }
 
