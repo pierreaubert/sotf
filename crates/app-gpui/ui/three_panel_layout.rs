@@ -58,11 +58,13 @@ impl PlayerView {
                     is_dragging_queue_rack,
                     is_dragging_queue_list,
                     is_dragging_meters,
+                    is_dragging_lufs,
                     anchor_pos,
                     anchor_lib,
                     anchor_rack,
                     anchor_queue_list,
                     anchor_meters,
+                    anchor_lufs,
                     library_h_ratio,
                     rack_h_ratio,
                     rack_collapsed,
@@ -74,11 +76,13 @@ impl PlayerView {
                         layout.is_dragging_queue_rack_divider,
                         layout.is_dragging_queue_list_divider,
                         layout.is_dragging_meters_divider,
+                        layout.is_dragging_lufs_divider,
                         layout.drag_anchor_pos,
                         layout.drag_anchor_library_h_ratio,
                         layout.drag_anchor_rack_h_ratio,
                         layout.drag_anchor_queue_list_ratio,
                         layout.drag_anchor_meters_ratio,
+                        layout.drag_anchor_lufs_ratio,
                         layout.library_h_ratio,
                         layout.rack_h_ratio,
                         layout.rack_panel_collapsed,
@@ -90,6 +94,9 @@ impl PlayerView {
                 let window_width: f32 = window_size.width.into();
                 let mouse_x: f32 = mouse_pos.x.into();
                 let dx = mouse_x - anchor_pos;
+                let window_height: f32 = window_size.height.into();
+                let mouse_y: f32 = mouse_pos.y.into();
+                let dy = mouse_y - anchor_pos;
 
                 if is_dragging_lib_queue && window_width > 0.0 {
                     let new_ratio = (anchor_lib + dx / window_width).clamp(0.15, 0.50);
@@ -116,7 +123,11 @@ impl PlayerView {
                 // shouldn't be dragging two dividers simultaneously.
                 if is_dragging_queue_list || is_dragging_meters {
                     let queue_start = library_h_ratio * window_width;
-                    let rack_width = if rack_collapsed { 0.0 } else { rack_h_ratio * window_width };
+                    let rack_width = if rack_collapsed {
+                        0.0
+                    } else {
+                        rack_h_ratio * window_width
+                    };
                     let queue_width = window_width - queue_start - rack_width;
 
                     if queue_width > 0.0 {
@@ -140,6 +151,15 @@ impl PlayerView {
                         }
                     }
                 }
+
+                if is_dragging_lufs && window_height > 0.0 {
+                    let new_ratio = (anchor_lufs + dy / window_height).clamp(0.20, 0.82);
+                    view.state.update(cx, |state, cx| {
+                        state.layout.update(cx, |layout, _| {
+                            layout.lufs_panel_ratio = new_ratio;
+                        });
+                    });
+                }
             }))
             .on_mouse_up(
                 MouseButton::Left,
@@ -149,16 +169,16 @@ impl PlayerView {
                             let any_dragging = layout.is_dragging_library_queue_divider
                                 || layout.is_dragging_queue_rack_divider
                                 || layout.is_dragging_queue_list_divider
-                                || layout.is_dragging_meters_divider;
+                                || layout.is_dragging_meters_divider
+                                || layout.is_dragging_lufs_divider;
 
                             layout.is_dragging_library_queue_divider = false;
                             layout.is_dragging_queue_rack_divider = false;
                             layout.is_dragging_queue_list_divider = false;
                             layout.is_dragging_meters_divider = false;
+                            layout.is_dragging_lufs_divider = false;
 
-                            if any_dragging
-                                && let Err(e) = state.app.save_config(layout)
-                            {
+                            if any_dragging && let Err(e) = state.app.save_config(layout) {
                                 log::warn!("Failed to save panel layout: {}", e);
                             }
                         });
@@ -316,11 +336,13 @@ impl PlayerView {
                     is_dragging_queue_rack,
                     is_dragging_queue_list,
                     is_dragging_meters,
+                    is_dragging_lufs,
                     anchor_pos,
                     anchor_lib_v,
                     anchor_rack_v,
                     anchor_queue_list,
                     anchor_meters,
+                    anchor_lufs,
                 ) = {
                     let layout = view.state.read(cx).layout.read(cx);
                     (
@@ -328,11 +350,13 @@ impl PlayerView {
                         layout.is_dragging_queue_rack_divider,
                         layout.is_dragging_queue_list_divider,
                         layout.is_dragging_meters_divider,
+                        layout.is_dragging_lufs_divider,
                         layout.drag_anchor_pos,
                         layout.drag_anchor_library_v_ratio,
                         layout.drag_anchor_rack_v_ratio,
                         layout.drag_anchor_queue_list_ratio,
                         layout.drag_anchor_meters_ratio,
+                        layout.drag_anchor_lufs_ratio,
                     )
                 };
 
@@ -394,6 +418,20 @@ impl PlayerView {
                         }
                     }
                 }
+
+                if is_dragging_lufs {
+                    let window_height: f32 = window_size.height.into();
+                    if window_height > 0.0 {
+                        let mouse_y: f32 = mouse_pos.y.into();
+                        let dy = mouse_y - anchor_pos;
+                        let new_ratio = (anchor_lufs + dy / window_height).clamp(0.20, 0.82);
+                        view.state.update(cx, |state, cx| {
+                            state.layout.update(cx, |layout, _| {
+                                layout.lufs_panel_ratio = new_ratio;
+                            });
+                        });
+                    }
+                }
             }))
             .on_mouse_up(
                 MouseButton::Left,
@@ -403,16 +441,16 @@ impl PlayerView {
                             let any_dragging = layout.is_dragging_library_queue_divider
                                 || layout.is_dragging_queue_rack_divider
                                 || layout.is_dragging_queue_list_divider
-                                || layout.is_dragging_meters_divider;
+                                || layout.is_dragging_meters_divider
+                                || layout.is_dragging_lufs_divider;
 
                             layout.is_dragging_library_queue_divider = false;
                             layout.is_dragging_queue_rack_divider = false;
                             layout.is_dragging_queue_list_divider = false;
                             layout.is_dragging_meters_divider = false;
+                            layout.is_dragging_lufs_divider = false;
 
-                            if any_dragging
-                                && let Err(e) = state.app.save_config(layout)
-                            {
+                            if any_dragging && let Err(e) = state.app.save_config(layout) {
                                 log::warn!("Failed to save panel layout: {}", e);
                             }
                         });
@@ -551,12 +589,13 @@ impl PlayerView {
                     .child("OUTPUT"),
             )
             // Output meters
-            .child(
-                div()
-                    .flex_1()
-                    .p(d.pad_y)
-                    .child(self.render_side_meter(cx, output_channels, "", true, false)),
-            )
+            .child(div().flex_1().p(d.pad_y).child(self.render_side_meter(
+                cx,
+                output_channels,
+                "",
+                true,
+                false,
+            )))
     }
 
     /// Render queue content for 3-panel layout

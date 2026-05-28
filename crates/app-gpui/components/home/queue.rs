@@ -53,6 +53,8 @@ impl PlayerView {
 
         // Hide meters when: explicitly collapsed, OR rack is visible in 3-panel layout
         let meters_collapsed = meters_ratio < 0.05 || hide_meters_for_rack;
+        let lufs_ratio = layout.lufs_panel_ratio;
+        let level_meters_collapsed = lufs_ratio >= 0.90;
 
         let divider_theme = PaneDividerTheme {
             background: theme.background,
@@ -72,6 +74,46 @@ impl PlayerView {
             .flex()
             .size_full()
             .overflow_hidden()
+            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
+                let (is_dragging_lufs, anchor_pos, anchor_lufs_ratio) = {
+                    let state = view.state.read(cx);
+                    let layout = state.layout.read(cx);
+                    (
+                        layout.is_dragging_lufs_divider,
+                        layout.drag_anchor_pos,
+                        layout.drag_anchor_lufs_ratio,
+                    )
+                };
+
+                if is_dragging_lufs {
+                    let window_height: f32 = window.bounds().size.height.into();
+                    if window_height > 0.0 {
+                        let mouse_y: f32 = event.position.y.into();
+                        let dy = mouse_y - anchor_pos;
+                        let new_ratio = (anchor_lufs_ratio + dy / window_height).clamp(0.20, 0.82);
+                        view.state.update(cx, |state, cx| {
+                            state.layout.update(cx, |layout, _| {
+                                layout.lufs_panel_ratio = new_ratio;
+                            });
+                        });
+                    }
+                }
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, _event: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, cx| {
+                        state.layout.update(cx, |layout, _| {
+                            if layout.is_dragging_lufs_divider {
+                                layout.is_dragging_lufs_divider = false;
+                                if let Err(e) = state.app.save_config(layout) {
+                                    log::warn!("Failed to save panel layout: {}", e);
+                                }
+                            }
+                        });
+                    });
+                }),
+            )
             // Queue pane: album accordion with expanded album details
             .child(self.render_queue_accordion_pane(&translations, cx))
             // Separator (Queue <-> Right meters)
@@ -215,23 +257,63 @@ impl PlayerView {
                                     .flex_1()
                                     .overflow_hidden()
                                     // LUFS panel on top
-                                    .child(self.render_lufs_panel(cx))
+                                    .child(
+                                        div()
+                                            .overflow_hidden()
+                                            .when(level_meters_collapsed, |el| el.flex_1())
+                                            .when(!level_meters_collapsed, |el| {
+                                                el.h(relative(lufs_ratio.clamp(0.20, 0.82)))
+                                                    .flex_shrink_0()
+                                            })
+                                            .child(self.render_lufs_panel(cx)),
+                                    )
                                     .child(
                                         PaneDivider::horizontal(
                                             "lufs-levels-divider",
                                             CollapseDirection::Down,
                                         )
                                         .label("Level Meters")
-                                        .collapsed(false)
-                                        .theme(divider_theme.clone()),
+                                        .collapsed(level_meters_collapsed)
+                                        .theme(divider_theme.clone())
+                                        .on_toggle({
+                                            let state_handle = self.state.clone();
+                                            move |collapsed, _window, cx| {
+                                                state_handle.update(cx, |state, cx| {
+                                                    state.layout.update(cx, |layout, _| {
+                                                        layout.lufs_panel_ratio =
+                                                            if collapsed { 0.95 } else { 0.35 };
+                                                        if let Err(e) = state.app.save_config(layout)
+                                                        {
+                                                            log::debug!("Config save failed: {e}");
+                                                        }
+                                                    });
+                                                });
+                                            }
+                                        })
+                                        .on_drag_start({
+                                            let state_handle = self.state.clone();
+                                            move |pos, _window, cx| {
+                                                state_handle.update(cx, |state, cx| {
+                                                    state.layout.update(cx, |layout, _| {
+                                                        layout.is_dragging_lufs_divider = true;
+                                                        layout.drag_anchor_pos = pos;
+                                                        layout.drag_anchor_lufs_ratio = layout
+                                                            .lufs_panel_ratio
+                                                            .clamp(0.20, 0.82);
+                                                    });
+                                                });
+                                            }
+                                        }),
                                     )
                                     // Level meters below, centered
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .overflow_hidden()
-                                            .child(self.render_meters_panel(cx)),
-                                    ),
+                                    .when(!level_meters_collapsed, |el| {
+                                        el.child(
+                                            div()
+                                                .flex_1()
+                                                .overflow_hidden()
+                                                .child(self.render_meters_panel(cx)),
+                                        )
+                                    }),
                             )
                         })
                         .when(!meters_panel_tall, |el| {

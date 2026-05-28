@@ -167,6 +167,9 @@ pub struct PanelLayout {
     /// LUFS panel width ratio (0.0-1.0), default 0.25
     #[serde(default = "default_lufs_ratio")]
     pub lufs_ratio: f32,
+    /// Rack strip height ratio inside Studio (0.0-1.0), default 0.22
+    #[serde(default = "default_rack_detail_ratio")]
+    pub rack_detail_ratio: f32,
     // 3-Panel Layout ratios (horizontal mode)
     #[serde(default = "default_library_h_ratio")]
     pub library_h_ratio: f32,
@@ -193,6 +196,10 @@ fn default_meters_ratio() -> f32 {
 
 fn default_lufs_ratio() -> f32 {
     0.25
+}
+
+fn default_rack_detail_ratio() -> f32 {
+    0.22
 }
 
 fn default_queue_list_ratio() -> f32 {
@@ -230,6 +237,7 @@ impl Default for PanelLayout {
             meters_ratio: default_meters_ratio(),
             queue_list_ratio: default_queue_list_ratio(),
             lufs_ratio: default_lufs_ratio(),
+            rack_detail_ratio: default_rack_detail_ratio(),
             library_h_ratio: default_library_h_ratio(),
             queue_h_ratio: default_queue_h_ratio(),
             rack_h_ratio: default_rack_h_ratio(),
