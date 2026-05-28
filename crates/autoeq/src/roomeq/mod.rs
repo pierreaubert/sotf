@@ -44,6 +44,7 @@ mod config;
 pub use config::{ValidationResult, validate_room_config};
 
 // Main optimization entry points
+mod artifacts;
 mod pipeline;
 pub use pipeline::{
     PipelineControl, PipelineEvent, PipelineObserver, PipelineStepId, PipelineStepStatus,
@@ -75,7 +76,10 @@ pub mod workflows; // Make public to access from optimize.rs or tests
 
 // Export to external formats (CamillaDSP, APO, EasyEffects, Wavelet, PipeWire)
 mod export;
-pub use export::{ExportFormat, export_dsp_chain, external_export_supported};
+pub use export::{
+    ExportFormat, export_dsp_chain, export_dsp_chain_with_convolution_sidecars,
+    external_export_supported, package_convolution_sidecars,
+};
 
 // DSP chain building
 mod output;

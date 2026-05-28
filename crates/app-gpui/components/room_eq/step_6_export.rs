@@ -302,15 +302,16 @@ impl PlayerView {
     /// (pretty-printed DspChainOutput); indices 1–6 delegate to
     /// `autoeq::roomeq::export::export_dsp_chain`.
     fn export_room_eq_format(&mut self, cx: &mut Context<Self>) {
-        let (dsp_output, format_idx) = {
+        let (dsp_output, format_idx, sample_rate, artifact_dir) = {
             let state = self.state.read(cx);
+            let room_eq = &state.app.measurement_state.room_eq_state;
             (
-                state.app.measurement_state.room_eq_state.dsp_output.clone(),
-                state
-                    .app
-                    .measurement_state
-                    .room_eq_state
-                    .export_format_index,
+                room_eq.dsp_output.clone(),
+                room_eq.export_format_index,
+                room_eq.optimizer_config.sample_rate as f64,
+                room_eq.artifact_dir.clone().unwrap_or_else(|| {
+                    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+                }),
             )
         };
 
@@ -343,6 +344,7 @@ impl PlayerView {
             }
         };
         let ext = format.default_extension();
+        let file_name = format.default_file_name();
         let (format_name, _) = EXPORT_FORMATS
             .get(format_idx)
             .copied()
@@ -367,7 +369,7 @@ impl PlayerView {
                 let file = rfd::AsyncFileDialog::new()
                     .add_filter(format_name, &[ext])
                     .set_title(format!("Export Room EQ — {}", format_name))
-                    .set_file_name(format!("room_eq.{}", ext))
+                    .set_file_name(file_name)
                     .save_file()
                     .await;
 
@@ -375,11 +377,12 @@ impl PlayerView {
                     // Parse back into autoeq DspChainOutput
                     match serde_json::from_str::<autoeq::roomeq::DspChainOutput>(&dsp_json) {
                         Ok(autoeq_output) => {
-                            match autoeq::roomeq::export_dsp_chain(
+                            match autoeq::roomeq::export_dsp_chain_with_convolution_sidecars(
                                 &autoeq_output,
                                 format,
                                 file.path(),
-                                48000.0,
+                                sample_rate,
+                                &artifact_dir,
                             ) {
                                 Ok(()) => {
                                     log::info!(
@@ -424,9 +427,15 @@ impl PlayerView {
 
     fn export_room_eq_json(&mut self, cx: &mut Context<Self>) {
         // Get the DSP output from state
-        let dsp_output = {
+        let (dsp_output, artifact_dir) = {
             let state = self.state.read(cx);
-            state.app.measurement_state.room_eq_state.dsp_output.clone()
+            let room_eq = &state.app.measurement_state.room_eq_state;
+            (
+                room_eq.dsp_output.clone(),
+                room_eq.artifact_dir.clone().unwrap_or_else(|| {
+                    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+                }),
+            )
         };
 
         let Some(dsp_output) = dsp_output else {
@@ -452,8 +461,25 @@ impl PlayerView {
                     .await;
 
                 if let Some(file) = file {
+                    let dest_dir = file.path().parent().unwrap_or(std::path::Path::new("."));
+                    let packaged_output = match autoeq::roomeq::package_convolution_sidecars(
+                        &dsp_output,
+                        &artifact_dir,
+                        dest_dir,
+                    ) {
+                        Ok(output) => output,
+                        Err(e) => {
+                            log::error!("Failed to package Room EQ sidecars: {}", e);
+                            state_entity.update(cx, |state, _| {
+                                state.app.measurement_state.room_eq_state.error_message =
+                                    Some(format!("Failed to package WAV files: {}", e));
+                            });
+                            return;
+                        }
+                    };
+
                     // Serialize DSP output
-                    match serde_json::to_string_pretty(&dsp_output) {
+                    match serde_json::to_string_pretty(&packaged_output) {
                         Ok(json) => {
                             // Write to file
                             match std::fs::write(file.path(), &json) {

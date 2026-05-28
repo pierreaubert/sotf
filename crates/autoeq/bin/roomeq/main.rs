@@ -24,8 +24,8 @@ use std::path::PathBuf;
 // Use the library types
 use autoeq::roomeq::{
     DspChainOutput, ExportFormat, PipelineControl, PipelineEvent, PipelineObserver, RoomConfig,
-    RoomPipeline, RoomPipelineRequest, export_dsp_chain, load_config, save_dsp_chain,
-    validate_room_config,
+    RoomPipeline, RoomPipelineRequest, export_dsp_chain_with_convolution_sidecars, load_config,
+    save_dsp_chain, validate_room_config,
 };
 
 /// Room EQ - Optimize multi-channel speaker systems
@@ -116,9 +116,18 @@ fn main() -> Result<()> {
         let export_path = args
             .export_path
             .unwrap_or_else(|| convert_path.with_extension(format.default_extension()));
+        let source_dir = convert_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
 
         info!("Converting {:?} to {:?} format", convert_path, format);
-        export_dsp_chain(&dsp_output, format, &export_path, args.sample_rate)?;
+        export_dsp_chain_with_convolution_sidecars(
+            &dsp_output,
+            format,
+            &export_path,
+            args.sample_rate,
+            source_dir,
+        )?;
         info!("Exported to {:?}", export_path);
         return Ok(());
     }
@@ -223,10 +232,18 @@ fn run(
 
     // Export to external format if requested
     if let Some(format) = export_format {
-        let path =
-            export_path.unwrap_or_else(|| output_path.with_extension(format.default_extension()));
+        let path = export_path.unwrap_or_else(|| format.default_export_path(&output_path));
+        let source_dir = output_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
         info!("Exporting DSP chain to {:?} ({:?})", path, format);
-        export_dsp_chain(&dsp_output, format, &path, sample_rate)?;
+        export_dsp_chain_with_convolution_sidecars(
+            &dsp_output,
+            format,
+            &path,
+            sample_rate,
+            source_dir,
+        )?;
         info!("Exported to {:?}", path);
     }
 

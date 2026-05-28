@@ -785,7 +785,8 @@ impl PlayerView {
         use autoeq::roomeq::CallbackAction;
         use sotf_audio_player::autoeq::{
             PipelineStepId, PipelineStepStatus, RoomOptimizationCallback, RoomOptimizationProgress,
-            run_room_optimization, run_room_optimization_with_probe_arrivals,
+            run_room_optimization_with_output_dir,
+            run_room_optimization_with_probe_arrivals_and_output_dir,
         };
         use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 
@@ -819,7 +820,7 @@ impl PlayerView {
         // any probe-based per-channel arrival times that the Delay Detection
         // step measured so we can feed them into the optimizer instead of
         // letting it fall back to WAV-onset detection.
-        let (room_config, channel_names, max_iter, probe_arrivals) = {
+        let (room_config, channel_names, max_iter, probe_arrivals, sample_rate, artifact_dir) = {
             let state = self.state.read(cx);
             let room_eq = &state.app.measurement_state.room_eq_state;
             let cfg = &room_eq.optimizer_config;
@@ -889,6 +890,16 @@ impl PlayerView {
                 channel_names,
                 room_eq.optimizer_config.max_iter,
                 room_eq.delay_detection.probe_arrival_map(),
+                room_eq.optimizer_config.sample_rate as f64,
+                room_eq_artifact_dir(
+                    &room_eq.data_source,
+                    state
+                        .app
+                        .measurement_state
+                        .recording_state
+                        .recording_directory
+                        .as_deref(),
+                ),
             )
         };
 
@@ -936,6 +947,8 @@ impl PlayerView {
                 .clear();
             state.app.measurement_state.room_eq_state.current_iteration = 0;
             state.app.measurement_state.room_eq_state.current_loss = 0.0;
+            state.app.measurement_state.room_eq_state.dsp_output = None;
+            state.app.measurement_state.room_eq_state.artifact_dir = Some(artifact_dir.clone());
             state.app.measurement_state.room_eq_state.current_channel = None;
             state.app.measurement_state.room_eq_state.error_message = None;
             state.app.measurement_state.room_eq_state.current_step = None;
@@ -1203,15 +1216,28 @@ impl PlayerView {
             // per-channel delays in the Delay Detection step; otherwise
             // fall back to WAV-onset detection.
             let result = smol::unblock(move || {
+                std::fs::create_dir_all(&artifact_dir).map_err(|e| {
+                    format!(
+                        "Failed to create Room EQ artifact directory {}: {}",
+                        artifact_dir.display(),
+                        e
+                    )
+                })?;
                 if let Some(arrivals) = probe_arrivals.as_ref() {
-                    run_room_optimization_with_probe_arrivals(
+                    run_room_optimization_with_probe_arrivals_and_output_dir(
                         &room_config,
-                        48000.0,
+                        sample_rate,
                         Some(callback),
+                        Some(&artifact_dir),
                         arrivals,
                     )
                 } else {
-                    run_room_optimization(&room_config, 48000.0, Some(callback))
+                    run_room_optimization_with_output_dir(
+                        &room_config,
+                        sample_rate,
+                        Some(callback),
+                        Some(&artifact_dir),
+                    )
                 }
             })
             .await;
@@ -1906,6 +1932,25 @@ pub fn room_eq_channel_chain_by_name<'a>(
     channels
         .get(name)
         .or_else(|| channels.values().find(|chain| chain.channel == name))
+}
+
+fn room_eq_artifact_dir(
+    data_source: &sotf_audio_player::room_eq_types::RoomEqDataSource,
+    recording_dir: Option<&str>,
+) -> std::path::PathBuf {
+    match data_source {
+        sotf_audio_player::room_eq_types::RoomEqDataSource::FromFile(path) => path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+            }),
+        sotf_audio_player::room_eq_types::RoomEqDataSource::FromRecording => recording_dir
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+            }),
+    }
 }
 
 fn room_eq_channel_result_by_name<'a>(

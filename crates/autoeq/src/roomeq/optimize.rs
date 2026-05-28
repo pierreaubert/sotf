@@ -1180,7 +1180,7 @@ fn collect_generic_channel_results(
 
         // Post-generate FIR coefficients for channels that need them but don't have them
         // (e.g., speaker groups that only support IIR internally)
-        let mut post_generated_fir: Option<Vec<f64>> = None;
+        let mut post_generated_fir = None;
         let fir_coeffs = if fir_coeffs.is_none()
             && !matches!(
                 config.optimizer.processing_mode,
@@ -1217,7 +1217,7 @@ fn collect_generic_channel_results(
                 output_dir,
             );
             post_generated_fir = generated.clone();
-            generated
+            generated.map(|generated| generated.coeffs)
         } else {
             fir_coeffs
         };
@@ -1235,18 +1235,17 @@ fn collect_generic_channel_results(
             },
         );
 
-        if let Some(coeffs) = post_generated_fir {
+        if let Some(generated) = post_generated_fir {
             if let Some(chain) = channel_chains.get_mut(&channel_name) {
-                let filename = format!("{}_fir.wav", channel_name);
-                chain
-                    .plugins
-                    .push(super::output::create_convolution_plugin(&filename));
+                chain.plugins.push(super::output::create_convolution_plugin(
+                    &generated.filename,
+                ));
             }
             sync_reported_fir_adjustment(
                 &channel_name,
                 &mut channel_results,
                 &mut channel_chains,
-                &coeffs,
+                &generated.coeffs,
                 sample_rate,
             );
         }
@@ -1768,7 +1767,7 @@ fn optimize_room_impl(
                             if ch.fir_coeffs.is_some() {
                                 None
                             } else {
-                                ch.fir_coeffs = post_generate_fir(
+                                let generated = post_generate_fir(
                                     &name,
                                     &ch.initial_curve,
                                     &ch.final_curve,
@@ -1777,27 +1776,29 @@ fn optimize_room_impl(
                                     sample_rate,
                                     Some(out_dir),
                                 );
-                                ch.fir_coeffs.clone()
+                                if let Some(generated) = &generated {
+                                    ch.fir_coeffs = Some(generated.coeffs.clone());
+                                }
+                                generated
                             }
                         } else {
                             None
                         };
 
-                        let Some(coeffs) = generated else {
+                        let Some(generated) = generated else {
                             continue;
                         };
 
                         if let Some(chain) = result.channels.get_mut(&name) {
-                            let filename = format!("{}_fir.wav", name);
-                            chain
-                                .plugins
-                                .push(super::output::create_convolution_plugin(&filename));
+                            chain.plugins.push(super::output::create_convolution_plugin(
+                                &generated.filename,
+                            ));
                         }
                         sync_reported_fir_adjustment(
                             &name,
                             &mut result.channel_results,
                             &mut result.channels,
-                            &coeffs,
+                            &generated.coeffs,
                             sample_rate,
                         );
                         workflow_refresh_needed = true;
@@ -1848,34 +1849,36 @@ fn optimize_room_impl(
                             if ch.fir_coeffs.is_some() {
                                 None
                             } else {
-                                ch.fir_coeffs = post_generate_mixed_phase_fir(
+                                let generated = post_generate_mixed_phase_fir(
                                     &name,
                                     &ch.initial_curve,
                                     &config.optimizer,
                                     sample_rate,
                                     Some(out_dir),
                                 );
-                                ch.fir_coeffs.clone()
+                                if let Some(generated) = &generated {
+                                    ch.fir_coeffs = Some(generated.coeffs.clone());
+                                }
+                                generated
                             }
                         } else {
                             None
                         };
 
-                        let Some(coeffs) = generated else {
+                        let Some(generated) = generated else {
                             continue;
                         };
 
                         if let Some(chain) = result.channels.get_mut(&name) {
-                            let filename = format!("{}_excess_phase_fir.wav", name);
-                            chain
-                                .plugins
-                                .push(super::output::create_convolution_plugin(&filename));
+                            chain.plugins.push(super::output::create_convolution_plugin(
+                                &generated.filename,
+                            ));
                         }
                         sync_reported_fir_adjustment(
                             &name,
                             &mut result.channel_results,
                             &mut result.channels,
-                            &coeffs,
+                            &generated.coeffs,
                             sample_rate,
                         );
                         workflow_refresh_needed = true;

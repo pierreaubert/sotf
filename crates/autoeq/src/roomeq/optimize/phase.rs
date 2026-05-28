@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Debug, Clone)]
+pub(super) struct GeneratedFir {
+    pub coeffs: Vec<f64>,
+    pub filename: String,
+}
+
 /// Post-generate FIR coefficients for a channel that only has IIR results.
 ///
 /// For Hybrid mode, uses the IIR-corrected curve as FIR input;
@@ -12,16 +18,27 @@ pub(super) fn post_generate_fir(
     target_curve: Option<&crate::roomeq::types::TargetCurveConfig>,
     sample_rate: f64,
     output_dir: Option<&Path>,
-) -> Option<Vec<f64>> {
+) -> Option<GeneratedFir> {
     let fir_input = match config.processing_mode {
         ProcessingMode::Hybrid => final_curve,
         _ => initial_curve,
     };
     match fir::generate_fir_correction(fir_input, config, target_curve, sample_rate) {
         Ok(coeffs) => {
+            let mut filename = crate::roomeq::artifacts::convolution_artifact_filename(
+                name,
+                crate::roomeq::artifacts::ConvolutionArtifactKind::Fir,
+                sample_rate,
+            );
             if let Some(out_dir) = output_dir {
-                let filename = format!("{}_fir.wav", name);
-                let wav_path = out_dir.join(&filename);
+                let reserved = crate::roomeq::artifacts::reserve_convolution_artifact_path(
+                    out_dir,
+                    name,
+                    crate::roomeq::artifacts::ConvolutionArtifactKind::Fir,
+                    sample_rate,
+                );
+                filename = reserved.0;
+                let wav_path = reserved.1;
                 if let Err(e) = crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
                 {
                     warn!("Failed to save FIR WAV for {}: {}", name, e);
@@ -29,7 +46,7 @@ pub(super) fn post_generate_fir(
                     info!("  Saved FIR filter to {}", wav_path.display());
                 }
             }
-            Some(coeffs)
+            Some(GeneratedFir { coeffs, filename })
         }
         Err(e) => {
             warn!("FIR generation failed for {}: {}", name, e);
@@ -49,7 +66,7 @@ pub(super) fn post_generate_mixed_phase_fir(
     config: &crate::roomeq::types::OptimizerConfig,
     sample_rate: f64,
     output_dir: Option<&Path>,
-) -> Option<Vec<f64>> {
+) -> Option<GeneratedFir> {
     let phase = initial_curve.phase.as_ref()?;
     if phase.is_empty() {
         return None;
@@ -78,9 +95,20 @@ pub(super) fn post_generate_mixed_phase_fir(
                 sample_rate,
             );
 
+            let mut filename = crate::roomeq::artifacts::convolution_artifact_filename(
+                name,
+                crate::roomeq::artifacts::ConvolutionArtifactKind::ExcessPhaseFir,
+                sample_rate,
+            );
             if let Some(out_dir) = output_dir {
-                let filename = format!("{}_excess_phase_fir.wav", name);
-                let wav_path = out_dir.join(&filename);
+                let reserved = crate::roomeq::artifacts::reserve_convolution_artifact_path(
+                    out_dir,
+                    name,
+                    crate::roomeq::artifacts::ConvolutionArtifactKind::ExcessPhaseFir,
+                    sample_rate,
+                );
+                filename = reserved.0;
+                let wav_path = reserved.1;
                 if let Err(e) = crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
                 {
                     warn!("Failed to save excess phase FIR for {}: {}", name, e);
@@ -89,7 +117,7 @@ pub(super) fn post_generate_mixed_phase_fir(
                 }
             }
 
-            Some(coeffs)
+            Some(GeneratedFir { coeffs, filename })
         }
         Err(e) => {
             warn!(
@@ -149,9 +177,20 @@ pub(super) fn apply_phase_correction(
     };
 
     // Save phase FIR WAV and add convolution plugin
-    let filename = format!("{}_phase_correction.wav", name);
+    let mut filename = crate::roomeq::artifacts::convolution_artifact_filename(
+        name,
+        crate::roomeq::artifacts::ConvolutionArtifactKind::PhaseCorrection,
+        sample_rate,
+    );
     if let Some(out_dir) = output_dir {
-        let wav_path = out_dir.join(&filename);
+        let reserved = crate::roomeq::artifacts::reserve_convolution_artifact_path(
+            out_dir,
+            name,
+            crate::roomeq::artifacts::ConvolutionArtifactKind::PhaseCorrection,
+            sample_rate,
+        );
+        filename = reserved.0;
+        let wav_path = reserved.1;
         if let Err(e) = crate::fir::save_fir_to_wav(&phase_fir, sample_rate as u32, &wav_path) {
             warn!("Failed to save phase correction FIR for {}: {}", name, e);
         } else {
