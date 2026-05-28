@@ -429,10 +429,12 @@ pub use sotf_audio_player::federation_scan::FederationScanResult;
 pub struct RemoteState {
     pub server_store: sotf_audio_player::SotfRemoteServerStore,
     pub discovered_servers: Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>,
+    pub server_probe_statuses: HashMap<String, RemoteServerProbeStatus>,
     pub discovery_running: bool,
     pub discovery_error: Option<String>,
     pub manual_server_name: String,
     pub manual_api_base_url: String,
+    pub server_probe_receiver: Option<std::sync::mpsc::Receiver<(String, RemoteServerProbeStatus)>>,
     pub discovery_receiver: Option<
         std::sync::mpsc::Receiver<
             Result<Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>, String>,
@@ -445,10 +447,12 @@ impl Default for RemoteState {
         Self {
             server_store: sotf_audio_player::SotfRemoteServerStore::default(),
             discovered_servers: Vec::new(),
+            server_probe_statuses: HashMap::new(),
             discovery_running: false,
             discovery_error: None,
             manual_server_name: String::new(),
             manual_api_base_url: String::new(),
+            server_probe_receiver: None,
             discovery_receiver: None,
         }
     }
@@ -517,6 +521,38 @@ impl RemoteState {
         self.manual_server_name.clear();
         self.manual_api_base_url.clear();
         Ok(id)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RemoteServerProbeStatus {
+    Testing,
+    Reachable {
+        friendly_name: String,
+        version: String,
+        auth_required: bool,
+    },
+    Failed(String),
+}
+
+impl RemoteServerProbeStatus {
+    #[must_use]
+    pub fn label(&self) -> String {
+        match self {
+            Self::Testing => "testing".to_string(),
+            Self::Reachable {
+                version,
+                auth_required,
+                ..
+            } => {
+                if *auth_required {
+                    format!("reachable, auth required ({version})")
+                } else {
+                    format!("reachable ({version})")
+                }
+            }
+            Self::Failed(err) => format!("failed: {err}"),
+        }
     }
 }
 
