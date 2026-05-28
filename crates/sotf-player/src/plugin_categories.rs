@@ -31,7 +31,6 @@ pub const CATEGORIES: &[PluginCategory] = &[
             PluginType::DeEsser,
             PluginType::Saturation,
             PluginType::DynamicEq,
-            PluginType::LinearPhaseEq,
             PluginType::SpectralCompressor,
         ],
     },
@@ -39,6 +38,8 @@ pub const CATEGORIES: &[PluginCategory] = &[
         name: "EQ & Tone",
         plugins: &[
             PluginType::EQ,
+            PluginType::LinearPhaseEq,
+            PluginType::FirDesigner,
             PluginType::Gain,
             PluginType::Delay,
             PluginType::LoudnessCompensation,

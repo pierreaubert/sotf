@@ -3891,6 +3891,7 @@ version = "0.6.0"
 dependencies = [
  "gpui",
  "gpui-design",
+ "gpui-ios",
  "gpui-ui-kit",
  "gpui_linux",
  "gpui_macos",
@@ -3935,7 +3936,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.20"
+version = "0.6.22"
 dependencies = [
  "block2",
  "gpui",
@@ -10254,6 +10255,7 @@ dependencies = [
  "bytemuck",
  "chrono",
  "clap",
+ "coreaudio-rs",
  "cpal",
  "criterion",
  "crossbeam",
@@ -10518,17 +10520,20 @@ dependencies = [
  "num-complex 0.4.6",
  "num_cpus",
  "parking_lot",
+ "reqwest 0.13.3",
  "rubato",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2",
+ "socket2 0.6.3",
  "sotf-dlna",
  "sotf-engine",
  "sotf-federation",
  "sotf-mpd",
  "sotf-player",
  "sotf-plugins",
+ "sotf-tls",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",
@@ -10541,6 +10546,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-rustls 0.26.4",
  "unicode-normalization",
  "uuid",
  "walkdir",
@@ -10789,6 +10795,18 @@ dependencies = [
  "serde",
  "sotf-host",
  "sotf-midi",
+]
+
+[[package]]
+name = "sotf-plugin-fir-designer"
+version = "0.5.3"
+dependencies = [
+ "math-iir-fir",
+ "num-complex 0.4.6",
+ "realfft",
+ "serde",
+ "serde_json",
+ "sotf-host",
 ]
 
 [[package]]
@@ -11093,6 +11111,7 @@ dependencies = [
  "sotf-plugin-downmix",
  "sotf-plugin-dynamic-eq",
  "sotf-plugin-eq",
+ "sotf-plugin-fir-designer",
  "sotf-plugin-gain",
  "sotf-plugin-gate",
  "sotf-plugin-hal-input",

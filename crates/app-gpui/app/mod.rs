@@ -23,6 +23,7 @@ pub mod manager;
 pub mod midi_input;
 pub mod navigation;
 pub mod queue;
+pub mod remote;
 pub mod state;
 pub mod theme;
 pub mod types;

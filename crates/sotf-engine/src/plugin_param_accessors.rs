@@ -12,7 +12,7 @@
 use crate::plugins::PluginSettings;
 use sotf_plugins::param_specs::{self, ParamSpec};
 use sotf_plugins::plugin_layout::PluginLayout;
-use sotf_plugins::{CrossfeedMode, CrossfeedPreset};
+use sotf_plugins::{CrossfeedMode, CrossfeedPreset, SpectralTiltCorrection, TiltReferenceFreq};
 
 // ============================================================================
 // Enum/String <-> index helpers
@@ -183,13 +183,54 @@ fn index_to_crossover_type(index: f64) -> String {
     crossover_types().get(idx).unwrap_or(&"LR24").to_string()
 }
 
+fn spectral_tilt_to_index(stc: &SpectralTiltCorrection) -> f64 {
+    match stc {
+        SpectralTiltCorrection::None => 0.0,
+        SpectralTiltCorrection::ThreeDbPerOctave => 1.0,
+        SpectralTiltCorrection::SixDbPerOctave => 2.0,
+        SpectralTiltCorrection::Pink => 3.0,
+        SpectralTiltCorrection::Custom(_) => 3.0,
+    }
+}
+
+fn index_to_spectral_tilt(index: f64) -> SpectralTiltCorrection {
+    match index as usize {
+        0 => SpectralTiltCorrection::None,
+        1 => SpectralTiltCorrection::ThreeDbPerOctave,
+        2 => SpectralTiltCorrection::SixDbPerOctave,
+        _ => SpectralTiltCorrection::Pink,
+    }
+}
+
+fn tilt_reference_to_index(trf: &TiltReferenceFreq) -> f64 {
+    match trf {
+        TiltReferenceFreq::Standard => 0.0,
+        TiltReferenceFreq::OneKilohertz => 1.0,
+        TiltReferenceFreq::TwoKilohertz => 2.0,
+        TiltReferenceFreq::MinFreq => 3.0,
+    }
+}
+
+fn index_to_tilt_reference(index: f64) -> TiltReferenceFreq {
+    match index as usize {
+        0 => TiltReferenceFreq::Standard,
+        1 => TiltReferenceFreq::OneKilohertz,
+        2 => TiltReferenceFreq::TwoKilohertz,
+        _ => TiltReferenceFreq::MinFreq,
+    }
+}
+
 // ============================================================================
 // Bool <-> f64 helpers
 // ============================================================================
 
 #[inline]
 fn b2f(b: bool) -> f64 {
-    if b { 1.0 } else { 0.0 }
+    if b {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 #[inline]
@@ -212,6 +253,9 @@ macro_rules! field_to_f64 {
         Some(*$field as f64)
     };
     ($field:ident, i32) => {
+        Some(*$field as f64)
+    };
+    ($field:ident, f32) => {
         Some(*$field as f64)
     };
     ($field:ident, skip) => {
@@ -237,6 +281,9 @@ macro_rules! f64_to_field {
     };
     ($field:ident, $val:ident, i32) => {
         *$field = $val as i32
+    };
+    ($field:ident, $val:ident, f32) => {
+        *$field = $val as f32
     };
     ($field:ident, $val:ident, skip) => {};
     ($field:ident, $val:ident, [enum $to:path, $from:path]) => {
@@ -736,6 +783,14 @@ impl_param_accessors! {
             auto_gain: bool, mix: f64,
         ]
     },
+    FirDesigner {
+        params: param_specs::fir_designer::PARAMS,
+        layout: Some(&param_specs::fir_designer::LAYOUT),
+        fields: [
+            num_filters: f64, fir_length: f64,
+            phase_mode: f64, auto_gain: bool, mix: f64,
+        ]
+    },
     AAE {
         params: param_specs::aae::PARAMS,
         layout: Some(&param_specs::aae::LAYOUT),
@@ -751,10 +806,22 @@ impl_param_accessors! {
             auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
             bypass: bool, solo_early: bool, solo_late: bool,
         ]
+    },
+    SpectrumAnalyzer {
+        params: param_specs::spectrum::PARAMS,
+        layout: None,
+        fields: [
+            num_bins: usize,
+            min_freq: f32,
+            max_freq: f32,
+            smoothing: f32,
+            tilt_correction: [enum spectral_tilt_to_index, index_to_spectral_tilt],
+            tilt_reference: [enum tilt_reference_to_index, index_to_tilt_reference],
+        ]
     }
     ;
     no_params_unit: [LoudnessMonitor];
-    no_params_struct: [SpectrumAnalyzer, Matrix, FletcherMunson]
+    no_params_struct: [Matrix, FletcherMunson]
 }
 
 // ============================================================================
@@ -915,6 +982,7 @@ impl PluginSettings {
 #[cfg(test)]
 mod tests {
     use crate::plugins::{PluginSettings, PluginType};
+    use sotf_plugins::param_specs;
 
     /// Validate that every plugin's LAYOUT indices are within bounds of its PARAMS.
     ///
@@ -978,8 +1046,6 @@ mod tests {
     /// registered it in `parameters()` / `set_parameter()`, causing silent drops.
     #[test]
     fn validate_engine_keys_exist_in_dsp_plugin() {
-        use sotf_plugins::param_specs::{ParamType, UpdateMode};
-
         let known_gaps: std::collections::HashSet<(&str, &str)> = [
             ("Compressor", "sidechain_hpf_hz"),
             ("Compressor", "sidechain_hpf_order"),
@@ -1020,19 +1086,16 @@ mod tests {
                 dsp_params.iter().map(|p| p.id.0.as_str()).collect();
 
             for (i, spec) in specs.iter().enumerate() {
-                if spec.update_mode == UpdateMode::Structural {
+                let Some((engine_key, _)) = settings.engine_param_at(i) else {
+                    continue;
+                };
+                if known_gaps.contains(&(name, engine_key.as_str())) {
                     continue;
                 }
-                if matches!(spec.param_type, ParamType::FilePath) {
-                    continue;
-                }
-                if known_gaps.contains(&(name, spec.engine_key)) {
-                    continue;
-                }
-                if !dsp_keys.contains(spec.engine_key) {
+                if !dsp_keys.contains(engine_key.as_str()) {
                     all_errors.push(format!(
                         "{} param {} ({}): engine_key '{}' not found in DSP plugin parameters",
-                        name, i, spec.name, spec.engine_key
+                        name, i, spec.name, engine_key
                     ));
                 }
             }
@@ -1045,5 +1108,18 @@ mod tests {
                 all_errors.join("\n  ")
             );
         }
+    }
+
+    #[test]
+    fn spectrum_tilt_params_do_not_emit_engine_updates() {
+        let settings = PluginSettings::default_for(&PluginType::SpectrumAnalyzer);
+
+        let tilt_correction_idx =
+            param_specs::index_of(param_specs::spectrum::PARAMS, "tilt_correction");
+        let tilt_reference_idx =
+            param_specs::index_of(param_specs::spectrum::PARAMS, "tilt_reference");
+
+        assert_eq!(settings.engine_param_at(tilt_correction_idx), None);
+        assert_eq!(settings.engine_param_at(tilt_reference_idx), None);
     }
 }

@@ -231,6 +231,32 @@ impl TuiEditablePlugin for PluginSettings {
                 }
                 descs
             }
+            PluginSettings::Matrix { .. } => {
+                vec![
+                    TuiParamDescriptor {
+                        name: "Input Channels".to_string(),
+                        param_type: TuiParamType::Int {
+                            min: 1,
+                            max: 32,
+                            step: 1,
+                        },
+                        unit: "".to_string(),
+                        group: "Matrix".to_string(),
+                        doc: "Number of input channels".to_string(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Output Channels".to_string(),
+                        param_type: TuiParamType::Int {
+                            min: 1,
+                            max: 32,
+                            step: 1,
+                        },
+                        unit: "".to_string(),
+                        group: "Matrix".to_string(),
+                        doc: "Number of output channels".to_string(),
+                    },
+                ]
+            }
             // All other plugins: generic from ParamSpec
             _ => specs_to_descriptors(self.param_specs()),
         }
@@ -500,6 +526,15 @@ impl TuiEditablePlugin for PluginSettings {
                     }
                 }
             }
+            PluginSettings::Matrix {
+                input_channels,
+                output_channels,
+                ..
+            } => match index {
+                0 => format!("{}", input_channels),
+                1 => format!("{}", output_channels),
+                _ => String::new(),
+            },
             // Generic: all other plugins use ParamSpec
             _ => {
                 let specs = self.param_specs();

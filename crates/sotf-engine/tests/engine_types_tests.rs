@@ -307,6 +307,14 @@ fn test_audio_engine_state_default() {
     assert!(!state.muted);
     assert!(!state.processing_bypassed);
     assert_eq!(state.underruns, 0);
+    assert_eq!(state.playback_output_device, None);
+    assert_eq!(state.playback_callback_count, 0);
+    assert_eq!(state.playback_buffer_fill_percent, 0);
+    assert_eq!(state.playback_stream_error_count, 0);
+    assert_eq!(state.playback_frames_received, 0);
+    assert_eq!(state.playback_frames_written, 0);
+    assert_eq!(state.playback_frames_dropped, 0);
+    assert_eq!(state.playback_effective_sample_rate, 0);
     assert_eq!(state.last_error, None);
     assert!(!state.seeking);
     assert!(state.isolated_external_plugin_worker_statuses.is_empty());
@@ -334,7 +342,11 @@ fn test_audio_engine_state_serialization() {
     assert_eq!(deserialized.duration, Some(180.0));
     assert!((deserialized.volume - 0.8).abs() < 0.001);
     assert!(deserialized.muted);
-    assert!(deserialized.isolated_external_plugin_worker_statuses.is_empty());
+    assert!(
+        deserialized
+            .isolated_external_plugin_worker_statuses
+            .is_empty()
+    );
 }
 
 #[test]
@@ -357,13 +369,20 @@ fn test_audio_engine_state_deserializes_without_worker_statuses_field() {
     let deserialized: AudioEngineState = serde_json::from_value(value).unwrap();
 
     assert_eq!(deserialized.playback_state, PlaybackState::Playing);
-    assert_eq!(deserialized.current_file, Some(PathBuf::from("/path/to/file.flac")));
+    assert_eq!(
+        deserialized.current_file,
+        Some(PathBuf::from("/path/to/file.flac"))
+    );
     assert!((deserialized.position - 12.5).abs() < 0.001);
     assert_eq!(deserialized.sample_rate, 44100);
     assert_eq!(deserialized.num_channels, 6);
     assert_eq!(deserialized.duration, Some(321.0));
     assert_eq!(deserialized.last_error.as_deref(), Some("none"));
-    assert!(deserialized.isolated_external_plugin_worker_statuses.is_empty());
+    assert!(
+        deserialized
+            .isolated_external_plugin_worker_statuses
+            .is_empty()
+    );
 }
 
 #[test]
@@ -407,6 +426,40 @@ fn test_thread_event_playback_underrun() {
     let event = ThreadEvent::PlaybackUnderrun(101);
 
     assert!(matches!(event, ThreadEvent::PlaybackUnderrun(101)));
+}
+
+#[test]
+fn test_thread_event_playback_stats() {
+    let event = ThreadEvent::PlaybackStats {
+        callback_count: 12,
+        buffer_fill_percent: 75,
+        stream_error_count: 1,
+        frames_received: 40,
+        frames_written: 39,
+        frames_dropped: 1,
+        effective_sample_rate: 48_000,
+    };
+
+    if let ThreadEvent::PlaybackStats {
+        callback_count,
+        buffer_fill_percent,
+        stream_error_count,
+        frames_received,
+        frames_written,
+        frames_dropped,
+        effective_sample_rate,
+    } = event
+    {
+        assert_eq!(callback_count, 12);
+        assert_eq!(buffer_fill_percent, 75);
+        assert_eq!(stream_error_count, 1);
+        assert_eq!(frames_received, 40);
+        assert_eq!(frames_written, 39);
+        assert_eq!(frames_dropped, 1);
+        assert_eq!(effective_sample_rate, 48_000);
+    } else {
+        panic!("Expected PlaybackStats event");
+    }
 }
 
 #[test]

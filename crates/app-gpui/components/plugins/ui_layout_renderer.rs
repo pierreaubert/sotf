@@ -101,6 +101,54 @@ pub fn render_from_layout(
     )
 }
 
+/// Render only the primary control groups from a plugin's declarative layout.
+///
+/// Custom plugin views use this when they need bespoke content for one portion
+/// of a plugin but still need the standard parameter controls.
+#[allow(clippy::too_many_arguments)]
+pub fn render_main_controls_from_layout(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    settings: &PluginSettings,
+    is_editing: bool,
+    selected_param: usize,
+    plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    available_width: f32,
+    theme: &Theme,
+) -> AnyElement {
+    let Some(layout) = settings.layout() else {
+        return div().into_any_element();
+    };
+    let params = settings.param_specs();
+    let values: Vec<f64> = (0..params.len())
+        .map(|i| settings.param_value(i).unwrap_or(0.0))
+        .collect();
+    let file_paths = extract_file_paths(params, settings);
+    let solved = solve_layout(layout.column_constraints, available_width);
+    let main_width = available_width.max(AUTO_COLUMN_MIN_MAIN_WIDTH);
+
+    render_main_column(
+        d,
+        entity,
+        plugin_idx,
+        layout,
+        params,
+        &values,
+        &file_paths,
+        &solved,
+        main_width,
+        is_editing,
+        selected_param,
+        0,
+        plugin_data,
+        None,
+        theme,
+        false,
+    )
+    .into_any_element()
+}
+
 // ============================================================================
 // Internal Rendering
 // ============================================================================
@@ -242,6 +290,11 @@ fn render_solved_layout(
         foreground: theme.text_muted,
         foreground_hover: theme.text_secondary,
         border: theme.border,
+        tint: Rgba {
+            a: 0.42,
+            ..theme.accent
+        },
+        tint_hover: theme.accent,
     };
 
     let row_entity = entity.clone();
@@ -357,6 +410,7 @@ fn render_solved_layout(
         plugin_data,
         spider_snapshot,
         theme,
+        true,
     ));
 
     if has_output_column {
@@ -484,6 +538,7 @@ fn render_main_column(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
     theme: &Theme,
+    include_tabs: bool,
 ) -> impl IntoElement {
     let mut center = div()
         .flex()
@@ -528,10 +583,21 @@ fn render_main_column(
             }
         }
 
-        let (visible_groups, overflow_groups) =
-            partition_main_groups(layout, values, solved, mode.as_ref(), main_width);
+        let (visible_groups, overflow_groups) = if include_tabs {
+            partition_main_groups(layout, values, solved, mode.as_ref(), main_width)
+        } else {
+            (
+                mode_visible_groups(layout, values, mode.as_ref()),
+                Vec::new(),
+            )
+        };
 
-        let mut container = div().flex().gap(d.section).items_start().justify_center();
+        let mut container = div()
+            .flex()
+            .gap(d.section)
+            .items_start()
+            .justify_center()
+            .when(!include_tabs, |div| div.flex_wrap());
         for group in &visible_groups {
             container = container.child(render_group(
                 d,
@@ -552,7 +618,11 @@ fn render_main_column(
         }
         center = center.child(container);
 
-        let all_tabs = collect_all_tabs(layout, solved, &overflow_groups);
+        let all_tabs = if include_tabs {
+            collect_all_tabs(layout, solved, &overflow_groups)
+        } else {
+            Vec::new()
+        };
 
         if !all_tabs.is_empty() {
             let clamped_tab = active_tab.min(all_tabs.len().saturating_sub(1));
@@ -563,6 +633,11 @@ fn render_main_column(
                 foreground: theme.text_muted,
                 foreground_hover: theme.text_secondary,
                 border: theme.border,
+                tint: Rgba {
+                    a: 0.42,
+                    ..theme.accent
+                },
+                tint_hover: theme.accent,
             };
 
             center = center.child(auto_tab_divider(plugin_idx, tab_divider_theme));

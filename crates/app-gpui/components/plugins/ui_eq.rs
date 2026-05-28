@@ -195,6 +195,22 @@ pub enum EqViewMode {
         fir_length: usize,
         /// Whether auto_gain is enabled
         auto_gain: bool,
+        /// Wet/dry mix
+        mix: f64,
+    },
+    FirDesigner {
+        /// Latency in samples = (fir_length - 1) / 2 in linear mode.
+        latency_samples: usize,
+        /// Latency in milliseconds at the current sample rate.
+        latency_ms: f32,
+        /// Current FIR length (samples) for display.
+        fir_length: usize,
+        /// Current FIR phase design mode.
+        phase_mode: &'static str,
+        /// Whether auto_gain is enabled.
+        auto_gain: bool,
+        /// Wet/dry mix
+        mix: f64,
     },
 }
 
@@ -215,6 +231,12 @@ pub struct EqRenderState<'a> {
     pub midi_overlay: Option<&'a MidiOverlay>,
     /// View variant — Standard biquad EQ or LinearPhase FIR EQ
     pub mode: EqViewMode,
+    /// Number of active filters (for EQ, LinearPhaseEq, FirDesigner)
+    pub num_filters: usize,
+    /// Use Transposed Direct Form II (Standard EQ only)
+    pub tdf2: bool,
+    /// Filter topology: 0 = Biquad, 1 = SVF (Standard EQ only)
+    pub topology: f64,
 }
 
 /// Magnitude (dB) for a single filter at `freq`, branching on the band's
@@ -994,7 +1016,10 @@ pub fn render_eq_plugin(
 
     // Clone values needed for closures
     let channels = state.channels;
-    let is_lp_mode = matches!(state.mode, EqViewMode::LinearPhase { .. });
+    let is_lp_mode = matches!(
+        state.mode,
+        EqViewMode::LinearPhase { .. } | EqViewMode::FirDesigner { .. }
+    );
     // Linear-phase EQ is global-only; force the toggle off so the renderer's
     // downstream logic doesn't try to surface per-channel data we don't have.
     let per_channel_mode = if is_lp_mode {
@@ -1470,13 +1495,72 @@ pub fn render_eq_plugin(
         });
 
     // Optional linear-phase info header — shown only for the LP variant.
-    let lp_header = if let EqViewMode::LinearPhase {
-        latency_samples,
-        latency_ms,
-        fir_length,
-        auto_gain,
-    } = state.mode
-    {
+    let fir_summary = match state.mode {
+        EqViewMode::LinearPhase {
+            latency_samples,
+            latency_ms,
+            fir_length,
+            auto_gain,
+            mix,
+        } => Some((latency_samples, latency_ms, fir_length, "Linear", auto_gain, mix)),
+        EqViewMode::FirDesigner {
+            latency_samples,
+            latency_ms,
+            fir_length,
+            phase_mode,
+            auto_gain,
+            mix,
+        } => Some((
+            latency_samples,
+            latency_ms,
+            fir_length,
+            phase_mode,
+            auto_gain,
+            mix,
+        )),
+        EqViewMode::Standard => None,
+    };
+    let lp_header = fir_summary.map(
+        |(latency_samples, latency_ms, fir_length, phase_mode, auto_gain, mix)| {
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap(ds.section)
+                .px(ds.pad_x)
+                .py(ds.pad_y_half)
+                .bg(theme.surface)
+                .rounded(ds.r_md)
+                .text_size(ds.text_sm)
+                .text_color(theme.text_secondary)
+                .child(format!("Filters: {}", state.num_filters))
+                .child(format!("FIR length: {fir_length}"))
+                .child(format!("Phase: {phase_mode}"))
+                .child(format!(
+                    "Latency: {latency_samples} samples ({latency_ms:.2} ms)"
+                ))
+                .child(format!(
+                    "Auto-gain: {}",
+                    if auto_gain { "on" } else { "off" }
+                ))
+                .child(format!("Mix: {:.0}%", mix * 100.0))
+        },
+    );
+    let lp_analysis =
+        fir_summary.map(|(latency_samples, latency_ms, fir_length, phase_mode, _, _)| {
+            render_linear_phase_analysis(
+                &ds,
+                latency_samples,
+                latency_ms,
+                fir_length,
+                phase_mode,
+                theme,
+            )
+        });
+
+    // Algorithm info bar for Standard EQ
+    let eq_header = if matches!(state.mode, EqViewMode::Standard) {
+        let topo_label = if state.topology > 0.5 { "SVF" } else { "Biquad" };
         Some(
             div()
                 .flex()
@@ -1489,13 +1573,11 @@ pub fn render_eq_plugin(
                 .rounded(ds.r_md)
                 .text_size(ds.text_sm)
                 .text_color(theme.text_secondary)
-                .child(format!("FIR length: {fir_length}"))
+                .child(format!("Filters: {}", state.num_filters))
+                .child(format!("Topology: {topo_label}"))
                 .child(format!(
-                    "Latency: {latency_samples} samples ({latency_ms:.2} ms)"
-                ))
-                .child(format!(
-                    "Auto-gain: {}",
-                    if auto_gain { "on" } else { "off" }
+                    "TDF-II: {}",
+                    if state.tdf2 { "on" } else { "off" }
                 )),
         )
     } else {
@@ -1509,9 +1591,96 @@ pub fn render_eq_plugin(
         .flex_col()
         .items_center()
         .gap(ds.section_xl)
+        .children(eq_header)
         .children(lp_header)
         .child(graph_section)
+        .children(lp_analysis)
         .child(controls_section)
+}
+
+fn render_linear_phase_analysis(
+    d: &Ds,
+    latency_samples: usize,
+    latency_ms: f32,
+    fir_length: usize,
+    phase_mode: &str,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_wrap()
+        .justify_center()
+        .gap(d.gap)
+        .w_full()
+        .child(render_lp_analysis_card(
+            d,
+            "Magnitude",
+            "Editable paragraphic target".to_string(),
+            theme.accent,
+            theme,
+        ))
+        .child(render_lp_analysis_card(
+            d,
+            "Phase",
+            if phase_mode == "Linear" {
+                "Linear after latency compensation".to_string()
+            } else {
+                "Minimum phase, energy near start".to_string()
+            },
+            theme.success,
+            theme,
+        ))
+        .child(render_lp_analysis_card(
+            d,
+            "Group Delay",
+            format!("{latency_samples} samples / {latency_ms:.2} ms"),
+            theme.warning,
+            theme,
+        ))
+        .child(render_lp_analysis_card(
+            d,
+            "Impulse",
+            if phase_mode == "Linear" {
+                format!("{fir_length} taps, symmetric FIR")
+            } else {
+                format!("{fir_length} taps, minimum-phase FIR")
+            },
+            theme.text_secondary,
+            theme,
+        ))
+}
+
+fn render_lp_analysis_card(
+    d: &Ds,
+    label: &'static str,
+    value: String,
+    accent: Rgba,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.grid)
+        .min_w(rems(10.0))
+        .px(d.pad_x)
+        .py(d.pad_y)
+        .rounded(d.r_md)
+        .bg(theme.surface)
+        .border_l_4()
+        .border_color(accent)
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(accent)
+                .child(label),
+        )
+        .child(
+            div()
+                .text_size(d.text_sm)
+                .text_color(theme.text_secondary)
+                .child(value),
+        )
 }
 
 /// Calculate the actual plot width based on chart width and legend configuration.

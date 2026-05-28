@@ -10,6 +10,13 @@ use gpui_ui_kit::theme::ThemeState as UiKitThemeState;
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use std::time::Duration;
 
+#[cfg(target_os = "ios")]
+unsafe extern "C" {
+    fn sotf_ios_pop_remote_command() -> i32;
+    fn sotf_ios_take_imported_files_json() -> *mut std::ffi::c_char;
+    fn sotf_ios_string_free(value: *mut std::ffi::c_char);
+}
+
 // Re-export all actions for backward compatibility
 pub use crate::app::actions::*;
 use crate::components::plugins::actions::{
@@ -294,6 +301,9 @@ impl PlayerView {
                         for event in &media_events {
                             Self::handle_media_control_event(state, event);
                         }
+
+                        #[cfg(target_os = "ios")]
+                        Self::drain_ios_remote_commands(state);
 
                         if state.app.playback.is_playing && playback_state.is_playing {
                             state.app.check_and_record_play();
@@ -763,6 +773,8 @@ impl PlayerView {
         state.app.update_library_scan();
         state.app.update_federation_scan();
         state.app.update_cast_discovery();
+        state.app.update_remote_server_discovery();
+        state.app.update_remote_server_probe();
         state.app.update_toast();
 
         state.app.library_state.ensure_cache_valid();
@@ -771,6 +783,122 @@ impl PlayerView {
         if let Some(stats) = pending {
             state.app.library_stats = stats;
             state.app.library_stats_computing = false;
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    fn drain_ios_remote_commands(state: &mut AppState) {
+        for _ in 0..32 {
+            // SAFETY: implemented by the iOS crate in the final app binary.
+            // It returns one small integer command and never hands out Rust
+            // references across the FFI boundary.
+            match unsafe { sotf_ios_pop_remote_command() } {
+                0 => break,
+                1 => Self::handle_ios_queue_navigation(state, true),
+                2 => Self::handle_ios_queue_navigation(state, false),
+                3 => {
+                    Self::handle_ios_imported_files(state);
+                }
+                other => {
+                    log::warn!("[iOS] unknown remote command code: {other}");
+                    break;
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    fn handle_ios_imported_files(state: &mut AppState) {
+        // SAFETY: implemented by app-ios in the final binary. It returns an
+        // owned C string allocated by Rust, or NULL on serialization failure.
+        let raw = unsafe { sotf_ios_take_imported_files_json() };
+        if raw.is_null() {
+            return;
+        }
+        let json = {
+            // SAFETY: `raw` is non-null and points to a NUL-terminated string
+            // until we release it below.
+            unsafe { std::ffi::CStr::from_ptr(raw) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        // SAFETY: release the string returned by `sotf_ios_take_imported_files_json`.
+        unsafe {
+            sotf_ios_string_free(raw);
+        }
+
+        let paths: Vec<String> = match serde_json::from_str(&json) {
+            Ok(paths) => paths,
+            Err(err) => {
+                log::warn!("[iOS] failed to parse imported file paths: {err}");
+                return;
+            }
+        };
+        if paths.is_empty() {
+            return;
+        }
+
+        let mut added = 0usize;
+        for path in paths.iter().map(std::path::PathBuf::from) {
+            let looks_like_file = path.is_file() || path.extension().is_some();
+            let library_path = if looks_like_file {
+                path.parent()
+                    .map(std::path::Path::to_path_buf)
+                    .unwrap_or(path)
+            } else {
+                path
+            };
+            match state.app.library_state.library.add_directory(library_path) {
+                Ok(true) => added += 1,
+                Ok(false) => {}
+                Err(err) => log::debug!("[iOS] imported file library path skipped: {err}"),
+            }
+        }
+
+        if added > 0 {
+            state.app.needs_rescan = true;
+            match state.app.rescan_library() {
+                Ok(()) => {
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
+                        format!("Imported files queued {added} library location(s) for scanning."),
+                    ));
+                }
+                Err(err) => {
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::warning(
+                        format!("Imported files added, but scan could not start: {err}"),
+                    ));
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    fn handle_ios_queue_navigation(state: &mut AppState, next: bool) {
+        if let Err(e) = state.player.lock().cancel_next() {
+            log::warn!("Player cancel_next failed: {e}");
+        }
+
+        let from_index = state.app.playback.current_queue_index;
+        let source = if next {
+            state.app.next_track()
+        } else {
+            state.app.previous_track()
+        };
+
+        if let Some(source) = source {
+            Self::play_track(state, source);
+            if let Some(to_index) = state.app.playback.current_queue_index {
+                let trigger = if next {
+                    crate::app::state::TrackChangeTrigger::NextTrack
+                } else {
+                    crate::app::state::TrackChangeTrigger::PrevTrack
+                };
+                state
+                    .app
+                    .record_track_changed(from_index, to_index, trigger);
+            }
+        } else if next {
+            state.app.playback.is_playing = false;
         }
     }
 
@@ -1603,8 +1731,16 @@ impl PlayerView {
                     // config files are tiny and we're already in a spawned task)
                     match std::fs::read_to_string(&file_path) {
                         Ok(content) => {
-                            // Validate it's valid JSON
-                            if serde_json::from_str::<serde_json::Value>(&content).is_ok() {
+                            // Validate it is an AB Compare path config before applying it.
+                            if serde_json::from_str::<
+                                sotf_audio_player::controllers::ab_compare_path::PathConfig,
+                            >(&content)
+                            .is_ok()
+                            {
+                                let plugins =
+                                    sotf_audio_player::controllers::ab_compare_path::parse_path_config(
+                                        &content,
+                                    );
                                 let param_idx = if path_id == "a" { 9 } else { 10 };
                                 state_entity.update(&mut cx.clone(), |state, cx| {
                                     // AB Compare configs are JSON, not file paths — error won't occur
@@ -1614,13 +1750,18 @@ impl PlayerView {
                                     // Store the source file path for display
                                     if path_id == "a" {
                                         state.app.plugin_state.ab_compare_file_a = Some(file_path);
+                                        state.app.plugin_state.ab_path_a = plugins;
                                     } else {
                                         state.app.plugin_state.ab_compare_file_b = Some(file_path);
+                                        state.app.plugin_state.ab_path_b = plugins;
                                     }
+                                    state.app.plugin_state.ab_add_menu_target = None;
                                     cx.notify();
                                 });
                             } else {
-                                log::warn!("AB Compare: file is not valid JSON: {file_path}");
+                                log::warn!(
+                                    "AB Compare: file is not a valid path config: {file_path}"
+                                );
                             }
                         }
                         Err(e) => {
@@ -1647,8 +1788,10 @@ impl PlayerView {
 
         self.state.update(cx, |state, _cx| {
             let plugins = if action.path == 0 {
+                state.app.plugin_state.ab_compare_file_a = None;
                 &mut state.app.plugin_state.ab_path_a
             } else {
+                state.app.plugin_state.ab_compare_file_b = None;
                 &mut state.app.plugin_state.ab_path_b
             };
             add_path_plugin(plugins, &action.plugin_type);
@@ -1676,8 +1819,10 @@ impl PlayerView {
 
         self.state.update(cx, |state, _cx| {
             let plugins = if action.path == 0 {
+                state.app.plugin_state.ab_compare_file_a = None;
                 &mut state.app.plugin_state.ab_path_a
             } else {
+                state.app.plugin_state.ab_compare_file_b = None;
                 &mut state.app.plugin_state.ab_path_b
             };
             remove_path_plugin(plugins, action.sub_idx);
@@ -1703,8 +1848,10 @@ impl PlayerView {
 
         self.state.update(cx, |state, _cx| {
             let plugins = if action.path == 0 {
+                state.app.plugin_state.ab_compare_file_a = None;
                 &mut state.app.plugin_state.ab_path_a
             } else {
+                state.app.plugin_state.ab_compare_file_b = None;
                 &mut state.app.plugin_state.ab_path_b
             };
             move_path_plugin(plugins, action.from, action.to);

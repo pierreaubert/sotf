@@ -1423,7 +1423,93 @@ impl PluginController {
 pub fn get_param_count(settings: &PluginSettings) -> usize {
     match settings {
         PluginSettings::EQ { filters, .. } => filters.len() * 4,
+        PluginSettings::LinearPhaseEq { filters, .. }
+        | PluginSettings::FirDesigner { filters, .. } => filters.len() * 4,
+        PluginSettings::DynamicEq { num_bands, .. } => 8 + (*num_bands as usize).clamp(1, 8) * 7,
         _ => settings.param_specs().len(),
+    }
+}
+
+fn eq_band_types(allow_extended: bool) -> &'static [BiquadFilterType] {
+    if allow_extended {
+        &[
+            BiquadFilterType::Peak,
+            BiquadFilterType::Lowshelf,
+            BiquadFilterType::Highshelf,
+            BiquadFilterType::Lowpass,
+            BiquadFilterType::Highpass,
+            BiquadFilterType::Bandpass,
+            BiquadFilterType::Notch,
+        ]
+    } else {
+        &[
+            BiquadFilterType::Peak,
+            BiquadFilterType::Lowshelf,
+            BiquadFilterType::Highshelf,
+            BiquadFilterType::Lowpass,
+            BiquadFilterType::Highpass,
+        ]
+    }
+}
+
+fn adjust_eq_band_field_for_plugin(
+    filter_idx: usize,
+    field_idx: usize,
+    filters: &mut [EQFilter],
+    delta: f64,
+    allow_extended_types: bool,
+) -> bool {
+    let Some(filter) = filters.get_mut(filter_idx) else {
+        return false;
+    };
+    if field_idx != 3 {
+        return crate::ui_params::apply_eq_band_field(filter, field_idx, delta);
+    }
+
+    let types = eq_band_types(allow_extended_types);
+    let current_idx = types
+        .iter()
+        .position(|t| *t == filter.filter_type)
+        .unwrap_or(0);
+    let new_idx = if delta > 0.0 {
+        (current_idx + 1) % types.len()
+    } else {
+        (current_idx + types.len() - 1) % types.len()
+    };
+    filter.filter_type = types[new_idx];
+    true
+}
+
+fn set_eq_band_field_for_plugin(
+    filter_idx: usize,
+    field_idx: usize,
+    filters: &mut [EQFilter],
+    value: f64,
+    allow_extended_types: bool,
+) -> bool {
+    let Some(filter) = filters.get_mut(filter_idx) else {
+        return false;
+    };
+    match field_idx {
+        0 => {
+            filter.frequency = value.clamp(20.0, 20_000.0);
+            true
+        }
+        1 => {
+            filter.q = value.clamp(0.1, 10.0);
+            true
+        }
+        2 => {
+            filter.gain_db = value.clamp(-24.0, 24.0);
+            true
+        }
+        3 => {
+            let types = eq_band_types(allow_extended_types);
+            let type_idx = (value as usize).clamp(0, types.len() - 1);
+            filter.filter_type = types[type_idx];
+            true
+        }
+        _ => false,
     }
 }
 
@@ -1462,11 +1548,22 @@ fn adjust_plugin_param(
             let filter_idx = param_idx / 4;
             let field_idx = param_idx % 4;
 
-            if let Some(filter) = filters.get_mut(filter_idx) {
-                crate::ui_params::apply_eq_band_field(filter, field_idx, delta)
-            } else {
-                false
+            adjust_eq_band_field_for_plugin(filter_idx, field_idx, filters, delta, true)
+        }
+        PluginSettings::LinearPhaseEq { filters, .. }
+        | PluginSettings::FirDesigner { filters, .. } => {
+            if filters.is_empty() {
+                return false;
             }
+
+            let total_params = filters.len() * 4;
+            if param_idx >= total_params {
+                return false;
+            }
+
+            let filter_idx = param_idx / 4;
+            let field_idx = param_idx % 4;
+            adjust_eq_band_field_for_plugin(filter_idx, field_idx, filters, delta, false)
         }
         // === SpectrumAnalyzer: no_params_struct — not in the macro, needs manual handling ===
         PluginSettings::SpectrumAnalyzer {
@@ -1534,6 +1631,53 @@ fn adjust_plugin_param(
             }
             _ => false,
         },
+        // === DynamicEq band-level params (idx >= 100) ===
+        PluginSettings::DynamicEq { bands, .. } if param_idx >= 100 => {
+            let band_idx = (param_idx - 100) / 10;
+            let local_idx = (param_idx - 100) % 10;
+            if let Some(band) = bands.get_mut(band_idx) {
+                use sotf_plugins::param_specs::{dynamic_eq::BAND_PARAMS as BT, find_by_key as p};
+                match local_idx {
+                    0 => {
+                        let s = p(BT, "frequency");
+                        band.frequency = s.adjust_f64(band.frequency as f64, delta) as f32;
+                        true
+                    }
+                    1 => {
+                        let s = p(BT, "q");
+                        band.q = s.adjust_f64(band.q as f64, delta) as f32;
+                        true
+                    }
+                    2 => {
+                        let s = p(BT, "gain");
+                        band.gain = s.adjust_f64(band.gain as f64, delta) as f32;
+                        true
+                    }
+                    3 => {
+                        let s = p(BT, "band_threshold");
+                        band.band_threshold =
+                            s.adjust_f64(band.band_threshold as f64, delta) as f32;
+                        true
+                    }
+                    4 => {
+                        let s = p(BT, "band_ratio");
+                        band.band_ratio = s.adjust_f64(band.band_ratio as f64, delta) as f32;
+                        true
+                    }
+                    5 => {
+                        band.active = !band.active;
+                        true
+                    }
+                    6 => {
+                        band.solo = !band.solo;
+                        true
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            }
+        }
         // === MultibandCompressor band-level params (idx >= 100) ===
         PluginSettings::MultibandCompressor {
             threshold_db,
@@ -1745,39 +1889,14 @@ fn set_plugin_param_value(
             let filter_idx = param_idx / 4;
             let field_idx = param_idx % 4;
 
-            if let Some(filter) = filters.get_mut(filter_idx) {
-                match field_idx {
-                    0 => {
-                        filter.frequency = value.clamp(20.0, 20_000.0);
-                        true
-                    }
-                    1 => {
-                        filter.q = value.clamp(0.1, 10.0);
-                        true
-                    }
-                    2 => {
-                        filter.gain_db = value.clamp(-24.0, 24.0);
-                        true
-                    }
-                    3 => {
-                        let types = [
-                            BiquadFilterType::Peak,
-                            BiquadFilterType::Lowshelf,
-                            BiquadFilterType::Highshelf,
-                            BiquadFilterType::Lowpass,
-                            BiquadFilterType::Highpass,
-                            BiquadFilterType::Bandpass,
-                            BiquadFilterType::Notch,
-                        ];
-                        let type_idx = (value as usize).clamp(0, types.len() - 1);
-                        filter.filter_type = types[type_idx];
-                        true
-                    }
-                    _ => false,
-                }
-            } else {
-                false
-            }
+            set_eq_band_field_for_plugin(filter_idx, field_idx, filters, value, true)
+        }
+        PluginSettings::LinearPhaseEq { filters, .. }
+        | PluginSettings::FirDesigner { filters, .. } => {
+            let filter_idx = param_idx / 4;
+            let field_idx = param_idx % 4;
+
+            set_eq_band_field_for_plugin(filter_idx, field_idx, filters, value, false)
         }
         // === SpectrumAnalyzer: no_params_struct — not in the macro, needs manual handling ===
         PluginSettings::SpectrumAnalyzer {
@@ -1829,6 +1948,47 @@ fn set_plugin_param_value(
             }
             _ => false,
         },
+        // === DynamicEq band-level params (idx >= 100) ===
+        PluginSettings::DynamicEq { bands, .. } if param_idx >= 100 => {
+            let band_idx = (param_idx - 100) / 10;
+            let local_idx = (param_idx - 100) % 10;
+            if let Some(band) = bands.get_mut(band_idx) {
+                use sotf_plugins::param_specs::{dynamic_eq::BAND_PARAMS as BT, find_by_key as p};
+                match local_idx {
+                    0 => {
+                        band.frequency = p(BT, "frequency").clamp_f64(value) as f32;
+                        true
+                    }
+                    1 => {
+                        band.q = p(BT, "q").clamp_f64(value) as f32;
+                        true
+                    }
+                    2 => {
+                        band.gain = p(BT, "gain").clamp_f64(value) as f32;
+                        true
+                    }
+                    3 => {
+                        band.band_threshold = p(BT, "band_threshold").clamp_f64(value) as f32;
+                        true
+                    }
+                    4 => {
+                        band.band_ratio = p(BT, "band_ratio").clamp_f64(value) as f32;
+                        true
+                    }
+                    5 => {
+                        band.active = value > 0.5;
+                        true
+                    }
+                    6 => {
+                        band.solo = value > 0.5;
+                        true
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            }
+        }
         // === MultibandCompressor band-level params (idx >= 100) ===
         PluginSettings::MultibandCompressor { bands, .. } if param_idx >= 100 => {
             let band_idx = (param_idx / 100) - 1;
@@ -2041,6 +2201,26 @@ fn apply_structural_side_effects(
                 };
             }
             *channel_count_changed = true;
+        }
+        PluginSettings::DynamicEq {
+            num_bands, bands, ..
+        } if param_idx == 0 => {
+            bands.resize_with((*num_bands as usize).clamp(1, 8), Default::default);
+        }
+        PluginSettings::LinearPhaseEq {
+            num_filters,
+            filters,
+            ..
+        }
+        | PluginSettings::FirDesigner {
+            num_filters,
+            filters,
+            ..
+        } if param_idx == 0 => {
+            let n = (*num_filters as usize).clamp(1, 10);
+            filters.resize_with(n, || {
+                EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)
+            });
         }
         _ => {}
     }

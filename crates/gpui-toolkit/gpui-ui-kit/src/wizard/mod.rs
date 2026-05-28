@@ -131,6 +131,26 @@ pub enum WizardVariant {
     Vertical,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WizardStepIndicatorDensity {
+    Full,
+    CurrentLabel,
+    CurrentIcon,
+}
+
+impl WizardStepIndicatorDensity {
+    fn from_window(window: &Window) -> Self {
+        let width: f32 = window.viewport_size().width.into();
+        if width < 560.0 {
+            Self::CurrentIcon
+        } else if width < 960.0 {
+            Self::CurrentLabel
+        } else {
+            Self::Full
+        }
+    }
+}
+
 /// A wizard component for multi-step workflows
 pub struct Wizard {
     steps: Vec<WizardStep>,
@@ -318,10 +338,18 @@ impl Wizard {
     }
 
     /// Build the step indicators
-    fn build_step_indicators(&self, theme: &WizardTheme) -> Div {
-        let mut container = div().flex().items_center().gap_2();
+    fn build_step_indicators(
+        &self,
+        theme: &WizardTheme,
+        density: WizardStepIndicatorDensity,
+    ) -> Div {
+        let mut container = div().flex().items_center().gap_2().overflow_hidden();
 
         for (index, step) in self.steps.iter().enumerate() {
+            if density == WizardStepIndicatorDensity::CurrentIcon && index != self.current_step {
+                continue;
+            }
+
             let status = self
                 .step_statuses
                 .get(index)
@@ -391,27 +419,43 @@ impl Wizard {
                     FontWeight::NORMAL
                 })
                 .text_color(label_color)
+                .whitespace_nowrap()
+                .overflow_hidden()
+                .text_ellipsis()
                 .child(step.label.clone());
 
             // Step item (circle + label)
-            let step_item = div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(step_circle)
-                .child(label);
+            let mut step_item = div().flex().items_center().gap_2().child(step_circle);
+
+            let show_label = match density {
+                WizardStepIndicatorDensity::Full => true,
+                WizardStepIndicatorDensity::CurrentLabel => is_current,
+                WizardStepIndicatorDensity::CurrentIcon => false,
+            };
+            if show_label {
+                step_item = step_item.child(label);
+            }
 
             container = container.child(step_item);
 
             // Connector line between steps (except after last step)
-            if index < self.steps.len() - 1 {
+            if density != WizardStepIndicatorDensity::CurrentIcon && index < self.steps.len() - 1 {
                 let connector_color = if status == StepStatus::Completed {
                     theme.connector_completed_color
                 } else {
                     theme.connector_color
                 };
 
-                let connector = div().w(px(32.0)).h(px(2.0)).bg(connector_color);
+                let connector_width = if density == WizardStepIndicatorDensity::CurrentLabel {
+                    px(24.0)
+                } else {
+                    px(32.0)
+                };
+                let connector = div()
+                    .flex_shrink_0()
+                    .w(connector_width)
+                    .h(px(2.0))
+                    .bg(connector_color);
 
                 container = container.child(connector);
             }
@@ -504,12 +548,20 @@ impl Wizard {
 
     /// Build into element with theme
     pub fn build_with_theme(self, global_theme: &WizardTheme) -> Div {
+        self.build_with_theme_and_density(global_theme, WizardStepIndicatorDensity::Full)
+    }
+
+    fn build_with_theme_and_density(
+        self,
+        global_theme: &WizardTheme,
+        density: WizardStepIndicatorDensity,
+    ) -> Div {
         let theme = self.theme.as_ref().unwrap_or(global_theme);
 
         let mut container = div().flex().flex_col().gap_4().w_full();
 
         // Step indicators
-        let indicators = self.build_step_indicators(theme);
+        let indicators = self.build_step_indicators(theme, density);
         container = container.child(indicators);
 
         // Progress bar (if progress is set)
@@ -546,10 +598,13 @@ impl Default for Wizard {
 }
 
 impl RenderOnce for Wizard {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
         let wizard_theme = WizardTheme::from(&global_theme);
-        self.build_with_theme(&wizard_theme)
+        self.build_with_theme_and_density(
+            &wizard_theme,
+            WizardStepIndicatorDensity::from_window(window),
+        )
     }
 }
 
@@ -619,10 +674,18 @@ impl WizardHeader {
     }
 
     /// Build step indicators (reuses Wizard's logic)
-    fn build_step_indicators(&self, theme: &WizardTheme) -> Div {
-        let mut container = div().flex().items_center().gap_2();
+    fn build_step_indicators(
+        &self,
+        theme: &WizardTheme,
+        density: WizardStepIndicatorDensity,
+    ) -> Div {
+        let mut container = div().flex().items_center().gap_2().overflow_hidden();
 
         for (index, step) in self.steps.iter().enumerate() {
+            if density == WizardStepIndicatorDensity::CurrentIcon && index != self.current_step {
+                continue;
+            }
+
             let status = self
                 .step_statuses
                 .get(index)
@@ -688,25 +751,43 @@ impl WizardHeader {
                     FontWeight::NORMAL
                 })
                 .text_color(label_color)
+                .whitespace_nowrap()
+                .overflow_hidden()
+                .text_ellipsis()
                 .child(step.label.clone());
 
-            let step_item = div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(step_circle)
-                .child(label);
+            let mut step_item = div().flex().items_center().gap_2().child(step_circle);
+
+            let show_label = match density {
+                WizardStepIndicatorDensity::Full => true,
+                WizardStepIndicatorDensity::CurrentLabel => is_current,
+                WizardStepIndicatorDensity::CurrentIcon => false,
+            };
+            if show_label {
+                step_item = step_item.child(label);
+            }
 
             container = container.child(step_item);
 
-            if index < self.steps.len() - 1 {
+            if density != WizardStepIndicatorDensity::CurrentIcon && index < self.steps.len() - 1 {
                 let connector_color = if status == StepStatus::Completed {
                     theme.connector_completed_color
                 } else {
                     theme.connector_color
                 };
 
-                container = container.child(div().w(px(32.0)).h(px(2.0)).bg(connector_color));
+                let connector_width = if density == WizardStepIndicatorDensity::CurrentLabel {
+                    px(24.0)
+                } else {
+                    px(32.0)
+                };
+                container = container.child(
+                    div()
+                        .flex_shrink_0()
+                        .w(connector_width)
+                        .h(px(2.0))
+                        .bg(connector_color),
+                );
             }
         }
 
@@ -715,6 +796,14 @@ impl WizardHeader {
 
     /// Build with theme
     pub fn build_with_theme(self, global_theme: &WizardTheme) -> Div {
+        self.build_with_theme_and_density(global_theme, WizardStepIndicatorDensity::Full)
+    }
+
+    fn build_with_theme_and_density(
+        self,
+        global_theme: &WizardTheme,
+        density: WizardStepIndicatorDensity,
+    ) -> Div {
         let theme = self.theme.as_ref().unwrap_or(global_theme);
 
         let mut container = div().flex().items_center().gap_4();
@@ -734,7 +823,7 @@ impl WizardHeader {
         }
 
         // Step indicators
-        container = container.child(self.build_step_indicators(theme));
+        container = container.child(self.build_step_indicators(theme, density));
 
         container
     }
@@ -747,10 +836,13 @@ impl Default for WizardHeader {
 }
 
 impl RenderOnce for WizardHeader {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
         let wizard_theme = WizardTheme::from(&global_theme);
-        self.build_with_theme(&wizard_theme)
+        self.build_with_theme_and_density(
+            &wizard_theme,
+            WizardStepIndicatorDensity::from_window(window),
+        )
     }
 }
 

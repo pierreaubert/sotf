@@ -1290,6 +1290,7 @@ mod tests {
                     | PluginType::Denoiser
                     | PluginType::Downmix
                     | PluginType::MonoToStereo
+                    | PluginType::FirDesigner
                     | PluginType::LinearPhaseEq
                     | PluginType::SpectralCompressor
             );

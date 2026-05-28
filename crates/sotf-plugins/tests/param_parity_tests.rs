@@ -15,10 +15,10 @@ use sotf_plugins::param_specs::{self, ParamSpec, ParamType};
 use sotf_plugins::{
     ABComparePlugin, BandMergePlugin, BandSplitPlugin, BinauralDecoderPlugin,
     ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin, DelayPlugin,
-    DenoiserPlugin, DownmixPlugin, ExpanderPlugin, GainPlugin, GatePlugin, InPlacePluginAdapter,
-    LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin, MonoToStereoPlugin,
-    MultibandCompressorPlugin, MultibandExpanderPlugin, ParameterId, ParameterValue, Plugin,
-    PndPlugin, RoomModel, UpmixerPlugin, XtcPlugin, XtcPluginParams,
+    DenoiserPlugin, DownmixPlugin, ExpanderPlugin, FirDesignerPlugin, GainPlugin, GatePlugin,
+    InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin,
+    MonoToStereoPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, ParameterId,
+    ParameterValue, Plugin, PndPlugin, RoomModel, UpmixerPlugin, XtcPlugin, XtcPluginParams,
 };
 
 const SAMPLE_RATE: u32 = 48000;
@@ -175,6 +175,14 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
                 SAMPLE_RATE,
             ))),
             params: param_specs::convolution::PARAMS,
+        },
+        PluginWithSpec {
+            name: "fir_designer",
+            plugin: Box::new(InPlacePluginAdapter::new(FirDesignerPlugin::new(
+                2,
+                SAMPLE_RATE,
+            ))),
+            params: param_specs::fir_designer::PARAMS,
         },
     ]
 }

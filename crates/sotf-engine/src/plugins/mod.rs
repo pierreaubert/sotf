@@ -66,7 +66,7 @@ where
     deserializer.deserialize_any(SpeakerConfigVisitor)
 }
 use sotf_plugins::{
-    BandCompressorParams, BandExpanderParams, CrossfeedMode, CrossfeedPreset,
+    BandCompressorParams, BandExpanderParams, CrossfeedMode, CrossfeedPreset, DynEqBandParams,
     SpectralTiltCorrection, TiltReferenceFreq,
 };
 
@@ -157,6 +157,7 @@ pub enum PluginType {
     TransientShaper,
     Saturation,
     DynamicEq,
+    FirDesigner,
     LinearPhaseEq,
     SpectralCompressor,
 }
@@ -203,6 +204,7 @@ impl PluginType {
             Self::TransientShaper => "Transient Shaper",
             Self::Saturation => "Saturation",
             Self::DynamicEq => "Dynamic EQ",
+            Self::FirDesigner => "FIR Designer",
             Self::LinearPhaseEq => "Linear-Phase EQ",
             Self::SpectralCompressor => "Spectral Compressor",
         }
@@ -249,6 +251,7 @@ impl PluginType {
             Self::TransientShaper => "SPL Transient Designer — attack/sustain shaping",
             Self::Saturation => "Harmonic saturation / exciter with multiple modes",
             Self::DynamicEq => "Frequency-selective dynamics (hybrid EQ + compressor)",
+            Self::FirDesigner => "FIR magnitude and phase design",
             Self::LinearPhaseEq => "Parametric EQ with linear-phase FIR convolution",
             Self::SpectralCompressor => {
                 "Per-bin FFT dynamics processor for surgical spectral compression"
@@ -297,6 +300,7 @@ impl PluginType {
             Self::TransientShaper,
             Self::Saturation,
             Self::DynamicEq,
+            Self::FirDesigner,
             Self::LinearPhaseEq,
             Self::SpectralCompressor,
         ]
@@ -362,6 +366,7 @@ impl PluginType {
             | Self::TransientShaper
             | Self::Saturation
             | Self::DynamicEq
+            | Self::FirDesigner
             | Self::LinearPhaseEq => ReleaseChannel::Beta,
 
             Self::BinauralDecoder
@@ -399,6 +404,7 @@ use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
 use sotf_plugins::param_specs::find_by_key as pk;
+use sotf_plugins::param_specs::fir_designer as fir_designer_specs;
 use sotf_plugins::param_specs::hiss_reducer as hiss_reducer_specs;
 use sotf_plugins::param_specs::speech_denoiser as speech_denoiser_specs;
 // fletcher_munson specs removed — merged into loudness_compensation
@@ -1872,6 +1878,8 @@ pub enum PluginSettings {
         link_channels: bool,
         #[serde(default = "default_dyneq_mix")]
         mix: f64,
+        #[serde(default = "default_dyneq_bands")]
+        bands: Vec<DynEqBandParams>,
     },
     LinearPhaseEq {
         #[serde(default = "default_lpeq_num_filters")]
@@ -1881,6 +1889,20 @@ pub enum PluginSettings {
         #[serde(default)]
         auto_gain: bool,
         #[serde(default = "default_lpeq_mix")]
+        mix: f64,
+        #[serde(default)]
+        filters: Vec<EQFilter>,
+    },
+    FirDesigner {
+        #[serde(default = "default_fird_num_filters")]
+        num_filters: f64,
+        #[serde(default = "default_fird_fir_length")]
+        fir_length: f64,
+        #[serde(default = "default_fird_phase_mode")]
+        phase_mode: f64,
+        #[serde(default)]
+        auto_gain: bool,
+        #[serde(default = "default_fird_mix")]
         mix: f64,
         #[serde(default)]
         filters: Vec<EQFilter>,
@@ -1946,11 +1968,25 @@ sotf_plugins::serde_param_default! {
     fn default_dyneq_mix() -> f64 = "mix";
 }
 
+fn default_dyneq_bands() -> Vec<DynEqBandParams> {
+    (0..default_dyneq_num_bands() as usize)
+        .map(|_| DynEqBandParams::default())
+        .collect()
+}
+
 sotf_plugins::serde_param_default! {
     linear_phase_eq_specs::PARAMS;
     fn default_lpeq_num_filters() -> f64 = "num_filters";
     fn default_lpeq_fir_length() -> f64 = "fir_length";
     fn default_lpeq_mix() -> f64 = "mix";
+}
+
+sotf_plugins::serde_param_default! {
+    fir_designer_specs::PARAMS;
+    fn default_fird_num_filters() -> f64 = "num_filters";
+    fn default_fird_fir_length() -> f64 = "fir_length";
+    fn default_fird_phase_mode() -> f64 = "phase_mode";
+    fn default_fird_mix() -> f64 = "mix";
 }
 
 impl PluginSettings {
@@ -1960,6 +1996,7 @@ impl PluginSettings {
         match self {
             Self::EQ { filters, .. } => Some(filters),
             Self::LinearPhaseEq { filters, .. } => Some(filters),
+            Self::FirDesigner { filters, .. } => Some(filters),
             _ => None,
         }
     }
@@ -1969,6 +2006,7 @@ impl PluginSettings {
         match self {
             Self::EQ { filters, .. } => Some(filters),
             Self::LinearPhaseEq { filters, .. } => Some(filters),
+            Self::FirDesigner { filters, .. } => Some(filters),
             _ => None,
         }
     }
@@ -2013,6 +2051,7 @@ impl PluginSettings {
             Self::TransientShaper { .. } => PluginType::TransientShaper,
             Self::Saturation { .. } => PluginType::Saturation,
             Self::DynamicEq { .. } => PluginType::DynamicEq,
+            Self::FirDesigner { .. } => PluginType::FirDesigner,
             Self::LinearPhaseEq { .. } => PluginType::LinearPhaseEq,
             Self::SpectralCompressor { .. } => PluginType::SpectralCompressor,
             Self::AAE { .. } => PluginType::AAE,
@@ -2234,6 +2273,7 @@ impl PluginSettings {
                 knee,
                 link_channels,
                 mix,
+                bands,
             } => PluginConfig::new(
                 "dynamic_eq",
                 json!({
@@ -2245,6 +2285,7 @@ impl PluginSettings {
                     "knee": *knee as f32,
                     "link_channels": link_channels,
                     "mix": *mix as f32,
+                    "bands": bands,
                 }),
             ),
             Self::LinearPhaseEq {
@@ -2273,6 +2314,39 @@ impl PluginSettings {
                     json!({
                         "num_filters": *num_filters as usize,
                         "fir_length_index": *fir_length as usize,
+                        "auto_gain": auto_gain,
+                        "mix": *mix as f32,
+                        "filters": band_configs,
+                    }),
+                )
+            }
+            Self::FirDesigner {
+                num_filters,
+                fir_length,
+                phase_mode,
+                auto_gain,
+                mix,
+                filters,
+            } => {
+                let band_configs: Vec<serde_json::Value> = filters
+                    .iter()
+                    .filter(|f| !f.muted)
+                    .map(|f| {
+                        json!({
+                            "filter_type": f.filter_type.long_name().to_lowercase(),
+                            "frequency": f.frequency,
+                            "q": f.q,
+                            "gain_db": f.gain_db,
+                            "active": true,
+                        })
+                    })
+                    .collect();
+                PluginConfig::new(
+                    "fir_designer",
+                    json!({
+                        "num_filters": *num_filters as usize,
+                        "fir_length_index": *fir_length as usize,
+                        "phase_mode_index": *phase_mode as usize,
                         "auto_gain": auto_gain,
                         "mix": *mix as f32,
                         "filters": band_configs,
@@ -3833,8 +3907,9 @@ impl PluginSettings {
             }
             PluginType::DynamicEq => {
                 let dq = dynamic_eq_specs::PARAMS;
+                let num_bands = p(dq, "num_bands").default_f64();
                 Self::DynamicEq {
-                    num_bands: p(dq, "num_bands").default_f64(),
+                    num_bands,
                     threshold: p(dq, "threshold").default_f64(),
                     ratio: p(dq, "ratio").default_f64(),
                     attack: p(dq, "attack").default_f64(),
@@ -3842,6 +3917,9 @@ impl PluginSettings {
                     knee: p(dq, "knee").default_f64(),
                     link_channels: p(dq, "link_channels").default_bool(),
                     mix: p(dq, "mix").default_f64(),
+                    bands: (0..num_bands as usize)
+                        .map(|_| DynEqBandParams::default())
+                        .collect(),
                 }
             }
             PluginType::LinearPhaseEq => {
@@ -3855,6 +3933,21 @@ impl PluginSettings {
                     fir_length: p(lp, "fir_length").default_f64(),
                     auto_gain: p(lp, "auto_gain").default_bool(),
                     mix: p(lp, "mix").default_f64(),
+                    filters,
+                }
+            }
+            PluginType::FirDesigner => {
+                let fd = fir_designer_specs::PARAMS;
+                let n = p(fd, "num_filters").default_f64() as usize;
+                let filters = (0..n)
+                    .map(|_| EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0))
+                    .collect();
+                Self::FirDesigner {
+                    num_filters: p(fd, "num_filters").default_f64(),
+                    fir_length: p(fd, "fir_length").default_f64(),
+                    phase_mode: p(fd, "phase_mode").default_f64(),
+                    auto_gain: p(fd, "auto_gain").default_bool(),
+                    mix: p(fd, "mix").default_f64(),
                     filters,
                 }
             }

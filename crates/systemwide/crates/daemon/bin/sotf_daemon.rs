@@ -15,15 +15,17 @@
 
 mod driver_manager;
 mod lock_order;
+mod plugin_artifact;
 mod security;
 
 use driver_manager::{DriverManager, get_driver_status};
+use plugin_artifact::{PluginArtifactPlan, plan_plugin_artifact};
 use security::{
     KeyManager, PeerClass, classify_peer, current_uid as security_current_uid,
     ensure_secure_socket_dir, get_secure_socket_path, peer_allows_command, verify_peer_credentials,
 };
 
-use driver_common::DriverConfig;
+use driver_common::{DriverConfig, DriverStatus};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -49,10 +51,17 @@ fn default_output_channels() -> usize {
     2
 }
 
+fn env_path_is_set(key: &str) -> bool {
+    std::env::var_os(key).is_some_and(|value| !value.as_os_str().is_empty())
+}
+
 /// Get the socket path to use
 /// Uses secure per-user path, with fallback to legacy path if SOTF_LEGACY_SOCKET is set
 fn get_socket_path() -> PathBuf {
-    if std::env::var("SOTF_LEGACY_SOCKET").is_ok() {
+    if env_path_is_set("SOTF_DAEMON_SOCKET_PATH") || env_path_is_set("SOTF_SYSTEMWIDE_RUNTIME_DIR")
+    {
+        get_secure_socket_path()
+    } else if std::env::var("SOTF_LEGACY_SOCKET").is_ok() {
         PathBuf::from(LEGACY_SOCKET_PATH)
     } else {
         get_secure_socket_path()
@@ -64,6 +73,10 @@ fn get_socket_path() -> PathBuf {
 enum Command {
     #[serde(rename = "status")]
     Status,
+    #[serde(rename = "get_snapshot", alias = "snapshot")]
+    GetSnapshot,
+    #[serde(rename = "dump_state")]
+    DumpState,
     #[serde(rename = "load")]
     Load { path: String },
     #[serde(rename = "play")]
@@ -87,6 +100,19 @@ enum Command {
         input_channels: usize,
         #[serde(default = "default_output_channels")]
         output_channels: usize,
+    },
+    #[serde(rename = "load_plugin_artifact")]
+    LoadPluginArtifact { artifact: Value },
+    #[serde(rename = "set_input_channels")]
+    SetInputChannels { channels: usize },
+    #[serde(rename = "set_output_channels")]
+    SetOutputChannels { channels: usize },
+    #[serde(rename = "set_pipeline_channels")]
+    SetPipelineChannels {
+        #[serde(default)]
+        input_channels: Option<usize>,
+        #[serde(default)]
+        output_channels: Option<usize>,
     },
     #[serde(rename = "get_loudness")]
     GetLoudness,
@@ -142,6 +168,8 @@ impl Command {
     fn name(&self) -> &'static str {
         match self {
             Command::Status => "status",
+            Command::GetSnapshot => "get_snapshot",
+            Command::DumpState => "dump_state",
             Command::Load { .. } => "load",
             Command::Play => "play",
             Command::Pause => "pause",
@@ -151,6 +179,10 @@ impl Command {
             Command::ListDevices => "list_devices",
             Command::SetDevice { .. } => "set_device",
             Command::LoadPlugins { .. } => "load_plugins",
+            Command::LoadPluginArtifact { .. } => "load_plugin_artifact",
+            Command::SetInputChannels { .. } => "set_input_channels",
+            Command::SetOutputChannels { .. } => "set_output_channels",
+            Command::SetPipelineChannels { .. } => "set_pipeline_channels",
             Command::GetLoudness => "get_loudness",
             Command::GetMetering => "get_metering",
             Command::GetPlugins => "get_plugins",
@@ -322,6 +354,172 @@ fn empty_loudness_json(channels: usize) -> Value {
     })
 }
 
+fn metering_source_json(data_present: bool, channels: usize) -> Value {
+    let channels = channels.clamp(1, MAX_HAL_CHANNELS);
+    let (status, source) = if data_present {
+        ("available", "loudness_monitor")
+    } else {
+        ("fallback_zero", "channel_sized_fallback")
+    };
+    serde_json::json!({
+        "status": status,
+        "source": source,
+        "channels": channels,
+    })
+}
+
+fn transport_snapshot_and_faults(
+    state_name: &str,
+    driver_status: &DriverStatus,
+    engine_state: &sotf_audio::AudioEngineState,
+) -> (Value, Vec<Value>) {
+    let playing = state_name == "Playing";
+    let driver_unavailable =
+        playing && (!driver_status.driver_installed || !driver_status.driver_ready);
+    let hal_stream_inactive = playing && !driver_unavailable && !driver_status.capture_active;
+    let input_frames_missing =
+        playing && !driver_unavailable && engine_state.playback_frames_received == 0;
+    let output_callbacks_missing = playing && engine_state.playback_callback_count == 0;
+    let output_frames_missing = playing
+        && engine_state.playback_frames_received > 0
+        && engine_state.playback_frames_written == 0;
+    let output_device_unresolved = playing && engine_state.playback_output_device.is_none();
+
+    let input_status = if !playing {
+        "idle"
+    } else if driver_unavailable {
+        "driver_unavailable"
+    } else if hal_stream_inactive {
+        "hal_stream_inactive"
+    } else if input_frames_missing {
+        "input_frames_missing"
+    } else {
+        "flowing"
+    };
+
+    let output_status = if !playing {
+        "idle"
+    } else if output_callbacks_missing {
+        "output_callbacks_missing"
+    } else if output_frames_missing {
+        "output_frames_missing"
+    } else if output_device_unresolved {
+        "output_device_unresolved"
+    } else {
+        "flowing"
+    };
+
+    let mut faults = Vec::new();
+    if playing {
+        if driver_unavailable {
+            faults.push(serde_json::json!({
+                "code": "driver_unavailable",
+                "severity": "error",
+                "message": "Playback is marked Playing but the HAL driver is not ready.",
+            }));
+        }
+        if hal_stream_inactive {
+            faults.push(serde_json::json!({
+                "code": "hal_stream_inactive",
+                "severity": "warning",
+                "message": "Playback is marked Playing but the HAL stream is not active.",
+            }));
+        }
+        if input_frames_missing {
+            faults.push(serde_json::json!({
+                "code": "input_frames_missing",
+                "severity": "error",
+                "message": "Playback is marked Playing but no frames have reached the playback thread.",
+            }));
+        }
+
+        if output_callbacks_missing {
+            faults.push(serde_json::json!({
+                "code": "output_callbacks_missing",
+                "severity": "error",
+                "message": "Playback is marked Playing but no hardware output callbacks have been observed.",
+            }));
+        }
+        if output_frames_missing {
+            faults.push(serde_json::json!({
+                "code": "output_frames_missing",
+                "severity": "error",
+                "message": "The playback thread received frames but has not written any to the hardware ring.",
+            }));
+        }
+        if output_device_unresolved {
+            faults.push(serde_json::json!({
+                "code": "output_device_unresolved",
+                "severity": "warning",
+                "message": "Playback is active but no hardware output device has been resolved yet.",
+            }));
+        }
+    }
+
+    (
+        serde_json::json!({
+            "input_status": input_status,
+            "output_status": output_status,
+            "input": {
+                "status": input_status,
+                "frames_received": engine_state.playback_frames_received,
+                "hal_capture_active": driver_status.capture_active,
+                "driver_installed": driver_status.driver_installed,
+                "driver_ready": driver_status.driver_ready,
+            },
+            "output": {
+                "status": output_status,
+                "callbacks": engine_state.playback_callback_count,
+                "frames_written": engine_state.playback_frames_written,
+                "frames_dropped": engine_state.playback_frames_dropped,
+                "device": engine_state.playback_output_device.as_deref(),
+                "effective_sample_rate": engine_state.playback_effective_sample_rate,
+            },
+            "input_frames_received": engine_state.playback_frames_received,
+            "output_callbacks": engine_state.playback_callback_count,
+            "output_frames_written": engine_state.playback_frames_written,
+            "frames_dropped": engine_state.playback_frames_dropped,
+            "hal_capture_active": driver_status.capture_active,
+        }),
+        faults,
+    )
+}
+
+fn push_metering_faults(state_name: &str, metering: &Value, faults: &mut Vec<Value>) {
+    if state_name != "Playing" {
+        return;
+    }
+
+    if metering["sources"]["input"]["status"].as_str() == Some("fallback_zero") {
+        faults.push(serde_json::json!({
+            "code": "input_metering_unavailable",
+            "severity": "warning",
+            "message": "Input meters are channel-shaped fallback zeros, not analyzer data.",
+        }));
+    }
+    if metering["sources"]["output"]["status"].as_str() == Some("fallback_zero") {
+        faults.push(serde_json::json!({
+            "code": "output_metering_unavailable",
+            "severity": "warning",
+            "message": "Output meters are channel-shaped fallback zeros, not analyzer data.",
+        }));
+    }
+}
+
+fn pipeline_spec_to_json(spec: &PipelineSpec) -> Value {
+    serde_json::json!({
+        "output_device": spec.output_device,
+        "input_channels": spec.input_channels,
+        "output_channels": spec.output_channels,
+        "user_plugin_count": spec.user_plugins.len(),
+        "user_plugin_types": spec
+            .user_plugins
+            .iter()
+            .map(|p| p.plugin_type.as_str())
+            .collect::<Vec<_>>(),
+    })
+}
+
 fn parameter_descriptor_to_json(spec: &sotf_plugins::param_specs::ParamSpec) -> Value {
     use sotf_plugins::param_specs::{ParamType, UpdateMode};
 
@@ -441,27 +639,292 @@ fn build_driver_plugin_chain(plugins: Vec<PluginConfig>) -> (Vec<PluginConfig>, 
     (final_plugins, input_monitor_index, output_monitor_index)
 }
 
+#[derive(Clone, Debug)]
+struct PipelineSpec {
+    output_device: Option<String>,
+    user_plugins: Vec<PluginConfig>,
+    input_channels: usize,
+    output_channels: usize,
+}
+
+impl Default for PipelineSpec {
+    fn default() -> Self {
+        Self {
+            output_device: None,
+            user_plugins: Vec::new(),
+            input_channels: 2,
+            output_channels: 2,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct AppliedPipeline {
+    spec: PipelineSpec,
+    input_loudness_index: usize,
+    output_loudness_index: usize,
+    generation: u64,
+}
+
+#[derive(Clone, Debug)]
+struct PipelinePlan {
+    spec: PipelineSpec,
+    runtime_plugins: Vec<PluginConfig>,
+    input_loudness_index: usize,
+    output_loudness_index: usize,
+}
+
+#[derive(Debug, Default)]
+struct PipelineSupervisor {
+    desired: PipelineSpec,
+    applied: Option<AppliedPipeline>,
+    generation: u64,
+}
+
+impl PipelineSupervisor {
+    fn selected_output_device(&self) -> Option<String> {
+        self.desired.output_device.clone()
+    }
+
+    fn user_plugins(&self) -> Vec<PluginConfig> {
+        self.desired.user_plugins.clone()
+    }
+
+    fn input_channels(&self) -> usize {
+        self.desired.input_channels
+    }
+
+    fn output_channels(&self) -> usize {
+        self.desired.output_channels
+    }
+
+    fn input_loudness_index(&self) -> Option<usize> {
+        self.applied.as_ref().map(|p| p.input_loudness_index)
+    }
+
+    fn output_loudness_index(&self) -> Option<usize> {
+        self.applied.as_ref().map(|p| p.output_loudness_index)
+    }
+
+    fn applied_generation(&self) -> Option<u64> {
+        self.applied.as_ref().map(|p| p.generation)
+    }
+
+    fn applied_output_device(&self) -> Option<String> {
+        self.applied
+            .as_ref()
+            .and_then(|p| p.spec.output_device.clone())
+    }
+
+    fn desired_spec(&self) -> PipelineSpec {
+        self.desired.clone()
+    }
+
+    fn applied_spec(&self) -> Option<PipelineSpec> {
+        self.applied.as_ref().map(|p| p.spec.clone())
+    }
+
+    fn prepare_plan(
+        &self,
+        user_plugins: Vec<PluginConfig>,
+        input_channels: usize,
+        output_channels: usize,
+        driver_input_fallback_channels: usize,
+    ) -> Result<PipelinePlan, String> {
+        let user_plugins = sanitize_user_plugins(user_plugins);
+        let input_channels = if input_channels > 0 {
+            input_channels
+        } else if driver_input_fallback_channels > 0 {
+            driver_input_fallback_channels
+        } else {
+            self.desired.input_channels.max(1)
+        };
+
+        if !(1..=MAX_HAL_CHANNELS).contains(&input_channels) {
+            return Err(format!(
+                "Invalid HAL input channel count: {}. Must be between 1 and {}.",
+                input_channels, MAX_HAL_CHANNELS
+            ));
+        }
+        if !(1..=MAX_HAL_CHANNELS).contains(&output_channels) {
+            return Err(format!(
+                "Invalid output channel count: {}. Must be between 1 and {}.",
+                output_channels, MAX_HAL_CHANNELS
+            ));
+        }
+
+        let mut output_device = self.desired.output_device.clone();
+        if output_device.is_none() {
+            output_device = configured_output_device_from_env();
+        }
+
+        if output_device
+            .as_ref()
+            .map(|d| is_safe_output_device_name(d))
+            .unwrap_or(false)
+        {
+            log::info!(
+                "Using selected output device for driver playback: {:?}",
+                output_device
+            );
+        } else if output_device.is_some() {
+            log::warn!(
+                "Ignoring virtual output device selection {:?}; playback thread will choose a safe device",
+                output_device
+            );
+            output_device = None;
+        }
+
+        let (runtime_plugins, input_loudness_index, output_loudness_index) =
+            build_driver_plugin_chain(user_plugins.clone());
+
+        Ok(PipelinePlan {
+            spec: PipelineSpec {
+                output_device,
+                user_plugins,
+                input_channels,
+                output_channels,
+            },
+            runtime_plugins,
+            input_loudness_index,
+            output_loudness_index,
+        })
+    }
+
+    fn prepare_with_selected_device(&self, output_device: String) -> Result<PipelinePlan, String> {
+        let mut next = self.desired.clone();
+        next.output_device = Some(output_device);
+        let supervisor = Self {
+            desired: next.clone(),
+            applied: self.applied.clone(),
+            generation: self.generation,
+        };
+        supervisor.prepare_plan(
+            next.user_plugins,
+            next.input_channels,
+            next.output_channels,
+            next.input_channels,
+        )
+    }
+
+    fn commit_applied(&mut self, plan: &PipelinePlan) {
+        self.generation = self.generation.saturating_add(1);
+        self.desired = plan.spec.clone();
+        self.applied = Some(AppliedPipeline {
+            spec: plan.spec.clone(),
+            input_loudness_index: plan.input_loudness_index,
+            output_loudness_index: plan.output_loudness_index,
+            generation: self.generation,
+        });
+    }
+
+    fn set_desired_output_device(&mut self, output_device: Option<String>) -> Result<(), String> {
+        if let Some(device) = output_device.as_ref()
+            && !is_safe_output_device_name(device)
+        {
+            return Err(format!(
+                "'{}' is a virtual/loopback device and cannot be used as Systemwide speaker output.",
+                device
+            ));
+        }
+        self.desired.output_device = output_device;
+        Ok(())
+    }
+
+    fn commit_idle_reconfigure(&mut self, plan: &PipelinePlan) {
+        self.desired = plan.spec.clone();
+    }
+}
+
+#[derive(Debug, Default)]
+struct SystemwideState {
+    pipeline: PipelineSupervisor,
+}
+
+impl SystemwideState {
+    fn selected_output_device(&self) -> Option<String> {
+        self.pipeline.selected_output_device()
+    }
+
+    fn user_plugins(&self) -> Vec<PluginConfig> {
+        self.pipeline.user_plugins()
+    }
+
+    fn input_channels(&self) -> usize {
+        self.pipeline.input_channels()
+    }
+
+    fn output_channels(&self) -> usize {
+        self.pipeline.output_channels()
+    }
+
+    fn input_loudness_index(&self) -> Option<usize> {
+        self.pipeline.input_loudness_index()
+    }
+
+    fn output_loudness_index(&self) -> Option<usize> {
+        self.pipeline.output_loudness_index()
+    }
+
+    fn applied_generation(&self) -> Option<u64> {
+        self.pipeline.applied_generation()
+    }
+
+    fn applied_output_device(&self) -> Option<String> {
+        self.pipeline.applied_output_device()
+    }
+
+    fn desired_spec(&self) -> PipelineSpec {
+        self.pipeline.desired_spec()
+    }
+
+    fn applied_spec(&self) -> Option<PipelineSpec> {
+        self.pipeline.applied_spec()
+    }
+
+    fn prepare_plan(
+        &self,
+        user_plugins: Vec<PluginConfig>,
+        input_channels: usize,
+        output_channels: usize,
+        driver_input_fallback_channels: usize,
+    ) -> Result<PipelinePlan, String> {
+        self.pipeline.prepare_plan(
+            user_plugins,
+            input_channels,
+            output_channels,
+            driver_input_fallback_channels,
+        )
+    }
+
+    fn prepare_with_selected_device(&self, output_device: String) -> Result<PipelinePlan, String> {
+        self.pipeline.prepare_with_selected_device(output_device)
+    }
+
+    fn commit_applied(&mut self, plan: &PipelinePlan) {
+        self.pipeline.commit_applied(plan);
+    }
+
+    fn set_desired_output_device(&mut self, output_device: Option<String>) -> Result<(), String> {
+        self.pipeline.set_desired_output_device(output_device)
+    }
+
+    fn commit_idle_reconfigure(&mut self, plan: &PipelinePlan) {
+        self.pipeline.commit_idle_reconfigure(plan);
+    }
+}
+
 #[derive(Clone)]
 struct AudioDaemon {
     manager: Arc<Mutex<AudioEngineManager>>,
     running: Arc<Mutex<bool>>,
     driver_manager: Arc<Mutex<DriverManager>>,
-    /// Selected output device name (None = use default device)
-    selected_device: Arc<Mutex<Option<String>>>,
+    /// Desired and applied systemwide daemon state.
+    system_state: Arc<Mutex<SystemwideState>>,
     /// Encryption key manager
     key_manager: Arc<Mutex<KeyManager>>,
     /// Shared Tokio runtime for async operations
     runtime: Arc<tokio::runtime::Runtime>,
-    /// Current plugin configuration (user plugins, excluding auto-added monitors)
-    current_plugins: Arc<Mutex<Vec<PluginConfig>>>,
-    /// Current HAL input channel count
-    current_input_channels: Arc<Mutex<usize>>,
-    /// Current output channel count
-    current_output_channels: Arc<Mutex<usize>>,
-    /// Index of the auto-injected input loudness monitor in the final plugin chain
-    input_loudness_index: Arc<Mutex<Option<usize>>>,
-    /// Index of the auto-injected output loudness monitor in the final plugin chain
-    output_loudness_index: Arc<Mutex<Option<usize>>>,
 }
 
 impl AudioDaemon {
@@ -472,14 +935,9 @@ impl AudioDaemon {
             manager: Arc::new(Mutex::new(AudioEngineManager::new())),
             running: Arc::new(Mutex::new(true)),
             driver_manager: Arc::new(Mutex::new(DriverManager::new())),
-            selected_device: Arc::new(Mutex::new(None)),
+            system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
             runtime: Arc::new(runtime),
-            current_plugins: Arc::new(Mutex::new(Vec::new())),
-            current_input_channels: Arc::new(Mutex::new(2)),
-            current_output_channels: Arc::new(Mutex::new(2)),
-            input_loudness_index: Arc::new(Mutex::new(None)),
-            output_loudness_index: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -491,8 +949,14 @@ impl AudioDaemon {
             let output_device = configured_output_device_from_env();
             println!("   Output device: {:?}", output_device);
 
-            if let Some(ref device) = output_device {
-                *daemon.selected_device.lock() = Some(device.clone());
+            if let Some(device) = output_device {
+                if let Err(e) = daemon
+                    .system_state
+                    .lock()
+                    .set_desired_output_device(Some(device.clone()))
+                {
+                    println!("   Ignoring configured output device {:?}: {}", device, e);
+                }
             } else {
                 println!("   No output device override; playback thread will choose a safe device");
             }
@@ -513,6 +977,8 @@ impl AudioDaemon {
     async fn handle_command(&self, cmd: Command) -> Response {
         match cmd {
             Command::Status => self.handle_status().await,
+            Command::GetSnapshot => self.handle_get_snapshot().await,
+            Command::DumpState => self.handle_dump_state().await,
             Command::Load { path } => self.handle_load(&path).await,
             Command::Play => self.handle_play().await,
             Command::Pause => self.handle_pause().await,
@@ -527,6 +993,24 @@ impl AudioDaemon {
                 output_channels,
             } => {
                 self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
+                    .await
+            }
+            Command::LoadPluginArtifact { artifact } => {
+                self.handle_load_plugin_artifact(artifact).await
+            }
+            Command::SetInputChannels { channels } => {
+                self.handle_set_pipeline_channels(Some(channels), None)
+                    .await
+            }
+            Command::SetOutputChannels { channels } => {
+                self.handle_set_pipeline_channels(None, Some(channels))
+                    .await
+            }
+            Command::SetPipelineChannels {
+                input_channels,
+                output_channels,
+            } => {
+                self.handle_set_pipeline_channels(input_channels, output_channels)
                     .await
             }
             Command::GetLoudness => self.handle_get_loudness().await,
@@ -555,20 +1039,198 @@ impl AudioDaemon {
         }
     }
 
+    fn metering_snapshot(&self) -> Value {
+        let manager = self.manager.lock();
+        let pipeline = self.system_state.lock();
+        let input_idx = pipeline.input_loudness_index();
+        let output_idx = pipeline.output_loudness_index();
+        let fallback_input_channels = pipeline.input_channels();
+        let fallback_output_channels = manager.get_engine_state().num_channels;
+        drop(pipeline);
+
+        let input_data = input_idx.and_then(|idx| {
+            manager
+                .get_cached_plugin_data(idx)
+                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
+        });
+
+        let output_data = output_idx.and_then(|idx| {
+            manager
+                .get_cached_plugin_data(idx)
+                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
+        });
+
+        let input_json = input_data
+            .as_ref()
+            .map(loudness_data_to_json)
+            .unwrap_or_else(|| empty_loudness_json(fallback_input_channels));
+        let output_json = output_data
+            .as_ref()
+            .map(loudness_data_to_json)
+            .unwrap_or_else(|| empty_loudness_json(fallback_output_channels));
+
+        serde_json::json!({
+            "input": input_json,
+            "output": output_json,
+            "sources": {
+                "input": metering_source_json(input_data.is_some(), fallback_input_channels),
+                "output": metering_source_json(output_data.is_some(), fallback_output_channels),
+            },
+        })
+    }
+
+    fn snapshot_json(&self) -> Value {
+        let driver_status = self.driver_manager.lock().status();
+        let key_status = self.key_manager.lock().status();
+
+        let manager = self.manager.lock();
+        let state = manager.get_state();
+        let state_name = format!("{:?}", state);
+        let engine_state = manager.get_engine_state();
+        let volume = manager.get_volume();
+        let muted = manager.is_muted();
+        drop(manager);
+
+        let pipeline = self.system_state.lock();
+        let desired = pipeline.desired_spec();
+        let applied = pipeline.applied_spec();
+        let applied_generation = pipeline.applied_generation();
+        let applied_output_device = pipeline.applied_output_device();
+        drop(pipeline);
+
+        let (transport, mut faults) =
+            transport_snapshot_and_faults(&state_name, &driver_status, &engine_state);
+
+        if desired
+            .output_device
+            .as_ref()
+            .is_some_and(|device| !is_safe_output_device_name(device))
+        {
+            faults.push(serde_json::json!({
+                "code": "unsafe_desired_output_device",
+                "severity": "error",
+                "message": "Desired output device is virtual/loopback and would create a feedback risk.",
+            }));
+        }
+        if engine_state
+            .playback_output_device
+            .as_ref()
+            .is_some_and(|device| !is_safe_output_device_name(device))
+        {
+            faults.push(serde_json::json!({
+                "code": "unsafe_observed_output_device",
+                "severity": "error",
+                "message": "Observed playback output device is virtual/loopback and risks feedback.",
+            }));
+        }
+
+        let metering = self.metering_snapshot();
+        push_metering_faults(&state_name, &metering, &mut faults);
+        let health = if faults
+            .iter()
+            .any(|fault| fault["severity"].as_str() == Some("error"))
+        {
+            "fault"
+        } else if faults.is_empty() {
+            "ok"
+        } else {
+            "warning"
+        };
+
+        serde_json::json!({
+            "schema_version": 1,
+            "desired": pipeline_spec_to_json(&desired),
+            "applied": {
+                "generation": applied_generation,
+                "output_device": applied_output_device,
+                "spec": applied.as_ref().map(pipeline_spec_to_json),
+            },
+            "observed": {
+                "engine": {
+                    "state": state_name,
+                    "volume": volume,
+                    "muted": muted,
+                    "sample_rate": engine_state.sample_rate,
+                    "channels": engine_state.num_channels,
+                    "underruns": engine_state.underruns,
+                    "playback_output_device": engine_state.playback_output_device,
+                    "playback_callback_count": engine_state.playback_callback_count,
+                    "playback_buffer_fill_percent": engine_state.playback_buffer_fill_percent,
+                    "playback_stream_error_count": engine_state.playback_stream_error_count,
+                    "playback_frames_received": engine_state.playback_frames_received,
+                    "playback_frames_written": engine_state.playback_frames_written,
+                    "playback_frames_dropped": engine_state.playback_frames_dropped,
+                    "playback_effective_sample_rate": engine_state.playback_effective_sample_rate,
+                    "last_error": engine_state.last_error,
+                },
+                "driver": {
+                    "platform_supported": driver_status.platform_supported,
+                    "driver_installed": driver_status.driver_installed,
+                    "driver_ready": driver_status.driver_ready,
+                    "capture_active": driver_status.capture_active,
+                    "sample_rate": driver_status.sample_rate,
+                    "channel_count": driver_status.channel_count,
+                    "buffer_frames": driver_status.buffer_frames,
+                    "driver_name": driver_status.driver_name,
+                },
+                "encryption": {
+                    "enabled": key_status.enabled,
+                    "fingerprint": key_status.fingerprint,
+                    "key_path": key_status.key_path,
+                },
+                "transport": transport,
+                "metering": metering,
+            },
+            "diagnostics": {
+                "health": health,
+                "faults": faults,
+            },
+        })
+    }
+
+    async fn handle_get_snapshot(&self) -> Response {
+        Response::ok(self.snapshot_json())
+    }
+
+    async fn handle_dump_state(&self) -> Response {
+        Response::ok(serde_json::json!({
+            "snapshot": self.snapshot_json(),
+            "plugins": self.system_state.lock().user_plugins(),
+        }))
+    }
+
     async fn handle_status(&self) -> Response {
         let manager = self.manager.lock();
         let state = manager.get_state();
         let engine_state = manager.get_engine_state();
-        let selected_device = self.selected_device.lock().clone();
+        let pipeline = self.system_state.lock();
+        let selected_device = pipeline.selected_output_device();
+        let input_channels = pipeline.input_channels();
+        let output_channels = pipeline.output_channels();
+        let pipeline_generation = pipeline.applied_generation();
+        let pipeline_applied_output_device = pipeline.applied_output_device();
+        drop(pipeline);
 
         Response::ok(serde_json::json!({
             "state": format!("{:?}", state),
             "volume": manager.get_volume(),
             "muted": manager.is_muted(),
             "selected_device": selected_device,
+            "pipeline_generation": pipeline_generation,
+            "pipeline_applied_output_device": pipeline_applied_output_device,
             "sample_rate": engine_state.sample_rate,
+            "input_channels": input_channels,
+            "output_channels": output_channels,
             "channels": engine_state.num_channels,
             "underruns": engine_state.underruns,
+            "playback_output_device": engine_state.playback_output_device,
+            "playback_callback_count": engine_state.playback_callback_count,
+            "playback_buffer_fill_percent": engine_state.playback_buffer_fill_percent,
+            "playback_stream_error_count": engine_state.playback_stream_error_count,
+            "playback_frames_received": engine_state.playback_frames_received,
+            "playback_frames_written": engine_state.playback_frames_written,
+            "playback_frames_dropped": engine_state.playback_frames_dropped,
+            "playback_effective_sample_rate": engine_state.playback_effective_sample_rate,
             "last_error": engine_state.last_error,
         }))
     }
@@ -583,7 +1245,7 @@ impl AudioDaemon {
 
     async fn handle_play(&self) -> Response {
         let mut manager = self.manager.lock();
-        let output_device = self.selected_device.lock().clone();
+        let output_device = self.system_state.lock().selected_output_device();
         match manager.start_playback(output_device, vec![], 2) {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::err(format!("Failed to start playback: {}", e)),
@@ -672,26 +1334,42 @@ impl AudioDaemon {
                 } else {
                     resolved_name.clone()
                 };
-                *self.selected_device.lock() = Some(stored_name);
                 log::info!(
                     "Output device set to: {} (matched from '{}')",
                     resolved_name,
                     device
                 );
 
-                // The cpal stream is bound to the current output device. Reload
-                // the driver chain even from Idle so selecting a device can
-                // recover from startup fallback discovery failures.
-                let plugins = self.current_plugins.lock().clone();
-                let input_channels = *self.current_input_channels.lock();
-                let output_channels = *self.current_output_channels.lock();
+                let driver_status = self.driver_manager.lock().status();
+                let driver_sample_rate = if driver_status.sample_rate > 0 {
+                    driver_status.sample_rate
+                } else {
+                    48_000
+                };
+                let driver_buffer_frames = if driver_status.buffer_frames > 0 {
+                    driver_status.buffer_frames
+                } else {
+                    512
+                };
+                let plan = match self
+                    .system_state
+                    .lock()
+                    .prepare_with_selected_device(stored_name.clone())
+                {
+                    Ok(plan) => plan,
+                    Err(e) => return Response::err(e),
+                };
+
                 log::info!(
                     "Starting/restarting driver playback with output device: {}",
                     resolved_name
                 );
-                let resp = self
-                    .handle_load_plugins_with_channels(plugins, input_channels, output_channels)
-                    .await;
+                let resp = self.apply_pipeline_plan(
+                    plan,
+                    driver_status,
+                    driver_sample_rate,
+                    driver_buffer_frames,
+                );
                 if !resp.success {
                     return resp;
                 }
@@ -705,46 +1383,13 @@ impl AudioDaemon {
         }
     }
 
-    async fn handle_load_plugins_with_channels(
+    fn apply_pipeline_plan(
         &self,
-        plugins: Vec<PluginConfig>,
-        input_channels: usize,
-        output_channels: usize,
+        plan: PipelinePlan,
+        driver_status: driver_common::DriverStatus,
+        driver_sample_rate: u32,
+        driver_buffer_frames: u32,
     ) -> Response {
-        let plugins = sanitize_user_plugins(plugins);
-
-        let driver_status = self.driver_manager.lock().status();
-        let driver_sample_rate = if driver_status.sample_rate > 0 {
-            driver_status.sample_rate
-        } else {
-            48_000
-        };
-        let driver_buffer_frames = if driver_status.buffer_frames > 0 {
-            driver_status.buffer_frames
-        } else {
-            512
-        };
-        let stored_input_channels = *self.current_input_channels.lock();
-        let fallback_input_channels = if driver_status.channel_count > 0 {
-            driver_status.channel_count as usize
-        } else if stored_input_channels > 0 {
-            stored_input_channels
-        } else {
-            2
-        };
-        let driver_input_channels = if input_channels > 0 {
-            input_channels
-        } else {
-            fallback_input_channels
-        };
-
-        if !(1..=MAX_HAL_CHANNELS).contains(&driver_input_channels) {
-            return Response::err(format!(
-                "Invalid HAL input channel count: {}. Must be between 1 and {}.",
-                driver_input_channels, MAX_HAL_CHANNELS
-            ));
-        }
-
         self.driver_manager.lock().set_engine_ready(false);
 
         {
@@ -753,12 +1398,12 @@ impl AudioDaemon {
         }
 
         if driver_status.driver_installed
-            && driver_status.channel_count != driver_input_channels as u32
+            && driver_status.channel_count != plan.spec.input_channels as u32
         {
             let result = self.driver_manager.lock().request_config(DriverConfig {
                 sample_rate: driver_sample_rate,
                 buffer_frames: driver_buffer_frames,
-                channel_count: driver_input_channels as u32,
+                channel_count: plan.spec.input_channels as u32,
             });
 
             match result {
@@ -766,7 +1411,7 @@ impl AudioDaemon {
                 | driver_common::ConfigResult::Negotiated { .. } => {
                     log::info!(
                         "HAL input channel count set to {} via driver config",
-                        driver_input_channels
+                        plan.spec.input_channels
                     );
                 }
                 driver_common::ConfigResult::Error(e) => {
@@ -776,78 +1421,32 @@ impl AudioDaemon {
             }
         }
 
-        // Store user's plugin configuration BEFORE adding monitors
-        *self.current_plugins.lock() = plugins.clone();
-        *self.current_input_channels.lock() = driver_input_channels;
-        *self.current_output_channels.lock() = output_channels;
-
-        let mut output_device = self.selected_device.lock().clone();
-
-        if output_device.is_none() {
-            output_device = configured_output_device_from_env();
-        }
-
-        // If no device is selected, let the playback thread choose. It already
-        // knows how to avoid virtual loopback devices. Doing cpal enumeration
-        // here can block startup while coreaudiod is busy loading HAL plugins.
-        if output_device
-            .as_ref()
-            .map(|d| is_safe_output_device_name(d))
-            .unwrap_or(false)
-        {
-            log::info!(
-                "Using selected output device for driver playback: {:?}",
-                output_device
-            );
-        } else if output_device.is_some() {
-            log::warn!(
-                "Ignoring virtual output device selection {:?}; playback thread will choose a safe device",
-                output_device
-            );
-            output_device = None;
-        }
-
-        let (final_plugins, input_monitor_index, output_monitor_index) =
-            build_driver_plugin_chain(plugins);
-
-        // Store monitor indices for get_metering
-        *self.input_loudness_index.lock() = Some(input_monitor_index);
-        *self.output_loudness_index.lock() = Some(output_monitor_index);
-
         log::info!(
             "Loading driver plugin chain: {} user plugins + 2 monitors = {} total, {}Hz {}ch input, {} output channels, device: {:?}",
-            final_plugins.len() - 2,
-            final_plugins.len(),
+            plan.spec.user_plugins.len(),
+            plan.runtime_plugins.len(),
             driver_sample_rate,
-            driver_input_channels,
-            output_channels,
-            output_device
+            plan.spec.input_channels,
+            plan.spec.output_channels,
+            plan.spec.output_device
         );
 
         let mut manager = self.manager.lock();
-
-        // Set the output loudness index for backward compat (get_loudness command)
-        manager.set_loudness_plugin_index(output_monitor_index);
-
-        // Start driver playback (no file source needed)
+        manager.set_loudness_plugin_index(plan.output_loudness_index);
         let result = manager.start_hal_playback_with_driver_config(
-            output_device,
-            final_plugins,
-            output_channels,
+            plan.spec.output_device.clone(),
+            plan.runtime_plugins.clone(),
+            plan.spec.output_channels,
             driver_sample_rate,
-            driver_input_channels,
+            plan.spec.input_channels,
         );
-
-        // Drop manager lock BEFORE acquiring driver_manager to avoid
-        // lock-order inversion with the config watcher thread
-        // (which acquires driver_manager -> audio_manager).
         drop(manager);
 
         match result {
             Ok(_) => {
+                self.system_state.lock().commit_applied(&plan);
                 log::info!("Driver plugin chain loaded successfully");
 
-                // Set engine_ready so driver starts sending audio
                 self.driver_manager.lock().set_engine_ready(true);
                 log::info!("Set engine_ready=true via driver");
                 if let Err(e) = self.sync_encryption_to_shared_memory(false) {
@@ -863,6 +1462,95 @@ impl AudioDaemon {
         }
     }
 
+    async fn handle_load_plugins_with_channels(
+        &self,
+        plugins: Vec<PluginConfig>,
+        input_channels: usize,
+        output_channels: usize,
+    ) -> Response {
+        let driver_status = self.driver_manager.lock().status();
+        let driver_sample_rate = if driver_status.sample_rate > 0 {
+            driver_status.sample_rate
+        } else {
+            48_000
+        };
+        let driver_buffer_frames = if driver_status.buffer_frames > 0 {
+            driver_status.buffer_frames
+        } else {
+            512
+        };
+        let stored_input_channels = self.system_state.lock().input_channels();
+        let fallback_input_channels = if driver_status.channel_count > 0 {
+            driver_status.channel_count as usize
+        } else if stored_input_channels > 0 {
+            stored_input_channels
+        } else {
+            2
+        };
+
+        let plan = match self.system_state.lock().prepare_plan(
+            plugins,
+            input_channels,
+            output_channels,
+            fallback_input_channels,
+        ) {
+            Ok(plan) => plan,
+            Err(e) => return Response::err(e),
+        };
+
+        self.apply_pipeline_plan(
+            plan,
+            driver_status,
+            driver_sample_rate,
+            driver_buffer_frames,
+        )
+    }
+
+    async fn handle_load_plugin_artifact(&self, artifact: Value) -> Response {
+        match plan_plugin_artifact(artifact) {
+            Ok(PluginArtifactPlan::RackChain { plugins }) => {
+                let (input_channels, output_channels) = {
+                    let state = self.system_state.lock();
+                    (state.input_channels(), state.output_channels())
+                };
+                self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
+                    .await
+            }
+            Ok(PluginArtifactPlan::UnsupportedGraph { reason }) => Response::err(format!(
+                "Unsupported graph plugin artifact: {}. Use a graph-aware loader instead of flattening it into the rack.",
+                reason
+            )),
+            Err(e) => Response::err(format!("Invalid plugin artifact: {}", e)),
+        }
+    }
+
+    async fn handle_set_pipeline_channels(
+        &self,
+        input_channels: Option<usize>,
+        output_channels: Option<usize>,
+    ) -> Response {
+        if input_channels.is_none() && output_channels.is_none() {
+            return Response::err(
+                "set_pipeline_channels requires input_channels or output_channels",
+            );
+        }
+
+        let (plugins, current_input_channels, current_output_channels) = {
+            let state = self.system_state.lock();
+            (
+                state.user_plugins(),
+                state.input_channels(),
+                state.output_channels(),
+            )
+        };
+
+        let next_input_channels = input_channels.unwrap_or(current_input_channels);
+        let next_output_channels = output_channels.unwrap_or(current_output_channels);
+
+        self.handle_load_plugins_with_channels(plugins, next_input_channels, next_output_channels)
+            .await
+    }
+
     async fn handle_get_loudness(&self) -> Response {
         let manager = self.manager.lock();
         match manager.get_loudness() {
@@ -872,37 +1560,7 @@ impl AudioDaemon {
     }
 
     async fn handle_get_metering(&self) -> Response {
-        let manager = self.manager.lock();
-        let input_idx = *self.input_loudness_index.lock();
-        let output_idx = *self.output_loudness_index.lock();
-        let fallback_input_channels = *self.current_input_channels.lock();
-        let fallback_output_channels = manager.get_engine_state().num_channels;
-
-        let input_data = input_idx.and_then(|idx| {
-            manager
-                .get_cached_plugin_data(idx)
-                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
-        });
-
-        let output_data = output_idx.and_then(|idx| {
-            manager
-                .get_cached_plugin_data(idx)
-                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
-        });
-
-        let input_json = input_data
-            .as_ref()
-            .map(loudness_data_to_json)
-            .unwrap_or_else(|| empty_loudness_json(fallback_input_channels));
-        let output_json = output_data
-            .as_ref()
-            .map(loudness_data_to_json)
-            .unwrap_or_else(|| empty_loudness_json(fallback_output_channels));
-
-        Response::ok(serde_json::json!({
-            "input": input_json,
-            "output": output_json,
-        }))
+        Response::ok(self.metering_snapshot())
     }
 
     // =========================================================================
@@ -910,7 +1568,7 @@ impl AudioDaemon {
     // =========================================================================
 
     async fn handle_get_plugins(&self) -> Response {
-        let plugins = self.current_plugins.lock();
+        let plugins = self.system_state.lock().user_plugins();
         let result: Vec<Value> = plugins
             .iter()
             .enumerate()
@@ -965,106 +1623,106 @@ impl AudioDaemon {
     }
 
     async fn handle_add_plugin(&self, plugin: PluginConfig, index: Option<usize>) -> Response {
-        {
-            let mut plugins = self.current_plugins.lock();
-            match index {
-                Some(i) if i <= plugins.len() => plugins.insert(i, plugin),
-                _ => plugins.push(plugin),
-            }
+        let mut plugins = self.system_state.lock().user_plugins();
+        match index {
+            Some(i) if i <= plugins.len() => plugins.insert(i, plugin),
+            _ => plugins.push(plugin),
         }
-        self.reload_plugins().await
+        self.reload_plugins_with_user_plugins(plugins).await
     }
 
     async fn handle_remove_plugin(&self, index: usize) -> Response {
-        {
-            let mut plugins = self.current_plugins.lock();
-            if index >= plugins.len() {
-                return Response::err(format!(
-                    "Plugin index {} out of range (have {})",
-                    index,
-                    plugins.len()
-                ));
-            }
-            plugins.remove(index);
+        let mut plugins = self.system_state.lock().user_plugins();
+        if index >= plugins.len() {
+            return Response::err(format!(
+                "Plugin index {} out of range (have {})",
+                index,
+                plugins.len()
+            ));
         }
-        self.reload_plugins().await
+        plugins.remove(index);
+        self.reload_plugins_with_user_plugins(plugins).await
     }
 
     async fn handle_update_plugin(&self, index: usize, parameters: Value) -> Response {
-        {
-            let mut plugins = self.current_plugins.lock();
-            if index >= plugins.len() {
-                return Response::err(format!(
-                    "Plugin index {} out of range (have {})",
-                    index,
-                    plugins.len()
-                ));
-            }
-            plugins[index].parameters = parameters;
+        let mut plugins = self.system_state.lock().user_plugins();
+        if index >= plugins.len() {
+            return Response::err(format!(
+                "Plugin index {} out of range (have {})",
+                index,
+                plugins.len()
+            ));
         }
-        self.reload_plugins().await
+        plugins[index].parameters = parameters;
+        self.reload_plugins_with_user_plugins(plugins).await
     }
 
     async fn handle_reorder_plugins(&self, order: Vec<usize>) -> Response {
-        {
-            let mut plugins = self.current_plugins.lock();
-            let n = plugins.len();
+        let plugins = self.system_state.lock().user_plugins();
+        let n = plugins.len();
 
-            if order.len() != n {
+        if order.len() != n {
+            return Response::err(format!(
+                "Order length {} doesn't match plugin count {}",
+                order.len(),
+                n
+            ));
+        }
+        let mut seen = vec![false; n];
+        for &idx in &order {
+            if idx >= n || seen[idx] {
                 return Response::err(format!(
-                    "Order length {} doesn't match plugin count {}",
-                    order.len(),
-                    n
+                    "Invalid order: duplicate or out-of-range index {}",
+                    idx
                 ));
             }
-            let mut seen = vec![false; n];
-            for &idx in &order {
-                if idx >= n || seen[idx] {
-                    return Response::err(format!(
-                        "Invalid order: duplicate or out-of-range index {}",
-                        idx
-                    ));
-                }
-                seen[idx] = true;
-            }
-
-            let old = plugins.clone();
-            for (new_pos, &old_pos) in order.iter().enumerate() {
-                plugins[new_pos] = old[old_pos].clone();
-            }
+            seen[idx] = true;
         }
-        self.reload_plugins().await
+
+        let old = plugins.clone();
+        let mut reordered = plugins;
+        for (new_pos, &old_pos) in order.iter().enumerate() {
+            reordered[new_pos] = old[old_pos].clone();
+        }
+        self.reload_plugins_with_user_plugins(reordered).await
     }
 
-    /// Reload the plugin chain from current_plugins (re-injects monitors)
-    async fn reload_plugins(&self) -> Response {
-        let plugins = sanitize_user_plugins(self.current_plugins.lock().clone());
-        *self.current_plugins.lock() = plugins.clone();
-        let output_channels = *self.current_output_channels.lock();
-        let (final_plugins, input_monitor_index, output_monitor_index) =
-            build_driver_plugin_chain(plugins.clone());
-
-        *self.input_loudness_index.lock() = Some(input_monitor_index);
-        *self.output_loudness_index.lock() = Some(output_monitor_index);
+    async fn reload_plugins_with_user_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
+        let plan = match {
+            let pipeline = self.system_state.lock();
+            pipeline.prepare_plan(
+                plugins,
+                pipeline.input_channels(),
+                pipeline.output_channels(),
+                pipeline.input_channels(),
+            )
+        } {
+            Ok(plan) => plan,
+            Err(e) => return Response::err(e),
+        };
 
         let result = {
             let manager = self.manager.lock();
-            manager.update_plugin_chain(final_plugins)
+            manager.update_plugin_chain(plan.runtime_plugins.clone())
         };
 
         match result {
             Ok(()) => {
                 self.manager
                     .lock()
-                    .set_loudness_plugin_index(output_monitor_index);
+                    .set_loudness_plugin_index(plan.output_loudness_index);
+                self.system_state.lock().commit_applied(&plan);
                 log::info!("Driver plugin chain hot-updated successfully");
                 Response::ok_empty()
             }
             Err(e) if e == "No engine running" => {
                 log::info!("No running driver engine; starting driver playback");
-                let input_channels = *self.current_input_channels.lock();
-                self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
-                    .await
+                self.handle_load_plugins_with_channels(
+                    plan.spec.user_plugins.clone(),
+                    plan.spec.input_channels,
+                    plan.spec.output_channels,
+                )
+                .await
             }
             Err(e) => {
                 log::error!("Failed to hot-update plugin chain: {}", e);
@@ -1355,21 +2013,8 @@ impl AudioDaemon {
             let driver_manager = Arc::clone(&self.driver_manager);
             let audio_manager = Arc::clone(&self.manager);
             let running = Arc::clone(&self.running);
-            let current_plugins = Arc::clone(&self.current_plugins);
-            let current_input_channels = Arc::clone(&self.current_input_channels);
-            let current_output_channels = Arc::clone(&self.current_output_channels);
-            let input_loudness_index = Arc::clone(&self.input_loudness_index);
-            let output_loudness_index = Arc::clone(&self.output_loudness_index);
-            spawn_driver_config_watcher(
-                driver_manager,
-                audio_manager,
-                running,
-                current_plugins,
-                current_input_channels,
-                current_output_channels,
-                input_loudness_index,
-                output_loudness_index,
-            )
+            let pipeline = Arc::clone(&self.system_state);
+            spawn_driver_config_watcher(driver_manager, audio_manager, running, pipeline)
         };
 
         // Bind the socket. To avoid a TOCTOU race window between an
@@ -1431,14 +2076,9 @@ impl AudioDaemon {
                         manager: Arc::clone(&self.manager),
                         running: Arc::clone(&self.running),
                         driver_manager: Arc::clone(&self.driver_manager),
-                        selected_device: Arc::clone(&self.selected_device),
+                        system_state: Arc::clone(&self.system_state),
                         key_manager: Arc::clone(&self.key_manager),
                         runtime: Arc::clone(&self.runtime),
-                        current_plugins: Arc::clone(&self.current_plugins),
-                        current_input_channels: Arc::clone(&self.current_input_channels),
-                        current_output_channels: Arc::clone(&self.current_output_channels),
-                        input_loudness_index: Arc::clone(&self.input_loudness_index),
-                        output_loudness_index: Arc::clone(&self.output_loudness_index),
                     };
 
                     std::thread::spawn(move || {
@@ -1530,16 +2170,18 @@ fn socket_is_unix_socket(path: &std::path::Path) -> bool {
 /// Supported sample rates for driver config negotiation
 const SUPPORTED_SAMPLE_RATES: [u32; 6] = [44100, 48000, 88200, 96000, 176400, 192000];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PipelineReconfigureOutcome {
+    IdleUpdated,
+    Restarted,
+}
+
 /// Spawn a background thread that polls the driver for config changes
 fn spawn_driver_config_watcher(
     driver_manager: Arc<Mutex<DriverManager>>,
     audio_manager: Arc<Mutex<AudioEngineManager>>,
     running: Arc<Mutex<bool>>,
-    current_plugins: Arc<Mutex<Vec<PluginConfig>>>,
-    current_input_channels: Arc<Mutex<usize>>,
-    current_output_channels: Arc<Mutex<usize>>,
-    input_loudness_index: Arc<Mutex<Option<usize>>>,
-    output_loudness_index: Arc<Mutex<Option<usize>>>,
+    system_state: Arc<Mutex<SystemwideState>>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         use std::time::Duration;
@@ -1556,16 +2198,7 @@ fn spawn_driver_config_watcher(
             // Poll driver for config changes
             let config_change = driver_manager.lock().poll_config_change();
             if let Some(config) = config_change {
-                handle_driver_config_change(
-                    &driver_manager,
-                    &audio_manager,
-                    config,
-                    &current_plugins,
-                    &current_input_channels,
-                    &current_output_channels,
-                    &input_loudness_index,
-                    &output_loudness_index,
-                );
+                handle_driver_config_change(&driver_manager, &audio_manager, config, &system_state);
             }
 
             std::thread::sleep(poll_interval);
@@ -1580,11 +2213,7 @@ fn handle_driver_config_change(
     driver_manager: &Arc<Mutex<DriverManager>>,
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
     config: DriverConfig,
-    current_plugins: &Arc<Mutex<Vec<PluginConfig>>>,
-    current_input_channels: &Arc<Mutex<usize>>,
-    current_output_channels: &Arc<Mutex<usize>>,
-    input_loudness_index: &Arc<Mutex<Option<usize>>>,
-    output_loudness_index: &Arc<Mutex<Option<usize>>>,
+    system_state: &Arc<Mutex<SystemwideState>>,
 ) {
     let requested_rate = config.sample_rate;
     let requested_frames = config.buffer_frames;
@@ -1653,21 +2282,20 @@ fn handle_driver_config_change(
     };
 
     let negotiated = actual_rate != requested_rate;
-    *current_input_channels.lock() = requested_channels as usize;
 
     // Reconfigure audio pipeline
     match reconfigure_audio_pipeline(
         audio_manager,
+        system_state,
         actual_rate,
         requested_frames,
-        current_plugins,
-        current_output_channels,
-        input_loudness_index,
-        output_loudness_index,
+        requested_channels as usize,
     ) {
-        Ok(()) => {
-            // Set engine_ready so driver continues sending audio
-            driver_manager.lock().set_engine_ready(true);
+        Ok(outcome) => {
+            if outcome == PipelineReconfigureOutcome::Restarted {
+                // Set engine_ready so driver continues sending audio.
+                driver_manager.lock().set_engine_ready(true);
+            }
 
             let result = if negotiated {
                 log::info!(
@@ -1692,10 +2320,11 @@ fn handle_driver_config_change(
                 result,
             );
             log::info!(
-                "Config accepted: {}Hz, {} frames, {} channels, engine_ready=true",
+                "Config accepted: {}Hz, {} frames, {} channels, outcome={:?}",
                 actual_rate,
                 requested_frames,
-                requested_channels
+                requested_channels,
+                outcome
             );
         }
         Err(e) => {
@@ -1715,19 +2344,28 @@ fn handle_driver_config_change(
 /// Reconfigure the audio pipeline with new sample rate and buffer size
 fn reconfigure_audio_pipeline(
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
+    system_state: &Arc<Mutex<SystemwideState>>,
     hal_sample_rate: u32,
     _buffer_frames: u32,
-    current_plugins: &Arc<Mutex<Vec<PluginConfig>>>,
-    current_output_channels: &Arc<Mutex<usize>>,
-    input_loudness_index: &Arc<Mutex<Option<usize>>>,
-    output_loudness_index: &Arc<Mutex<Option<usize>>>,
-) -> Result<(), String> {
+    input_channels: usize,
+) -> Result<PipelineReconfigureOutcome, String> {
+    let plan = {
+        let state = system_state.lock();
+        state.prepare_plan(
+            state.user_plugins(),
+            input_channels,
+            state.output_channels(),
+            input_channels,
+        )?
+    };
+
     let mut manager = audio_manager.lock();
 
     let state = manager.get_state();
     if state == sotf_audio::manager::StreamingState::Idle {
         log::debug!("No active playback, acknowledging config change");
-        return Ok(());
+        system_state.lock().commit_idle_reconfigure(&plan);
+        return Ok(PipelineReconfigureOutcome::IdleUpdated);
     }
 
     log::info!("Reconfiguring driver playback pipeline");
@@ -1736,74 +2374,31 @@ fn reconfigure_audio_pipeline(
         log::warn!("Failed to stop current playback: {}", e);
     }
 
-    // Get stored user plugins
-    let user_plugins = current_plugins.lock().clone();
-    let output_channels = *current_output_channels.lock();
-
-    // Build full plugin chain: input_monitor + user_plugins + output_monitor
-    let mut final_plugins = Vec::with_capacity(user_plugins.len() + 2);
-
-    let input_monitor_index = 0;
-    final_plugins.push(PluginConfig {
-        plugin_type: "loudness_monitor".to_string(),
-        parameters: serde_json::json!({}),
-    });
-
-    final_plugins.extend(user_plugins);
-
-    let output_monitor_index = final_plugins.len();
-    final_plugins.push(PluginConfig {
-        plugin_type: "loudness_monitor".to_string(),
-        parameters: serde_json::json!({}),
-    });
-
-    *input_loudness_index.lock() = Some(input_monitor_index);
-    *output_loudness_index.lock() = Some(output_monitor_index);
-
-    let output_device = configured_output_device_from_env();
-
     log::info!(
         "Restarting driver playback with {} plugins (incl. 2 monitors), {} output channels, device: {:?}",
-        final_plugins.len(),
-        output_channels,
-        output_device
+        plan.runtime_plugins.len(),
+        plan.spec.output_channels,
+        plan.spec.output_device
     );
 
-    manager.set_loudness_plugin_index(output_monitor_index);
-
-    let input_channels = driver_hal_input_channels().unwrap_or(2);
+    manager.set_loudness_plugin_index(plan.output_loudness_index);
 
     match manager.start_hal_playback_with_driver_config(
-        output_device,
-        final_plugins,
-        output_channels,
+        plan.spec.output_device.clone(),
+        plan.runtime_plugins.clone(),
+        plan.spec.output_channels,
         hal_sample_rate,
-        input_channels,
+        plan.spec.input_channels,
     ) {
         Ok(_) => {
+            system_state.lock().commit_applied(&plan);
             log::info!("Driver playback restarted successfully");
-            Ok(())
+            Ok(PipelineReconfigureOutcome::Restarted)
         }
         Err(e) => {
             log::error!("Failed to restart driver playback: {}", e);
             Err(format!("Failed to restart driver playback: {}", e))
         }
-    }
-}
-
-fn driver_hal_input_channels() -> Option<usize> {
-    #[cfg(all(target_os = "macos", feature = "hal"))]
-    {
-        driver_hal::SharedAudioBuffer::open_default()
-            .ok()
-            .and_then(|buffer| {
-                let channels = buffer.channel_count() as usize;
-                (channels > 0).then_some(channels)
-            })
-    }
-    #[cfg(not(all(target_os = "macos", feature = "hal")))]
-    {
-        None
     }
 }
 
@@ -1849,6 +2444,7 @@ fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
         PluginType::TransientShaper => "transient_shaper",
         PluginType::Saturation => "saturation",
         PluginType::DynamicEq => "dynamic_eq",
+        PluginType::FirDesigner => "fir_designer",
         PluginType::LinearPhaseEq => "linear_phase_eq",
         PluginType::SpectralCompressor => "spectral_compressor",
     }
@@ -1890,6 +2486,7 @@ fn plugin_type_category(pt: &PluginType) -> &'static str {
         PluginType::TransientShaper => "Dynamics",
         PluginType::Saturation => "Effects",
         PluginType::DynamicEq => "Dynamics",
+        PluginType::FirDesigner => "EQ & Tone",
         PluginType::LinearPhaseEq => "EQ",
         PluginType::SpectralCompressor => "Dynamics",
     }
@@ -2156,6 +2753,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod ipc_safety_tests {
     use super::*;
+    use driver_common::{AudioDriver, ConfigResult, DriverStatus};
     use std::io::Cursor;
 
     /// `serialize_response_safely` must produce valid JSON on the OK
@@ -2294,6 +2892,15 @@ mod ipc_safety_tests {
         let cmd: Command = serde_json::from_str(r#"{"command":"status"}"#).unwrap();
         assert_eq!(cmd.name(), "status");
 
+        let cmd: Command = serde_json::from_str(r#"{"command":"get_snapshot"}"#).unwrap();
+        assert_eq!(cmd.name(), "get_snapshot");
+
+        let cmd: Command = serde_json::from_str(r#"{"command":"snapshot"}"#).unwrap();
+        assert_eq!(cmd.name(), "get_snapshot");
+
+        let cmd: Command = serde_json::from_str(r#"{"command":"dump_state"}"#).unwrap();
+        assert_eq!(cmd.name(), "dump_state");
+
         let cmd: Command = serde_json::from_str(r#"{"command":"driver_status"}"#).unwrap();
         assert_eq!(cmd.name(), "driver_status");
 
@@ -2307,7 +2914,578 @@ mod ipc_safety_tests {
                 .unwrap();
         assert_eq!(cmd.name(), "update_plugin");
 
+        let cmd: Command =
+            serde_json::from_str(r#"{"command":"set_input_channels","channels":4}"#).unwrap();
+        assert_eq!(cmd.name(), "set_input_channels");
+
+        let cmd: Command =
+            serde_json::from_str(r#"{"command":"set_output_channels","channels":6}"#).unwrap();
+        assert_eq!(cmd.name(), "set_output_channels");
+
+        let cmd: Command =
+            serde_json::from_str(r#"{"command":"set_pipeline_channels","output_channels":6}"#)
+                .unwrap();
+        assert_eq!(cmd.name(), "set_pipeline_channels");
+
+        let cmd: Command =
+            serde_json::from_str(r#"{"command":"load_plugin_artifact","artifact":[]}"#).unwrap();
+        assert_eq!(cmd.name(), "load_plugin_artifact");
+
         let cmd: Command = serde_json::from_str(r#"{"command":"shutdown"}"#).unwrap();
         assert_eq!(cmd.name(), "shutdown");
+    }
+
+    fn test_plugin(plugin_type: &str) -> PluginConfig {
+        PluginConfig {
+            plugin_type: plugin_type.to_string(),
+            parameters: serde_json::json!({}),
+        }
+    }
+
+    #[derive(Debug)]
+    struct FakeDriverState {
+        status: DriverStatus,
+        engine_ready: bool,
+        last_requested_config: Option<DriverConfig>,
+        last_ack: Option<(DriverConfig, ConfigResult)>,
+        pending_config_change: Option<DriverConfig>,
+    }
+
+    #[derive(Debug, Clone)]
+    struct FakeDriver {
+        state: Arc<Mutex<FakeDriverState>>,
+    }
+
+    impl FakeDriver {
+        fn new(state: Arc<Mutex<FakeDriverState>>) -> Self {
+            Self { state }
+        }
+    }
+
+    impl AudioDriver for FakeDriver {
+        fn initialize(&mut self) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn shutdown(&mut self) {}
+
+        fn status(&self) -> DriverStatus {
+            self.state.lock().status.clone()
+        }
+
+        fn read_audio(&mut self, buffer: &mut [f32]) -> usize {
+            buffer.fill(0.0);
+            0
+        }
+
+        fn available_frames(&self) -> usize {
+            0
+        }
+
+        fn sample_rate(&self) -> u32 {
+            self.state.lock().status.sample_rate
+        }
+
+        fn channel_count(&self) -> u32 {
+            self.state.lock().status.channel_count
+        }
+
+        fn request_config(&mut self, config: DriverConfig) -> ConfigResult {
+            self.state.lock().last_requested_config = Some(config);
+            ConfigResult::Accepted
+        }
+
+        fn poll_config_change(&mut self) -> Option<DriverConfig> {
+            self.state.lock().pending_config_change.take()
+        }
+
+        fn acknowledge_config_change(&mut self, actual: DriverConfig, result: ConfigResult) {
+            self.state.lock().last_ack = Some((actual, result));
+        }
+
+        fn set_engine_ready(&mut self, ready: bool) {
+            self.state.lock().engine_ready = ready;
+        }
+    }
+
+    fn fake_driver_state() -> Arc<Mutex<FakeDriverState>> {
+        Arc::new(Mutex::new(FakeDriverState {
+            status: DriverStatus {
+                platform_supported: true,
+                driver_installed: true,
+                capture_active: true,
+                sample_rate: 48_000,
+                channel_count: 2,
+                buffer_frames: 512,
+                driver_name: "Fake HAL".to_string(),
+                driver_ready: true,
+            },
+            engine_ready: false,
+            last_requested_config: None,
+            last_ack: None,
+            pending_config_change: None,
+        }))
+    }
+
+    fn healthy_driver_status() -> DriverStatus {
+        DriverStatus {
+            platform_supported: true,
+            driver_installed: true,
+            capture_active: true,
+            sample_rate: 48_000,
+            channel_count: 2,
+            buffer_frames: 512,
+            driver_name: "Fake HAL".to_string(),
+            driver_ready: true,
+        }
+    }
+
+    fn fault_codes(faults: &[Value]) -> Vec<&str> {
+        faults
+            .iter()
+            .filter_map(|fault| fault["code"].as_str())
+            .collect()
+    }
+
+    fn test_daemon_with_driver(state: Arc<Mutex<FakeDriverState>>) -> AudioDaemon {
+        let runtime = tokio::runtime::Runtime::new().expect("test runtime");
+        AudioDaemon {
+            manager: Arc::new(Mutex::new(AudioEngineManager::new())),
+            running: Arc::new(Mutex::new(true)),
+            driver_manager: Arc::new(Mutex::new(DriverManager::from_driver(Box::new(
+                FakeDriver::new(state),
+            )))),
+            system_state: Arc::new(Mutex::new(SystemwideState::default())),
+            key_manager: Arc::new(Mutex::new(KeyManager::default())),
+            runtime: Arc::new(runtime),
+        }
+    }
+
+    fn send_owner_ipc_command(daemon: &AudioDaemon, raw: &str) -> serde_json::Value {
+        let (mut client, server) = UnixStream::pair().expect("unix stream pair");
+        let daemon = daemon.clone();
+        let handle = std::thread::spawn(move || daemon.handle_client(server, PeerClass::Owner));
+
+        writeln!(client, "{}", raw).expect("write request");
+        let mut reader = BufReader::new(client.try_clone().expect("clone client"));
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read response");
+        drop(reader);
+        drop(client);
+        handle.join().expect("client handler thread");
+
+        serde_json::from_str(&line).expect("valid JSON response")
+    }
+
+    #[test]
+    fn pipeline_supervisor_builds_runtime_chain_without_committing_until_success() {
+        let supervisor = PipelineSupervisor::default();
+
+        let plan = supervisor
+            .prepare_plan(
+                vec![
+                    test_plugin("hal_input"),
+                    test_plugin("eq"),
+                    test_plugin("loudness_monitor"),
+                    test_plugin("gain"),
+                    test_plugin("hal_output"),
+                ],
+                2,
+                6,
+                2,
+            )
+            .expect("valid pipeline plan");
+
+        assert_eq!(plan.spec.input_channels, 2);
+        assert_eq!(plan.spec.output_channels, 6);
+        assert_eq!(
+            plan.spec
+                .user_plugins
+                .iter()
+                .map(|p| p.plugin_type.as_str())
+                .collect::<Vec<_>>(),
+            vec!["eq", "gain"]
+        );
+        assert_eq!(plan.input_loudness_index, 0);
+        assert_eq!(plan.output_loudness_index, 3);
+        assert_eq!(
+            plan.runtime_plugins
+                .iter()
+                .map(|p| p.plugin_type.as_str())
+                .collect::<Vec<_>>(),
+            vec!["loudness_monitor", "eq", "gain", "loudness_monitor"]
+        );
+        assert!(supervisor.input_loudness_index().is_none());
+        assert!(supervisor.output_loudness_index().is_none());
+    }
+
+    #[test]
+    fn pipeline_supervisor_commit_atomically_updates_desired_and_applied_state() {
+        let mut supervisor = PipelineSupervisor::default();
+        let plan = supervisor
+            .prepare_plan(vec![test_plugin("eq")], 4, 8, 2)
+            .expect("valid pipeline plan");
+
+        supervisor.commit_applied(&plan);
+
+        assert_eq!(supervisor.input_channels(), 4);
+        assert_eq!(supervisor.output_channels(), 8);
+        assert_eq!(supervisor.input_loudness_index(), Some(0));
+        assert_eq!(supervisor.output_loudness_index(), Some(2));
+        assert_eq!(supervisor.applied_generation(), Some(1));
+    }
+
+    #[test]
+    fn pipeline_supervisor_rejects_invalid_channels_before_state_mutation() {
+        let supervisor = PipelineSupervisor::default();
+        let result = supervisor.prepare_plan(vec![test_plugin("eq")], 0, 64, 2);
+
+        assert!(result.unwrap_err().contains("Invalid output channel count"));
+        assert_eq!(supervisor.input_channels(), 2);
+        assert_eq!(supervisor.output_channels(), 2);
+    }
+
+    #[test]
+    fn pipeline_supervisor_reducer_methods_control_desired_mutation() {
+        let mut supervisor = PipelineSupervisor::default();
+
+        supervisor
+            .set_desired_output_device(Some("ADAM Audio D3V".to_string()))
+            .expect("safe device should be accepted");
+        assert_eq!(
+            supervisor.selected_output_device().as_deref(),
+            Some("ADAM Audio D3V")
+        );
+
+        let result = supervisor.set_desired_output_device(Some("SotF Virtual Audio".to_string()));
+        assert!(result.unwrap_err().contains("virtual/loopback"));
+        assert_eq!(
+            supervisor.selected_output_device().as_deref(),
+            Some("ADAM Audio D3V")
+        );
+
+        let plan = supervisor
+            .prepare_plan(vec![test_plugin("eq")], 10, 4, 10)
+            .expect("valid idle reconfigure plan");
+        supervisor.commit_idle_reconfigure(&plan);
+        assert_eq!(supervisor.input_channels(), 10);
+        assert_eq!(supervisor.output_channels(), 4);
+        assert!(supervisor.applied_generation().is_none());
+    }
+
+    #[test]
+    fn transport_snapshot_reports_all_playing_faults_without_hiding_secondary_causes() {
+        let driver_status = healthy_driver_status();
+        let engine_state = sotf_audio::AudioEngineState::default();
+
+        let (transport, faults) =
+            transport_snapshot_and_faults("Playing", &driver_status, &engine_state);
+
+        assert_eq!(transport["input"]["status"], "input_frames_missing");
+        assert_eq!(transport["output"]["status"], "output_callbacks_missing");
+        let codes = fault_codes(&faults);
+        assert!(codes.contains(&"input_frames_missing"));
+        assert!(codes.contains(&"output_callbacks_missing"));
+        assert!(codes.contains(&"output_device_unresolved"));
+    }
+
+    #[test]
+    fn transport_snapshot_reports_flowing_when_input_and_output_are_observed() {
+        let driver_status = healthy_driver_status();
+        let mut engine_state = sotf_audio::AudioEngineState::default();
+        engine_state.playback_frames_received = 1024;
+        engine_state.playback_callback_count = 8;
+        engine_state.playback_frames_written = 1024;
+        engine_state.playback_output_device = Some("ADAM Audio D3V".to_string());
+        engine_state.playback_effective_sample_rate = 48_000;
+
+        let (transport, faults) =
+            transport_snapshot_and_faults("Playing", &driver_status, &engine_state);
+
+        assert_eq!(transport["input"]["status"], "flowing");
+        assert_eq!(transport["output"]["status"], "flowing");
+        assert_eq!(transport["output"]["device"], "ADAM Audio D3V");
+        assert!(faults.is_empty());
+    }
+
+    #[test]
+    fn metering_faults_only_apply_to_playing_fallback_sources() {
+        let metering = serde_json::json!({
+            "sources": {
+                "input": { "status": "fallback_zero" },
+                "output": { "status": "available" }
+            }
+        });
+
+        let mut faults = Vec::new();
+        push_metering_faults("Idle", &metering, &mut faults);
+        assert!(faults.is_empty());
+
+        push_metering_faults("Playing", &metering, &mut faults);
+        assert_eq!(fault_codes(&faults), vec!["input_metering_unavailable"]);
+    }
+
+    #[test]
+    fn driver_reconfigure_preserves_daemon_selected_output_device_when_idle() {
+        let audio_manager = Arc::new(Mutex::new(AudioEngineManager::new()));
+        let system_state = Arc::new(Mutex::new(SystemwideState::default()));
+
+        {
+            let mut state = system_state.lock();
+            let plan = state
+                .prepare_with_selected_device("ADAM Audio D3V".to_string())
+                .expect("valid device plan");
+            state.commit_applied(&plan);
+        }
+
+        reconfigure_audio_pipeline(&audio_manager, &system_state, 48_000, 512, 6)
+            .expect("idle reconfigure should update desired state");
+
+        let state = system_state.lock();
+        assert_eq!(
+            state.selected_output_device().as_deref(),
+            Some("ADAM Audio D3V")
+        );
+        assert_eq!(state.input_channels(), 6);
+        assert_eq!(state.output_channels(), 2);
+    }
+
+    #[test]
+    fn testkit_driver_status_uses_injected_driver() {
+        let state = fake_driver_state();
+        state.lock().status.channel_count = 10;
+        let daemon = test_daemon_with_driver(state);
+
+        let response = daemon
+            .runtime
+            .block_on(daemon.handle_command(Command::DriverStatus));
+
+        assert!(response.success);
+        let data = response.data.expect("driver_status data");
+        assert_eq!(data["driver_name"], "Fake HAL");
+        assert_eq!(data["channel_count"], 10);
+        assert_eq!(data["ready"], true);
+    }
+
+    #[test]
+    fn testkit_invalid_plugin_load_does_not_mutate_pipeline_state() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = daemon
+            .runtime
+            .block_on(daemon.handle_command(Command::LoadPlugins {
+                plugins: vec![test_plugin("eq")],
+                input_channels: 2,
+                output_channels: 64,
+            }));
+
+        assert!(!response.success);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("Invalid output channel count"))
+        );
+        assert_eq!(daemon.system_state.lock().output_channels(), 2);
+        assert!(daemon.system_state.lock().output_loudness_index().is_none());
+    }
+
+    #[test]
+    fn testkit_patch_channel_command_preserves_daemon_owned_plugins_and_input_channels() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = daemon
+            .runtime
+            .block_on(daemon.handle_command(Command::LoadPlugins {
+                plugins: vec![test_plugin("eq")],
+                input_channels: 10,
+                output_channels: 2,
+            }));
+        assert!(response.success);
+
+        let response = daemon
+            .runtime
+            .block_on(daemon.handle_command(Command::SetOutputChannels { channels: 6 }));
+
+        assert!(response.success);
+        let state = daemon.system_state.lock();
+        assert_eq!(state.input_channels(), 10);
+        assert_eq!(state.output_channels(), 6);
+        assert_eq!(state.user_plugins().len(), 1);
+    }
+
+    #[test]
+    fn testkit_pipeline_channel_patch_requires_a_field() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response =
+            daemon
+                .runtime
+                .block_on(daemon.handle_command(Command::SetPipelineChannels {
+                    input_channels: None,
+                    output_channels: None,
+                }));
+
+        assert!(!response.success);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("requires input_channels or output_channels"))
+        );
+    }
+
+    #[test]
+    fn testkit_load_plugin_artifact_accepts_rack_chain_without_ui_flattening() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(
+            &daemon,
+            r#"{"command":"load_plugin_artifact","artifact":{"plugins":[{"plugin_type":"eq","parameters":{}}]}}"#,
+        );
+
+        assert_eq!(response["success"], true);
+        let state = daemon.system_state.lock();
+        assert_eq!(state.user_plugins().len(), 1);
+        assert_eq!(state.user_plugins()[0].plugin_type, "eq");
+    }
+
+    #[test]
+    fn testkit_load_plugin_artifact_rejects_graph_shape_instead_of_flattening() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(
+            &daemon,
+            r#"{"command":"load_plugin_artifact","artifact":{"global_plugins":[{"plugin_type":"eq","parameters":{}}],"channels":{"L":{"plugins":[{"plugin_type":"gain","parameters":{}}]}}}}"#,
+        );
+
+        assert_eq!(response["success"], false);
+        assert!(
+            response["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("Unsupported graph plugin artifact"))
+        );
+        assert!(daemon.system_state.lock().user_plugins().is_empty());
+    }
+
+    #[test]
+    fn testkit_unix_ipc_invalid_plugin_load_preserves_pipeline_state() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(
+            &daemon,
+            r#"{"command":"load_plugins","plugins":[{"plugin_type":"eq","parameters":{}}],"input_channels":2,"output_channels":64}"#,
+        );
+
+        assert_eq!(response["success"], false);
+        assert!(
+            response["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("Invalid output channel count"))
+        );
+        assert_eq!(daemon.system_state.lock().input_channels(), 2);
+        assert_eq!(daemon.system_state.lock().output_channels(), 2);
+        assert!(daemon.system_state.lock().applied_generation().is_none());
+    }
+
+    #[test]
+    fn testkit_unix_ipc_driver_status_uses_injected_driver() {
+        let state = fake_driver_state();
+        state.lock().status.channel_count = 12;
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"driver_status"}"#);
+
+        assert_eq!(response["success"], true);
+        assert_eq!(response["data"]["driver_name"], "Fake HAL");
+        assert_eq!(response["data"]["channel_count"], 12);
+    }
+
+    #[test]
+    fn testkit_snapshot_separates_desired_observed_and_diagnostics() {
+        let state = fake_driver_state();
+        state.lock().status.channel_count = 6;
+        let daemon = test_daemon_with_driver(state);
+        {
+            let mut pipeline = daemon.system_state.lock();
+            pipeline
+                .set_desired_output_device(Some("ADAM Audio D3V".to_string()))
+                .expect("safe device");
+        }
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"get_snapshot"}"#);
+
+        assert_eq!(response["success"], true);
+        let data = &response["data"];
+        assert_eq!(data["schema_version"], 1);
+        assert_eq!(data["desired"]["output_device"], "ADAM Audio D3V");
+        assert_eq!(data["observed"]["driver"]["channel_count"], 6);
+        assert_eq!(
+            data["observed"]["metering"]["sources"]["input"]["status"],
+            "fallback_zero"
+        );
+        assert_eq!(data["observed"]["transport"]["input"]["status"], "idle");
+        assert_eq!(data["observed"]["transport"]["output"]["status"], "idle");
+        assert_eq!(data["diagnostics"]["health"], "ok");
+        assert!(data["diagnostics"]["faults"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn testkit_dump_state_includes_snapshot_and_plugins() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"dump_state"}"#);
+
+        assert_eq!(response["success"], true);
+        assert_eq!(response["data"]["snapshot"]["schema_version"], 1);
+        assert!(response["data"]["plugins"].as_array().is_some());
+    }
+
+    #[test]
+    fn testkit_idle_driver_config_change_updates_spec_without_engine_ready() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(Arc::clone(&state));
+        {
+            let mut pipeline = daemon.system_state.lock();
+            let plan = pipeline
+                .prepare_with_selected_device("ADAM Audio D3V".to_string())
+                .expect("valid device plan");
+            pipeline.commit_applied(&plan);
+        }
+
+        handle_driver_config_change(
+            &daemon.driver_manager,
+            &daemon.manager,
+            DriverConfig {
+                sample_rate: 48_000,
+                buffer_frames: 512,
+                channel_count: 10,
+            },
+            &daemon.system_state,
+        );
+
+        let pipeline = daemon.system_state.lock();
+        assert_eq!(pipeline.input_channels(), 10);
+        assert_eq!(
+            pipeline.selected_output_device().as_deref(),
+            Some("ADAM Audio D3V")
+        );
+        drop(pipeline);
+
+        let state = state.lock();
+        assert!(
+            !state.engine_ready,
+            "idle reconfigure must not mark engine ready"
+        );
+        let (actual, result) = state.last_ack.as_ref().expect("config ack");
+        assert_eq!(actual.channel_count, 10);
+        assert!(matches!(result, ConfigResult::Accepted));
     }
 }

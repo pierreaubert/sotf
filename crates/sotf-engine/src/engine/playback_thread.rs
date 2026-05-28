@@ -225,7 +225,7 @@ fn select_playback_device(
             .unwrap_or_else(|_| "Unknown".to_string())
     };
 
-    let find_fallback = || -> Result<Device, String> {
+    let find_physical_output = || -> Result<Device, String> {
         let devices = host.output_devices().map_err(|e| e.to_string())?;
         let physical = devices.into_iter().find(|d| {
             let name = get_name(d);
@@ -239,8 +239,7 @@ fn select_playback_device(
             );
             Ok(dev)
         } else {
-            host.default_output_device()
-                .ok_or("No default device found".to_string())
+            Err("No physical output device found".to_string())
         }
     };
 
@@ -251,10 +250,10 @@ fn select_playback_device(
         );
 
         if is_virtual_output_device_name(device_identifier) && !allow_virtual_output {
-            log::info!(
-                "[Playback Thread] Explicit virtual output device '{}' requested; honoring selection",
+            return Err(format!(
+                "Selected output device '{}' is virtual/loopback and cannot be used as speaker output",
                 device_identifier
-            );
+            ));
         }
 
         match crate::devices::find_device(host, device_identifier, false) {
@@ -263,35 +262,39 @@ fn select_playback_device(
                 Ok(dev)
             }
             Err(e) => {
-                log::info!(
-                    "[Playback Thread] Device '{}' not found (error: {}), using fallback output device",
+                log::warn!(
+                    "[Playback Thread] Explicit output device '{}' was not found: {}",
                     device_identifier,
                     e
                 );
-                find_fallback().map_err(|fallback_err| {
-                    format!(
-                        "Failed to find fallback output device after lookup error '{}': {}",
-                        e, fallback_err
-                    )
-                })
+                Err(format!(
+                    "Selected output device '{}' is not available: {}",
+                    device_identifier, e
+                ))
             }
         }
+    } else if !allow_virtual_output {
+        // In systemwide mode the macOS default output is the SotF virtual
+        // device. Do not open it even transiently: CoreAudio can keep the
+        // daemon registered as an active virtual-device client, which starves
+        // the app-audio ingress path.
+        find_physical_output()
     } else {
         let default_dev = host
             .default_output_device()
             .ok_or("No output device available")?;
-        let name = get_name(&default_dev);
-
-        if is_virtual_output_device_name(&name) && !allow_virtual_output {
-            log::info!(
-                "[Playback Thread] Default device is '{}' (virtual/null) - finding fallback physical device",
-                name
-            );
-            Ok(find_fallback().unwrap_or(default_dev))
-        } else {
-            Ok(default_dev)
-        }
+        Ok(default_dev)
     }
+}
+
+#[cfg(target_os = "macos")]
+fn coreaudio_output_device_id(name: &str) -> Option<u32> {
+    coreaudio::audio_unit::macos_helpers::get_device_id_from_name(name, false)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn coreaudio_output_device_id(_name: &str) -> Option<u32> {
+    None
 }
 
 struct RebuiltPlaybackStream {
@@ -540,6 +543,12 @@ fn run_playback_thread(
         .description()
         .map(|d| d.name().to_string())
         .unwrap_or_else(|_| "Unknown".to_string());
+    let mut coreaudio_device_id = coreaudio_output_device_id(&device_name);
+    send_playback_event(
+        &event_tx,
+        ThreadEvent::PlaybackOutputDeviceChanged(device_name.clone()),
+        "initial playback output device",
+    );
 
     log::info!(
         "[Playback Thread] Started - {}Hz, {} channels, format: {:?}, device: '{}'",
@@ -597,6 +606,8 @@ fn run_playback_thread(
         .checked_sub(std::time::Duration::from_secs(10))
         .unwrap_or_else(std::time::Instant::now);
     let recovery_retry_interval = std::time::Duration::from_millis(500);
+    let mut last_device_identity_check = std::time::Instant::now();
+    let device_identity_check_interval = std::time::Duration::from_secs(2);
     let mut last_reported_underruns: u64 = 0;
 
     // Main loop: read from queue and write to ring buffer
@@ -988,7 +999,26 @@ fn run_playback_thread(
         {
             let current_stream_errors = state.stream_error_count.load(Ordering::Relaxed);
             let current_callbacks = state.callback_count.load(Ordering::Relaxed);
-            let recovery_reason = if current_stream_errors != last_stream_error_count {
+            let coreaudio_identity_reason =
+                if last_device_identity_check.elapsed() > device_identity_check_interval {
+                    last_device_identity_check = std::time::Instant::now();
+                    let current_device_id = coreaudio_output_device_id(&device_name);
+                    if current_device_id.is_some() && current_device_id != coreaudio_device_id {
+                        let previous_device_id = coreaudio_device_id;
+                        coreaudio_device_id = current_device_id;
+                        Some(format!(
+                            "CoreAudio device id changed for '{}' ({:?} -> {:?})",
+                            device_name, previous_device_id, current_device_id
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+            let recovery_reason = if let Some(reason) = coreaudio_identity_reason {
+                Some(reason)
+            } else if current_stream_errors != last_stream_error_count {
                 last_stream_error_count = current_stream_errors;
                 Some(format!(
                     "stream error reported by CoreAudio ({} total)",
@@ -1073,6 +1103,8 @@ fn run_playback_thread(
                         output_format = rebuilt.output_format;
                         channels = rebuilt.channels;
                         buffer_capacity = rebuilt.buffer_capacity;
+                        coreaudio_device_id = coreaudio_output_device_id(&device_name);
+                        last_device_identity_check = std::time::Instant::now();
                         last_callback_count = 0;
                         last_stream_error_count = 0;
                         last_callback_check = std::time::Instant::now();
@@ -1084,6 +1116,11 @@ fn run_playback_thread(
                             &event_tx,
                             ThreadEvent::PlaybackChannelsChanged(channels),
                             "playback channels changed",
+                        );
+                        send_playback_event(
+                            &event_tx,
+                            ThreadEvent::PlaybackOutputDeviceChanged(device_name.clone()),
+                            "playback output device changed",
                         );
                         continue;
                     }
@@ -1140,7 +1177,7 @@ fn run_playback_thread(
         }
 
         // Periodic diagnostics: log callback rate and buffer stats every few seconds
-        if last_diagnostic_log.elapsed() > diagnostic_interval && frames_received > 0 {
+        if last_diagnostic_log.elapsed() > diagnostic_interval {
             let elapsed = stream_start_time.elapsed().as_secs_f64();
             let total_cb = state.callback_count.load(Ordering::Relaxed);
             let total_cb_samples = state.total_callback_samples.load(Ordering::Relaxed);
@@ -1166,6 +1203,19 @@ fn run_playback_thread(
                 frames_dropped,
                 frames_received,
                 output_format,
+            );
+            send_playback_event(
+                &event_tx,
+                ThreadEvent::PlaybackStats {
+                    callback_count: total_cb,
+                    buffer_fill_percent: fill as u64,
+                    stream_error_count: state.stream_error_count.load(Ordering::Relaxed),
+                    frames_received,
+                    frames_written,
+                    frames_dropped,
+                    effective_sample_rate: effective_hz,
+                },
+                "playback stats",
             );
             last_diagnostic_log = std::time::Instant::now();
         }
@@ -1974,6 +2024,84 @@ mod tests {
         assert!(
             source.contains("if crate::rate_limit::allow(&EVENT_GATE, 5_000_000_000)"),
             "playback stream-error callbacks must rate-limit event formatting/sending"
+        );
+    }
+
+    #[test]
+    fn macos_playback_recovers_when_coreaudio_device_id_changes() {
+        let source = include_str!("playback_thread.rs");
+
+        assert!(
+            source.contains("coreaudio_output_device_id(&device_name)")
+                && source.contains("CoreAudio device id changed")
+                && source.contains("rebuild_playback_stream("),
+            "playback should rebuild the output stream when macOS resurrects a named device under a new CoreAudio device id"
+        );
+    }
+
+    #[test]
+    fn explicit_output_device_lookup_does_not_silently_fallback() {
+        let source = include_str!("playback_thread.rs");
+        let explicit_lookup = source
+            .split("match crate::devices::find_device(host, device_identifier, false)")
+            .nth(1)
+            .expect("explicit lookup branch should exist")
+            .split("} else {")
+            .next()
+            .expect("explicit lookup branch should end before default-device branch");
+
+        assert!(
+            explicit_lookup.contains("Selected output device")
+                && !explicit_lookup.contains("find_fallback()"),
+            "an explicit user-selected output must fail loudly instead of falling back to another physical device"
+        );
+    }
+
+    #[test]
+    fn explicit_virtual_output_device_is_rejected_when_not_allowed() {
+        let source = include_str!("playback_thread.rs");
+
+        assert!(
+            source.contains(
+                "is_virtual_output_device_name(device_identifier) && !allow_virtual_output"
+            ) && source.contains("is virtual/loopback and cannot be used as speaker output"),
+            "explicit virtual output selection must be rejected before device lookup"
+        );
+    }
+
+    #[test]
+    fn default_selection_avoids_opening_virtual_output_when_not_allowed() {
+        let source = include_str!("playback_thread.rs");
+        let default_branch = source
+            .split("} else if !allow_virtual_output {")
+            .nth(1)
+            .expect("safe default branch should exist")
+            .split("} else {")
+            .next()
+            .expect("safe default branch should end before virtual-allowed branch");
+
+        assert!(
+            default_branch.contains("find_physical_output()")
+                && !default_branch.contains("default_output_device()"),
+            "systemwide default selection must scan physical outputs without opening the virtual default device"
+        );
+    }
+
+    #[test]
+    fn playback_stats_publish_even_before_frames_arrive() {
+        let source = include_str!("playback_thread.rs");
+        let diagnostics_block = source
+            .split("// Periodic diagnostics: log callback rate and buffer stats every few seconds")
+            .nth(1)
+            .expect("periodic diagnostics block should exist")
+            .split("// Read from message queue")
+            .next()
+            .expect("periodic diagnostics block should end before queue read");
+
+        assert!(
+            diagnostics_block.contains("if last_diagnostic_log.elapsed() > diagnostic_interval")
+                && !diagnostics_block.contains("frames_received > 0"),
+            "playback stats must report callbacks/underruns during upstream starvation"
         );
     }
 
