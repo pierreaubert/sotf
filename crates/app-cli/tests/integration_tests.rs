@@ -9,15 +9,26 @@ use std::process::Command;
 
 fn cargo_bin(name: &str) -> PathBuf {
     // cargo test sets CARGO_BIN_EXE_<name> when the binary is a target of the same workspace
-    let env_var = format!("CARGO_BIN_EXE_{}", name.replace('-', "_").to_uppercase());
-    std::env::var(&env_var)
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            // Fallback for running tests directly
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/debug")
-                .join(name)
-        })
+    for env_var in [
+        format!("CARGO_BIN_EXE_{name}"),
+        format!("CARGO_BIN_EXE_{}", name.replace('-', "_")),
+        format!("CARGO_BIN_EXE_{}", name.replace('-', "_").to_uppercase()),
+    ] {
+        if let Ok(path) = std::env::var(&env_var) {
+            return PathBuf::from(path);
+        }
+    }
+
+    // Fallback for running tests directly.
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target")
+        .join(profile)
+        .join(format!("{}{}", name, std::env::consts::EXE_SUFFIX))
 }
 
 fn demo_audio_path(name: &str) -> PathBuf {
