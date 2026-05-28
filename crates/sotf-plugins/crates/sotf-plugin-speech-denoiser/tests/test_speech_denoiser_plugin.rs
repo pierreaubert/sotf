@@ -1,6 +1,6 @@
 use sotf_host::parameters::ParameterValue;
 use sotf_host::plugin::{InPlacePlugin, ProcessContext};
-use sotf_plugin_speech_denoiser::SpeechDenoiserPlugin;
+use sotf_plugin_speech_denoiser::{SpeechDenoiserPlugin, SPEECH_DENOISER_FRAME_SIZE};
 
 #[test]
 fn disabled_is_transparent() {
@@ -123,7 +123,11 @@ fn process_accepts_multiples_of_480() {
         .unwrap();
     plugin.initialize(48000).expect("initialize");
 
-    for &good_size in &[480usize, 960, 1440] {
+    for &good_size in &[
+        SPEECH_DENOISER_FRAME_SIZE,
+        SPEECH_DENOISER_FRAME_SIZE * 2,
+        SPEECH_DENOISER_FRAME_SIZE * 3,
+    ] {
         let mut buffer = vec![0.0f32; good_size];
         let ctx = ProcessContext::new(48000, good_size);
         assert!(
@@ -131,6 +135,19 @@ fn process_accepts_multiples_of_480() {
             "Block size {good_size} must be accepted"
         );
     }
+}
+
+#[test]
+fn published_frame_size_can_drive_allocation_benchmark() {
+    let mut plugin = SpeechDenoiserPlugin::new(2);
+    plugin.initialize(48000).expect("initialize");
+
+    let mut buffer = vec![0.0f32; SPEECH_DENOISER_FRAME_SIZE * 2];
+    let ctx = ProcessContext::new(48000, SPEECH_DENOISER_FRAME_SIZE);
+
+    plugin
+        .process_in_place(&mut buffer, &ctx)
+        .expect("published frame size must be a valid processing block");
 }
 
 /// 2.3: buffer too small for the declared num_frames must return an error.

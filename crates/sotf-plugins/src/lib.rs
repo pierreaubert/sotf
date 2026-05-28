@@ -295,7 +295,9 @@ pub use plugin_pnd::{PndPlugin, PndPluginParams};
 pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_saturation::{SaturationPlugin, SaturationPluginParams};
 pub use plugin_spectral_compressor::{SpectralCompressorPlugin, SpectralCompressorPluginParams};
-pub use plugin_speech_denoiser::{SpeechDenoiserPlugin, SpeechDenoiserPluginParams};
+pub use plugin_speech_denoiser::{
+    SpeechDenoiserPlugin, SpeechDenoiserPluginParams, SPEECH_DENOISER_FRAME_SIZE,
+};
 pub use plugin_stereo_imager::{StereoImagerPlugin, StereoImagerPluginParams};
 pub use plugin_transient_shaper::{
     TransientShaperData, TransientShaperPlugin, TransientShaperPluginParams,

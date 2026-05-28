@@ -28,7 +28,7 @@ use sotf_plugins::{
     LimiterPlugin, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
     LoudnessMonitorPlugin, MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
     Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
-    UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
+    UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams, SPEECH_DENOISER_FRAME_SIZE,
 };
 
 // ============================================================================
@@ -413,8 +413,8 @@ fn test_speech_denoiser_zero_alloc() {
     let mut plugin = SpeechDenoiserPlugin::new(2);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
-    let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+    let mut buffer = generate_test_buffer(SPEECH_DENOISER_FRAME_SIZE, 2);
+    let ctx = ProcessContext::new(SAMPLE_RATE, SPEECH_DENOISER_FRAME_SIZE);
 
     for _ in 0..3 {
         plugin.process_in_place(&mut buffer, &ctx).unwrap();

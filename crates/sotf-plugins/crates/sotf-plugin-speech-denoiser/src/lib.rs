@@ -7,6 +7,9 @@ use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 
+/// RNNoise processes fixed 480-sample frames at 48 kHz.
+pub const SPEECH_DENOISER_FRAME_SIZE: usize = 480;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpeechDenoiserPluginParams {
     #[serde(default = "default_enabled")]
@@ -120,11 +123,13 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
 
         // RNNoise processes in fixed 480-sample frames.  Arbitrary block
         // sizes cause periodic zero-padding dropouts; reject upfront.
-        const RNNOISE_FRAME_SIZE: usize = 480;
-        if !context.num_frames.is_multiple_of(RNNOISE_FRAME_SIZE) {
+        if !context
+            .num_frames
+            .is_multiple_of(SPEECH_DENOISER_FRAME_SIZE)
+        {
             return Err(format!(
                 "RNNoise requires block sizes that are a multiple of {}; got {}",
-                RNNOISE_FRAME_SIZE, context.num_frames
+                SPEECH_DENOISER_FRAME_SIZE, context.num_frames
             ));
         }
 
