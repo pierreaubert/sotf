@@ -388,7 +388,7 @@ qa-roomeq-features:
 # Typical wall time under 3 minutes on modern hardware.
 [group('qa-roomeq')]
 qa-roomeq-ci:
-	cargo run --bin roomeq-fuzzer --release -- -n 50
+	cargo run --bin roomeq-fuzzer --release  --features="plotly" -- -n 50
 	cargo run --bin roomeq-qa-coverage --release -- --quick --maxeval 200
 	cargo test -p autoeq reported_ --lib -- --nocapture
 	cargo test -p autoeq timing_diagnostics --lib -- --nocapture
