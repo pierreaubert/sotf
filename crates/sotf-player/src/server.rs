@@ -673,12 +673,29 @@ fn handle_sotf_api_request(
     match (request.method.as_str(), route) {
         ("GET", "/api/v1/state") => api_json_response(200, api_state_json(state, &adapter)),
         ("GET", "/api/v1/queue") => api_json_response(200, api_queue_json(&adapter)),
+        ("GET", "/api/v1/library/albums") => api_json_response(200, api_library_albums_json(state)),
         ("POST", "/api/v1/play") => api_command_response("play", adapter.play(None)),
         ("POST", "/api/v1/pause") => api_command_response("pause", adapter.pause(Some(true))),
         ("POST", "/api/v1/resume") => api_command_response("resume", adapter.pause(Some(false))),
         ("POST", "/api/v1/stop") => api_command_response("stop", adapter.stop()),
         ("POST", "/api/v1/next") => api_command_response("next", adapter.next()),
         ("POST", "/api/v1/previous") => api_command_response("previous", adapter.previous()),
+        ("POST", "/api/v1/queue/add-album") => match api_add_album_to_queue(state, &request) {
+            Ok(body) => api_json_response(200, body),
+            Err(err) => api_error_response(400, &err),
+        },
+        ("POST", "/api/v1/queue/clear") => match api_clear_queue(state) {
+            Ok(body) => api_json_response(200, body),
+            Err(err) => api_error_response(400, &err),
+        },
+        ("POST", "/api/v1/queue/delete") => match api_delete_queue_album(state, &request) {
+            Ok(body) => api_json_response(200, body),
+            Err(err) => api_error_response(400, &err),
+        },
+        ("POST", "/api/v1/queue/jump") => match api_jump_queue_album(state, &request) {
+            Ok(body) => api_json_response(200, body),
+            Err(err) => api_error_response(400, &err),
+        },
         ("POST", "/api/v1/seek") => match api_json_body(&request).and_then(|body| {
             let position = body
                 .get("position_secs")
@@ -706,6 +723,12 @@ fn handle_sotf_api_request(
             Ok(()) => api_json_response(200, json!({ "ok": true, "command": "volume" })),
             Err(err) => api_error_response(400, &err),
         },
+        ("GET", _) if route.starts_with("/api/v1/library/albums/") => {
+            match api_library_album_tracks_json(state, route) {
+                Ok(body) => api_json_response(200, body),
+                Err(err) => api_error_response(404, &err),
+            }
+        }
         _ if route.starts_with("/api/v1/") => api_error_response(404, "unknown API route"),
         _ => api_error_response(404, "not found"),
     }
@@ -752,6 +775,156 @@ fn api_queue_json(adapter: &MpdPlayerAdapter) -> Value {
     json!({ "items": songs })
 }
 
+fn api_library_albums_json(state: &Arc<ServerState>) -> Value {
+    let library = state.library.lock();
+    let albums: Vec<_> = library.albums.iter().map(api_album_json).collect();
+    json!({ "albums": albums })
+}
+
+fn api_library_album_tracks_json(state: &Arc<ServerState>, route: &str) -> Result<Value, String> {
+    let album_id = route
+        .strip_prefix("/api/v1/library/albums/")
+        .and_then(|tail| tail.strip_suffix("/tracks"))
+        .ok_or_else(|| "invalid album tracks route".to_string())?;
+    let library = state.library.lock();
+    let album = library
+        .albums
+        .iter()
+        .find(|album| api_album_id(album) == album_id)
+        .ok_or_else(|| "album not found".to_string())?;
+    let tracks: Vec<_> = album
+        .tracks
+        .iter()
+        .enumerate()
+        .map(|(index, track)| api_track_json(track, album, index))
+        .collect();
+    Ok(json!({ "album": api_album_json(album), "tracks": tracks }))
+}
+
+fn api_add_album_to_queue(state: &Arc<ServerState>, request: &ApiRequest) -> Result<Value, String> {
+    let body = api_json_body(request)?;
+    let album_id = body
+        .get("album_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "album_id is required".to_string())?;
+    let play_now = body
+        .get("play_now")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let album = {
+        let library = state.library.lock();
+        library
+            .albums
+            .iter()
+            .find(|album| api_album_id(album) == album_id)
+            .cloned()
+            .ok_or_else(|| "album not found".to_string())?
+    };
+
+    let mut queue = state.queue.lock();
+    let index = queue.add(album);
+    let source = if play_now { queue.jump_to(index) } else { None };
+    state
+        .playlist_version
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    drop(queue);
+
+    if let Some(source) = source {
+        let mut player = state.player.lock();
+        player
+            .load_and_play_source(source, vec![], 2, None)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(json!({
+        "ok": true,
+        "command": "queue.add-album",
+        "index": index,
+        "playlist_version": state.playlist_version.load(std::sync::atomic::Ordering::Relaxed),
+    }))
+}
+
+fn api_clear_queue(state: &Arc<ServerState>) -> Result<Value, String> {
+    let mut queue = state.queue.lock();
+    queue.clear();
+    state
+        .playlist_version
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    drop(queue);
+    let mut player = state.player.lock();
+    player.stop().map_err(|e| e.to_string())?;
+    Ok(json!({
+        "ok": true,
+        "command": "queue.clear",
+        "playlist_version": state.playlist_version.load(std::sync::atomic::Ordering::Relaxed),
+    }))
+}
+
+fn api_delete_queue_album(state: &Arc<ServerState>, request: &ApiRequest) -> Result<Value, String> {
+    let index = api_body_index(request)?;
+    let mut queue = state.queue.lock();
+    if index >= queue.items.len() {
+        return Err("queue index out of range".to_string());
+    }
+    let was_current = queue.remove(index);
+    let replacement = if was_current {
+        queue.current_track_source()
+    } else {
+        None
+    };
+    let is_empty = queue.items.is_empty();
+    state
+        .playlist_version
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    drop(queue);
+
+    if was_current {
+        let mut player = state.player.lock();
+        if let Some(source) = replacement {
+            player
+                .load_and_play_source(source, vec![], 2, None)
+                .map_err(|e| e.to_string())?;
+        } else if is_empty {
+            player.stop().map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(json!({
+        "ok": true,
+        "command": "queue.delete",
+        "index": index,
+        "was_current": was_current,
+        "playlist_version": state.playlist_version.load(std::sync::atomic::Ordering::Relaxed),
+    }))
+}
+
+fn api_jump_queue_album(state: &Arc<ServerState>, request: &ApiRequest) -> Result<Value, String> {
+    let index = api_body_index(request)?;
+    let mut queue = state.queue.lock();
+    let source = queue
+        .jump_to(index)
+        .ok_or_else(|| "queue index out of range".to_string())?;
+    drop(queue);
+    let mut player = state.player.lock();
+    player
+        .load_and_play_source(source, vec![], 2, None)
+        .map_err(|e| e.to_string())?;
+    Ok(json!({
+        "ok": true,
+        "command": "queue.jump",
+        "index": index,
+    }))
+}
+
+fn api_body_index(request: &ApiRequest) -> Result<usize, String> {
+    let body = api_json_body(request)?;
+    let index = body
+        .get("index")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| "index is required".to_string())?;
+    usize::try_from(index).map_err(|_| "index is too large".to_string())
+}
+
 fn api_command_response(command: &str, result: Result<(), String>) -> Vec<u8> {
     match result {
         Ok(()) => api_json_response(200, json!({ "ok": true, "command": command })),
@@ -779,6 +952,86 @@ fn mpd_song_json(song: &MpdSongInfo) -> Value {
         "pos": song.pos,
         "id": song.id,
     })
+}
+
+fn api_album_json(album: &crate::library::Album) -> Value {
+    json!({
+        "id": api_album_id(album),
+        "title": &album.title,
+        "artist": album.artist(),
+        "year": album.year,
+        "track_count": album.tracks.len(),
+        "edition": &album.edition,
+        "dynamic_range": album.dynamic_range,
+        "is_favorite": album.is_favorite,
+        "play_count": album.play_count,
+    })
+}
+
+fn api_track_json(
+    track: &crate::library::Track,
+    album: &crate::library::Album,
+    index: usize,
+) -> Value {
+    json!({
+        "id": api_track_id(track, album, index),
+        "title": &track.title,
+        "artist": &track.artist,
+        "album": &album.title,
+        "track": track.track_number,
+        "duration_secs": track.duration_secs,
+        "genre": &track.genre,
+        "composer": &track.composer,
+        "disc_number": track.disc_number,
+        "conductor": &track.conductor,
+        "performer": &track.performer,
+        "ensemble": &track.ensemble,
+        "channels": track.channels,
+        "sample_rate": track.sample_rate,
+        "bit_depth": track.bit_depth,
+        "is_favorite": track.is_favorite,
+        "play_count": track.play_count,
+    })
+}
+
+fn api_album_id(album: &crate::library::Album) -> String {
+    if let Some(id) = album.id {
+        return format!("id:{id}");
+    }
+    if let Some(uuid) = album.uuid.as_deref()
+        && is_safe_media_id(uuid)
+    {
+        return format!("uuid:{uuid}");
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(album.title.as_bytes());
+    hasher.update([0]);
+    hasher.update(album.artist().as_bytes());
+    hasher.update([0]);
+    hasher.update(album.edition.as_deref().unwrap_or_default().as_bytes());
+    hasher.update([0]);
+    if let Some(first_path) = album
+        .tracks
+        .first()
+        .map(|track| track.path.to_string_lossy())
+    {
+        hasher.update(first_path.as_bytes());
+    }
+    let digest = hasher.finalize();
+    format!("hash:{}", hex_prefix(&digest, 24))
+}
+
+fn api_track_id(
+    track: &crate::library::Track,
+    album: &crate::library::Album,
+    index: usize,
+) -> String {
+    if let Some(uuid) = track.uuid.as_deref()
+        && is_safe_media_id(uuid)
+    {
+        return format!("uuid:{uuid}");
+    }
+    media_track_id(track, album, index)
 }
 
 fn mpd_state_name(state: &MpdPlayState) -> &'static str {
