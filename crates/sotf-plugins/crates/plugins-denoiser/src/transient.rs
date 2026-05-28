@@ -1,5 +1,3 @@
-use rayon::prelude::*;
-
 /// Adaptive slew-rate limiter for click and pop repair.
 #[derive(Clone, Copy)]
 struct ChannelState {
@@ -15,6 +13,7 @@ pub struct TransientSuppressor {
     last_outputs: Vec<f32>,
     prev_delta: Vec<f32>,
     slope_envelope: Vec<f32>,
+    scratch_states: Vec<ChannelState>,
     work: Vec<f32>,
     sensitivity: f32,
     release_ms: f32,
@@ -32,6 +31,15 @@ impl TransientSuppressor {
             // Start at the non-zero floor so new() and reset() behave
             // identically (fix for issue 3).
             slope_envelope: vec![1e-6; channels],
+            scratch_states: vec![
+                ChannelState {
+                    last_sample: 0.0,
+                    last_output: 0.0,
+                    prev_delta: 0.0,
+                    slope_envelope: 1e-6,
+                };
+                channels
+            ],
             work: vec![0.0; channels.saturating_mul(1024)],
             sensitivity: 10.0,
             release_ms: 20.0,
@@ -106,37 +114,31 @@ impl TransientSuppressor {
             }
         }
 
-        let mut states: Vec<ChannelState> = (0..self.channels)
-            .map(|ch| ChannelState {
+        for ch in 0..self.channels {
+            self.scratch_states[ch] = ChannelState {
                 last_sample: self.last_samples[ch],
                 last_output: self.last_outputs[ch],
                 prev_delta: self.prev_delta[ch],
                 slope_envelope: self.slope_envelope[ch],
-            })
-            .collect();
+            };
+        }
 
         let decay = self.decay;
         let one_minus_decay = self.one_minus_decay;
         let sensitivity = self.sensitivity;
-        let work_ptr = self.work.as_mut_ptr() as usize;
-        let state_ptr = states.as_mut_ptr() as usize;
-
-        (0..self.channels).into_par_iter().for_each(|ch| {
-            let start = ch * num_frames;
-            // SAFETY: each channel chunk is non-overlapping because each
-            // start index is advanced by `num_frames`.
-            let samples = unsafe {
-                std::slice::from_raw_parts_mut((work_ptr as *mut f32).add(start), num_frames)
-            };
-            let state = unsafe { &mut *((state_ptr as *mut ChannelState).add(ch)) };
-            Self::process_channel_impl(samples, state, sensitivity, decay, one_minus_decay);
-        });
 
         for ch in 0..self.channels {
-            self.last_samples[ch] = states[ch].last_sample;
-            self.last_outputs[ch] = states[ch].last_output;
-            self.prev_delta[ch] = states[ch].prev_delta;
-            self.slope_envelope[ch] = states[ch].slope_envelope;
+            let start = ch * num_frames;
+            let samples = &mut self.work[start..start + num_frames];
+            let state = &mut self.scratch_states[ch];
+            Self::process_channel_impl(samples, state, sensitivity, decay, one_minus_decay);
+        }
+
+        for ch in 0..self.channels {
+            self.last_samples[ch] = self.scratch_states[ch].last_sample;
+            self.last_outputs[ch] = self.scratch_states[ch].last_output;
+            self.prev_delta[ch] = self.scratch_states[ch].prev_delta;
+            self.slope_envelope[ch] = self.scratch_states[ch].slope_envelope;
         }
 
         for frame in 0..num_frames {

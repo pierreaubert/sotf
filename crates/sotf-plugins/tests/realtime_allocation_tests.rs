@@ -12,9 +12,9 @@ use std::cell::Cell;
 use sotf_plugins::{
     ABComparePlugin, AutoGain, AutoGainParams, BandMergePlugin, BandSplitPlugin,
     BinauralDecoderPlugin, ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin,
-    CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, CrossoverPlugin, DenoiserPlugin,
-    DownmixPlugin, DownmixPluginParams, EqPlugin, ExpanderPlugin, GainPlugin, GatePlugin,
-    InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
+    CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, CrossoverPlugin, DeclickPlugin,
+    DenoiserPlugin, DownmixPlugin, DownmixPluginParams, EqPlugin, ExpanderPlugin, GainPlugin,
+    GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
     LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
     MultibandExpanderPlugin, Plugin, PndPlugin, ProcessContext, ResamplerPlugin, RoomModel,
     SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, XtcPlugin, XtcPluginParams,
@@ -408,6 +408,20 @@ fn test_denoiser_zero_alloc() {
             plugin.process_in_place(&mut buffer, &ctx).unwrap();
             let _ = plugin.get_data();
         }
+    });
+}
+
+#[test]
+#[serial]
+fn test_declick_zero_alloc() {
+    let mut plugin = DeclickPlugin::new(2);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+
+    assert_no_allocs("DeclickPlugin", || {
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
     });
 }
 
