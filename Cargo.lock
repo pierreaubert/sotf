@@ -10254,6 +10254,7 @@ dependencies = [
  "bytemuck",
  "chrono",
  "clap",
+ "coreaudio-rs",
  "cpal",
  "criterion",
  "crossbeam",
