@@ -1116,8 +1116,11 @@ pub fn {}() -> EditorTheme {{
         gpui_ui_kit::AccordionTheme {
             header_bg: self.surface.to_rgba(),
             header_hover_bg: self.surface_hover.to_rgba(),
+            header_active_bg: self.accent_muted.to_rgba(),
             content_bg: self.background.to_rgba(),
             border: self.border.to_rgba(),
+            accent_tint: self.accent_muted.to_rgba(),
+            accent: self.accent.to_rgba(),
             title_color: self.text_primary.to_rgba(),
             indicator_color: self.text_muted.to_rgba(),
         }
@@ -1204,6 +1207,13 @@ impl ColorGroup {
 mod tests {
     use super::*;
 
+    fn assert_rgba_eq(actual: gpui::Rgba, expected: gpui::Rgba) {
+        assert!((actual.r - expected.r).abs() <= f32::EPSILON);
+        assert!((actual.g - expected.g).abs() <= f32::EPSILON);
+        assert!((actual.b - expected.b).abs() <= f32::EPSILON);
+        assert!((actual.a - expected.a).abs() <= f32::EPSILON);
+    }
+
     #[test]
     fn test_theme_json_roundtrip() {
         let theme = EditorTheme::dark();
@@ -1242,6 +1252,16 @@ mod tests {
             !code.contains("plugin_colors, graph_colors, etc."),
             "Rust code should not contain abbreviated placeholder"
         );
+    }
+
+    #[test]
+    fn test_to_accordion_theme_maps_accent_fields() {
+        let theme = EditorTheme::dark();
+        let accordion = theme.to_accordion_theme();
+
+        assert_rgba_eq(accordion.header_active_bg, theme.accent_muted.to_rgba());
+        assert_rgba_eq(accordion.accent_tint, theme.accent_muted.to_rgba());
+        assert_rgba_eq(accordion.accent, theme.accent.to_rgba());
     }
 
     #[test]
