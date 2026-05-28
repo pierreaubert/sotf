@@ -1,6 +1,6 @@
 use gpui::*;
 use rust_embed::RustEmbed;
-use sotf_audio_player::Player;
+use sotf_audio_player::{Player, SotfRemoteAuthToken, SotfRemoteServer};
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::ui;
@@ -26,6 +26,13 @@ unsafe extern "C" {
         is_playing: bool,
     );
     fn sotf_ios_update_now_playing_position(position: f64, is_playing: bool);
+    #[allow(dead_code)]
+    fn sotf_ios_keychain_save(key: *const std::ffi::c_char, token: *const std::ffi::c_char)
+    -> bool;
+    #[allow(dead_code)]
+    fn sotf_ios_keychain_load(key: *const std::ffi::c_char) -> *const std::ffi::c_char;
+    #[allow(dead_code)]
+    fn sotf_ios_keychain_delete(key: *const std::ffi::c_char) -> bool;
 }
 
 /// Global handle to the player so C FFI callbacks can control playback.
@@ -33,9 +40,7 @@ unsafe extern "C" {
 static GLOBAL_PLAYER: OnceLock<Arc<parking_lot::Mutex<Player>>> = OnceLock::new();
 
 /// Remote control commands that require AppState/Queue access. The GPUI event
-/// loop is expected to drain this queue on each tick (see TODO in
-/// `pending_remote_commands`). Until that drain is wired up, lock-screen
-/// next/prev events are recorded here but do not yet move the queue.
+/// loop drains this queue on each tick through `sotf_ios_pop_remote_command`.
 #[derive(Debug, Clone)]
 pub enum RemoteCommand {
     NextTrack,
@@ -47,17 +52,17 @@ pub enum RemoteCommand {
 
 static PENDING_REMOTE_COMMANDS: OnceLock<parking_lot::Mutex<VecDeque<RemoteCommand>>> =
     OnceLock::new();
+static PENDING_IMPORTED_FILES: OnceLock<parking_lot::Mutex<Vec<PathBuf>>> = OnceLock::new();
 
 fn pending_queue() -> &'static parking_lot::Mutex<VecDeque<RemoteCommand>> {
     PENDING_REMOTE_COMMANDS.get_or_init(|| parking_lot::Mutex::new(VecDeque::new()))
 }
 
+fn pending_imports() -> &'static parking_lot::Mutex<Vec<PathBuf>> {
+    PENDING_IMPORTED_FILES.get_or_init(|| parking_lot::Mutex::new(Vec::new()))
+}
+
 /// Push a remote command for the GPUI loop to drain.
-///
-/// TODO(cross-crate-plumbing): the GPUI side (sotf-gpui / AppState) needs to
-/// call `drain_pending_remote_commands()` on each tick and act on the
-/// commands (e.g. `QueueController::next()` / `::prev()` / library import).
-/// That drain consumer cannot be added from this crate alone.
 fn push_remote_command(cmd: RemoteCommand) {
     pending_queue().lock().push_back(cmd);
 }
@@ -66,6 +71,67 @@ fn push_remote_command(cmd: RemoteCommand) {
 #[allow(dead_code)]
 pub fn drain_pending_remote_commands() -> Vec<RemoteCommand> {
     pending_queue().lock().drain(..).collect()
+}
+
+/// Pop one queued command for the iOS GPUI tick.
+///
+/// Return codes are intentionally scalar so `app-gpui` can consume remote
+/// commands without depending on this crate and creating a cycle:
+/// 0 = none, 1 = next track, 2 = previous track, 3 = imported files noticed.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_pop_remote_command() -> i32 {
+    ffi_guard(|| match pending_queue().lock().pop_front() {
+        None => 0,
+        Some(RemoteCommand::NextTrack) => 1,
+        Some(RemoteCommand::PrevTrack) => 2,
+        Some(RemoteCommand::ImportFiles(paths)) => {
+            log::info!(
+                "[iOS] Imported files drain observed {} paths; full library import pending",
+                paths.len()
+            );
+            3
+        }
+    })
+}
+
+/// Return and clear imported file paths as a JSON string for GPUI to consume.
+///
+/// The returned pointer must be released with `sotf_ios_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_take_imported_files_json() -> *mut std::ffi::c_char {
+    ffi_guard(|| {
+        let paths: Vec<String> = pending_imports()
+            .lock()
+            .drain(..)
+            .map(|path| path.display().to_string())
+            .collect();
+        let Ok(json) = serde_json::to_string(&paths) else {
+            log::error!("[iOS] failed to serialize imported file paths");
+            return std::ptr::null_mut();
+        };
+        match CString::new(json) {
+            Ok(value) => value.into_raw(),
+            Err(_) => {
+                log::error!("[iOS] imported file JSON contained interior NUL");
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Free a string returned by an iOS Rust FFI function.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_string_free(value: *mut std::ffi::c_char) {
+    ffi_guard(|| {
+        if value.is_null() {
+            return;
+        }
+        // SAFETY: callers may only pass pointers returned by `CString::into_raw`
+        // from this crate, and each pointer is freed at most once.
+        unsafe {
+            let _ = CString::from_raw(value);
+        }
+    })
 }
 
 /// FFI panic guard. Wrap every `extern "C"` body in this so a Rust panic does
@@ -186,6 +252,8 @@ pub extern "C" fn sotf_ios_start() {
                             app.add_directory_quiet(music_dir);
                         }
 
+                        app.start_remote_server_discovery();
+
                         AppState {
                             app,
                             layout,
@@ -237,13 +305,7 @@ fn get_ios_music_directory() -> Option<PathBuf> {
 /// The JSON payload is an array of absolute paths. Each entry that points to
 /// an audio file is forwarded to the playback queue via `Player::queue_next`,
 /// and the full list is also pushed onto the pending remote-command queue so
-/// the GPUI side can perform a full library import when the drain consumer
-/// lands.
-///
-/// TODO(cross-crate-plumbing): the proper destination is
-/// `App::add_directory_quiet` / a dedicated import API in app-gpui, which can
-/// scan metadata and register the tracks with the library. That requires a
-/// drain consumer in the GPUI event loop — see `drain_pending_remote_commands`.
+/// the GPUI side can register the containing folders for a library scan.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_files_imported(paths_json: *const std::ffi::c_char) {
     ffi_guard(AssertUnwindSafe(|| {
@@ -291,8 +353,8 @@ pub extern "C" fn sotf_ios_files_imported(paths_json: *const std::ffi::c_char) {
             );
         }
 
-        // Also enqueue for the (future) full library-import consumer. See
-        // TODO on `RemoteCommand::ImportFiles`.
+        // Also enqueue for the GPUI library-import consumer.
+        pending_imports().lock().extend(path_bufs.iter().cloned());
         push_remote_command(RemoteCommand::ImportFiles(path_bufs));
     }))
 }
@@ -389,13 +451,12 @@ pub extern "C" fn sotf_ios_remote_toggle_play_pause() {
 ///
 /// Implementation note: track navigation lives on the AppState's
 /// `QueueController`, not on the engine-level `Player`. We therefore push a
-/// `RemoteCommand::NextTrack` onto the pending queue, which the GPUI tick
-/// must drain (see TODO on `drain_pending_remote_commands`). Until the drain
-/// is wired, the command will accumulate but will not advance the queue.
+/// `RemoteCommand::NextTrack` onto the pending queue for the GPUI tick to
+/// drain on the UI thread.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_remote_next_track() {
     ffi_guard(|| {
-        log::info!("[iOS] Remote: next track (enqueued for GPUI drain)");
+        log::info!("[iOS] Remote: next track");
         push_remote_command(RemoteCommand::NextTrack);
     })
 }
@@ -404,7 +465,7 @@ pub extern "C" fn sotf_ios_remote_next_track() {
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_remote_prev_track() {
     ffi_guard(|| {
-        log::info!("[iOS] Remote: prev track (enqueued for GPUI drain)");
+        log::info!("[iOS] Remote: prev track");
         push_remote_command(RemoteCommand::PrevTrack);
     })
 }
@@ -436,6 +497,53 @@ fn cstring_or_unknown(value: &str, field: &str) -> CString {
             CString::new("<unknown>").expect("static literal has no NUL")
         }
     }
+}
+
+#[allow(dead_code)]
+fn cstring_for_keychain(value: &str, field: &str) -> Option<CString> {
+    match CString::new(value) {
+        Ok(value) => Some(value),
+        Err(_) => {
+            log::warn!("[iOS] interior NUL in remote {field}; refusing Keychain operation");
+            None
+        }
+    }
+}
+
+/// Store a remote server bearer token in the iOS Keychain.
+///
+/// The account name is derived from `SotfRemoteServer::token_secret_key`; the
+/// token is never written to `remote_servers.json`.
+#[allow(dead_code)]
+pub fn save_remote_auth_token(server: &SotfRemoteServer, token: &SotfRemoteAuthToken) -> bool {
+    let Some(key) = cstring_for_keychain(&server.token_secret_key(), "token key") else {
+        return false;
+    };
+    let Some(token) = cstring_for_keychain(token.as_str(), "token") else {
+        return false;
+    };
+    unsafe { sotf_ios_keychain_save(key.as_ptr(), token.as_ptr()) }
+}
+
+/// Load a remote server bearer token from the iOS Keychain.
+#[allow(dead_code)]
+pub fn load_remote_auth_token(server: &SotfRemoteServer) -> Option<SotfRemoteAuthToken> {
+    let key = cstring_for_keychain(&server.token_secret_key(), "token key")?;
+    let token = unsafe { sotf_ios_keychain_load(key.as_ptr()) };
+    if token.is_null() {
+        return None;
+    }
+    let token = unsafe { std::ffi::CStr::from_ptr(token) }.to_str().ok()?;
+    SotfRemoteAuthToken::new(token).ok()
+}
+
+/// Delete a remote server bearer token from the iOS Keychain.
+#[allow(dead_code)]
+pub fn delete_remote_auth_token(server: &SotfRemoteServer) -> bool {
+    let Some(key) = cstring_for_keychain(&server.token_secret_key(), "token key") else {
+        return false;
+    };
+    unsafe { sotf_ios_keychain_delete(key.as_ptr()) }
 }
 
 /// Update the lock screen Now Playing info with full track metadata.

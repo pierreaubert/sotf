@@ -340,6 +340,11 @@ impl PlayerView {
                     foreground: theme.text_muted,
                     foreground_hover: theme.text_secondary,
                     border: theme.border,
+                    tint: Rgba {
+                        a: 0.42,
+                        ..theme.accent
+                    },
+                    tint_hover: theme.accent,
                 };
                 PaneDivider::vertical("queue-list-divider", CollapseDirection::Left)
                     .label("Queue")
@@ -382,6 +387,11 @@ impl PlayerView {
                     foreground: theme.text_muted,
                     foreground_hover: theme.text_secondary,
                     border: theme.border,
+                    tint: Rgba {
+                        a: 0.42,
+                        ..theme.accent
+                    },
+                    tint_hover: theme.accent,
                 };
                 PaneDivider::vertical("meters-divider", CollapseDirection::Right)
                     .label("Meters")

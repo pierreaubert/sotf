@@ -14,3 +14,4 @@ path = "src/lib.rs"
 
 [dependencies]
 nnnoiseless = { workspace = true }
+rayon = { workspace = true }

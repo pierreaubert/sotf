@@ -23,12 +23,24 @@
   useful. Added an additional `test_band_split_dc_sums_to_unity_tight` test
   that also uses 20 000 frames to verify full settling.
 
-## Deferred
+- **Fixed crossover-type dead parameter** (`src/lib.rs`):
+  `crossover_type` is now honored in both constructor and runtime parameter updates.
+  The plugin now uses `MultibandLr4Crossover` for `LR24` and `MultibandLr8Crossover`
+  for `LR48`, rebuilding the active crossover when the type parameter changes.
+  This resolves the previously unimplemented "LR48 dead path".
 
-- **LR48 parameter is a no-op** (review issue #6): `crossover_type` accepts
-  `"LR48"` but only `LR24` is instantiated in `MultibandLr4Crossover`.
-  Implementing LR48 (cascaded biquad, 8th order) requires changes to
-  `math-iir-fir::lr4_crossover` — deferred as a cross-crate change.
+- **Used geometric defaults for legacy `num_bands` expansion** (`src/lib.rs:from_params`):
+  Replaced arbitrary 8×/4×/3× multipliers with consistent octave-like spread
+  (×4 per step): 3-band defaults now `[f, 4f]`; 4-band defaults now
+  `[f, 4f, 16f]` (clamped to 20 kHz). This matches the intended geometric
+  behavior and keeps bands better separated.
+
+- **Removed per-frame split helper allocation overhead** (`src/lib.rs:process`):
+  Replaced `split_at_mut` loop-based band slicing with direct fixed-index
+  slicing over the preallocated `band_flat` buffer (`band_idx * in_ch .. (band_idx + 1) * in_ch`),
+  reducing bounds checks and keeping the operation fully branch-light.
+
+## Deferred
 
 - **`LogSmoother` recreated in `initialize`** (review issue #7): The smoother
   has no `set_sample_rate` method. Recreation from the same target value is

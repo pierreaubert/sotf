@@ -1,3 +1,11 @@
+# 0.5.12
+
+## Fixes (from code review 2026-05-16)
+
+- **Medium (2.3):** Muted bands now report the same `-120.0 dB` silence floor as constructors,
+  data snapshots, and `num_bands` resize paths. Added a regression test covering solo-induced band
+  muting so meter state remains consistent.
+
 # 0.5.11
 
 ## Fixes (from code review 2026-05-11)

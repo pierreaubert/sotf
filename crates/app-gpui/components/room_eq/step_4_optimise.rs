@@ -780,7 +780,7 @@ impl PlayerView {
             )
     }
 
-    fn start_room_eq_optimization(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn start_room_eq_optimization(&mut self, cx: &mut Context<Self>) {
         use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
         use autoeq::roomeq::CallbackAction;
         use sotf_audio_player::autoeq::{

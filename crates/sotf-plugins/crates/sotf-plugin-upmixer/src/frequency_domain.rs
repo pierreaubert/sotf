@@ -663,10 +663,14 @@ impl UpmixerPlugin {
         self.coherence_history_idx = self.coherence_history_idx.wrapping_add(1);
         // Note: FTZ/DAZ CPU flags handle denormal flushing automatically
 
+        let height_floor_end = self.cached_bandpass_bin.min(self.height_band_gains.len());
+        self.height_band_gains[..height_floor_end].fill(HEIGHT_MASK_FLOOR);
+
         // Compute height spectral flux gate before smoothing height gains
         self.compute_height_flux_gate();
 
         self.smooth_height_gains();
+        self.height_band_gains[..height_floor_end].fill(HEIGHT_MASK_FLOOR);
     }
 }
 

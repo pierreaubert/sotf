@@ -141,6 +141,7 @@ pub struct GatePlugin {
     ratio: f32,
     attack_ms: f32,
     hold_ms: f32,
+    hold_samples: usize,
     release_ms: f32,
     mix: f32,
     link_channels: bool,
@@ -192,6 +193,7 @@ impl GatePlugin {
             ratio,
             attack_ms,
             hold_ms,
+            hold_samples: (hold_ms * 0.001 * sr as f32).round() as usize,
             release_ms,
             mix: 1.0,
             link_channels: true,
@@ -314,9 +316,14 @@ impl GatePlugin {
         p.hysteresis_db = params.hysteresis_db.max(0.0);
         p.knee_db = params.knee_db.max(0.0);
         p.lookahead_ms = params.lookahead_ms.clamp(0.0, MAX_LOOKAHEAD_MS);
+        p.update_hold_samples();
         p.update_lookahead_delay();
         p.rebuild_cached_parameters();
         p
+    }
+
+    fn update_hold_samples(&mut self) {
+        self.hold_samples = (self.hold_ms * 0.001 * self.sample_rate as f32).round() as usize;
     }
 
     fn update_lookahead_delay(&mut self) {
@@ -343,7 +350,10 @@ impl GatePlugin {
             // Below knee zone -- full gate
             (threshold - input_db) * slope
         } else {
-            // Within knee zone -- quadratic transition (ported from expander)
+            // Within knee zone: quadratic easing from 0 dB attenuation at
+            // threshold + knee/2 to the full below-threshold slope at
+            // threshold - knee/2. The curve is continuous at both boundaries
+            // and intentionally softer near the opening point.
             let below = threshold + knee / 2.0 - input_db;
             let kf = below / knee;
             kf * kf * (knee / 2.0) * slope
@@ -424,6 +434,7 @@ impl InPlacePlugin for GatePlugin {
         match idx {
             0 => self.threshold_smoother.set_target(self.threshold_db), // threshold
             2 | 4 => self.update_coefficients(),                        // attack or release
+            3 => self.update_hold_samples(),                            // hold
             5 => self.mix_smoother.set_target(self.mix),                // mix
             7 | 8 => self.rebuild_sidechain_hpf(),                      // sidechain_hpf_hz or order
             9 => {
@@ -449,6 +460,7 @@ impl InPlacePlugin for GatePlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.update_coefficients();
+        self.update_hold_samples();
         self.rebuild_sidechain_hpf();
         self.threshold_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
@@ -490,7 +502,7 @@ impl InPlacePlugin for GatePlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
-        let hs = (self.hold_ms * 0.001 * self.sample_rate as f32) as usize;
+        let hs = self.hold_samples;
         let use_lookahead = self.lookahead_ms > 0.0;
         let use_ext_sc = self.sidechain_external;
         // When external sidechain is active, the buffer stride is channels*2
@@ -674,6 +686,19 @@ mod tests {
         p.process_in_place(&mut b, &ProcessContext::new(48000, 1000))
             .unwrap();
         assert!(b[999] < 0.05);
+    }
+
+    #[test]
+    fn test_hold_samples_precomputed_and_updated() {
+        let mut p = GatePlugin::new(1, -20.0, 10.0, 1.0, 10.0, 50.0);
+        assert_eq!(p.hold_samples, 441);
+
+        p.initialize(96000).unwrap();
+        assert_eq!(p.hold_samples, 960);
+
+        p.set_parameter(ParameterId::from("hold"), ParameterValue::Float(1.5))
+            .unwrap();
+        assert_eq!(p.hold_samples, 144);
     }
 
     /// CRITICAL: Attack must control gate opening speed, Release must control closing speed.
@@ -1017,6 +1042,33 @@ mod tests {
             (avg_output - input_level).abs() < 0.001,
             "Gate should stay open for signal at exact threshold (linear comparison), \
              avg output was {avg_output}"
+        );
+    }
+
+    #[test]
+    fn test_soft_knee_curve_is_continuous_at_boundaries() {
+        let mut p = GatePlugin::new(1, -20.0, 4.0, 1.0, 0.0, 10.0);
+        p.range_db = 80.0;
+        p.knee_db = 6.0;
+
+        let threshold = -20.0;
+        let upper = threshold + p.knee_db / 2.0;
+        let lower = threshold - p.knee_db / 2.0;
+        let slope = 1.0 - 1.0 / p.ratio.max(1.0);
+
+        let at_upper = p.calculate_gate_attenuation(upper, threshold);
+        let just_inside_upper = p.calculate_gate_attenuation(upper - 0.001, threshold);
+        assert!(at_upper.abs() < 1e-6);
+        assert!(
+            just_inside_upper < 0.001,
+            "knee should enter smoothly near upper boundary, got {just_inside_upper}"
+        );
+
+        let at_lower = p.calculate_gate_attenuation(lower, threshold);
+        let expected_lower = (threshold - lower) * slope;
+        assert!(
+            (at_lower - expected_lower).abs() < 1e-5,
+            "lower boundary should meet below-threshold line: got {at_lower}, expected {expected_lower}"
         );
     }
 }

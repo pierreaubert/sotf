@@ -83,6 +83,7 @@ ctrlc = { workspace = true }
 signal-hook = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+coreaudio-rs = "0.13"
 driver-hal = { workspace = true, optional = true }
 
 [dev-dependencies]

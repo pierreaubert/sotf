@@ -131,8 +131,35 @@ fn test_roomeq_multidriver_config() {
         .as_array()
         .expect("plugins should be an array");
 
-    // Should have plugins (gain + EQ at minimum)
-    assert!(!plugins.is_empty(), "No plugins in multi-driver DSP chain");
+    // Multi-driver exports keep active-crossover DSP on each driver branch.
+    assert!(
+        plugins.is_empty(),
+        "multi-driver channel should not need channel-level plugins"
+    );
+
+    let drivers = left_channel["drivers"]
+        .as_array()
+        .expect("drivers should be an array");
+    assert_eq!(drivers.len(), 2, "Expected woofer/tweeter driver branches");
+
+    for driver in drivers {
+        let driver_plugins = driver["plugins"]
+            .as_array()
+            .expect("driver plugins should be an array");
+        assert!(
+            !driver_plugins.is_empty(),
+            "No plugins in multi-driver branch"
+        );
+        assert!(
+            driver_plugins.iter().any(|p| {
+                p.get("plugin_type")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t == "crossover")
+                    .unwrap_or(false)
+            }),
+            "Missing crossover plugin in multi-driver branch"
+        );
+    }
 
     // Verify we can parse the optimizer metadata
     let metadata = json["metadata"]

@@ -4,6 +4,8 @@
 //! The library exposes the App state for testing and integration purposes.
 
 pub mod app;
+#[cfg(feature = "dev-api")]
+pub mod dev_api;
 pub mod events;
 pub mod media_controls;
 pub mod theme;

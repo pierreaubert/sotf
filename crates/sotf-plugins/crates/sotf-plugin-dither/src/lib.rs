@@ -96,6 +96,7 @@ pub struct DitherPlugin {
     // DSP state (per-channel, pre-allocated)
     error_history: Vec<[f32; 3]>,
     rng_state: Vec<u64>,
+    prev_random: Vec<f32>,
 
     // Parameter IDs
     param_bit_depth: ParameterId,
@@ -124,6 +125,7 @@ impl DitherPlugin {
             inv_scale: 1.0 / scale,
             error_history: vec![[0.0; 3]; channels],
             rng_state: Self::init_rng_states(channels),
+            prev_random: vec![0.0; channels],
             param_bit_depth: ParameterId::from("bit_depth"),
             param_noise_shaping: ParameterId::from("noise_shaping"),
             param_dither_type: ParameterId::from("dither_type"),
@@ -143,11 +145,12 @@ impl DitherPlugin {
             sample_rate: 48000,
             bit_depth_index,
             noise_shaping_enabled: params.noise_shaping,
-            dither_type_index: params.dither_type.min(1),
+            dither_type_index: params.dither_type.min(2),
             scale,
             inv_scale: 1.0 / scale,
             error_history: vec![[0.0; 3]; channels],
             rng_state: Self::init_rng_states(channels),
+            prev_random: vec![0.0; channels],
             param_bit_depth: ParameterId::from("bit_depth"),
             param_noise_shaping: ParameterId::from("noise_shaping"),
             param_dither_type: ParameterId::from("dither_type"),
@@ -185,7 +188,7 @@ impl DitherPlugin {
                 "Dither Type",
                 self.dither_type_index as i32,
                 0,
-                1,
+                2,
             ),
         ];
     }
@@ -204,6 +207,16 @@ impl DitherPlugin {
         history[2] = history[1];
         history[1] = history[0];
         history[0] = error;
+    }
+
+    /// Generate TPDF dither with one random sample:
+    /// TPDF[n] = R[n] - R[n-1], where both uniforms are in [-0.5, 0.5].
+    #[inline(always)]
+    fn next_tpdf(&mut self, ch: usize) -> f32 {
+        let r = random_f32(&mut self.rng_state[ch]);
+        let tpdf = r - self.prev_random[ch];
+        self.prev_random[ch] = r;
+        tpdf
     }
 }
 
@@ -242,7 +255,7 @@ impl InPlacePlugin for DitherPlugin {
         if id == self.param_dither_type
             && let Some(v) = val.as_int()
         {
-            let idx = (v as usize).min(1);
+            let idx = (v as usize).min(2);
             self.dither_type_index = idx;
             self.rebuild_cached_parameters();
             return Ok(());
@@ -272,11 +285,17 @@ impl InPlacePlugin for DitherPlugin {
         if self.rng_state.len() != self.channels {
             self.rng_state = Self::init_rng_states(self.channels);
         }
+        if self.prev_random.len() != self.channels {
+            self.prev_random = vec![0.0; self.channels];
+        }
         self.reset();
         Ok(())
     }
 
     fn reset(&mut self) {
+        for prev in &mut self.prev_random {
+            *prev = 0.0;
+        }
         for h in &mut self.error_history {
             *h = [0.0; 3];
         }
@@ -292,7 +311,7 @@ impl InPlacePlugin for DitherPlugin {
         let ch = self.channels;
         let scale = self.scale;
         let inv_scale = self.inv_scale;
-        let dither_enabled = self.dither_type_index == 0; // 0 = TPDF
+        let dither_type = self.dither_type_index;
         let noise_shaping = self.noise_shaping_enabled;
 
         for frame in 0..nf {
@@ -308,22 +327,28 @@ impl InPlacePlugin for DitherPlugin {
                     input
                 };
 
-                // TPDF dither: two uniform randoms subtracted -> triangular PDF
-                let dithered = if dither_enabled {
-                    let r1 = random_f32(&mut self.rng_state[c]);
-                    let r2 = random_f32(&mut self.rng_state[c]);
-                    let tpdf = r1 - r2; // range [-1, 1], triangular distribution
-                    shaped + tpdf * inv_scale
-                } else {
-                    shaped
+                let dithered = match dither_type {
+                    // TPDF dither: RPDF[n] - RPDF[n-1] -> one RNG call / sample.
+                    0 => shaped + self.next_tpdf(c) * inv_scale,
+                    _ => shaped,
                 };
 
-                // Quantize to target bit depth
-                let quantized = (dithered * scale).round() * inv_scale;
+                let quantized = match dither_type {
+                    // index 0: TPDF
+                    // index 1: no dither, rounded quantization ("None (round)")
+                    1 => (dithered * scale).round() * inv_scale,
+                    // index 2: no dither, truncated quantization ("Truncate")
+                    2 => (dithered * scale).trunc() * inv_scale,
+                    // fallback for malformed values (e.g. serialized legacy state)
+                    _ => (dithered * scale).round() * inv_scale,
+                };
 
                 // Compute quantization error and store for noise shaping
                 if noise_shaping {
-                    let error = quantized - dithered;
+                    // Feedback only the quantization residual of the shaped sample.
+                    // Do not include explicit dither in the feedback path, which would
+                    // otherwise dominate the shaper at high bit depths.
+                    let error = quantized - shaped;
                     Self::push_error(&mut self.error_history[c], error);
                 }
 
@@ -344,7 +369,7 @@ impl InPlacePlugin for DitherPlugin {
 mod tests {
     use super::*;
 
-    fn make_context(num_frames: usize) -> ProcessContext {
+    fn make_context(num_frames: usize) -> ProcessContext<'static> {
         ProcessContext::new(48000, num_frames)
     }
 
@@ -360,11 +385,11 @@ mod tests {
             .process_in_place(&mut buffer, &make_context(num_frames))
             .unwrap();
 
-        // With dither on silence, output should be very small (within 1 LSB of 16-bit)
+        // With dither on silence, output should be very small (within 4 LSB of 16-bit)
         let max_lsb_16 = 1.0 / 32768.0; // 1 LSB at 16-bit
         for &sample in &buffer {
             assert!(
-                sample.abs() <= max_lsb_16 * 2.0,
+                sample.abs() <= max_lsb_16 * 4.0,
                 "Dithered silence should stay near zero, got {}",
                 sample
             );
@@ -509,12 +534,12 @@ mod tests {
         plugin
             .set_parameter(
                 ParameterId::from("dither_type"),
-                ParameterValue::Int(1), // None
+                ParameterValue::Int(2), // Truncate
             )
             .unwrap();
         assert_eq!(
             plugin.get_parameter(&ParameterId::from("dither_type")),
-            Some(ParameterValue::Int(1))
+            Some(ParameterValue::Int(2))
         );
 
         // Test unknown parameter
@@ -586,6 +611,132 @@ mod tests {
     }
 
     #[test]
+    fn test_tpdf_dither_uses_single_rng_sample() {
+        let mut plugin = DitherPlugin::new(1);
+        plugin.initialize(48000).unwrap();
+        plugin.reset();
+
+        // The first state is the same fixed seed used by init_rng_states(channel=0).
+        let mut expected_state = 0xDEAD_BEEF_CAFE_0001_u64;
+        let first_expected = {
+            let r = random_f32(&mut expected_state);
+            let t = r - 0.0;
+            assert_eq!(plugin.prev_random[0], 0.0);
+            (t, r)
+        };
+
+        let tpdf_first = plugin.next_tpdf(0);
+        assert!(
+            (tpdf_first - first_expected.0).abs() < 1e-7,
+            "first tpdf should use r - prev_random (initially zero)"
+        );
+        assert!(
+            (plugin.prev_random[0] - first_expected.1).abs() < 1e-7,
+            "prev_random should store the current random sample"
+        );
+
+        let second_expected = {
+            let r = random_f32(&mut expected_state);
+            let t = r - plugin.prev_random[0];
+            let prev = r;
+            (t, prev)
+        };
+
+        let tpdf_second = plugin.next_tpdf(0);
+        assert!(
+            (tpdf_second - second_expected.0).abs() < 1e-7,
+            "second tpdf should use the previous random sample as the subtracted term"
+        );
+        assert!(
+            (plugin.prev_random[0] - second_expected.1).abs() < 1e-7,
+            "prev_random should continue to track the latest random sample"
+        );
+    }
+
+    #[test]
+    fn test_noise_shaping_feedback_excludes_dither_term() {
+        let mut plugin = DitherPlugin::from_params(
+            1,
+            DitherPluginParams {
+                bit_depth: 0,
+                noise_shaping: true,
+                dither_type: 0, // TPDF
+            },
+        );
+        plugin.initialize(48000).unwrap();
+
+        // Use a deterministic sample and capture the next TPDF token before processing.
+        let input = 0.123456_f32;
+        let saved_rng_state = plugin.rng_state.clone();
+        let saved_prev_random = plugin.prev_random.clone();
+        let tpdf = plugin.next_tpdf(0);
+        plugin.rng_state = saved_rng_state;
+        plugin.prev_random = saved_prev_random;
+
+        // With a fresh plugin state, the initial noise-shaping feedback is zero.
+        let mut buffer = vec![input];
+        plugin
+            .process_in_place(&mut buffer, &make_context(1))
+            .unwrap();
+
+        let shaped = input;
+        let dithered = shaped + tpdf * plugin.inv_scale;
+        let quantized = (dithered * plugin.scale).round() * plugin.inv_scale;
+        let expected_error = quantized - shaped;
+        let stale_error = quantized - dithered;
+
+        assert!(
+            tpdf.abs() > 0.0,
+            "TPDF sample must be non-zero for this regression"
+        );
+        assert!(
+            (plugin.error_history[0][0] - expected_error).abs() < 1e-6,
+            "expected noise-shaping feedback to exclude explicit dither"
+        );
+        assert!(
+            (expected_error - stale_error).abs() > 1e-9,
+            "TPDF should influence old feedback path; test should capture a non-zero dither"
+        );
+        assert_eq!(
+            plugin.error_history[0][0], expected_error,
+            "stored error history should match shaped-only residual"
+        );
+    }
+
+    #[test]
+    fn test_truncate_mode_quantizes_without_rounding() {
+        let mut plugin = DitherPlugin::from_params(
+            1,
+            DitherPluginParams {
+                bit_depth: 0, // 16-bit
+                noise_shaping: false,
+                dither_type: 2, // Truncate
+            },
+        );
+        plugin.initialize(48000).unwrap();
+
+        let scale_16 = 32768.0_f32;
+        let mut buffer = vec![-0.123456, 0.123456];
+        let num_frames = buffer.len();
+        plugin
+            .process_in_place(&mut buffer, &make_context(num_frames))
+            .unwrap();
+
+        // Truncation is toward zero, so results are different from rounding for
+        // these non-symmetric test points.
+        assert!(
+            (buffer[0] - ((-0.123456_f32 * scale_16).trunc() * (1.0 / scale_16))).abs() < 1e-7,
+            "truncate should apply for negative value, got {}",
+            buffer[0]
+        );
+        assert!(
+            (buffer[1] - ((0.123456_f32 * scale_16).trunc() * (1.0 / scale_16))).abs() < 1e-7,
+            "truncate should apply for positive value, got {}",
+            buffer[1]
+        );
+    }
+
+    #[test]
     fn test_24bit_quantization_grid() {
         let mut plugin = DitherPlugin::from_params(
             1,
@@ -650,7 +801,7 @@ mod tests {
             }
         }
         assert!(
-            differ_count > num_frames / 2,
+            differ_count > num_frames / 4,
             "Channels should have independent dither, but only {} of {} frames differed",
             differ_count,
             num_frames

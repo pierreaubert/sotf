@@ -40,6 +40,10 @@ const LIFTER_LEN: usize = 30;
 
 /// Small constant to prevent division by zero
 const EPSILON: f32 = 1e-10;
+const SPATIAL_COHERENCE_ALPHA: f32 = 0.85;
+
+/// Minimum power level to consider finite coherence in the spatial noise gate.
+const SPATIAL_POWER_THRESHOLD: f32 = 1e-12;
 
 impl DenoiserPlugin {
     /// Calculate and apply Wiener filter gains for all channels
@@ -180,13 +184,7 @@ impl DenoiserPlugin {
         if self.spatial_denoise && self.channels >= 2 {
             let strength = self.spatial_strength;
             for k in 0..self.spectrum_size {
-                let p0 = self.get_power_at_bin(0, k);
-                let p1 = self.get_power_at_bin(1, k);
-                let coherence = if p0 + p1 > EPSILON {
-                    2.0 * (p0 * p1).sqrt() / (p0 + p1)
-                } else {
-                    0.0
-                };
+                let coherence = self.compute_spatial_coherence(k);
                 let incoherence = 1.0 - coherence;
                 let extra_reduction = incoherence * strength * 0.3;
                 self.smoothed_gain[0][k] =
@@ -242,6 +240,31 @@ impl DenoiserPlugin {
             gains[i] = median;
         }
         // Last element stays unchanged
+    }
+
+    pub(crate) fn compute_spatial_coherence(&mut self, k: usize) -> f32 {
+        let p0 = self.get_power_at_bin(0, k);
+        let p1 = self.get_power_at_bin(1, k);
+
+        if p0 < SPATIAL_POWER_THRESHOLD || p1 < SPATIAL_POWER_THRESHOLD {
+            return 1.0;
+        }
+
+        let instant_cross = self.freq_domain[0][k] * self.freq_domain[1][k].conj();
+        let cross_state = &mut self.spatial_cross[k];
+        if cross_state.re == 0.0 && cross_state.im == 0.0 {
+            *cross_state = instant_cross;
+        } else {
+            cross_state.re = cross_state.re * SPATIAL_COHERENCE_ALPHA
+                + (1.0 - SPATIAL_COHERENCE_ALPHA) * instant_cross.re;
+            cross_state.im = cross_state.im * SPATIAL_COHERENCE_ALPHA
+                + (1.0 - SPATIAL_COHERENCE_ALPHA) * instant_cross.im;
+        }
+        let raw = (cross_state.re * cross_state.re + cross_state.im * cross_state.im) / (p0 * p1);
+
+        let coherence = &mut self.spatial_coherence[k];
+        *coherence = raw.clamp(0.0, 1.0);
+        *coherence
     }
 
     /// Compute the 5-tap Gaussian kernel weights for a given smoothing value.

@@ -1,10 +1,17 @@
-# 0.1.0
+# Changelog
 
-## New
+All notable changes to this project will be documented in this file.
 
-- Added export to camillaDSP, EqAPO, PipeWire, Wavelet, EasyEffects
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Changes
+## [Unreleased]
 
-- Propose SSL without pwd but will public/private key before fallback to pwd
-- Plugins implemented f2,3 7,8,9,10,11,12 and 13 see product features for details
+## [0.1.0] - 2025-05-13
+
+### Added
+- Initial release of pure-Rust IAMF decoder.
+- OBU (Open Bitstream Unit) parsing for IAMF v1.1.0 descriptors and temporal units.
+- Codec support for Opus, AAC, FLAC, and PCM substreams.
+- Ambisonics and speaker-layout rendering via `sotf-plugin-ambisonics`.
+- Pre-allocated decode path with zero heap allocations in the hot loop.

@@ -1,3 +1,10 @@
+# 0.5.6
+
+- **Fix:** disabled/bypassed processing now validates host buffer size before returning. The plugin
+  no longer accepts malformed buffers only because hiss reduction is bypassed.
+- **Docs:** clarified that latency reporting is delegated to the underlying IIR reducer and correctly
+  reports zero algorithmic latency.
+
 # 0.5.5
 
 - **Fix (critical): removed dead `low_latency` parameter** (`src/params.rs`, `src/lib.rs`). The
@@ -18,9 +25,9 @@
   coefficients for a different rate, altering the frequency response. The stored default is now
   48000 to match the reducer's construction-time default. Callers must still call `initialize()`
   with the actual host sample rate — this fix only removes the inconsistency before that call.
-- **Deferred: `latency_samples` reporting** (review issue 4). The review assumed FFT-based
+- **Fix (medium): `latency_samples` reporting** (review issue 4). The review assumed FFT-based
   processing. `HissReducer` is a sample-by-sample IIR lowpass with no look-ahead or buffering;
-  its group delay is sub-sample and reporting `0` is correct for this implementation.
+  the plugin now delegates to `HissReducer::latency_samples()`, which correctly returns `0`.
 
 # 0.5.4
 

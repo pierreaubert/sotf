@@ -1,3 +1,20 @@
+# 0.5.3
+
+## Fixes
+
+- **Smooth crossover frequency automation** — `low_mid_freq` and
+  `mid_high_freq` now retarget frequency smoothers in `set_parameter()` and
+  retune the LR4 crossovers gradually per frame during processing, avoiding
+  large instantaneous coefficient jumps. Added
+  `test_crossover_frequency_changes_are_smoothed`.
+
+# 0.5.2
+
+## Fixes
+
+- Completed the mono-bass hot-loop cleanup: `mono_bass` now becomes a scalar side-gain outside the
+  per-sample loop, removing the remaining branch from the inner processing path.
+
 # 0.5.1
 
 ## Fixes
@@ -33,6 +50,23 @@
   per sample at the default mix=1.0 setting.
   (Review issue #6 — medium)
 
+- **[lib.rs]** Added a full-dry early return in `process_in_place()` when both
+  `mix_smoother.target()` and `mix_smoother.current()` are zero, bypassing all DSP
+  and avoiding unnecessary per-block allocations/copies. This addresses issue #13
+  (`mix=0` fast path).
+  (Review issue #13 — medium)
+
+- **[lib.rs]** `PluginInfo` now reports `env!("CARGO_PKG_VERSION")`
+  so the plugin version matches crate `Cargo.toml`, fixing the previously
+  stale `1.0.0` hardcoded value.
+  (Review issue #11 — advisory)
+
+- **[lib.rs]** `process_in_place()` now reinitializes plugin internals when
+  `context.sample_rate != self.sample_rate`, so if a host calls process without a
+  prior `initialize()` or with a late sample-rate change, crossover coefficients
+  and smoothers are corrected from the context sample rate.
+  (Review issue #9 — algorithmic, high)
+
 ## Deferred (cross-crate, noted for follow-up)
 
 - **Unsmoothed crossover frequency changes (issue #1 — critical):** Adding
@@ -45,9 +79,9 @@
   The threshold `1e-30` in `math-dsp/src/simd.rs` is too large (not the
   subnormal boundary). Fix belongs in `math-dsp`. Defer.
 
-- **Minor issues #8–#15:** Nits (crossover ordering validation, sample-rate
-  in constructor, version mismatch in PluginInfo, latency reporting, block
-  processing, output gain). Skipped per review scope constraints.
+- **Minor issues #8–#15:** Nits (crossover ordering validation, latency
+  reporting, block processing, output gain). Skipped per review scope
+  constraints.
 
 # 0.5.0
 

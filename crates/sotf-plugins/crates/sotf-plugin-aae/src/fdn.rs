@@ -181,7 +181,10 @@ impl Fdn {
         }
     }
 
-    /// Update room size without reallocating.
+    /// Update room size without reallocating delay buffers.
+    ///
+    /// Keeping delay-line state and modulator state avoids audible tail truncation when
+    /// room_size changes at runtime.
     pub fn set_room_size(&mut self, room_size: f32, rt60: f32, bass_ratio: f32, treble_ratio: f32) {
         let scale = room_size.clamp(0.2, MAX_ROOM_SIZE) * self.sample_rate / 48000.0;
         for i in 0..FDN_SIZE {
@@ -191,7 +194,6 @@ impl Fdn {
                 .min(self.delay_lines[i].max_delay_samples());
         }
         self.set_rt60(rt60, bass_ratio, treble_ratio);
-        self.reset();
     }
 
     /// Update modulation depth (0.0–1.0).
@@ -329,6 +331,32 @@ mod tests {
                 assert!(v.abs() < 1e-10, "After reset, output should be silent");
             }
         }
+    }
+
+    #[test]
+    fn test_set_room_size_preserves_state() {
+        let mut fdn = Fdn::new(48000, 1.0, 1.5, 1.2, 0.8, 0.4, 6.0);
+
+        // Build up some feedback energy.
+        for i in 0..20000 {
+            let input = ((i as f32 * 0.123).sin() * 0.3).sin() * 0.5;
+            fdn.process(input);
+        }
+
+        let before: Vec<f32> = (0..2000).flat_map(|_| fdn.process(0.0)).collect();
+        let before_energy: f32 = before.iter().map(|v| v * v).sum();
+        assert!(before_energy > 1e-8);
+
+        fdn.set_room_size(2.5, 1.5, 1.2, 0.8);
+
+        let after: Vec<f32> = (0..2000).flat_map(|_| fdn.process(0.0)).collect();
+        let after_energy: f32 = after.iter().map(|v| v * v).sum();
+
+        // Room-size updates should not truncate feedback energy to silence.
+        assert!(
+            after_energy > before_energy * 0.1,
+            "FDN state should persist across room-size changes: before={before_energy}, after={after_energy}"
+        );
     }
 
     #[test]

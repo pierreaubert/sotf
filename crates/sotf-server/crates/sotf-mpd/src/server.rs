@@ -338,20 +338,14 @@ where
                 // pre-newline payload is a classic DoS vector. Send a generic
                 // ACK and close the connection rather than re-syncing on
                 // attacker-controlled bytes.
-                let err = protocol::MpdError::new(
-                    protocol::MpdErrorCode::Arg,
-                    "input",
-                    "line too long",
-                );
+                let err =
+                    protocol::MpdError::new(protocol::MpdErrorCode::Arg, "input", "line too long");
                 let _ = writer.write_all(err.format().as_bytes()).await;
                 break;
             }
             LineRead::InvalidUtf8 => {
-                let err = protocol::MpdError::new(
-                    protocol::MpdErrorCode::Arg,
-                    "input",
-                    "invalid UTF-8",
-                );
+                let err =
+                    protocol::MpdError::new(protocol::MpdErrorCode::Arg, "input", "invalid UTF-8");
                 writer
                     .write_all(err.format().as_bytes())
                     .await
@@ -718,7 +712,10 @@ mod tests {
         // Case-insensitive on the command name (MPD commands are ASCII).
         assert_eq!(redact_for_log("Password hunter2"), "password <redacted>");
         // Leading whitespace is preserved so the log columns still line up.
-        assert_eq!(redact_for_log("  password hunter2"), "  password <redacted>");
+        assert_eq!(
+            redact_for_log("  password hunter2"),
+            "  password <redacted>"
+        );
         // Non-password commands pass through unmodified.
         assert_eq!(redact_for_log("status"), "status");
         // A command that merely starts with the prefix `pass` is NOT a

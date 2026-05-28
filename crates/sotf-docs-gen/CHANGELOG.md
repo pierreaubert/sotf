@@ -1,10 +1,17 @@
-# 0.6.1
+# Changelog
 
-## New
+All notable changes to this project will be documented in this file.
 
-- Added missing plugins in docs and AU/Clap/VST3 bridges
-- Updated documentation and added some missing plugins
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Changes
+## [Unreleased]
 
-- Automatic documentation for reference implementation
+## [0.6.1] - 2025-05-13
+
+### Added
+- Added missing plugins in docs and AU/Clap/VST3 bridges.
+- Updated documentation and added some missing plugins.
+
+### Changed
+- Automatic documentation for reference implementation.

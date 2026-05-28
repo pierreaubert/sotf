@@ -1,3 +1,13 @@
+# 0.5.117
+
+## Bug fixes (from code review 2026-05-16)
+
+- `frequency_domain.rs` now clamps height-band gains below `cached_bandpass_bin` back to
+  `HEIGHT_MASK_FLOOR` before and after spectral smoothing, preventing low-frequency height leakage
+  from neighboring-bin smoothing.
+- Added regression coverage that verifies bins below the height bandpass remain at the height mask
+  floor after processing diffuse high-frequency input.
+
 # 0.5.116
 
 ## Bug fixes (from code review 2026-05-11)

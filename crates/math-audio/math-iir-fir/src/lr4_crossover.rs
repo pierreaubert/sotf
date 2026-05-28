@@ -90,7 +90,7 @@ impl<T: FilterFloat> Lr4Crossover<T> {
     /// Update the crossover frequency. Recomputes all filter coefficients
     /// without resetting filter state (click-free).
     pub fn set_frequency(&mut self, freq: T) {
-        if (freq - self.freq).abs() < lit(0.1) {
+        if (freq - self.freq).abs() < lit(0.001) {
             return;
         }
         self.freq = freq;
@@ -159,6 +159,11 @@ impl<T: FilterFloat> Lr4Crossover<T> {
 ///
 /// Generic over [`FilterFloat`] (`f32` or `f64`, default `f64`).
 /// Uses N-1 crossover points to create N frequency bands.
+///
+/// Note that cascaded LR4 bands are amplitude-complementary, but their group
+/// delays are not identical: lower bands pass through different pole sets than
+/// upper bands. Summing the bands is suitable for broad crossover work, but it
+/// is not a phase-perfect linear-phase split.
 #[derive(Debug, Clone)]
 pub struct MultibandLr4Crossover<T: FilterFloat = f64> {
     crossovers: Vec<Lr4Crossover<T>>,
@@ -204,7 +209,7 @@ impl<T: FilterFloat> MultibandLr4Crossover<T> {
         // Middle splits: carry → low (band i) + high (carry forward)
         #[allow(clippy::needless_range_loop)] // Can't use iterators: multiple &mut self fields
         for i in 1..self.crossovers.len() {
-            self.carry.copy_from_slice(&self.scratch);
+            std::mem::swap(&mut self.carry, &mut self.scratch);
             self.crossovers[i].process_frame(&self.carry, bands[i], &mut self.scratch);
         }
 
@@ -297,6 +302,17 @@ mod tests {
         let mut xo = Lr4Crossover::new(1000.0_f64, 48000.0, 2);
         xo.set_frequency(2000.0);
         assert!((xo.frequency() - 2000.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_set_frequency_small_changes_are_not_ignored() {
+        let mut xo = Lr4Crossover::new(1000.0_f64, 48000.0, 2);
+        xo.set_frequency(1000.05);
+        assert!(
+            (xo.frequency() - 1000.05).abs() < 0.001,
+            "small frequency changes (< 0.1 Hz) should not be ignored, got freq={}",
+            xo.frequency()
+        );
     }
 
     #[test]

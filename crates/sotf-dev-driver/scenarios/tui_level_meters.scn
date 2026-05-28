@@ -1,0 +1,56 @@
+# TUI Level Meters — enter, navigate groups, mute/solo/dim, clear, exit.
+#
+# Covers: LevelMeters input mode, group navigation, mute/solo/dim toggles.
+
+focus library
+assert screen.focused == "Library"
+assert input_mode == "Normal"
+
+# Enter level meters mode from library.
+key m
+sleep 100ms
+assert input_mode == "LevelMeters"
+
+# Navigate meter groups.
+key right
+sleep 50ms
+key left
+sleep 50ms
+
+# Navigate controls (mute/solo/dim).
+key down
+sleep 50ms
+key up
+sleep 50ms
+
+# Toggle mute on selected group.
+key m
+sleep 50ms
+
+# Toggle solo.
+key s
+sleep 50ms
+
+# Toggle dim.
+key d
+sleep 50ms
+
+# Clear all mutes/solos/dims.
+key C
+sleep 50ms
+
+# Exit back to Normal (Esc).
+key esc
+sleep 100ms
+assert input_mode == "Normal"
+assert screen.focused == "Library"
+
+# Re-enter and exit via Tab (also returns to Library).
+key m
+sleep 100ms
+assert input_mode == "LevelMeters"
+
+key tab
+sleep 100ms
+assert input_mode == "Normal"
+assert screen.focused == "Library"

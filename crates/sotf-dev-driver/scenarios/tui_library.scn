@@ -1,0 +1,11 @@
+# TUI Library screen test
+# Verifies basic library navigation and state queries.
+
+focus library
+assert screen.focused == "Library"
+assert input_mode == "Normal"
+
+# Library should be empty or have demo content
+query library.album_count
+query library.track_count
+query library.directory_count

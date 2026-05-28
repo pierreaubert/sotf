@@ -160,6 +160,10 @@ impl GainPlugin {
         self.channel_gains_db = dbs;
         Ok(())
     }
+
+    /// Set a single channel gain. It is safe to call before `initialize()`;
+    /// initialize recalculates all smoother coefficients for the real host
+    /// sample rate while preserving current and target values.
     pub fn set_channel_gain_db(&mut self, ch: usize, db: f32) -> Result<(), String> {
         if ch >= self.channels {
             return Err("OOB".into());
@@ -201,6 +205,28 @@ impl GainPlugin {
     #[inline]
     fn linear_to_db(l: f32) -> f32 {
         sotf_host::linear_to_db(l)
+    }
+
+    #[inline]
+    fn apply_frame_gain(frame: &mut [f32], gain: f32) {
+        if frame.len() <= 4 {
+            for sample in frame {
+                *sample *= gain;
+            }
+        } else {
+            apply_gain_simd(frame, gain);
+        }
+    }
+
+    #[inline]
+    fn apply_frame_channel_gains(frame: &mut [f32], gains: &[f32]) {
+        if frame.len() <= 4 {
+            for (sample, gain) in frame.iter_mut().zip(gains.iter()) {
+                *sample *= *gain;
+            }
+        } else {
+            apply_per_channel_gain_simd(frame, frame.len(), gains);
+        }
     }
 }
 
@@ -297,9 +323,8 @@ impl InPlacePlugin for GainPlugin {
                     self.cached_gains[ch] = self.channel_gains_smoothers[ch].advance();
                 }
                 let off = frame * self.channels;
-                apply_per_channel_gain_simd(
+                Self::apply_frame_channel_gains(
                     &mut buffer[off..off + self.channels],
-                    self.channels,
                     &self.cached_gains,
                 );
             }
@@ -307,7 +332,7 @@ impl InPlacePlugin for GainPlugin {
             for frame in 0..nf {
                 let g = self.global_gain_smoother.advance();
                 let off = frame * self.channels;
-                apply_gain_simd(&mut buffer[off..off + self.channels], g);
+                Self::apply_frame_gain(&mut buffer[off..off + self.channels], g);
             }
         }
         Ok(nf)
@@ -415,5 +440,41 @@ mod tests {
             diff_from_target > 0.01,
             "After only 1ms, gain should still be transitioning (diff={diff_from_target:.4})"
         );
+    }
+
+    #[test]
+    fn test_channel_gain_before_initialize_uses_host_sample_rate_after_initialize() {
+        let mut p = GainPlugin::with_smoothing(1, 0.0, 20.0);
+        p.set_channel_gain_db(0, -6.0).unwrap();
+        p.initialize(96000).unwrap();
+
+        let target_linear = GainPlugin::db_to_linear(-6.0);
+        let num_frames = 19200; // 200ms at 96kHz
+        let mut buf = vec![1.0f32; num_frames];
+        p.process_in_place(&mut buf, &ProcessContext::new(96000, num_frames))
+            .unwrap();
+
+        let last_sample = buf[num_frames - 1];
+        assert!(
+            (last_sample - target_linear).abs() < 0.01,
+            "pre-initialize channel smoother should converge at host sample rate: target={target_linear:.4}, got={last_sample:.4}"
+        );
+
+        let early_sample = buf[96]; // ~1ms at 96kHz
+        assert!(
+            (early_sample - target_linear).abs() > 0.01,
+            "pre-initialize channel smoother should not use stale/too-fast timing"
+        );
+    }
+
+    #[test]
+    fn test_small_frame_gain_helpers_match_expected_scalar_results() {
+        let mut stereo = vec![1.0, -2.0];
+        GainPlugin::apply_frame_gain(&mut stereo, 0.25);
+        assert_eq!(stereo, vec![0.25, -0.5]);
+
+        let mut quad = vec![1.0, 2.0, 3.0, 4.0];
+        GainPlugin::apply_frame_channel_gains(&mut quad, &[1.0, 0.5, -1.0, 2.0]);
+        assert_eq!(quad, vec![1.0, 1.0, -3.0, 8.0]);
     }
 }

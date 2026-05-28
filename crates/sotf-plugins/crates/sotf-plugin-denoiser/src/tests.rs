@@ -214,6 +214,63 @@ fn test_rejects_oversized_classical_in_place_block() {
     );
 }
 
+#[cfg(target_arch = "x86_64")]
+fn current_fpu_control() -> u64 {
+    let mut mxcsr = 0_u32;
+    unsafe {
+        std::arch::asm!(
+            "stmxcsr [{}]",
+            in(reg) &mut mxcsr,
+            options(nostack, preserves_flags)
+        );
+    }
+    mxcsr as u64
+}
+
+#[cfg(target_arch = "aarch64")]
+fn current_fpu_control() -> u64 {
+    let fpcr: u64;
+    unsafe {
+        std::arch::asm!("mrs {}, fpcr", out(reg) fpcr);
+    }
+    fpcr
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[test]
+fn test_ftz_guard_restores_fpu_control_on_error_returns() {
+    let mut plugin = DenoiserPlugin::new(2, false);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let before = current_fpu_control();
+    let mut mismatched = vec![0.0_f32; 1023];
+    let mismatch_context = ProcessContext::new(SAMPLE_RATE, 512);
+    assert!(
+        plugin
+            .process_in_place(&mut mismatched, &mismatch_context)
+            .is_err()
+    );
+    assert_eq!(
+        current_fpu_control(),
+        before,
+        "mismatched-buffer error path must restore FPU control state"
+    );
+
+    let oversized_frames = plugin.max_in_place_frames() + 1;
+    let mut oversized = make_test_signal(oversized_frames, 2, 1000.0);
+    let oversized_context = ProcessContext::new(SAMPLE_RATE, oversized_frames);
+    assert!(
+        plugin
+            .process_in_place(&mut oversized, &oversized_context)
+            .is_err()
+    );
+    assert_eq!(
+        current_fpu_control(),
+        before,
+        "oversized-block error path must restore FPU control state"
+    );
+}
+
 #[test]
 fn test_denoiser_data_clone_keeps_mutable_cache_slots() {
     let mut cloned = DenoiserData::default().clone();
@@ -1220,4 +1277,71 @@ fn test_pnd_fed_block_not_sample_by_sample() {
         sum > 0.0,
         "Polyphonic mode with block-fed PND should produce non-zero output after latency period"
     );
+}
+
+/// Issue #4: Spatial denoising should use complex coherence, not just magnitudes.
+/// With decorrelated, rotating phase between channels, complex coherence should drop
+/// after averaging and apply extra reduction. The previous magnitude-only formula
+/// could not represent decorrelation and would often stay near 1.0.
+#[test]
+fn test_spatial_coherence_uses_complex_cross_term() {
+    let mut plugin = DenoiserPlugin::new(2, true);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let k = 10;
+    let mut coherent_sum = 0.0;
+    let mut decorrelated_sum = 0.0;
+
+    // Strongly coherent case: identical complex bins each frame.
+    plugin.spatial_coherence.fill(1.0);
+    plugin
+        .spatial_cross
+        .fill(rustfft::num_complex::Complex::new(0.0, 0.0));
+    for frame in 0..12 {
+        let angle = frame as f32 * 0.0;
+        plugin.freq_domain[0][k] = rustfft::num_complex::Complex::new(angle.cos(), angle.sin());
+        plugin.freq_domain[1][k] = plugin.freq_domain[0][k];
+        coherent_sum += plugin.compute_spatial_coherence(k);
+    }
+    coherent_sum /= 12.0;
+    assert!(
+        coherent_sum > 0.95,
+        "Coherent pair should remain highly coherent, got {coherent_sum}"
+    );
+
+    // Decorrelated case: rapidly rotating relative phase; average complex cross
+    // should cancel toward 0 even though magnitudes stay the same.
+    plugin.spatial_coherence.fill(1.0);
+    plugin
+        .spatial_cross
+        .fill(rustfft::num_complex::Complex::new(0.0, 0.0));
+    for frame in 0..12 {
+        let phase = (frame as f32) * 0.7;
+        plugin.freq_domain[0][k] = rustfft::num_complex::Complex::new(1.0, 0.0);
+        plugin.freq_domain[1][k] = rustfft::num_complex::Complex::new(phase.cos(), phase.sin());
+        decorrelated_sum += plugin.compute_spatial_coherence(k);
+    }
+    decorrelated_sum /= 12.0;
+    assert!(
+        decorrelated_sum < 0.5,
+        "Rotating-phase bins should reduce complex coherence, got {decorrelated_sum}"
+    );
+
+    assert!(
+        coherent_sum > decorrelated_sum,
+        "Complex coherence should distinguish coherent vs. decorrelated bins"
+    );
+}
+
+// Issue #7: Remove dead allocation helper for power spectrum (`calculate_power_spectrum`).
+// This test keeps the same code coverage intent by asserting the direct path has
+// no extra allocation dependency.
+#[test]
+fn test_power_at_bin_reads_no_alloc_vector_per_call() {
+    let mut plugin = DenoiserPlugin::new(2, false);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    plugin.freq_domain[0][3] = rustfft::num_complex::Complex::new(3.0, 4.0);
+    let p = plugin.get_power_at_bin(0, 3);
+    assert!((p - 25.0).abs() < 1e-6, "Expected norm^2 = 25, got {p}");
 }

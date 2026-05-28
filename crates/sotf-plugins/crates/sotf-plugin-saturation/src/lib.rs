@@ -763,13 +763,13 @@ impl InPlacePlugin for SaturationPlugin {
         let nc = self.channels;
         let total = nf * nc;
 
-        // Guard against buggy host sending a buffer shorter than total
-        debug_assert!(
-            buffer.len() >= total,
-            "process_in_place: buffer too short ({} < {})",
-            buffer.len(),
-            total
-        );
+        if buffer.len() < total {
+            return Err(format!(
+                "process_in_place: buffer too short ({} < {})",
+                buffer.len(),
+                total
+            ));
+        }
 
         // Grow all pre-allocated buffers together if host sends a larger block
         if self.dry_buf.len() < total {
@@ -985,7 +985,7 @@ impl InPlacePlugin for SaturationPlugin {
 mod tests {
     use super::*;
 
-    fn make_context(num_frames: usize) -> ProcessContext {
+    fn make_context(num_frames: usize) -> ProcessContext<'static> {
         ProcessContext::new(48000, num_frames)
     }
 
@@ -1230,6 +1230,45 @@ mod tests {
             for (i, &s) in buffer.iter().enumerate() {
                 assert!(s.is_finite(), "sample {} not finite: {}", i, s);
             }
+        }
+    }
+
+    #[test]
+    fn test_short_buffer_returns_error() {
+        let mut plugin = SaturationPlugin::new(2);
+        plugin.initialize(48000).unwrap();
+        let ctx = make_context(16);
+        let mut buffer = vec![0.0f32; 31];
+
+        let err = plugin.process_in_place(&mut buffer, &ctx).unwrap_err();
+
+        assert!(err.contains("buffer too short"));
+    }
+
+    #[test]
+    fn test_exciter_with_oversampling_processes() {
+        let channels = 1;
+        let params = SaturationPluginParams {
+            mode: "Exciter".to_string(),
+            drive: 8.0,
+            tone: 1.5,
+            exciter_freq: 3000.0,
+            oversampling: "2x".to_string(),
+            output_gain_db: 0.0,
+            mix: 1.0,
+            ..Default::default()
+        };
+        let mut plugin = SaturationPlugin::from_params(channels, params);
+        plugin.initialize(48000).unwrap();
+
+        let num_frames = 512;
+        let ctx = make_context(num_frames);
+        for _ in 0..20 {
+            let mut buffer = make_sine(8000.0, 48000, num_frames, 0.5);
+            let processed = plugin.process_in_place(&mut buffer, &ctx).unwrap();
+
+            assert_eq!(processed, num_frames);
+            assert!(buffer.iter().all(|s| s.is_finite()));
         }
     }
 

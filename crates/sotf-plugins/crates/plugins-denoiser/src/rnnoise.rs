@@ -120,41 +120,73 @@ impl RnnoiseBackend {
                         }
                     }
                 } else {
-                    let mut ch0_input_power = 0.0f32;
-                    let mut ch0_output_power = 0.0f32;
+                    let mut input_power_sum = 0.0f32;
+                    let mut output_power_sum = 0.0f32;
 
-                    for ch in 0..ch_count {
-                        // Copy into pre-allocated scratch and scale to i16 range.
-                        self.scratch_input[ch].copy_from_slice(&self.accum_buffers[ch]);
-                        for s in &mut self.scratch_input[ch] {
-                            *s *= 32767.0;
+                    if ch_count == 2 {
+                        // Stereo: downmix to mono, process once, apply linked gain
+                        // to both channels so the stereo image is preserved.
+                        for i in 0..RNNOISE_FRAME_SIZE {
+                            let mono = (self.accum_buffers[0][i] + self.accum_buffers[1][i]) * 0.5;
+                            self.scratch_input[0][i] = mono * 32768.0;
                         }
 
-                        self.denoisers[ch]
-                            .process_frame(&mut self.scratch_output[ch], &self.scratch_input[ch]);
+                        self.denoisers[0]
+                            .process_frame(&mut self.scratch_output[0], &self.scratch_input[0]);
 
-                        for s in &mut self.scratch_output[ch] {
-                            *s /= 32767.0;
+                        for i in 0..RNNOISE_FRAME_SIZE {
+                            let mono_in =
+                                (self.accum_buffers[0][i] + self.accum_buffers[1][i]) * 0.5;
+                            let mono_out = self.scratch_output[0][i] / 32768.0;
+                            let gain = if mono_in.abs() > 1e-10 {
+                                mono_out / mono_in
+                            } else {
+                                1.0
+                            };
+                            let ring_size = self.output_buffers[0].len();
+                            let left = self.accum_buffers[0][i] * gain;
+                            let right = self.accum_buffers[1][i] * gain;
+                            self.output_buffers[0][(self.output_write_pos + i) % ring_size] = left;
+                            self.output_buffers[1][(self.output_write_pos + i) % ring_size] = right;
+                            input_power_sum += self.accum_buffers[0][i] * self.accum_buffers[0][i]
+                                + self.accum_buffers[1][i] * self.accum_buffers[1][i];
+                            output_power_sum += left * left + right * right;
                         }
+                    } else {
+                        // Mono or >2 channels: fall back to independent processing.
+                        for ch in 0..ch_count {
+                            self.scratch_input[ch].copy_from_slice(&self.accum_buffers[ch]);
+                            for s in &mut self.scratch_input[ch] {
+                                *s *= 32768.0;
+                            }
 
-                        if ch == 0 {
-                            ch0_input_power =
-                                self.accum_buffers[0].iter().map(|x| x * x).sum::<f32>()
-                                    / RNNOISE_FRAME_SIZE as f32;
-                            ch0_output_power =
-                                self.scratch_output[0].iter().map(|x| x * x).sum::<f32>()
-                                    / RNNOISE_FRAME_SIZE as f32;
-                        }
+                            self.denoisers[ch].process_frame(
+                                &mut self.scratch_output[ch],
+                                &self.scratch_input[ch],
+                            );
 
-                        let ring_size = self.output_buffers[ch].len();
-                        for (i, &s) in self.scratch_output[ch].iter().enumerate() {
-                            self.output_buffers[ch][(self.output_write_pos + i) % ring_size] = s;
+                            for s in &mut self.scratch_output[ch] {
+                                *s /= 32768.0;
+                            }
+                            input_power_sum +=
+                                self.accum_buffers[ch].iter().map(|x| x * x).sum::<f32>();
+                            output_power_sum +=
+                                self.scratch_output[ch].iter().map(|x| x * x).sum::<f32>();
+
+                            let ring_size = self.output_buffers[ch].len();
+                            for (i, &s) in self.scratch_output[ch].iter().enumerate() {
+                                self.output_buffers[ch][(self.output_write_pos + i) % ring_size] =
+                                    s;
+                            }
                         }
                     }
 
-                    if ch0_input_power > 1e-10 {
+                    let denom = (RNNOISE_FRAME_SIZE * ch_count) as f32;
+                    let input_power = input_power_sum / denom;
+                    let output_power = output_power_sum / denom;
+                    if input_power > 1e-10 {
                         self.avg_reduction_db = 0.9 * self.avg_reduction_db
-                            + 0.1 * 10.0 * (ch0_input_power / ch0_output_power.max(1e-10)).log10();
+                            + 0.1 * 10.0 * (input_power / output_power.max(1e-10)).log10();
                     }
                 }
                 if !self.first_frame_discarded {
@@ -357,17 +389,63 @@ mod tests {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 2).unwrap();
 
-        let ptrs_before: Vec<*const nnnoiseless::DenoiseState> =
-            backend.denoisers.iter().map(|d| d.as_ref() as *const _).collect();
+        let ptrs_before: Vec<*const nnnoiseless::DenoiseState> = backend
+            .denoisers
+            .iter()
+            .map(|d| d.as_ref() as *const _)
+            .collect();
 
         backend.reset();
 
-        let ptrs_after: Vec<*const nnnoiseless::DenoiseState> =
-            backend.denoisers.iter().map(|d| d.as_ref() as *const _).collect();
+        let ptrs_after: Vec<*const nnnoiseless::DenoiseState> = backend
+            .denoisers
+            .iter()
+            .map(|d| d.as_ref() as *const _)
+            .collect();
 
         assert_eq!(
             ptrs_before, ptrs_after,
             "reset() must reuse existing DenoiseState objects"
+        );
+    }
+
+    /// Regression: stereo channels must be processed with linked gain so that
+    /// the stereo image does not collapse or shift randomly during noise-only
+    /// passages.  With independent per-channel denoisers the suppression gain
+    /// differs per channel; after the fix both channels receive the same gain.
+    #[test]
+    fn test_stereo_linked_gain_preserves_image() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 2).unwrap();
+
+        // Warm-up: two frames to get past the first-frame discard.
+        let mut warmup = vec![0.0f32; RNNOISE_FRAME_SIZE * 2 * 2]; // 2 frames, stereo
+        for f in 0..(RNNOISE_FRAME_SIZE * 2) {
+            // Correlated sine wave in both channels (same phase, same amplitude)
+            let s = (f as f32 * 0.1).sin() * 0.3;
+            warmup[f * 2] = s;
+            warmup[f * 2 + 1] = s;
+        }
+        backend.process(&mut warmup, RNNOISE_FRAME_SIZE * 2, 2, false);
+
+        // Now process a third frame where L and R have identical content.
+        let mut frame = vec![0.0f32; RNNOISE_FRAME_SIZE * 2];
+        for f in 0..RNNOISE_FRAME_SIZE {
+            let s = (f as f32 * 0.1).sin() * 0.3;
+            frame[f * 2] = s;
+            frame[f * 2 + 1] = s;
+        }
+        backend.process(&mut frame, RNNOISE_FRAME_SIZE, 2, false);
+
+        // With linked gain, L and R outputs should be almost identical.
+        let mut max_diff = 0.0f32;
+        for f in 0..RNNOISE_FRAME_SIZE {
+            let diff = (frame[f * 2] - frame[f * 2 + 1]).abs();
+            max_diff = max_diff.max(diff);
+        }
+        assert!(
+            max_diff < 1e-4,
+            "Stereo image broken: max(L-R) diff = {max_diff} (should be ~0 with linked gain)"
         );
     }
 }

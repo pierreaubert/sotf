@@ -1,0 +1,4 @@
+# TUI Plugins screen test
+focus plugins
+assert screen.focused == "Plugins"
+query plugins.count

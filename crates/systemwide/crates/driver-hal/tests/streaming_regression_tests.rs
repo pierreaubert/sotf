@@ -320,6 +320,14 @@ fn swift_shared_memory_protocol_matches_rust_v5_configuring_handshake() {
         "Swift SharedAudioHeader must include the Rust v5 configuring field"
     );
     assert!(
+        source.contains("var keyFingerprint: UInt64"),
+        "Swift SharedAudioHeader must mirror Rust's aligned AtomicU64 key_fingerprint field"
+    );
+    assert!(
+        source.contains("headerFingerprint >> shift"),
+        "Swift must compare the UInt64 fingerprint using Rust's canonical big-endian byte order"
+    );
+    assert!(
         source.contains("header.pointee.configuring != 0"),
         "HAL write/config paths must observe the daemon configuring flag"
     );

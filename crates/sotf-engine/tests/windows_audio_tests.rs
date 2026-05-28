@@ -189,8 +189,14 @@ mod tests {
         println!("  Sample format: {:?}", config.sample_format());
         println!("  Buffer size: {:?}", config.buffer_size());
 
-        // This is a dry-run test - we verify we can get config without error
-        assert!(true);
+        assert!(
+            config.sample_rate().0 > 0,
+            "Default output config must report a non-zero sample rate"
+        );
+        assert!(
+            config.channels() > 0,
+            "Default output config must report at least one channel"
+        );
     }
 }
 

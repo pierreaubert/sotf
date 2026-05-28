@@ -696,6 +696,17 @@ impl<T: FilterFloat> Biquad<T> {
         self.s2 = s2;
     }
 
+    /// Reset all internal state to zero while preserving coefficients.
+    pub fn reset(&mut self) {
+        let zero = T::zero();
+        self.x1 = zero;
+        self.x2 = zero;
+        self.y1 = zero;
+        self.y2 = zero;
+        self.s1 = zero;
+        self.s2 = zero;
+    }
+
     /// Calculates the filter's complex frequency response at a single frequency `f`.
     pub fn complex_response(&self, f: T) -> Complex<T> {
         let omega = lit::<T>(2.0) * T::PI() * f / self.srate;
@@ -1491,6 +1502,29 @@ mod tests {
                 single_out[i],
                 block_buf[i]
             );
+        }
+    }
+
+    #[test]
+    fn test_result_matches_complex_response_magnitude() {
+        let filters = [
+            Biquad::new(BiquadFilterType::Lowpass, 500.0, 48000.0, 0.707, 0.0),
+            Biquad::new(BiquadFilterType::Highpass, 2000.0, 48000.0, 0.707, 0.0),
+            Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0),
+            Biquad::new(BiquadFilterType::Lowshelf, 250.0, 48000.0, 0.707, 3.0),
+            Biquad::new(BiquadFilterType::Highshelf, 6000.0, 48000.0, 0.707, -4.0),
+        ];
+        let freqs = [20.0, 100.0, 500.0, 1000.0, 4000.0, 12000.0, 20000.0];
+
+        for filter in filters {
+            for freq in freqs {
+                let fast = filter.result(freq);
+                let exact = filter.complex_response(freq).norm();
+                assert!(
+                    approx_eq(fast, exact, 1e-9),
+                    "result({freq})={fast} should match complex_response norm {exact}"
+                );
+            }
         }
     }
 

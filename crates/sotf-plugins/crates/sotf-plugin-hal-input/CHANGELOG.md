@@ -1,3 +1,11 @@
+# 0.5.85
+
+## Fixes
+
+- `parameters()` now reports the constructed `input_channels` value in parameter metadata instead of
+  always advertising stereo. This keeps the runtime parameter list consistent with `get_parameter()`
+  for multichannel HAL input instances.
+
 # 0.5.84
 
 ## Fixes (from code review)
@@ -25,14 +33,20 @@
   normal during device startup or device switching.  The counter now only increments on partial
   reads (`samples_read > 0 && samples_read < output.len()`).
 
+- **Underrun tail zeroing efficiency** (`lib.rs:process`): switched from `slice.fill(0.0)` to
+  `std::ptr::write_bytes` for the under-run tail.  This keeps the same behavior while using a
+  contiguous memory clear path that is efficient for large tails.
+
+- **HAL diagnostics and latency** (`lib.rs:parameters`, `lib.rs:get_parameter`,
+  `lib.rs:process`, `lib.rs:latency_samples`): added `is_connected` diagnostic
+  parameter and cached shared-memory buffer frame count as latency (frames), updated at
+  each successful HAL read using `HalInputReader::is_connected()` and `buffer_frames()`.
+
 ## Deferred
 
 - **Sample-rate conversion on mismatch** (review §2): integrating a synchronous/asynchronous
   resampler is a cross-crate change (requires `sotf-plugin-resampler`); deferred.
 
-- **`is_active` / latency reporting** (review §4): feature additions, not bugs; deferred.
-
-- **Zero-fill SIMD** (review §3): `.fill()` is already optimized by the stdlib; no action needed.
 
 ---
 

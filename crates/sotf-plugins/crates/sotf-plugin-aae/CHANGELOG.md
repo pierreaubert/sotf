@@ -1,6 +1,13 @@
 # Unreleased
 
 - Layout opts into the spatial-spider visualiser via `VizSlot::Custom { name: viz_names::SPATIAL_SPIDER, position: VizPosition::FullCenter }`. The app-gpui layout renderer picks this up automatically and appends the spider panel below the main control row.
+- `AaePlugin::process` now hoists per-frame input/output base indices in the
+  scalar render loop, trimming repeated offset arithmetic while the larger
+  SIMD/block-processing refactor remains deferred.
+- `qa-aae` now excludes the low-passed LFE feed from the full-range channel
+  energy balance assertion, while still checking that LFE energy remains finite.
+- `qa-aae` now scopes the zero-allocation assertion to `process()` because
+  `get_data()` returns freshly allocated UI meter data outside the audio callback.
 
 # 0.5.3
 
@@ -13,13 +20,13 @@
 - `EarlyReflections`: hard-code `MAX_PRESET_DELAY_MS = 154.5` to replace the O(presets × taps) scan inside `max_tap_delay_samples`. A `debug_assert` validates the constant against computed values during testing (fixes `src/early_reflections.rs`).
 - `AaePlugin`: always pre-allocate `AutoGain` (even when `auto_gain_enabled=false`) in `from_params` and `initialize()`. This eliminates the heap allocation in `ensure_auto_gain()` that would otherwise occur on the audio thread the first time auto-gain is enabled via `set_parameter` (fixes `src/lib.rs`).
 - `AaePlugin::process`: replace impossible runtime bounds checks (`tap_idx >= er_gains.len()`, `line_idx >= fdn_gains.len()`) with `debug_assert!` — these conditions are structurally impossible given construction invariants, but the checks were silently skipping taps in release builds (fixes `src/lib.rs`).
+- `AaePlugin`: LFE source-domain extraction now uses unsigned energy magnitude instead of signed fallback to avoid low-frequency polarity flips on symmetric or cancelling feeds (`signed_rms` behavior).
+- `AaePlugin`: `FDN::set_room_size` now updates delay lengths in place rather than resetting delay lines, preventing abrupt tail truncation and audible clicks on room-size changes.
+- `AaePlugin`: VBAP routing matrices (`er_gains` and `fdn_gains`) were flattened from `Vec<Vec<f32>>` to a contiguous row-major `Vec<f32>` layout to improve cache locality.
+- `AaePlugin`: `compute_lp_coeff` now uses the bilinear one-pole low-pass coefficient form (`(1 - sin(ω)) / cos(ω)`) with valid-range clamping.
 
 **Deferred (require cross-crate changes or larger refactors):**
-- Issue #3 (`compute_lp_coeff` clamp at w=0.99): the function is only used at 120 Hz where the clamp never activates; the API confusion is noted but not fixed to avoid scope creep.
-- Issue #4 (room-size click): smoothing the FDN delay-length transition requires a crossfade mechanism not yet present in the crate; deferred.
-- Issue #8 (flat `Vec<Vec<f32>>` for VBAP matrices): correct direction but requires auditing all callers; deferred to a dedicated performance PR.
 - Issue #10 (SIMD block processing): out of scope for a bug-fix release.
-- Issue #6 (`signed_rms` polarity): function does not exist in this version of the code; review item was inapplicable.
 
 # 0.5.2
 

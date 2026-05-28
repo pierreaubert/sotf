@@ -1,3 +1,9 @@
+# 0.5.4
+
+- Fixed the phase-vocoder path rejecting host blocks larger than its 1024-frame planar scratch
+  buffer. Oversized blocks are now split into prepared-capacity chunks and processed without
+  allocating in the hot path. Added `test_phase_vocoder_accepts_blocks_larger_than_planar_capacity`.
+
 # 0.5.3
 
 - Fixed `current_drift_estimate()` reading the circular drift-history buffer as

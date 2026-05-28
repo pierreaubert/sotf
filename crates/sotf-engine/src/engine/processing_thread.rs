@@ -5,10 +5,21 @@
 // Processes audio through the plugin chain with seamless hot-reload support.
 
 use super::{
-    DecoderMessage, PluginConfig, ProcessingCommand, ProcessingMessage, ProcessingResponse,
-    ThreadEvent,
+    DecoderMessage, IsolatedExternalPluginWorkerStatus, PluginConfig, ProcessingCommand,
+    ProcessingMessage, ProcessingResponse, ThreadEvent,
 };
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use sotf_plugins::ExternalPluginProcessEvent;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use sotf_plugins::IsolatedExternalPluginWorkerReport;
 use sotf_plugins::{Host, Plugin, PluginHost};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use sotf_plugins::{PluginSandboxBackendCode, PluginSandboxStatusCode};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use sotf_types::{
+    IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
+    IsolatedExternalPluginWorkerEvent,
+};
 
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::Duration;
@@ -313,7 +324,9 @@ fn handle_processing_command(
     command: ProcessingCommand,
     state: &mut ProcessingState,
     response_tx: &Sender<ProcessingResponse>,
+    event_tx: &Sender<ThreadEvent>,
 ) -> bool {
+    let _ = event_tx;
     match command {
         ProcessingCommand::UpdateHost(new_host) => {
             let new_host = *new_host;
@@ -408,6 +421,27 @@ fn handle_processing_command(
                     .ok();
             }
         },
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        ProcessingCommand::PollIsolatedExternalPluginWorkers => {
+            let reports = state.host.poll_isolated_external_plugin_workers();
+            for report in &reports {
+                if let Some(error) = &report.error {
+                    event_tx
+                        .send(ThreadEvent::ProcessingWarning(format!(
+                            "external plugin worker poll failed (plugin {}, node {}): {}",
+                            report.plugin_index, report.node_id, error
+                        )))
+                        .ok();
+                }
+            }
+            let statuses = reports
+                .into_iter()
+                .map(isolated_external_plugin_status)
+                .collect::<Vec<_>>();
+            event_tx
+                .send(ThreadEvent::IsolatedExternalPluginWorkerStatuses(statuses))
+                .ok();
+        }
         ProcessingCommand::Stop => {
             log::debug!("[Processing Thread] Stopped");
         }
@@ -456,7 +490,7 @@ fn run_processing_thread(
     loop {
         // Check for commands (non-blocking)
         if let Ok(command) = command_rx.try_recv()
-            && handle_processing_command(command, &mut state, &response_tx)
+            && handle_processing_command(command, &mut state, &response_tx, &event_tx)
         {
             break;
         }
@@ -594,7 +628,12 @@ fn run_processing_thread(
                                 Ok(Some((cmd, unsent))) => {
                                     let old_channels = state.channels;
                                     pending_msg = unsent;
-                                    if handle_processing_command(cmd, &mut state, &response_tx) {
+                                    if handle_processing_command(
+                                        cmd,
+                                        &mut state,
+                                        &response_tx,
+                                        &event_tx,
+                                    ) {
                                         break;
                                     }
                                     // If channels changed, discard the stale frame
@@ -666,7 +705,7 @@ fn run_processing_thread(
                         Ok(Some((cmd, unsent))) => {
                             let old_channels = state.channels;
                             pending_msg = unsent;
-                            if handle_processing_command(cmd, &mut state, &response_tx) {
+                            if handle_processing_command(cmd, &mut state, &response_tx, &event_tx) {
                                 break;
                             }
                             if state.channels != old_channels {
@@ -692,7 +731,7 @@ fn run_processing_thread(
                         Ok(Some((cmd, unsent))) => {
                             let old_channels = state.channels;
                             pending_msg = unsent;
-                            if handle_processing_command(cmd, &mut state, &response_tx) {
+                            if handle_processing_command(cmd, &mut state, &response_tx, &event_tx) {
                                 break;
                             }
                             if state.channels != old_channels {
@@ -750,6 +789,77 @@ fn run_processing_thread(
 
     log::debug!("[Processing Thread] Stopped");
     Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn isolated_external_plugin_status(
+    report: IsolatedExternalPluginWorkerReport,
+) -> IsolatedExternalPluginWorkerStatus {
+    IsolatedExternalPluginWorkerStatus {
+        plugin_index: report.plugin_index,
+        node_id: report.node_id,
+        event: report.event.map(isolated_external_plugin_event),
+        error: report.error,
+        worker_start_count: report.worker_start_count,
+        worker_exit_count: report.worker_exit_count,
+        worker_launch_failure_count: report.worker_launch_failure_count,
+        block_timeout_count: report.block_timeout_count,
+        block_worker_failure_count: report.block_worker_failure_count,
+        block_wrong_sequence_count: report.block_wrong_sequence_count,
+        sandbox_status: isolated_external_plugin_sandbox_status(report.sandbox_status),
+        sandbox_backend: isolated_external_plugin_sandbox_backend(report.sandbox_backend),
+        sandbox_reason: report.sandbox_reason,
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn isolated_external_plugin_event(
+    event: ExternalPluginProcessEvent,
+) -> IsolatedExternalPluginWorkerEvent {
+    match event {
+        ExternalPluginProcessEvent::AlreadyRunning => {
+            IsolatedExternalPluginWorkerEvent::AlreadyRunning
+        }
+        ExternalPluginProcessEvent::Started { pid } => {
+            IsolatedExternalPluginWorkerEvent::Started { pid }
+        }
+        ExternalPluginProcessEvent::Exited { status } => {
+            IsolatedExternalPluginWorkerEvent::Exited {
+                exit_code: status.code(),
+            }
+        }
+        ExternalPluginProcessEvent::NotRunning => IsolatedExternalPluginWorkerEvent::NotRunning,
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn isolated_external_plugin_sandbox_status(
+    status: PluginSandboxStatusCode,
+) -> IsolatedExternalPluginSandboxStatus {
+    match status {
+        PluginSandboxStatusCode::Unknown => IsolatedExternalPluginSandboxStatus::Unknown,
+        PluginSandboxStatusCode::Disabled => IsolatedExternalPluginSandboxStatus::Disabled,
+        PluginSandboxStatusCode::Enforced => IsolatedExternalPluginSandboxStatus::Enforced,
+        PluginSandboxStatusCode::Unsupported => IsolatedExternalPluginSandboxStatus::Unsupported,
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn isolated_external_plugin_sandbox_backend(
+    backend: PluginSandboxBackendCode,
+) -> IsolatedExternalPluginSandboxBackend {
+    match backend {
+        PluginSandboxBackendCode::Unknown => IsolatedExternalPluginSandboxBackend::Unknown,
+        PluginSandboxBackendCode::LinuxLandlock => {
+            IsolatedExternalPluginSandboxBackend::LinuxLandlock
+        }
+        PluginSandboxBackendCode::MacosProcessIsolation => {
+            IsolatedExternalPluginSandboxBackend::MacosProcessIsolation
+        }
+        PluginSandboxBackendCode::WindowsProcessIsolation => {
+            IsolatedExternalPluginSandboxBackend::WindowsProcessIsolation
+        }
+    }
 }
 
 // ============================================================================
@@ -929,6 +1039,12 @@ fn create_plugin(
 mod tests {
     use super::*;
     use crate::plugins::{PluginSettings, PluginType};
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    use sotf_plugins::{
+        ExternalPluginProcessEvent, ExternalPluginWorkerCommand, IsolatedExternalPlugin,
+        IsolatedExternalPluginConfig, PluginDescriptor, PluginFormat,
+    };
+    use std::time::Duration;
 
     /// Returns the input channel count that `create_plugin` expects for each type.
     fn input_channels_for(plugin_type: &PluginType) -> usize {
@@ -947,6 +1063,55 @@ mod tests {
             PluginType::AmbisonicsDecoder => 4,
             _ => 2,
         }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    fn test_isolated_external_plugin_descriptor(
+        name: &str,
+    ) -> (tempfile::TempDir, PluginDescriptor) {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin_path = dir.path().join(format!("{name}.clap"));
+        std::fs::write(&plugin_path, b"stub external plugin").unwrap();
+        let plugin_path = plugin_path.canonicalize().unwrap();
+        let descriptor = PluginDescriptor {
+            id: format!("test.{name}"),
+            name: name.into(),
+            vendor: "SOTF Test".into(),
+            version: "0.1.0".into(),
+            format: PluginFormat::Clap,
+            path: plugin_path,
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: Vec::new(),
+        };
+        (dir, descriptor)
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    fn test_processing_state_with_invalid_isolated_plugin() -> (ProcessingState, tempfile::TempDir)
+    {
+        let (tempdir, descriptor) =
+            test_isolated_external_plugin_descriptor("engine-processing-invalid");
+        let plugin = IsolatedExternalPlugin::new(
+            descriptor,
+            48_000,
+            IsolatedExternalPluginConfig {
+                worker_command: ExternalPluginWorkerCommand::new(
+                    "/definitely/not/a/real/sotf/external/plugin/worker",
+                ),
+                start_worker: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let mut host = PluginHost::new(2, 48_000);
+        host.add_plugin(Box::new(plugin)).unwrap();
+
+        let mut state = ProcessingState::new(2, 48_000);
+        state.host = host;
+        (state, tempdir)
     }
 
     #[test]
@@ -1125,6 +1290,7 @@ mod tests {
                     | PluginType::Denoiser
                     | PluginType::Downmix
                     | PluginType::MonoToStereo
+                    | PluginType::FirDesigner
                     | PluginType::LinearPhaseEq
                     | PluginType::SpectralCompressor
             );
@@ -1609,5 +1775,128 @@ mod tests {
             // All samples in [-1, 1) range for this test data
             assert!(frame.data.iter().all(|&s| (0.0..1.0).contains(&s)));
         }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn test_isolated_external_plugin_event_and_status_mappings() {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+
+        let event = isolated_external_plugin_event(ExternalPluginProcessEvent::AlreadyRunning);
+        assert!(matches!(
+            event,
+            IsolatedExternalPluginWorkerEvent::AlreadyRunning
+        ));
+
+        let event = isolated_external_plugin_event(ExternalPluginProcessEvent::NotRunning);
+        assert!(matches!(
+            event,
+            IsolatedExternalPluginWorkerEvent::NotRunning
+        ));
+
+        let event =
+            isolated_external_plugin_event(ExternalPluginProcessEvent::Started { pid: 555 });
+        assert!(matches!(
+            event,
+            IsolatedExternalPluginWorkerEvent::Started { pid } if pid == 555
+        ));
+
+        #[cfg(unix)]
+        {
+            let status = ExitStatusExt::from_raw(11 << 8);
+            let event =
+                isolated_external_plugin_event(ExternalPluginProcessEvent::Exited { status });
+            assert!(matches!(
+                event,
+                IsolatedExternalPluginWorkerEvent::Exited {
+                    exit_code: Some(11)
+                }
+            ));
+        }
+        #[cfg(windows)]
+        {
+            let status = ExitStatusExt::from_raw((11 << 8) as u32);
+            let event =
+                isolated_external_plugin_event(ExternalPluginProcessEvent::Exited { status });
+            assert!(matches!(
+                event,
+                IsolatedExternalPluginWorkerEvent::Exited {
+                    exit_code: Some(11)
+                }
+            ));
+        }
+
+        let report = IsolatedExternalPluginWorkerReport {
+            plugin_index: 3,
+            node_id: 9,
+            event: Some(ExternalPluginProcessEvent::Started { pid: 777 }),
+            error: Some("blocked".into()),
+            worker_start_count: 4,
+            worker_exit_count: 2,
+            worker_launch_failure_count: 1,
+            block_timeout_count: 3,
+            block_worker_failure_count: 4,
+            block_wrong_sequence_count: 5,
+            sandbox_status: PluginSandboxStatusCode::Enforced,
+            sandbox_backend: PluginSandboxBackendCode::LinuxLandlock,
+            sandbox_reason: None,
+        };
+        let status = isolated_external_plugin_status(report);
+        assert_eq!(status.plugin_index, 3);
+        assert_eq!(status.node_id, 9);
+        assert_eq!(status.error, Some("blocked".into()));
+        assert_eq!(status.worker_start_count, 4);
+        assert_eq!(status.worker_exit_count, 2);
+        assert_eq!(status.worker_launch_failure_count, 1);
+        assert_eq!(status.block_timeout_count, 3);
+        assert_eq!(status.block_worker_failure_count, 4);
+        assert_eq!(status.block_wrong_sequence_count, 5);
+        assert_eq!(
+            status.sandbox_status,
+            IsolatedExternalPluginSandboxStatus::Enforced
+        );
+        assert_eq!(
+            status.sandbox_backend,
+            IsolatedExternalPluginSandboxBackend::LinuxLandlock
+        );
+        assert_eq!(status.sandbox_reason, None);
+        assert!(matches!(
+            status.event,
+            Some(IsolatedExternalPluginWorkerEvent::Started { pid }) if pid == 777
+        ));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn test_handle_processing_command_polls_isolated_external_plugin_statuses_without_launching() {
+        let (mut state, _tempdir) = test_processing_state_with_invalid_isolated_plugin();
+
+        let (response_tx, _response_rx) = std::sync::mpsc::channel::<ProcessingResponse>();
+        let (event_tx, event_rx) = std::sync::mpsc::channel::<ThreadEvent>();
+
+        let shutdown = handle_processing_command(
+            ProcessingCommand::PollIsolatedExternalPluginWorkers,
+            &mut state,
+            &response_tx,
+            &event_tx,
+        );
+        assert!(!shutdown);
+
+        let statuses = match event_rx.recv_timeout(Duration::from_secs(1)).unwrap() {
+            ThreadEvent::IsolatedExternalPluginWorkerStatuses(statuses) => statuses,
+            event => panic!("expected status event, got {:?}", event),
+        };
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].plugin_index, 0);
+        assert_eq!(statuses[0].node_id, 0);
+        assert_eq!(statuses[0].error, None);
+        assert_eq!(statuses[0].worker_launch_failure_count, 0);
+        assert!(matches!(
+            statuses[0].event,
+            Some(IsolatedExternalPluginWorkerEvent::NotRunning)
+        ));
     }
 }

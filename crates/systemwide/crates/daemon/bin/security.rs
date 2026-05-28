@@ -10,7 +10,8 @@
 //! - Only same-user or root can connect
 //! - Optional encryption of audio data in shared memory via ChaCha20-Poly1305
 
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
@@ -21,18 +22,47 @@ use std::os::unix::net::UnixStream;
 /// On Linux, $XDG_RUNTIME_DIR provides similar isolation.
 /// Fallback uses UID in the path.
 pub fn get_secure_socket_path() -> PathBuf {
+    secure_socket_path_from_env(
+        std::env::var_os("SOTF_DAEMON_SOCKET_PATH"),
+        std::env::var_os("SOTF_SYSTEMWIDE_RUNTIME_DIR"),
+        std::env::var_os("TMPDIR"),
+        std::env::var_os("XDG_RUNTIME_DIR"),
+        get_current_uid(),
+    )
+}
+
+fn non_empty_path(value: Option<OsString>) -> Option<PathBuf> {
+    value
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+}
+
+fn secure_socket_path_from_env(
+    socket_override: Option<OsString>,
+    runtime_dir: Option<OsString>,
+    tmpdir: Option<OsString>,
+    xdg_runtime_dir: Option<OsString>,
+    uid: u32,
+) -> PathBuf {
+    if let Some(path) = non_empty_path(socket_override) {
+        return path;
+    }
+
+    if let Some(path) = non_empty_path(runtime_dir) {
+        return path.join("daemon.sock");
+    }
+
     // Try macOS per-user temp directory first
-    if let Ok(tmpdir) = std::env::var("TMPDIR") {
-        return PathBuf::from(tmpdir).join("sotf-daemon.sock");
+    if let Some(tmpdir) = non_empty_path(tmpdir) {
+        return tmpdir.join("sotf-daemon.sock");
     }
 
     // Try Linux XDG runtime directory
-    if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
-        return PathBuf::from(xdg).join("sotf-daemon.sock");
+    if let Some(xdg) = non_empty_path(xdg_runtime_dir) {
+        return xdg.join("sotf-daemon.sock");
     }
 
     // Fallback: use UID in path
-    let uid = get_current_uid();
     PathBuf::from(format!("/tmp/sotf-{}/daemon.sock", uid))
 }
 
@@ -146,7 +176,7 @@ pub fn verify_peer_credentials(_stream: &UnixStream) -> Result<u32, String> {
 }
 
 /// Ensure the socket directory exists with secure permissions
-pub fn ensure_secure_socket_dir(socket_path: &std::path::Path) -> std::io::Result<()> {
+pub fn ensure_secure_socket_dir(socket_path: &Path) -> std::io::Result<()> {
     if let Some(parent) = socket_path.parent()
         && !parent.exists()
     {
@@ -249,6 +279,8 @@ pub fn peer_allows_command(class: PeerClass, command_name: &str) -> bool {
                 | "get_driver_config"
                 | "get_hal_config"
                 | "encryption_status"
+                | "get_snapshot"
+                | "snapshot"
                 | "status"
         ),
     }
@@ -414,9 +446,10 @@ mod encryption_impl {
             // permissive umask. This is the canonical post-write
             // permission.
             fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+            grant_coreaudiod_key_access(&path);
 
             log::info!(
-                "Published HAL-readable encryption key at {} (mode 0600)",
+                "Published HAL-readable encryption key at {} (mode 0600 + _coreaudiod ACL)",
                 path.display()
             );
             Ok(())
@@ -680,6 +713,14 @@ mod tests {
         assert_eq!(targets[0].1, "_coreaudiod allow search,readattr");
         assert_eq!(targets[1].0, key_path);
         assert_eq!(targets[1].1, "_coreaudiod allow read,readattr");
+
+        let hal_key_path = get_hal_key_path();
+        let hal_targets = encryption_impl::coreaudiod_acl_targets(&hal_key_path);
+        assert_eq!(
+            hal_targets[0].0,
+            hal_key_path.parent().expect("HAL key path has parent")
+        );
+        assert_eq!(hal_targets[1].0, hal_key_path);
     }
 
     #[test]
@@ -687,6 +728,27 @@ mod tests {
         let path1 = get_secure_socket_path();
         let path2 = get_secure_socket_path();
         assert_eq!(path1, path2);
+    }
+
+    #[test]
+    fn test_socket_path_supports_lab_overrides() {
+        let explicit = secure_socket_path_from_env(
+            Some(OsString::from("/tmp/sotf-lab/daemon.sock")),
+            Some(OsString::from("/tmp/ignored")),
+            None,
+            None,
+            42,
+        );
+        assert_eq!(explicit, PathBuf::from("/tmp/sotf-lab/daemon.sock"));
+
+        let runtime = secure_socket_path_from_env(
+            None,
+            Some(OsString::from("/tmp/sotf-lab")),
+            None,
+            None,
+            42,
+        );
+        assert_eq!(runtime, PathBuf::from("/tmp/sotf-lab/daemon.sock"));
     }
 
     #[test]
@@ -731,6 +793,8 @@ mod tests {
             "get_driver_config",
             "get_hal_config",
             "encryption_status",
+            "get_snapshot",
+            "snapshot",
             "status",
         ] {
             assert!(

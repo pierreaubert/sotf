@@ -27,9 +27,9 @@ impl AudioFrame {
     /// audio in release builds, so we assert unconditionally (not just under
     /// debug_assertions).
     pub fn new(data: Vec<f32>, num_frames: usize, num_channels: usize, sample_rate: u32) -> Self {
-        let expected = num_frames.checked_mul(num_channels).expect(
-            "AudioFrame::new: num_frames * num_channels overflowed usize",
-        );
+        let expected = num_frames
+            .checked_mul(num_channels)
+            .expect("AudioFrame::new: num_frames * num_channels overflowed usize");
         assert_eq!(
             data.len(),
             expected,
@@ -75,6 +75,82 @@ pub enum PlaybackState {
     Paused,
 }
 
+/// Lifecycle event reported for an isolated external plugin worker.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IsolatedExternalPluginWorkerEvent {
+    /// Worker process is already running.
+    AlreadyRunning,
+    /// Worker process was started.
+    Started {
+        /// Worker process ID.
+        pid: u32,
+    },
+    /// Worker process has exited.
+    Exited {
+        /// Exit code if available.
+        exit_code: Option<i32>,
+    },
+    /// Worker is not running.
+    NotRunning,
+}
+
+/// Reported worker sandbox status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum IsolatedExternalPluginSandboxStatus {
+    #[default]
+    Unknown,
+    Disabled,
+    Enforced,
+    Unsupported,
+}
+
+/// Reported sandbox backend for a worker process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum IsolatedExternalPluginSandboxBackend {
+    #[default]
+    Unknown,
+    LinuxLandlock,
+    MacosProcessIsolation,
+    WindowsProcessIsolation,
+}
+
+/// Snapshot of a single isolated external plugin worker status.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IsolatedExternalPluginWorkerStatus {
+    /// Index of the plugin in the chain.
+    pub plugin_index: usize,
+    /// Host node id for the plugin.
+    pub node_id: usize,
+    /// Latest lifecycle event reported by the worker supervisor.
+    pub event: Option<IsolatedExternalPluginWorkerEvent>,
+    /// Last error while polling/ensuring worker state.
+    pub error: Option<String>,
+    /// Number of successful worker starts.
+    pub worker_start_count: u64,
+    /// Number of observed worker exits.
+    pub worker_exit_count: u64,
+    /// Number of launch failures.
+    pub worker_launch_failure_count: u64,
+    /// Number of block timeouts from the shared-memory proxy.
+    pub block_timeout_count: u64,
+    /// Number of worker failures while processing blocks.
+    pub block_worker_failure_count: u64,
+    /// Number of wrong-sequence block responses from the worker.
+    pub block_wrong_sequence_count: u64,
+    /// Runtime sandbox status observed by the worker.
+    #[serde(default)]
+    pub sandbox_status: IsolatedExternalPluginSandboxStatus,
+    /// Runtime sandbox backend observed by the worker.
+    #[serde(default)]
+    pub sandbox_backend: IsolatedExternalPluginSandboxBackend,
+    /// Optional reason text when sandboxing is unavailable/disabled/failed.
+    #[serde(default)]
+    pub sandbox_reason: Option<String>,
+}
+
 /// Complete audio engine state
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AudioEngineState {
@@ -100,12 +176,39 @@ pub struct AudioEngineState {
     pub processing_bypassed: bool,
     /// Number of buffer underruns
     pub underruns: u64,
+    /// Output device actually resolved by the playback stream.
+    #[serde(default)]
+    pub playback_output_device: Option<String>,
+    /// Number of hardware output callbacks observed by the playback stream.
+    #[serde(default)]
+    pub playback_callback_count: u64,
+    /// Last reported playback ring-buffer fill percentage.
+    #[serde(default)]
+    pub playback_buffer_fill_percent: u64,
+    /// Number of output stream errors observed by the playback stream.
+    #[serde(default)]
+    pub playback_stream_error_count: u64,
+    /// Number of processed frames received by the playback thread.
+    #[serde(default)]
+    pub playback_frames_received: u64,
+    /// Number of processed frames written to the hardware ring buffer.
+    #[serde(default)]
+    pub playback_frames_written: u64,
+    /// Number of processed frames dropped before reaching hardware.
+    #[serde(default)]
+    pub playback_frames_dropped: u64,
+    /// Estimated callback sample rate from hardware consumption.
+    #[serde(default)]
+    pub playback_effective_sample_rate: u64,
     /// Total plugin chain latency in samples (for position compensation)
     pub plugin_latency_samples: usize,
     /// Last error message, if any
     pub last_error: Option<String>,
     /// Seek in progress flag
     pub seeking: bool,
+    /// Snapshot of isolated external plugin worker status.
+    #[serde(default)]
+    pub isolated_external_plugin_worker_statuses: Vec<IsolatedExternalPluginWorkerStatus>,
 }
 
 impl Default for AudioEngineState {
@@ -122,9 +225,18 @@ impl Default for AudioEngineState {
             muted: false,
             processing_bypassed: false,
             underruns: 0,
+            playback_output_device: None,
+            playback_callback_count: 0,
+            playback_buffer_fill_percent: 0,
+            playback_stream_error_count: 0,
+            playback_frames_received: 0,
+            playback_frames_written: 0,
+            playback_frames_dropped: 0,
+            playback_effective_sample_rate: 0,
             plugin_latency_samples: 0,
             last_error: None,
             seeking: false,
+            isolated_external_plugin_worker_statuses: Vec::new(),
         }
     }
 }

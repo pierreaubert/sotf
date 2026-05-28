@@ -247,6 +247,64 @@ fn test_empty_path_fast_path_matches_equal_power_mix() {
 }
 
 #[test]
+fn test_empty_path_fast_gain_is_reused_after_mix_changes() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    let input = vec![0.5f32; 512 * 2];
+    let mut output = vec![0.0f32; 512 * 2];
+    let context = ProcessContext::new(48000, 512);
+
+    plugin
+        .set_parameter(
+            ParameterId("auto_gain_enabled".to_string()),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+    plugin.process(&input, &mut output, &context).unwrap();
+    let expected =
+        0.5f32 * std::f32::consts::FRAC_PI_4.cos() + 0.5f32 * std::f32::consts::FRAC_PI_4.sin();
+    for &sample in &output {
+        assert!((sample - expected).abs() < 1e-6);
+    }
+
+    plugin
+        .set_parameter(ParameterId("mix".to_string()), ParameterValue::Float(1.0))
+        .unwrap();
+    plugin.mix_smoother.reset(1.0);
+    plugin.process(&input, &mut output, &context).unwrap();
+    for &sample in &output {
+        assert!(
+            (sample - 0.5).abs() < 1e-5,
+            "pure B should retain unity gain"
+        );
+    }
+
+    assert!(
+        (plugin.empty_path_fast_gain - 1.0).abs() < 1e-6,
+        "cached gain should switch to the pure B value"
+    );
+
+    plugin
+        .set_parameter(ParameterId("mix".to_string()), ParameterValue::Float(-1.0))
+        .unwrap();
+    plugin.mix_smoother.reset(-1.0);
+    plugin.process(&input, &mut output, &context).unwrap();
+    for &sample in &output {
+        assert!(
+            (sample - 0.5).abs() < 1e-5,
+            "pure A should retain unity gain"
+        );
+    }
+
+    assert!(
+        (plugin.empty_path_fast_gain - 1.0).abs() < 1e-6,
+        "pure-path mix values should keep cached gain at unity"
+    );
+}
+
+#[test]
 fn test_reset() {
     let mut plugin = ABComparePlugin::new(2).unwrap();
     plugin.initialize(48000).unwrap();

@@ -97,7 +97,7 @@ pub struct DownmixPlugin {
     pub(crate) target_coeffs: Vec<DownmixCoeffs>,
     coeff_smoothers: Vec<Smoother>,
     lfe_channels: Vec<usize>,
-    lfe_lpf_idx: Vec<Option<usize>>,
+    lfe_is_channel: Vec<bool>,
 
     fft_forward: Arc<dyn RealToComplex<f32>>,
     fft_inverse: Arc<dyn ComplexToReal<f32>>,
@@ -288,7 +288,7 @@ impl DownmixPlugin {
             target_coeffs: Vec::new(),
             coeff_smoothers: Vec::new(),
             lfe_channels: Vec::new(),
-            lfe_lpf_idx: Vec::new(),
+            lfe_is_channel: Vec::new(),
             fft_forward,
             fft_inverse,
             analysis_window,
@@ -477,11 +477,11 @@ impl DownmixPlugin {
             self.compute_standard_coefficients()
         };
 
-        self.lfe_lpf_idx.clear();
-        self.lfe_lpf_idx.resize(self.input_ch, None);
-        for (slot, &ch) in self.lfe_channels.iter().enumerate() {
+        self.lfe_is_channel.clear();
+        self.lfe_is_channel.resize(self.input_ch, false);
+        for &ch in &self.lfe_channels {
             if ch < self.input_ch {
-                self.lfe_lpf_idx[ch] = Some(slot);
+                self.lfe_is_channel[ch] = true;
             }
         }
 
@@ -509,6 +509,12 @@ impl DownmixPlugin {
                     self.coeff_smoothers[i * 2 + 1].set_target(c.right_gain);
                 }
             }
+        }
+    }
+
+    fn advance_coeff_smoothers_by(&mut self, samples: usize) {
+        for smoother in &mut self.coeff_smoothers {
+            smoother.next_n(samples);
         }
     }
 
@@ -667,10 +673,11 @@ impl DownmixPlugin {
             for ch in 0..self.input_ch {
                 let mut s = input[frame * self.input_ch + ch];
                 // O(1) lookup: no linear scan over lfe_channels.
-                if let Some(l_idx) = self.lfe_lpf_idx[ch].filter(|&i| i < self.lfe_lpf.len()) {
+                if self.lfe_is_channel.get(ch).copied().unwrap_or(false) && ch < self.lfe_lpf.len()
+                {
                     let mut val = s as f64;
-                    val = self.lfe_lpf[l_idx][0].process(val);
-                    val = self.lfe_lpf[l_idx][1].process(val);
+                    val = self.lfe_lpf[ch][0].process(val);
+                    val = self.lfe_lpf[ch][1].process(val);
                     s = val as f32;
                 }
                 l += s * self.coeff_smoothers[ch * 2].advance();
@@ -732,7 +739,7 @@ impl DownmixPlugin {
                             rt -= ATTEN * shifted;
                         }
                     }
-                } else if self.lfe_lpf_idx.get(ch).copied().flatten().is_some() {
+                } else if self.lfe_is_channel.get(ch).copied().unwrap_or(false) {
                     // LFE: discard in standard Lt/Rt encoding
                 } else {
                     // Front L/R: pass through directly using smoother gains
@@ -906,6 +913,7 @@ impl DownmixPlugin {
             self.output_accumulator[idx * 2 + 1] += self.ifft_output_buf[i];
         }
 
+        self.advance_coeff_smoothers_by(HOP_SIZE);
         self.next_add_position = (self.next_add_position + HOP_SIZE) & mask;
         self.output_accumulator_fill += HOP_SIZE;
     }
@@ -936,9 +944,7 @@ impl Plugin for DownmixPlugin {
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
-        self.lfe_lpf = self
-            .lfe_channels
-            .iter()
+        self.lfe_lpf = (0..self.input_ch)
             .map(|_| {
                 [
                     Biquad::new(
@@ -1001,11 +1007,13 @@ impl Plugin for DownmixPlugin {
                     for ch in 0..self.input_ch {
                         let ch_offset = ch * n;
                         let src = &input[input_pos * self.input_ch + ch..];
-                        if let Some(li) = self.lfe_lpf_idx[ch].filter(|&i| i < self.lfe_lpf.len()) {
+                        if self.lfe_is_channel.get(ch).copied().unwrap_or(false)
+                            && ch < self.lfe_lpf.len()
+                        {
                             for i in 0..to_copy {
                                 let mut v = src[i * self.input_ch] as f64;
-                                v = self.lfe_lpf[li][0].process(v);
-                                v = self.lfe_lpf[li][1].process(v);
+                                v = self.lfe_lpf[ch][0].process(v);
+                                v = self.lfe_lpf[ch][1].process(v);
                                 self.input_buffer[ch_offset + self.input_fill + i] = v as f32;
                             }
                         } else {
@@ -1049,10 +1057,6 @@ impl Plugin for DownmixPlugin {
             }
         }
 
-        for s in &mut self.coeff_smoothers {
-            s.next_n(num_frames);
-        }
-
         Ok(num_frames)
     }
     fn reset(&mut self) {
@@ -1065,9 +1069,7 @@ impl Plugin for DownmixPlugin {
         for ap in &mut self.ltrt_allpass {
             ap.reset();
         }
-        self.lfe_lpf = self
-            .lfe_channels
-            .iter()
+        self.lfe_lpf = (0..self.input_ch)
             .map(|_| {
                 [
                     Biquad::new(
@@ -1128,6 +1130,45 @@ mod tests {
         p.process(&i, &mut o, &ProcessContext::new(44100, 100))
             .unwrap();
         assert!(o[0].abs() > 0.01);
+    }
+
+    #[test]
+    fn test_lfe_lookup_uses_channel_indexed_flags() {
+        let mut p = DownmixPlugin::new(6);
+        p.initialize(48000).unwrap();
+
+        assert_eq!(p.lfe_is_channel.len(), 6);
+        assert_eq!(p.lfe_lpf.len(), 6);
+        assert_eq!(p.lfe_channels, vec![3]);
+        for ch in 0..6 {
+            assert_eq!(
+                p.lfe_is_channel[ch],
+                ch == 3,
+                "5.1 should mark only channel 3 as LFE"
+            );
+        }
+    }
+
+    #[test]
+    fn test_stft_path_advances_coeff_smoothers_per_fft_block() {
+        let mut p = DownmixPlugin::new(6);
+        p.initialize(48000).unwrap();
+        p.phase_coherence = true;
+
+        let smoother_index = 2 * 2; // center channel left coefficient
+        let before = p.coeff_smoothers[smoother_index].current();
+        p.coeff_smoothers[smoother_index].set_target(0.0);
+
+        let input = vec![0.0f32; FFT_SIZE * p.input_ch];
+        let mut output = vec![0.0f32; FFT_SIZE * 2];
+        p.process(&input, &mut output, &ProcessContext::new(48000, FFT_SIZE))
+            .unwrap();
+
+        let after = p.coeff_smoothers[smoother_index].current();
+        assert!(
+            after < before,
+            "STFT path should advance coefficient smoothers per processed FFT block: before={before}, after={after}"
+        );
     }
 
     /// Helper: create a 5.1.4 downmix plugin with all gains at 0dB, phase_coherence off,

@@ -696,11 +696,7 @@ mod tests {
     use super::*;
     use sotf_host::param_specs::ParamCategory;
 
-    fn make_float_spec(
-        name: &'static str,
-        doc: &'static str,
-        unit: &'static str,
-    ) -> ParamSpec {
+    fn make_float_spec(name: &'static str, doc: &'static str, unit: &'static str) -> ParamSpec {
         ParamSpec {
             name,
             engine_key: "test_key",
@@ -814,7 +810,10 @@ mod tests {
         let title_line = lines.next().expect("title line");
         let desc_line = lines.next().expect("description line");
         let close = lines.next().expect("closing frontmatter line");
-        assert_eq!(close, "---", "frontmatter must close after title+description");
+        assert_eq!(
+            close, "---",
+            "frontmatter must close after title+description"
+        );
 
         assert!(
             title_line.starts_with("title: \"") && title_line.ends_with('"'),

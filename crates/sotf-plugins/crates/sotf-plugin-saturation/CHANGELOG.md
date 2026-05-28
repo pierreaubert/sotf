@@ -1,3 +1,11 @@
+# 0.5.6
+
+## Fixes
+
+- Short host buffers now return an explicit `Err` instead of relying on a debug-only assertion and
+  later panicking on slice bounds.
+- Added coverage for the exciter path with oversampling enabled.
+
 # 0.5.5
 
 ## Fixes (from code review)

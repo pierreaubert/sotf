@@ -1,0 +1,44 @@
+# RoomEQ e2e matrix: 2.0_d3v measured fixture through one default-wizard tuple.
+#
+# The suite copies crates/autoeq/data_tests/roomeq/measured/2.0_d3v into the
+# per-run dist tree, loads recordings.json through /qa/room-eq, applies the
+# tuple from [scenario.room_eq], caps optimizer work for QA, and starts the
+# real optimizer before this script observes completion.
+
+focus       room-e-q
+assert      screen.focused == "RoomEq"
+assert      roomeq.measurement_count == 2
+assert      roomeq.speaker_config_count == 2
+query       roomeq.wizard.target
+query       roomeq.wizard.loss
+query       roomeq.wizard.processing
+query       roomeq.wizard.crossover
+query       roomeq.step
+query       roomeq.status
+
+wait_until  roomeq.optimization_status == "Completed" timeout=120s
+assert      roomeq.step == "Review"
+assert      roomeq.result_count == 2
+assert      roomeq.has_dsp_output == true
+assert      roomeq.dsp_channel_count == 2
+assert      roomeq.filter_count >= 2
+assert      roomeq.filter_count <= 28
+assert      roomeq.average_pre_score >= 1
+assert      roomeq.average_pre_score <= 35
+assert      roomeq.average_post_score >= 1
+assert      roomeq.average_post_score <= 35
+assert      roomeq.error == null
+query       roomeq.status
+
+export_room_eq_json
+assert      roomeq.step == "Export"
+assert      roomeq.export.exists == true
+assert      roomeq.export.bytes > 500
+assert      roomeq.export.channel_count == 2
+assert      roomeq.export.plugin_count >= 2
+assert      roomeq.export.filter_count >= 2
+query       roomeq.export.path
+query       roomeq.export.version
+
+focus       library
+assert      screen.focused == "Library"

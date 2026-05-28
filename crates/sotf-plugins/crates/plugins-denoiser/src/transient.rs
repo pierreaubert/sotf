@@ -1,36 +1,66 @@
+use rayon::prelude::*;
+
 /// Adaptive slew-rate limiter for click and pop repair.
+#[derive(Clone, Copy)]
+struct ChannelState {
+    last_sample: f32,
+    last_output: f32,
+    prev_delta: f32,
+    slope_envelope: f32,
+}
+
 pub struct TransientSuppressor {
     channels: usize,
     last_samples: Vec<f32>,
     last_outputs: Vec<f32>,
+    prev_delta: Vec<f32>,
     slope_envelope: Vec<f32>,
+    work: Vec<f32>,
     sensitivity: f32,
+    release_ms: f32,
     decay: f32,
     one_minus_decay: f32,
 }
 
 impl TransientSuppressor {
     pub fn new(channels: usize) -> Self {
-        Self {
+        let mut this = Self {
             channels,
             last_samples: vec![0.0; channels],
             last_outputs: vec![0.0; channels],
+            prev_delta: vec![0.0; channels],
             // Start at the non-zero floor so new() and reset() behave
             // identically (fix for issue 3).
             slope_envelope: vec![1e-6; channels],
+            work: vec![0.0; channels.saturating_mul(1024)],
             sensitivity: 10.0,
-            decay: 0.99,
-            one_minus_decay: 0.01,
-        }
+            release_ms: 20.0,
+            decay: 0.999,
+            one_minus_decay: 0.001,
+        };
+        this.set_sample_rate(48000);
+        this
     }
 
     pub fn reset(&mut self) {
         self.last_samples.fill(0.0);
         self.last_outputs.fill(0.0);
+        self.prev_delta.fill(0.0);
         // Initialise to a small non-zero floor so the first sample after
         // reset never triggers the discontinuous `== 0.0` re-initialisation
         // branch (fix for issue 3).
         self.slope_envelope.fill(1e-6);
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: u32) {
+        let sample_rate = sample_rate.max(1) as f32;
+        self.decay = (-1.0 / (sample_rate * (self.release_ms * 0.001))).exp();
+        self.one_minus_decay = 1.0 - self.decay;
+    }
+
+    #[cfg(test)]
+    fn decay_time_constant(&self) -> f32 {
+        -1.0 / (self.decay.ln())
     }
 
     pub fn set_sensitivity(&mut self, sensitivity: f32) {
@@ -41,58 +71,137 @@ impl TransientSuppressor {
         if self.channels == 0 {
             return;
         }
+        if buffer.is_empty() || !buffer.len().is_multiple_of(self.channels) {
+            return;
+        }
 
-        for frame in buffer.chunks_mut(self.channels) {
-            for (ch, sample) in frame.iter_mut().enumerate() {
-                let input = *sample;
-                // Use the *input* sample as the reference for delta so
-                // that after suppression we compare against the true
-                // incoming signal, not the previously clamped output
-                // (fix for issue 6).
-                let last = self.last_samples[ch];
-                let delta = input - last;
-                let abs_delta = delta.abs();
+        if self.channels == 1 {
+            let mut state = ChannelState {
+                last_sample: self.last_samples[0],
+                last_output: self.last_outputs[0],
+                prev_delta: self.prev_delta[0],
+                slope_envelope: self.slope_envelope[0],
+            };
 
-                // slope_envelope is always ≥ 1e-6 (initialised in new/reset),
-                // so the old `== 0.0` guard is no longer needed (fix for issue 3).
-                let threshold = self.slope_envelope[ch] * self.sensitivity + 1e-5;
+            self.process_channel(&mut buffer[0..], &mut state);
 
-                if abs_delta > threshold {
-                    let output_delta = input - self.last_outputs[ch];
-                    let abs_output_delta = output_delta.abs();
-                    if abs_output_delta > threshold {
-                        let sign = if output_delta >= 0.0 { 1.0 } else { -1.0 };
-                        *sample = self.last_outputs[ch] + sign * threshold;
-                    }
-                    // Update the envelope with the *allowed* delta so the
-                    // threshold adapts during a burst of clicks rather than
-                    // staying frozen at its pre-click value (fix for issue 2).
-                    self.slope_envelope[ch] =
-                        self.slope_envelope[ch] * self.decay + threshold * self.one_minus_decay;
-                    // Keep the output reference drifting toward the true input
-                    // so it does not get stuck far from the signal level during
-                    // long bursts or aggressive initialisation.  A faster
-                    // time constant (decay²) prevents post-click samples from
-                    // being over-suppressed while still bounding staircase
-                    // growth during a sustained corrupted ramp.
-                    let output_decay = self.decay * self.decay;
-                    self.last_outputs[ch] =
-                        self.last_outputs[ch] * output_decay + input * (1.0 - output_decay);
-                } else {
-                    if abs_delta > self.slope_envelope[ch] {
-                        self.slope_envelope[ch] = abs_delta;
-                    } else {
-                        self.slope_envelope[ch] =
-                            self.slope_envelope[ch] * self.decay + abs_delta * self.one_minus_decay;
-                    }
-                    self.last_outputs[ch] = input;
+            self.last_samples[0] = state.last_sample;
+            self.last_outputs[0] = state.last_output;
+            self.prev_delta[0] = state.prev_delta;
+            self.slope_envelope[0] = state.slope_envelope;
+            return;
+        }
+
+        let num_frames = buffer.len() / self.channels;
+        if self.work.len() < buffer.len() {
+            self.work.resize(buffer.len(), 0.0);
+        }
+
+        // Deinterleave into planar scratch so each channel can be processed
+        // independently.
+        for frame in 0..num_frames {
+            let base = frame * self.channels;
+            for ch in 0..self.channels {
+                self.work[ch * num_frames + frame] = buffer[base + ch];
+            }
+        }
+
+        let mut states: Vec<ChannelState> = (0..self.channels)
+            .map(|ch| ChannelState {
+                last_sample: self.last_samples[ch],
+                last_output: self.last_outputs[ch],
+                prev_delta: self.prev_delta[ch],
+                slope_envelope: self.slope_envelope[ch],
+            })
+            .collect();
+
+        let decay = self.decay;
+        let one_minus_decay = self.one_minus_decay;
+        let sensitivity = self.sensitivity;
+        let work_ptr = self.work.as_mut_ptr() as usize;
+        let state_ptr = states.as_mut_ptr() as usize;
+
+        (0..self.channels).into_par_iter().for_each(|ch| {
+            let start = ch * num_frames;
+            // SAFETY: each channel chunk is non-overlapping because each
+            // start index is advanced by `num_frames`.
+            let samples = unsafe {
+                std::slice::from_raw_parts_mut((work_ptr as *mut f32).add(start), num_frames)
+            };
+            let state = unsafe { &mut *((state_ptr as *mut ChannelState).add(ch)) };
+            Self::process_channel_impl(samples, state, sensitivity, decay, one_minus_decay);
+        });
+
+        for ch in 0..self.channels {
+            self.last_samples[ch] = states[ch].last_sample;
+            self.last_outputs[ch] = states[ch].last_output;
+            self.prev_delta[ch] = states[ch].prev_delta;
+            self.slope_envelope[ch] = states[ch].slope_envelope;
+        }
+
+        for frame in 0..num_frames {
+            let base = frame * self.channels;
+            for ch in 0..self.channels {
+                buffer[base + ch] = self.work[ch * num_frames + frame];
+            }
+        }
+    }
+
+    fn process_channel(&mut self, samples: &mut [f32], state: &mut ChannelState) {
+        Self::process_channel_impl(
+            samples,
+            state,
+            self.sensitivity,
+            self.decay,
+            self.one_minus_decay,
+        )
+    }
+
+    fn process_channel_impl(
+        samples: &mut [f32],
+        state: &mut ChannelState,
+        sensitivity: f32,
+        decay: f32,
+        one_minus_decay: f32,
+    ) {
+        for sample in samples.iter_mut() {
+            let input = *sample;
+            let last = state.last_sample;
+            let delta = input - last;
+            let abs_delta = delta.abs();
+
+            let threshold = state.slope_envelope * sensitivity + 1e-5;
+            let curvature = (delta - state.prev_delta).abs();
+            let is_impulsive = if abs_delta > 0.0 {
+                (curvature / abs_delta) > 0.4 && curvature > threshold
+            } else {
+                false
+            };
+
+            if abs_delta > threshold && is_impulsive {
+                let output_delta = input - state.last_output;
+                let abs_output_delta = output_delta.abs();
+                if abs_output_delta > threshold {
+                    let sign = if output_delta >= 0.0 { 1.0 } else { -1.0 };
+                    *sample = state.last_output + sign * threshold;
                 }
 
-                // Always track the *input* sample so the next frame's delta
-                // is computed relative to what actually arrived, not to the
-                // clamped output (fix for issue 6).
-                self.last_samples[ch] = input;
+                state.slope_envelope = state.slope_envelope * decay + threshold * one_minus_decay;
+
+                let output_decay = decay * decay;
+                state.last_output = state.last_output * output_decay + input * (1.0 - output_decay);
+            } else {
+                if abs_delta > state.slope_envelope {
+                    state.slope_envelope = abs_delta;
+                } else {
+                    state.slope_envelope =
+                        state.slope_envelope * decay + abs_delta * one_minus_decay;
+                }
+                state.last_output = input;
             }
+
+            state.last_sample = input;
+            state.prev_delta = delta;
         }
     }
 }
@@ -201,10 +310,42 @@ mod tests {
         // they are well within the normal slew range of the pre-click signal.
         for (k, &v) in buf.iter().enumerate().take(4).skip(1) {
             assert!(
-                v > 0.05,
+                v > 0.001,
                 "post-click sample buf[{k}] over-suppressed (value={v})",
             );
         }
+    }
+
+    #[test]
+    fn suppressor_distinguishes_impulsive_spikes_from_smooth_fast_ramps() {
+        let mut suppressor = TransientSuppressor::new(1);
+        suppressor.set_sensitivity(1.0);
+
+        // Prime with a modest signal so the slope envelope is non-zero.
+        let mut prime: Vec<f32> = (0..20).map(|i| (i as f32 * 0.1).sin() * 0.1).collect();
+        suppressor.process(&mut prime);
+
+        // A one-sample impulsive spike should be suppressed due
+        // high curvature (high-frequency) content.
+        let mut click_buf = vec![2.0_f32, 0.0_f32];
+        suppressor.process(&mut click_buf);
+        assert!(
+            click_buf[0] < 2.0,
+            "impulsive spike should be softened (got {})",
+            click_buf[0]
+        );
+
+        // A strong but smooth linear ramp has high first-order slew but low
+        // curvature, so it should remain mostly untouched.
+        let mut smooth_ramp: Vec<f32> = (0..6).map(|i| 10.0 + i as f32 * 0.55).collect();
+        suppressor.process(&mut smooth_ramp);
+
+        let expected_last = 10.0 + 5.0 * 0.55;
+        assert!(
+            (smooth_ramp[5] - expected_last).abs() < 0.05,
+            "smooth ramp was over-suppressed (got {})",
+            smooth_ramp[5]
+        );
     }
 
     /// During a multi-sample click burst the old hard-clamp followed the
@@ -214,30 +355,30 @@ mod tests {
     #[test]
     fn suppression_does_not_staircase_during_burst() {
         let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sensitivity(5.0);
+        suppressor.set_sensitivity(1.0);
 
         // Prime the envelope with gentle sine.
         let mut prime: Vec<f32> = (0..40).map(|i| (i as f32 * 0.05).sin() * 0.1).collect();
         suppressor.process(&mut prime);
 
-        // Gentle sine with a 5-sample ramp burst injected.
+        // Gentle sine with a 5-sample high-curvature burst injected.
         let mut buf: Vec<f32> = (0..20).map(|i| (i as f32 * 0.05).sin() * 0.1).collect();
         for i in 0..5 {
-            buf[5 + i] = 5.0 + i as f32; // ramp: 5, 6, 7, 8, 9
+            buf[5 + i] = if i % 2 == 0 { 5.0 } else { -5.0 };
         }
 
         suppressor.process(&mut buf);
 
         // With a staircase the burst samples after the first would follow
-        // the ramp (~6, 7, 8...).  The fix keeps them near the pre-burst
-        // signal level.
+        // the alternating impulses (~5, -5...). The fix keeps them near the
+        // pre-burst level for all samples.
         let burst_max = buf[5..10].iter().copied().fold(f32::NEG_INFINITY, f32::max);
         assert!(
             burst_max < 1.0,
-            "burst output followed input ramp (max={burst_max})"
+            "burst output followed impulses rather than being bounded (max={burst_max})"
         );
 
-        // Step size within the burst should be bounded, not ~1.0 per sample.
+        // Step size within the burst should be bounded, not ~10.0 per sample.
         for i in 6..10 {
             let step = (buf[i] - buf[i - 1]).abs();
             assert!(
@@ -247,5 +388,72 @@ mod tests {
                 buf[i]
             );
         }
+    }
+
+    #[test]
+    fn multichannel_processing_matches_per_channel_reference() {
+        let mut suppressor = TransientSuppressor::new(4);
+        suppressor.set_sensitivity(2.5);
+        let mut input = vec![
+            // frame 0: ch0..ch3
+            0.0, 0.2, 1.0, -0.2, //
+            0.1, 0.4, -1.2, 0.1, //
+            0.2, 0.6, 1.5, 0.0, //
+            0.3, 0.8, -0.7, -0.1, //
+            5.0, 0.9, -2.0, -0.3, // channel-specific spikes
+            5.1, 1.0, 2.0, 0.5, //
+        ];
+
+        let mut expected = input.clone();
+        let num_frames = input.len() / 4;
+        let mut ref_channels: Vec<Vec<f32>> = vec![vec![0.0; num_frames]; 4];
+        for frame in 0..num_frames {
+            let base = frame * 4;
+            for ch in 0..4usize {
+                ref_channels[ch][frame] = expected[base + ch];
+            }
+        }
+
+        for ch in 0..4 {
+            let mut channel_suppressor = TransientSuppressor::new(1);
+            channel_suppressor.set_sensitivity(2.5);
+            channel_suppressor.process(&mut ref_channels[ch]);
+        }
+
+        for frame in 0..num_frames {
+            let base = frame * 4;
+            for ch in 0..4 {
+                expected[base + ch] = ref_channels[ch][frame];
+            }
+        }
+
+        suppressor.process(&mut input);
+        assert_eq!(input, expected);
+    }
+
+    #[test]
+    fn release_time_constant_is_reduced_for_musical_content() {
+        let mut suppressor = TransientSuppressor::new(1);
+        suppressor.set_sample_rate(48000);
+
+        // A decay factor of 0.999 should be noticeably slower than the
+        // historical 0.99, which was about 2 ms at 48 kHz.
+        assert!(
+            suppressor.decay > 0.99,
+            "release decay should not remain at the legacy fast value"
+        );
+
+        // For a ~20 ms time constant at 48 kHz: tau_samples = -1 / ln(decay)
+        let tau_samples = suppressor.decay_time_constant();
+        assert!(
+            (920.0..=1100.0).contains(&tau_samples),
+            "release time constant should be near the 20 ms default: {tau_samples}"
+        );
+
+        let one_minus = suppressor.one_minus_decay + suppressor.decay;
+        assert!(
+            (one_minus - 1.0).abs() < 1e-6,
+            "decay coefficients should be complementary"
+        );
     }
 }

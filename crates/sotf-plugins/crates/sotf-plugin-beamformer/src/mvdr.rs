@@ -274,19 +274,15 @@ impl MvdrBeamformer {
     /// Apply beamforming weights to produce single-channel output.
     ///
     /// Zero allocations: writes directly to pre-allocated output_buf.
-    pub fn apply_weights_into(
-        &mut self,
-        stft_channels: &[Vec<Complex<f32>>],
-        weights: &[Vec<Complex<f32>>],
-    ) -> &[Complex<f32>] {
-        let spectrum_size = weights.len().min(self.spectrum_size);
+    pub fn apply_weights_into(&mut self, stft_channels: &[Vec<Complex<f32>>]) -> &[Complex<f32>] {
+        let spectrum_size = self.weights_buf.len().min(self.spectrum_size);
         let num_mics = stft_channels.len();
 
         for k in 0..spectrum_size {
             let mut sum = Complex::new(0.0, 0.0);
             for m in 0..num_mics {
-                if k < stft_channels[m].len() && m < weights[k].len() {
-                    sum += weights[k][m].conj() * stft_channels[m][k];
+                if k < stft_channels[m].len() && m < self.weights_buf[k].len() {
+                    sum += self.weights_buf[k][m].conj() * stft_channels[m][k];
                 }
             }
             self.output_buf[k] = sum;
@@ -359,13 +355,13 @@ mod tests {
             vec![Complex::new(1.0, 0.0), Complex::new(0.5, 0.5)],
             vec![Complex::new(0.8, 0.2), Complex::new(0.3, -0.3)],
         ];
-        let weights = vec![
+        let mut bf = MvdrBeamformer::new(2, 2);
+        bf.weights_buf = vec![
             vec![Complex::new(0.5, 0.0), Complex::new(0.5, 0.0)],
             vec![Complex::new(0.5, 0.0), Complex::new(0.5, 0.0)],
         ];
 
-        let mut bf = MvdrBeamformer::new(2, 2);
-        let output = bf.apply_weights_into(&stft_channels, &weights);
+        let output = bf.apply_weights_into(&stft_channels);
         assert_eq!(output.len(), 2);
         for c in output {
             assert!(c.re.is_finite() && c.im.is_finite());

@@ -1,3 +1,11 @@
+# 0.5.3
+
+## Fixes
+
+- Documented the manual-mode shelf cascade as an intentional approximation: each low/high shelf is
+  implemented as two half-gain cascaded shelves for a steeper transition, so the corner-region
+  response is not an exact additive gain curve. Added regression coverage for the passband gain.
+
 # 0.5.2
 
 ## Fixes

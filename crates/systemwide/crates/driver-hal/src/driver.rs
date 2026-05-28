@@ -4,6 +4,12 @@
 //! [`HalInputReader`] and [`SharedAudioBuffer`] types.
 
 use driver_common::{AudioDriver, ConfigResult, DriverConfig, DriverStatus};
+use std::path::{Path, PathBuf};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::shared_memory::{
@@ -12,6 +18,7 @@ use crate::shared_memory::{
 
 const DAEMON_CONFIG_ACK_TIMEOUT: Duration = Duration::from_millis(750);
 const DAEMON_CONFIG_ACK_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const DAEMON_HEARTBEAT_INTERVAL: Duration = Duration::from_millis(500);
 
 /// macOS CoreAudio HAL driver.
 ///
@@ -25,6 +32,8 @@ pub struct HalDriver {
     /// owns its own `SharedAudioBuffer` internally.
     config_buffer: Option<SharedAudioBuffer>,
     driver_installed: bool,
+    heartbeat_stop: Option<Arc<AtomicBool>>,
+    heartbeat_thread: Option<JoinHandle<()>>,
 }
 
 impl HalDriver {
@@ -33,6 +42,8 @@ impl HalDriver {
             reader: None,
             config_buffer: None,
             driver_installed: false,
+            heartbeat_stop: None,
+            heartbeat_thread: None,
         }
     }
 
@@ -70,6 +81,72 @@ impl HalDriver {
                 _ => std::thread::sleep(DAEMON_CONFIG_ACK_POLL_INTERVAL),
             }
         }
+    }
+
+    fn start_engine_heartbeat(&mut self) {
+        if self.heartbeat_thread.is_some() {
+            return;
+        }
+
+        self.ensure_config_buffer();
+        let Some(path) = self
+            .config_buffer
+            .as_ref()
+            .map(|buf| buf.path().to_path_buf())
+        else {
+            return;
+        };
+
+        match spawn_engine_heartbeat(path, DAEMON_HEARTBEAT_INTERVAL) {
+            Ok((stop, handle)) => {
+                self.heartbeat_stop = Some(stop);
+                self.heartbeat_thread = Some(handle);
+            }
+            Err(e) => {
+                log::warn!("[HalDriver] Failed to start daemon heartbeat thread: {}", e);
+            }
+        }
+    }
+
+    fn stop_engine_heartbeat(&mut self) {
+        if let Some(stop) = self.heartbeat_stop.take() {
+            stop.store(true, Ordering::Release);
+        }
+
+        if let Some(handle) = self.heartbeat_thread.take() {
+            handle.thread().unpark();
+            if handle.join().is_err() {
+                log::warn!("[HalDriver] Daemon heartbeat thread panicked");
+            }
+        }
+    }
+}
+
+fn spawn_engine_heartbeat(
+    path: PathBuf,
+    interval: Duration,
+) -> std::io::Result<(Arc<AtomicBool>, JoinHandle<()>)> {
+    let stop = Arc::new(AtomicBool::new(false));
+    let thread_stop = Arc::clone(&stop);
+    let handle = std::thread::Builder::new()
+        .name("sotf-hal-heartbeat".to_string())
+        .spawn(move || run_engine_heartbeat(&path, interval, thread_stop))?;
+
+    Ok((stop, handle))
+}
+
+fn run_engine_heartbeat(path: &Path, interval: Duration, stop: Arc<AtomicBool>) {
+    let mut buffer = SharedAudioBuffer::open(path).ok();
+    while !stop.load(Ordering::Acquire) {
+        if buffer.is_none() {
+            buffer = SharedAudioBuffer::open(path).ok();
+        }
+
+        if let Some(ref buf) = buffer {
+            buf.refresh_daemon_heartbeat();
+        }
+
+        std::thread::park_timeout(interval);
     }
 }
 
@@ -127,6 +204,8 @@ impl AudioDriver for HalDriver {
     }
 
     fn shutdown(&mut self) {
+        self.stop_engine_heartbeat();
+
         // Clear engine_ready flag
         if let Some(ref buf) = self.config_buffer {
             buf.set_engine_ready(false);
@@ -299,10 +378,21 @@ impl AudioDriver for HalDriver {
         self.ensure_config_buffer();
         if let Some(ref buf) = self.config_buffer {
             buf.set_engine_ready(ready);
+            if ready {
+                self.start_engine_heartbeat();
+            } else {
+                self.stop_engine_heartbeat();
+            }
             log::info!("[HalDriver] engine_ready = {}", ready);
         } else {
             log::warn!("[HalDriver] Cannot set engine_ready: shared memory not available");
         }
+    }
+}
+
+impl Drop for HalDriver {
+    fn drop(&mut self) {
+        self.stop_engine_heartbeat();
     }
 }
 
@@ -382,6 +472,45 @@ mod tests {
     }
 
     #[test]
+    fn test_engine_ready_heartbeat_continues_while_idle() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
+            .expect("Failed to create shared memory");
+
+        let mut driver = HalDriver::new();
+        driver.config_buffer = Some(buffer);
+        driver.set_engine_ready(true);
+
+        let first = driver
+            .config_buffer
+            .as_ref()
+            .expect("Expected config buffer")
+            .header()
+            .daemon_heartbeat_ms
+            .load(Ordering::Acquire);
+        thread::sleep(DAEMON_HEARTBEAT_INTERVAL + Duration::from_millis(150));
+        let refreshed = driver
+            .config_buffer
+            .as_ref()
+            .expect("Expected config buffer")
+            .header()
+            .daemon_heartbeat_ms
+            .load(Ordering::Acquire);
+
+        assert!(refreshed > first);
+
+        driver.set_engine_ready(false);
+        let cleared = driver
+            .config_buffer
+            .as_ref()
+            .expect("Expected config buffer")
+            .header()
+            .daemon_heartbeat_ms
+            .load(Ordering::Acquire);
+        assert_eq!(cleared, 0);
+    }
+
+    #[test]
     fn test_request_config_writes_daemon_request_fields() {
         let temp_file = NamedTempFile::new().expect("Failed to create temp file");
         let buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
@@ -438,7 +567,10 @@ mod tests {
             .expect("Expected config buffer")
             .header();
         assert_eq!(header.requested_sample_rate.load(Ordering::Acquire), 44_100);
-        assert_eq!(header.requested_buffer_frames.load(Ordering::Acquire), 1_024);
+        assert_eq!(
+            header.requested_buffer_frames.load(Ordering::Acquire),
+            1_024
+        );
         assert_eq!(header.config_source.load(Ordering::Acquire), 2);
         assert_eq!(header.config_changed.load(Ordering::Acquire), 0);
         assert_eq!(header.config_status.load(Ordering::Acquire), 1);

@@ -20,6 +20,7 @@ pub mod database;
 pub mod federation_config;
 pub mod federation_scan;
 pub mod headphone_eq_types;
+pub mod lan_discovery;
 pub mod level_meter;
 pub mod library;
 pub mod library_scanner;
@@ -41,6 +42,8 @@ pub use autoeq as room_eq;
 pub mod library_stats;
 pub mod security;
 pub mod server;
+pub mod sotf_api_client;
+pub mod sotf_remote;
 pub mod ui_params;
 pub mod waveform_scanner;
 
@@ -63,6 +66,10 @@ pub use plugin_graph::{
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
 };
 pub use queue::{Queue, QueueItem};
+pub use sotf_remote::{
+    SotfRemoteAuthToken, SotfRemoteConnection, SotfRemoteConnectionInfo, SotfRemoteServer,
+    SotfRemoteServerStore, SotfRemoteSnapshot, SotfRemoteTransportCommand,
+};
 // Re-export plugins from engine
 pub use replay_gain_scanner::{
     AlbumGainPhase, ReplayGainMode, ReplayGainScanManager, ReplayGainScanner, ScanMessage,

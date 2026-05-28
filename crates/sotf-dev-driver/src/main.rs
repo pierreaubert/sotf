@@ -13,6 +13,7 @@
 //!   focus <screen-name>                   (sugar for SwitchTo<Screen>)
 //!   key <keystroke>                       (e.g. `cmd-shift-p`, `enter`, `a`)
 //!   click <selector>                      (selector must have been registered via dev_track(...))
+//!   export_room_eq_json [path]             Export completed RoomEQ DSP JSON
 //!   elements                              (list every tracked selector — debugging aid)
 //!
 //! `<duration>` accepts `Ns`, `Nms`, `Nm`. Bare numbers default to seconds.
@@ -134,6 +135,7 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         "focus" => verb_focus(rest, ctx),
         "key" => verb_key(rest, ctx),
         "click" => verb_click(rest, ctx),
+        "export_room_eq_json" | "export_roomeq_json" => verb_export_room_eq_json(rest, ctx),
         "elements" => verb_elements(ctx),
         other => bail!("unknown verb `{other}`"),
     }
@@ -203,8 +205,9 @@ fn verb_assert(rest: &str, ctx: &Ctx) -> Result<()> {
     let actual = verb_query(&cmp.path, ctx)?;
     if !cmp.matches(&actual) {
         bail!(
-            "assertion failed: {} == {} (got {})",
+            "assertion failed: {} {} {} (got {})",
             cmp.path,
+            cmp.op.as_str(),
             cmp.expected_text,
             actual
         );
@@ -236,9 +239,10 @@ fn verb_wait_until(rest: &str, ctx: &Ctx) -> Result<()> {
         sleep(Duration::from_millis(50));
     }
     bail!(
-        "wait_until timed out after {:?}: {} != {} (last seen: {})",
+        "wait_until timed out after {:?}: {} {} {} (last seen: {})",
         timeout,
         cmp.path,
+        cmp.op.as_str(),
         cmp.expected_text,
         last
     );
@@ -311,6 +315,34 @@ fn verb_elements(ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
+fn verb_export_room_eq_json(rest: &str, ctx: &Ctx) -> Result<()> {
+    let path = rest.trim();
+    let body = if path.is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::json!({ "path": path })
+    };
+    let resp = ctx
+        .client
+        .post(format!("{}/qa/room-eq/export-json", ctx.base))
+        .json(&body)
+        .send()?;
+    let status = resp.status();
+    let json: Value = resp.json().unwrap_or(Value::Null);
+    if !status.is_success() || !json.get("ok").and_then(Value::as_bool).unwrap_or(false) {
+        let err = json
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown error");
+        bail!("RoomEQ JSON export failed ({status}): {err}");
+    }
+    if ctx.verbose {
+        let value = json.get("value").cloned().unwrap_or(Value::Null);
+        println!("    -> {value}");
+    }
+    Ok(())
+}
+
 fn verb_focus(rest: &str, ctx: &Ctx) -> Result<()> {
     let target = rest.trim();
     if target.is_empty() {
@@ -341,10 +373,34 @@ fn verb_focus(rest: &str, ctx: &Ctx) -> Result<()> {
 
 struct Compare {
     path: String,
+    op: ComparisonOp,
     expected: ExpectedValue,
     expected_text: String,
     tolerance: Option<f64>,
     timeout: Option<Duration>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonOp {
+    Eq,
+    Ne,
+    Gt,
+    Ge,
+    Lt,
+    Le,
+}
+
+impl ComparisonOp {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Eq => "==",
+            Self::Ne => "!=",
+            Self::Gt => ">",
+            Self::Ge => ">=",
+            Self::Lt => "<",
+            Self::Le => "<=",
+        }
+    }
 }
 
 enum ExpectedValue {
@@ -356,18 +412,36 @@ enum ExpectedValue {
 
 impl Compare {
     fn matches(&self, actual: &Value) -> bool {
-        match (&self.expected, actual) {
-            (ExpectedValue::Bool(b), Value::Bool(a)) => a == b,
-            (ExpectedValue::Number(n), Value::Number(a)) => match a.as_f64() {
-                Some(av) => match self.tolerance {
-                    Some(t) => (av - n).abs() <= t,
-                    None => (av - n).abs() < f64::EPSILON,
-                },
+        match (&self.expected, actual, self.op) {
+            (ExpectedValue::Bool(b), Value::Bool(a), ComparisonOp::Eq) => a == b,
+            (ExpectedValue::Bool(b), Value::Bool(a), ComparisonOp::Ne) => a != b,
+            (ExpectedValue::Number(n), Value::Number(a), _) => match a.as_f64() {
+                Some(av) => self.matches_number(av, *n),
                 None => false,
             },
-            (ExpectedValue::String(s), Value::String(a)) => a == s,
-            (ExpectedValue::Null, Value::Null) => true,
+            (ExpectedValue::String(s), Value::String(a), ComparisonOp::Eq) => a == s,
+            (ExpectedValue::String(s), Value::String(a), ComparisonOp::Ne) => a != s,
+            (ExpectedValue::Null, Value::Null, ComparisonOp::Eq) => true,
+            (ExpectedValue::Null, Value::Null, ComparisonOp::Ne) => false,
+            (ExpectedValue::Null, _, ComparisonOp::Ne) => true,
             _ => false,
+        }
+    }
+
+    fn matches_number(&self, actual: f64, expected: f64) -> bool {
+        match self.op {
+            ComparisonOp::Eq => match self.tolerance {
+                Some(t) => (actual - expected).abs() <= t,
+                None => (actual - expected).abs() < f64::EPSILON,
+            },
+            ComparisonOp::Ne => match self.tolerance {
+                Some(t) => (actual - expected).abs() > t,
+                None => (actual - expected).abs() >= f64::EPSILON,
+            },
+            ComparisonOp::Gt => actual > expected,
+            ComparisonOp::Ge => actual >= expected,
+            ComparisonOp::Lt => actual < expected,
+            ComparisonOp::Le => actual <= expected,
         }
     }
 }
@@ -394,24 +468,39 @@ fn parse_compare(rest: &str) -> Result<Compare> {
         break;
     }
 
-    // Now `core` is `<path> == <literal>` with the tolerance/timeout
+    // Now `core` is `<path> <op> <literal>` with the tolerance/timeout
     // suffixes already stripped (see loop above). Splitting on `core`
     // — not the raw `rest` — ensures a literal that happens to contain
     // the substring `tolerance=` or `timeout=` survives intact.
-    let (path, lit_text) = core
-        .split_once("==")
-        .ok_or_else(|| anyhow!("missing `==` in comparison"))?;
+    let (path, op, lit_text) = split_comparison(&core)?;
     let path = path.trim().to_string();
     let lit_text = lit_text.trim();
     let expected = parse_literal(lit_text)?;
 
     Ok(Compare {
         path,
+        op,
         expected,
         expected_text: lit_text.to_string(),
         tolerance,
         timeout,
     })
+}
+
+fn split_comparison(core: &str) -> Result<(&str, ComparisonOp, &str)> {
+    for (needle, op) in [
+        (">=", ComparisonOp::Ge),
+        ("<=", ComparisonOp::Le),
+        ("!=", ComparisonOp::Ne),
+        ("==", ComparisonOp::Eq),
+        (">", ComparisonOp::Gt),
+        ("<", ComparisonOp::Lt),
+    ] {
+        if let Some((path, lit_text)) = core.split_once(needle) {
+            return Ok((path, op, lit_text));
+        }
+    }
+    Err(anyhow!("missing comparison operator"))
 }
 
 fn parse_literal(s: &str) -> Result<ExpectedValue> {
@@ -496,6 +585,54 @@ mod tests {
         assert!(cmp.matches(&json!(0.851)));
         assert!(cmp.matches(&json!(0.845)));
         assert!(!cmp.matches(&json!(0.9)));
+    }
+
+    #[test]
+    fn compare_number_ordering() {
+        assert!(
+            parse_compare("roomeq.filter_count > 0")
+                .unwrap()
+                .matches(&json!(8))
+        );
+        assert!(
+            parse_compare("roomeq.filter_count >= 8")
+                .unwrap()
+                .matches(&json!(8))
+        );
+        assert!(
+            parse_compare("roomeq.average_post_score < 35")
+                .unwrap()
+                .matches(&json!(26.5))
+        );
+        assert!(
+            parse_compare("roomeq.average_post_score <= 26.5")
+                .unwrap()
+                .matches(&json!(26.5))
+        );
+        assert!(
+            !parse_compare("roomeq.average_post_score < 20")
+                .unwrap()
+                .matches(&json!(26.5))
+        );
+    }
+
+    #[test]
+    fn compare_not_equal() {
+        assert!(
+            parse_compare("roomeq.error != null")
+                .unwrap()
+                .matches(&json!("boom"))
+        );
+        assert!(
+            !parse_compare("roomeq.error != null")
+                .unwrap()
+                .matches(&Value::Null)
+        );
+        assert!(
+            parse_compare("screen.focused != Library")
+                .unwrap()
+                .matches(&json!("RoomEq"))
+        );
     }
 
     #[test]

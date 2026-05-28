@@ -25,6 +25,8 @@ use std::sync::Arc;
 
 pub use sotf_host::lr4_crossover::CROSSOVER_PRESETS;
 
+const MAX_BLOCK_FRAMES: usize = 4096;
+
 fn default_true() -> bool {
     true
 }
@@ -1713,8 +1715,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         }
         self.update_lookahead_delay();
 
-        // Pre-allocate buffers for real-time safety
-        let max_frames = 4096; // Standard max block size
+        // Pre-allocate buffers for real-time safety.
+        let max_frames = MAX_BLOCK_FRAMES;
         let stride = max_frames * self.channels;
         self.band_buffers.resize(self.num_bands * stride, 0.0);
         self.dry_buffer.resize(max_frames * self.channels, 0.0);
@@ -1796,15 +1798,21 @@ impl InPlacePlugin for MultibandExpanderPlugin {
 
         enable_ftz_daz();
         let nf = context.num_frames;
+        if nf > MAX_BLOCK_FRAMES {
+            let mut processed = 0;
+            while processed < nf {
+                let chunk_frames = (nf - processed).min(MAX_BLOCK_FRAMES);
+                let sample_start = processed * self.channels;
+                let sample_end = sample_start + chunk_frames * self.channels;
+                let chunk_ctx = ProcessContext::new(context.sample_rate, chunk_frames);
+                self.process_in_place(&mut buffer[sample_start..sample_end], &chunk_ctx)?;
+                processed += chunk_frames;
+            }
+            return Ok(nf);
+        }
         let stride = nf * self.channels;
-
-        // Ensure buffers are large enough (usually a no-op due to initialize)
-        if self.dry_buffer.len() < buffer.len() {
-            self.dry_buffer.resize(buffer.len(), 0.0);
-        }
-        if self.band_buffers.len() < self.num_bands * stride {
-            self.band_buffers.resize(self.num_bands * stride, 0.0);
-        }
+        debug_assert!(self.dry_buffer.len() >= buffer.len());
+        debug_assert!(self.band_buffers.len() >= self.num_bands * stride);
 
         self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
 
@@ -2469,6 +2477,25 @@ mod tests {
         p.initialize(48000).unwrap();
         // fft_size = 1024, hop_size = 512 (50% overlap), latency = 512
         assert_eq!(p.latency_samples(), 512);
+    }
+
+    #[test]
+    fn test_time_domain_chunks_oversized_blocks_without_resizing() {
+        let mut p = MultibandExpanderPlugin::new(2);
+        p.initialize(48000).unwrap();
+        let dry_len = p.dry_buffer.len();
+        let band_len = p.band_buffers.len();
+
+        let frames = MAX_BLOCK_FRAMES + 1;
+        let mut buf = vec![0.0f32; frames * 2];
+        let processed = p
+            .process_in_place(&mut buf, &ProcessContext::new(48000, frames))
+            .unwrap();
+
+        assert_eq!(processed, frames);
+        assert_eq!(p.dry_buffer.len(), dry_len);
+        assert_eq!(p.band_buffers.len(), band_len);
+        assert!(buf.iter().all(|s| s.is_finite()));
     }
 
     /// Regression: measured auto-makeup tracker must not jitter on stereo material.

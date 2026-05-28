@@ -1,3 +1,10 @@
+# 0.5.23
+
+## Fixes
+
+- Removed the redundant post-shift zero-fill of STFT input-buffer tail samples. Those slots are
+  overwritten before becoming active input, so the fill only added unnecessary writes per hop.
+
 # 0.5.22
 
 ## Bug fixes (from code review)
@@ -69,4 +76,3 @@
 - Advanced threshold smoothing per STFT hop instead of jumping to the block-end value before the first hop in large blocks.
 - Marked FFT size as structural/setup because changing it rebuilds the STFT state.
 - Added regressions for buffer mismatch and mix=0 passthrough during latency fill.
-

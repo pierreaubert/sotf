@@ -1,19 +1,19 @@
-# sotf-types
+# sotf-types (lib: `sotf_types`)
 
 Shared configuration types for the SOTF audio system.
 
-## What It Does
+## Overview
 
 Provides lightweight, serializable types used across the SOTF workspace without pulling in audio processing dependencies (cpal, symphonia, rustfft). Any crate in the workspace can depend on `sotf-types` without bloating its dependency tree.
 
 ## Features
 
-- `EngineConfig` -- Complete audio engine configuration with JSON persistence and version migration
-- `PluginConfig` -- Plugin type + JSON parameters for the plugin chain
-- `PluginGraphConfig` -- DAG-based plugin routing configuration
-- `AudioSource` -- Audio source abstraction (file, URL, stream)
-- `SinkType` / `SinkConfig` -- Output sink configuration
-- `PlaybackState` / `AudioEngineState` -- Runtime state types
+- `EngineConfig` — Complete audio engine configuration with JSON persistence and version migration
+- `PluginConfig` — Plugin type + JSON parameters for the plugin chain
+- `PluginGraphConfig` — DAG-based plugin routing configuration
+- `AudioSource` — Audio source abstraction (file, URL, stream)
+- `SinkType` / `SinkConfig` — Output sink configuration
+- `PlaybackState` / `AudioEngineState` — Runtime state types
 
 ## Usage
 
@@ -42,19 +42,26 @@ config.save_to_file(&"config.json".into()).unwrap();
 ## Architecture
 
 ```
-audio_source.rs   -- AudioSource, ServiceId
-config.rs         -- EngineConfig (the central configuration type)
-plugin_config.rs  -- PluginConfig, PluginGraphConfig
-sink.rs           -- SinkConfig, SinkType, SinkOpenResult
-state.rs          -- AudioEngineState, AudioFrame, PlaybackState
+src/
+├── audio_source.rs   -- AudioSource, ServiceId
+├── config.rs         -- EngineConfig (the central configuration type)
+├── plugin_config.rs  -- PluginConfig, PluginGraphConfig
+├── sink.rs           -- SinkConfig, SinkType, SinkOpenResult
+└── state.rs          -- AudioEngineState, AudioFrame, PlaybackState
 ```
+
+## Dependencies
+
+- `serde` / `serde_json` — Serialization
+- `log` — Logging
 
 ## Testing
 
 ```bash
 cargo test -p sotf-types
+cargo check -p sotf-types && cargo clippy -p sotf-types
 ```
 
 ## License
 
-Part of the SOTF (Sound of the Future) project.
+See the root workspace `LICENSE` file.

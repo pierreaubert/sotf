@@ -703,7 +703,7 @@ fn test_room_eq_step_previous() {
 #[test]
 fn test_crossover_type_all() {
     let all = CrossoverType::all();
-    assert_eq!(all.len(), 5);
+    assert_eq!(all.len(), 6);
 }
 
 #[test]

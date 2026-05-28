@@ -664,12 +664,144 @@ TARGET_DIR="/Library/Audio/Plug-Ins/HAL"
 TARGET_BUNDLE="${TARGET_DIR}/SotFHAL.driver"
 EXECUTABLE="${TARGET_BUNDLE}/Contents/MacOS/SotFHAL"
 HELPER_NAME="Core-Audio-Driver-Service.helper"
+SYSTEMWIDE_BUNDLE_ID="org.spinorama.sotf-systemwide"
 LEGACY_BUNDLES=(
     "${TARGET_DIR}/SotFHAL.driver"
     "${TARGET_DIR}/sotf.driver"
     "${TARGET_DIR}/sotf_hal.driver"
     "${TARGET_DIR}/AutoEQ.driver"
 )
+
+daemon_is_running() {
+    /usr/bin/pgrep -x "sotf-daemon" >/dev/null 2>&1
+}
+
+wait_for_daemon_exit() {
+    local timeout="$1"
+    local elapsed=0
+
+    while daemon_is_running && [ "$elapsed" -lt "$timeout" ]; do
+        /bin/sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    ! daemon_is_running
+}
+
+console_user_and_uid() {
+    local console_user
+    local console_uid
+
+    console_user="$(/usr/bin/stat -f "%Su" /dev/console 2>/dev/null || true)"
+    if [ -n "$console_user" ] && [ "$console_user" != "root" ]; then
+        console_uid="$(/usr/bin/id -u "$console_user" 2>/dev/null || true)"
+        if [ -n "$console_uid" ]; then
+            printf '%s:%s\n' "$console_user" "$console_uid"
+        fi
+    fi
+}
+
+daemon_socket_candidates() {
+    local user_info
+    local console_user
+    local console_uid
+    local user_tmpdir
+
+    user_info="$(console_user_and_uid)"
+    if [ -n "$user_info" ]; then
+        console_user="${user_info%%:*}"
+        console_uid="${user_info##*:}"
+
+        user_tmpdir="$(/usr/bin/sudo -u "$console_user" /usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
+        if [ -n "$user_tmpdir" ]; then
+            printf '%s\n' "${user_tmpdir%/}/sotf-daemon.sock"
+        fi
+
+        printf '%s\n' "/tmp/sotf-${console_uid}/daemon.sock"
+    fi
+
+    printf '%s\n' "/tmp/autoeq_audio.sock"
+}
+
+send_daemon_shutdown() {
+    local socket_path="$1"
+
+    [ -S "$socket_path" ] || return 0
+
+    echo "Requesting sotf-daemon shutdown via $socket_path"
+
+    if [ -x /usr/bin/python3 ]; then
+        /usr/bin/python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(0.2); s.connect(sys.argv[1]); s.sendall(b"{\"command\":\"shutdown\"}\n"); s.close()' "$socket_path" >/dev/null 2>&1 && return 0
+    fi
+
+    if [ -x /usr/bin/nc ]; then
+        printf '{"command":"shutdown"}\n' | /usr/bin/nc -U -w 1 "$socket_path" >/dev/null 2>&1 || true
+    fi
+}
+
+cleanup_sotf_runtime_files() {
+    local user_info
+    local console_user
+    local console_uid
+    local user_tmpdir
+    local runtime_dir
+
+    user_info="$(console_user_and_uid)"
+    if [ -n "$user_info" ]; then
+        console_user="${user_info%%:*}"
+        console_uid="${user_info##*:}"
+        runtime_dir="/tmp/sotf-${console_uid}"
+
+        user_tmpdir="$(/usr/bin/sudo -u "$console_user" /usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
+        if [ -n "$user_tmpdir" ]; then
+            /bin/rm -f "${user_tmpdir%/}/sotf-daemon.sock"
+        fi
+
+        /bin/rm -f "${runtime_dir}/daemon.sock" "${runtime_dir}/audio.shm" "${runtime_dir}/session.key"
+    fi
+
+    /bin/rm -f "/tmp/autoeq_audio.sock"
+}
+
+quiesce_sotf_daemon() {
+    while IFS= read -r socket_path; do
+        send_daemon_shutdown "$socket_path"
+    done < <(daemon_socket_candidates)
+
+    wait_for_daemon_exit 2 && {
+        cleanup_sotf_runtime_files
+        return 0
+    }
+
+    echo "sotf-daemon still running; sending TERM"
+    sudo /usr/bin/pkill -TERM -x "sotf-daemon" >/dev/null 2>&1 || true
+    wait_for_daemon_exit 2 && {
+        cleanup_sotf_runtime_files
+        return 0
+    }
+
+    echo "sotf-daemon still running; sending KILL"
+    sudo /usr/bin/pkill -KILL -x "sotf-daemon" >/dev/null 2>&1 || true
+    cleanup_sotf_runtime_files
+}
+
+quit_systemwide_app() {
+    local user_info
+    local console_user
+
+    user_info="$(console_user_and_uid)"
+    if [ -n "$user_info" ]; then
+        console_user="${user_info%%:*}"
+        echo "Requesting SotF Systemwide app quit for user: $console_user"
+        /usr/bin/sudo -u "$console_user" /usr/bin/osascript -e "tell application id \"${SYSTEMWIDE_BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
+    fi
+
+    /usr/bin/pkill -TERM -x "sotf-systemwide" >/dev/null 2>&1 || true
+    /usr/bin/pkill -TERM -x "SotF Systemwide" >/dev/null 2>&1 || true
+    /usr/bin/pkill -TERM -x "SotF Toolbar" >/dev/null 2>&1 || true
+    /usr/bin/pkill -TERM -x "SotF ConfigBar" >/dev/null 2>&1 || true
+    /bin/sleep 1
+}
 
 restart_coreaudio() {
     echo "Restarting CoreAudio..."
@@ -710,6 +842,9 @@ fi
 
 # Create target directory if needed
 sudo /usr/bin/install -d -o root -g wheel -m 755 "${TARGET_DIR}"
+
+quit_systemwide_app
+quiesce_sotf_daemon
 
 sudo /usr/bin/killall "${HELPER_NAME}" 2>/dev/null || true
 for bundle in "${LEGACY_BUNDLES[@]}"; do
@@ -998,17 +1133,30 @@ wait_for_daemon_exit() {
     ! daemon_is_running
 }
 
-daemon_socket_candidates() {
+console_user_and_uid() {
     local console_user
     local console_uid
-    local user_tmpdir
 
     console_user="$(/usr/bin/stat -f "%Su" /dev/console 2>/dev/null || true)"
     if [ -n "$console_user" ] && [ "$console_user" != "root" ]; then
         console_uid="$(/usr/bin/id -u "$console_user" 2>/dev/null || true)"
+        if [ -n "$console_uid" ]; then
+            printf '%s:%s\n' "$console_user" "$console_uid"
+        fi
     fi
+}
 
-    if [ -n "$console_uid" ]; then
+daemon_socket_candidates() {
+    local user_info
+    local console_user
+    local console_uid
+    local user_tmpdir
+
+    user_info="$(console_user_and_uid)"
+    if [ -n "$user_info" ]; then
+        console_user="${user_info%%:*}"
+        console_uid="${user_info##*:}"
+
         # Matches the daemon's macOS $TMPDIR path, if it was launched from the GUI session.
         user_tmpdir="$(/usr/bin/sudo -u "$console_user" /usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
         if [ -n "$user_tmpdir" ]; then
@@ -1039,21 +1187,71 @@ send_daemon_shutdown() {
     fi
 }
 
+cleanup_sotf_runtime_files() {
+    local user_info
+    local console_user
+    local console_uid
+    local user_tmpdir
+    local runtime_dir
+
+    user_info="$(console_user_and_uid)"
+    if [ -n "$user_info" ]; then
+        console_user="${user_info%%:*}"
+        console_uid="${user_info##*:}"
+        runtime_dir="/tmp/sotf-${console_uid}"
+
+        user_tmpdir="$(/usr/bin/sudo -u "$console_user" /usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
+        if [ -n "$user_tmpdir" ]; then
+            /bin/rm -f "${user_tmpdir%/}/sotf-daemon.sock"
+        fi
+
+        /bin/rm -f "${runtime_dir}/daemon.sock" "${runtime_dir}/audio.shm" "${runtime_dir}/session.key"
+    fi
+
+    /bin/rm -f "/tmp/autoeq_audio.sock"
+}
+
 quiesce_sotf_daemon() {
     while IFS= read -r socket_path; do
         send_daemon_shutdown "$socket_path"
     done < <(daemon_socket_candidates)
 
-    wait_for_daemon_exit 2 && return 0
+    wait_for_daemon_exit 2 && {
+        cleanup_sotf_runtime_files
+        return 0
+    }
 
     echo "sotf-daemon still running; sending TERM"
     /usr/bin/pkill -TERM -x "sotf-daemon" >/dev/null 2>&1 || true
-    wait_for_daemon_exit 2 && return 0
+    wait_for_daemon_exit 2 && {
+        cleanup_sotf_runtime_files
+        return 0
+    }
 
     echo "sotf-daemon still running; sending KILL"
     /usr/bin/pkill -KILL -x "sotf-daemon" >/dev/null 2>&1 || true
+    cleanup_sotf_runtime_files
 }
 
+quit_systemwide_app() {
+    local user_info
+    local console_user
+
+    user_info="$(console_user_and_uid)"
+    if [ -n "$user_info" ]; then
+        console_user="${user_info%%:*}"
+        echo "Requesting SotF Systemwide app quit for user: $console_user"
+        /usr/bin/sudo -u "$console_user" /usr/bin/osascript -e 'tell application id "org.spinorama.sotf-systemwide" to quit' >/dev/null 2>&1 || true
+    fi
+
+    /usr/bin/pkill -TERM -x "sotf-systemwide" >/dev/null 2>&1 || true
+    /usr/bin/pkill -TERM -x "SotF Systemwide" >/dev/null 2>&1 || true
+    /usr/bin/pkill -TERM -x "SotF Toolbar" >/dev/null 2>&1 || true
+    /usr/bin/pkill -TERM -x "SotF ConfigBar" >/dev/null 2>&1 || true
+    /bin/sleep 1
+}
+
+quit_systemwide_app
 quiesce_sotf_daemon
 
 # Remove old menu bar app names so Systemwide replaces Toolbar/ConfigBar cleanly

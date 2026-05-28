@@ -1,0 +1,22 @@
+# GPUI Playlists screen — basic focus + playlist actions.
+#
+# Covers: SwitchToPlaylists, CreatePlaylist, RenamePlaylist, DeletePlaylist
+
+focus       playlists
+assert      screen.focused == "Playlists"
+
+# Create a new playlist (action opens a modal in GPUI).
+action      CreatePlaylist
+sleep       200ms
+
+# Rename the selected playlist.
+action      RenamePlaylist
+sleep       200ms
+
+# Delete the selected playlist.
+action      DeletePlaylist
+sleep       200ms
+
+# Return to library.
+focus       library
+assert      screen.focused == "Library"

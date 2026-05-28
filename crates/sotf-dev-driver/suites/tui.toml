@@ -1,0 +1,105 @@
+# TUI scenario suite
+# Run with:
+#   cargo build -p sotf-tui --features dev-api --bin sotf-tui
+#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/tui.toml -v
+
+[runner]
+app_bin = "target/debug/sotf-tui"
+app_args = []
+readiness_timeout = "10s"
+
+# ── Basic navigation & smoke ────────────────────────────────────────────────
+
+[[scenario]]
+name = "tui-smoke"
+path = "crates/sotf-dev-driver/scenarios/tui_smoke.scn"
+timeout = "30s"
+
+[[scenario]]
+name = "tui-library"
+path = "crates/sotf-dev-driver/scenarios/tui_library.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-queue"
+path = "crates/sotf-dev-driver/scenarios/tui_queue.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-transport"
+path = "crates/sotf-dev-driver/scenarios/tui_transport.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-search"
+path = "crates/sotf-dev-driver/scenarios/tui_search.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-level-meters"
+path = "crates/sotf-dev-driver/scenarios/tui_level_meters.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-devices"
+path = "crates/sotf-dev-driver/scenarios/tui_devices.scn"
+timeout = "10s"
+
+# ── Plugins & Playlists ─────────────────────────────────────────────────────
+
+[[scenario]]
+name = "tui-plugins"
+path = "crates/sotf-dev-driver/scenarios/tui_plugins.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-plugins-interactive"
+path = "crates/sotf-dev-driver/scenarios/tui_plugins_interactive.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-playlists"
+path = "crates/sotf-dev-driver/scenarios/tui_playlists.scn"
+timeout = "10s"
+
+# ── Configure sub-screens ───────────────────────────────────────────────────
+
+[[scenario]]
+name = "tui-configure"
+path = "crates/sotf-dev-driver/scenarios/tui_configure.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-configure-directories"
+path = "crates/sotf-dev-driver/scenarios/tui_configure_directories.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-configure-recording"
+path = "crates/sotf-dev-driver/scenarios/tui_configure_recording.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-configure-roomeq"
+path = "crates/sotf-dev-driver/scenarios/tui_configure_roomeq.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-configure-headphoneeq"
+path = "crates/sotf-dev-driver/scenarios/tui_configure_headphoneeq.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-configure-spinorama"
+path = "crates/sotf-dev-driver/scenarios/tui_configure_spinorama.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-configure-federation"
+path = "crates/sotf-dev-driver/scenarios/tui_configure_federation.scn"
+timeout = "10s"
+
+[[scenario]]
+name = "tui-configure-servers"
+path = "crates/sotf-dev-driver/scenarios/tui_configure_servers.scn"
+timeout = "10s"

@@ -3,8 +3,6 @@
 // ============================================================================
 
 use super::DenoiserPlugin;
-use rustfft::num_complex::Complex;
-
 impl DenoiserPlugin {
     /// Apply window and forward FFT for all channels
     /// Input: interleaved audio [L0, R0, L1, R1, ...]
@@ -43,14 +41,6 @@ impl DenoiserPlugin {
                 .process(&mut self.freq_domain[ch], &mut self.time_out_channels[ch])
                 .expect("FFT inverse failed");
         }
-    }
-
-    /// Calculate power spectrum for a channel
-    /// Returns |X(k)|^2 for each frequency bin
-    #[inline]
-    #[allow(dead_code)]
-    pub(super) fn calculate_power_spectrum(freq: &[Complex<f32>]) -> Vec<f32> {
-        freq.iter().map(|c| c.norm_sqr()).collect()
     }
 
     /// Get power spectrum for a specific channel (avoids allocation)

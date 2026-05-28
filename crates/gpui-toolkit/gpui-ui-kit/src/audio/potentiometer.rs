@@ -34,10 +34,14 @@ use gpui::*;
 /// current value angle. It is rendered as a filled annular sector using
 /// `PathBuilder`, sitting just outside the knob circle.
 struct KnobArcElement {
-    /// Total size of the container (matches knob_container)
-    container_size: f32,
-    /// Offset of the knob within the container
-    knob_offset: f32,
+    /// Width of the container (matches knob_container)
+    container_width: f32,
+    /// Height of the container (matches knob_container)
+    container_height: f32,
+    /// Horizontal offset of the knob within the container
+    knob_offset_x: f32,
+    /// Vertical offset of the knob within the container
+    knob_offset_y: f32,
     /// Knob diameter
     knob_size: f32,
     /// Normalized value [0, 1]
@@ -87,8 +91,8 @@ impl Element for KnobArcElement {
         let layout_id = window.request_layout(
             Style {
                 size: Size {
-                    width: px(self.container_size).into(),
-                    height: px(self.container_size).into(),
+                    width: px(self.container_width).into(),
+                    height: px(self.container_height).into(),
                 },
                 ..Default::default()
             },
@@ -122,8 +126,8 @@ impl Element for KnobArcElement {
         let origin_x = bounds.origin.x;
         let origin_y = bounds.origin.y;
 
-        let center_x = self.knob_offset + self.knob_size / 2.0;
-        let center_y = self.knob_offset + self.knob_size / 2.0;
+        let center_x = self.knob_offset_x + self.knob_size / 2.0;
+        let center_y = self.knob_offset_y + self.knob_size / 2.0;
 
         let start_rad = self.arc_start_rad;
         let end_rad = self.arc_end_rad;
@@ -942,18 +946,27 @@ impl RenderOnce for Potentiometer {
         // Number of minor ticks between each major tick
         let minor_ticks_between = 4;
 
-        // Knob graphic with ticks. Keep a generous gutter so quadrant-anchored
-        // tick labels stay inside the surrounding potentiometer frame.
-        let label_gutter = 44.0;
-        let container_size = knob_size + (label_gutter * 2.0);
-        let mut knob_container = div().w(px(container_size)).h(px(container_size)).relative();
-
-        // Add tick marks and labels around the knob
-        let knob_offset = label_gutter; // Offset to center the knob in the larger container
+        // Knob graphic with ticks. Horizontal labels still need room for the
+        // widest tick text, but the top/bottom gutter can be much tighter:
+        // just enough for the tick label's own line height plus a small gap.
+        let label_line_h = 10.0_f32;
+        let tick_label_pad = 1.5_f32;
         let tick_inner_radius = knob_size / 2.0; // Start at knob edge
         let major_tick_outer_radius = tick_inner_radius + 8.0; // Major ticks
         let minor_tick_outer_radius = tick_inner_radius + 5.0; // Minor ticks (shorter)
         let label_radius = major_tick_outer_radius + 8.0; // Labels outside ticks
+        let horizontal_label_gutter = 44.0;
+        let vertical_label_gutter = (label_radius - center + label_line_h + tick_label_pad).ceil();
+        let container_width = knob_size + (horizontal_label_gutter * 2.0);
+        let container_height = knob_size + (vertical_label_gutter * 2.0);
+        let mut knob_container = div()
+            .w(px(container_width))
+            .h(px(container_height))
+            .relative();
+
+        // Add tick marks and labels around the knob
+        let knob_offset_x = horizontal_label_gutter;
+        let knob_offset_y = vertical_label_gutter;
         let major_tick_width = 3.0; // Doubled from 1.5
         let minor_tick_width = 1.5; // Thinner for minor ticks
 
@@ -994,10 +1007,10 @@ impl RenderOnce for Potentiometer {
             };
 
             // Calculate tick line positions (inner and outer points)
-            let inner_x = knob_offset + center + tick_inner_radius * tick_angle.cos();
-            let inner_y = knob_offset + center + tick_inner_radius * tick_angle.sin();
-            let outer_x = knob_offset + center + tick_outer_radius * tick_angle.cos();
-            let outer_y = knob_offset + center + tick_outer_radius * tick_angle.sin();
+            let inner_x = knob_offset_x + center + tick_inner_radius * tick_angle.cos();
+            let inner_y = knob_offset_y + center + tick_inner_radius * tick_angle.sin();
+            let outer_x = knob_offset_x + center + tick_outer_radius * tick_angle.cos();
+            let outer_y = knob_offset_y + center + tick_outer_radius * tick_angle.sin();
 
             // Draw tick line using circles connected visually
             let tick_length = tick_outer_radius - tick_inner_radius;
@@ -1023,8 +1036,8 @@ impl RenderOnce for Potentiometer {
             if is_major {
                 // Convert normalized position to actual value using scale
                 let tick_value = scale.normalized_to_value(tick_normalized as f64, min, max);
-                let label_x = knob_offset + center + label_radius * tick_angle.cos();
-                let label_y = knob_offset + center + label_radius * tick_angle.sin();
+                let label_x = knob_offset_x + center + label_radius * tick_angle.cos();
+                let label_y = knob_offset_y + center + label_radius * tick_angle.sin();
 
                 // Format tick label
                 let unit = self.unit.as_ref();
@@ -1063,7 +1076,7 @@ impl RenderOnce for Potentiometer {
                 // here without entering paint, so the multiplier is tuned for
                 // the ~9px font used below.
                 let char_w = 5.4_f32;
-                let line_h = 10.0_f32;
+                let line_h = label_line_h;
                 let text_w = (label_text.len() as f32) * char_w;
 
                 // Anchor offsets: how far the label's top-left corner is
@@ -1072,7 +1085,7 @@ impl RenderOnce for Potentiometer {
                 let cos_a = tick_angle.cos();
                 let sin_a = tick_angle.sin();
                 let dead_zone = 0.30_f32; // |cos|/|sin| below this counts as "centered"
-                let pad = 1.5_f32; // gap between tick and label edge
+                let pad = tick_label_pad; // gap between tick and label edge
 
                 let dx = if cos_a > dead_zone {
                     pad // left edge of label hugs the tick
@@ -1113,8 +1126,10 @@ impl RenderOnce for Potentiometer {
         let track_arc_width = self.design_tokens.knob_arc_track_widths[size_idx].max(0.0);
         knob_container = knob_container.child(
             div().absolute().inset_0().child(KnobArcElement {
-                container_size,
-                knob_offset,
+                container_width,
+                container_height,
+                knob_offset_x,
+                knob_offset_y,
                 knob_size,
                 normalized,
                 arc_color,
@@ -1134,8 +1149,8 @@ impl RenderOnce for Potentiometer {
         let knob_border = self.design_tokens.knob_border_width;
         let mut knob = div()
             .absolute()
-            .left(px(knob_offset))
-            .top(px(knob_offset))
+            .left(px(knob_offset_x))
+            .top(px(knob_offset_y))
             .w(px(knob_size))
             .h(px(knob_size))
             .rounded_full()
@@ -1245,8 +1260,8 @@ impl RenderOnce for Potentiometer {
         // Position it at the same radius as the tick labels
         if !unit_str.is_empty() {
             let unit_angle = std::f32::consts::PI * 0.5; // 90° in screen coordinates (6 o'clock)
-            let unit_x = knob_offset + center + label_radius * unit_angle.cos();
-            let unit_y = knob_offset + center + label_radius * unit_angle.sin();
+            let unit_x = knob_offset_x + center + label_radius * unit_angle.cos();
+            let unit_y = knob_offset_y + center + label_radius * unit_angle.sin();
 
             // Calculate approximate centering offset based on typical unit string lengths
             // "%" is 1 char, "Hz" is 2 chars, "dB" is 2 chars

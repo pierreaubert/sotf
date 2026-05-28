@@ -1,0 +1,40 @@
+# TUI Plugins — add, toggle, move, remove.
+#
+# Covers: Plugins screen, AddPlugin mode, toggle, move up/down, remove.
+
+focus plugins
+assert screen.focused == "Plugins"
+assert input_mode == "Normal"
+
+query plugins.count
+
+# Enter add-plugin mode.
+key a
+sleep 100ms
+assert input_mode == "AddPlugin"
+
+# Navigate plugin list.
+key down
+sleep 50ms
+key up
+sleep 50ms
+
+# Cancel add.
+key esc
+sleep 100ms
+assert input_mode == "Normal"
+
+# If there is at least one plugin, exercise toggle / move / remove.
+# (These are no-ops when the plugin list is empty, which is safe.)
+key t
+sleep 50ms
+key u
+sleep 50ms
+key w
+sleep 50ms
+key d
+sleep 50ms
+
+# Return to library.
+focus library
+assert screen.focused == "Library"

@@ -145,6 +145,7 @@ pub(crate) fn plugin_description(plugin_type: &PluginType) -> &'static str {
         PluginType::TransientShaper => "Attack/sustain shaping (SPL Transient Designer)",
         PluginType::Saturation => "Harmonic saturation / exciter with multiple modes",
         PluginType::DynamicEq => "Frequency-selective dynamics (hybrid EQ + compressor)",
+        PluginType::FirDesigner => "FIR magnitude and phase designer",
         PluginType::LinearPhaseEq => "Parametric EQ with linear-phase FIR convolution",
         PluginType::SpectralCompressor => {
             "Per-bin FFT dynamics processor for surgical spectral compression"
@@ -232,6 +233,8 @@ impl PlayerView {
                                 let new_width = (drag.start_width - delta_x).max(60.0);
                                 state.app.output_meter_width = new_width;
                             }
+                            DividerType::PluginAutoConfig { .. }
+                            | DividerType::PluginAutoOutput { .. } => {}
                         }
                     });
                     cx.notify();
@@ -309,6 +312,11 @@ impl PlayerView {
                                 foreground: theme.text_muted,
                                 foreground_hover: theme.text_secondary,
                                 border: theme.border,
+                                tint: Rgba {
+                                    a: 0.42,
+                                    ..theme.accent
+                                },
+                                tint_hover: theme.accent,
                             };
                             let state = self.state.clone();
                             let is_collapsed = self.state.read(cx).app.rack_detail_collapsed;
@@ -2125,6 +2133,11 @@ impl PlayerView {
                         foreground: theme.text_muted,
                         foreground_hover: theme.text_secondary,
                         border: theme.border,
+                        tint: Rgba {
+                            a: 0.42,
+                            ..theme.accent
+                        },
+                        tint_hover: theme.accent,
                     };
 
                     let output_collapsed = state.app.output_meter_collapsed;
@@ -2136,6 +2149,13 @@ impl PlayerView {
                     } else {
                         state.app.output_meter_width.min(max_meter_width)
                     };
+                    let plugin_bg = state
+                        .app
+                        .plugin_state
+                        .rack_theme_state
+                        .resolved_id(selected_idx)
+                        .theme()
+                        .chassis_bg_top;
 
                     // Create state clones for divider callbacks
                     let state_for_output_toggle = self.state.clone();
@@ -2151,6 +2171,7 @@ impl PlayerView {
                                 .id("params-scroll")
                                 .flex_1()
                                 .overflow_y_scroll()
+                                .bg(plugin_bg)
                                 .p(d.card)
                                 .child({
                                     // Get plugin-specific real-time data based on plugin type

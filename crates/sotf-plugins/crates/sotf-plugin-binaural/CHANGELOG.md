@@ -1,3 +1,11 @@
+# 0.5.19
+
+## Fixes (from code review 2026-05-11)
+
+- **AL11 (advisory)**: `BinauralDecoderPlugin::new` now rejects non-power-of-two
+  `fft_size` values before constructing FFT buffers, matching the output-accumulator
+  mask assumptions. Regression: `test_constructor_rejects_non_power_of_two_fft_size`.
+
 # 0.5.18
 
 ## Fixes (from code review 2026-05-11)
@@ -65,7 +73,6 @@
 - **AL8**: LFE circular convolution. Deferred (advisory; negligible at fft_size≥512).
 - **AL9**: HRTF normalization overly conservative. Deferred.
 - **AL10**: Runtime exposure of `diffuse_field_eq` / LFE params. Deferred.
-- **AL11**: `fft_size` not validated as power of 2. Deferred (advisory).
 - **P3**: Cache-unfriendly delay-line access pattern. Deferred.
 - **P4–P6**: Per-hop copy_within, ir_to_freq allocations, rebuild_cached_parameters
   allocations. Deferred (minor, not real-time critical in practice).

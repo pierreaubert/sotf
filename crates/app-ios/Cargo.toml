@@ -7,7 +7,7 @@ description = "iOS app shell for SOTF music player"
 
 [lib]
 name = "sotf_ios"
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 gpui = { workspace = true }

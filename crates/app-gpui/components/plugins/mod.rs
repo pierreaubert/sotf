@@ -17,15 +17,13 @@ pub mod theme;
 pub mod ticks;
 
 mod ui_ab_compare;
-mod ui_compressor;
 mod ui_controller_view;
 mod ui_downmix;
+mod ui_dynamic_eq;
 pub mod ui_eq;
 mod ui_gain;
-mod ui_gate;
 mod ui_graph;
 pub mod ui_layout_renderer;
-mod ui_limiter;
 mod ui_loudness;
 mod ui_matrix;
 mod ui_mb_compressor;
@@ -48,13 +46,11 @@ pub use sotf_audio_player_midi::mapping::MidiOverlay;
 pub use theme::*;
 pub use ticks::{ScaleType, TickConfig, render_tick_row};
 
-pub use ui_compressor::render_compressor_plugin;
 pub use ui_controller_view::render_controller_view;
 pub use ui_downmix::render_downmix_plugin;
+pub use ui_dynamic_eq::render_dynamic_eq_plugin;
 pub use ui_eq::render_eq_plugin;
 pub use ui_gain::render_gain_plugin;
-pub use ui_gate::render_gate_plugin;
-pub use ui_limiter::render_limiter_plugin;
 pub use ui_loudness::render_loudness_monitor_plugin;
 pub use ui_matrix::render_matrix_plugin;
 pub use ui_mb_compressor::render_mb_compressor_plugin;
@@ -105,6 +101,8 @@ pub fn render_plugin_content(
         .get(&plugin_idx)
         .copied()
         .unwrap_or(0);
+    let auto_config_width = state.app.plugin_auto_config_width.get(&plugin_idx).copied();
+    let auto_output_width = state.app.plugin_auto_output_width.get(&plugin_idx).copied();
 
     // Resolve the active plugin chassis theme — cascade of rack default
     // and per-plugin override. Bound here so `&plugin_theme` references in
@@ -149,11 +147,12 @@ pub fn render_plugin_content(
     let registry = GpuiViewRegistry::new();
     let type_key = custom_view_registry::plugin_type_key(settings);
 
-    if let Some(render_fn) = registry.get(type_key) {
+    let content = if let Some(render_fn) = registry.get(type_key) {
         let ctx = CustomViewRenderContext {
             entity: entity.clone(),
             plugin_idx,
             settings,
+            available_width,
             is_editing,
             selected_param,
             selected_band_idx,
@@ -166,11 +165,9 @@ pub fn render_plugin_content(
             plugin_graph,
             midi_overlay,
         };
-        return render_fn(&ctx, cx);
-    }
-
-    // Fallback: generic layout renderer for plugins with PluginLayout definitions
-    if settings.layout().is_some() {
+        render_fn(&ctx, cx)
+    } else if settings.layout().is_some() {
+        // Fallback: generic layout renderer for plugins with PluginLayout definitions.
         let d = Ds::from_cx(cx);
         // Snapshot live audio data for plugins whose layout opts into the
         // spatial-spider visualization. The renderer ignores this when the
@@ -184,7 +181,7 @@ pub fn render_plugin_content(
                 },
             )
         };
-        return ui_layout_renderer::render_from_layout(
+        ui_layout_renderer::render_from_layout(
             &d,
             entity.clone(),
             plugin_idx,
@@ -194,12 +191,19 @@ pub fn render_plugin_content(
             auto_tab,
             plugin_data.as_ref(),
             available_width,
+            auto_config_width,
+            auto_output_width,
             theme,
             &plugin_theme,
             spider_snapshot,
-        );
-    }
+        )
+    } else {
+        gpui::div().into_any_element()
+    };
 
-    // Plugin has neither a custom view nor a layout — render empty placeholder
-    gpui::div().into_any_element()
+    gpui::div()
+        .size_full()
+        .bg(chassis_theme.background)
+        .child(content)
+        .into_any_element()
 }

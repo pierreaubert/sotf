@@ -138,12 +138,8 @@ impl MidiRegion {
     }
 
     /// Iterate over events in the timeline range without allocating.
-    pub fn for_each_event_in_timeline_range<F>(
-        &self,
-        timeline_start: u64,
-        length: u64,
-        mut f: F,
-    ) where
+    pub fn for_each_event_in_timeline_range<F>(&self, timeline_start: u64, length: u64, mut f: F)
+    where
         F: FnMut(u64, &MidiMessage),
     {
         let clip_start = timeline_start.saturating_sub(self.position_samples);

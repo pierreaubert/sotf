@@ -199,7 +199,10 @@ mod tests {
         assert_eq!(device.location, "http://192.168.1.1:8080/desc.xml");
         assert_ne!(device.location, "http");
         // ST is also colon-rich — make sure it round-trips too.
-        assert_eq!(device.device_type, "urn:schemas-upnp-org:device:MediaRenderer:1");
+        assert_eq!(
+            device.device_type,
+            "urn:schemas-upnp-org:device:MediaRenderer:1"
+        );
     }
 
     #[test]

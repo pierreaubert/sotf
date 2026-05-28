@@ -17,6 +17,24 @@ fn disabled_is_transparent() {
     assert_eq!(buffer, input);
 }
 
+#[test]
+fn disabled_still_validates_buffer_size() {
+    let mut plugin = HissReducerPlugin::new(2);
+    plugin
+        .set_parameter("enabled".into(), ParameterValue::Bool(false))
+        .expect("set enabled");
+
+    let context = ProcessContext::new(48000, 2);
+    let mut buffer = vec![0.0; 3];
+    let err = plugin
+        .process_in_place(&mut buffer, &context)
+        .expect_err("disabled plugin must still reject malformed host buffers");
+    assert!(
+        err.contains("Buffer size mismatch"),
+        "unexpected error message: {err}"
+    );
+}
+
 /// Bug fix: low_latency was a dead parameter (the underlying HissReducer is a
 /// simple IIR filter, not FFT-based, so the concept does not apply).
 /// After the fix, `low_latency` must no longer appear in the parameter list.

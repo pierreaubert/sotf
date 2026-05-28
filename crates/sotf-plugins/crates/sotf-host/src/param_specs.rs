@@ -770,6 +770,7 @@ pub mod spectrum {
             &["None", "3dB/oct", "6dB/oct", "Pink"],
             "General",
         )
+        .structural()
         .setup()
         .doc("Slope compensation for display"),
         ParamSpec::choice(
@@ -779,6 +780,7 @@ pub mod spectrum {
             &["Standard", "1kHz", "2kHz", "Min Freq"],
             "General",
         )
+        .structural()
         .setup()
         .doc("Reference frequency for tilt"),
     ];

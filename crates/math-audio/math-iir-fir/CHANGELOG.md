@@ -1,38 +1,44 @@
-# 0.5.12
+# Changelog
 
-- Added support for linear phase crossover
+All notable changes to this project will be documented in this file.
 
-# 0.5.11
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Bug fixes
+## [Unreleased]
 
+## [0.5.13] - 2025-05-13
+
+### Changed
+- Optimised initialization of parameters.
+
+## [0.5.12] - 2025-05-13
+
+### Added
+- Added support for linear phase crossover.
+- Exposed `DEFAULT_FIR_CROSSOVER_TAPS` plus lowpass/highpass coefficient
+  accessors on `FirCrossover`.
+- Added Warped Linear Predictive Coding (LPC).
+- Added Kautz filters.
+
+### Fixed
 - `warped_biquad`: `compute_implicit_consts` now uses a type-aware threshold
-  (`T::epsilon() * 1000 * coeff_scale`) instead of a hard-coded `1e-15`.
-  The fallback preserves sign and clamps magnitude, preventing huge
-  `inv_denom` values for small denominators in `f32` (#3).
+  (`T::epsilon() * 1000 * coeff_scale`) instead of a hard-coded `1e-15`,
+  preventing huge `inv_denom` values for small denominators in `f32` (#3).
 - `kautz`: `optimize_gains` now solves the regularized least-squares problem
   via QR on the augmented system instead of normal equations + Cholesky.
-  This avoids squaring the condition number for ill-conditioned basis sets
-  (closely-spaced poles).  Regularization strength increased from `1e-6` to
-  `1e-4` to keep gains bounded (#4).
-- `filtfilt`: default padding multiplier increased from `3` to `6` for better
-  edge handling with narrow high-order filters on short signals.  Added
+  Regularization strength increased from `1e-6` to `1e-4` (#4).
+- `filtfilt`: default padding multiplier increased from `3` to `6`. Added
   `filtfilt_with_padlen` for explicit padding control (#8).
 
-## Added
+## [0.5.10] - 2025-05-13
 
-- Exposed `DEFAULT_FIR_CROSSOVER_TAPS` plus lowpass/highpass coefficient
-  accessors on `FirCrossover`, so callers can model/export the same
-  linear-phase crossover response used by the realtime splitter.
-- Warped Linear Predictive Coding (LPC)
-- Kautz filters
+### Added
+- Added missing LR8 crossovers.
+- Added ZDF (Zero-Delay Feedback) state variable filter.
 
-# 0.5.10
+## [0.5.9] - 2025-05-13
 
-- added missing LR8 crossvers
-- added ZDF: Zero-Delay Feeback state variable
-
-# 0.5.9
-
-- added BiquadBank (can pack 2 or 4 operations in 1 clock depending on the hardware)
-- added PeakMatched filters (Vicanek matched analog response)
+### Added
+- Added `BiquadBank` (can pack 2 or 4 operations in 1 clock depending on hardware).
+- Added PeakMatched filters (Vicanek matched analog response).

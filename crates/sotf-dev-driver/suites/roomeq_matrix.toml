@@ -1,0 +1,317 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1440x900"
+
+[[scenario]]
+name = "roomeq-d3v-nearfield-flat-iir-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "nearfield", "flat", "iir", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-nearfield-flat-iir-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "nearfield", "flat", "iir", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-nearfield-flat-mixedphase-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "nearfield", "flat", "mixedphase", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "NearField"
+loss = "Flat"
+processing = "MixedPhase"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-nearfield-flat-mixedphase-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "nearfield", "flat", "mixedphase", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "NearField"
+loss = "Flat"
+processing = "MixedPhase"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-nearfield-epa-iir-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "nearfield", "epa", "iir", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "NearField"
+loss = "Epa"
+processing = "Iir"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-nearfield-epa-iir-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "nearfield", "epa", "iir", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "NearField"
+loss = "Epa"
+processing = "Iir"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-nearfield-epa-mixedphase-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "nearfield", "epa", "mixedphase", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "NearField"
+loss = "Epa"
+processing = "MixedPhase"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-nearfield-epa-mixedphase-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "nearfield", "epa", "mixedphase", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "NearField"
+loss = "Epa"
+processing = "MixedPhase"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-midfield-flat-iir-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "midfield", "flat", "iir", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "MidField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-midfield-flat-iir-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "midfield", "flat", "iir", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "MidField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-midfield-flat-mixedphase-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "midfield", "flat", "mixedphase", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "MidField"
+loss = "Flat"
+processing = "MixedPhase"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-midfield-flat-mixedphase-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "midfield", "flat", "mixedphase", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "MidField"
+loss = "Flat"
+processing = "MixedPhase"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-midfield-epa-iir-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "midfield", "epa", "iir", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "MidField"
+loss = "Epa"
+processing = "Iir"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-midfield-epa-iir-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "midfield", "epa", "iir", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "MidField"
+loss = "Epa"
+processing = "Iir"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-midfield-epa-mixedphase-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "midfield", "epa", "mixedphase", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "MidField"
+loss = "Epa"
+processing = "MixedPhase"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-midfield-epa-mixedphase-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "midfield", "epa", "mixedphase", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "MidField"
+loss = "Epa"
+processing = "MixedPhase"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-farfield-flat-iir-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "farfield", "flat", "iir", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "FarField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-farfield-flat-iir-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "farfield", "flat", "iir", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "FarField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-farfield-flat-mixedphase-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "farfield", "flat", "mixedphase", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "FarField"
+loss = "Flat"
+processing = "MixedPhase"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-farfield-flat-mixedphase-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "farfield", "flat", "mixedphase", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "FarField"
+loss = "Flat"
+processing = "MixedPhase"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-farfield-epa-iir-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "farfield", "epa", "iir", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "FarField"
+loss = "Epa"
+processing = "Iir"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-farfield-epa-iir-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "farfield", "epa", "iir", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "FarField"
+loss = "Epa"
+processing = "Iir"
+crossover = "Lr48"
+
+[[scenario]]
+name = "roomeq-d3v-farfield-epa-mixedphase-lr24"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "farfield", "epa", "mixedphase", "lr24"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "FarField"
+loss = "Epa"
+processing = "MixedPhase"
+crossover = "Lr24"
+
+[[scenario]]
+name = "roomeq-d3v-farfield-epa-mixedphase-lr48"
+path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
+timeout = "150s"
+tags = ["roomeq", "autoeq", "fixtures", "farfield", "epa", "mixedphase", "lr48"]
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "FarField"
+loss = "Epa"
+processing = "MixedPhase"
+crossover = "Lr48"

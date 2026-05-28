@@ -70,6 +70,38 @@ fn test_loudness_monitor_keeps_32_channel_peak_slots() {
 }
 
 #[test]
+fn test_loudness_monitor_spatial_matrix_is_opt_in_and_survives_initialize() {
+    let num_frames = 4096;
+    let mut input = vec![0.0_f32; num_frames * 2];
+    for i in 0..num_frames {
+        let t = i as f32 / 48_000.0;
+        input[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.2;
+        input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.2;
+    }
+
+    let context = ProcessContext::new(48_000, num_frames);
+    let mut output = vec![0.0_f32; input.len()];
+
+    let mut disabled = LoudnessMonitorPlugin::new(2).unwrap();
+    disabled.initialize(48_000).unwrap();
+    disabled.process(&input, &mut output, &context).unwrap();
+    let disabled_data = disabled.get_data().unwrap();
+    let disabled_loudness = disabled_data.downcast_ref::<LoudnessData>().unwrap();
+    assert!(disabled_loudness.correlation_matrix.is_empty());
+    assert_eq!(disabled_loudness.correlation_samples_seen, 0);
+
+    let mut enabled = LoudnessMonitorPlugin::new(2).unwrap().with_spatial();
+    enabled.initialize(48_000).unwrap();
+    enabled.process(&input, &mut output, &context).unwrap();
+    let enabled_data = enabled.get_data().unwrap();
+    let enabled_loudness = enabled_data.downcast_ref::<LoudnessData>().unwrap();
+    assert_eq!(enabled_loudness.correlation_matrix.len(), 4);
+    assert!(enabled_loudness.correlation_samples_seen >= num_frames as u64);
+    assert!(enabled_loudness.correlation_matrix[0] > 0.99);
+    assert!(enabled_loudness.correlation_matrix[3] > 0.99);
+}
+
+#[test]
 fn test_spectrum_analyzer_stereo() {
     // Create a spectrum analyzer for stereo audio
     let config = SpectrumConfig {

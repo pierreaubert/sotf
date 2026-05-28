@@ -42,10 +42,6 @@ impl PluginInfo {
 }
 
 /// A raw MIDI message scheduled within a processing block.
-///
-/// `data[..len]` stores the MIDI bytes. Short channel messages fit in the
-/// inline 3-byte storage; larger messages should be transported by a future
-/// external SysEx/event arena rather than allocated in the audio thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MidiMessage {
     /// Inline MIDI bytes.
@@ -156,7 +152,7 @@ pub struct TransportInfo {
     pub bpm: f64,
     /// Current time signature.
     pub time_signature: TimeSignature,
-    /// Pulses/quarters position at the start of the block.
+    /// Pulses/quarter position at the start of the block.
     pub ppq_position: f64,
     /// Active loop range, if any.
     pub loop_range: Option<LoopRange>,
@@ -291,6 +287,17 @@ pub type PluginResult<T> = Result<T, String>;
 /// allowing for flexible channel configuration (e.g., stereo to mono,
 /// mono to stereo, surround processing, etc.).
 pub trait Plugin: Send {
+    /// Optional typed access for control-thread integrations that need to
+    /// discover a concrete plugin wrapper behind `Box<dyn Plugin>`.
+    fn as_any(&self) -> Option<&dyn Any> {
+        None
+    }
+
+    /// Optional mutable typed access for control-thread integrations.
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
+        None
+    }
+
     /// Get plugin information
     fn info(&self) -> PluginInfo;
 

@@ -901,7 +901,6 @@ impl InPlacePlugin for SpectralCompressorPlugin {
                 let overlap = fft_size - hop_size;
                 for ch in 0..channels {
                     self.stft.input_buffers[ch].copy_within(hop_size..fft_size, 0);
-                    self.stft.input_buffers[ch][overlap..].fill(0.0);
                 }
                 self.stft.input_fill = overlap;
             }

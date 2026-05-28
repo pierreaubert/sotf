@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
-use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz, flush_denormals_inplace};
+use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::path::Path;
@@ -179,7 +179,7 @@ impl ConvolutionPlugin {
             }
             3 => self.use_nupc = value > 0.5,
             4 => self.zero_latency_head = value > 0.5,
-            5 => self.head_taps = value as usize,
+            5 => self.head_taps = value.clamp(CV[5].min_f64(), CV[5].max_f64()) as usize,
             _ => {}
         }
     }
@@ -301,7 +301,7 @@ impl ConvolutionPlugin {
             fdl_flat: vec![Complex::new(0.0, 0.0); num_partitions * channels * FFT_SIZE],
             fdl_head: 0,
             fft_scratch: vec![Complex::new(0.0, 0.0); fft_scratch_len],
-            rayon_accum_pool: (0..rayon::current_num_threads().max(1))
+            rayon_accum_pool: (0..rayon::current_num_threads().min(num_partitions).max(1))
                 .map(|_| vec![Complex::new(0.0, 0.0); FFT_SIZE])
                 .collect(),
             ir_file: path.to_string(),
@@ -482,22 +482,26 @@ impl ConvolutionPlugin {
         let mut output_channels: Vec<Vec<f32>> =
             vec![Vec::with_capacity(estimated_output_len); num_channels];
 
+        let max_input_frames = resampler.input_frames_max();
+        let max_output_frames = resampler.output_frames_max();
+        let mut input_chunk = vec![vec![0.0_f32; max_input_frames]; num_channels];
+        let mut output_chunk = vec![vec![0.0_f32; max_output_frames]; num_channels];
+
         let mut pos = 0;
         while pos < source_len {
             let input_frames_needed = resampler.input_frames_next();
             let output_frames = resampler.output_frames_next();
 
-            // Prepare input chunks - pad with zeros if we're at the end
-            let input_chunk: Vec<Vec<f32>> = (0..num_channels)
-                .map(|ch| {
-                    let end = (pos + input_frames_needed).min(source_len);
-                    let mut chunk = ir_samples[ch][pos..end].to_vec();
-                    chunk.resize(input_frames_needed, 0.0);
-                    chunk
-                })
-                .collect();
-
-            let mut output_chunk: Vec<Vec<f32>> = vec![vec![0.0; output_frames]; num_channels];
+            // Prepare input chunks in reusable buffers, padding the final chunk
+            // with zeros without allocating a fresh Vec per channel.
+            let end = (pos + input_frames_needed).min(source_len);
+            for ch in 0..num_channels {
+                let chunk = &mut input_chunk[ch][..input_frames_needed];
+                chunk.fill(0.0);
+                let copy_len = end.saturating_sub(pos);
+                chunk[..copy_len].copy_from_slice(&ir_samples[ch][pos..end]);
+                output_chunk[ch][..output_frames].fill(0.0);
+            }
 
             let input_adapter =
                 SequentialSliceOfVecs::new(&input_chunk, num_channels, input_frames_needed)
@@ -676,8 +680,7 @@ impl InPlacePlugin for ConvolutionPlugin {
         enable_ftz_daz();
 
         let nf = context.num_frames;
-        let total_samples =
-            validate_interleaved_in_place("Convolution", nf, self.channels, buffer.len())?;
+        validate_interleaved_in_place("Convolution", nf, self.channels, buffer.len())?;
 
         // Check for asynchronously-loaded IR results and swap them in.
         if let Some(ref rx) = self.ir_load_result_rx
@@ -806,7 +809,7 @@ impl InPlacePlugin for ConvolutionPlugin {
                     let ir_ch = if state.ir_channels == 1 {
                         0
                     } else {
-                        ch.min(state.ir_channels - 1)
+                        ch % state.ir_channels
                     };
 
                     if num_partitions >= 8 {
@@ -822,6 +825,9 @@ impl InPlacePlugin for ConvolutionPlugin {
                                 .collect();
                         }
                         let pool = &mut self.rayon_accum_pool;
+                        if pool.len() > num_partitions {
+                            pool.truncate(num_partitions);
+                        }
                         for acc in pool.iter_mut() {
                             acc.fill(Complex::new(0.0, 0.0));
                         }
@@ -895,7 +901,6 @@ impl InPlacePlugin for ConvolutionPlugin {
                 self.input_fill = 0;
             }
         }
-        flush_denormals_inplace(&mut buffer[..total_samples]);
         Ok(nf)
     }
 
@@ -1374,6 +1379,39 @@ mod tests {
     }
 
     #[test]
+    fn test_from_params_loads_nupc_engine_from_ir_file() {
+        let path = std::env::temp_dir().join(format!(
+            "sotf-convolution-ir-{}-{}.wav",
+            std::process::id(),
+            "nupc"
+        ));
+        write_test_wav(&path, &[32767, 0, 0, 0], 48000);
+
+        let params = ConvolutionPluginParams {
+            ir_file: path.to_string_lossy().into_owned(),
+            mix: 1.0,
+            gain_db: 0.0,
+            use_nupc: true,
+            zero_latency_head: false,
+            head_taps: 128,
+        };
+
+        let mut plugin = ConvolutionPlugin::from_params(1, 48000, params).unwrap();
+        assert_eq!(
+            plugin.nupc_engines.len(),
+            1,
+            "from_params with use_nupc=true should build NUPC engines from the IR file"
+        );
+
+        let mut buffer = vec![1.0_f32; 64];
+        let ctx = ProcessContext::new(48000, 64);
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+        assert!(buffer.iter().all(|sample| sample.is_finite()));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
     fn test_ir_file_parameter_reports_load_errors() {
         let mut plugin = ConvolutionPlugin::new(1, 48000);
         let err = plugin
@@ -1503,6 +1541,68 @@ mod tests {
         assert!(
             (ratio - 1.0).abs() < 0.05,
             "partial-block energy ratio should be ~1.0, got {ratio} (in={input_energy}, out={output_energy})"
+        );
+    }
+
+    #[test]
+    fn test_upc_ir_channel_mapping_cycles_stereo_ir() {
+        let channels = 4;
+        let sr = 48000;
+        let ir = vec![vec![0.25f32], vec![0.75f32]];
+
+        let mut plugin = make_plugin_with_ir(channels, sr, ir);
+        plugin.use_nupc = false;
+        plugin.mix_value = 1.0;
+        plugin.mix.set_target(1.0);
+        plugin.mix.reset(1.0);
+        plugin.gain_linear.set_target(1.0);
+        plugin.gain_linear.reset(1.0);
+
+        let mut buffer = vec![1.0f32; PARTITION_SIZE * 2 * channels];
+        for block_start in (0..PARTITION_SIZE * 2).step_by(PARTITION_SIZE) {
+            let ctx = ProcessContext::new(sr, PARTITION_SIZE);
+            let start = block_start * channels;
+            let end = start + PARTITION_SIZE * channels;
+            plugin
+                .process_in_place(&mut buffer[start..end], &ctx)
+                .unwrap();
+        }
+
+        let first_output = PARTITION_SIZE * channels;
+        let expected = [0.25, 0.75, 0.25, 0.75];
+        for (ch, expected_gain) in expected.iter().enumerate() {
+            let got = buffer[first_output + ch];
+            assert!(
+                (got - expected_gain).abs() < 1e-4,
+                "UPC IR channel {ch} should cycle stereo IR channels, got {got}, expected {expected_gain}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_tiny_but_normal_output_is_not_threshold_flushed() {
+        let channels = 1;
+        let sr = 48000;
+        let tiny = 1.0e-35_f32;
+
+        let mut plugin = make_plugin_with_ir(channels, sr, vec![vec![1.0f32]]);
+        plugin.mix_value = 0.0;
+        plugin.mix.set_target(0.0);
+        plugin.mix.reset(0.0);
+
+        let mut buffer = vec![0.0f32; PARTITION_SIZE * 2];
+        buffer[..PARTITION_SIZE].fill(tiny);
+
+        for block_start in (0..PARTITION_SIZE * 2).step_by(PARTITION_SIZE) {
+            let ctx = ProcessContext::new(sr, PARTITION_SIZE);
+            plugin
+                .process_in_place(&mut buffer[block_start..block_start + PARTITION_SIZE], &ctx)
+                .unwrap();
+        }
+
+        assert_eq!(
+            buffer[PARTITION_SIZE], tiny,
+            "values below the old 1e-30 cleanup threshold but above f32 denormal range should survive"
         );
     }
 

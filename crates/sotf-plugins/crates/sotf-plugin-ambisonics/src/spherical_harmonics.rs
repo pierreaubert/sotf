@@ -59,16 +59,15 @@ pub fn spherical_harmonic(l: i32, m: i32, azimuth: f64, elevation: f64) -> f64 {
     }
 }
 
-/// Compute all spherical harmonics up to `order` for a given direction.
-/// Returns a vector of length `(order+1)²` in ACN order.
-pub fn spherical_harmonics_vector(order: usize, azimuth: f64, elevation: f64) -> Vec<f64> {
+/// Compute all spherical harmonics up to `order` for a given direction into `out`.
+/// `out` must be length `(order+1)²` (ACN order).
+pub fn spherical_harmonics_vector(order: usize, azimuth: f64, elevation: f64, out: &mut [f64]) {
     let n = channel_count(order);
-    let mut result = Vec::with_capacity(n);
+    debug_assert_eq!(out.len(), n);
     for acn in 0..n {
         let (l, m) = acn_to_degree_index(acn);
-        result.push(spherical_harmonic(l, m, azimuth, elevation));
+        out[acn] = spherical_harmonic(l, m, azimuth, elevation);
     }
-    result
 }
 
 /// SN3D normalization factor.
@@ -156,6 +155,12 @@ mod tests {
 
     const TOLERANCE: f64 = 1e-10;
 
+    fn spherical_harmonics_vector_owned(order: usize, azimuth: f64, elevation: f64) -> Vec<f64> {
+        let mut out = vec![0.0_f64; channel_count(order)];
+        spherical_harmonics_vector(order, azimuth, elevation, &mut out);
+        out
+    }
+
     #[test]
     fn test_channel_count() {
         assert_eq!(channel_count(0), 1); // W only
@@ -216,21 +221,21 @@ mod tests {
     fn test_first_order_cardinal_directions() {
         // AmbiX convention: ACN 1 = Y (sin(az)), ACN 2 = Z (sin(el)), ACN 3 = X (cos(az))
         // FOA at front (az=0, el=0): W=1, Y=0, Z=0, X=1
-        let front = spherical_harmonics_vector(1, 0.0, 0.0);
+        let front = spherical_harmonics_vector_owned(1, 0.0, 0.0);
         assert!((front[0] - 1.0).abs() < TOLERANCE); // W
         assert!(front[1].abs() < TOLERANCE); // Y: sin(0) = 0
         assert!(front[2].abs() < TOLERANCE); // Z: sin(0) = 0
         assert!((front[3] - 1.0).abs() < TOLERANCE); // X: cos(0) = 1
 
         // FOA at left (az=pi/2, el=0): W=1, Y=1, Z=0, X=0
-        let left = spherical_harmonics_vector(1, PI / 2.0, 0.0);
+        let left = spherical_harmonics_vector_owned(1, PI / 2.0, 0.0);
         assert!((left[0] - 1.0).abs() < TOLERANCE); // W
         assert!((left[1] - 1.0).abs() < TOLERANCE); // Y: sin(pi/2) = 1
         assert!(left[2].abs() < TOLERANCE); // Z: sin(0) = 0
         assert!(left[3].abs() < TOLERANCE); // X: cos(pi/2) = 0
 
         // FOA at top (az=0, el=pi/2): W=1, Y=0, Z=1, X=0
-        let top = spherical_harmonics_vector(1, 0.0, PI / 2.0);
+        let top = spherical_harmonics_vector_owned(1, 0.0, PI / 2.0);
         assert!((top[0] - 1.0).abs() < TOLERANCE); // W
         assert!(top[1].abs() < TOLERANCE); // Y
         assert!((top[2] - 1.0).abs() < TOLERANCE); // Z: sin(pi/2) = 1
@@ -240,7 +245,7 @@ mod tests {
     #[test]
     fn test_second_order_values() {
         // Verify that second-order harmonics produce the expected channel count
-        let sh = spherical_harmonics_vector(2, 0.0, 0.0);
+        let sh = spherical_harmonics_vector_owned(2, 0.0, 0.0);
         assert_eq!(sh.len(), 9);
         // W channel should still be 1.0
         assert!((sh[0] - 1.0).abs() < TOLERANCE);

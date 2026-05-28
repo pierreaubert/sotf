@@ -1,3 +1,24 @@
+# 0.5.68
+
+## Fixes
+
+- **Restore oversampler across unwinds** — the oversampling path now restores
+  the temporarily moved `Oversampler` before resuming a panic, and returns a
+  clear error if the oversampler is missing while oversampling is enabled.
+  `test_oversampling_2x_processes_audio` now asserts the oversampler is restored.
+
+# 0.5.67
+
+## Fixes
+
+- **Odd filter orders are rejected** (`src/lib.rs`): `from_params` and the
+  runtime `band_N_order` parameter now return a clear error for odd orders
+  instead of silently rounding down. Added `test_from_params_rejects_odd_filter_order`
+  and `test_set_parameter_rejects_odd_filter_order`.
+- **Reset preserves coefficients** (`src/lib.rs`): `reset()` now calls
+  `Biquad::reset()` to clear filter state without reconstructing coefficients.
+  Added `test_reset_preserves_biquad_coefficients`.
+
 # 0.5.66
 
 ## New
@@ -38,10 +59,6 @@
 - **Butterworth Q multiplication for peaking filters:** The current behavior (multiplying user Q
   by Butterworth Q for each stage) is a valid design choice. Added documentation comment in
   `create_band_stages`. Deferred from "fix" to "document".
-
-- **Odd-order silent truncation:** Order 3 is silently rounded to 2 by `(order/2)*2`. A proper
-  fix (returning an error) would be a breaking API change. The behavior is now documented in a
-  comment in `from_params`. Deferred.
 
 # 0.5.65
 

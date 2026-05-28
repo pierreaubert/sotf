@@ -1,3 +1,13 @@
+# 0.5.7
+
+## Fixes
+
+- `src/lib.rs` — `delay_smoother` now advances exactly once per processed
+  frame. The prior code accidentally advanced it twice in the global-delay
+  path, shortening the intended 50 ms delay-time smoothing constant. Added
+  `test_delay_smoother_advances_once_per_frame` to guard the review issue #1
+  contract.
+
 # 0.5.6
 
 ## Added
@@ -30,6 +40,9 @@
 - `debug_assert_eq!` on `channel_delays_ms.len() == channel_delay_smoothers.len()`
   at the top of `process_in_place` surfaces invariant drift before it manifests
   as a less-helpful indexing panic in release builds.
+- `src/lib.rs:323, 604` — delay buffer is now deinterleaved by channel
+  (`buffer[ch * max_samples + pos]`), which improves cache behavior for high
+  channel counts and avoids interleaved strided writes/reads in the inner loop.
 
 # 0.5.5
 
@@ -51,6 +64,11 @@
   This enables the compiler to replace the four `% max_samples` operations per
   sample in `process_in_place` with fast bitwise AND instructions in release builds.
 
+- `src/lib.rs:320-336` — LFO delay clamping asymmetry (Issue 4):
+  `effective_delay_samples` now computes a symmetric headroom budget around the
+  current base delay and scales the active LFO depth so the modulated delay stays
+  within `[1, max_samples - 3]` without one-sided clipping near the guard rails.
+
 ## Deferred
 
 - Issue 2 (allpass coeff parameter): exposing the allpass coefficient as a UI
@@ -58,12 +76,8 @@
   places (`rebuild_cached_parameters`, `set_parameter`, `get_parameter`). Deferred
   as a future enhancement — no correctness impact.
 
-- Issue 4 (LFO clamping asymmetry): the asymmetric clamp at 1 sample minimum is
-  intentional (interpolation guard). Documented in `effective_delay_samples`.
-  No code change needed.
-
-- Issue 6 (deinterleaved buffer layout): would require changing the flat
-  interleaved `buffer[pos * channels + ch]` layout. Cross-crate refactor, deferred.
+- Issue 6 (deinterleaved buffer layout): implemented as a direct cache-layout change in
+  `sotf-plugin-delay` (`buffer[ch * max_samples + pos]` in the delay-ring accessors).
 
 # 0.5.4
 

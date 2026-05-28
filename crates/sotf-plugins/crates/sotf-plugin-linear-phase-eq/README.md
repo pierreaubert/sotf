@@ -12,6 +12,8 @@ A parametric equalizer that uses FIR (Finite Impulse Response) filters instead o
 - **FIR convolution**: Uses frequency-domain convolution for efficient processing
 - **Parametric bands**: Standard frequency, Q, and gain controls
 - **High precision**: Ideal for mastering and critical listening
+- **Auto Gain**: Normalizes the FIR's DC gain to unity. It is a predictable
+  reference-point correction, not a perceptual loudness match.
 
 ## When to Use
 

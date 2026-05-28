@@ -1089,7 +1089,8 @@ mod tests {
             10,           // duration
             10,           // constant_subblock_duration (==duration => 1 subblock)
             0,            // animation_type=Step (low 3 bits)
-            0x10, 0x00,   // start_point_value = 0x1000 i16 BE = 4096/256 = 16.0 dB
+            0x10,
+            0x00, // start_point_value = 0x1000 i16 BE = 4096/256 = 16.0 dB
         ]
     }
 

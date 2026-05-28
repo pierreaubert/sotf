@@ -16,15 +16,18 @@
   branch-free and can be auto-vectorized by LLVM.
   File: `src/lib.rs` (lines 260–285).
 
+- **Issue #4 (review): skip reconstruction metric accumulation unless requested** — Added
+  an on-demand diagnostic path for `reconstruction_error_db` using an internal request flag.
+  The reconstruction/reference energies are now accumulated and the error is recomputed only
+  when the host reads `reconstruction_error_db`, reducing per-frame overhead for normal
+  processing.
+  File: `src/lib.rs` (lines 214–304).
+
 ## Deferred
 
 - **Issue #1 (review): rename `reconstruction_error_db` to `reconstruction_level_diff_db`**
   — Cross-crate rename (parameter ID strings appear in host serialization and UI).
   Deferred to avoid a breaking preset-format change.
-
-- **Issue #4 (review): skip `ref_sum` when diagnostic is not queried** — Minor overhead
-  (one f64 add per band per sample). Not fixed: adding a dirty-flag or feature gate would
-  complicate the code for negligible real-world gain. Stays simple.
 
 # 0.5.1
 

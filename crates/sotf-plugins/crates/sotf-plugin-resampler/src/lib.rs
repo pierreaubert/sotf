@@ -642,10 +642,14 @@ impl Plugin for ResamplerPlugin {
     fn latency_samples(&self) -> usize {
         // Use rubato's exact output_delay() which accounts for the full FIR group delay,
         // ring-buffer offsets, and polyphase filter delays — not just sinc_len / 2.
-        self.resampler
+        // Also add the chunking buffer latency: up to chunk_size - 1 frames can sit in
+        // residual_input before producing output.
+        let rubato_delay = self
+            .resampler
             .as_ref()
             .map(|r| r.output_delay())
-            .unwrap_or(self.quality.sinc_len() / 2)
+            .unwrap_or(self.quality.sinc_len() / 2);
+        rubato_delay + self.chunk_size - 1
     }
 
     fn output_frames_for_input(&self, input_frames: usize) -> usize {
@@ -900,27 +904,30 @@ mod tests {
         // group delay and internal offsets — not the old sinc_len/2 heuristic.
         // For Fast (64-tap sinc), the real delay is > 0.
         assert!(r_fast.latency_samples() > 0);
-        // The delay should be at most sinc_len (64) * ratio, with some headroom.
-        assert!(r_fast.latency_samples() <= 128);
+        // Latency = rubato delay + chunk_size - 1.  For Fast quality the rubato
+        // delay is small, but chunk_size (1024) dominates.
+        assert!(r_fast.latency_samples() >= 1024);
 
         // Medium
         let r_med =
             ResamplerPlugin::with_quality(2, 44100, 48000, 1024, ResamplerQuality::Medium).unwrap();
         assert_eq!(r_med.quality(), ResamplerQuality::Medium);
         assert!(r_med.latency_samples() > 0);
-        assert!(r_med.latency_samples() <= 256);
+        assert!(r_med.latency_samples() >= 1024);
 
         // High
         let r_high =
             ResamplerPlugin::with_quality(2, 44100, 48000, 1024, ResamplerQuality::High).unwrap();
         assert_eq!(r_high.quality(), ResamplerQuality::High);
         assert!(r_high.latency_samples() > 0);
-        assert!(r_high.latency_samples() <= 512);
+        // Latency = rubato delay + chunk_size - 1.  All qualities share the same
+        // chunk_size, so the base latency is similar; only the rubato delay differs.
+        assert!(r_high.latency_samples() >= 1024);
 
-        // Higher quality → higher latency
+        // Higher quality → slightly higher rubato delay (all have same chunk_size)
         assert!(
-            r_high.latency_samples() > r_fast.latency_samples(),
-            "High quality should have more latency than Fast: {} vs {}",
+            r_high.latency_samples() >= r_fast.latency_samples(),
+            "High quality should have at least as much latency as Fast: {} vs {}",
             r_high.latency_samples(),
             r_fast.latency_samples()
         );
@@ -1449,9 +1456,10 @@ fn test_latency_uses_rubato_output_delay() {
         ResamplerPlugin::with_quality(2, 44100, 48000, 1024, ResamplerQuality::Medium).unwrap();
     let latency = resampler.latency_samples();
     // Old heuristic was 64 (128/2); rubato reports 69 for this configuration.
+    // With chunking buffer included, total latency = 69 + 1023 = 1092.
     assert_eq!(
-        latency, 69,
-        "latency_samples should use rubato output_delay, not sinc_len/2"
+        latency, 1092,
+        "latency_samples should use rubato output_delay + chunk_size - 1"
     );
 }
 
@@ -1505,5 +1513,28 @@ fn test_rebuild_resampler_reuses_buffers() {
         resampler.residual_input[0].as_ptr(),
         residual_ptr,
         "residual_input was reallocated"
+    );
+}
+
+/// Regression: latency_samples() must include the chunking buffer latency.
+/// The plugin buffers up to chunk_size - 1 frames before calling rubato,
+/// so the maximum end-to-end latency is output_delay() + chunk_size - 1.
+#[test]
+fn test_latency_includes_chunking_buffer() {
+    let chunk_size = 1024;
+    let resampler =
+        ResamplerPlugin::with_quality(2, 44100, 48000, chunk_size, ResamplerQuality::Medium)
+            .unwrap();
+    let reported = resampler.latency_samples();
+    let rubato_delay = resampler
+        .resampler
+        .as_ref()
+        .map(|r| r.output_delay())
+        .unwrap_or(0);
+    assert!(
+        reported >= rubato_delay + chunk_size - 1,
+        "latency_samples()={reported} must include chunking buffer ({}), \
+         rubato_delay={rubato_delay}",
+        chunk_size - 1
     );
 }

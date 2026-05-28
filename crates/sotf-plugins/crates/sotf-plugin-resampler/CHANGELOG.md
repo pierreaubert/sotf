@@ -1,3 +1,11 @@
+# 0.5.24
+
+## Fixes
+
+- **QA binary:** The performance benchmark now appends each block's output into `bench_output`
+  instead of reusing `bench_output[..rt_max_out * channels]` for every block. This keeps the QA
+  benchmark's output layout correct if it is extended to validate rendered samples.
+
 # 0.5.23
 
 ## Fixes

@@ -2,6 +2,11 @@
 
 ## Fixes (from code review)
 
+- **docs: dual-band latency semantics** (`src/lib.rs`): `latency_samples()` now
+  documents that dual-band LR4 processing has frequency-dependent group delay near
+  the 700 Hz crossover but no fixed linear-phase delay to report to the host.
+  Regression test: `test_dual_band_reports_no_fixed_host_latency`.
+
 - **fix: no-alloc dual-band scratch buffers** (`src/lib.rs`): `initialize()` now
   pre-allocates `lf_buffer` / `hf_buffer` to `MAX_BLOCK_FRAMES (8192) ×
   MAX_AMBI_CHANNELS (16)` so that the audio-thread hot path in `process()`
@@ -11,6 +16,24 @@
   catch oversized blocks early in debug builds.
   Regression test: `test_dual_band_large_block_no_alloc` (5000-frame block).
 
+- **fix: per-speaker harmonic buffer reuse** (`src/spherical_harmonics.rs`, `src/decode_matrix.rs`):
+  `spherical_harmonics_vector` now takes a mutable output slice (`&mut [f64]`) and
+  writes in place. `DecodeMatrix::build` uses a reusable scratch buffer to populate
+  each speaker's SH row, removing per-speaker temporary allocation during matrix
+  build.
+  Unit tests in `src/spherical_harmonics.rs` still cover first/second-order values
+  and ACN ordering.
+
+- **fix: improve `decode_frame` loop structure** (`src/decode_matrix.rs`):
+  replaced iterator `take()` loops with direct row/input slice access and indexed
+  accumulation in the small fixed-size dot product. This gives LLVM a simpler loop
+  shape and avoids extra iterator overhead in the decode inner loop.
+
+- **fix: remove crossover move in dual-band process** (`src/lib.rs`):
+  dual-band processing now uses `self.crossover.as_mut()` directly instead of
+  `take()` + restore. Crossover state remains in place for the call and no longer
+  risks becoming `None` via panic during processing.
+
 - **fix: `acn_to_degree_index` bounds guard** (`src/spherical_harmonics.rs`):
   Added `debug_assert!(acn <= channel_count(MAX_ORDER))`.  The
   floating-point `sqrt` truncation is correct for `acn ≤ 15` (MAX_ORDER = 3)
@@ -19,21 +42,6 @@
   incorrect harmonics.
   New test: `test_acn_to_degree_index_all_valid` verifies round-trip and range
   for every valid ACN index.
-
-## Deferred / not applicable
-
-- **`spherical_harmonics_vector` slice output** (review §6): Called only on
-  the control thread during matrix construction; not a real-time concern.
-  Would require a cross-crate API change. Deferred.
-
-- **`take()` / `Lr4Crossover` refactor** (review §9): The reviewer notes the
-  pattern is "safe" with no current `?` operators between `take()` and
-  `restore`.  The suggested fix requires refactoring `Lr4Crossover` in
-  `sotf-host`, which is out of scope for this crate. Deferred.
-
-- **`decode_frame` vectorization** (review §8): Speculative; LLVM may already
-  unroll the 16-iteration inner loop.  Profiling required before pursuing SIMD
-  intrinsics. Deferred.
 
 # 0.5.3
 

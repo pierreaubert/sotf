@@ -247,6 +247,12 @@ impl PlayerView {
                                     });
                                 });
 
+                            #[cfg(feature = "dev-api")]
+                            let tab = {
+                                use crate::app::dev_api::DevTrackExt;
+                                tab.dev_track(format!("settings.tab.{:?}", tab_variant))
+                            };
+
                             tabs_container = tabs_container.child(tab);
                         }
 

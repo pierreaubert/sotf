@@ -1,0 +1,37 @@
+# TUI Configure → Federation Sources sub-screen.
+#
+# Covers: FederationSources sub-screen, list navigation, add mode transition.
+
+focus configure
+assert screen.focused == "Configure"
+assert input_mode == "Configure"
+
+# Enter Federation Sources sub-screen.
+key 6
+sleep 100ms
+assert input_mode == "ConfigureFederationSources"
+assert configure.sub_screen == "FederationSources"
+
+# Navigate sources list.
+key down
+sleep 50ms
+key up
+sleep 50ms
+
+# Enter add mode.
+key a
+sleep 100ms
+
+# Cancel add with Esc.
+key esc
+sleep 100ms
+assert input_mode == "ConfigureFederationSources"
+
+# Esc again → Configure tab bar.
+key esc
+sleep 100ms
+assert input_mode == "Configure"
+
+# Return to library.
+focus library
+assert screen.focused == "Library"

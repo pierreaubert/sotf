@@ -30,8 +30,14 @@ pub const PARAMS: &[ParamSpec] = &[
         "Dither",
     )
     .doc("F-weighted noise shaping (Wannamaker 1992)"),
-    ParamSpec::choice("Dither Type", "dither_type", 0, &["TPDF", "None"], "Dither")
-        .doc("Dither algorithm: TPDF or no dither"),
+    ParamSpec::choice(
+        "Dither Type",
+        "dither_type",
+        0,
+        &["TPDF", "None (round)", "Truncate"],
+        "Dither",
+    )
+    .doc("TPDF with rounding, round-only passthrough, or truncated quantization"),
 ];
 
 // ============================================================================

@@ -1,0 +1,50 @@
+# TUI Configure → Spinorama EQ wizard navigation.
+#
+# Covers: SpinoramaEq sub-screen, step tab navigation, search/filter typing.
+
+focus configure
+assert screen.focused == "Configure"
+assert input_mode == "Configure"
+
+# Enter Spinorama EQ sub-screen.
+key 5
+sleep 100ms
+assert input_mode == "ConfigureSpinoramaEq"
+assert configure.sub_screen == "SpinoramaEq"
+assert spinorama.step == "Select"
+
+# In Select step, type a filter query.
+key a
+sleep 50ms
+key b
+sleep 50ms
+key c
+sleep 50ms
+
+# Navigate step tab bar forward to Configure.
+key right
+sleep 100ms
+assert spinorama.step == "Configure"
+
+# In Configure step, Tab cycles detail level.
+key tab
+sleep 50ms
+
+# BackTab from Configure goes back to Select.
+key backtab
+sleep 100ms
+assert spinorama.step == "Select"
+
+# Esc chain: content → step tab → configure tab.
+key esc
+sleep 100ms
+assert input_mode == "ConfigureSpinoramaEq"
+
+key esc
+sleep 100ms
+assert input_mode == "Configure"
+assert screen.focused == "Configure"
+
+# Return to library.
+focus library
+assert screen.focused == "Library"

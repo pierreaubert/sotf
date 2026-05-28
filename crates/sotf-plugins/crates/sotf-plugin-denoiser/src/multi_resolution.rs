@@ -214,24 +214,21 @@ impl MultiResState {
         let block_samples = small_fft_size * num_channels;
         let shift_samples = hop_size * num_channels;
 
-        // Copy block to temp buffer to avoid borrow conflict during the shift
-        let mut temp = std::mem::take(&mut self.temp_input_block);
-        temp[..block_samples].copy_from_slice(&self.input_buffer[..block_samples]);
+        // Copy block to temp buffer before shifting.
+        self.temp_input_block[..block_samples].copy_from_slice(&self.input_buffer[..block_samples]);
 
         // Forward FFT per channel: de-interleave + window, then FFT
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
             for i in 0..small_fft_size {
-                state.time_domain[i] = temp[i * num_channels + ch] * state.window[i];
+                state.time_domain[i] =
+                    self.temp_input_block[i * num_channels + ch] * state.window[i];
             }
             state
                 .fft_forward
                 .process(&mut state.time_domain, &mut state.freq_domain)
                 .expect("small FFT forward failed");
         }
-
-        // Restore temp buffer
-        self.temp_input_block = temp;
 
         // Shift input buffer left by hop_size (consume processed overlap)
         self.input_buffer.copy_within(shift_samples.., 0);

@@ -89,11 +89,11 @@ pub struct Params {
     #[serde(default)]
     pub zero_latency_head: bool,
     #[serde(default = "d_head_taps")]
-    pub head_taps: i64,
+    pub head_taps: usize,
 }
 
-fn d_head_taps() -> i64 {
-    pk(PARAMS, "head_taps").default_f64() as i64
+fn d_head_taps() -> usize {
+    pk(PARAMS, "head_taps").default_f64() as usize
 }
 fn d_mix() -> f64 {
     pk(PARAMS, "mix").default_f64()
@@ -146,7 +146,7 @@ impl PluginParamDef for Params {
             2 => self.gain_db = value,
             3 => self.use_nupc = value > 0.5,
             4 => self.zero_latency_head = value > 0.5,
-            5 => self.head_taps = value as i64,
+            5 => self.head_taps = value.clamp(PARAMS[5].min_f64(), PARAMS[5].max_f64()) as usize,
             _ => {}
         }
     }
@@ -186,6 +186,17 @@ mod tests {
         assert_eq!(original.mix, restored.mix);
         assert_eq!(original.gain_db, restored.gain_db);
         assert_eq!(original.use_nupc, restored.use_nupc);
+        assert_eq!(original.head_taps, restored.head_taps);
+    }
+
+    #[test]
+    fn head_taps_setter_clamps_to_spec_range() {
+        let mut p = Params::default();
+        p.set_param_value(5, -1.0);
+        assert_eq!(p.head_taps, pk(PARAMS, "head_taps").min_f64() as usize);
+
+        p.set_param_value(5, 9999.0);
+        assert_eq!(p.head_taps, pk(PARAMS, "head_taps").max_f64() as usize);
     }
 
     #[test]

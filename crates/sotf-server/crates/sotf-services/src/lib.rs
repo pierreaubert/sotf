@@ -7,6 +7,6 @@ pub mod spotify;
 pub mod tidal;
 
 pub use service::{
-    redact_secret, AudioQuality, PcmStream, ServiceCredentials, ServiceError, ServiceTrack,
-    StreamingService,
+    AudioQuality, PcmStream, ServiceCredentials, ServiceError, ServiceTrack, StreamingService,
+    redact_secret,
 };

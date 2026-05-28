@@ -1711,7 +1711,7 @@ impl PlatformWindow for IosWindow {
 
             // Add buttons
             for (index, button) in answers.iter().enumerate() {
-                let label = std::ffi::CString::new(button.label()).ok()?;
+                let label = std::ffi::CString::new(button.label().to_string()).ok()?;
                 let button_title: *mut Object = msg_send![
                     class!(NSString),
                     stringWithUTF8String: label.as_ptr()
@@ -1720,7 +1720,7 @@ impl PlatformWindow for IosWindow {
                 let action_style: i64 = if button.is_cancel() { 1 } else { 0 }; // UIAlertActionStyleCancel or Default
 
                 let tx_clone = tx.clone();
-                let block = block2::RcBlock::new(move |_action: *mut Object| {
+                let block = block2::RcBlock::new(move |_action: *mut c_void| {
                     if let Ok(mut guard) = tx_clone.lock() {
                         if let Some(sender) = guard.take() {
                             let _ = sender.send(index);
@@ -1732,7 +1732,7 @@ impl PlatformWindow for IosWindow {
                     class!(UIAlertAction),
                     actionWithTitle: button_title
                     style: action_style
-                    handler: block
+                    handler: &*block
                 ];
 
                 let _: () = msg_send![alert, addAction: action];

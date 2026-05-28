@@ -133,8 +133,9 @@ fn test_delay_parameter_sync_deep() {
     let mut settings = PluginSettings::default_for(&PluginType::Delay);
     let descriptors = settings.get_descriptors();
 
-    // Delay has 6 parameters: delay_ms, feedback, mix, lfo_rate_hz, lfo_depth_ms, allpass_feedback
-    assert_eq!(descriptors.len(), 6);
+    // Delay has 7 parameters: delay_ms, feedback, mix, lfo_rate_hz, lfo_depth_ms,
+    // allpass_coeff, allpass_feedback
+    assert_eq!(descriptors.len(), 7);
 
     // Verify all params are editable
     for i in 0..descriptors.len() {
@@ -148,7 +149,8 @@ fn test_delay_parameter_sync_deep() {
     assert_eq!(descriptors[2].name, "Mix");
     assert_eq!(descriptors[3].name, "LFO Rate");
     assert_eq!(descriptors[4].name, "LFO Depth");
-    assert_eq!(descriptors[5].name, "Allpass Feedback");
+    assert_eq!(descriptors[5].name, "Allpass Coeff");
+    assert_eq!(descriptors[6].name, "Allpass Feedback");
 }
 
 #[test]

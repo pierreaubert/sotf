@@ -52,6 +52,7 @@ fn test_queue_diverse_albums() {
             QueuePlaybackEffect::Play(_) => total_next_calls += 1,
             QueuePlaybackEffect::Stop => break,
             QueuePlaybackEffect::None => panic!("Unexpected None effect"),
+            QueuePlaybackEffect::Reload(_) => panic!("Unexpected Reload effect"),
         }
         if total_next_calls > 50 {
             panic!("Too many tracks - possible infinite loop");
@@ -253,6 +254,7 @@ fn test_queue_with_duplicates() {
             }
             QueuePlaybackEffect::Stop => break,
             QueuePlaybackEffect::None => panic!("Unexpected None"),
+            QueuePlaybackEffect::Reload(_) => panic!("Unexpected Reload"),
         }
     }
 
@@ -280,6 +282,7 @@ fn test_long_queue() {
             QueuePlaybackEffect::Play(_) => count += 1,
             QueuePlaybackEffect::Stop => break,
             QueuePlaybackEffect::None => panic!("Unexpected None"),
+            QueuePlaybackEffect::Reload(_) => panic!("Unexpected Reload"),
         }
         if count > 150 {
             panic!("Infinite loop detected");
@@ -404,6 +407,7 @@ fn test_realistic_queue_session() {
             QueuePlaybackEffect::Play(_) => remaining += 1,
             QueuePlaybackEffect::Stop => break,
             QueuePlaybackEffect::None => panic!("Unexpected None"),
+            QueuePlaybackEffect::Reload(_) => panic!("Unexpected Reload"),
         }
         if remaining > 50 {
             panic!("Infinite loop");

@@ -2419,8 +2419,7 @@ pub fn poll_save_recordings(app: &mut App) -> bool {
         Err(std::sync::mpsc::TryRecvError::Disconnected) => {
             // Worker dropped its sender without sending — treat as
             // failure rather than a silent hang.
-            app.recording.save_error =
-                Some("Save thread terminated without result".to_string());
+            app.recording.save_error = Some("Save thread terminated without result".to_string());
             app.recording.save_in_progress = false;
             app.recording.save_receiver = None;
             true

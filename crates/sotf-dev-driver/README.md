@@ -1,8 +1,13 @@
 # sotf-dev-driver
 
-Scenario driver for the SotF GPUI dev API. Reads a line-based `.scn`
+Scenario driver for the SotF dev API. Reads a line-based `.scn`
 script and translates each verb into an HTTP call against a running
-`SotF` instance with the `dev-api` feature enabled.
+SotF instance with the `dev-api` feature enabled.
+
+Supported apps:
+- **GPUI** (`sotf-desktop`) — desktop GUI app (primary target)
+- **TUI** (`sotf-tui`) — terminal UI app (requires `dev-api` feature)
+- **CLI** (`player-cli`, `sotf-recorder-cli`) — tested via Rust integration tests in `crates/app-cli/tests/`
 
 ## Run a scenario
 
@@ -25,15 +30,41 @@ only start the HTTP endpoint when `--qa <dir>` is present.
 Override the URL with `--url http://127.0.0.1:9999`. Override the
 server port with `SOTF_DEV_API_PORT=9999`.
 
+## Run a TUI scenario
+
+The TUI app also exposes a dev API when compiled with the `dev-api`
+feature. Scenarios use the same `.scn` DSL as GPUI, but actions map to
+TUI state transitions instead of GPUI actions.
+
+```bash
+# Terminal 1: launch TUI with dev API
+cargo run -p sotf-tui --features dev-api --bin sotf-tui -- --qa "$QA_DIR"
+
+# Terminal 2: drive a scenario
+cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/tui_smoke.scn --url http://127.0.0.1:7777 -v
+```
+
+TUI-specific notes:
+- `action SwitchTo<Screen>` transitions between TUI screens (Library, Queue, Configure, Plugins, Devices, Playlists).
+- `key <keystroke>` synthesises crossterm key events (e.g. `enter`, `esc`, `ctrl-c`, `space`).
+- No `click` verb — TUI is keyboard-driven.
+- The suite runner supports TUI via `app_bin = "target/debug/sotf-tui"` in the suite TOML.
+
 ## Run a suite
 
-Suites start a fresh `sotf-desktop --qa <dir>` process per scenario,
-assign a free dev-api port, seed fixtures, run the `.scn`, collect app
+Suites start a fresh app process per scenario, assign a free dev-api
+port, seed fixtures (GPUI only), run the `.scn`, collect app
 stdout/stderr under `target/qa-gpui`, and then call `/quit`.
 
 ```bash
 cargo build -p sotf-gpui --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/smoke.toml -v
+```
+
+The RoomEQ wizard matrix can be run with:
+
+```bash
+cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/roomeq_matrix.toml -v
 ```
 
 Suite entries use `[[scenario]]`:
@@ -53,6 +84,44 @@ points = 48
 the scenario artifact directory and sends them to `/qa/seed`.
 `require_virtual_audio = true` skips the scenario unless `AEQ_E2E_DEVICE`
 is set; use it for BlackHole/SotF HAL loopback smoke tests.
+
+RoomEQ fixture scenarios use `[scenario.room_eq]`. The runner copies the
+fixture into the per-scenario artifact `dist/` tree, loads `recordings.json`
+through `/qa/room-eq`, applies the requested default-wizard tuple, and can
+start the real optimizer:
+
+```toml
+[scenario.room_eq]
+fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+target = "NearField"      # NearField | MidField | FarField
+loss = "Flat"             # Flat | Epa
+processing = "Iir"        # Iir | MixedPhase
+crossover = "Lr24"        # Lr24 | Lr48
+num_filters = 7
+max_iter = 20
+population = 24
+start = true
+```
+
+## CLI integration tests
+
+The CLI binaries (`player-cli` and `sotf-recorder-cli`) are tested via
+Rust integration tests in `crates/app-cli/tests/integration_tests.rs`.
+These tests invoke the actual compiled binaries and assert on exit codes,
+stdout, and stderr.
+
+```bash
+cargo test -p app-cli --test integration_tests
+```
+
+Covered commands:
+- `player-cli devices` — lists audio devices
+- `player-cli replay-gain <file>` — analyzes ReplayGain
+- `player-cli play <file>` — argument parsing with filters, rack, LUFS, loudness compensation
+- `player-cli play /nonexistent` — error handling
+- `sotf-recorder-cli --list-devices` — lists devices
+- `sotf-recorder-cli` — missing-arg validation, channel-config validation
 
 ## Per-screen scenarios
 
@@ -92,11 +161,12 @@ involvement, prefer a unit test in the implicated crate over a `.scn`.
 | `focus`      | Sugar: `focus library` → `action SwitchToLibrary`.           |
 | `key`        | Synthetic keystroke (`gpui::Keystroke::parse` syntax).        |
 | `click`      | Click a `dev_track`-registered element by selector.           |
+| `export_room_eq_json` | Export completed RoomEQ DSP JSON to the QA artifact. |
 | `elements`   | List every currently tracked selector (debugging aid).        |
 
-Comparison clauses accept trailing `tolerance=<f>` (numbers) and
-`timeout=<dur>` (`wait_until` only). Durations: `Nms` / `Ns` / `Nm`
-or bare seconds.
+Comparison clauses support `==`, `!=`, `>`, `>=`, `<`, and `<=`. They
+accept trailing `tolerance=<f>` for numeric equality and `timeout=<dur>`
+for `wait_until`. Durations: `Nms` / `Ns` / `Nm` or bare seconds.
 
 ```
 focus       library
@@ -105,6 +175,7 @@ action      PlayPause
 wait_until  playback.is_playing == true   timeout=2s
 action      VolumeUpLarge
 assert      playback.volume == 0.85       tolerance=0.01
+assert      roomeq.average_post_score <= 35
 action      Stop
 ```
 
@@ -125,8 +196,16 @@ See `crates/app-gpui/app/dev_api/queries.rs` — currently:
 - `library.directory_count`, `library.album_count`, `library.track_count`
 - `recording.step`, `recording.channel_count`, `recording.done_count`,
   `recording.all_done`, `recording.status`
-- `roomeq.step`, `roomeq.measurement_count`, `roomeq.result_count`,
-  `roomeq.has_dsp_output`, `roomeq.status`
+- `roomeq.step`, `roomeq.measurement_count`, `roomeq.speaker_config_count`,
+  `roomeq.optimization_status`, `roomeq.result_count`, `roomeq.filter_count`,
+  `roomeq.has_dsp_output`, `roomeq.dsp_channel_count`,
+  `roomeq.average_pre_score`, `roomeq.average_post_score`,
+  `roomeq.wizard.target`, `roomeq.wizard.loss`,
+  `roomeq.wizard.processing`, `roomeq.wizard.crossover`, `roomeq.status`,
+  `roomeq.error`
+- `roomeq.export.path`, `roomeq.export.exists`, `roomeq.export.bytes`,
+  `roomeq.export.channel_count`, `roomeq.export.plugin_count`,
+  `roomeq.export.filter_count`, `roomeq.export.version`
 - `settings.theme`, `settings.language`, `settings.release_channel`
 - `audio.input_device`, `audio.output_device`, and device counts
 

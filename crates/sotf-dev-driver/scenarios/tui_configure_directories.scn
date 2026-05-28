@@ -1,0 +1,30 @@
+# TUI Configure → Directories sub-screen.
+#
+# Covers: Configure tab bar, Directories sub-screen entry/exit.
+
+focus configure
+assert screen.focused == "Configure"
+assert input_mode == "Configure"
+assert configure.sub_screen == "Directories"
+
+# Enter Directories sub-screen (1 or Enter).
+key 1
+sleep 100ms
+assert input_mode == "ConfigureDirectories"
+assert configure.sub_screen == "Directories"
+
+# Navigate directories list.
+key down
+sleep 50ms
+key up
+sleep 50ms
+
+# Esc goes back to Configure tab bar.
+key esc
+sleep 100ms
+assert input_mode == "Configure"
+assert screen.focused == "Configure"
+
+# Return to library.
+focus library
+assert screen.focused == "Library"

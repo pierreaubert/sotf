@@ -1,0 +1,32 @@
+# TUI Configure → Servers sub-screen.
+#
+# Covers: Servers sub-screen, section toggle, field navigation.
+
+focus configure
+assert screen.focused == "Configure"
+assert input_mode == "Configure"
+
+# Enter Servers sub-screen.
+key 7
+sleep 100ms
+assert input_mode == "ConfigureServers"
+assert configure.sub_screen == "Servers"
+
+# Navigate fields.
+key down
+sleep 50ms
+key up
+sleep 50ms
+
+# Toggle section with Tab.
+key tab
+sleep 50ms
+
+# Esc → Configure tab bar.
+key esc
+sleep 100ms
+assert input_mode == "Configure"
+
+# Return to library.
+focus library
+assert screen.focused == "Library"

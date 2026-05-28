@@ -32,9 +32,10 @@
 //! The legacy `set_sample_rate` / `set_buffer_frames` / `set_channel_count`
 //! setters route through this path so they no longer race the HAL writer.
 
+use std::ffi::OsString;
 use std::fs::OpenOptions;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering, fence};
 
 use memmap2::MmapMut;
@@ -177,6 +178,32 @@ pub fn get_shared_memory_path() -> std::path::PathBuf {
     // SAFETY: `libc::getuid` is async-signal-safe, has no preconditions, and
     // cannot fail. It only reads the calling process's UID.
     let uid = unsafe { libc::getuid() };
+    shared_memory_path_from_env(
+        std::env::var_os("SOTF_HAL_SHARED_MEMORY_PATH"),
+        std::env::var_os("SOTF_SYSTEMWIDE_RUNTIME_DIR"),
+        uid,
+    )
+}
+
+fn non_empty_path(value: Option<OsString>) -> Option<std::path::PathBuf> {
+    value
+        .map(std::path::PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+}
+
+fn shared_memory_path_from_env(
+    path_override: Option<OsString>,
+    runtime_dir: Option<OsString>,
+    uid: u32,
+) -> std::path::PathBuf {
+    if let Some(path) = non_empty_path(path_override) {
+        return path;
+    }
+
+    if let Some(path) = non_empty_path(runtime_dir) {
+        return path.join("audio.shm");
+    }
+
     std::path::PathBuf::from(format!("/tmp/sotf-{}/audio.shm", uid))
 }
 
@@ -188,7 +215,8 @@ fn current_uid() -> u32 {
 
 #[cfg(unix)]
 fn protected_shared_memory_parent() -> std::path::PathBuf {
-    std::path::PathBuf::from(format!("/tmp/sotf-{}", current_uid()))
+    non_empty_path(std::env::var_os("SOTF_SYSTEMWIDE_RUNTIME_DIR"))
+        .unwrap_or_else(|| std::path::PathBuf::from(format!("/tmp/sotf-{}", current_uid())))
 }
 
 #[cfg(unix)]
@@ -413,6 +441,7 @@ fn u64_to_fingerprint(value: u64) -> [u8; 8] {
 /// Shared audio buffer for communication with Swift HAL driver
 pub struct SharedAudioBuffer {
     mmap: MmapMut,
+    path: PathBuf,
     audio_offset: usize,
     audio_capacity: usize,
     /// Maximum audio capacity based on original mmap size (for validation)
@@ -601,6 +630,7 @@ impl SharedAudioBuffer {
         let mmap = unsafe { MmapMut::map_mut(&file)? };
         let mut buffer = Self {
             mmap,
+            path: path.to_path_buf(),
             audio_offset,
             audio_capacity,
             max_audio_capacity,
@@ -620,6 +650,11 @@ impl SharedAudioBuffer {
         }
 
         Ok(buffer)
+    }
+
+    /// Filesystem path backing this shared memory mapping.
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// Create or open the default per-user shared memory file.
@@ -650,6 +685,7 @@ impl SharedAudioBuffer {
 
     /// Open an existing shared memory region created by the Swift HAL driver
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        let path = path.as_ref();
         let file = OpenOptions::new().read(true).write(true).open(path)?;
 
         // SAFETY: see `create_or_open_with_max_geometry`. The file is sized
@@ -736,6 +772,7 @@ impl SharedAudioBuffer {
 
         Ok(Self {
             mmap,
+            path: path.to_path_buf(),
             audio_offset,
             audio_capacity,
             max_audio_capacity,
@@ -1918,6 +1955,23 @@ impl HalInputReader {
         }
     }
 
+    /// Returns true when encrypted shared memory is active but this reader has
+    /// no matching cached cipher.
+    pub fn needs_cipher_reload(&self) -> bool {
+        let Some(buf) = self.buffer.as_ref() else {
+            return false;
+        };
+        if !buf.is_encrypted() {
+            return false;
+        }
+        let header_fingerprint = buf.key_fingerprint();
+        !self
+            .cipher
+            .as_ref()
+            .map(|cipher| cipher.fingerprint() == &header_fingerprint)
+            .unwrap_or(false)
+    }
+
     /// Check if connected to the HAL driver.
     pub fn is_connected(&self) -> bool {
         self.buffer
@@ -2239,6 +2293,22 @@ mod tests {
     fn test_header_size() {
         assert!(std::mem::size_of::<SharedAudioHeader>() <= 256);
         assert_eq!(std::mem::align_of::<SharedAudioHeader>(), 8);
+    }
+
+    #[test]
+    fn test_shared_memory_path_supports_lab_overrides() {
+        let explicit = shared_memory_path_from_env(
+            Some(OsString::from("/tmp/sotf-lab/custom-audio.shm")),
+            Some(OsString::from("/tmp/ignored")),
+            42,
+        );
+        assert_eq!(explicit, PathBuf::from("/tmp/sotf-lab/custom-audio.shm"));
+
+        let runtime = shared_memory_path_from_env(None, Some(OsString::from("/tmp/sotf-lab")), 42);
+        assert_eq!(runtime, PathBuf::from("/tmp/sotf-lab/audio.shm"));
+
+        let fallback = shared_memory_path_from_env(None, None, 42);
+        assert_eq!(fallback, PathBuf::from("/tmp/sotf-42/audio.shm"));
     }
 
     fn create_mock_shared_memory(
@@ -2804,6 +2874,50 @@ mod tests {
                 "tail sample {index} mismatch"
             );
         }
+    }
+
+    #[test]
+    fn test_hal_input_reader_reports_cipher_reload_need() {
+        let temp_file = create_mock_shared_memory(48_000, 512, 2);
+        let buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+        let writer_cipher = test_audio_cipher();
+        let stale_cipher = crate::encryption::AudioCipher::new(&[0x43u8; 32]);
+
+        buffer.set_key_fingerprint(*writer_cipher.fingerprint());
+        buffer.set_encrypted(false);
+
+        let mut reader = HalInputReader {
+            buffer: Some(buffer),
+            cipher: Some(stale_cipher),
+            encrypted_samples_buf: Vec::new(),
+            ciphertext_buf: Vec::new(),
+            decrypted_record_buf: Vec::new(),
+            pending_decrypted_samples: Vec::new(),
+            pending_sample_offset: 0,
+        };
+
+        assert!(
+            !reader.needs_cipher_reload(),
+            "unencrypted shared memory should not require a cipher reload"
+        );
+
+        reader.buffer.as_ref().unwrap().set_encrypted(true);
+        assert!(
+            reader.needs_cipher_reload(),
+            "encrypted shared memory should report stale cached cipher"
+        );
+
+        reader.cipher = Some(writer_cipher);
+        assert!(
+            !reader.needs_cipher_reload(),
+            "matching cached cipher should be considered current"
+        );
+
+        reader.cipher = None;
+        assert!(
+            reader.needs_cipher_reload(),
+            "encrypted shared memory without a cached cipher should reload"
+        );
     }
 
     #[test]

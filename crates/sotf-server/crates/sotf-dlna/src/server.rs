@@ -13,7 +13,7 @@ use crate::xml;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
 const CD_SERVICE: &str = "urn:schemas-upnp-org:service:ContentDirectory:1";
@@ -183,9 +183,12 @@ async fn handle_server_request(
                 .map_err(|e| e.to_string())?;
         }
         (method, path) if path.starts_with("/media/") && (method == "GET" || method == "HEAD") => {
-            // Basic /media/{id} handler. Range requests + DLNA profile
-            // flags are NOT in this bug-fix pass — see review §4.
-            handle_media(&mut writer, method, path, adapter).await?;
+            let range = req
+                .headers
+                .iter()
+                .find(|(name, _)| name == "range")
+                .map(|(_, value)| value.as_str());
+            handle_media(&mut writer, method, path, range, adapter).await?;
         }
         // GENA event + SCPD endpoints are NOT implemented in this
         // bug-fix pass. Return 501 so controllers can distinguish
@@ -219,6 +222,7 @@ async fn handle_media(
     writer: &mut tokio::net::tcp::OwnedWriteHalf,
     method: &str,
     path: &str,
+    range_header: Option<&str>,
     adapter: &Arc<dyn MediaServerAdapter>,
 ) -> Result<(), String> {
     let id = path.trim_start_matches("/media/");
@@ -246,12 +250,21 @@ async fn handle_media(
             .map_err(|e| e.to_string());
     };
 
-    // Whole-file read. Music files are typically a few tens of MB. Range
-    // support is intentionally deferred (see review §4).
-    let bytes = match tokio::fs::read(&src.path).await {
-        Ok(b) => b,
+    let metadata = match tokio::fs::metadata(&src.path).await {
+        Ok(m) if m.is_file() => m,
         Err(e) => {
-            log::warn!("[DLNA Server] media_path {:?} read error: {}", src.path, e);
+            log::warn!(
+                "[DLNA Server] media_path {:?} metadata error: {}",
+                src.path,
+                e
+            );
+            let response = http_response(404, "text/plain", "Not Found");
+            return writer
+                .write_all(response.as_bytes())
+                .await
+                .map_err(|e| e.to_string());
+        }
+        Ok(_) => {
             let response = http_response(404, "text/plain", "Not Found");
             return writer
                 .write_all(response.as_bytes())
@@ -259,29 +272,136 @@ async fn handle_media(
                 .map_err(|e| e.to_string());
         }
     };
+    let file_len = metadata.len();
 
+    let range = match parse_range_header(range_header, file_len) {
+        Ok(range) => range,
+        Err(()) => {
+            let header = format!(
+                "HTTP/1.1 416 Range Not Satisfiable\r\n\
+                 Content-Range: bytes */{}\r\n\
+                 Content-Length: 0\r\n\
+                 Accept-Ranges: bytes\r\n\
+                 Connection: close\r\n\
+                 \r\n",
+                file_len
+            );
+            return writer
+                .write_all(header.as_bytes())
+                .await
+                .map_err(|e| e.to_string());
+        }
+    };
+
+    let (status, status_text, start, end) = match range {
+        Some((start, end)) => (206, "Partial Content", start, end),
+        None => {
+            if file_len == 0 {
+                (200, "OK", 0, 0)
+            } else {
+                (200, "OK", 0, file_len - 1)
+            }
+        }
+    };
+    let body_len = if file_len == 0 { 0 } else { end - start + 1 };
+
+    let content_range = if status == 206 {
+        format!("Content-Range: bytes {}-{}/{}\r\n", start, end, file_len)
+    } else {
+        String::new()
+    };
     let header = format!(
-        "HTTP/1.1 200 OK\r\n\
+        "HTTP/1.1 {} {}\r\n\
          Content-Type: {}\r\n\
          Content-Length: {}\r\n\
-         Accept-Ranges: none\r\n\
+         Accept-Ranges: bytes\r\n\
+         {}\
          transferMode.dlna.org: Streaming\r\n\
          Connection: close\r\n\
          \r\n",
-        src.mime_type,
-        bytes.len()
+        status, status_text, src.mime_type, body_len, content_range
     );
     writer
         .write_all(header.as_bytes())
         .await
         .map_err(|e| e.to_string())?;
-    if method == "GET" {
-        writer
-            .write_all(&bytes)
-            .await
-            .map_err(|e| e.to_string())?;
+    if method == "GET" && body_len > 0 {
+        stream_file_range(writer, &src.path, start, body_len).await?;
     }
     Ok(())
+}
+
+async fn stream_file_range(
+    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    path: &std::path::Path,
+    start: u64,
+    len: u64,
+) -> Result<(), String> {
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| format!("open media file: {e}"))?;
+    file.seek(std::io::SeekFrom::Start(start))
+        .await
+        .map_err(|e| format!("seek media file: {e}"))?;
+
+    let mut remaining = len;
+    let mut buf = vec![0u8; 64 * 1024];
+    while remaining > 0 {
+        let to_read = remaining.min(buf.len() as u64) as usize;
+        let n = file
+            .read(&mut buf[..to_read])
+            .await
+            .map_err(|e| format!("read media file: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        writer
+            .write_all(&buf[..n])
+            .await
+            .map_err(|e| e.to_string())?;
+        remaining -= n as u64;
+    }
+    Ok(())
+}
+
+fn parse_range_header(range_header: Option<&str>, file_len: u64) -> Result<Option<(u64, u64)>, ()> {
+    let Some(raw) = range_header else {
+        return Ok(None);
+    };
+    let Some(spec) = raw.trim().strip_prefix("bytes=") else {
+        return Err(());
+    };
+    if spec.contains(',') || file_len == 0 {
+        return Err(());
+    }
+    let Some((start_raw, end_raw)) = spec.split_once('-') else {
+        return Err(());
+    };
+
+    let (start, end) = if start_raw.is_empty() {
+        let suffix_len = end_raw.parse::<u64>().map_err(|_| ())?;
+        if suffix_len == 0 {
+            return Err(());
+        }
+        let start = file_len.saturating_sub(suffix_len);
+        (start, file_len - 1)
+    } else {
+        let start = start_raw.parse::<u64>().map_err(|_| ())?;
+        if start >= file_len {
+            return Err(());
+        }
+        let end = if end_raw.is_empty() {
+            file_len - 1
+        } else {
+            end_raw.parse::<u64>().map_err(|_| ())?.min(file_len - 1)
+        };
+        if end < start {
+            return Err(());
+        }
+        (start, end)
+    };
+
+    Ok(Some((start, end)))
 }
 
 fn handle_content_directory(
@@ -606,5 +726,33 @@ mod tests {
             "got: {}",
             resp
         );
+    }
+
+    #[test]
+    fn parses_byte_ranges() {
+        assert_eq!(parse_range_header(None, 100), Ok(None));
+        assert_eq!(parse_range_header(Some("bytes=0-9"), 100), Ok(Some((0, 9))));
+        assert_eq!(
+            parse_range_header(Some("bytes=10-"), 100),
+            Ok(Some((10, 99)))
+        );
+        assert_eq!(
+            parse_range_header(Some("bytes=-10"), 100),
+            Ok(Some((90, 99)))
+        );
+        assert_eq!(
+            parse_range_header(Some("bytes=95-200"), 100),
+            Ok(Some((95, 99)))
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_byte_ranges() {
+        assert!(parse_range_header(Some("items=0-9"), 100).is_err());
+        assert!(parse_range_header(Some("bytes=50-40"), 100).is_err());
+        assert!(parse_range_header(Some("bytes=100-101"), 100).is_err());
+        assert!(parse_range_header(Some("bytes=0-1,4-5"), 100).is_err());
+        assert!(parse_range_header(Some("bytes=-0"), 100).is_err());
+        assert!(parse_range_header(Some("bytes=0-1"), 0).is_err());
     }
 }

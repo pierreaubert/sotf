@@ -138,6 +138,9 @@ pub struct TransientShaperPlugin {
 /// coeff = 1.0 - exp(-1.0 / (time_ms * 0.001 * sample_rate))
 #[inline]
 fn time_to_coeff(time_ms: f32, sample_rate: u32) -> f32 {
+    if time_ms <= 0.0 || sample_rate == 0 {
+        return 1.0;
+    }
     1.0 - (-1.0 / (time_ms * 0.001 * sample_rate as f32)).exp()
 }
 
@@ -490,7 +493,7 @@ impl InPlacePlugin for TransientShaperPlugin {
 mod tests {
     use super::*;
 
-    fn make_context(num_frames: usize) -> ProcessContext {
+    fn make_context(num_frames: usize) -> ProcessContext<'static> {
         ProcessContext::new(48000, num_frames)
     }
 
@@ -915,6 +918,14 @@ mod tests {
         for (i, &s) in buffer.iter().enumerate() {
             assert!(s.is_finite(), "sample {} is not finite: {}", i, s);
         }
+    }
+
+    #[test]
+    fn test_time_to_coeff_handles_bad_inputs() {
+        assert_eq!(time_to_coeff(0.0, 48000), 1.0);
+        assert_eq!(time_to_coeff(-1.0, 48000), 1.0);
+        assert_eq!(time_to_coeff(10.0, 0), 1.0);
+        assert!(time_to_coeff(10.0, 48000).is_finite());
     }
 
     #[test]

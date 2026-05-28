@@ -1,0 +1,105 @@
+# Full GPUI test matrix.
+#
+# This suite covers all GPUI screens and major action groups.
+# Run with:
+#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/full_matrix.toml -v
+#
+# For TUI scenarios see suites/tui.toml.
+
+[runner]
+app_bin = "target/debug/sotf-desktop"
+readiness_timeout = "20s"
+
+# ── Smoke & basic navigation ────────────────────────────────────────────────
+
+[[scenario]]
+name = "gpui-smoke"
+path = "crates/sotf-dev-driver/scenarios/smoke.scn"
+timeout = "30s"
+tags = ["gpui", "smoke"]
+
+[[scenario]]
+name = "gpui-library"
+path = "crates/sotf-dev-driver/scenarios/library.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-transport"
+path = "crates/sotf-dev-driver/scenarios/gpui_transport.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+# ── Screens ─────────────────────────────────────────────────────────────────
+
+[[scenario]]
+name = "gpui-studio"
+path = "crates/sotf-dev-driver/scenarios/studio.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-plugin-graph"
+path = "crates/sotf-dev-driver/scenarios/plugin_graph.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-plugin-rack"
+path = "crates/sotf-dev-driver/scenarios/gpui_plugin_rack.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-recording"
+path = "crates/sotf-dev-driver/scenarios/recording.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-room-eq"
+path = "crates/sotf-dev-driver/scenarios/room_eq.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-headphone-eq"
+path = "crates/sotf-dev-driver/scenarios/headphone_eq.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-spinorama"
+path = "crates/sotf-dev-driver/scenarios/spinorama.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-spectrum"
+path = "crates/sotf-dev-driver/scenarios/gpui_spectrum.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-devices"
+path = "crates/sotf-dev-driver/scenarios/gpui_devices.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-settings"
+path = "crates/sotf-dev-driver/scenarios/gpui_settings.scn"
+timeout = "30s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-playlists"
+path = "crates/sotf-dev-driver/scenarios/gpui_playlists.scn"
+timeout = "10s"
+tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-level-meters"
+path = "crates/sotf-dev-driver/scenarios/gpui_level_meters.scn"
+timeout = "10s"
+tags = ["gpui"]

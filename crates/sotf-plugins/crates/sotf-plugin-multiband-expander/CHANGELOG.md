@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.24
+
+### Bug fixes
+
+- **Real-time safety** (`lib.rs:1787`): Time-domain processing now splits blocks larger than the
+  preallocated `4096` frame capacity into internal chunks instead of growing `dry_buffer` or
+  `band_buffers` inside `process_in_place`. Added regression coverage that verifies oversized
+  blocks process without resizing the hot-path buffers.
+
 ## 0.5.23
 
 ### Bug fixes (critical / high)

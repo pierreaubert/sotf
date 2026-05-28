@@ -3,6 +3,12 @@
 ## Fixes (from code review 2026-05-11)
 
 ### Fixed
+- **Air absorption documentation and coverage** (`reflections.rs`, `tests.rs`): Kept the
+  conservative quadratic dB/m fit after checking the review's proposed `5e-7 * f^1.5`
+  replacement, and added a regression assertion for the documented 8 kHz / 5 m value.
+- **Denormal regression test** (`tests.rs`): Corrected the test to count only IEEE-754
+  subnormal values below `f32::MIN_POSITIVE`; small normal values such as `1e-35`
+  are intentionally preserved by `flush_denormals_inplace`.
 - **Room reflection pressure coefficient** (`reflections.rs:119`): amplitude now uses
   `sqrt(1 - wall_absorption)` (pressure reflection coefficient) instead of
   `(1 - wall_absorption)` (energy coefficient). For α = 0.3 the reflected amplitude
@@ -22,12 +28,6 @@
   unnecessary host-side latency compensation.
 
 ### Deferred
-- **Air absorption formula** (review §1.2): the review's suggested replacement
-  `5e-7 * f^1.5` was verified to over-estimate more severely than the current quadratic
-  formula at 1 kHz. The current formula (`0.001 * (f/1000)^2`) overestimates by ~1.8× at
-  4 kHz vs ISO 9613-1, which is within acceptable bounds for room-scale distances. The
-  doc-comment was updated to document the known over-estimation and its practical
-  inaudibility.
 - **Brown-Duda `alpha_min` comment** (review §1.1): review says to "correct or document";
   the function already documents this as a simplified approximation. Adding published
   curve comparison tests deferred as cross-crate benchmark work.

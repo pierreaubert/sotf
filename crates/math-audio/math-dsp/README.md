@@ -1,8 +1,7 @@
-# math-dsp
+# math-dsp (lib: `math_audio_dsp`)
 
 DSP utilities for audio signal generation and FFT-based analysis.
 
-**Library name:** `math_audio_dsp`
 **Version:** 0.5.19
 
 ## Overview
@@ -182,7 +181,9 @@ write_analysis_csv(&recording_result, Path::new("output.csv"), Some(&mic_compens
 let loaded = read_analysis_csv(Path::new("output.csv"))?;
 ```
 
-## Binary: `simd-fuzzer`
+## Binaries
+
+### `simd-fuzzer`
 
 Fuzz testing tool for SIMD-optimized DSP operations. Validates SIMD implementations against scalar reference code.
 
@@ -190,7 +191,7 @@ Fuzz testing tool for SIMD-optimized DSP operations. Validates SIMD implementati
 cargo run --bin simd-fuzzer --release
 ```
 
-## Binary: `wav2csv`
+### `wav2csv`
 
 CLI tool to analyze a WAV file and output frequency/SPL/phase as CSV.
 
@@ -227,3 +228,7 @@ Options: `--num-points`, `--min-freq`, `--max-freq`, `--fft-size`, `--overlap`, 
 cargo test -p math-dsp --lib
 cargo check -p math-dsp && cargo clippy -p math-dsp
 ```
+
+## License
+
+See the root workspace `LICENSE` file.

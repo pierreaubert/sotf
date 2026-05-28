@@ -29,6 +29,14 @@ fn assert_layout_invariants<P: PluginParamDef>() {
 
     // 4. Column constraints include Main (which never collapses)
     assert_has_main_column(plugin_type, layout);
+
+    // 5. Every param in PARAMS is referenced by the layout (no uncovered params)
+    let coverage_errors = layout.validate_coverage(params, plugin_type);
+    assert!(
+        coverage_errors.is_empty(),
+        "[{plugin_type}] layout coverage errors:\n{}",
+        coverage_errors.join("\n")
+    );
 }
 
 fn all_controls(layout: &PluginLayout) -> Vec<(&'static str, &ControlSpec)> {
@@ -233,3 +241,16 @@ invariant_test!(
 invariant_test!(invariants_pnd, sotf_plugin_pnd::params::Params);
 invariant_test!(invariants_upmixer, sotf_plugin_upmixer::params::Params);
 invariant_test!(invariants_xtc, sotf_plugin_xtc::params::Params);
+
+// Missing plugins added for coverage audit
+invariant_test!(invariants_de_esser, sotf_plugin_de_esser::params::Params);
+invariant_test!(invariants_stereo_imager, sotf_plugin_stereo_imager::params::Params);
+invariant_test!(invariants_dynamic_eq, sotf_plugin_dynamic_eq::params::Params);
+invariant_test!(invariants_fir_designer, sotf_plugin_fir_designer::params::Params);
+invariant_test!(invariants_linear_phase_eq, sotf_plugin_linear_phase_eq::params::Params);
+invariant_test!(invariants_spectral_compressor, sotf_plugin_spectral_compressor::params::Params);
+invariant_test!(invariants_saturation, sotf_plugin_saturation::params::Params);
+invariant_test!(invariants_transient_shaper, sotf_plugin_transient_shaper::params::Params);
+// Note: multiband_compressor and multiband_expander have dynamic per-band params
+// and do not implement PluginParamDef on a single Params type. Their layouts
+// are audited manually in the plugin-ui-check report.

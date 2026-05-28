@@ -1,0 +1,5 @@
+# TUI Queue screen test
+focus queue
+assert screen.focused == "Queue"
+assert queue.length == 0
+assert queue.current_index == null

@@ -27,6 +27,7 @@ members = [
     "crates/sotf-plugins/crates/sotf-plugin-gate",
     "crates/sotf-plugins/crates/sotf-plugin-hal-input",
     "crates/sotf-plugins/crates/sotf-plugin-hal-output",
+    "crates/sotf-plugins/crates/sotf-plugin-fir-designer",
     "crates/sotf-plugins/crates/sotf-plugin-linear-phase-eq",
     "crates/sotf-plugins/crates/sotf-plugin-limiter",
     "crates/sotf-plugins/crates/sotf-plugin-loudness-compensation",
@@ -144,6 +145,7 @@ env_logger = "0.11"
 # getrandom = "0.2"
 libc = "0.2"
 log = "0.4"
+memmap2 = "0.9"
 mimalloc = { version = "0.1" }
 notify = { version = "8.2" }
 num_cpus = "1.17"
@@ -165,6 +167,7 @@ serial_test = "3"
 which = "8"
 walkdir = "2"
 qrcode = "0.14"
+windows-sys = "0.61"
 
 # Optimization and math
 ndarray = { version = "0.17", default-features = false, features = ["rayon", "serde"] }
@@ -233,6 +236,7 @@ sotf-plugin-gain = { path = "crates/sotf-plugins/crates/sotf-plugin-gain" }
 sotf-plugin-gate = { path = "crates/sotf-plugins/crates/sotf-plugin-gate" }
 sotf-plugin-hal-input = { path = "crates/sotf-plugins/crates/sotf-plugin-hal-input" }
 sotf-plugin-hal-output = { path = "crates/sotf-plugins/crates/sotf-plugin-hal-output" }
+sotf-plugin-fir-designer = { path = "crates/sotf-plugins/crates/sotf-plugin-fir-designer" }
 sotf-plugin-linear-phase-eq = { path = "crates/sotf-plugins/crates/sotf-plugin-linear-phase-eq" }
 sotf-plugin-limiter = { path = "crates/sotf-plugins/crates/sotf-plugin-limiter" }
 sotf-plugin-loudness-compensation = { path = "crates/sotf-plugins/crates/sotf-plugin-loudness-compensation" }

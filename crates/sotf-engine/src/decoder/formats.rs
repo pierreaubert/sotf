@@ -4,12 +4,12 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use symphonia::core::audio::{Audio, GenericAudioBufferRef};
-use symphonia::core::codecs::CodecParameters;
 use symphonia::core::codecs::audio::{
-    AudioCodecId, AudioCodecParameters, AudioDecoder as SymphoniaAudioDecoder, AudioDecoderOptions,
-    CODEC_ID_NULL_AUDIO, well_known,
+    well_known, AudioCodecId, AudioCodecParameters, AudioDecoder as SymphoniaAudioDecoder,
+    AudioDecoderOptions, CODEC_ID_NULL_AUDIO,
 };
 use symphonia::core::codecs::registry::CodecRegistry;
+use symphonia::core::codecs::CodecParameters;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::{Hint, Probe};
 use symphonia::core::formats::{FormatOptions, FormatReader, Track, TrackType};
@@ -581,14 +581,14 @@ impl AudioDecoder for SymphoniaDecoder {
     }
 
     fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize> {
-        if self.eof {
-            return Ok(0);
-        }
-
         // Clear destination samples but keep capacity
         dest.samples.clear();
         dest.frame_position = self.position;
         dest.spec = self.spec.clone(); // Ensure spec matches
+
+        if self.eof {
+            return Ok(0);
+        }
 
         if let Some(pending) = self.pending_decoded.take() {
             let frame_count = pending.frame_count();
@@ -719,6 +719,28 @@ impl AudioDecoder for SymphoniaDecoder {
 #[cfg(test)]
 mod tests_decoder {
     use super::*;
+    use hound::{SampleFormat, WavSpec, WavWriter};
+    use tempfile::NamedTempFile;
+
+    fn create_test_wav() -> NamedTempFile {
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: SampleFormat::Int,
+        };
+        let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+        let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
+
+        for frame in 0..512 {
+            let sample = if frame % 2 == 0 { i16::MAX / 4 } else { -i16::MAX / 4 };
+            writer.write_sample(sample).unwrap();
+            writer.write_sample(-sample).unwrap();
+        }
+
+        writer.finalize().unwrap();
+        temp_file
+    }
 
     #[test]
     fn test_symphonia_decoder_creation_fails_for_nonexistent() {
@@ -744,6 +766,35 @@ mod tests_decoder {
         let format = SymphoniaDecoder::format_from_codec(well_known::CODEC_ID_ALAC);
         assert_eq!(format, AudioFormat::Alac);
         assert!(format.is_lossless());
+    }
+
+    #[test]
+    fn test_symphonia_decode_into_clears_destination_after_eof() {
+        let wav = create_test_wav();
+        let mut decoder = SymphoniaDecoder::new(wav.path()).unwrap();
+        let mut dest = DecodedAudio {
+            spec: AudioSpec {
+                sample_rate: 1,
+                channels: 1,
+                bits_per_sample: 8,
+                total_frames: Some(1),
+            },
+            samples: vec![0.25, -0.25, 0.5],
+            frame_position: 123,
+        };
+
+        while decoder.decode_into(&mut dest).unwrap() > 0 {}
+
+        dest.samples.extend_from_slice(&[1.0, 2.0]);
+        dest.frame_position = 456;
+
+        let frames = decoder.decode_into(&mut dest).unwrap();
+
+        assert_eq!(frames, 0);
+        assert!(decoder.is_eof());
+        assert!(dest.samples.is_empty());
+        assert_eq!(dest.spec, *decoder.spec());
+        assert_eq!(dest.frame_position, decoder.position());
     }
 
     // Integration tests would go here with actual audio files:

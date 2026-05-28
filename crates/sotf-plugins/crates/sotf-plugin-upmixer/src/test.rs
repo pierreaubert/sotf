@@ -1197,6 +1197,37 @@ mod upmixer_tests {
         );
     }
 
+    #[test]
+    fn test_height_mask_passband_bins_stay_at_floor() {
+        let fft_size = 2048;
+        let mut plugin = UpmixerPlugin::new(
+            fft_size, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        let mut input = vec![0.0f32; fft_size * 2];
+        for i in 0..fft_size {
+            let t = i as f32 / 44100.0;
+            input[i * 2] = (2.0 * std::f32::consts::PI * 8000.0 * t).sin() * 0.5;
+            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 11000.0 * t).sin() * 0.5;
+        }
+        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+
+        for _ in 0..10 {
+            plugin.process_fft_block(&input, &mut output);
+        }
+
+        let bandpass_bin = plugin
+            .cached_bandpass_bin
+            .min(plugin.height_band_gains.len());
+        for (bin, &gain) in plugin.height_band_gains[..bandpass_bin].iter().enumerate() {
+            assert!(
+                (gain - crate::frequency_domain::HEIGHT_MASK_FLOOR).abs() < 1e-6,
+                "height gain below bandpass should stay at floor, bin {bin} = {gain}"
+            );
+        }
+    }
+
     // ===== NEW FEATURE TESTS TO IDENTIFY CLIPPING SOURCE =====
 
     #[test]

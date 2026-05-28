@@ -1,0 +1,16 @@
+# TUI Configure screen navigation test
+focus configure
+assert screen.focused == "Configure"
+assert configure.sub_screen == "Directories"
+
+action SwitchToPlugins
+assert screen.focused == "Plugins"
+
+action SwitchToDevices
+assert screen.focused == "Devices"
+
+action SwitchToPlaylists
+assert screen.focused == "Playlists"
+
+action SwitchToLibrary
+assert screen.focused == "Library"

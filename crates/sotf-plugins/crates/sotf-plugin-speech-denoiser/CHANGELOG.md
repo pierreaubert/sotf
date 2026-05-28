@@ -1,3 +1,10 @@
+# 0.5.6
+
+Bug fixes from code review (2026-05-16):
+
+- Delegated to `plugins-denoiser`: RNNoise reduction metering now averages input/output power
+  across all processed channels instead of reporting channel 0 only.
+
 # 0.5.5
 
 Bug fixes from code review (2026-05-11):

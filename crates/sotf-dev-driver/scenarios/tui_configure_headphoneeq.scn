@@ -1,0 +1,42 @@
+# TUI Configure → Headphone EQ wizard navigation.
+#
+# Covers: HeadphoneEq sub-screen, step tab navigation, BackTab chains.
+
+focus configure
+assert screen.focused == "Configure"
+assert input_mode == "Configure"
+
+# Enter Headphone EQ sub-screen.
+key 4
+sleep 100ms
+assert input_mode == "ConfigureHeadphoneEq"
+assert configure.sub_screen == "HeadphoneEq"
+assert headphoneeq.step == "SelectFile"
+
+# Navigate step tab bar forward.
+key right
+sleep 100ms
+assert headphoneeq.step == "Configure"
+
+key right
+sleep 100ms
+assert headphoneeq.step == "Optimize"
+
+# BackTab from Optimize goes back to Configure.
+key backtab
+sleep 100ms
+assert headphoneeq.step == "Configure"
+
+# Esc chain: content → step tab → configure tab.
+key esc
+sleep 100ms
+assert input_mode == "ConfigureHeadphoneEq"
+
+key esc
+sleep 100ms
+assert input_mode == "Configure"
+assert screen.focused == "Configure"
+
+# Return to library.
+focus library
+assert screen.focused == "Library"

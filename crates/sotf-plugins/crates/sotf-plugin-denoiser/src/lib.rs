@@ -23,6 +23,7 @@ use rustfft::num_complex::Complex;
 pub mod params;
 
 use crate::params::PARAMS as DN;
+use math_audio_dsp::simd::ScopedFtz;
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
@@ -221,6 +222,9 @@ pub struct DenoiserPlugin {
     // Wiener filter state
     gain: Vec<Vec<f32>>,          // Current Wiener gains per bin
     smoothed_gain: Vec<Vec<f32>>, // Temporally smoothed gains
+    // Spatial denoising state
+    spatial_coherence: Vec<f32>, // Smoothed MSC coherence estimate per bin
+    spatial_cross: Vec<Complex<f32>>, // Averaged complex cross-spectrum estimate per bin
 
     // Frequency smoothing scratch buffer and precomputed kernel
     freq_smooth_temp: Vec<f32>, // [spectrum_size] scratch for smoothing across bins
@@ -395,6 +399,8 @@ impl DenoiserPlugin {
 
             gain,
             smoothed_gain,
+            spatial_coherence: vec![1.0_f32; spectrum_size],
+            spatial_cross: vec![Complex::new(1.0_f32, 0.0_f32); spectrum_size],
 
             freq_smooth_temp: vec![0.0_f32; spectrum_size],
             freq_smooth_kernel: Self::compute_smoothing_kernel(pk(DN, "smoothing").default_f32()),
@@ -650,12 +656,17 @@ impl DenoiserPlugin {
         let block_samples = self.fft_size * self.channels;
 
         // Phase 1: Apply window and forward FFT (must happen before shifting)
-        // Copy the block to avoid borrow conflicts with the shift operation
-        // Use pre-allocated buffer instead of local Vec::new() / to_vec()
-        let mut input_block = std::mem::take(&mut self.temp_input_block);
-        input_block[..block_samples].copy_from_slice(&self.input_buffer[..block_samples]);
-        self.apply_window_and_forward_fft(&input_block);
-        self.temp_input_block = input_block; // Restore buffer
+        // Copy into pre-allocated scratch before shifting.
+        self.temp_input_block
+            .iter_mut()
+            .take(block_samples)
+            .zip(self.input_buffer.iter().take(block_samples))
+            .for_each(|(dst, src)| *dst = *src);
+        // Safe because the pointer remains valid for `block_samples` and is only
+        // read while `self` is borrowed mutably for this FFT call.
+        let input_ptr = self.temp_input_block.as_ptr();
+        let input_block = unsafe { std::slice::from_raw_parts(input_ptr, block_samples) };
+        self.apply_window_and_forward_fft(input_block);
 
         // Shift input buffer (remove processed samples, keeping hop_size overlap)
         let shift_samples = self.hop_size * self.channels;
@@ -897,6 +908,8 @@ impl InPlacePlugin for DenoiserPlugin {
         // Reset formant preserver working buffers
         self.formant_preserver.log_mag_scratch.fill(0.0);
         self.formant_preserver.envelope.fill(0.0);
+        self.spatial_coherence.fill(1.0);
+        self.spatial_cross.fill(Complex::new(1.0_f32, 0.0_f32));
 
         // Reset multi-resolution state
         if let Some(ref mut mrs) = self.multi_res_state {
@@ -911,32 +924,14 @@ impl InPlacePlugin for DenoiserPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
-        // Set FTZ+DAZ to flush denormals at hardware level (zero per-sample cost)
-        #[cfg(target_arch = "x86_64")]
-        let _old_mxcsr = unsafe {
-            let mut old: u32 = 0;
-            std::arch::asm!("stmxcsr [{}]", in(reg) &mut old, options(nostack, preserves_flags));
-            let new = old | 0x8040; // FTZ + DAZ
-            std::arch::asm!("ldmxcsr [{}]", in(reg) &new, options(nostack, preserves_flags));
-            old
-        };
+        let _ftz_guard = ScopedFtz::new();
 
         let num_frames = context.num_frames;
         let total_samples = match num_frames.checked_mul(self.channels) {
             Some(total_samples) => total_samples,
-            None => {
-                #[cfg(target_arch = "x86_64")]
-                unsafe {
-                    std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
-                }
-                return Err("Frame/channel count overflow".to_string());
-            }
+            None => return Err("Frame/channel count overflow".to_string()),
         };
         if buffer.len() != total_samples {
-            #[cfg(target_arch = "x86_64")]
-            unsafe {
-                std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
-            }
             return Err(format!(
                 "Buffer size mismatch: expected {}, got {}",
                 total_samples,
@@ -946,10 +941,6 @@ impl InPlacePlugin for DenoiserPlugin {
 
         let max_in_place_frames = self.max_in_place_frames();
         if num_frames > max_in_place_frames {
-            #[cfg(target_arch = "x86_64")]
-            unsafe {
-                std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
-            }
             return Err(format!(
                 "Block too large for in-place denoiser: {} frames exceeds prepared safe maximum {}",
                 num_frames, max_in_place_frames
@@ -1026,12 +1017,6 @@ impl InPlacePlugin for DenoiserPlugin {
         if output_pos < num_frames {
             let zero_start = output_pos * self.channels;
             buffer[zero_start..total_samples].fill(0.0);
-        }
-
-        // Restore MXCSR
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
         }
 
         // STFT convention: always return num_frames. Buffer is zero-padded for

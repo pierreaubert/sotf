@@ -3627,8 +3627,8 @@ fn build_factored_routed_room_eq_graph(
     let mut lp_modes: Vec<&'static str> = vec!["mute"; channel_count];
     let mut lp_delay_ms = vec![0.0f32; channel_count];
     // chain[ch] route_owned gain_db (i.e. baked-in LFE-style gain).
-    // Used as the dB coefficient for the self-route (src == dst) of that
-    // channel when present, overriding `route.gain_db` — see I1.
+    // Self-routes must prefer this baked-in chain gain over route metadata
+    // so the LFE channel is not attenuated twice.
     let mut chain_route_owned_gain_db = vec![0.0f32; channel_count];
     // Per-route LP fan-in: (dst_idx, src_idx, gain_db). Built directly from
     // routes so routes that point to different destinations from the same
@@ -3727,11 +3727,11 @@ fn build_factored_routed_room_eq_graph(
                     lp_fc[src_idx] = fc as f32;
                 }
                 lp_delay_ms[src_idx] = route.delay_ms as f32;
-                // I1 / C2: prefer the chain's route_owned gain only for
-                // self-routes (src == dst), where it represents the
-                // applied-sub-gain baked into the LFE chain. For all other
-                // routes use route.gain_db so multi-destination routes from
-                // a single source don't collapse.
+                // Prefer the chain's route_owned gain only for self-routes
+                // (src == dst), where it represents the applied-sub-gain
+                // baked into the LFE chain. For all other routes use
+                // route.gain_db so multi-destination routes from a single
+                // source don't collapse into one shared gain.
                 let route_gain_db =
                     if src_idx == dst_idx && chain_route_owned_gain_db[src_idx].abs() > 1e-6 {
                         chain_route_owned_gain_db[src_idx]
@@ -3747,10 +3747,10 @@ fn build_factored_routed_room_eq_graph(
         }
     }
 
-    // C1: destination-only channels (channels that receive routed bass but
-    // have no source-side processing) pass their direct input through the HP
-    // branch unchanged. This preserves the sub-direct-feed case (.1 from a
-    // 5.1 source mixed onto the sub channel upstream of RoomEQ).
+    // Destination-only channels (channels that receive routed bass but have
+    // no source-side processing) pass their direct input through the HP branch
+    // unchanged. This preserves the sub-direct-feed case (.1 from a 5.1
+    // source mixed onto the sub channel upstream of RoomEQ).
     for ch in 0..channel_count {
         if is_destination[ch] && !is_source[ch] {
             hp_modes[ch] = "passthrough";
@@ -3907,7 +3907,9 @@ fn build_factored_routed_room_eq_graph(
     Ok(PluginGraphConfig { nodes, edges })
 }
 
-#[allow(dead_code)]
+/// Legacy routed graph builder retained for regression comparisons against
+/// the current factored graph builder.
+#[cfg(test)]
 fn build_routed_room_eq_graph(
     output: &DspChainOutput,
     graph: &autoeq::roomeq::BassManagementRoutingGraph,
@@ -4576,6 +4578,7 @@ fn sorted_channel_names(output: &DspChainOutput) -> Vec<String> {
     names
 }
 
+#[cfg(test)]
 fn route_matrix_gain(route: &autoeq::roomeq::BassManagementRoute) -> f64 {
     if route.matrix_gain.abs() <= f64::EPSILON && route.gain_linear.abs() > f64::EPSILON {
         route.gain_linear
@@ -4640,6 +4643,7 @@ fn is_route_replaced_global_plugin(plugin: &DspPluginConfig) -> bool {
                 == Some("home_cinema_bass_management"))
 }
 
+#[cfg(test)]
 fn pre_route_plugins_for_route<'a>(
     output: &'a DspChainOutput,
     route: &autoeq::roomeq::BassManagementRoute,
@@ -4670,6 +4674,7 @@ fn pre_route_plugins_for_route<'a>(
         .collect()
 }
 
+#[cfg(test)]
 fn post_route_plugins_for_channel<'a>(
     output: &'a DspChainOutput,
     channel_name: &str,
@@ -4735,6 +4740,7 @@ fn post_route_plugins_for_channel<'a>(
     chain.plugins[start..].iter().collect()
 }
 
+#[cfg(test)]
 fn post_route_chain_for_channel<'a>(
     output: &'a DspChainOutput,
     channel_name: &str,
@@ -4753,6 +4759,7 @@ fn post_route_chain_for_channel<'a>(
     })
 }
 
+#[cfg(test)]
 fn is_route_owned_plugin(plugin: &DspPluginConfig) -> bool {
     plugin_stage(plugin) == Some("route_owned")
         || plugin
@@ -4769,6 +4776,7 @@ fn plugin_stage(plugin: &DspPluginConfig) -> Option<&str> {
         .and_then(|value| value.as_str())
 }
 
+#[cfg(test)]
 fn plugins_for_post_chain_name<'a>(
     output: &'a DspChainOutput,
     post_chain_name: &str,
@@ -4786,10 +4794,12 @@ fn plugins_for_post_chain_name<'a>(
         .unwrap_or_default()
 }
 
+#[cfg(test)]
 fn is_bass_route(route: &autoeq::roomeq::BassManagementRoute) -> bool {
     route.route_kind == "redirected_bass_lowpass_to_sub" || route.route_kind == "lfe_lowpass_to_sub"
 }
 
+#[cfg(test)]
 fn is_bass_output_channel(
     channel_name: &str,
     graph: &autoeq::roomeq::BassManagementRoutingGraph,
@@ -4800,6 +4810,7 @@ fn is_bass_output_channel(
         .any(|route| is_bass_route(route) && route.destination == channel_name)
 }
 
+#[cfg(test)]
 fn route_owns_gain_plugin(
     plugin: &DspPluginConfig,
     channel_name: &str,
@@ -4842,6 +4853,7 @@ fn route_owns_gain_plugin(
         })
 }
 
+#[cfg(test)]
 fn route_owns_delay_plugin(
     plugin: &DspPluginConfig,
     channel_name: &str,
@@ -7054,7 +7066,7 @@ mod tests {
         );
     }
 
-    /// I5: every node emitted by the factored builder must instantiate
+    /// Every node emitted by the factored builder must instantiate
     /// successfully via `sotf_plugins::create_plugin`. This catches schema
     /// drift between the JSON the builder emits and the plugin parameter
     /// structs — otherwise the engine would fail at flush time with a
@@ -7093,8 +7105,8 @@ mod tests {
         }
     }
 
-    /// I5b: the `lfe_gain_applied_to_chain == true` path needs explicit
-    /// coverage — the existing fixtures all set it to false. Build a small
+    /// The `lfe_gain_applied_to_chain == true` path needs explicit coverage
+    /// because the common fixtures set it to false. Build a small
     /// variant that flips it and confirm the matrix coefficient still
     /// reflects route.gain_db (chain has no route_owned gain in this
     /// minimal scenario, so the chain-override branch shouldn't fire).
@@ -7133,7 +7145,7 @@ mod tests {
         );
     }
 
-    /// C1 regression: a destination-only channel (in the routing graph as a
+    /// Regression: a destination-only channel (in the routing graph as a
     /// destination but not a source of any route) must pass its direct
     /// input through the HP branch so signals arriving on that channel
     /// upstream of RoomEQ reach the post-EQ stage instead of being muted.
@@ -7166,7 +7178,7 @@ mod tests {
         );
     }
 
-    /// I5b: When `lfe_gain_applied_to_chain == true` AND the LFE chain has a
+    /// When `lfe_gain_applied_to_chain == true` AND the LFE chain has a
     /// `route_owned` gain plugin, the chain-override branch in the builder
     /// should win for the LFE self-route. Matrix coefficient for the LFE
     /// self-route should reflect the chain's gain, not `route.gain_db`.
@@ -7288,8 +7300,8 @@ mod tests {
                             crossover_type: "LR24".to_string(),
                             high_pass_hz: None,
                             low_pass_hz: Some(80.0),
-                            // Route metadata gain is -7. The chain has -17.
-                            // The chain-override (I1) should win for self-routes.
+                            // Route metadata gain is -7. The chain has -17,
+                            // which should win for self-routes.
                             gain_db: -7.0,
                             gain_linear: 0.4467,
                             matrix_gain: 0.4467,
@@ -7332,13 +7344,13 @@ mod tests {
             (l_to_lfe - expected_l_to_lfe).abs() < 1e-5,
             "L→LFE matrix coef should be 10^(-13/20) ≈ {expected_l_to_lfe}, got {l_to_lfe}"
         );
-        // LFE → LFE: chain has route_owned gain = -17 dB; chain override
-        // (I1) should win over route.gain_db = -7.
+        // LFE → LFE: chain has route_owned gain = -17 dB, which should win
+        // over route.gain_db = -7 for the self-route.
         let lfe_to_lfe = matrix[1 * 2 + 1];
         let expected_lfe_to_lfe = 10.0_f32.powf(-17.0 / 20.0);
         assert!(
             (lfe_to_lfe - expected_lfe_to_lfe).abs() < 1e-5,
-            "LFE self-route should use chain route_owned gain -17 (chain override I1), \
+            "LFE self-route should use chain route_owned gain -17, \
              got {lfe_to_lfe}, expected 10^(-17/20) ≈ {expected_lfe_to_lfe}"
         );
     }

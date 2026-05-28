@@ -1,5 +1,5 @@
 use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
-use sotf_host::{CountingAlloc, run_standard_tests};
+use sotf_host::{CountingAlloc, assert_no_allocs, run_standard_tests};
 use sotf_plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
 
 #[global_allocator]
@@ -36,7 +36,10 @@ fn main() {
     let num_frames = 24000; // 500ms for fade convergence
     let mut buffer = vec![1.0f32; num_frames * channels];
     let ctx = ProcessContext::new(sample_rate, num_frames);
-    inner.process_in_place(&mut buffer, &ctx).unwrap();
+
+    assert_no_allocs("ChannelMuteSoloPlugin::process_in_place", || {
+        inner.process_in_place(&mut buffer, &ctx).unwrap();
+    });
 
     let ch0_last = buffer[(num_frames - 1) * channels].abs();
     let ch1_last = buffer[(num_frames - 1) * channels + 1].abs();

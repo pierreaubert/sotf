@@ -15,17 +15,17 @@ use tempfile::NamedTempFile;
 
 /// Magic number for shared memory header validation: 'SOTF'
 const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
-/// Version 4: Added daemon heartbeat for stale-engine detection
-const SHARED_MEMORY_VERSION: u32 = 4;
+/// Version 5: Added atomic geometry/config fields and configuring handshake.
+const SHARED_MEMORY_VERSION: u32 = 5;
 
 /// Shared audio header structure (must match driver_hal::SharedAudioHeader)
-#[repr(C)]
+#[repr(C, align(8))]
 struct SharedAudioHeader {
-    magic: u32,
-    version: u32,
-    sample_rate: u32,
-    buffer_frames: u32,
-    channel_count: u32,
+    magic: AtomicU32,
+    version: AtomicU32,
+    sample_rate: AtomicU32,
+    buffer_frames: AtomicU32,
+    channel_count: AtomicU32,
     write_position: AtomicU64,
     read_position: AtomicU64,
     active: AtomicU32,
@@ -34,19 +34,20 @@ struct SharedAudioHeader {
     engine_ready: AtomicU32,
     // Encryption fields (version 2+)
     encrypted: AtomicU32,
-    key_fingerprint: [u8; 8],
+    key_fingerprint: AtomicU64,
     frame_counter: AtomicU64,
     // Config negotiation fields (version 3+)
-    requested_sample_rate: u32,
-    requested_buffer_frames: u32,
-    actual_sample_rate: u32,
-    actual_buffer_frames: u32,
+    requested_sample_rate: AtomicU32,
+    requested_buffer_frames: AtomicU32,
+    actual_sample_rate: AtomicU32,
+    actual_buffer_frames: AtomicU32,
     config_status: AtomicU32,
     config_source: AtomicU32,
-    config_error_code: u32,
+    config_error_code: AtomicU32,
     // Statistics
     encryption_overflow_count: AtomicU64,
     daemon_heartbeat_ms: AtomicU64,
+    configuring: AtomicU32,
 }
 
 /// Create a mock shared memory file for testing
@@ -63,11 +64,11 @@ fn create_mock_shared_memory(
     let mut file = NamedTempFile::new().expect("Failed to create temp file");
 
     let header = SharedAudioHeader {
-        magic: SHARED_MEMORY_MAGIC,
-        version: SHARED_MEMORY_VERSION,
-        sample_rate,
-        buffer_frames,
-        channel_count,
+        magic: AtomicU32::new(SHARED_MEMORY_MAGIC),
+        version: AtomicU32::new(SHARED_MEMORY_VERSION),
+        sample_rate: AtomicU32::new(sample_rate),
+        buffer_frames: AtomicU32::new(buffer_frames),
+        channel_count: AtomicU32::new(channel_count),
         write_position: AtomicU64::new(0),
         read_position: AtomicU64::new(0),
         active: AtomicU32::new(1),
@@ -76,19 +77,20 @@ fn create_mock_shared_memory(
         engine_ready: AtomicU32::new(0),
         // Encryption fields (version 2+)
         encrypted: AtomicU32::new(0),
-        key_fingerprint: [0; 8],
+        key_fingerprint: AtomicU64::new(0),
         frame_counter: AtomicU64::new(0),
         // Config negotiation fields (version 3+)
-        requested_sample_rate: 0,
-        requested_buffer_frames: 0,
-        actual_sample_rate: sample_rate,
-        actual_buffer_frames: buffer_frames,
+        requested_sample_rate: AtomicU32::new(0),
+        requested_buffer_frames: AtomicU32::new(0),
+        actual_sample_rate: AtomicU32::new(sample_rate),
+        actual_buffer_frames: AtomicU32::new(buffer_frames),
         config_status: AtomicU32::new(0),
         config_source: AtomicU32::new(0),
-        config_error_code: 0,
+        config_error_code: AtomicU32::new(0),
         // Statistics
         encryption_overflow_count: AtomicU64::new(0),
         daemon_heartbeat_ms: AtomicU64::new(0),
+        configuring: AtomicU32::new(0),
     };
 
     let header_bytes: &[u8] =
@@ -187,6 +189,9 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
             q: 1.0,
             db_gain: 0.0, // Zero gain
             order: 2,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         },
         BiquadFilterConfig {
             filter_type: "peak".to_string(),
@@ -194,6 +199,9 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
             q: 1.0,
             db_gain: 0.0, // Zero gain
             order: 2,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         },
         BiquadFilterConfig {
             filter_type: "peak".to_string(),
@@ -201,6 +209,9 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
             q: 1.0,
             db_gain: 0.0, // Zero gain
             order: 2,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         },
         BiquadFilterConfig {
             filter_type: "lowshelf".to_string(),
@@ -208,6 +219,9 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
             q: 0.707,
             db_gain: 0.0, // Zero gain
             order: 2,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         },
         BiquadFilterConfig {
             filter_type: "highshelf".to_string(),
@@ -215,6 +229,9 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
             q: 0.707,
             db_gain: 0.0, // Zero gain
             order: 2,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         },
     ];
 
@@ -357,6 +374,9 @@ fn test_hal_with_eq_zero_gain_passthrough() {
             q: 1.0,
             db_gain: 0.0,
             order: 2,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         },
         BiquadFilterConfig {
             filter_type: "lowshelf".to_string(),
@@ -364,6 +384,9 @@ fn test_hal_with_eq_zero_gain_passthrough() {
             q: 0.707,
             db_gain: 0.0,
             order: 2,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         },
         BiquadFilterConfig {
             filter_type: "highshelf".to_string(),
@@ -371,6 +394,9 @@ fn test_hal_with_eq_zero_gain_passthrough() {
             q: 0.707,
             db_gain: 0.0,
             order: 2,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         },
     ];
 
@@ -468,6 +494,9 @@ fn test_eq_zero_gain_with_silence() {
             q: 1.0,
             db_gain: 0.0,
             order: 2,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         }],
         channel_filters: None,
         auto_gain: Default::default(),
@@ -883,6 +912,9 @@ fn test_eq_zero_gain_preserves_full_scale() {
             q: 1.0,
             db_gain: 0.0,
             order: 2,
+            topology: Default::default(),
+            lambda: None,
+            kautz_sections: Vec::new(),
         }],
         channel_filters: None,
         auto_gain: Default::default(),

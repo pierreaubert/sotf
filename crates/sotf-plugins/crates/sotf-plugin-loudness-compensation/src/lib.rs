@@ -502,6 +502,10 @@ impl LoudnessCompensationPlugin {
     fn rebuild_filters(&mut self) {
         let q = 0.707;
         let sr = self.sample_rate as f64;
+        // Manual mode intentionally uses two cascaded shelves at half the requested
+        // gain. This gives a steeper transition than a single shelf, but the
+        // combined response around the corner is an approximation rather than an
+        // exact additive `low_gain`/`high_gain` curve.
         let lg = self.low_gain / 2.0;
         let hg = self.high_gain / 2.0;
         // When midrange is disabled, set gain to 0 dB so the peak filter is a no-op
@@ -1242,6 +1246,21 @@ mod tests {
             LoudnessCompensationPlugin::FILTER_COUNT,
             "Channel 1 should have {} filters",
             LoudnessCompensationPlugin::FILTER_COUNT
+        );
+    }
+
+    #[test]
+    fn test_manual_cascaded_shelf_approximates_requested_passband_gain() {
+        let mut p = LoudnessCompensationPlugin::new(1, 200.0, 12.0, 10000.0, 0.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+        let gain_db: f64 = p.filters[0]
+            .iter()
+            .map(|filter| filter.log_result(40.0))
+            .sum();
+        assert!(
+            (8.0..=14.0).contains(&(gain_db as f32)),
+            "two half-gain shelves should approximate the requested low passband gain; got {gain_db:.2} dB"
         );
     }
 

@@ -23,7 +23,8 @@ use super::output;
 use super::slope;
 use super::target_tilt;
 use super::types::{
-    ChannelDspChain, MeasurementSource, OptimizerConfig, ProcessingMode, RoomConfig, TargetShape,
+    ChannelDspChain, MeasurementSource, OptimizerConfig, PluginConfigWrapper, ProcessingMode,
+    RoomConfig, TargetShape,
 };
 
 // Import from optimize and group_processing modules
@@ -233,6 +234,708 @@ fn create_kautz_filter_config(sections: &[(f64, f64, f64)]) -> serde_json::Value
     })
 }
 
+fn load_channel_measurement(
+    channel_name: &str,
+    source: &MeasurementSource,
+    room_config: &RoomConfig,
+) -> Result<Curve> {
+    let curve = load::load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
+        message: format!(
+            "Failed to load measurement for channel {}: {}",
+            channel_name, e
+        ),
+    })?;
+
+    debug!(
+        "  Loaded measurement: {:.1} Hz - {:.1} Hz",
+        curve.freq[0],
+        curve.freq[curve.freq.len() - 1]
+    );
+
+    super::optimize::warn_if_optimizer_bounds_exceed_data(
+        channel_name,
+        &curve,
+        &room_config.optimizer,
+    );
+
+    Ok(curve)
+}
+
+fn detect_channel_arrival_time(
+    channel_name: &str,
+    source: &MeasurementSource,
+    room_config: &RoomConfig,
+    sample_rate: f64,
+    probe_arrival_ms: Option<f64>,
+) -> Option<f64> {
+    if let Some(probe_ms) = probe_arrival_ms {
+        debug!(
+            "  Using probe-based arrival time for '{}': {:.2} ms",
+            channel_name, probe_ms
+        );
+        return Some(probe_ms);
+    }
+
+    extract_wav_path(source).and_then(|wav_path| {
+        let path = std::path::Path::new(&wav_path);
+        if path.exists() {
+            if let Some((reference_name, reference_signal, reference_sample_rate)) =
+                matched_reference_from_recording_config(room_config, sample_rate)
+                && !reference_signal.is_empty()
+            {
+                match super::time_align::find_arrival_time_with_reference(
+                    path,
+                    &reference_signal,
+                    reference_sample_rate,
+                ) {
+                    Ok(result) => {
+                        debug!(
+                            "  {} matched arrival for '{}': {:.2} ms (peak at sample {}, SNR {:.1} dB)",
+                            reference_name,
+                            channel_name,
+                            result.arrival_ms,
+                            result.arrival_samples,
+                            result.detection_snr_db
+                        );
+                        return Some(result.arrival_ms);
+                    }
+                    Err(e) => {
+                        debug!(
+                            "  Could not determine {} matched arrival for '{}': {}; falling back to WAV onset",
+                            reference_name, channel_name, e
+                        );
+                    }
+                }
+            }
+
+            match super::time_align::find_arrival_time(path, None) {
+                Ok(result) => {
+                    debug!(
+                        "  Arrival time for '{}': {:.2} ms (peak at sample {})",
+                        channel_name, result.arrival_ms, result.arrival_samples
+                    );
+                    Some(result.arrival_ms)
+                }
+                Err(e) => {
+                    debug!(
+                        "  Could not determine arrival time for '{}': {}",
+                        channel_name, e
+                    );
+                    None
+                }
+            }
+        } else {
+            debug!("  WAV file not found for '{}': {:?}", channel_name, path);
+            None
+        }
+    })
+}
+
+fn cea2034_correction_active(room_config: &RoomConfig) -> bool {
+    room_config
+        .optimizer
+        .cea2034_correction
+        .as_ref()
+        .is_some_and(|c| c.enabled)
+}
+
+fn build_target_tilt_curve(
+    channel_name: &str,
+    room_config: &RoomConfig,
+    curve: &Curve,
+    cea2034_active: bool,
+) -> Option<Curve> {
+    let Some(ref target_resp) = room_config.optimizer.target_response else {
+        return None;
+    };
+
+    // When 3-pass is active, strip preferences from the target
+    // (they become Pass 3 output filters instead)
+    let mut effective_target = if cea2034_active {
+        let mut stripped = target_resp.clone();
+        stripped.preference = super::types::UserPreference::default();
+        stripped
+    } else {
+        target_resp.clone()
+    };
+    effective_target =
+        super::home_cinema::role_adjusted_target_response(channel_name, &effective_target);
+
+    // Resolve FromMeasurement: prefer a system-wide slope override
+    // (resolved once from a full-range reference channel by
+    // `optimize_room_impl`) over per-channel regression. Per-channel
+    // regression is junk for band-limited channels — an LFE/sub
+    // measurement has no real signal in the
+    // `[DEFAULT_SLOPE_MIN_FREQ, DEFAULT_SLOPE_MAX_FREQ]` window so
+    // the slope falls into the noise floor and the resulting target
+    // tilt is unphysically steep.
+    if effective_target.shape == TargetShape::FromMeasurement {
+        let is_sub_or_lfe = super::home_cinema::role_for_channel(channel_name).is_sub_or_lfe();
+        let measured_slope = if let Some(override_slope) =
+            room_config.optimizer.from_measurement_slope_override
+        {
+            info!(
+                "  FromMeasurement: using room-level slope = {:.2} dB/octave (resolved from reference channel) for '{}'",
+                override_slope, channel_name
+            );
+            override_slope
+        } else if is_sub_or_lfe {
+            info!(
+                "  FromMeasurement: '{}' is band-limited (sub/LFE) and no reference slope is available — defaulting to flat (0.0 dB/octave)",
+                channel_name
+            );
+            0.0
+        } else {
+            let s = slope::estimate_slope_db_per_octave(
+                curve,
+                slope::DEFAULT_SLOPE_MIN_FREQ,
+                slope::DEFAULT_SLOPE_MAX_FREQ,
+            )
+            .unwrap_or(0.0);
+            info!(
+                "  FromMeasurement: estimated slope = {:.2} dB/octave from '{}'",
+                s, channel_name
+            );
+            s
+        };
+        effective_target.shape = TargetShape::Custom;
+        effective_target.slope_db_per_octave = measured_slope;
+    }
+
+    if effective_target.shape != TargetShape::Flat
+        || effective_target.preference.bass_shelf_db.abs() > 1e-6
+        || effective_target.preference.treble_shelf_db.abs() > 1e-6
+        || super::home_cinema::role_target_curve_shape_active(channel_name, &effective_target)
+    {
+        info!(
+            "  Building target curve: shape={:?}, slope={:.2} dB/oct, bass={:+.1}dB, treble={:+.1}dB{}",
+            effective_target.shape,
+            match effective_target.shape {
+                TargetShape::Harman => -0.8,
+                TargetShape::Custom => effective_target.slope_db_per_octave,
+                _ => 0.0,
+            },
+            effective_target.preference.bass_shelf_db,
+            effective_target.preference.treble_shelf_db,
+            if cea2034_active {
+                " (preferences extracted to Pass 3)"
+            } else {
+                ""
+            },
+        );
+        let mut target_curve =
+            target_tilt::build_complete_target_curve(&curve.freq, &effective_target);
+        super::home_cinema::apply_role_target_curve_shape(
+            channel_name,
+            &mut target_curve,
+            &effective_target,
+        );
+        Some(target_curve)
+    } else {
+        None
+    }
+}
+
+fn generate_excursion_filters(
+    room_config: &RoomConfig,
+    curve: &Curve,
+    sample_rate: f64,
+) -> Vec<Biquad> {
+    let Some(exc_config) = &room_config.optimizer.excursion_protection else {
+        return Vec::new();
+    };
+    if !exc_config.enabled {
+        return Vec::new();
+    }
+
+    info!("  Applying excursion protection...");
+    match excursion::generate_excursion_protection(curve, exc_config, sample_rate) {
+        Ok(result) => {
+            info!(
+                "  Excursion protection: F3={:.1}Hz, HPF={:.1}Hz ({} filters)",
+                result.f3_hz,
+                result.hpf_frequency,
+                result.filters.len()
+            );
+            result.filters
+        }
+        Err(e) => {
+            warn!(
+                "  Excursion protection failed: {}. Continuing without protection.",
+                e
+            );
+            Vec::new()
+        }
+    }
+}
+
+fn apply_excursion_filters_to_curve(
+    curve: Curve,
+    excursion_filters: &[Biquad],
+    sample_rate: f64,
+) -> Curve {
+    if excursion_filters.is_empty() {
+        return curve;
+    }
+
+    let hpf_resp =
+        response::compute_peq_complex_response(excursion_filters, &curve.freq, sample_rate);
+    let adjusted = response::apply_complex_response(&curve, &hpf_resp);
+    info!(
+        "  Simulating excursion HPF on optimization curve ({} filters)",
+        excursion_filters.len()
+    );
+    adjusted
+}
+
+fn apply_cea2034_speaker_correction(
+    channel_name: &str,
+    source: &MeasurementSource,
+    room_config: &RoomConfig,
+    curve: Curve,
+    arrival_time_ms: Option<f64>,
+    sample_rate: f64,
+) -> (Curve, Vec<Biquad>, Vec<PluginConfigWrapper>) {
+    let Some(cea_config) = &room_config.optimizer.cea2034_correction else {
+        return (curve, vec![], vec![]);
+    };
+    if !cea_config.enabled {
+        return (curve, vec![], vec![]);
+    }
+
+    // Resolve speaker name: config override > MeasurementSource
+    let speaker_name = cea_config
+        .speaker_name
+        .as_deref()
+        .or_else(|| source.speaker_name());
+
+    let Some(name) = speaker_name else {
+        debug!(
+            "  No speaker_name configured for '{}'. Skipping CEA2034 correction.",
+            channel_name
+        );
+        return (curve, vec![], vec![]);
+    };
+
+    let cea_data = room_config
+        .cea2034_cache
+        .as_ref()
+        .and_then(|cache| cache.get(name));
+
+    let Some(data) = cea_data else {
+        warn!(
+            "  No CEA2034 data in cache for speaker '{}'. Skipping Pass 1.",
+            name
+        );
+        return (curve, vec![], vec![]);
+    };
+
+    let schroeder_freq = cea_config.min_freq.unwrap_or_else(|| {
+        room_config
+            .optimizer
+            .schroeder_split
+            .as_ref()
+            .filter(|s| s.enabled)
+            .map(|s| s.schroeder_freq)
+            .unwrap_or(300.0)
+    });
+
+    match super::cea2034_correction::compute_speaker_correction(
+        data,
+        cea_config,
+        &curve,
+        schroeder_freq,
+        arrival_time_ms,
+        sample_rate,
+    ) {
+        Ok((filters, corrected_curve)) => {
+            info!(
+                "  Pass 1 CEA2034 correction: {} filters above {:.0} Hz for '{}'",
+                filters.len(),
+                schroeder_freq,
+                name
+            );
+            let plugin = output::create_labeled_eq_plugin(&filters, "cea2034_speaker_correction");
+            (corrected_curve, filters, vec![plugin])
+        }
+        Err(e) => {
+            warn!(
+                "  CEA2034 correction failed for '{}': {}. Skipping Pass 1.",
+                name, e
+            );
+            (curve, vec![], vec![])
+        }
+    }
+}
+
+fn system_has_subwoofer(room_config: &RoomConfig) -> bool {
+    room_config
+        .system
+        .as_ref()
+        .map(|sys| {
+            sys.subwoofers
+                .as_ref()
+                .is_some_and(|s| !s.mapping.is_empty())
+        })
+        .unwrap_or_else(|| {
+            // Legacy: check if any speaker name looks like a sub
+            room_config
+                .speakers
+                .keys()
+                .any(|k| k.eq_ignore_ascii_case("lfe") || k.to_lowercase().starts_with("sub"))
+        })
+}
+
+fn maybe_clamp_min_freq_for_target_tilt(
+    channel_name: &str,
+    room_config: &RoomConfig,
+    curve: &Curve,
+    target_tilt_curve: Option<&Curve>,
+    min_freq: f64,
+    max_freq: f64,
+) -> f64 {
+    if target_tilt_curve.is_some() && system_has_subwoofer(room_config) {
+        match excursion::detect_f3(curve, None) {
+            Ok(f3_result) => {
+                // Only clamp if F3 is above the configured min_freq but still
+                // well below max_freq. A very high "F3" (e.g., on a tilted curve
+                // with no real rolloff) would invalidate the frequency range.
+                if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq * 0.5 {
+                    info!(
+                        "  Tilt active + subwoofer: clamping min_freq from {:.1}Hz to F3={:.1}Hz \
+                         to prevent bass over-boost below rolloff",
+                        min_freq, f3_result.f3_hz
+                    );
+                    return f3_result.f3_hz;
+                }
+            }
+            Err(e) => {
+                debug!(
+                    "  F3 detection failed for tilt clamping: {}. Using configured min_freq.",
+                    e
+                );
+            }
+        }
+    } else if target_tilt_curve.is_some() {
+        debug!(
+            "  Tilt active but no subwoofer: skipping F3 min_freq clamping for '{}' (full-range speakers)",
+            channel_name
+        );
+    }
+
+    min_freq
+}
+
+fn mean_response_in_range(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {
+    let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
+    compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64
+}
+
+fn flatness_score_in_range(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {
+    let mean = mean_response_in_range(curve, min_freq, max_freq);
+    let normalized_spl = &curve.spl - mean;
+    crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq)
+}
+
+fn target_mean_spl(channel_name: &str, channel_mean_spl: f64, shared_mean_spl: Option<f64>) -> f64 {
+    if let Some(shared) = shared_mean_spl {
+        debug!(
+            "  Using shared target level {:.1} dB (channel mean was {:.1} dB, delta {:.1} dB)",
+            shared,
+            channel_mean_spl,
+            shared - channel_mean_spl
+        );
+        shared
+    } else {
+        debug!(
+            "  Using channel '{}' target level {:.1} dB",
+            channel_name, channel_mean_spl
+        );
+        channel_mean_spl
+    }
+}
+
+struct BroadbandPreCorrection {
+    curve_for_optim: Curve,
+    plugins: Vec<PluginConfigWrapper>,
+    biquads: Vec<Biquad>,
+    mean_shift: f64,
+}
+
+fn apply_broadband_precorrection(
+    room_config: &RoomConfig,
+    curve: &Curve,
+    target_tilt_curve: Option<&Curve>,
+    mean_spl: f64,
+    min_freq: f64,
+    max_freq: f64,
+    sample_rate: f64,
+) -> BroadbandPreCorrection {
+    let broadband_enabled = room_config
+        .optimizer
+        .target_response
+        .as_ref()
+        .is_some_and(|tr| tr.broadband_precorrection);
+
+    if !broadband_enabled {
+        return BroadbandPreCorrection {
+            curve_for_optim: curve.clone(),
+            plugins: Vec::new(),
+            biquads: Vec::new(),
+            mean_shift: 0.0,
+        };
+    }
+
+    info!("  Broadband pre-correction enabled...");
+
+    // Detect F3 to avoid shelf-correcting below the speaker's rolloff.
+    let detected_f3 = match excursion::detect_f3(curve, None) {
+        Ok(f3_result) if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq * 0.5 => {
+            info!("  Broadband: detected speaker F3={:.1}Hz", f3_result.f3_hz);
+            Some(f3_result.f3_hz)
+        }
+        _ => None,
+    };
+    let bb_min_freq = detected_f3.unwrap_or(min_freq);
+
+    // Construct target at the measurement's mean level, INCLUDING the
+    // target shape (tilt + preference). This ensures broadband and
+    // optimizer pull toward the same goal — no double-tilt.
+    let target = if let Some(tilt_curve) = target_tilt_curve {
+        Curve {
+            freq: curve.freq.clone(),
+            spl: &tilt_curve.spl + mean_spl,
+            phase: None,
+            ..Default::default()
+        }
+    } else {
+        Curve {
+            freq: curve.freq.clone(),
+            spl: Array1::from_elem(curve.freq.len(), mean_spl),
+            phase: None,
+            ..Default::default()
+        }
+    };
+
+    let Some(mut result) =
+        spectral_align::compute_target_alignment(curve, &target, bb_min_freq, 20000.0, sample_rate)
+    else {
+        return BroadbandPreCorrection {
+            curve_for_optim: curve.clone(),
+            plugins: Vec::new(),
+            biquads: Vec::new(),
+            mean_shift: 0.0,
+        };
+    };
+
+    // Suppress the low-shelf when a rolloff is detected below the
+    // shelf frequency: the shelf response extends to DC and would
+    // partially boost the rolloff region, creating a worse shape
+    // than leaving it uncorrected.
+    if let Some(f3) = detected_f3
+        && f3 < spectral_align::LOWSHELF_FREQ
+    {
+        info!(
+            "  Broadband: suppressing low-shelf (F3={:.1}Hz < shelf={:.1}Hz)",
+            f3,
+            spectral_align::LOWSHELF_FREQ
+        );
+        result.lowshelf_gain_db = 0.0;
+    }
+    info!(
+        "  Broadband correction: LS={:+.2}dB, HS={:+.2}dB, Gain={:+.2}dB",
+        result.lowshelf_gain_db, result.highshelf_gain_db, result.flat_gain_db
+    );
+
+    let (eq_plugin, gain_plugin) = spectral_align::create_alignment_plugins(&result, sample_rate);
+
+    let mut plugins = Vec::new();
+    if let Some(g) = gain_plugin {
+        plugins.push(g);
+    }
+    if let Some(mut eq) = eq_plugin {
+        // Label the broadband EQ so the UI can distinguish it
+        // from the main room-correction EQ.
+        eq.parameters["label"] = serde_json::json!("broadband");
+        plugins.push(eq);
+    }
+
+    use math_audio_iir_fir::{BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
+    let mut filters = Vec::new();
+    if result.lowshelf_gain_db.abs() > 1e-3 {
+        filters.push(Biquad::new(
+            BiquadFilterType::Lowshelf,
+            spectral_align::LOWSHELF_FREQ,
+            sample_rate,
+            DEFAULT_Q_HIGH_LOW_SHELF,
+            result.lowshelf_gain_db,
+        ));
+    }
+    if result.highshelf_gain_db.abs() > 1e-3 {
+        filters.push(Biquad::new(
+            BiquadFilterType::Highshelf,
+            spectral_align::HIGHSHELF_FREQ,
+            sample_rate,
+            DEFAULT_Q_HIGH_LOW_SHELF,
+            result.highshelf_gain_db,
+        ));
+    }
+
+    let mut temp_curve = curve.clone();
+    temp_curve.spl += result.flat_gain_db;
+
+    let corrected_curve = if !filters.is_empty() {
+        let resp = response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
+        response::apply_complex_response(&temp_curve, &resp)
+    } else {
+        temp_curve
+    };
+
+    // Validate: reject broadband correction if it makes things worse.
+    // Measure deviation from the tilted target — broadband should move
+    // us CLOSER to the target, not further away.
+    let target_spl = &target.spl;
+    let pre_bb_dev = &curve.spl - target_spl;
+    let pre_bb_score = crate::loss::flat_loss(&curve.freq, &pre_bb_dev, min_freq, max_freq);
+    let post_bb_dev = &corrected_curve.spl - target_spl;
+    let post_bb_score =
+        crate::loss::flat_loss(&corrected_curve.freq, &post_bb_dev, min_freq, max_freq);
+
+    if broadband_correction_rejected(pre_bb_score, post_bb_score) {
+        warn!(
+            "  Broadband correction rejected: deviation from target {:.4} -> {:.4} \
+                 (worse by {:.0}%). Shelf fit likely confused by room modes or HPF rolloff.",
+            pre_bb_score,
+            post_bb_score,
+            (post_bb_score / pre_bb_score - 1.0) * 100.0,
+        );
+        BroadbandPreCorrection {
+            curve_for_optim: curve.clone(),
+            plugins: Vec::new(),
+            biquads: Vec::new(),
+            mean_shift: 0.0,
+        }
+    } else {
+        BroadbandPreCorrection {
+            curve_for_optim: corrected_curve,
+            plugins,
+            biquads: filters,
+            mean_shift: result.flat_gain_db,
+        }
+    }
+}
+
+fn existing_ssir_wav_path(source: &MeasurementSource) -> Option<std::path::PathBuf> {
+    extract_wav_path(source).and_then(|wp| {
+        let path = std::path::PathBuf::from(&wp);
+        if path.exists() { Some(path) } else { None }
+    })
+}
+
+fn is_subwoofer_measurement_channel(channel_name: &str, room_config: &RoomConfig) -> bool {
+    super::home_cinema::role_for_channel(channel_name).is_sub_or_lfe()
+        || room_config
+            .system
+            .as_ref()
+            .and_then(|sys| {
+                let subs = sys.subwoofers.as_ref()?;
+                let meas_key = sys.speakers.get(channel_name)?;
+                Some(subs.mapping.contains_key(meas_key))
+            })
+            .unwrap_or(false)
+}
+
+fn build_clamped_optimizer(
+    channel_name: &str,
+    source: &MeasurementSource,
+    room_config: &RoomConfig,
+    curve_raw: &Curve,
+    curve_for_optim: &Curve,
+    min_freq: f64,
+    max_freq: f64,
+    target_tilt_curve: Option<&Curve>,
+    broadband_enabled: bool,
+) -> OptimizerConfig {
+    let is_sub_channel = is_subwoofer_measurement_channel(channel_name, room_config);
+    let mut opt = room_config.optimizer.clone();
+    if min_freq != room_config.optimizer.min_freq {
+        opt.min_freq = min_freq;
+    }
+    opt.ssir_wav_path = existing_ssir_wav_path(source);
+
+    // For sub channels, clamp the optimizer's UPPER frequency bound to the
+    // actual usable bandwidth.
+    if is_sub_channel {
+        let measured_upper =
+            super::optimize::detect_sub_passband_3db(curve_raw).map(|(_lo, hi)| hi);
+        let crossover_upper = super::home_cinema::effective_bass_management(room_config)
+            .and_then(|bm| bm.crossover_frequency_hz)
+            .map(|xo| 2.0 * xo);
+        const SUB_UPPER_FALLBACK_HZ: f64 = 160.0;
+        let upper = match (measured_upper, crossover_upper) {
+            (Some(m), Some(xo)) => m.max(xo),
+            (Some(m), None) => m,
+            (None, Some(xo)) => xo,
+            (None, None) => SUB_UPPER_FALLBACK_HZ,
+        };
+        info!(
+            "  Sub channel '{}': clamping optimizer upper bound to {:.1} Hz (measured -3dB high={}, 2*crossover={})",
+            channel_name,
+            upper,
+            measured_upper
+                .map(|h| format!("{:.1} Hz", h))
+                .unwrap_or_else(|| "n/a".to_string()),
+            crossover_upper
+                .map(|h| format!("{:.1} Hz", h))
+                .unwrap_or_else(|| "n/a".to_string()),
+        );
+        opt.max_freq = opt.max_freq.min(upper);
+    }
+
+    if is_sub_channel && let Some(sub_cfg) = &room_config.optimizer.sub_config {
+        info!(
+            "  Applying sub_config overrides: num_filters={}, max_db={:+.1}, min_db={:+.1}, max_q={:.1}",
+            sub_cfg.num_filters, sub_cfg.max_db, sub_cfg.min_db, sub_cfg.max_q,
+        );
+        opt.num_filters = sub_cfg.num_filters;
+        opt.max_db = sub_cfg.max_db;
+        opt.min_db = sub_cfg.min_db;
+        opt.min_q = sub_cfg.min_q;
+        opt.max_q = sub_cfg.max_q;
+    }
+
+    if opt.auto_optimizer.as_ref().is_some_and(|auto| auto.enabled) {
+        let detected_f3_hz = match excursion::detect_f3(curve_for_optim, None) {
+            Ok(f3_result) if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq => {
+                Some(f3_result.f3_hz)
+            }
+            Ok(_) => None,
+            Err(e) => {
+                debug!("  Auto optimizer: F3 detection skipped: {}", e);
+                None
+            }
+        };
+
+        let auto_context = AutoOptimizerContext {
+            is_sub_channel,
+            effective_min_freq: min_freq,
+            effective_max_freq: max_freq,
+            detected_f3_hz,
+            schroeder_hz: auto_tune::resolved_schroeder_hz(&opt),
+            target_tilt_active: target_tilt_curve.is_some(),
+            broadband_enabled,
+        };
+        opt = auto_tune::resolve_auto_optimizer_config(curve_for_optim, &opt, &auto_context);
+    }
+
+    opt
+}
+
 /// Process a simple speaker with a single measurement
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
@@ -250,194 +953,17 @@ pub(super) fn process_single_speaker(
     probe_arrival_ms: Option<f64>,
     shared_mean_spl: Option<f64>,
 ) -> Result<MixedModeResult> {
-    // Load measurement
-    let curve = load::load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
-        message: format!(
-            "Failed to load measurement for channel {}: {}",
-            channel_name, e
-        ),
-    })?;
-
-    debug!(
-        "  Loaded measurement: {:.1} Hz - {:.1} Hz",
-        curve.freq[0],
-        curve.freq[curve.freq.len() - 1]
-    );
-
-    // B3 — warn when optimizer.{min,max}_freq falls outside the measurement.
-    super::optimize::warn_if_optimizer_bounds_exceed_data(
+    let curve = load_channel_measurement(channel_name, source, room_config)?;
+    let arrival_time_ms = detect_channel_arrival_time(
         channel_name,
-        &curve,
-        &room_config.optimizer,
+        source,
+        room_config,
+        sample_rate,
+        probe_arrival_ms,
     );
-
-    // Use probe-based arrival time if available (more accurate), else fall back to WAV onset
-    let arrival_time_ms: Option<f64> = if let Some(probe_ms) = probe_arrival_ms {
-        debug!(
-            "  Using probe-based arrival time for '{}': {:.2} ms",
-            channel_name, probe_ms
-        );
-        Some(probe_ms)
-    } else {
-        extract_wav_path(source).and_then(|wav_path| {
-            let path = std::path::Path::new(&wav_path);
-            if path.exists() {
-                if let Some((reference_name, reference_signal, reference_sample_rate)) =
-                    matched_reference_from_recording_config(room_config, sample_rate)
-                    && !reference_signal.is_empty()
-                {
-                    match super::time_align::find_arrival_time_with_reference(
-                        path,
-                        &reference_signal,
-                        reference_sample_rate,
-                    ) {
-                        Ok(result) => {
-                            debug!(
-                                "  {} matched arrival for '{}': {:.2} ms (peak at sample {}, SNR {:.1} dB)",
-                                reference_name,
-                                channel_name,
-                                result.arrival_ms,
-                                result.arrival_samples,
-                                result.detection_snr_db
-                            );
-                            return Some(result.arrival_ms);
-                        }
-                        Err(e) => {
-                            debug!(
-                                "  Could not determine {} matched arrival for '{}': {}; falling back to WAV onset",
-                                reference_name, channel_name, e
-                            );
-                        }
-                    }
-                }
-
-                match super::time_align::find_arrival_time(path, None) {
-                    Ok(result) => {
-                        debug!(
-                            "  Arrival time for '{}': {:.2} ms (peak at sample {})",
-                            channel_name, result.arrival_ms, result.arrival_samples
-                        );
-                        Some(result.arrival_ms)
-                    }
-                    Err(e) => {
-                        debug!(
-                            "  Could not determine arrival time for '{}': {}",
-                            channel_name, e
-                        );
-                        None
-                    }
-                }
-            } else {
-                debug!("  WAV file not found for '{}': {:?}", channel_name, path);
-                None
-            }
-        })
-    };
-
-    // ========================================================================
-    // Build target curve with tilt (if configured)
-    // ========================================================================
-    // Build the unified target curve from target_response (or migrated legacy fields).
-    // This curve is the single source of truth for both broadband pre-correction
-    // and EQ optimization, eliminating double-tilt bugs.
-    //
-    // When 3-pass CEA2034 correction is active, user preferences (bass/treble shelves)
-    // are emitted as Pass 3 filters rather than being baked into the target curve.
-    let cea2034_active = room_config
-        .optimizer
-        .cea2034_correction
-        .as_ref()
-        .is_some_and(|c| c.enabled);
-
-    let target_tilt_curve = if let Some(ref target_resp) = room_config.optimizer.target_response {
-        // When 3-pass is active, strip preferences from the target
-        // (they become Pass 3 output filters instead)
-        let mut effective_target = if cea2034_active {
-            let mut stripped = target_resp.clone();
-            stripped.preference = super::types::UserPreference::default();
-            stripped
-        } else {
-            target_resp.clone()
-        };
-        effective_target =
-            super::home_cinema::role_adjusted_target_response(channel_name, &effective_target);
-
-        // Resolve FromMeasurement: prefer a system-wide slope override
-        // (resolved once from a full-range reference channel by
-        // `optimize_room_impl`) over per-channel regression. Per-channel
-        // regression is junk for band-limited channels — an LFE/sub
-        // measurement has no real signal in the
-        // `[DEFAULT_SLOPE_MIN_FREQ, DEFAULT_SLOPE_MAX_FREQ]` window so
-        // the slope falls into the noise floor and the resulting target
-        // tilt is unphysically steep.
-        if effective_target.shape == TargetShape::FromMeasurement {
-            let is_sub_or_lfe = super::home_cinema::role_for_channel(channel_name).is_sub_or_lfe();
-            let measured_slope = if let Some(override_slope) =
-                room_config.optimizer.from_measurement_slope_override
-            {
-                info!(
-                    "  FromMeasurement: using room-level slope = {:.2} dB/octave (resolved from reference channel) for '{}'",
-                    override_slope, channel_name
-                );
-                override_slope
-            } else if is_sub_or_lfe {
-                info!(
-                    "  FromMeasurement: '{}' is band-limited (sub/LFE) and no reference slope is available — defaulting to flat (0.0 dB/octave)",
-                    channel_name
-                );
-                0.0
-            } else {
-                let s = slope::estimate_slope_db_per_octave(
-                    &curve,
-                    slope::DEFAULT_SLOPE_MIN_FREQ,
-                    slope::DEFAULT_SLOPE_MAX_FREQ,
-                )
-                .unwrap_or(0.0);
-                info!(
-                    "  FromMeasurement: estimated slope = {:.2} dB/octave from '{}'",
-                    s, channel_name
-                );
-                s
-            };
-            effective_target.shape = TargetShape::Custom;
-            effective_target.slope_db_per_octave = measured_slope;
-        }
-
-        if effective_target.shape != TargetShape::Flat
-            || effective_target.preference.bass_shelf_db.abs() > 1e-6
-            || effective_target.preference.treble_shelf_db.abs() > 1e-6
-            || super::home_cinema::role_target_curve_shape_active(channel_name, &effective_target)
-        {
-            info!(
-                "  Building target curve: shape={:?}, slope={:.2} dB/oct, bass={:+.1}dB, treble={:+.1}dB{}",
-                effective_target.shape,
-                match effective_target.shape {
-                    TargetShape::Harman => -0.8,
-                    TargetShape::Custom => effective_target.slope_db_per_octave,
-                    _ => 0.0,
-                },
-                effective_target.preference.bass_shelf_db,
-                effective_target.preference.treble_shelf_db,
-                if cea2034_active {
-                    " (preferences extracted to Pass 3)"
-                } else {
-                    ""
-                },
-            );
-            let mut target_curve =
-                target_tilt::build_complete_target_curve(&curve.freq, &effective_target);
-            super::home_cinema::apply_role_target_curve_shape(
-                channel_name,
-                &mut target_curve,
-                &effective_target,
-            );
-            Some(target_curve)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let cea2034_active = cea2034_correction_active(room_config);
+    let target_tilt_curve =
+        build_target_tilt_curve(channel_name, room_config, &curve, cea2034_active);
 
     // When target curve is active, it is baked into the measurement before optimization.
     // Passing target_curve on top would double-apply.
@@ -450,134 +976,22 @@ pub(super) fn process_single_speaker(
         );
     }
 
-    // ========================================================================
-    // Excursion Protection (detect F3, generate HPF)
-    // ========================================================================
-    let excursion_filters: Vec<Biquad> =
-        if let Some(exc_config) = &room_config.optimizer.excursion_protection {
-            if exc_config.enabled {
-                info!("  Applying excursion protection...");
-                match excursion::generate_excursion_protection(&curve, exc_config, sample_rate) {
-                    Ok(result) => {
-                        info!(
-                            "  Excursion protection: F3={:.1}Hz, HPF={:.1}Hz ({} filters)",
-                            result.f3_hz,
-                            result.hpf_frequency,
-                            result.filters.len()
-                        );
-                        result.filters
-                    }
-                    Err(e) => {
-                        warn!(
-                            "  Excursion protection failed: {}. Continuing without protection.",
-                            e
-                        );
-                        Vec::new()
-                    }
-                }
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
+    let excursion_filters = generate_excursion_filters(room_config, &curve, sample_rate);
 
     // Simulate excursion HPF on the curve so the EQ optimizer sees the measurement
     // as it will be after the HPF. Without this, the optimizer doesn't know about the
     // HPF cuts and stacks additional cuts on top, double-cutting the bass.
     // Keep `curve_raw` for final display (all_filters applied to raw measurement).
     let curve_raw = curve.clone();
-    let curve = if !excursion_filters.is_empty() {
-        let hpf_resp =
-            response::compute_peq_complex_response(&excursion_filters, &curve.freq, sample_rate);
-        let adjusted = response::apply_complex_response(&curve, &hpf_resp);
-        info!(
-            "  Simulating excursion HPF on optimization curve ({} filters)",
-            excursion_filters.len()
-        );
-        adjusted
-    } else {
-        curve
-    };
-
-    // ========================================================================
-    // Pass 1: CEA2034 Speaker Correction (above Schroeder frequency)
-    // ========================================================================
-    let (curve, cea2034_filters, cea2034_plugins) = if let Some(cea_config) =
-        &room_config.optimizer.cea2034_correction
-    {
-        if cea_config.enabled {
-            // Resolve speaker name: config override > MeasurementSource
-            let speaker_name = cea_config
-                .speaker_name
-                .as_deref()
-                .or_else(|| source.speaker_name());
-
-            if let Some(name) = speaker_name {
-                // Look up pre-fetched CEA2034 data
-                let cea_data = room_config
-                    .cea2034_cache
-                    .as_ref()
-                    .and_then(|cache| cache.get(name));
-
-                if let Some(data) = cea_data {
-                    // Determine Schroeder frequency
-                    let schroeder_freq = cea_config.min_freq.unwrap_or_else(|| {
-                        room_config
-                            .optimizer
-                            .schroeder_split
-                            .as_ref()
-                            .filter(|s| s.enabled)
-                            .map(|s| s.schroeder_freq)
-                            .unwrap_or(300.0)
-                    });
-
-                    match super::cea2034_correction::compute_speaker_correction(
-                        data,
-                        cea_config,
-                        &curve,
-                        schroeder_freq,
-                        arrival_time_ms,
-                        sample_rate,
-                    ) {
-                        Ok((filters, corrected_curve)) => {
-                            info!(
-                                "  Pass 1 CEA2034 correction: {} filters above {:.0} Hz for '{}'",
-                                filters.len(),
-                                schroeder_freq,
-                                name
-                            );
-                            let plugin = output::create_labeled_eq_plugin(
-                                &filters,
-                                "cea2034_speaker_correction",
-                            );
-                            (corrected_curve, filters, vec![plugin])
-                        }
-                        Err(e) => {
-                            warn!(
-                                "  CEA2034 correction failed for '{}': {}. Skipping Pass 1.",
-                                name, e
-                            );
-                            (curve, vec![], vec![])
-                        }
-                    }
-                } else {
-                    warn!(
-                        "  No CEA2034 data in cache for speaker '{}'. Skipping Pass 1.",
-                        name
-                    );
-                    (curve, vec![], vec![])
-                }
-            } else {
-                debug!("  No speaker_name configured. Skipping CEA2034 correction.");
-                (curve, vec![], vec![])
-            }
-        } else {
-            (curve, vec![], vec![])
-        }
-    } else {
-        (curve, vec![], vec![])
-    };
+    let curve = apply_excursion_filters_to_curve(curve, &excursion_filters, sample_rate);
+    let (curve, cea2034_filters, cea2034_plugins) = apply_cea2034_speaker_correction(
+        channel_name,
+        source,
+        room_config,
+        curve,
+        arrival_time_ms,
+        sample_rate,
+    );
 
     // Compute pre-score (within EQ range)
     let mut min_freq = room_config.optimizer.min_freq;
@@ -593,98 +1007,28 @@ pub(super) fn process_single_speaker(
         );
     }
 
-    // When target tilt is active AND a subwoofer handles the bass, clamp
-    // min_freq to the main speaker's F3 rolloff. Without this, the tilt
-    // creates a massive target deficit below the speaker's capability
-    // (e.g. +4.5dB at 20Hz on a speaker that rolls off at 60Hz). The
-    // optimizer wastes filters on impossible bass boost, and the broad
-    // filter skirts cause collateral damage in the midrange.
-    //
-    // For stereo (no sub), the full-range speakers ARE the bass source.
-    // Clamping min_freq would prevent the optimizer from placing filters
-    // on room modes below F3, which is counterproductive.
-    let system_has_subwoofer = room_config
-        .system
-        .as_ref()
-        .map(|sys| {
-            sys.subwoofers
-                .as_ref()
-                .is_some_and(|s| !s.mapping.is_empty())
-        })
-        .unwrap_or_else(|| {
-            // Legacy: check if any speaker name looks like a sub
-            room_config
-                .speakers
-                .keys()
-                .any(|k| k.eq_ignore_ascii_case("lfe") || k.to_lowercase().starts_with("sub"))
-        });
-
-    if target_tilt_curve.is_some() && system_has_subwoofer {
-        match excursion::detect_f3(&curve, None) {
-            Ok(f3_result) => {
-                // Only clamp if F3 is above the configured min_freq but still
-                // well below max_freq. A very high "F3" (e.g., on a tilted curve
-                // with no real rolloff) would invalidate the frequency range.
-                if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq * 0.5 {
-                    info!(
-                        "  Tilt active + subwoofer: clamping min_freq from {:.1}Hz to F3={:.1}Hz \
-                         to prevent bass over-boost below rolloff",
-                        min_freq, f3_result.f3_hz
-                    );
-                    min_freq = f3_result.f3_hz;
-                }
-            }
-            Err(e) => {
-                debug!(
-                    "  F3 detection failed for tilt clamping: {}. Using configured min_freq.",
-                    e
-                );
-            }
-        }
-    } else if target_tilt_curve.is_some() {
-        debug!(
-            "  Tilt active but no subwoofer: skipping F3 min_freq clamping (full-range speakers)"
-        );
-    }
+    min_freq = maybe_clamp_min_freq_for_target_tilt(
+        channel_name,
+        room_config,
+        &curve,
+        target_tilt_curve.as_ref(),
+        min_freq,
+        max_freq,
+    );
 
     // Use range-based mean (same as optimizer) for consistent pre/post scoring
-    let pre_freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
-    let pre_spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
-    let pre_mean = compute_average_response(
-        &pre_freqs_f32,
-        &pre_spl_f32,
-        Some((min_freq as f32, max_freq as f32)),
-    ) as f64;
-
-    let normalized_spl = &curve.spl - pre_mean;
-    let pre_score = crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq);
+    let pre_score = flatness_score_in_range(&curve, min_freq, max_freq);
 
     // Level alignment: use mean SPL within the EQ optimization range.
     // Passband mean (-3 dB from peak) is too narrow for resonant room data;
     // full-range mean is misleading for bandpass speakers (subwoofers).
     // The optimizer range gives a consistent reference across channel types.
-    let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
-    let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
-    let channel_mean_spl = compute_average_response(
-        &freqs_f32,
-        &spl_f32,
-        Some((min_freq as f32, max_freq as f32)),
-    ) as f64;
+    let channel_mean_spl = mean_response_in_range(&curve, min_freq, max_freq);
 
     // When a shared average level is provided (multi-channel pre-pass), use it
     // as the target level instead of this channel's own mean. This makes all
     // channels optimize toward the same reference, reducing ICD at the source.
-    let mean_spl = if let Some(shared) = shared_mean_spl {
-        debug!(
-            "  Using shared target level {:.1} dB (channel mean was {:.1} dB, delta {:.1} dB)",
-            shared,
-            channel_mean_spl,
-            shared - channel_mean_spl
-        );
-        shared
-    } else {
-        channel_mean_spl
-    };
+    let mean_spl = target_mean_spl(channel_name, channel_mean_spl, shared_mean_spl);
 
     // ========================================================================
     // Broadband Pre-Correction
@@ -699,277 +1043,36 @@ pub(super) fn process_single_speaker(
         .as_ref()
         .is_some_and(|tr| tr.broadband_precorrection);
 
-    let (curve_for_optim, broadband_plugins, broadband_biquads, bb_mean_shift) =
-        if broadband_enabled {
-            info!("  Broadband pre-correction enabled...");
-
-            // Detect F3 to avoid shelf-correcting below the speaker's rolloff.
-            let detected_f3 = match excursion::detect_f3(&curve, None) {
-                Ok(f3_result) if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq * 0.5 => {
-                    info!("  Broadband: detected speaker F3={:.1}Hz", f3_result.f3_hz);
-                    Some(f3_result.f3_hz)
-                }
-                _ => None,
-            };
-            let bb_min_freq = detected_f3.unwrap_or(min_freq);
-
-            // Construct target at the measurement's mean level, INCLUDING the
-            // target shape (tilt + preference). This ensures broadband and
-            // optimizer pull toward the same goal — no double-tilt.
-            let target = if let Some(ref tilt_curve) = target_tilt_curve {
-                Curve {
-                    freq: curve.freq.clone(),
-                    spl: &tilt_curve.spl + mean_spl,
-                    phase: None,
-                    ..Default::default()
-                }
-            } else {
-                Curve {
-                    freq: curve.freq.clone(),
-                    spl: Array1::from_elem(curve.freq.len(), mean_spl),
-                    phase: None,
-                    ..Default::default()
-                }
-            };
-
-            // 2. Compute alignment within the speaker's passband (F3 to 20kHz).
-            // The target is flat at mean_spl, so the alignment fits gentle
-            // shelves + gain to correct the measurement's broadband shape.
-            if let Some(mut result) = spectral_align::compute_target_alignment(
-                &curve,
-                &target,
-                bb_min_freq,
-                20000.0,
-                sample_rate,
-            ) {
-                // Suppress the low-shelf when a rolloff is detected below the
-                // shelf frequency: the shelf response extends to DC and would
-                // partially boost the rolloff region, creating a worse shape
-                // than leaving it uncorrected.
-                if let Some(f3) = detected_f3
-                    && f3 < spectral_align::LOWSHELF_FREQ
-                {
-                    info!(
-                        "  Broadband: suppressing low-shelf (F3={:.1}Hz < shelf={:.1}Hz)",
-                        f3,
-                        spectral_align::LOWSHELF_FREQ
-                    );
-                    result.lowshelf_gain_db = 0.0;
-                }
-                info!(
-                    "  Broadband correction: LS={:+.2}dB, HS={:+.2}dB, Gain={:+.2}dB",
-                    result.lowshelf_gain_db, result.highshelf_gain_db, result.flat_gain_db
-                );
-
-                // 3. Create plugins
-                let (eq_plugin, gain_plugin) =
-                    spectral_align::create_alignment_plugins(&result, sample_rate);
-
-                let mut plugins = Vec::new();
-                if let Some(g) = gain_plugin {
-                    plugins.push(g);
-                }
-                if let Some(mut eq) = eq_plugin {
-                    // Label the broadband EQ so the UI can distinguish it
-                    // from the main room-correction EQ.
-                    eq.parameters["label"] = serde_json::json!("broadband");
-                    plugins.push(eq);
-                }
-
-                // Simulate the broadband correction on the curve
-                use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
-                let mut filters = Vec::new();
-                if result.lowshelf_gain_db.abs() > 1e-3 {
-                    filters.push(Biquad::new(
-                        BiquadFilterType::Lowshelf,
-                        spectral_align::LOWSHELF_FREQ,
-                        sample_rate,
-                        DEFAULT_Q_HIGH_LOW_SHELF,
-                        result.lowshelf_gain_db,
-                    ));
-                }
-                if result.highshelf_gain_db.abs() > 1e-3 {
-                    filters.push(Biquad::new(
-                        BiquadFilterType::Highshelf,
-                        spectral_align::HIGHSHELF_FREQ,
-                        sample_rate,
-                        DEFAULT_Q_HIGH_LOW_SHELF,
-                        result.highshelf_gain_db,
-                    ));
-                }
-
-                // 1. Gain
-                let mut temp_curve = curve.clone();
-                temp_curve.spl += result.flat_gain_db;
-
-                // 2. Filters
-                let corrected_curve = if !filters.is_empty() {
-                    let resp =
-                        response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
-                    response::apply_complex_response(&temp_curve, &resp)
-                } else {
-                    temp_curve
-                };
-
-                // 3. Validate: reject broadband correction if it makes things worse.
-                // Measure deviation from the tilted target — broadband should move
-                // us CLOSER to the target, not further away.  When combined with
-                // excursion HPF + room modes, the shelf fitting can produce bad
-                // results that then compound with the optimizer's tilt subtraction.
-                let target_spl = &target.spl; // mean_spl + tilt (or just mean_spl if flat)
-                let pre_bb_dev = &curve.spl - target_spl;
-                let pre_bb_score =
-                    crate::loss::flat_loss(&curve.freq, &pre_bb_dev, min_freq, max_freq);
-                let post_bb_dev = &corrected_curve.spl - target_spl;
-                let post_bb_score =
-                    crate::loss::flat_loss(&corrected_curve.freq, &post_bb_dev, min_freq, max_freq);
-
-                if broadband_correction_rejected(pre_bb_score, post_bb_score) {
-                    warn!(
-                        "  Broadband correction rejected: deviation from target {:.4} -> {:.4} \
-                             (worse by {:.0}%). Shelf fit likely confused by room modes or HPF rolloff.",
-                        pre_bb_score,
-                        post_bb_score,
-                        (post_bb_score / pre_bb_score - 1.0) * 100.0,
-                    );
-                    (curve.clone(), Vec::new(), Vec::new(), 0.0)
-                } else {
-                    (corrected_curve, plugins, filters, result.flat_gain_db)
-                }
-            } else {
-                (curve.clone(), Vec::new(), Vec::new(), 0.0)
-            }
-        } else {
-            (curve.clone(), Vec::new(), Vec::new(), 0.0)
-        };
+    let broadband = apply_broadband_precorrection(
+        room_config,
+        &curve,
+        target_tilt_curve.as_ref(),
+        mean_spl,
+        min_freq,
+        max_freq,
+        sample_rate,
+    );
+    let BroadbandPreCorrection {
+        curve_for_optim,
+        plugins: broadband_plugins,
+        biquads: broadband_biquads,
+        mean_shift: bb_mean_shift,
+    } = broadband;
 
     // We must update the mean_spl because the broadband gain shifted it
     let mean_spl = mean_spl + bb_mean_shift;
 
-    // Build optimizer config with the clamped min_freq so the optimizer
-    // doesn't place filters below the speaker's rolloff when tilt is active.
-    // Also inject the WAV path for SSIR analysis if available.
-    let wav_path_for_ssir = extract_wav_path(source).and_then(|wp| {
-        let p = std::path::PathBuf::from(&wp);
-        if p.exists() { Some(p) } else { None }
-    });
-    // Detect whether this is a subwoofer/LFE channel.
-    //
-    // The role-based check (`role_for_channel(...).is_sub_or_lfe()`) is
-    // the source of truth — it correctly classifies channels named
-    // "LFE", "sub*", etc. regardless of whether the v2.1
-    // `system.subwoofers.mapping` is populated. The mapping check is
-    // kept as an additional positive signal (e.g. a channel named
-    // "extra-bass" mapped into the subwoofer group), never as a gate
-    // that would override the role.
-    let is_sub_channel = super::home_cinema::role_for_channel(channel_name).is_sub_or_lfe()
-        || room_config
-            .system
-            .as_ref()
-            .and_then(|sys| {
-                let subs = sys.subwoofers.as_ref()?;
-                let meas_key = sys.speakers.get(channel_name)?;
-                Some(subs.mapping.contains_key(meas_key))
-            })
-            .unwrap_or(false);
-
-    let clamped_optimizer = {
-        let mut opt = room_config.optimizer.clone();
-        if min_freq != room_config.optimizer.min_freq {
-            opt.min_freq = min_freq;
-        }
-        opt.ssir_wav_path = wav_path_for_ssir;
-
-        // For sub channels, clamp the optimizer's UPPER frequency
-        // bound to the actual usable bandwidth. Subwoofers vary
-        // hugely in passband — a sealed 8" sub may roll off at 80 Hz
-        // while a full-range "sub" used as broad-band bass extends
-        // past 300 Hz. A static 160 Hz cap was wrong in both
-        // directions, so we derive the upper bound from data:
-        //
-        // 1. The measured -3 dB high-side crossing on the smoothed
-        //    response (`detect_sub_passband_3db`).
-        // 2. Twice the bass-management crossover, when configured —
-        //    covers the LR2/LR4 skirt where main/sub correction
-        //    legitimately overlaps (Welti & Devantier 2007 on
-        //    multi-sub correction often reaches into the 120–200 Hz
-        //    region for bass-managed systems).
-        //
-        // Lower bound is intentionally left untouched — real axial
-        // modes can exist below 20 Hz in larger rooms (Toole, *Sound
-        // Reproduction* 3rd ed. ch. 8; Welti AES 2002), and modern
-        // subs reach 12–15 Hz in-room. The measurement's own SNR plus
-        // the existing data-range clamp in `prepare_single_channel_eq`
-        // already gate filter placement at the low end.
-        if is_sub_channel {
-            let measured_upper =
-                super::optimize::detect_sub_passband_3db(&curve_raw).map(|(_lo, hi)| hi);
-            let crossover_upper = super::home_cinema::effective_bass_management(room_config)
-                .and_then(|bm| bm.crossover_frequency_hz)
-                .map(|xo| 2.0 * xo);
-            // Fallback when neither signal is available — the previous
-            // hard-coded LFE band default. Lets a sub-only run with no
-            // bass-management config still get *some* sane upper bound.
-            const SUB_UPPER_FALLBACK_HZ: f64 = 160.0;
-            let upper = match (measured_upper, crossover_upper) {
-                (Some(m), Some(xo)) => m.max(xo),
-                (Some(m), None) => m,
-                (None, Some(xo)) => xo,
-                (None, None) => SUB_UPPER_FALLBACK_HZ,
-            };
-            info!(
-                "  Sub channel '{}': clamping optimizer upper bound to {:.1} Hz (measured -3dB high={}, 2*crossover={})",
-                channel_name,
-                upper,
-                measured_upper
-                    .map(|h| format!("{:.1} Hz", h))
-                    .unwrap_or_else(|| "n/a".to_string()),
-                crossover_upper
-                    .map(|h| format!("{:.1} Hz", h))
-                    .unwrap_or_else(|| "n/a".to_string()),
-            );
-            opt.max_freq = opt.max_freq.min(upper);
-        }
-
-        // Apply subwoofer-specific optimizer overrides
-        if is_sub_channel && let Some(sub_cfg) = &room_config.optimizer.sub_config {
-            info!(
-                "  Applying sub_config overrides: num_filters={}, max_db={:+.1}, min_db={:+.1}, max_q={:.1}",
-                sub_cfg.num_filters, sub_cfg.max_db, sub_cfg.min_db, sub_cfg.max_q,
-            );
-            opt.num_filters = sub_cfg.num_filters;
-            opt.max_db = sub_cfg.max_db;
-            opt.min_db = sub_cfg.min_db;
-            opt.min_q = sub_cfg.min_q;
-            opt.max_q = sub_cfg.max_q;
-        }
-
-        if opt.auto_optimizer.as_ref().is_some_and(|auto| auto.enabled) {
-            let detected_f3_hz = match excursion::detect_f3(&curve_for_optim, None) {
-                Ok(f3_result) if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq => {
-                    Some(f3_result.f3_hz)
-                }
-                Ok(_) => None,
-                Err(e) => {
-                    debug!("  Auto optimizer: F3 detection skipped: {}", e);
-                    None
-                }
-            };
-
-            let auto_context = AutoOptimizerContext {
-                is_sub_channel,
-                effective_min_freq: min_freq,
-                effective_max_freq: max_freq,
-                detected_f3_hz,
-                schroeder_hz: auto_tune::resolved_schroeder_hz(&opt),
-                target_tilt_active: target_tilt_curve.is_some(),
-                broadband_enabled,
-            };
-            opt = auto_tune::resolve_auto_optimizer_config(&curve_for_optim, &opt, &auto_context);
-        }
-
-        opt
-    };
+    let clamped_optimizer = build_clamped_optimizer(
+        channel_name,
+        source,
+        room_config,
+        &curve_raw,
+        &curve_for_optim,
+        min_freq,
+        max_freq,
+        target_tilt_curve.as_ref(),
+        broadband_enabled,
+    );
 
     match room_config.optimizer.processing_mode {
         ProcessingMode::PhaseLinear => {

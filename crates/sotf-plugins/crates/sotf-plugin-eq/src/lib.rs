@@ -553,8 +553,11 @@ impl EqPlugin {
         let config_to_stages = |f: &BiquadFilterConfig| -> Result<(Vec<Biquad>, usize), String> {
             let filter_type = parse_filter_type(&f.filter_type)?;
             let order = f.order.clamp(2, 8);
-            // Round order to nearest even
-            let order = (order / 2) * 2;
+            if order % 2 != 0 {
+                return Err(format!(
+                    "Filter order must be even (2, 4, 6, 8); got {order}"
+                ));
+            }
             let stages = create_band_stages(
                 filter_type,
                 f.freq,
@@ -882,7 +885,11 @@ impl InPlacePlugin for EqPlugin {
                 if field == "order" {
                     // Change filter order: rebuild all stages for this band
                     let new_order = value.as_int().unwrap_or(2).clamp(2, 8) as usize;
-                    let new_order = (new_order / 2) * 2; // round to even
+                    if new_order % 2 != 0 {
+                        return Err(format!(
+                            "Filter order must be even (2, 4, 6, 8); got {new_order}"
+                        ));
+                    }
                     if let Some(stages) = self.filters[0].get(b_idx)
                         && let Some(primary) = stages.first()
                     {
@@ -1101,7 +1108,7 @@ impl InPlacePlugin for EqPlugin {
         for chain in &mut self.filters {
             for stages in chain {
                 for f in stages {
-                    *f = Biquad::new(f.filter_type, f.freq, f.srate, f.q, f.db_gain);
+                    f.reset();
                 }
             }
         }
@@ -1234,12 +1241,22 @@ impl InPlacePlugin for EqPlugin {
             // ----------------------------------------------------------------
             // Take the oversampler out to split the borrow: the callback
             // needs &mut self.filters/transitions while oversampler needs &mut.
-            let mut os = self.oversampler.take().unwrap();
-            let result = os.process(buffer, num_frames, |planar, os_frames| {
-                self.process_biquads_planar(planar, os_frames);
-            });
+            let mut os = self
+                .oversampler
+                .take()
+                .ok_or_else(|| "oversampling enabled but oversampler is unavailable".to_string())?;
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                os.process(buffer, num_frames, |planar, os_frames| {
+                    self.process_biquads_planar(planar, os_frames);
+                })
+            }));
             self.oversampler = Some(os);
-            result?;
+            match result {
+                Ok(result) => {
+                    result?;
+                }
+                Err(payload) => std::panic::resume_unwind(payload),
+            }
         }
 
         self.process_advanced_interleaved(buffer, num_frames);
@@ -1726,6 +1743,10 @@ mod tests {
         for (i, &s) in signal.iter().enumerate() {
             assert!(s.is_finite(), "sample {} not finite: {}", i, s);
         }
+        assert!(
+            p.oversampler.is_some(),
+            "oversampler must be restored after processing"
+        );
     }
 
     #[test]
@@ -1922,6 +1943,92 @@ mod tests {
         } else {
             panic!("filter_type param should be a Choice type");
         }
+    }
+
+    #[test]
+    fn test_from_params_rejects_odd_filter_order() {
+        let params = EqPluginParams {
+            filters: vec![BiquadFilterConfig {
+                filter_type: "peak".to_string(),
+                freq: 1000.0,
+                q: 1.0,
+                db_gain: 6.0,
+                order: 3,
+                topology: Default::default(),
+                lambda: None,
+                kautz_sections: Vec::new(),
+            }],
+            channel_filters: None,
+            auto_gain: Default::default(),
+        };
+
+        let err = match EqPlugin::from_params(1, 48000, params) {
+            Ok(_) => panic!("odd order should be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.contains("Filter order must be even"),
+            "odd order should be rejected, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_set_parameter_rejects_odd_filter_order() {
+        let mut p = EqPlugin::new(
+            1,
+            vec![Biquad::new(
+                BiquadFilterType::Peak,
+                1000.0,
+                48000.0,
+                1.0,
+                6.0,
+            )],
+        );
+
+        let err = InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("band_0_order"),
+            ParameterValue::Int(3),
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("Filter order must be even"),
+            "odd runtime order should be rejected, got: {err}"
+        );
+        assert_eq!(p.band_orders[0], 2);
+    }
+
+    #[test]
+    fn test_reset_preserves_biquad_coefficients() {
+        let mut p = EqPlugin::new(
+            1,
+            vec![Biquad::new(
+                BiquadFilterType::Peak,
+                1000.0,
+                48000.0,
+                2.0,
+                6.0,
+            )],
+        );
+        let before = p.filters[0][0][0].coefficients();
+
+        // Put non-zero state into the biquad before reset.
+        let mut buf = vec![0.5f32; 128];
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 128))
+            .unwrap();
+
+        InPlacePlugin::reset(&mut p);
+        let after = p.filters[0][0][0].coefficients();
+        let max_diff = (before.b0 - after.b0)
+            .abs()
+            .max((before.b1 - after.b1).abs())
+            .max((before.b2 - after.b2).abs())
+            .max((before.a1 - after.a1).abs())
+            .max((before.a2 - after.a2).abs());
+        assert!(
+            max_diff < 1e-12,
+            "reset should clear state without rebuilding/changing coefficients; max_diff={max_diff}"
+        );
     }
 
     #[test]

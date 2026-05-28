@@ -469,11 +469,12 @@ fn test_xtc_denormal_flushing() {
 
     plugin.process(&input, &mut output, &context).unwrap();
 
-    // Count denormal samples (non-zero but below normalized threshold)
+    // Count IEEE-754 subnormal samples. Small normal f32 values such as 1e-35
+    // are valid audio samples and must not be mistaken for denormals.
     let mut denormal_count = 0;
     for sample in output.iter() {
         let abs_val = sample.abs();
-        if abs_val > 0.0 && abs_val < 1e-30 {
+        if abs_val > 0.0 && abs_val < f32::MIN_POSITIVE {
             denormal_count += 1;
         }
     }
@@ -913,6 +914,13 @@ fn test_air_absorption_physically_plausible() {
     assert!(
         at_1k_1m > 0.988,
         "Air absorption at 1 kHz, 1 m should be >0.988 (tiny loss), got {at_1k_1m}"
+    );
+
+    let at_8k_5m = air_absorption(8000.0, 5.0);
+    let expected = 10.0_f32.powf(-(0.001 * 8.0_f32.powi(2)) * 5.0 / 20.0);
+    assert!(
+        (at_8k_5m - expected).abs() < 1e-6,
+        "air_absorption should follow the documented quadratic dB/m fit"
     );
 }
 

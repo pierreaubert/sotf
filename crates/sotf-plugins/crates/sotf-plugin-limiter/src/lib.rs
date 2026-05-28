@@ -142,6 +142,7 @@ impl LimiterPlugin {
     ) -> Self {
         let sr = 44100;
         let lookahead_len = ((lookahead_ms * 0.001 * sr as f32) as usize).max(1);
+        let max_lookahead_len = Self::max_lookahead_len(sr);
         let mut p = Self {
             channels,
             sample_rate: sr,
@@ -169,10 +170,10 @@ impl LimiterPlugin {
             mix_smoother: Smoother::new(1.0, 5.0, sr),
             envelope: 0.0,
             release_coeff: 0.0,
-            lookahead_buffer: vec![0.0; lookahead_len * channels],
+            lookahead_buffer: vec![0.0; max_lookahead_len * channels],
             lookahead_pos: 0,
             lookahead_len,
-            lookahead_peaks: vec![0.0; lookahead_len],
+            lookahead_peaks: vec![0.0; max_lookahead_len],
             true_peak_detectors: (0..channels).map(|_| TruePeakDetector::new()).collect(),
             output_isp_detectors: (0..channels).map(|_| TruePeakDetector::new()).collect(),
             isp_correction_db: 0.0,
@@ -190,6 +191,11 @@ impl LimiterPlugin {
         };
         p.rebuild_cached_parameters();
         p
+    }
+
+    fn max_lookahead_len(sample_rate: u32) -> usize {
+        let max_ms = pk(LM, "lookahead").max_f64() as f32;
+        ((max_ms * 0.001 * sample_rate as f32) as usize).max(1)
     }
 
     fn rebuild_cached_parameters(&mut self) {
@@ -289,10 +295,18 @@ impl LimiterPlugin {
     fn update_coefficients(&mut self) {
         self.release_coeff = (-1.0 / (self.release_ms * 0.001 * self.sample_rate as f32)).exp();
         let new_len = ((self.lookahead_ms * 0.001 * self.sample_rate as f32) as usize).max(1);
+        let required_capacity = Self::max_lookahead_len(self.sample_rate);
+        if self.lookahead_peaks.len() < required_capacity {
+            self.lookahead_peaks.resize(required_capacity, 0.0);
+        }
+        let required_buffer_capacity = required_capacity * self.channels;
+        if self.lookahead_buffer.len() < required_buffer_capacity {
+            self.lookahead_buffer.resize(required_buffer_capacity, 0.0);
+        }
         if new_len != self.lookahead_len {
             self.lookahead_len = new_len;
-            self.lookahead_buffer.resize(new_len * self.channels, 0.0);
-            self.lookahead_peaks.resize(new_len, 0.0);
+            self.lookahead_buffer.fill(0.0);
+            self.lookahead_peaks.fill(0.0);
             self.lookahead_pos = 0;
         }
         self.dual_release_env
@@ -313,8 +327,7 @@ impl InPlacePlugin for LimiterPlugin {
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         // Validate against parameter definitions
-        let params = self.parameters();
-        if let Some(param) = params.iter().find(|p| p.id == id) {
+        if let Some(param) = self.cached_parameters.iter().find(|p| p.id == id) {
             param.validate(&value)?;
         } else {
             return Err(format!("Unknown parameter: {}", id));
@@ -442,8 +455,6 @@ impl InPlacePlugin for LimiterPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
-        let thresh = self.threshold_smoother.advance();
-        let mix = self.mix_smoother.advance();
         let mut max_peak = 0.0f32;
         let use_true_peak = self.true_peak || self.isp_mode;
         let use_dual_release = self.dual_release;
@@ -451,14 +462,15 @@ impl InPlacePlugin for LimiterPlugin {
         let use_isp_mode = self.isp_mode;
 
         // Reset per-block ISP tracking (no resize needed — channels is invariant)
-        if use_true_peak {
-            self.monitoring_isp_linear.fill(0.0);
-        }
+        self.monitoring_isp_linear.fill(0.0);
 
         let link = self.link_amount;
 
         #[allow(clippy::needless_range_loop)]
         for frame in 0..num_frames {
+            let thresh = self.threshold_smoother.advance();
+            let mix = self.mix_smoother.advance();
+
             // Detect per-channel peaks using pre-allocated scratch.
             let nc = self.channels;
             self.channel_peaks[..nc].fill(0.0);
@@ -487,14 +499,12 @@ impl InPlacePlugin for LimiterPlugin {
             let frame_peak = if link >= 1.0 || nc <= 1 {
                 max_peak_ch
             } else {
-                // Blend: each channel's peak moves toward max by link amount
-                // Use the max of the linked peaks as the effective frame peak
-                let mut linked_max = 0.0f32;
-                for ch in 0..nc {
-                    let linked = self.channel_peaks[ch] * (1.0 - link) + max_peak_ch * link;
-                    linked_max = linked_max.max(linked);
-                }
-                linked_max
+                // Single-envelope limiter: link_amount blends the detector from
+                // average channel energy toward the strict linked maximum.
+                // The old per-channel blend took max() after blending, which
+                // always returned max_peak_ch and made link_amount a no-op.
+                let avg_peak = self.channel_peaks[..nc].iter().copied().sum::<f32>() / nc as f32;
+                avg_peak * (1.0 - link) + max_peak_ch * link
             };
 
             max_peak = max_peak.max(frame_peak);
@@ -505,7 +515,7 @@ impl InPlacePlugin for LimiterPlugin {
             // This anticipates loud transients before they arrive at the output.
             let effective_peak = if use_feed_forward {
                 self.lookahead_peaks[self.lookahead_pos] = frame_peak;
-                self.lookahead_peaks
+                self.lookahead_peaks[..self.lookahead_len]
                     .iter()
                     .copied()
                     .fold(frame_peak, f32::max)
@@ -608,10 +618,6 @@ impl InPlacePlugin for LimiterPlugin {
             self.lookahead_pos = (self.lookahead_pos + 1) % self.lookahead_len;
         }
 
-        // Smoothers already advanced at the start of this block via .advance().
-        // Do not call .next_n() again — that would double-advance, making
-        // threshold transitions ~500x faster than intended.
-
         // Update monitoring cache
         self.monitoring_peak_db = 20.0 * fast_log10(max_peak.max(1e-10));
         self.monitoring_gr_db = self.envelope;
@@ -623,13 +629,19 @@ impl InPlacePlugin for LimiterPlugin {
                 d.gain_reduction_db = self.monitoring_gr_db;
                 d.peak_db = self.monitoring_peak_db;
                 d.is_limiting = self.monitoring_gr_db > 0.01;
-                if use_true_peak && d.isp_dbtp.len() == self.channels {
-                    for (ch, &lin) in self.monitoring_isp_linear.iter().enumerate() {
-                        d.isp_dbtp[ch] = if lin < 1e-12 {
-                            -120.0
-                        } else {
-                            20.0 * lin.log10()
-                        };
+                if d.isp_dbtp.len() == self.channels {
+                    if use_true_peak {
+                        for (ch, &lin) in self.monitoring_isp_linear.iter().enumerate() {
+                            d.isp_dbtp[ch] = if lin < 1e-12 {
+                                -120.0
+                            } else {
+                                20.0 * lin.log10()
+                            };
+                        }
+                    } else {
+                        for v in &mut d.isp_dbtp {
+                            *v = -120.0;
+                        }
                     }
                 }
             });
@@ -707,6 +719,42 @@ mod tests {
             "After 1ms of a 5ms threshold transition, output {output_after_1ms:.4} should be above \
              midpoint {midpoint:.4} (old={old_thresh_lin:.4}, new={new_thresh_lin:.4}). \
              Smoother may be double-advancing."
+        );
+    }
+
+    /// Verify mix automation now advances inside the block, not as one-step block
+    /// control. When mix is ramped from dry to wet, the frame outputs should not
+    /// remain constant during a short block with 5 ms smoothing and non-zero
+    /// reduction.
+    #[test]
+    fn test_mix_smoother_advances_per_frame() {
+        let mut p = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
+        p.initialize(48000).unwrap();
+
+        // Start from dry.
+        p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
+            .unwrap();
+
+        // Warm up so the smoother is actually at mix=0.
+        let mut warmup = vec![0.9f32; 4800];
+        p.process_in_place(&mut warmup, &ProcessContext::new(48000, 4800))
+            .unwrap();
+
+        // Ramp mix toward full wet.
+        p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+            .unwrap();
+
+        // 5 ms at 48 kHz.
+        let mut output = vec![0.9f32; 240];
+        p.process_in_place(&mut output, &ProcessContext::new(48000, 240))
+            .unwrap();
+
+        let first = output[0].abs();
+        let last = output[239].abs();
+        // Mix ramp should make these distinct once reduced.
+        assert!(
+            (last - first).abs() > 1e-4,
+            "mix automation should advance per frame: first={first:.6}, last={last:.6}"
         );
     }
 
@@ -1015,6 +1063,39 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_isp_meter_resets_to_floor_when_true_peak_disabled() {
+        let mut p = LimiterPlugin::new(1, -1.0, 50.0, 5.0, false);
+        p.set_parameter(ParameterId::from("true_peak"), ParameterValue::Bool(true))
+            .unwrap();
+        p.initialize(48000).unwrap();
+
+        let frames = 512;
+        let mut b = vec![0.8f32; frames];
+        let ctx = ProcessContext::new(48000, frames);
+
+        // First, gather non-floor ISP data.
+        for _ in 0..(CACHE_UPDATE_THROTTLE + 1) {
+            p.process_in_place(&mut b, &ctx).unwrap();
+        }
+        let with_true_peak = p.cache.load();
+        assert!(
+            with_true_peak.isp_dbtp[0] > -20.0,
+            "ISP meter should reflect active true-peak detection"
+        );
+
+        p.set_parameter(ParameterId::from("true_peak"), ParameterValue::Bool(false))
+            .unwrap();
+        for _ in 0..(CACHE_UPDATE_THROTTLE + 1) {
+            p.process_in_place(&mut b, &ctx).unwrap();
+        }
+        let without_true_peak = p.cache.load();
+        assert!(
+            without_true_peak.isp_dbtp[0] <= -119.0,
+            "ISP meter should fall back to floor immediately after disabling true peak"
+        );
+    }
+
     /// ISP mode: output inter-sample peaks must not exceed the ceiling.
     /// We create a signal with known inter-sample peaks, run through the
     /// ISP limiter, then verify output ISP with an independent detector.
@@ -1268,6 +1349,67 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_lookahead_parameter_change_uses_preallocated_storage() {
+        let mut p = LimiterPlugin::new(2, -6.0, 50.0, 5.0, false);
+        p.initialize(48000).unwrap();
+
+        let initial_buffer_len = p.lookahead_buffer.len();
+        let initial_peaks_len = p.lookahead_peaks.len();
+        assert_eq!(initial_buffer_len, 960 * 2);
+        assert_eq!(initial_peaks_len, 960);
+        assert_eq!(p.lookahead_len, 240);
+
+        p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
+            .unwrap();
+        assert_eq!(p.lookahead_len, 960);
+        assert_eq!(p.lookahead_buffer.len(), initial_buffer_len);
+        assert_eq!(p.lookahead_peaks.len(), initial_peaks_len);
+
+        p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(1.0))
+            .unwrap();
+        assert_eq!(p.lookahead_len, 48);
+        assert_eq!(p.lookahead_buffer.len(), initial_buffer_len);
+        assert_eq!(p.lookahead_peaks.len(), initial_peaks_len);
+    }
+
+    #[test]
+    fn test_link_amount_interpolates_average_to_peak_detection() {
+        let sr = 48000;
+        let frames = 4096;
+        let threshold_db = -6.0;
+        let make_input = || {
+            let mut b = vec![0.0f32; frames * 2];
+            for frame in 0..frames {
+                b[frame * 2] = 0.9;
+                b[frame * 2 + 1] = 0.05;
+            }
+            b
+        };
+
+        let mut linked = LimiterPlugin::new(2, threshold_db, 50.0, 0.0, false);
+        linked.link_amount = 1.0;
+        linked.initialize(sr).unwrap();
+        let mut linked_buf = make_input();
+        linked
+            .process_in_place(&mut linked_buf, &ProcessContext::new(sr, frames))
+            .unwrap();
+
+        let mut half = LimiterPlugin::new(2, threshold_db, 50.0, 0.0, false);
+        half.link_amount = 0.5;
+        half.initialize(sr).unwrap();
+        let mut half_buf = make_input();
+        half.process_in_place(&mut half_buf, &ProcessContext::new(sr, frames))
+            .unwrap();
+
+        assert!(
+            half.monitoring_gr_db < linked.monitoring_gr_db,
+            "partial linking should produce intermediate detector GR: half={} linked={}",
+            half.monitoring_gr_db,
+            linked.monitoring_gr_db
+        );
     }
 
     /// Test that reset clears true peak detectors and dual release state.

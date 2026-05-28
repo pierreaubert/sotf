@@ -519,6 +519,8 @@ pub struct ServerConfig {
     pub mpd: MpdSettings,
     #[serde(default)]
     pub dlna: DlnaSettings,
+    #[serde(default)]
+    pub api: SotfApiSettings,
 }
 
 /// Authentication mode for the MPD server.
@@ -587,6 +589,33 @@ impl Default for DlnaSettings {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SotfApiSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_bind_address")]
+    pub bind_address: String,
+    #[serde(default = "default_sotf_api_port")]
+    pub port: u16,
+    #[serde(default = "default_sotf_api_name")]
+    pub friendly_name: String,
+    /// Bearer token required for all control/status endpoints except health.
+    #[serde(default)]
+    pub auth_token: Option<String>,
+}
+
+impl Default for SotfApiSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bind_address: default_bind_address(),
+            port: default_sotf_api_port(),
+            friendly_name: default_sotf_api_name(),
+            auth_token: None,
+        }
+    }
+}
+
 fn default_bind_address() -> String {
     "0.0.0.0".to_string()
 }
@@ -601,6 +630,14 @@ fn default_dlna_name() -> String {
 
 fn default_dlna_port() -> u16 {
     8200
+}
+
+fn default_sotf_api_name() -> String {
+    "SOTF Player".to_string()
+}
+
+fn default_sotf_api_port() -> u16 {
+    8732
 }
 
 #[cfg(test)]
@@ -650,6 +687,11 @@ mod tests {
         assert_eq!(config.mpd.port, 6600);
         assert!(!config.dlna.enabled);
         assert_eq!(config.dlna.port, 8200);
+        assert!(!config.api.enabled);
+        assert_eq!(config.api.bind_address, "0.0.0.0");
+        assert_eq!(config.api.port, 8732);
+        assert_eq!(config.api.friendly_name, "SOTF Player");
+        assert!(config.api.auth_token.is_none());
     }
 
     #[test]

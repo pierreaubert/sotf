@@ -3,6 +3,12 @@
 // ============================================================================
 
 use crate::automation::{ParameterAutomation, automation_utils};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use crate::external_plugin_isolated::IsolatedExternalPlugin;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use crate::external_plugin_ipc::{PluginSandboxBackendCode, PluginSandboxStatusCode};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use crate::external_plugin_process::ExternalPluginProcessEvent;
 use crate::parameters::{ParameterId, ParameterValue};
 use crate::plugin::{Plugin, ProcessContext};
 use arc_swap::ArcSwap;
@@ -11,6 +17,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::AddAssign;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -78,6 +85,47 @@ fn ensure_len<T: AudioSample>(buffer: &mut Vec<T>, len: usize) {
     if buffer.len() < len {
         buffer.resize(len, T::default());
     }
+}
+
+fn panic_payload_description(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "non-string panic payload".to_string()
+    }
+}
+
+fn write_plugin_failure_passthrough<T: AudioSample>(
+    input: &[T],
+    output: &mut [T],
+    num_frames: usize,
+    input_channels: usize,
+    output_channels: usize,
+) -> usize {
+    let output_len = num_frames.saturating_mul(output_channels).min(output.len());
+    output[..output_len].fill(T::default());
+
+    if input_channels == 0 || output_channels == 0 {
+        return num_frames;
+    }
+
+    let copy_channels = input_channels.min(output_channels);
+    for frame in 0..num_frames {
+        let src_base = frame.saturating_mul(input_channels);
+        let dst_base = frame.saturating_mul(output_channels);
+        if src_base >= input.len() || dst_base >= output_len {
+            break;
+        }
+
+        let src_end = (src_base + copy_channels).min(input.len());
+        let dst_end = (dst_base + copy_channels).min(output_len);
+        let copied = (src_end - src_base).min(dst_end - dst_base);
+        output[dst_base..dst_base + copied].copy_from_slice(&input[src_base..src_base + copied]);
+    }
+
+    num_frames
 }
 
 struct ProcessBuffers<T: AudioSample> {
@@ -248,9 +296,39 @@ pub trait Host {
     fn take_analyzer_contention_stats(&mut self) -> Vec<(usize, u64, u64)> {
         Vec::new()
     }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    fn poll_isolated_external_plugin_workers(&mut self) -> Vec<IsolatedExternalPluginWorkerReport> {
+        Vec::new()
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    fn ensure_isolated_external_plugin_workers_running(
+        &mut self,
+    ) -> Vec<IsolatedExternalPluginWorkerReport> {
+        Vec::new()
+    }
 }
 
 pub type NodeId = usize;
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[derive(Debug)]
+pub struct IsolatedExternalPluginWorkerReport {
+    pub plugin_index: usize,
+    pub node_id: NodeId,
+    pub event: Option<ExternalPluginProcessEvent>,
+    pub error: Option<String>,
+    pub worker_start_count: u64,
+    pub worker_exit_count: u64,
+    pub worker_launch_failure_count: u64,
+    pub block_timeout_count: u64,
+    pub block_worker_failure_count: u64,
+    pub block_wrong_sequence_count: u64,
+    pub sandbox_status: PluginSandboxStatusCode,
+    pub sandbox_backend: PluginSandboxBackendCode,
+    pub sandbox_reason: Option<String>,
+}
 
 #[derive(Clone)]
 pub struct GraphNode {
@@ -920,10 +998,13 @@ impl DawHost {
 
         for (chain_idx, &id) in self.chain_nodes.iter().enumerate() {
             let p = self.plugins[id].as_ref().unwrap();
-            if p.output_frames_for_input(100) != 100 {
+            let node = &self.nodes[&id];
+            if Self::plugin_output_frames_for_input_isolated(p.as_ref(), id, &node.name, 100) != 100
+            {
                 self.cached_frames_identity = false;
             }
-            if p.output_sample_rate(48000) != 48000 {
+            if Self::plugin_output_sample_rate_isolated(p.as_ref(), id, &node.name, 48000) != 48000
+            {
                 self.cached_rate_identity = false;
             }
             if p.get_data().is_some() {
@@ -933,7 +1014,9 @@ impl DawHost {
 
         self.has_variable_frame_plugin = self.chain_nodes.iter().any(|&id| {
             let p = self.plugins[id].as_ref().unwrap();
-            p.output_frames_for_input(100) != 100 || p.latency_samples() > 0
+            let node = &self.nodes[&id];
+            Self::plugin_output_frames_for_input_isolated(p.as_ref(), id, &node.name, 100) != 100
+                || p.latency_samples() > 0
         });
         // Cache total latency so total_latency_samples() is O(1)
         self.cached_latency = Some(self.compute_latency());
@@ -1002,6 +1085,98 @@ impl DawHost {
         let &nid = self.chain_nodes.get(index)?;
         self.plugins.get(nid)?.as_deref()
     }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    pub fn poll_isolated_external_plugin_workers(
+        &mut self,
+    ) -> Vec<IsolatedExternalPluginWorkerReport> {
+        let mut reports = Vec::new();
+        let chain_nodes = self.chain_nodes.clone();
+        for (plugin_index, node_id) in chain_nodes.into_iter().enumerate() {
+            let Some(Some(plugin)) = self.plugins.get_mut(node_id) else {
+                continue;
+            };
+            let Some(isolated) = plugin
+                .as_any_mut()
+                .and_then(|plugin| plugin.downcast_mut::<IsolatedExternalPlugin>())
+            else {
+                continue;
+            };
+
+            let (event, error) = match isolated.poll_worker() {
+                Ok(event) => (event, None),
+                Err(err) => (None, Some(err)),
+            };
+            reports.push(Self::isolated_external_plugin_report(
+                plugin_index,
+                node_id,
+                isolated,
+                event,
+                error,
+            ));
+        }
+        reports
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    pub fn ensure_isolated_external_plugin_workers_running(
+        &mut self,
+    ) -> Vec<IsolatedExternalPluginWorkerReport> {
+        let mut reports = Vec::new();
+        let chain_nodes = self.chain_nodes.clone();
+        for (plugin_index, node_id) in chain_nodes.into_iter().enumerate() {
+            let Some(Some(plugin)) = self.plugins.get_mut(node_id) else {
+                continue;
+            };
+            let Some(isolated) = plugin
+                .as_any_mut()
+                .and_then(|plugin| plugin.downcast_mut::<IsolatedExternalPlugin>())
+            else {
+                continue;
+            };
+
+            let (event, error) = match isolated.ensure_worker_running_event() {
+                Ok(event) => (Some(event), None),
+                Err(err) => (None, Some(err)),
+            };
+            reports.push(Self::isolated_external_plugin_report(
+                plugin_index,
+                node_id,
+                isolated,
+                event,
+                error,
+            ));
+        }
+        reports
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    fn isolated_external_plugin_report(
+        plugin_index: usize,
+        node_id: NodeId,
+        plugin: &IsolatedExternalPlugin,
+        event: Option<ExternalPluginProcessEvent>,
+        error: Option<String>,
+    ) -> IsolatedExternalPluginWorkerReport {
+        let sandbox = plugin.worker_sandbox_status();
+        let sandbox_reason = sandbox_reason_text(sandbox.status, sandbox.backend, error.as_deref());
+        IsolatedExternalPluginWorkerReport {
+            plugin_index,
+            node_id,
+            event,
+            error,
+            worker_start_count: plugin.worker_start_count(),
+            worker_exit_count: plugin.worker_exit_count(),
+            worker_launch_failure_count: plugin.worker_launch_failure_count(),
+            block_timeout_count: plugin.block_timeout_count(),
+            block_worker_failure_count: plugin.block_worker_failure_count(),
+            block_wrong_sequence_count: plugin.block_wrong_sequence_count(),
+            sandbox_status: sandbox.status,
+            sandbox_backend: sandbox.backend,
+            sandbox_reason,
+        }
+    }
+
     pub fn input_channels(&self) -> usize {
         if self.chain_nodes.is_empty() {
             self.initial_input_channels
@@ -1022,10 +1197,14 @@ impl DawHost {
         }
         let mut result = f;
         for &id in &self.chain_nodes {
-            result = self.plugins[id]
-                .as_ref()
-                .unwrap()
-                .output_frames_for_input(result);
+            let plugin = self.plugins[id].as_ref().unwrap();
+            let node = &self.nodes[&id];
+            result = Self::plugin_output_frames_for_input_isolated(
+                plugin.as_ref(),
+                id,
+                &node.name,
+                result,
+            );
         }
         result
     }
@@ -1035,10 +1214,10 @@ impl DawHost {
         }
         let mut result = r;
         for &id in &self.chain_nodes {
-            result = self.plugins[id]
-                .as_ref()
-                .unwrap()
-                .output_sample_rate(result);
+            let plugin = self.plugins[id].as_ref().unwrap();
+            let node = &self.nodes[&id];
+            result =
+                Self::plugin_output_sample_rate_isolated(plugin.as_ref(), id, &node.name, result);
         }
         result
     }
@@ -1174,6 +1353,192 @@ impl DawHost {
         }
     }
 
+    fn plugin_supports_f64_isolated(plugin: &dyn Plugin, node_id: NodeId, node_name: &str) -> bool {
+        match catch_unwind(AssertUnwindSafe(|| plugin.supports_f64())) {
+            Ok(supports_f64) => supports_f64,
+            Err(payload) => {
+                let reason = panic_payload_description(payload.as_ref());
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) panicked in supports_f64: {}; using f32 bridge",
+                    node_name,
+                    node_id,
+                    reason
+                );
+                false
+            }
+        }
+    }
+
+    fn plugin_output_frames_for_input_isolated(
+        plugin: &dyn Plugin,
+        node_id: NodeId,
+        node_name: &str,
+        input_frames: usize,
+    ) -> usize {
+        match catch_unwind(AssertUnwindSafe(|| {
+            plugin.output_frames_for_input(input_frames)
+        })) {
+            Ok(output_frames) => output_frames,
+            Err(payload) => {
+                let reason = panic_payload_description(payload.as_ref());
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) panicked in output_frames_for_input: {}; assuming identity frame count",
+                    node_name,
+                    node_id,
+                    reason
+                );
+                input_frames
+            }
+        }
+    }
+
+    fn plugin_output_sample_rate_isolated(
+        plugin: &dyn Plugin,
+        node_id: NodeId,
+        node_name: &str,
+        input_rate: u32,
+    ) -> u32 {
+        match catch_unwind(AssertUnwindSafe(|| plugin.output_sample_rate(input_rate))) {
+            Ok(output_rate) => output_rate,
+            Err(payload) => {
+                let reason = panic_payload_description(payload.as_ref());
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) panicked in output_sample_rate: {}; assuming identity sample rate",
+                    node_name,
+                    node_id,
+                    reason
+                );
+                input_rate
+            }
+        }
+    }
+
+    fn process_plugin_f32_isolated(
+        plugin: &mut dyn Plugin,
+        node: &GraphNode,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext<'_>,
+    ) -> usize {
+        let fallback = |output: &mut [f32]| {
+            write_plugin_failure_passthrough(
+                input,
+                output,
+                context.num_frames,
+                node.input_channels(),
+                node.output_channels(),
+            )
+        };
+
+        match catch_unwind(AssertUnwindSafe(|| plugin.process(input, output, context))) {
+            Ok(Ok(frames)) => {
+                if frames.saturating_mul(node.output_channels()) <= output.len() {
+                    frames
+                } else {
+                    crate::rate_limited_log!(
+                        error,
+                        5,
+                        "host: plugin '{}' (node {}) returned {} frames but output buffer holds {} samples; using passthrough for this block",
+                        node.name,
+                        node.id,
+                        frames,
+                        output.len()
+                    );
+                    fallback(output)
+                }
+            }
+            Ok(Err(err)) => {
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) process failed: {err}; using passthrough for this block",
+                    node.name,
+                    node.id
+                );
+                fallback(output)
+            }
+            Err(payload) => {
+                let reason = panic_payload_description(payload.as_ref());
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) panicked in process: {}; using passthrough for this block",
+                    node.name,
+                    node.id,
+                    reason
+                );
+                fallback(output)
+            }
+        }
+    }
+
+    fn process_plugin_f64_isolated(
+        plugin: &mut dyn Plugin,
+        node: &GraphNode,
+        input: &[f64],
+        output: &mut [f64],
+        context: &ProcessContext<'_>,
+    ) -> usize {
+        let fallback = |output: &mut [f64]| {
+            write_plugin_failure_passthrough(
+                input,
+                output,
+                context.num_frames,
+                node.input_channels(),
+                node.output_channels(),
+            )
+        };
+
+        match catch_unwind(AssertUnwindSafe(|| {
+            plugin.process_f64(input, output, context)
+        })) {
+            Ok(Ok(frames)) => {
+                if frames.saturating_mul(node.output_channels()) <= output.len() {
+                    frames
+                } else {
+                    crate::rate_limited_log!(
+                        error,
+                        5,
+                        "host: plugin '{}' (node {}) returned {} f64 frames but output buffer holds {} samples; using passthrough for this block",
+                        node.name,
+                        node.id,
+                        frames,
+                        output.len()
+                    );
+                    fallback(output)
+                }
+            }
+            Ok(Err(err)) => {
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) f64 process failed: {err}; using passthrough for this block",
+                    node.name,
+                    node.id
+                );
+                fallback(output)
+            }
+            Err(payload) => {
+                let reason = panic_payload_description(payload.as_ref());
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) panicked in f64 process: {}; using passthrough for this block",
+                    node.name,
+                    node.id,
+                    reason
+                );
+                fallback(output)
+            }
+        }
+    }
+
     fn apply_parameter_event(&mut self, event: ParameterEvent) -> Result<(), String> {
         let ParameterEvent {
             node_id,
@@ -1190,16 +1555,33 @@ impl DawHost {
             .get_mut(node_id)
             .and_then(Option::as_mut)
             .ok_or_else(|| format!("Plugin for node {node_id} not found"))?;
-        plugin.set_parameter(param_id, value).map_err(|err| {
-            crate::rate_limited_log!(
-                warn,
-                5,
-                "host: queued parameter event failed for node {} '{}': {err}",
-                node_id,
-                node.name
-            );
-            err
-        })
+        match catch_unwind(AssertUnwindSafe(|| plugin.set_parameter(param_id, value))) {
+            Ok(result) => result.map_err(|err| {
+                crate::rate_limited_log!(
+                    warn,
+                    5,
+                    "host: queued parameter event failed for node {} '{}': {err}",
+                    node_id,
+                    node.name
+                );
+                err
+            }),
+            Err(payload) => {
+                let reason = panic_payload_description(payload.as_ref());
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) panicked while applying parameter: {}",
+                    node.name,
+                    node_id,
+                    reason
+                );
+                Err(format!(
+                    "plugin '{}' (node {}) panicked while applying parameter: {}",
+                    node.name, node_id, reason
+                ))
+            }
+        }
     }
 
     /// Number of parameter events dropped because the RT queue was full.
@@ -1368,19 +1750,28 @@ impl DawHost {
         events: &mut Vec<ParameterEvent>,
     ) -> Result<usize, String> {
         if events.is_empty() {
-            return self.process_block_without_parameter_events(input, output);
+            return self.process_block_without_parameter_events(
+                input,
+                output,
+                self.playback_position as u64,
+            );
         }
 
         if events.iter().any(|event| event.sample_offset > 0)
             && self.can_split_parameter_event_block(input, output)
         {
-            return self.process_split_parameter_events(input, output, events);
+            return self.process_split_parameter_events(
+                input,
+                output,
+                events,
+                self.playback_position as u64,
+            );
         }
 
         for event in events.drain(..) {
             self.apply_parameter_event(event)?;
         }
-        self.process_block_without_parameter_events(input, output)
+        self.process_block_without_parameter_events(input, output, self.playback_position as u64)
     }
 
     fn can_split_parameter_event_block(&self, input: &[f32], output: &[f32]) -> bool {
@@ -1404,6 +1795,7 @@ impl DawHost {
         input: &[f32],
         output: &mut [f32],
         events: &mut Vec<ParameterEvent>,
+        block_start_sample: u64,
     ) -> Result<usize, String> {
         let input_channels = self.input_channels();
         let output_channels = self.output_channels();
@@ -1432,6 +1824,7 @@ impl DawHost {
                 let segment_frames = self.process_block_without_parameter_events(
                     &input[in_start..in_end],
                     &mut output[out_start..out_end],
+                    block_start_sample + frame_cursor as u64,
                 )?;
                 processed_frames += segment_frames;
                 frame_cursor = next_event_frame;
@@ -1457,6 +1850,7 @@ impl DawHost {
         &mut self,
         input: &[f32],
         output: &mut [f32],
+        block_start_sample: u64,
     ) -> Result<usize, String> {
         if self.nodes.is_empty() {
             output.copy_from_slice(input);
@@ -1466,7 +1860,7 @@ impl DawHost {
         let max_of = self.output_frames_for_input(nf);
         let out_ch = self.output_channels();
         self.apply_automation_for_block(nf);
-        let block_start_sample = self.playback_position as u64;
+        let stage_block_start_sample = block_start_sample;
 
         // Use BufferGuard to guarantee process_buffers are returned even on early ?-return
         let mut guard = BufferGuard::take(&mut self.process_buffers);
@@ -1485,7 +1879,7 @@ impl DawHost {
                 input,
                 self.sample_rate,
                 cf,
-                block_start_sample,
+                stage_block_start_sample,
                 &mut self.plugins,
                 &self.nodes,
                 &self.predecessors,
@@ -1539,8 +1933,13 @@ impl DawHost {
                 } else {
                     let p = self.plugins[nid].as_mut().unwrap();
                     let context = ProcessContext::new(self.sample_rate, cf)
-                        .with_sample_position(block_start_sample);
-                    let mof = p.output_frames_for_input(cf);
+                        .with_sample_position(stage_block_start_sample);
+                    let mof = Self::plugin_output_frames_for_input_isolated(
+                        p.as_ref(),
+                        nid,
+                        &node.name,
+                        cf,
+                    );
                     let ol = mof * node.output_channels();
                     let needs_extended_in_place_buffer = node.input_channels()
                         > node.output_channels()
@@ -1553,22 +1952,13 @@ impl DawHost {
                         ol
                     };
                     ensure_len(&mut bufs.scratch_output, process_output_len);
-                    let out_frames = p
-                        .process(
-                            &bufs.scratch_input[..in_len],
-                            &mut bufs.scratch_output[..process_output_len],
-                            &context,
-                        )
-                        .map_err(|e| {
-                            crate::rate_limited_log!(
-                                error,
-                                5,
-                                "host: plugin '{}' (node {}) process failed: {e}",
-                                node.name,
-                                nid
-                            );
-                            e
-                        })?;
+                    let out_frames = Self::process_plugin_f32_isolated(
+                        p.as_mut(),
+                        node,
+                        &bufs.scratch_input[..in_len],
+                        &mut bufs.scratch_output[..process_output_len],
+                        &context,
+                    );
                     bufs.node_buffers[nid]
                         .as_mut()
                         .unwrap()
@@ -1643,7 +2033,30 @@ impl DawHost {
             let (idx, val) = self.automation_scratch[i];
             let slot = &mut self.automation[idx];
             if let Some(p) = self.plugins[slot.node_id].as_mut() {
-                let _ = p.set_parameter(slot.param_id.clone(), ParameterValue::Float(val));
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    p.set_parameter(slot.param_id.clone(), ParameterValue::Float(val))
+                }));
+                match result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => {
+                        crate::rate_limited_log!(
+                            warn,
+                            5,
+                            "host: automation parameter update failed for node {}: {err}",
+                            slot.node_id
+                        );
+                    }
+                    Err(payload) => {
+                        let reason = panic_payload_description(payload.as_ref());
+                        crate::rate_limited_log!(
+                            error,
+                            5,
+                            "host: plugin at node {} panicked during automation parameter update: {}",
+                            slot.node_id,
+                            reason
+                        );
+                    }
+                }
             }
             slot.automation.last_value = val;
             slot.automation.position += nf;
@@ -1674,19 +2087,28 @@ impl DawHost {
         events: &mut Vec<ParameterEvent>,
     ) -> Result<usize, String> {
         if events.is_empty() {
-            return self.process_f64_without_parameter_events(input, output);
+            return self.process_f64_without_parameter_events(
+                input,
+                output,
+                self.playback_position as u64,
+            );
         }
 
         if events.iter().any(|event| event.sample_offset > 0)
             && self.can_split_parameter_event_block_f64(input, output)
         {
-            return self.process_f64_split_parameter_events(input, output, events);
+            return self.process_f64_split_parameter_events(
+                input,
+                output,
+                events,
+                self.playback_position as u64,
+            );
         }
 
         for event in events.drain(..) {
             self.apply_parameter_event(event)?;
         }
-        self.process_f64_without_parameter_events(input, output)
+        self.process_f64_without_parameter_events(input, output, self.playback_position as u64)
     }
 
     fn can_split_parameter_event_block_f64(&self, input: &[f64], output: &[f64]) -> bool {
@@ -1707,6 +2129,7 @@ impl DawHost {
         input: &[f64],
         output: &mut [f64],
         events: &mut Vec<ParameterEvent>,
+        block_start_sample: u64,
     ) -> Result<usize, String> {
         let input_channels = self.input_channels();
         let output_channels = self.output_channels();
@@ -1735,6 +2158,7 @@ impl DawHost {
                 let segment_frames = self.process_f64_without_parameter_events(
                     &input[in_start..in_end],
                     &mut output[out_start..out_end],
+                    block_start_sample + frame_cursor as u64,
                 )?;
                 processed_frames += segment_frames;
                 frame_cursor = next_event_frame;
@@ -1760,16 +2184,17 @@ impl DawHost {
         &mut self,
         input: &[f64],
         output: &mut [f64],
+        block_start_sample: u64,
     ) -> Result<usize, String> {
         if self.nodes.is_empty() {
             output.copy_from_slice(input);
             return Ok(input.len() / self.input_channels());
         }
         if self.can_process_f64_chain_native() {
-            return self.process_f64_chain_native(input, output);
+            return self.process_f64_chain_native(input, output, block_start_sample);
         }
         if self.can_process_f64_graph_native() {
-            return self.process_f64_graph_native(input, output);
+            return self.process_f64_graph_native(input, output, block_start_sample);
         }
         let mut input_scratch = std::mem::take(&mut self.f64_input_scratch);
         let mut output_scratch = std::mem::take(&mut self.f64_output_scratch);
@@ -1785,6 +2210,7 @@ impl DawHost {
         let result = self.process_block_without_parameter_events(
             &input_scratch[..in_len],
             &mut output_scratch[..out_len],
+            block_start_sample,
         );
         let frames = match result {
             Ok(frames) => frames,
@@ -1807,9 +2233,10 @@ impl DawHost {
         !self.nodes.is_empty()
             && self.nodes.keys().copied().all(|nid| {
                 self.bypassed.get(nid).copied().unwrap_or(false)
-                    || self.plugins[nid]
-                        .as_ref()
-                        .is_some_and(|plugin| plugin.supports_f64())
+                    || self.plugins[nid].as_ref().is_some_and(|plugin| {
+                        let node = &self.nodes[&nid];
+                        Self::plugin_supports_f64_isolated(plugin.as_ref(), nid, &node.name)
+                    })
             })
     }
 
@@ -1836,9 +2263,10 @@ impl DawHost {
         }
         self.chain_nodes.iter().all(|&nid| {
             self.bypassed.get(nid).copied().unwrap_or(false)
-                || self.plugins[nid]
-                    .as_ref()
-                    .is_some_and(|plugin| plugin.supports_f64())
+                || self.plugins[nid].as_ref().is_some_and(|plugin| {
+                    let node = &self.nodes[&nid];
+                    Self::plugin_supports_f64_isolated(plugin.as_ref(), nid, &node.name)
+                })
         })
     }
 
@@ -1846,12 +2274,12 @@ impl DawHost {
         &mut self,
         input: &[f64],
         output: &mut [f64],
+        block_start_sample: u64,
     ) -> Result<usize, String> {
         let nf = input.len() / self.input_channels();
         let max_of = self.output_frames_for_input(nf);
         let out_ch = self.output_channels();
         self.apply_automation_for_block(nf);
-        let block_start_sample = self.playback_position as u64;
 
         let mut guard = BufferGuard::take(&mut self.process_buffers_f64);
         let bufs = guard.get_mut();
@@ -1905,7 +2333,12 @@ impl DawHost {
                     let plugin = self.plugins[nid].as_mut().unwrap();
                     let context = ProcessContext::new(self.sample_rate, cf)
                         .with_sample_position(block_start_sample);
-                    let max_output_frames = plugin.output_frames_for_input(cf);
+                    let max_output_frames = Self::plugin_output_frames_for_input_isolated(
+                        plugin.as_ref(),
+                        nid,
+                        &node.name,
+                        cf,
+                    );
                     let output_len = max_output_frames * node.output_channels();
                     let needs_extended_in_place_buffer = node.input_channels()
                         > node.output_channels()
@@ -1918,22 +2351,13 @@ impl DawHost {
                         output_len
                     };
                     ensure_len(&mut bufs.scratch_output, process_output_len);
-                    let frames = plugin
-                        .process_f64(
-                            &bufs.scratch_input[..in_len],
-                            &mut bufs.scratch_output[..process_output_len],
-                            &context,
-                        )
-                        .map_err(|e| {
-                            crate::rate_limited_log!(
-                                error,
-                                5,
-                                "host: plugin '{}' (node {}) f64 process failed: {e}",
-                                node.name,
-                                nid
-                            );
-                            e
-                        })?;
+                    let frames = Self::process_plugin_f64_isolated(
+                        plugin.as_mut(),
+                        node,
+                        &bufs.scratch_input[..in_len],
+                        &mut bufs.scratch_output[..process_output_len],
+                        &context,
+                    );
                     bufs.node_buffers[nid]
                         .as_mut()
                         .unwrap()
@@ -1972,6 +2396,7 @@ impl DawHost {
         &mut self,
         input: &[f64],
         output: &mut [f64],
+        block_start_sample: u64,
     ) -> Result<usize, String> {
         let mut scratch_a = std::mem::take(&mut self.f64_chain_scratch);
         let mut scratch_b = std::mem::take(&mut self.f64_chain_scratch_alt);
@@ -1983,7 +2408,6 @@ impl DawHost {
         let mut current_len = input.len();
         let mut current_frames = input.len() / self.input_channels();
         let mut current_rate = self.sample_rate;
-        let block_start_sample = self.playback_position as u64;
 
         for idx in 0..self.chain_nodes.len() {
             let nid = self.chain_nodes[idx];
@@ -1992,10 +2416,15 @@ impl DawHost {
                 .get(&nid)
                 .ok_or_else(|| format!("Missing node {nid} during f64 processing"))?;
             let is_last = idx + 1 == self.chain_nodes.len();
-            let output_frames = self.plugins[nid]
-                .as_ref()
-                .unwrap()
-                .output_frames_for_input(current_frames);
+            let output_frames = {
+                let plugin = self.plugins[nid].as_ref().unwrap();
+                Self::plugin_output_frames_for_input_isolated(
+                    plugin.as_ref(),
+                    nid,
+                    &node.name,
+                    current_frames,
+                )
+            };
             let output_len = output_frames * node.output_channels();
 
             let frames = if is_last {
@@ -2010,34 +2439,37 @@ impl DawHost {
                 if current_in_a {
                     Self::process_f64_node(
                         self.plugins[nid].as_mut().unwrap().as_mut(),
+                        node,
                         self.bypassed.get(nid).copied().unwrap_or(false),
                         &scratch_a[..current_len],
                         &mut output[..output_len],
                         current_rate,
-                        current_frames,
                         block_start_sample,
+                        current_frames,
                     )?
                 } else {
                     Self::process_f64_node(
                         self.plugins[nid].as_mut().unwrap().as_mut(),
+                        node,
                         self.bypassed.get(nid).copied().unwrap_or(false),
                         &scratch_b[..current_len],
                         &mut output[..output_len],
                         current_rate,
-                        current_frames,
                         block_start_sample,
+                        current_frames,
                     )?
                 }
             } else if current_in_a {
                 ensure_len(&mut scratch_b, output_len);
                 let frames = Self::process_f64_node(
                     self.plugins[nid].as_mut().unwrap().as_mut(),
+                    node,
                     self.bypassed.get(nid).copied().unwrap_or(false),
                     &scratch_a[..current_len],
                     &mut scratch_b[..output_len],
                     current_rate,
-                    current_frames,
                     block_start_sample,
+                    current_frames,
                 )?;
                 current_in_a = false;
                 frames
@@ -2045,12 +2477,13 @@ impl DawHost {
                 ensure_len(&mut scratch_a, output_len);
                 let frames = Self::process_f64_node(
                     self.plugins[nid].as_mut().unwrap().as_mut(),
+                    node,
                     self.bypassed.get(nid).copied().unwrap_or(false),
                     &scratch_b[..current_len],
                     &mut scratch_a[..output_len],
                     current_rate,
-                    current_frames,
                     block_start_sample,
+                    current_frames,
                 )?;
                 current_in_a = true;
                 frames
@@ -2058,10 +2491,15 @@ impl DawHost {
 
             current_frames = frames;
             current_len = frames * node.output_channels();
-            current_rate = self.plugins[nid]
-                .as_ref()
-                .unwrap()
-                .output_sample_rate(current_rate);
+            current_rate = {
+                let plugin = self.plugins[nid].as_ref().unwrap();
+                Self::plugin_output_sample_rate_isolated(
+                    plugin.as_ref(),
+                    nid,
+                    &node.name,
+                    current_rate,
+                )
+            };
         }
 
         self.f64_chain_scratch = scratch_a;
@@ -2072,12 +2510,13 @@ impl DawHost {
 
     fn process_f64_node(
         plugin: &mut dyn Plugin,
+        node: &GraphNode,
         bypassed: bool,
         input: &[f64],
         output: &mut [f64],
         sample_rate: u32,
-        num_frames: usize,
         sample_position: u64,
+        num_frames: usize,
     ) -> Result<usize, String> {
         if bypassed {
             output[..input.len()].copy_from_slice(input);
@@ -2085,7 +2524,9 @@ impl DawHost {
         }
         let context =
             ProcessContext::new(sample_rate, num_frames).with_sample_position(sample_position);
-        plugin.process_f64(input, output, &context)
+        Ok(Self::process_plugin_f64_isolated(
+            plugin, node, input, output, &context,
+        ))
     }
 
     fn process_stage_parallel(
@@ -2193,25 +2634,21 @@ impl DawHost {
                         let plugin = plugin_slot.as_mut().unwrap();
                         let context = ProcessContext::new(sample_rate, cf)
                             .with_sample_position(sample_position);
-                        let max_output_frames = plugin.output_frames_for_input(cf);
+                        let max_output_frames = Self::plugin_output_frames_for_input_isolated(
+                            plugin.as_ref(),
+                            nid,
+                            &node.name,
+                            cf,
+                        );
                         let output_len = max_output_frames * node.output_channels();
                         ensure_len(scratch_output, output_len);
-                        let frames = plugin
-                            .process(
-                                &scratch_input[..in_len],
-                                &mut scratch_output[..output_len],
-                                &context,
-                            )
-                            .map_err(|e| {
-                                crate::rate_limited_log!(
-                                    error,
-                                    5,
-                                    "host: plugin '{}' (node {}) parallel process failed: {e}",
-                                    node.name,
-                                    nid
-                                );
-                                e
-                            })?;
+                        let frames = Self::process_plugin_f32_isolated(
+                            plugin.as_mut(),
+                            node,
+                            &scratch_input[..in_len],
+                            &mut scratch_output[..output_len],
+                            &context,
+                        );
                         node_buffer_slot
                             .as_mut()
                             .unwrap()
@@ -2748,6 +3185,70 @@ impl DawHost {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn sandbox_reason_text(
+    status: PluginSandboxStatusCode,
+    backend: PluginSandboxBackendCode,
+    error: Option<&str>,
+) -> Option<String> {
+    if let Some(error) = error
+        && error.to_ascii_lowercase().contains("sandbox")
+    {
+        return Some(error.to_string());
+    }
+
+    match status {
+        PluginSandboxStatusCode::Unsupported => Some(match backend {
+            PluginSandboxBackendCode::MacosProcessIsolation => {
+                "macOS sandbox backend is not implemented yet; worker uses process isolation"
+                    .to_string()
+            }
+            PluginSandboxBackendCode::WindowsProcessIsolation => {
+                "Windows sandbox backend is not implemented yet; worker uses process isolation"
+                    .to_string()
+            }
+            PluginSandboxBackendCode::LinuxLandlock => {
+                "Linux sandbox backend reported unsupported at runtime".to_string()
+            }
+            PluginSandboxBackendCode::Unknown => {
+                "sandbox backend is unsupported on this platform".to_string()
+            }
+        }),
+        PluginSandboxStatusCode::Disabled => {
+            Some("sandbox disabled by policy".to_string())
+        }
+        PluginSandboxStatusCode::Enforced | PluginSandboxStatusCode::Unknown => None,
+    }
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+mod sandbox_reason_tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_backend_has_reason() {
+        let reason = sandbox_reason_text(
+            PluginSandboxStatusCode::Unsupported,
+            PluginSandboxBackendCode::MacosProcessIsolation,
+            None,
+        );
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn sandbox_error_text_is_prioritized() {
+        let reason = sandbox_reason_text(
+            PluginSandboxStatusCode::Unknown,
+            PluginSandboxBackendCode::Unknown,
+            Some("sandbox is required but not enforced"),
+        );
+        assert_eq!(
+            reason.as_deref(),
+            Some("sandbox is required but not enforced")
+        );
+    }
+}
+
 impl Host for DawHost {
     fn add_plugin(&mut self, p: Box<dyn Plugin>) -> Result<(), String> {
         self.add_plugin(p)
@@ -2794,6 +3295,18 @@ impl Host for DawHost {
             }
         }
         stats
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    fn poll_isolated_external_plugin_workers(&mut self) -> Vec<IsolatedExternalPluginWorkerReport> {
+        DawHost::poll_isolated_external_plugin_workers(self)
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    fn ensure_isolated_external_plugin_workers_running(
+        &mut self,
+    ) -> Vec<IsolatedExternalPluginWorkerReport> {
+        DawHost::ensure_isolated_external_plugin_workers_running(self)
     }
 }
 
@@ -3303,25 +3816,24 @@ mod tests {
         }
     }
 
-    struct ContextRecorderPlugin {
+    /// Mock plugin that records playback position metadata from process contexts.
+    struct PlaybackContextRecorderPlugin {
         channels: usize,
-        last_sample_position: u64,
-        last_ppq_position: f64,
+        positions: std::cell::RefCell<Vec<(u64, f64)>>,
     }
 
-    impl ContextRecorderPlugin {
+    impl PlaybackContextRecorderPlugin {
         fn new(channels: usize) -> Self {
             Self {
                 channels,
-                last_sample_position: 0,
-                last_ppq_position: 0.0,
+                positions: std::cell::RefCell::new(Vec::new()),
             }
         }
     }
 
-    impl Plugin for ContextRecorderPlugin {
+    impl Plugin for PlaybackContextRecorderPlugin {
         fn info(&self) -> crate::plugin::PluginInfo {
-            crate::plugin::PluginInfo::new("ContextRecorder", "0.1", "test")
+            crate::plugin::PluginInfo::new("PlaybackContextRecorder", "0.1", "test")
         }
         fn input_channels(&self) -> usize {
             self.channels
@@ -3351,38 +3863,15 @@ mod tests {
             output: &mut [f32],
             ctx: &crate::plugin::ProcessContext,
         ) -> Result<usize, String> {
-            self.last_sample_position = ctx.transport.sample_position;
-            self.last_ppq_position = ctx.transport.ppq_position;
-            let len = input.len().min(output.len());
-            output[..len].copy_from_slice(&input[..len]);
+            self.positions
+                .borrow_mut()
+                .push((ctx.transport.sample_position, ctx.transport.ppq_position));
+            output[..input.len()].copy_from_slice(input);
             Ok(ctx.num_frames)
         }
         fn get_data(&self) -> Option<Arc<dyn std::any::Any + Send + Sync>> {
-            Some(Arc::new((
-                self.last_sample_position,
-                self.last_ppq_position,
-            )))
+            Some(Arc::new(self.positions.borrow().clone()))
         }
-    }
-
-    #[test]
-    fn test_process_context_receives_playback_position() {
-        let mut g = DawHost::new(2, 48_000);
-        g.add_plugin(Box::new(ContextRecorderPlugin::new(2)))
-            .unwrap();
-
-        let input = vec![0.0; 256 * 2];
-        let mut output = vec![0.0; 256 * 2];
-        g.process(&input, &mut output).unwrap();
-        g.process(&input, &mut output).unwrap();
-
-        let data = g.get_plugin_data(0).unwrap();
-        let recorded = Arc::downcast::<(u64, f64)>(data).unwrap();
-        assert_eq!(recorded.0, 256);
-        assert!(
-            (recorded.1 - (256.0 / 48_000.0 * 2.0)).abs() < 1e-12,
-            "PPQ should derive from sample position at 120 bpm"
-        );
     }
 
     #[test]
@@ -3427,6 +3916,39 @@ mod tests {
             "Downstream received cf={}, expected 100 (min of parallel outputs)",
             recorded_cf,
         );
+    }
+
+    #[test]
+    fn test_process_context_receives_playback_position() {
+        let mut g = DawHost::new(2, 48000);
+        let recorder = g
+            .add_node(
+                "recorder".into(),
+                Box::new(PlaybackContextRecorderPlugin::new(2)),
+            )
+            .unwrap();
+        g.build().unwrap();
+
+        let input = vec![0.1_f32; 128 * 2];
+        let mut output = vec![0.0_f32; input.len()];
+
+        g.process(&input, &mut output).unwrap();
+        g.process(&input, &mut output).unwrap();
+
+        let captured = g.plugins[recorder]
+            .as_ref()
+            .unwrap()
+            .get_data()
+            .unwrap()
+            .downcast_ref::<Vec<(u64, f64)>>()
+            .unwrap()
+            .clone();
+
+        assert_eq!(captured.len(), 2);
+        assert_eq!(captured[0].0, 0);
+        assert_eq!(captured[1].0, 128);
+        assert!((captured[0].1 - 0.0).abs() < 1e-12);
+        assert!((captured[1].1 - (128.0 / 48_000.0 * 2.0)).abs() < 1e-12);
     }
 
     struct SidechainInPlacePlugin {
@@ -3609,6 +4131,104 @@ mod tests {
         fn latency_samples(&self) -> usize {
             self.latency
         }
+    }
+
+    struct PanickingProcessPlugin {
+        channels: usize,
+        supports_f64: bool,
+    }
+
+    impl PanickingProcessPlugin {
+        fn new(channels: usize) -> Self {
+            Self {
+                channels,
+                supports_f64: false,
+            }
+        }
+
+        fn new_f64(channels: usize) -> Self {
+            Self {
+                channels,
+                supports_f64: true,
+            }
+        }
+    }
+
+    impl Plugin for PanickingProcessPlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("PanickingProcess", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _: crate::parameters::ParameterId,
+            _: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+        fn get_parameter(
+            &self,
+            _: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            None
+        }
+        fn process(
+            &mut self,
+            _: &[f32],
+            _: &mut [f32],
+            _: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            panic!("simulated f32 plugin crash");
+        }
+        fn process_f64(
+            &mut self,
+            _: &[f64],
+            _: &mut [f64],
+            _: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            panic!("simulated f64 plugin crash");
+        }
+        fn supports_f64(&self) -> bool {
+            self.supports_f64
+        }
+    }
+
+    #[test]
+    fn test_plugin_process_panic_is_isolated_with_passthrough() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(PanickingProcessPlugin::new(2)))
+            .unwrap();
+        g.build().unwrap();
+
+        let input = vec![0.25, -0.5, 1.0, -1.0];
+        let mut output = vec![0.0; input.len()];
+        let frames = g.process(&input, &mut output).unwrap();
+
+        assert_eq!(frames, 2);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn test_plugin_process_f64_panic_is_isolated_with_passthrough() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(PanickingProcessPlugin::new_f64(2)))
+            .unwrap();
+        g.build().unwrap();
+
+        let input = vec![0.25_f64, -0.5, 1.0, -1.0];
+        let mut output = vec![0.0_f64; input.len()];
+        let frames = g.process_f64(&input, &mut output).unwrap();
+
+        assert_eq!(frames, 2);
+        assert_eq!(output, input);
     }
 
     // ---- Cached latency tests ----

@@ -2,6 +2,11 @@
 
 ## Fixes
 
+- **Issue #7 (PBFDAF hot-loop shape)** `src/pbfdaf.rs`: Rewrote echo accumulation,
+  power summing, and weight updates with slice/iterator zips. This keeps the existing
+  FDL layout but gives LLVM cleaner contiguous inner loops. Existing echo-cancellation
+  regression coverage continues to exercise the path.
+
 - **Issue #1 (Post-filter double-talk suppression)** `src/post_filter.rs`: Added power-ratio
   double-talk detector (DTD) to `ResidualEchoSuppressor`. When smoothed mic power exceeds
   smoothed echo-estimate power by 6 dB (factor 4), the Wiener suppression is bypassed and
@@ -34,8 +39,8 @@
 
 - **Issue #6** (`fft_scratch` reuse for forward/inverse FFT): Reviewed — using `max()` of the
   two scratch lengths is correct per rustfft's contract. Not a bug; no action needed.
-- **Issue #7** (PBFDAF inner loop SIMD vectorization): Cross-crate DSP optimization; deferred
-  to a dedicated performance PR.
+- **Issue #7** (full PBFDAF SIMD / flat FDL layout): Cross-crate DSP optimization; deferred
+  to a dedicated performance PR after the iterator hot-loop cleanup above.
 - **Issue #8** (Post-filter real FFT instead of complex IFFT): Minor optimization; deferred.
 
 # 0.5.1

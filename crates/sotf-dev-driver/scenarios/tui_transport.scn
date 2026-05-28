@@ -1,0 +1,47 @@
+# TUI Transport controls — play/pause, stop, volume, mute, seek.
+#
+# Covers: PlayPause, Stop, VolumeUp, VolumeDown, Mute, keystroke space
+
+focus library
+assert screen.focused == "Library"
+assert playback.is_playing == false
+
+# Play / pause toggle.
+action PlayPause
+sleep 100ms
+assert playback.is_playing == true
+
+action PlayPause
+sleep 100ms
+assert playback.is_playing == false
+
+# Stop while paused (no-op but should not error).
+action Stop
+sleep 100ms
+assert playback.is_playing == false
+
+# Volume nudges.
+action VolumeUp
+sleep 100ms
+action VolumeDown
+sleep 100ms
+
+# Mute toggle.
+action Mute
+sleep 100ms
+assert playback.muted == true
+
+action Mute
+sleep 100ms
+assert playback.muted == false
+
+# Synthetic space key on queue screen (toggles play/pause in queue).
+action SwitchToQueue
+assert screen.focused == "Queue"
+key space
+sleep 100ms
+assert playback.is_playing == true
+
+key space
+sleep 100ms
+assert playback.is_playing == false

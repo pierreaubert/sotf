@@ -1,0 +1,109 @@
+# GPUI Settings screen — comprehensive preferences coverage.
+#
+# Covers: all 9 settings tabs, theme cycling, language cycling, font size,
+#         design system switching, replay gain state, audio device queries.
+
+focus       settings
+assert      screen.focused == "Settings"
+assert      settings.active_tab == "Library"
+
+# ── Library tab (default) ───────────────────────────────────────────────────
+query       settings.theme
+query       settings.language
+query       settings.font_scale
+
+# ── Theme tab ───────────────────────────────────────────────────────────────
+click       settings.tab.Theme
+sleep       200ms
+assert      settings.active_tab == "Theme"
+
+# Cycle through themes and read back.
+action      CycleTheme
+sleep       100ms
+query       settings.theme
+
+action      CycleTheme
+sleep       100ms
+query       settings.theme
+
+# ── Language tab ────────────────────────────────────────────────────────────
+click       settings.tab.Language
+sleep       200ms
+assert      settings.active_tab == "Language"
+
+action      CycleLanguage
+sleep       100ms
+query       settings.language
+
+action      CycleLanguage
+sleep       100ms
+query       settings.language
+
+# ── Keybindings tab ─────────────────────────────────────────────────────────
+click       settings.tab.Keybindings
+sleep       200ms
+assert      settings.active_tab == "Keybindings"
+
+# ── Audio Device tab ────────────────────────────────────────────────────────
+click       settings.tab.AudioDevice
+sleep       200ms
+assert      settings.active_tab == "AudioDevice"
+
+query       audio.output_device
+query       audio.output_device_count
+query       audio.input_device_count
+
+# ── Misc tab (plugins / performance) ────────────────────────────────────────
+click       settings.tab.Misc
+sleep       200ms
+assert      settings.active_tab == "Misc"
+
+# Font size nudges.
+action      IncreaseFontSize
+sleep       100ms
+query       settings.font_scale
+
+action      DecreaseFontSize
+sleep       100ms
+query       settings.font_scale
+
+action      ResetFontSize
+sleep       100ms
+assert      settings.font_scale == 1.0
+
+# ── Federation tab ──────────────────────────────────────────────────────────
+click       settings.tab.Federation
+sleep       200ms
+assert      settings.active_tab == "Federation"
+
+# ── Servers tab ─────────────────────────────────────────────────────────────
+click       settings.tab.Servers
+sleep       200ms
+assert      settings.active_tab == "Servers"
+
+# ── Release Channel tab ─────────────────────────────────────────────────────
+click       settings.tab.ReleaseChannel
+sleep       200ms
+assert      settings.active_tab == "ReleaseChannel"
+
+# ── Design system switching ─────────────────────────────────────────────────
+# Design system can be switched from any screen; do it from settings.
+action      SetDesignAppleHig
+sleep       100ms
+query       settings.design_language
+
+action      SetDesignMaterial3
+sleep       100ms
+query       settings.design_language
+
+action      SetDesignFluent
+sleep       100ms
+query       settings.design_language
+
+action      SetDesignNeutral
+sleep       100ms
+query       settings.design_language
+
+# ── Return to library ───────────────────────────────────────────────────────
+focus       library
+assert      screen.focused == "Library"

@@ -187,8 +187,23 @@ pub struct ParameterSmoother {
     /// Smoothing coefficient (0.0 = no smoothing, 1.0 = infinite smoothing)
     coeff: f32,
 
+    /// Smoothing duration expressed in samples.
+    smoothing_samples: f32,
+
     /// Smoothing mode
     mode: SmoothingMode,
+
+    /// Per-sample increment used by linear smoothing.
+    linear_step: f32,
+
+    /// Velocity term used by the critically damped mode.
+    critical_velocity: f32,
+
+    /// Initial error at the moment the critical damping target was set.
+    critical_initial_error: f32,
+
+    /// Number of processed samples since the last critical damping target update.
+    critical_elapsed_samples: u32,
 }
 
 /// Smoothing algorithm modes
@@ -213,17 +228,19 @@ impl ParameterSmoother {
     /// * `time_ms` - Smoothing time in milliseconds
     /// * `sample_rate` - Sample rate in Hz
     pub fn new(initial_value: f32, time_ms: f32, sample_rate: f32) -> Self {
-        let coeff = if time_ms > 0.0 {
-            1.0 - (-1.0 / (time_ms * sample_rate / 1000.0)).exp()
-        } else {
-            0.0
-        };
+        let smoothing_samples = smoothing_samples(time_ms, sample_rate);
+        let coeff = smoothing_coeff(smoothing_samples);
 
         Self {
             current: initial_value,
             target: initial_value,
             coeff,
+            smoothing_samples,
             mode: SmoothingMode::Exponential,
+            linear_step: 0.0,
+            critical_velocity: 0.0,
+            critical_initial_error: 0.0,
+            critical_elapsed_samples: 0,
         }
     }
 
@@ -233,17 +250,29 @@ impl ParameterSmoother {
     /// * `time_ms` - Smoothing time in milliseconds
     /// * `sample_rate` - Sample rate in Hz
     pub fn set_time(&mut self, time_ms: f32, sample_rate: f32) {
-        self.coeff = if time_ms > 0.0 {
-            1.0 - (-1.0 / (time_ms * sample_rate / 1000.0)).exp()
-        } else {
-            0.0
-        };
+        self.smoothing_samples = smoothing_samples(time_ms, sample_rate);
+        self.coeff = smoothing_coeff(self.smoothing_samples);
+        self.reset_critical_damping_state();
+        self.recompute_linear_step();
+    }
+
+    /// Set the smoothing mode.
+    pub fn set_mode(&mut self, mode: SmoothingMode) {
+        if self.mode != mode {
+            self.mode = mode;
+            self.critical_velocity = 0.0;
+            self.reset_critical_damping_state();
+            self.recompute_linear_step();
+        }
     }
 
     /// Set the target value
     #[inline]
     pub fn set_target(&mut self, value: f32) {
         self.target = value;
+        self.critical_velocity = 0.0;
+        self.reset_critical_damping_state();
+        self.recompute_linear_step();
     }
 
     /// Process one sample
@@ -252,17 +281,18 @@ impl ParameterSmoother {
     #[inline]
     pub fn process(&mut self) -> f32 {
         self.current = match self.mode {
-            SmoothingMode::Exponential | SmoothingMode::CriticalDamping => {
-                self.current + self.coeff * (self.target - self.current)
-            }
+            SmoothingMode::Exponential => self.current + self.coeff * (self.target - self.current),
             SmoothingMode::Linear => {
-                let diff = self.target - self.current;
-                if diff.abs() < self.coeff {
+                if self.coeff == 0.0 {
+                    self.target
+                } else if (self.target - self.current).abs() <= self.linear_step.abs() {
+                    self.linear_step = 0.0;
                     self.target
                 } else {
-                    self.current + diff.signum() * self.coeff
+                    self.current + self.linear_step
                 }
             }
+            SmoothingMode::CriticalDamping => self.process_critical_damped(),
         };
         self.current
     }
@@ -278,12 +308,76 @@ impl ParameterSmoother {
     pub fn reset(&mut self, value: f32) {
         self.current = value;
         self.target = value;
+        self.linear_step = 0.0;
+        self.critical_velocity = 0.0;
+        self.reset_critical_damping_state();
+    }
+
+    fn reset_critical_damping_state(&mut self) {
+        self.critical_initial_error = self.target - self.current;
+        self.critical_elapsed_samples = 0;
+    }
+
+    fn process_critical_damped(&mut self) -> f32 {
+        let damping_rate = if self.smoothing_samples > 0.0 {
+            10.0 / self.smoothing_samples
+        } else {
+            0.0
+        };
+
+        if damping_rate == 0.0 || self.critical_initial_error == 0.0 {
+            self.critical_initial_error = 0.0;
+            self.critical_elapsed_samples = 0;
+            return self.target;
+        }
+
+        self.critical_elapsed_samples = self.critical_elapsed_samples.saturating_add(1);
+        let t = self.critical_elapsed_samples as f32 * damping_rate;
+        let damping = (1.0 + t) * (-t).exp();
+        let error = damping * self.critical_initial_error;
+        let previous = self.current;
+        let next = self.target - error;
+
+        self.current = next;
+        self.critical_velocity = next - previous;
+
+        if (next - self.target).abs() < 1e-6 {
+            self.critical_initial_error = 0.0;
+            self.critical_elapsed_samples = 0;
+            return self.target;
+        } else {
+            self.current
+        }
+    }
+
+    fn recompute_linear_step(&mut self) {
+        if self.mode == SmoothingMode::Linear && self.coeff != 0.0 {
+            self.linear_step = (self.target - self.current) / self.smoothing_samples.max(1.0);
+        } else {
+            self.linear_step = 0.0;
+        }
+    }
+}
+
+fn smoothing_samples(time_ms: f32, sample_rate: f32) -> f32 {
+    if time_ms > 0.0 && sample_rate > 0.0 {
+        (time_ms * sample_rate / 1000.0).max(1.0)
+    } else {
+        0.0
+    }
+}
+
+fn smoothing_coeff(samples: f32) -> f32 {
+    if samples > 0.0 {
+        1.0 - (-1.0 / samples).exp()
+    } else {
+        0.0
     }
 }
 
 /// Utility functions for automation
 pub mod automation_utils {
-    use super::AutomationCurve;
+    use super::{AutomationCurve, BezierPoint};
 
     /// Evaluate an automation curve at a given position
     ///
@@ -299,9 +393,12 @@ pub mod automation_utils {
                 values,
                 samples_per_step,
             } => {
-                let step = sample
-                    .checked_div(*samples_per_step)
-                    .unwrap_or_else(|| sample / num_frames);
+                let step_len = if *samples_per_step > 0 {
+                    *samples_per_step
+                } else {
+                    num_frames.max(1)
+                };
+                let step = sample / step_len;
                 values
                     .get(step)
                     .copied()
@@ -314,22 +411,18 @@ pub mod automation_utils {
                 if values.len() == 1 {
                     return values[0];
                 }
+                if num_frames == 0 {
+                    return values[0];
+                }
                 let num_segments = values.len() - 1;
-                let segment = (sample * num_segments / num_frames).min(num_segments);
+                let scaled = sample.saturating_mul(num_segments);
+                let segment = (scaled / num_frames).min(num_segments - 1);
                 let t = (sample * num_segments % num_frames) as f32 / num_frames as f32;
                 let start = values[segment];
                 let end = values[segment + 1];
                 start + (end - start) * t
             }
-            AutomationCurve::Bezier { points } => {
-                if points.is_empty() {
-                    return 0.0;
-                }
-                // Simple Bezier evaluation - find surrounding points
-                let pos = sample * points.len() / num_frames;
-                let point = points.get(pos).or(points.last()).unwrap();
-                point.value
-            }
+            AutomationCurve::Bezier { points } => eval_bezier(points, sample, num_frames),
             AutomationCurve::Exponential { values, min_value } => {
                 if values.is_empty() {
                     return *min_value;
@@ -337,8 +430,12 @@ pub mod automation_utils {
                 if values.len() == 1 {
                     return values[0].max(*min_value);
                 }
+                if num_frames == 0 {
+                    return values[0].max(*min_value);
+                }
                 let num_segments = values.len() - 1;
-                let segment = (sample * num_segments / num_frames).min(num_segments);
+                let scaled = sample.saturating_mul(num_segments);
+                let segment = (scaled / num_frames).min(num_segments - 1);
                 let t = (sample * num_segments % num_frames) as f32 / num_frames as f32;
                 let start = values[segment].max(*min_value).ln();
                 let end = values[segment + 1].max(*min_value).ln();
@@ -347,8 +444,58 @@ pub mod automation_utils {
         }
     }
 
+    fn eval_bezier(points: &[BezierPoint], sample: usize, num_frames: usize) -> f32 {
+        if points.is_empty() {
+            return 0.0;
+        }
+        if points.len() == 1 {
+            return points[0].value;
+        }
+
+        if sample <= points[0].position {
+            return points[0].value;
+        }
+
+        for pair in points.windows(2) {
+            let p0 = &pair[0];
+            let p1 = &pair[1];
+            if sample <= p1.position {
+                let span = p1.position.saturating_sub(p0.position);
+                let t = if span > 0 {
+                    (sample.saturating_sub(p0.position) as f32 / span as f32).clamp(0.0, 1.0)
+                } else {
+                    let fallback_span = num_frames.max(1) as f32;
+                    (sample as f32 / fallback_span).clamp(0.0, 1.0)
+                };
+                return cubic_bezier_value(
+                    p0.value,
+                    p0.value + p0.handle_right,
+                    p1.value + p1.handle_left,
+                    p1.value,
+                    t,
+                );
+            }
+        }
+
+        points.last().map_or(0.0, |p| p.value)
+    }
+
+    #[inline]
+    fn cubic_bezier_value(p0: f32, c0: f32, c1: f32, p1: f32, t: f32) -> f32 {
+        let omt = 1.0 - t;
+        omt * omt * omt * p0 + 3.0 * omt * omt * t * c0 + 3.0 * omt * t * t * c1 + t * t * t * p1
+    }
+
     /// Create a linear automation curve from start to end value
     pub fn linear_ramp(start_value: f32, end_value: f32, num_steps: usize) -> AutomationCurve {
+        if num_steps == 0 {
+            return AutomationCurve::Linear { values: Vec::new() };
+        }
+        if num_steps == 1 {
+            return AutomationCurve::Linear {
+                values: vec![start_value],
+            };
+        }
         let values: Vec<f32> = (0..num_steps)
             .map(|i| start_value + (end_value - start_value) * i as f32 / (num_steps - 1) as f32)
             .collect();
@@ -362,6 +509,7 @@ pub mod automation_utils {
             samples_per_step,
         }
     }
+
 }
 
 #[cfg(test)]
@@ -448,6 +596,17 @@ mod tests {
     }
 
     #[test]
+    fn test_linear_ramp_single_step_is_finite() {
+        let curve = linear_ramp(3.5, 9.0, 1);
+        match curve {
+            AutomationCurve::Linear { values } => {
+                assert_eq!(values, vec![3.5]);
+            }
+            _ => panic!("linear_ramp should produce AutomationCurve::Linear"),
+        }
+    }
+
+    #[test]
     fn test_parameter_smoother_exponential() {
         let mut smoother = ParameterSmoother::new(0.0, 10.0, 48000.0);
         smoother.set_target(1.0);
@@ -471,6 +630,79 @@ mod tests {
         }
         smoother.reset(5.0);
         assert_eq!(smoother.value(), 5.0, "After reset, value should be 5.0");
+    }
+
+    #[test]
+    fn bezier_curve_uses_handles_between_points() {
+        let curve = AutomationCurve::Bezier {
+            points: vec![
+                BezierPoint {
+                    position: 0,
+                    value: 0.0,
+                    handle_left: 0.0,
+                    handle_right: 1.0,
+                },
+                BezierPoint {
+                    position: 100,
+                    value: 1.0,
+                    handle_left: -1.0,
+                    handle_right: 0.0,
+                },
+            ],
+        };
+
+        let midpoint = eval_curve(&curve, 50, 100);
+        assert!(
+            (midpoint - 0.5).abs() < 0.01,
+            "symmetric handles should place midpoint near 0.5, got {midpoint}"
+        );
+
+        let plain_linear_midpoint = 0.5;
+        let early = eval_curve(&curve, 25, 100);
+        assert!(
+            early > plain_linear_midpoint * 0.5,
+            "right handle should pull the curve upward before midpoint, got {early}"
+        );
+    }
+
+    #[test]
+    fn linear_smoother_reaches_target_in_configured_time_for_large_diffs() {
+        let mut smoother = ParameterSmoother::new(0.0, 10.0, 48_000.0);
+        smoother.set_mode(SmoothingMode::Linear);
+        smoother.set_target(10.0);
+
+        for _ in 0..480 {
+            smoother.process();
+        }
+
+        assert!(
+            (smoother.value() - 10.0).abs() < 1e-4,
+            "linear smoothing should complete in 10ms independent of delta, got {}",
+            smoother.value()
+        );
+    }
+
+    #[test]
+    fn critical_damping_is_distinct_and_does_not_overshoot() {
+        let mut exp = ParameterSmoother::new(0.0, 10.0, 48_000.0);
+        let mut crit = ParameterSmoother::new(0.0, 10.0, 48_000.0);
+        crit.set_mode(SmoothingMode::CriticalDamping);
+        exp.set_target(1.0);
+        crit.set_target(1.0);
+
+        let mut last = 0.0;
+        for _ in 0..480 {
+            exp.process();
+            let v = crit.process();
+            assert!(v >= last - 1e-6, "critical damping should be monotonic");
+            assert!(v <= 1.0 + 1e-6, "critical damping must not overshoot");
+            last = v;
+        }
+
+        assert!(
+            (crit.value() - exp.value()).abs() > 0.01,
+            "critical damping should not collapse to exponential smoothing"
+        );
     }
 
     #[test]
@@ -508,5 +740,83 @@ mod tests {
             );
             prev = val;
         }
+    }
+
+    #[test]
+    fn test_linear_smoothing_uses_remaining_delta() {
+        let mut smoother = ParameterSmoother::new(0.0, 1000.0, 1000.0);
+        smoother.mode = SmoothingMode::Linear;
+        smoother.set_target(1.0);
+
+        let mut values = [0.0f32; 5];
+        for value in &mut values {
+            *value = smoother.process();
+        }
+
+        assert!(
+            (values[0] - 0.001).abs() < 1e-6,
+            "first step should be one-thousandth, got {}",
+            values[0]
+        );
+        assert!(
+            (values[4] - 0.005).abs() < 1e-6,
+            "fifth step should be five-thousandths, got {}",
+            values[4]
+        );
+    }
+
+    #[test]
+    fn test_critical_damping_no_overshoot() {
+        let mut smoother = ParameterSmoother::new(0.0, 20.0, 48000.0);
+        smoother.mode = SmoothingMode::CriticalDamping;
+        smoother.set_target(1.0);
+
+        let mut max = smoother.value();
+        for _ in 0..500 {
+            let v = smoother.process();
+            if v > max {
+                max = v;
+            }
+        }
+
+        assert!(
+            max <= 1.0001,
+            "critical mode should not overshoot, max={max}"
+        );
+        assert!((smoother.value() - 1.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_bezier_curve_supports_in_between_segments() {
+        let curve = AutomationCurve::Bezier {
+            points: vec![
+                BezierPoint {
+                    position: 0,
+                    value: 0.0,
+                    handle_left: 0.0,
+                    handle_right: 1.0,
+                },
+                BezierPoint {
+                    position: 50,
+                    value: 1.0,
+                    handle_left: -1.0,
+                    handle_right: 0.0,
+                },
+                BezierPoint {
+                    position: 100,
+                    value: 0.0,
+                    handle_left: -1.0,
+                    handle_right: 0.0,
+                },
+            ],
+        };
+
+        assert_eq!(eval_curve(&curve, 0, 100), 0.0);
+        let middle = eval_curve(&curve, 25, 100);
+        assert!(
+            (middle - 0.5).abs() < 1e-5,
+            "middle value changed unexpectedly: {middle}"
+        );
+        assert_eq!(eval_curve(&curve, 100, 100), 0.0);
     }
 }
