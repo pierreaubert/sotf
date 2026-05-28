@@ -1,14 +1,25 @@
 //! Client-side business logic for the native SOTF LAN control API.
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::lan_discovery::DiscoveredSotfApiServer;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SotfApiClient {
     client: reqwest::Client,
     base_url: String,
     auth_token: String,
+}
+
+impl fmt::Debug for SotfApiClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SotfApiClient")
+            .field("base_url", &self.base_url)
+            .field("auth_token", &"<redacted>")
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -343,6 +354,10 @@ impl SotfApiClient {
     }
 }
 
+pub fn normalized_api_base_url(base_url: impl Into<String>) -> SotfApiResult<String> {
+    normalize_base_url(base_url.into())
+}
+
 async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> SotfApiResult<T> {
     let status = response.status();
     let body = response.bytes().await?;
@@ -423,6 +438,15 @@ mod tests {
         assert!(validate_api_path_segment("hash:abc-123_def").is_ok());
         assert!(validate_api_path_segment("../music").is_err());
         assert!(validate_api_path_segment("id/42").is_err());
+    }
+
+    #[test]
+    fn client_debug_redacts_token() {
+        let client = SotfApiClient::new("http://host:8732", "very-secret-token").unwrap();
+        let debug = format!("{client:?}");
+        assert!(debug.contains("SotfApiClient"));
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("very-secret-token"));
     }
 
     #[test]
