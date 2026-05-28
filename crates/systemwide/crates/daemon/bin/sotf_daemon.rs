@@ -92,6 +92,17 @@ enum Command {
         #[serde(default = "default_output_channels")]
         output_channels: usize,
     },
+    #[serde(rename = "set_input_channels")]
+    SetInputChannels { channels: usize },
+    #[serde(rename = "set_output_channels")]
+    SetOutputChannels { channels: usize },
+    #[serde(rename = "set_pipeline_channels")]
+    SetPipelineChannels {
+        #[serde(default)]
+        input_channels: Option<usize>,
+        #[serde(default)]
+        output_channels: Option<usize>,
+    },
     #[serde(rename = "get_loudness")]
     GetLoudness,
     #[serde(rename = "get_metering")]
@@ -157,6 +168,9 @@ impl Command {
             Command::ListDevices => "list_devices",
             Command::SetDevice { .. } => "set_device",
             Command::LoadPlugins { .. } => "load_plugins",
+            Command::SetInputChannels { .. } => "set_input_channels",
+            Command::SetOutputChannels { .. } => "set_output_channels",
+            Command::SetPipelineChannels { .. } => "set_pipeline_channels",
             Command::GetLoudness => "get_loudness",
             Command::GetMetering => "get_metering",
             Command::GetPlugins => "get_plugins",
@@ -831,6 +845,21 @@ impl AudioDaemon {
                 self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
                     .await
             }
+            Command::SetInputChannels { channels } => {
+                self.handle_set_pipeline_channels(Some(channels), None)
+                    .await
+            }
+            Command::SetOutputChannels { channels } => {
+                self.handle_set_pipeline_channels(None, Some(channels))
+                    .await
+            }
+            Command::SetPipelineChannels {
+                input_channels,
+                output_channels,
+            } => {
+                self.handle_set_pipeline_channels(input_channels, output_channels)
+                    .await
+            }
             Command::GetLoudness => self.handle_get_loudness().await,
             Command::GetMetering => self.handle_get_metering().await,
             Command::GetPlugins => self.handle_get_plugins().await,
@@ -1358,6 +1387,33 @@ impl AudioDaemon {
             driver_sample_rate,
             driver_buffer_frames,
         )
+    }
+
+    async fn handle_set_pipeline_channels(
+        &self,
+        input_channels: Option<usize>,
+        output_channels: Option<usize>,
+    ) -> Response {
+        if input_channels.is_none() && output_channels.is_none() {
+            return Response::err(
+                "set_pipeline_channels requires input_channels or output_channels",
+            );
+        }
+
+        let (plugins, current_input_channels, current_output_channels) = {
+            let state = self.system_state.lock();
+            (
+                state.user_plugins(),
+                state.input_channels(),
+                state.output_channels(),
+            )
+        };
+
+        let next_input_channels = input_channels.unwrap_or(current_input_channels);
+        let next_output_channels = output_channels.unwrap_or(current_output_channels);
+
+        self.handle_load_plugins_with_channels(plugins, next_input_channels, next_output_channels)
+            .await
     }
 
     async fn handle_get_loudness(&self) -> Response {
@@ -2723,6 +2779,19 @@ mod ipc_safety_tests {
                 .unwrap();
         assert_eq!(cmd.name(), "update_plugin");
 
+        let cmd: Command =
+            serde_json::from_str(r#"{"command":"set_input_channels","channels":4}"#).unwrap();
+        assert_eq!(cmd.name(), "set_input_channels");
+
+        let cmd: Command =
+            serde_json::from_str(r#"{"command":"set_output_channels","channels":6}"#).unwrap();
+        assert_eq!(cmd.name(), "set_output_channels");
+
+        let cmd: Command =
+            serde_json::from_str(r#"{"command":"set_pipeline_channels","output_channels":6}"#)
+                .unwrap();
+        assert_eq!(cmd.name(), "set_pipeline_channels");
+
         let cmd: Command = serde_json::from_str(r#"{"command":"shutdown"}"#).unwrap();
         assert_eq!(cmd.name(), "shutdown");
     }
@@ -3009,6 +3078,53 @@ mod ipc_safety_tests {
         );
         assert_eq!(daemon.system_state.lock().output_channels(), 2);
         assert!(daemon.system_state.lock().output_loudness_index().is_none());
+    }
+
+    #[test]
+    fn testkit_patch_channel_command_preserves_daemon_owned_plugins_and_input_channels() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = daemon
+            .runtime
+            .block_on(daemon.handle_command(Command::LoadPlugins {
+                plugins: vec![test_plugin("eq")],
+                input_channels: 10,
+                output_channels: 2,
+            }));
+        assert!(response.success);
+
+        let response = daemon
+            .runtime
+            .block_on(daemon.handle_command(Command::SetOutputChannels { channels: 6 }));
+
+        assert!(response.success);
+        let state = daemon.system_state.lock();
+        assert_eq!(state.input_channels(), 10);
+        assert_eq!(state.output_channels(), 6);
+        assert_eq!(state.user_plugins().len(), 1);
+    }
+
+    #[test]
+    fn testkit_pipeline_channel_patch_requires_a_field() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response =
+            daemon
+                .runtime
+                .block_on(daemon.handle_command(Command::SetPipelineChannels {
+                    input_channels: None,
+                    output_channels: None,
+                }));
+
+        assert!(!response.success);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("requires input_channels or output_channels"))
+        );
     }
 
     #[test]
