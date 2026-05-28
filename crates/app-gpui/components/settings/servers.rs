@@ -42,6 +42,8 @@ impl PlayerView {
             .child(self.render_mpd_section(&server_config, &theme, &translations, &d, cx))
             // DLNA Server section
             .child(self.render_dlna_section(&server_config, &theme, &translations, &d, cx))
+            // Native SOTF remote control targets
+            .child(self.render_remote_sotf_section(&theme, &d, cx))
     }
 
     fn render_mpd_section(
@@ -414,6 +416,299 @@ impl PlayerView {
                             ),
                     )
                     .build(),
+            )
+    }
+
+    fn render_remote_sotf_section(
+        &self,
+        theme: &crate::app::theme::Theme,
+        d: &Ds,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let remote = {
+            let state = self.state.read(cx);
+            (
+                state.app.remote.server_store.clone(),
+                state.app.remote.discovered_servers.len(),
+                state.app.remote.discovery_running,
+                state.app.remote.discovery_error.clone(),
+                state.app.remote.manual_server_name.clone(),
+                state.app.remote.manual_api_base_url.clone(),
+            )
+        };
+        let (store, discovered_count, discovery_running, discovery_error, manual_name, manual_url) =
+            remote;
+        let selected_id = store.selected_server_id.clone();
+        let server_count = store.servers.len();
+        let state_for_name = self.state.clone();
+        let state_for_url = self.state.clone();
+
+        let mut section = div()
+            .flex()
+            .flex_col()
+            .gap(d.gap_md)
+            .p(d.card)
+            .bg(theme.background_secondary)
+            .rounded(d.r_md)
+            .border_1()
+            .border_color(theme.border)
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .child(
+                        Text::new("Remote SOTF Players")
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        Button::new(
+                            "discover-sotf-remotes",
+                            if discovery_running {
+                                "Scanning..."
+                            } else {
+                                "Refresh"
+                            },
+                        )
+                        .variant(if discovery_running {
+                            ButtonVariant::Ghost
+                        } else {
+                            ButtonVariant::Secondary
+                        })
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .on_click_event(cx.listener(
+                            move |view, _: &ClickEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.start_remote_server_discovery();
+                                });
+                                cx.notify();
+                            },
+                        )),
+                    ),
+            )
+            .child(Divider::new().color(theme.border))
+            .child(
+                div()
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_secondary)
+                    .child(format!(
+                        "{server_count} saved, {discovered_count} found in the latest LAN scan."
+                    )),
+            )
+            .when(discovery_error.is_some(), {
+                let theme = theme.clone();
+                move |el| {
+                    el.child(
+                        div()
+                            .p(d.pad_y)
+                            .bg(theme.background)
+                            .rounded(d.r_sm)
+                            .text_size(d.text_xs)
+                            .text_color(theme.warning)
+                            .child(discovery_error.unwrap_or_default()),
+                    )
+                }
+            })
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(server_editable_field(
+                        "remote-sotf-name",
+                        "Name",
+                        &manual_name,
+                        "Listening Room",
+                        theme,
+                        d,
+                        move |val, _window, cx| {
+                            let value = val.to_string();
+                            state_for_name.update(cx, |state, _cx| {
+                                state.app.update_manual_remote_server_name(value);
+                            });
+                        },
+                    ))
+                    .child(server_editable_field(
+                        "remote-sotf-url",
+                        "API URL",
+                        &manual_url,
+                        "http://host.local:8732",
+                        theme,
+                        d,
+                        move |val, _window, cx| {
+                            let value = val.to_string();
+                            state_for_url.update(cx, |state, _cx| {
+                                state.app.update_manual_remote_server_url(value);
+                            });
+                        },
+                    ))
+                    .child(
+                        div().flex().justify_end().child(
+                            Button::new("add-manual-sotf-remote", "Add Server")
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(
+                                    move |view, _: &ClickEvent, _window, cx| {
+                                        view.state.update(cx, |state, _cx| {
+                                            if let Err(err) =
+                                                state.app.add_manual_remote_server_from_inputs()
+                                            {
+                                                state.app.ui_state.toast_message =
+                                                    Some(crate::app::ToastMessage::error(err));
+                                            }
+                                        });
+                                        cx.notify();
+                                    },
+                                )),
+                        ),
+                    )
+                    .build(),
+            );
+
+        if store.servers.is_empty() {
+            section = section.child(
+                div()
+                    .p(d.pad_y)
+                    .bg(theme.background)
+                    .rounded(d.r_sm)
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_muted)
+                    .child("No SOTF remote players saved yet."),
+            );
+        } else {
+            for server in store.servers {
+                let is_selected = selected_id.as_deref() == Some(server.id.as_str());
+                section = section.child(self.render_remote_sotf_server_row(
+                    server,
+                    is_selected,
+                    theme,
+                    d,
+                    cx,
+                ));
+            }
+        }
+
+        section
+    }
+
+    fn render_remote_sotf_server_row(
+        &self,
+        server: sotf_audio_player::SotfRemoteServer,
+        is_selected: bool,
+        theme: &crate::app::theme::Theme,
+        d: &Ds,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let server_id_for_select = server.id.clone();
+        let server_id_for_remove = server.id.clone();
+        let address = server
+            .address
+            .clone()
+            .or(server.host_name.clone())
+            .unwrap_or_else(|| server.origin_url.clone());
+        let endpoint = format!(
+            "{}://{}:{}{}",
+            server.protocol, address, server.port, server.api_path
+        );
+        let auth = server.auth.clone();
+        let friendly_name = server.friendly_name.clone();
+
+        div()
+            .flex()
+            .items_center()
+            .gap(d.gap_md)
+            .p(d.pad_y)
+            .bg(theme.background)
+            .rounded(d.r_sm)
+            .border_1()
+            .border_color(if is_selected {
+                theme.accent
+            } else {
+                theme.border
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.grid)
+                    .flex_1()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(d.gap)
+                            .child(
+                                Text::new(friendly_name)
+                                    .size(TextSize::Sm)
+                                    .weight(TextWeight::Semibold)
+                                    .color(theme.text_primary),
+                            )
+                            .when(is_selected, |row| {
+                                row.child(
+                                    div()
+                                        .px(d.pad_y)
+                                        .py(px(2.0))
+                                        .rounded(d.r_sm)
+                                        .bg(theme.accent)
+                                        .text_size(d.text_xs)
+                                        .text_color(theme.background)
+                                        .child("Selected"),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_secondary)
+                            .child(endpoint),
+                    )
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_muted)
+                            .child(format!("Auth: {auth}")),
+                    ),
+            )
+            .child(
+                Button::new(
+                    SharedString::from(format!("select-sotf-remote-{server_id_for_select}")),
+                    "Select",
+                )
+                .variant(if is_selected {
+                    ButtonVariant::Primary
+                } else {
+                    ButtonVariant::Secondary
+                })
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(
+                    move |view, _: &ClickEvent, _window, cx| {
+                        let server_id = server_id_for_select.clone();
+                        view.state.update(cx, |state, _cx| {
+                            state.app.select_remote_server(&server_id);
+                        });
+                        cx.notify();
+                    },
+                )),
+            )
+            .child(
+                Button::new(
+                    SharedString::from(format!("remove-sotf-remote-{server_id_for_remove}")),
+                    "Remove",
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(
+                    move |view, _: &ClickEvent, _window, cx| {
+                        let server_id = server_id_for_remove.clone();
+                        view.state.update(cx, |state, _cx| {
+                            state.app.remove_remote_server(&server_id);
+                        });
+                        cx.notify();
+                    },
+                )),
             )
     }
 }

@@ -92,6 +92,23 @@ impl App {
         Ok(id)
     }
 
+    pub fn add_manual_remote_server_from_inputs(&mut self) -> Result<String, String> {
+        let id = self.remote.add_manual_server_from_inputs()?;
+        if !self.save_remote_server_store("save manual SOTF server") {
+            return Err("failed to save remote server store".to_string());
+        }
+        self.ui_state.toast_message = Some(ToastMessage::success("SOTF server saved."));
+        Ok(id)
+    }
+
+    pub fn update_manual_remote_server_name(&mut self, name: impl Into<String>) {
+        self.remote.set_manual_server_name(name);
+    }
+
+    pub fn update_manual_remote_server_url(&mut self, api_base_url: impl Into<String>) {
+        self.remote.set_manual_api_base_url(api_base_url);
+    }
+
     pub fn select_remote_server(&mut self, server_id: &str) -> bool {
         if !self.remote.server_store.select(server_id) {
             return false;
