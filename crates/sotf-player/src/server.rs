@@ -18,6 +18,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::federation_config::{self, ServerConfig, SotfApiSettings};
+use crate::lan_discovery::run_sotf_lan_discovery;
 use crate::library::MusicLibrary;
 use crate::player::Player;
 use crate::queue::Queue;
@@ -1134,6 +1135,22 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
                 if let Err(e) = run_sotf_api_server(api_config, api_state, cancel).await {
                     log::error!("[server] SOTF API server error: {}", e);
                     eprintln!("SOTF API server error: {}", e);
+                }
+            }));
+
+            let discovery_config = config.api.clone();
+            let discovery_cancel = shutdown_rx.clone();
+            let discovery_ip = get_local_ipv4();
+            eprintln!(
+                "SOTF API discovery advertising _sotf._tcp for {}:{}",
+                discovery_ip, discovery_config.port
+            );
+            handles.push(tokio::spawn(async move {
+                if let Err(e) =
+                    run_sotf_lan_discovery(discovery_config, discovery_ip, discovery_cancel).await
+                {
+                    log::warn!("[server] SOTF API discovery error: {}", e);
+                    eprintln!("SOTF API discovery warning: {}", e);
                 }
             }));
         }
