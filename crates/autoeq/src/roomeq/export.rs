@@ -8,7 +8,9 @@
 //! - PipeWire filter-chain (SPA-JSON .conf)
 
 use super::types::{ChannelDspChain, DspChainOutput, PluginConfigWrapper};
+use anyhow::Context;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use std::collections::HashMap;
 use std::fmt::Write as FmtWrite;
 use std::path::{Path, PathBuf};
 
@@ -91,6 +93,59 @@ pub fn export_dsp_chain(
     Ok(())
 }
 
+/// Export a DSP chain and package convolution WAV sidecars beside the export
+/// when the target format keeps `ir_file` references.
+pub fn export_dsp_chain_with_convolution_sidecars(
+    output: &DspChainOutput,
+    format: ExportFormat,
+    path: &Path,
+    sample_rate: f64,
+    source_dir: &Path,
+) -> anyhow::Result<()> {
+    let export_output = if export_format_preserves_convolution_paths(format) {
+        let dest_dir = path.parent().unwrap_or_else(|| Path::new("."));
+        package_convolution_sidecars(output, source_dir, dest_dir)?
+    } else {
+        output.clone()
+    };
+    export_dsp_chain(&export_output, format, path, sample_rate)
+}
+
+/// Copy convolution WAV sidecars into `dest_dir` and rewrite `ir_file`
+/// parameters to relative filenames.
+pub fn package_convolution_sidecars(
+    output: &DspChainOutput,
+    source_dir: &Path,
+    dest_dir: &Path,
+) -> anyhow::Result<DspChainOutput> {
+    std::fs::create_dir_all(dest_dir)
+        .with_context(|| format!("failed to create export directory '{}'", dest_dir.display()))?;
+
+    let mut output = output.clone();
+    let mut copied = HashMap::new();
+    rewrite_convolution_sidecars(
+        &mut output.global_plugins,
+        source_dir,
+        dest_dir,
+        &mut copied,
+    )?;
+    for chain in output.channels.values_mut() {
+        rewrite_convolution_sidecars(&mut chain.plugins, source_dir, dest_dir, &mut copied)?;
+        if let Some(drivers) = chain.drivers.as_mut() {
+            for driver in drivers {
+                rewrite_convolution_sidecars(
+                    &mut driver.plugins,
+                    source_dir,
+                    dest_dir,
+                    &mut copied,
+                )?;
+            }
+        }
+    }
+
+    Ok(output)
+}
+
 pub fn external_export_supported(
     output: &DspChainOutput,
     format: ExportFormat,
@@ -117,6 +172,126 @@ fn ensure_external_export_supported(
         "{format:?} export cannot represent routed home-cinema bass management safely. \
          Use SotF JSON or Apply as Graph so global_plugins and route-level bass-management DSP are preserved."
     );
+}
+
+fn export_format_preserves_convolution_paths(format: ExportFormat) -> bool {
+    matches!(
+        format,
+        ExportFormat::CamillaDsp | ExportFormat::EqualizerApo | ExportFormat::RoonDsp
+    )
+}
+
+fn rewrite_convolution_sidecars(
+    plugins: &mut [PluginConfigWrapper],
+    source_dir: &Path,
+    dest_dir: &Path,
+    copied: &mut HashMap<PathBuf, String>,
+) -> anyhow::Result<()> {
+    for plugin in plugins {
+        if plugin.plugin_type != "convolution" {
+            continue;
+        }
+
+        let Some(ir_file) = plugin
+            .parameters
+            .get("ir_file")
+            .and_then(|value| value.as_str())
+        else {
+            continue;
+        };
+        let packaged_name = package_one_convolution_sidecar(ir_file, source_dir, dest_dir, copied)?;
+        let Some(params) = plugin.parameters.as_object_mut() else {
+            anyhow::bail!("convolution plugin parameters must be a JSON object");
+        };
+        params.insert("ir_file".to_string(), serde_json::json!(packaged_name));
+    }
+
+    Ok(())
+}
+
+fn package_one_convolution_sidecar(
+    ir_file: &str,
+    source_dir: &Path,
+    dest_dir: &Path,
+    copied: &mut HashMap<PathBuf, String>,
+) -> anyhow::Result<String> {
+    let ir_path = Path::new(ir_file);
+    let source_path = if ir_path.is_absolute() {
+        ir_path.to_path_buf()
+    } else {
+        source_dir.join(ir_path)
+    };
+    let source_path = source_path.canonicalize().with_context(|| {
+        format!(
+            "convolution WAV '{}' was not found relative to '{}'",
+            ir_file,
+            source_dir.display()
+        )
+    })?;
+
+    if let Some(existing) = copied.get(&source_path) {
+        return Ok(existing.clone());
+    }
+
+    let preferred = ir_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("room_eq_ir.wav");
+    let filename = unique_sidecar_filename(dest_dir, preferred, &source_path)?;
+    let dest_path = dest_dir.join(&filename);
+    if !same_existing_file(&dest_path, &source_path)? {
+        std::fs::copy(&source_path, &dest_path).with_context(|| {
+            format!(
+                "failed to copy convolution WAV '{}' to '{}'",
+                source_path.display(),
+                dest_path.display()
+            )
+        })?;
+    }
+    copied.insert(source_path, filename.clone());
+    Ok(filename)
+}
+
+fn unique_sidecar_filename(
+    dest_dir: &Path,
+    preferred: &str,
+    source_path: &Path,
+) -> anyhow::Result<String> {
+    let preferred_path = dest_dir.join(preferred);
+    if !preferred_path.exists() || same_existing_file(&preferred_path, source_path)? {
+        return Ok(preferred.to_string());
+    }
+
+    let preferred_path = Path::new(preferred);
+    let stem = preferred_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("room_eq_ir");
+    let ext = preferred_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty())
+        .map(|ext| format!(".{ext}"))
+        .unwrap_or_default();
+
+    for suffix in 2.. {
+        let candidate = format!("{stem}_{suffix:03}{ext}");
+        let candidate_path = dest_dir.join(&candidate);
+        if !candidate_path.exists() || same_existing_file(&candidate_path, source_path)? {
+            return Ok(candidate);
+        }
+    }
+
+    unreachable!("unbounded numeric suffix search must return a filename")
+}
+
+fn same_existing_file(path: &Path, source_path: &Path) -> anyhow::Result<bool> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    Ok(path.canonicalize()? == source_path)
 }
 
 // ============================================================================
@@ -1240,6 +1415,112 @@ mod tests {
                 "unexpected error for {format:?}: {err}"
             );
         }
+    }
+
+    #[test]
+    fn package_convolution_sidecars_copies_and_rewrites_relative_paths() {
+        let source_dir = tempfile::tempdir().unwrap();
+        let dest_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("L_fir_96000hz.wav"), b"wav").unwrap();
+
+        let mut output = make_test_output();
+        output
+            .channels
+            .get_mut("left")
+            .unwrap()
+            .plugins
+            .push(PluginConfigWrapper {
+                plugin_type: "convolution".to_string(),
+                parameters: json!({"ir_file": "L_fir_96000hz.wav"}),
+            });
+
+        let packaged =
+            package_convolution_sidecars(&output, source_dir.path(), dest_dir.path()).unwrap();
+
+        assert_eq!(
+            std::fs::read(dest_dir.path().join("L_fir_96000hz.wav")).unwrap(),
+            b"wav"
+        );
+        let ir_file = packaged.channels["left"]
+            .plugins
+            .iter()
+            .find(|plugin| plugin.plugin_type == "convolution")
+            .unwrap()
+            .parameters
+            .get("ir_file")
+            .and_then(|value| value.as_str())
+            .unwrap();
+        assert_eq!(ir_file, "L_fir_96000hz.wav");
+    }
+
+    #[test]
+    fn package_convolution_sidecars_avoids_destination_collisions() {
+        let source_dir = tempfile::tempdir().unwrap();
+        let dest_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("L_fir_96000hz.wav"), b"new").unwrap();
+        std::fs::write(dest_dir.path().join("L_fir_96000hz.wav"), b"old").unwrap();
+
+        let mut output = make_test_output();
+        output
+            .channels
+            .get_mut("left")
+            .unwrap()
+            .plugins
+            .push(PluginConfigWrapper {
+                plugin_type: "convolution".to_string(),
+                parameters: json!({"ir_file": "L_fir_96000hz.wav"}),
+            });
+
+        let packaged =
+            package_convolution_sidecars(&output, source_dir.path(), dest_dir.path()).unwrap();
+
+        assert_eq!(
+            std::fs::read(dest_dir.path().join("L_fir_96000hz_002.wav")).unwrap(),
+            b"new"
+        );
+        let ir_file = packaged.channels["left"]
+            .plugins
+            .iter()
+            .find(|plugin| plugin.plugin_type == "convolution")
+            .unwrap()
+            .parameters
+            .get("ir_file")
+            .and_then(|value| value.as_str())
+            .unwrap();
+        assert_eq!(ir_file, "L_fir_96000hz_002.wav");
+    }
+
+    #[test]
+    fn export_with_convolution_sidecars_uses_selected_sample_rate() {
+        let source_dir = tempfile::tempdir().unwrap();
+        let dest_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("L_fir_96000hz.wav"), b"wav").unwrap();
+
+        let mut output = make_test_output();
+        output
+            .channels
+            .get_mut("left")
+            .unwrap()
+            .plugins
+            .push(PluginConfigWrapper {
+                plugin_type: "convolution".to_string(),
+                parameters: json!({"ir_file": "L_fir_96000hz.wav"}),
+            });
+
+        let export_path = dest_dir.path().join("room_eq_cdsp.yaml");
+        export_dsp_chain_with_convolution_sidecars(
+            &output,
+            ExportFormat::CamillaDsp,
+            &export_path,
+            96_000.0,
+            source_dir.path(),
+        )
+        .unwrap();
+
+        let yaml = std::fs::read_to_string(&export_path).unwrap();
+        assert!(yaml.contains("samplerate: 96000"));
+        assert!(yaml.contains("filename: L_fir_96000hz.wav"));
+        assert!(dest_dir.path().join("L_fir_96000hz.wav").is_file());
     }
 
     #[test]

@@ -8,6 +8,7 @@ use autoeq::roomeq::{
     SpeakerGroup, SystemConfig as BackendSystemConfig,
 };
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -304,6 +305,9 @@ pub struct RoomEqState {
     // === Step 5: Export ===
     /// Generated DSP chain output
     pub dsp_output: Option<DspChainOutput>,
+    /// Directory containing generated Room EQ convolution WAV sidecars for
+    /// the current DSP output.
+    pub artifact_dir: Option<PathBuf>,
 
     // === Export State ===
     /// Selected export format index (0 = SotF JSON, 1..=6 = external formats).
@@ -384,6 +388,7 @@ impl Default for RoomEqState {
             current_iteration: 0,
             current_loss: 0.0,
             dsp_output: None,
+            artifact_dir: None,
             export_format_index: 0,
             dropdowns: RoomEqDropdowns::default(),
             status_message: String::new(),
@@ -734,6 +739,8 @@ impl RoomEqState {
         self.progress_history.clear();
         self.current_iteration = 0;
         self.current_loss = 0.0;
+        self.dsp_output = None;
+        self.artifact_dir = None;
         self.error_message = None;
     }
 

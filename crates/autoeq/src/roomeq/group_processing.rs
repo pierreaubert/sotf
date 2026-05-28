@@ -14,6 +14,7 @@ use ndarray::Array1;
 use std::collections::HashMap;
 use std::path::Path;
 
+use super::artifacts::{self, ConvolutionArtifactKind};
 use super::crossover;
 use super::dba;
 use super::eq;
@@ -1503,8 +1504,12 @@ pub(super) fn process_mixed_mode_crossover(
     })?;
 
     // Save FIR to WAV
-    let fir_filename = format!("{}_band_fir.wav", channel_name);
-    let wav_path = output_dir.join(&fir_filename);
+    let (fir_filename, wav_path) = artifacts::reserve_convolution_artifact_path(
+        output_dir,
+        channel_name,
+        ConvolutionArtifactKind::BandFir,
+        sample_rate,
+    );
     crate::fir::save_fir_to_wav(&fir_coeffs, sample_rate as u32, &wav_path).map_err(|e| {
         AutoeqError::OptimizationFailed {
             message: format!("Failed to save FIR WAV: {}", e),
