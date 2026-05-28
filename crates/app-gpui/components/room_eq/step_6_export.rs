@@ -343,6 +343,7 @@ impl PlayerView {
             }
         };
         let ext = format.default_extension();
+        let file_name = format.default_file_name();
         let (format_name, _) = EXPORT_FORMATS
             .get(format_idx)
             .copied()
@@ -367,7 +368,7 @@ impl PlayerView {
                 let file = rfd::AsyncFileDialog::new()
                     .add_filter(format_name, &[ext])
                     .set_title(format!("Export Room EQ — {}", format_name))
-                    .set_file_name(format!("room_eq.{}", ext))
+                    .set_file_name(file_name)
                     .save_file()
                     .await;
 
