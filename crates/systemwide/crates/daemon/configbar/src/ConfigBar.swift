@@ -56,8 +56,16 @@ enum AudioSource: String, CaseIterable, Identifiable {
 class AudioEngineClient {
     /// Get the secure socket path (per-user directory)
     private static func getSecureSocketPath() -> String {
+        let environment = ProcessInfo.processInfo.environment
+        if let overridePath = environment["SOTF_DAEMON_SOCKET_PATH"], !overridePath.isEmpty {
+            return overridePath
+        }
+        if let runtimeDir = environment["SOTF_SYSTEMWIDE_RUNTIME_DIR"], !runtimeDir.isEmpty {
+            return (runtimeDir as NSString).appendingPathComponent("daemon.sock")
+        }
+
         // On macOS, TMPDIR is per-user and already secured
-        if let tmpdir = ProcessInfo.processInfo.environment["TMPDIR"] {
+        if let tmpdir = environment["TMPDIR"] {
             return (tmpdir as NSString).appendingPathComponent("sotf-daemon.sock")
         }
         // Fallback to UID-based path

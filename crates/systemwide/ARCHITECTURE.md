@@ -864,6 +864,9 @@ Current branch coverage starts the lower middle of that pyramid:
   produces machine-readable fault codes, multiple active causes are not hidden
   by a single UI label, and fallback meters become diagnostics only while
   playback is active.
+- Lab runtime hook tests prove daemon, toolbar, and HAL shared-memory paths can
+  be isolated with environment variables, and `SOTF_SYSTEMWIDE_DRIVER=lab`
+  provides deterministic fake capture without an installed HAL bundle.
 
 ### Scenario Matrix
 
@@ -899,6 +902,16 @@ toolbar command can mutate daemon-owned channel/device state using stale local
 values.
 
 ### Useful Debug Commands
+
+Current lab/runtime hooks:
+
+| Variable | Effect |
+| --- | --- |
+| `SOTF_SYSTEMWIDE_RUNTIME_DIR` | Makes daemon, toolbar, and HAL code use one isolated directory. The daemon socket becomes `daemon.sock`; shared memory becomes `audio.shm`. |
+| `SOTF_DAEMON_SOCKET_PATH` | Overrides only the daemon control socket path. This wins over the runtime-dir socket path. |
+| `SOTF_HAL_SHARED_MEMORY_PATH` | Overrides only the HAL shared-memory file path. This wins over the runtime-dir shared-memory path. |
+| `SOTF_SYSTEMWIDE_DRIVER=lab` or `fake` | Forces the daemon to use a deterministic in-process fake capture driver. It reports a ready 48 kHz stereo transport and emits a low-level sine signal once the engine marks the driver ready. |
+| `SOTF_SYSTEMWIDE_DRIVER=null` | Forces the daemon to use `NullDriver`, useful for status/control tests that should not touch HAL or fake audio. |
 
 Add a `systemwide doctor` or `systemwidectl doctor` command that collects:
 
@@ -965,7 +978,9 @@ enumeration or output-device selection.
    inferred UI labels. Done in the daemon snapshot through
    `observed.transport` and `diagnostics.faults`.
 6. Add `FakeAudioDriver`, HAL simulator, temp socket/shared-memory path
-   overrides, and output capture.
+   overrides, and output capture. The first runtime hooks are in place:
+   isolated socket/shared-memory paths plus an in-process lab driver. A HAL
+   simulator process and output capture still need to be added.
 7. Build `just systemwide-lab` around the scenario matrix and make it run in CI
    on macOS without installing the HAL bundle.
 8. Move the toolbar to consume snapshots and send typed intents instead of

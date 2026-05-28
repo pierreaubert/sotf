@@ -51,10 +51,17 @@ fn default_output_channels() -> usize {
     2
 }
 
+fn env_path_is_set(key: &str) -> bool {
+    std::env::var_os(key).is_some_and(|value| !value.as_os_str().is_empty())
+}
+
 /// Get the socket path to use
 /// Uses secure per-user path, with fallback to legacy path if SOTF_LEGACY_SOCKET is set
 fn get_socket_path() -> PathBuf {
-    if std::env::var("SOTF_LEGACY_SOCKET").is_ok() {
+    if env_path_is_set("SOTF_DAEMON_SOCKET_PATH") || env_path_is_set("SOTF_SYSTEMWIDE_RUNTIME_DIR")
+    {
+        get_secure_socket_path()
+    } else if std::env::var("SOTF_LEGACY_SOCKET").is_ok() {
         PathBuf::from(LEGACY_SOCKET_PATH)
     } else {
         get_secure_socket_path()

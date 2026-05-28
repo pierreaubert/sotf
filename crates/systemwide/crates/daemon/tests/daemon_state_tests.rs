@@ -425,6 +425,26 @@ fn configbar_plugin_edit_sheet_batches_parameter_edits_until_apply_or_close() {
 }
 
 #[test]
+fn configbar_and_daemon_support_isolated_lab_runtime_paths() {
+    let configbar = include_str!("../configbar/src/ConfigBar.swift");
+    let daemon = include_str!("../bin/sotf_daemon.rs");
+    let security = include_str!("../bin/security.rs");
+
+    assert!(
+        configbar.contains("SOTF_DAEMON_SOCKET_PATH")
+            && configbar.contains("SOTF_SYSTEMWIDE_RUNTIME_DIR")
+            && configbar.contains("daemon.sock"),
+        "toolbar should be able to connect to an isolated lab daemon socket"
+    );
+    assert!(
+        daemon.contains("SOTF_DAEMON_SOCKET_PATH")
+            && daemon.contains("SOTF_SYSTEMWIDE_RUNTIME_DIR")
+            && security.contains("secure_socket_path_from_env"),
+        "daemon should bind to explicit lab socket/runtime-dir overrides"
+    );
+}
+
+#[test]
 fn configbar_plugin_chain_loader_accepts_supported_linear_shapes() {
     let source = include_str!("../configbar/src/ConfigBar.swift");
 

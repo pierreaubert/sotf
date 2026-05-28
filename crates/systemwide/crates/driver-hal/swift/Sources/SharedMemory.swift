@@ -39,6 +39,14 @@ private func currentUnixMillis() -> UInt64 {
 /// IMPORTANT: This must match the Rust side in shared_memory.rs which uses:
 /// `/tmp/sotf-{uid}/audio.shm`
 private func getSharedMemoryPath() -> String {
+    let environment = ProcessInfo.processInfo.environment
+    if let overridePath = environment["SOTF_HAL_SHARED_MEMORY_PATH"], !overridePath.isEmpty {
+        return overridePath
+    }
+    if let runtimeDir = environment["SOTF_SYSTEMWIDE_RUNTIME_DIR"], !runtimeDir.isEmpty {
+        return (runtimeDir as NSString).appendingPathComponent("audio.shm")
+    }
+
     // Get the console user (the human logged in, not _coreaudiod)
     var uid: uid_t = 0
     var gid: gid_t = 0

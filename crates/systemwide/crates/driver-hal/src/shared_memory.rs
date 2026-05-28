@@ -32,6 +32,7 @@
 //! The legacy `set_sample_rate` / `set_buffer_frames` / `set_channel_count`
 //! setters route through this path so they no longer race the HAL writer.
 
+use std::ffi::OsString;
 use std::fs::OpenOptions;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -177,6 +178,32 @@ pub fn get_shared_memory_path() -> std::path::PathBuf {
     // SAFETY: `libc::getuid` is async-signal-safe, has no preconditions, and
     // cannot fail. It only reads the calling process's UID.
     let uid = unsafe { libc::getuid() };
+    shared_memory_path_from_env(
+        std::env::var_os("SOTF_HAL_SHARED_MEMORY_PATH"),
+        std::env::var_os("SOTF_SYSTEMWIDE_RUNTIME_DIR"),
+        uid,
+    )
+}
+
+fn non_empty_path(value: Option<OsString>) -> Option<std::path::PathBuf> {
+    value
+        .map(std::path::PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+}
+
+fn shared_memory_path_from_env(
+    path_override: Option<OsString>,
+    runtime_dir: Option<OsString>,
+    uid: u32,
+) -> std::path::PathBuf {
+    if let Some(path) = non_empty_path(path_override) {
+        return path;
+    }
+
+    if let Some(path) = non_empty_path(runtime_dir) {
+        return path.join("audio.shm");
+    }
+
     std::path::PathBuf::from(format!("/tmp/sotf-{}/audio.shm", uid))
 }
 
@@ -188,7 +215,8 @@ fn current_uid() -> u32 {
 
 #[cfg(unix)]
 fn protected_shared_memory_parent() -> std::path::PathBuf {
-    std::path::PathBuf::from(format!("/tmp/sotf-{}", current_uid()))
+    non_empty_path(std::env::var_os("SOTF_SYSTEMWIDE_RUNTIME_DIR"))
+        .unwrap_or_else(|| std::path::PathBuf::from(format!("/tmp/sotf-{}", current_uid())))
 }
 
 #[cfg(unix)]
@@ -2265,6 +2293,22 @@ mod tests {
     fn test_header_size() {
         assert!(std::mem::size_of::<SharedAudioHeader>() <= 256);
         assert_eq!(std::mem::align_of::<SharedAudioHeader>(), 8);
+    }
+
+    #[test]
+    fn test_shared_memory_path_supports_lab_overrides() {
+        let explicit = shared_memory_path_from_env(
+            Some(OsString::from("/tmp/sotf-lab/custom-audio.shm")),
+            Some(OsString::from("/tmp/ignored")),
+            42,
+        );
+        assert_eq!(explicit, PathBuf::from("/tmp/sotf-lab/custom-audio.shm"));
+
+        let runtime = shared_memory_path_from_env(None, Some(OsString::from("/tmp/sotf-lab")), 42);
+        assert_eq!(runtime, PathBuf::from("/tmp/sotf-lab/audio.shm"));
+
+        let fallback = shared_memory_path_from_env(None, None, 42);
+        assert_eq!(fallback, PathBuf::from("/tmp/sotf-42/audio.shm"));
     }
 
     fn create_mock_shared_memory(
