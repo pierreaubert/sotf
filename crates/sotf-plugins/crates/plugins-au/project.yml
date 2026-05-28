@@ -37,6 +37,7 @@ targetTemplates:
       EXTENSION_SAFE_API_ONLY: true
       OTHER_LDFLAGS:
         - -lsotf_audio_plugins_ffi
+        - -lsqlite3
     dependencies:
       - sdk: AVFoundation.framework
       - sdk: AudioToolbox.framework
