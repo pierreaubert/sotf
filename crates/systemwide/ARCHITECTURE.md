@@ -352,6 +352,9 @@ Implemented first controls:
   (`set_input_channels`, `set_output_channels`, `set_pipeline_channels`) so
   clients no longer need to replay the plugin list or the opposite channel
   count when changing one field.
+- The toolbar now uses `set_pipeline_channels` for HAL channel changes and
+  `load_plugin_artifact` for whole-file plugin loads, so it no longer
+  reconstructs plugin/channel state or flattens graph-shaped artifacts.
 
 ## Use Case: User Starts The Toolbar
 
@@ -867,6 +870,9 @@ Current branch coverage starts the lower middle of that pyramid:
 - Lab runtime hook tests prove daemon, toolbar, and HAL shared-memory paths can
   be isolated with environment variables, and `SOTF_SYSTEMWIDE_DRIVER=lab`
   provides deterministic fake capture without an installed HAL bundle.
+- Toolbar intent tests prove channel apply uses the daemon patch command rather
+  than replaying plugins, and whole-file plugin loading delegates artifact
+  planning to the daemon.
 
 ### Scenario Matrix
 
@@ -989,7 +995,10 @@ enumeration or output-device selection.
 7. Build `just systemwide-lab` around the scenario matrix and make it run in CI
    on macOS without installing the HAL bundle.
 8. Move the toolbar to consume snapshots and send typed intents instead of
-   reconstructing state from multiple commands.
+   reconstructing state from multiple commands. Partially done: channel apply
+   and plugin artifact loading now use typed daemon commands; the remaining
+   work is to make the toolbar render `get_snapshot` directly instead of
+   composing status, metering, devices, and plugin polling.
 
 ## Invariants To Preserve
 

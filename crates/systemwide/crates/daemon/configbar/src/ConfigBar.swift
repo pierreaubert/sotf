@@ -2636,13 +2636,8 @@ struct ConfigurationView: View {
             return
         }
 
-        // Preserve the user's processing chain while changing driver output channels.
-        // The daemon auto-injects the input/output loudness monitors.
-        let plugins = client.getPlugins() ?? []
-
         let command: [String: Any] = [
-            "command": "load_plugins",
-            "plugins": plugins,
+            "command": "set_pipeline_channels",
             "input_channels": halInputChannels,
             "output_channels": halOutputChannels
         ]
@@ -2671,20 +2666,15 @@ struct ConfigurationView: View {
             do {
                 let data = try Data(contentsOf: url)
                 let json = try JSONSerialization.jsonObject(with: data)
-                let userPlugins = try normalizedPluginConfigs(from: json)
 
-                // Send plugins to daemon (daemon auto-injects metering)
                 let command: [String: Any] = [
-                    "command": "load_plugins",
-                    "plugins": userPlugins,
-                    "input_channels": halInputChannels,
-                    "output_channels": halOutputChannels
+                    "command": "load_plugin_artifact",
+                    "artifact": json
                 ]
 
                 let response = client.sendCommand(command)
                 if let resp = response, resp.success {
                     print("✅ Plugin configuration loaded from: \(url.path)")
-                    print("   User plugins: \(userPlugins.count)")
                     pluginRackRefreshToken += 1
                 } else {
                     errorMessage = response?.error ?? "Failed to apply plugin configuration"
@@ -2722,91 +2712,6 @@ struct ConfigurationView: View {
                 showingError = true
             }
         }
-    }
-
-    private func normalizedPluginConfigs(from json: Any) throws -> [[String: Any]] {
-        if let simplePlugins = json as? [[String: Any]] {
-            return simplePlugins.compactMap(normalizedPluginConfigEntry)
-        }
-
-        guard let configDict = json as? [String: Any] else {
-            throw pluginConfigError("Invalid configuration format: expected an array or object")
-        }
-
-        if let plugins = configDict["plugins"] as? [[String: Any]] {
-            return plugins.compactMap(normalizedPluginConfigEntry)
-        }
-
-        var allPlugins: [[String: Any]] = []
-        if let globalPlugins = configDict["global_plugins"] as? [[String: Any]] {
-            allPlugins.append(contentsOf: globalPlugins)
-        }
-
-        if let channels = configDict["channels"] as? [String: Any] {
-            for channelName in channels.keys.sorted() {
-                if let channelData = channels[channelName] as? [String: Any],
-                   let channelPlugins = channelData["plugins"] as? [[String: Any]] {
-                    allPlugins.append(contentsOf: channelPlugins)
-                }
-            }
-            print("Found \(channels.count) channel(s) with \(allPlugins.count) total plugin entries")
-        }
-
-        if allPlugins.isEmpty {
-            throw pluginConfigError("No plugins found in configuration")
-        }
-
-        return allPlugins.compactMap(normalizedPluginConfigEntry)
-    }
-
-    private func normalizedPluginConfigEntry(_ entry: [String: Any]) -> [String: Any]? {
-        if let type = (entry["plugin_type"] as? String) ?? (entry["type"] as? String) {
-            if isSystemPluginType(type) {
-                return nil
-            }
-            return [
-                "plugin_type": type,
-                "parameters": entry["parameters"] as? [String: Any] ?? [:],
-            ]
-        }
-
-        guard let settings = entry["settings"] else {
-            return nil
-        }
-
-        let enabled = entry["enabled"] as? Bool ?? true
-        let permanent = entry["permanent"] as? Bool ?? false
-        return pluginConfigFromAppGpuiSettings(settings, enabled: enabled, permanent: permanent)
-    }
-
-    private func pluginConfigFromAppGpuiSettings(_ settings: Any, enabled: Bool, permanent: Bool) -> [String: Any]? {
-        guard enabled, !permanent else {
-            return nil
-        }
-
-        let variant: String
-        let parameters: [String: Any]
-
-        if let variantName = settings as? String {
-            variant = variantName
-            parameters = [:]
-        } else if let settingsDict = settings as? [String: Any],
-                  let first = settingsDict.first {
-            variant = first.key
-            parameters = first.value as? [String: Any] ?? [:]
-        } else {
-            return nil
-        }
-
-        guard let type = appGpuiSettingsVariantToEngineType[variant],
-              !isSystemPluginType(type) else {
-            return nil
-        }
-
-        return [
-            "plugin_type": type,
-            "parameters": parameters,
-        ]
     }
 
     private func appGpuiPreset(from plugins: [[String: Any]]) -> [String: Any] {
@@ -2862,14 +2767,6 @@ struct ConfigurationView: View {
             || type == "hal_output"
             || type == "loudness_monitor"
             || type == "spectrum_analyzer"
-    }
-
-    private func pluginConfigError(_ message: String) -> NSError {
-        NSError(
-            domain: "SotFSystemwidePluginConfig",
-            code: 1,
-            userInfo: [NSLocalizedDescriptionKey: message]
-        )
     }
 
     // MARK: - Encryption Methods

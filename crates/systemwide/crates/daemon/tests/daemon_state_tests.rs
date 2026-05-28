@@ -452,25 +452,40 @@ fn configbar_and_daemon_support_isolated_lab_runtime_paths() {
 }
 
 #[test]
-fn configbar_plugin_chain_loader_accepts_supported_linear_shapes() {
+fn configbar_plugin_chain_loader_delegates_artifact_planning_to_daemon() {
     let source = include_str!("../configbar/src/ConfigBar.swift");
 
     assert!(
-        source.contains("private func normalizedPluginConfigs(from json: Any) throws")
-            && source.contains("if let simplePlugins = json as? [[String: Any]]")
-            && source.contains("if let plugins = configDict[\"plugins\"] as? [[String: Any]]"),
-        "whole-chain loading should accept raw engine plugin arrays and app-GPUI preset plugin arrays"
+        source.contains("\"command\": \"load_plugin_artifact\"")
+            && source.contains("\"artifact\": json")
+            && !source.contains("private func normalizedPluginConfigs"),
+        "toolbar should send whole plugin artifacts to the daemon instead of normalizing them locally"
     );
     assert!(
-        source
-            .contains("if let globalPlugins = configDict[\"global_plugins\"] as? [[String: Any]]")
-            && source.contains("if let channels = configDict[\"channels\"] as? [String: Any]")
-            && source.contains("allPlugins.append(contentsOf: channelPlugins)"),
-        "whole-chain loading should accept RoomEQ-style global_plugins plus per-channel plugin maps"
+        !source.contains("allPlugins.append(contentsOf: channelPlugins)"),
+        "toolbar must not flatten per-channel or graph-style plugin artifacts into a linear rack"
+    );
+}
+
+#[test]
+fn configbar_channel_apply_uses_patch_intent_instead_of_replaying_plugins() {
+    let source = include_str!("../configbar/src/ConfigBar.swift");
+    let apply_start = source
+        .find("private func applyHALConfiguration()")
+        .expect("applyHALConfiguration should exist");
+    let load_start = source
+        .find("private func loadPluginConfig()")
+        .expect("loadPluginConfig should exist");
+    let body = &source[apply_start..load_start];
+
+    assert!(
+        body.contains("\"command\": \"set_pipeline_channels\"")
+            && body.contains("\"input_channels\": halInputChannels")
+            && body.contains("\"output_channels\": halOutputChannels"),
+        "HAL channel apply should use the daemon's typed channel patch command"
     );
     assert!(
-        source.contains("compactMap(normalizedPluginConfigEntry)")
-            && source.contains("isSystemPluginType(type)"),
-        "whole-chain loading should normalize supported plugin records and drop daemon-owned system plugins"
+        !body.contains("client.getPlugins()") && !body.contains("\"command\": \"load_plugins\""),
+        "HAL channel apply must not replay a stale plugin list"
     );
 }
