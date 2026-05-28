@@ -29,6 +29,10 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
 
         let meters_ratio = layout.meters_panel_ratio;
+        let lufs_ratio = layout.lufs_panel_ratio.clamp(
+            crate::app::state::ui::LUFS_PANEL_MIN_RATIO,
+            crate::app::state::ui::LUFS_PANEL_MAX_RATIO,
+        );
         let meter_display_mode = state.app.level_meters.display_mode;
         let window_height = state.app.ui_state.window_height;
         let window_width = state.app.ui_state.window_width;
@@ -215,7 +219,13 @@ impl PlayerView {
                                     .flex_1()
                                     .overflow_hidden()
                                     // LUFS panel on top
-                                    .child(self.render_lufs_panel(cx))
+                                    .child(
+                                        div()
+                                            .h(relative(lufs_ratio))
+                                            .min_h(px(120.0))
+                                            .overflow_hidden()
+                                            .child(self.render_lufs_panel(cx)),
+                                    )
                                     .child(
                                         PaneDivider::horizontal(
                                             "lufs-levels-divider",
@@ -223,7 +233,17 @@ impl PlayerView {
                                         )
                                         .label("Level Meters")
                                         .collapsed(false)
-                                        .theme(divider_theme.clone()),
+                                        .theme(divider_theme.clone())
+                                        .on_drag_start({
+                                            let state_handle = self.state.clone();
+                                            move |pos, _window, cx| {
+                                                state_handle.update(cx, |state, cx| {
+                                                    state.layout.update(cx, |layout, _| {
+                                                        layout.begin_lufs_panel_drag(pos);
+                                                    });
+                                                });
+                                            }
+                                        }),
                                     )
                                     // Level meters below, centered
                                     .child(

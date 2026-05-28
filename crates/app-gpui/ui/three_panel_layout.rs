@@ -16,10 +16,12 @@ impl PlayerView {
             )
         };
         let library_node = solved.find("library").unwrap();
+        let queue_node = solved.find("queue").unwrap();
         let rack_node = solved.find("rack").unwrap();
         let library_visible = library_node.visible;
         let rack_visible = rack_node.visible;
         let library_width = library_node.width;
+        let queue_height = queue_node.height;
         let rack_width = rack_node.width;
         let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
@@ -52,12 +54,13 @@ impl PlayerView {
             // disagreed with the solved layout (which clamps + adjusts the
             // configured ratios) and snapped the divider on the first
             // movement.
-            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
+            .on_mouse_move(cx.listener(move |view, event: &MouseMoveEvent, window, cx| {
                 let (
                     is_dragging_lib_queue,
                     is_dragging_queue_rack,
                     is_dragging_queue_list,
                     is_dragging_meters,
+                    is_dragging_lufs,
                     anchor_pos,
                     anchor_lib,
                     anchor_rack,
@@ -74,6 +77,7 @@ impl PlayerView {
                         layout.is_dragging_queue_rack_divider,
                         layout.is_dragging_queue_list_divider,
                         layout.is_dragging_meters_divider,
+                        layout.is_dragging_lufs_divider,
                         layout.drag_anchor_pos,
                         layout.drag_anchor_library_h_ratio,
                         layout.drag_anchor_rack_h_ratio,
@@ -140,6 +144,15 @@ impl PlayerView {
                         }
                     }
                 }
+
+                if is_dragging_lufs {
+                    let mouse_y: f32 = mouse_pos.y.into();
+                    view.state.update(cx, |state, cx| {
+                        state.layout.update(cx, |layout, _| {
+                            layout.update_lufs_panel_drag(mouse_y, queue_height);
+                        });
+                    });
+                }
             }))
             .on_mouse_up(
                 MouseButton::Left,
@@ -149,12 +162,14 @@ impl PlayerView {
                             let any_dragging = layout.is_dragging_library_queue_divider
                                 || layout.is_dragging_queue_rack_divider
                                 || layout.is_dragging_queue_list_divider
-                                || layout.is_dragging_meters_divider;
+                                || layout.is_dragging_meters_divider
+                                || layout.is_dragging_lufs_divider;
 
                             layout.is_dragging_library_queue_divider = false;
                             layout.is_dragging_queue_rack_divider = false;
                             layout.is_dragging_queue_list_divider = false;
                             layout.is_dragging_meters_divider = false;
+                            layout.end_lufs_panel_drag();
 
                             if any_dragging
                                 && let Err(e) = state.app.save_config(layout)
@@ -282,10 +297,12 @@ impl PlayerView {
             )
         };
         let library_node = solved.find("library").unwrap();
+        let queue_node = solved.find("queue").unwrap();
         let rack_node = solved.find("rack").unwrap();
         let library_visible = library_node.visible;
         let rack_visible = rack_node.visible;
         let library_height = library_node.height;
+        let queue_height = queue_node.height;
         let rack_height = rack_node.height;
         let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
@@ -310,12 +327,13 @@ impl PlayerView {
             .bg(theme.background)
             // Global mouse move handler for all divider dragging (vertical layout).
             // Delta-based — see horizontal-layout handler comment.
-            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
+            .on_mouse_move(cx.listener(move |view, event: &MouseMoveEvent, window, cx| {
                 let (
                     is_dragging_lib_queue,
                     is_dragging_queue_rack,
                     is_dragging_queue_list,
                     is_dragging_meters,
+                    is_dragging_lufs,
                     anchor_pos,
                     anchor_lib_v,
                     anchor_rack_v,
@@ -328,6 +346,7 @@ impl PlayerView {
                         layout.is_dragging_queue_rack_divider,
                         layout.is_dragging_queue_list_divider,
                         layout.is_dragging_meters_divider,
+                        layout.is_dragging_lufs_divider,
                         layout.drag_anchor_pos,
                         layout.drag_anchor_library_v_ratio,
                         layout.drag_anchor_rack_v_ratio,
@@ -394,6 +413,15 @@ impl PlayerView {
                         }
                     }
                 }
+
+                if is_dragging_lufs {
+                    let mouse_y: f32 = mouse_pos.y.into();
+                    view.state.update(cx, |state, cx| {
+                        state.layout.update(cx, |layout, _| {
+                            layout.update_lufs_panel_drag(mouse_y, queue_height);
+                        });
+                    });
+                }
             }))
             .on_mouse_up(
                 MouseButton::Left,
@@ -403,12 +431,14 @@ impl PlayerView {
                             let any_dragging = layout.is_dragging_library_queue_divider
                                 || layout.is_dragging_queue_rack_divider
                                 || layout.is_dragging_queue_list_divider
-                                || layout.is_dragging_meters_divider;
+                                || layout.is_dragging_meters_divider
+                                || layout.is_dragging_lufs_divider;
 
                             layout.is_dragging_library_queue_divider = false;
                             layout.is_dragging_queue_rack_divider = false;
                             layout.is_dragging_queue_list_divider = false;
                             layout.is_dragging_meters_divider = false;
+                            layout.end_lufs_panel_drag();
 
                             if any_dragging
                                 && let Err(e) = state.app.save_config(layout)

@@ -4,6 +4,9 @@
 //! image cache behavior, tick scale calculations, and icon properties.
 //! Extracted from inline tests to work around GPUI macro recursion issues.
 
+use sotf_audio_player_gpui::app::state::ui::{
+    LUFS_PANEL_MAX_RATIO, LUFS_PANEL_MIN_RATIO, LayoutState, lufs_panel_ratio_from_drag,
+};
 use sotf_audio_player_gpui::{
     Config, IconName, IconSize, ImageAccessTracker, PanelLayout, PlaybackDeviceConfig,
     PlaybackState, RecordingConfigState, RecordingDeviceConfig, RecordingSignalType, ScaleType,
@@ -67,6 +70,33 @@ fn test_panel_layout_serialization() {
     let deserialized: PanelLayout = serde_json::from_str(&json).unwrap();
     assert!((deserialized.queue_ratio - 0.5).abs() < 0.001);
     assert!((deserialized.meters_ratio - 0.3).abs() < 0.001);
+}
+
+#[test]
+fn test_lufs_level_meter_divider_drag_updates_lufs_ratio() {
+    let mut layout = LayoutState {
+        lufs_panel_ratio: 0.25,
+        ..Default::default()
+    };
+
+    layout.begin_lufs_panel_drag(200.0);
+    layout.update_lufs_panel_drag(320.0, 600.0);
+
+    assert!((layout.lufs_panel_ratio - 0.45).abs() < 0.001);
+    assert!(layout.end_lufs_panel_drag());
+    assert!(!layout.is_dragging_lufs_divider);
+}
+
+#[test]
+fn test_lufs_level_meter_divider_ratio_clamps_to_meter_bounds() {
+    assert_eq!(
+        lufs_panel_ratio_from_drag(0.25, -1000.0, 600.0),
+        LUFS_PANEL_MIN_RATIO
+    );
+    assert_eq!(
+        lufs_panel_ratio_from_drag(0.25, 1000.0, 600.0),
+        LUFS_PANEL_MAX_RATIO
+    );
 }
 
 #[test]

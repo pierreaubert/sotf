@@ -43,6 +43,7 @@ pub struct LayoutState {
     /// `is_dragging_*` flag is set.
     pub drag_anchor_pos: f32,
     pub drag_anchor_meters_ratio: f32,
+    pub drag_anchor_lufs_ratio: f32,
     pub drag_anchor_queue_list_ratio: f32,
     pub drag_anchor_library_h_ratio: f32,
     pub drag_anchor_rack_h_ratio: f32,
@@ -51,6 +52,44 @@ pub struct LayoutState {
 }
 
 impl EventEmitter<()> for LayoutState {}
+
+pub const LUFS_PANEL_MIN_RATIO: f32 = 0.15;
+pub const LUFS_PANEL_MAX_RATIO: f32 = 0.75;
+
+pub fn lufs_panel_ratio_from_drag(
+    anchor_ratio: f32,
+    drag_delta_px: f32,
+    available_height_px: f32,
+) -> f32 {
+    if available_height_px <= 0.0 {
+        return anchor_ratio.clamp(LUFS_PANEL_MIN_RATIO, LUFS_PANEL_MAX_RATIO);
+    }
+
+    (anchor_ratio + drag_delta_px / available_height_px)
+        .clamp(LUFS_PANEL_MIN_RATIO, LUFS_PANEL_MAX_RATIO)
+}
+
+impl LayoutState {
+    pub fn begin_lufs_panel_drag(&mut self, pos: f32) {
+        self.is_dragging_lufs_divider = true;
+        self.drag_anchor_pos = pos;
+        self.drag_anchor_lufs_ratio = self
+            .lufs_panel_ratio
+            .clamp(LUFS_PANEL_MIN_RATIO, LUFS_PANEL_MAX_RATIO);
+    }
+
+    pub fn update_lufs_panel_drag(&mut self, pos: f32, available_height_px: f32) {
+        let dy = pos - self.drag_anchor_pos;
+        self.lufs_panel_ratio =
+            lufs_panel_ratio_from_drag(self.drag_anchor_lufs_ratio, dy, available_height_px);
+    }
+
+    pub fn end_lufs_panel_drag(&mut self) -> bool {
+        let was_dragging = self.is_dragging_lufs_divider;
+        self.is_dragging_lufs_divider = false;
+        was_dragging
+    }
+}
 
 impl Default for LayoutState {
     fn default() -> Self {
@@ -77,6 +116,7 @@ impl Default for LayoutState {
             is_dragging_queue_rack_divider: false,
             drag_anchor_pos: 0.0,
             drag_anchor_meters_ratio: 0.0,
+            drag_anchor_lufs_ratio: 0.0,
             drag_anchor_queue_list_ratio: 0.0,
             drag_anchor_library_h_ratio: 0.0,
             drag_anchor_rack_h_ratio: 0.0,
