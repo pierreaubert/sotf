@@ -51,7 +51,7 @@ struct UpmixerArgs {
     enabled: bool,
 
     /// Upmixer speaker configuration (2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6)
-    #[arg(long = "upmixer-config", default_value = "5.1")]
+    #[arg(id = "upmixer_config", long = "upmixer-config", default_value = "5.1")]
     config: String,
 
     /// Upmixer FFT size (must be power of 2: 1024, 2048, 4096)
@@ -219,7 +219,11 @@ struct UpmixerArgs {
     enable_ml_detection: bool,
 
     /// Enable upmixer low-latency mode (1024 FFT vs 2048)
-    #[arg(long = "upmixer-low-latency", default_value_t = false)]
+    #[arg(
+        id = "upmixer_low_latency",
+        long = "upmixer-low-latency",
+        default_value_t = false
+    )]
     low_latency: bool,
 }
 
@@ -230,7 +234,7 @@ struct AaeArgs {
     enabled: bool,
 
     /// AAE speaker configuration (5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6)
-    #[arg(long = "aae-config", default_value = "5.1")]
+    #[arg(id = "aae_config", long = "aae-config", default_value = "5.1")]
     config: String,
 
     /// AAE room preset (small, medium, large, cathedral)
@@ -270,11 +274,19 @@ struct AaeArgs {
     auto_gain_enabled: bool,
 
     /// AAE maximum auto-gain correction in dB
-    #[arg(long = "aae-auto-gain-max-db", default_value = "12.0")]
+    #[arg(
+        id = "aae_auto_gain_max_db",
+        long = "aae-auto-gain-max-db",
+        default_value = "12.0"
+    )]
     auto_gain_max_db: f32,
 
     /// AAE auto-gain transition time in milliseconds
-    #[arg(long = "aae-auto-gain-smoothing-ms", default_value = "100.0")]
+    #[arg(
+        id = "aae_auto_gain_smoothing_ms",
+        long = "aae-auto-gain-smoothing-ms",
+        default_value = "100.0"
+    )]
     auto_gain_smoothing_ms: f32,
 }
 
@@ -399,11 +411,19 @@ struct CompressorArgs {
     sidechain_hpf_hz: f32,
 
     /// Compressor detection mode (peak or rms)
-    #[arg(long = "compressor-detection-mode", default_value = "peak")]
+    #[arg(
+        id = "compressor_detection_mode",
+        long = "compressor-detection-mode",
+        default_value = "peak"
+    )]
     detection_mode: String,
 
     /// Compressor lookahead time in ms (0 to 20)
-    #[arg(long = "compressor-lookahead-ms", default_value = "0.0")]
+    #[arg(
+        id = "compressor_lookahead_ms",
+        long = "compressor-lookahead-ms",
+        default_value = "0.0"
+    )]
     lookahead_ms: f32,
 
     /// Enable compressor program-dependent release
@@ -411,7 +431,11 @@ struct CompressorArgs {
     program_dependent_release: bool,
 
     /// Enable compressor measured auto-makeup gain
-    #[arg(long = "compressor-measured-auto-makeup", default_value_t = false)]
+    #[arg(
+        id = "compressor_measured_auto_makeup",
+        long = "compressor-measured-auto-makeup",
+        default_value_t = false
+    )]
     measured_auto_makeup: bool,
 }
 
@@ -482,7 +506,11 @@ struct GateArgs {
     knee_db: f32,
 
     /// Gate lookahead time in ms (0 to 20)
-    #[arg(long = "gate-lookahead-ms", default_value = "0.0")]
+    #[arg(
+        id = "gate_lookahead_ms",
+        long = "gate-lookahead-ms",
+        default_value = "0.0"
+    )]
     lookahead_ms: f32,
 }
 
@@ -509,7 +537,11 @@ struct LimiterArgs {
     release_ms: f32,
 
     /// Limiter lookahead time in ms (0 to 20)
-    #[arg(long = "limiter-lookahead-ms", default_value = "5.0")]
+    #[arg(
+        id = "limiter_lookahead_ms",
+        long = "limiter-lookahead-ms",
+        default_value = "5.0"
+    )]
     lookahead_ms: f32,
 
     /// Enable soft-knee limiting
@@ -616,15 +648,27 @@ struct ExpanderArgs {
     sidechain_hpf_hz: f32,
 
     /// Expander lookahead time in ms (0 to 20)
-    #[arg(long = "expander-lookahead-ms", default_value = "0.0")]
+    #[arg(
+        id = "expander_lookahead_ms",
+        long = "expander-lookahead-ms",
+        default_value = "0.0"
+    )]
     lookahead_ms: f32,
 
     /// Expander detection mode (peak or rms)
-    #[arg(long = "expander-detection-mode", default_value = "peak")]
+    #[arg(
+        id = "expander_detection_mode",
+        long = "expander-detection-mode",
+        default_value = "peak"
+    )]
     detection_mode: String,
 
     /// Enable expander measured auto-makeup gain
-    #[arg(long = "expander-measured-auto-makeup", default_value_t = false)]
+    #[arg(
+        id = "expander_measured_auto_makeup",
+        long = "expander-measured-auto-makeup",
+        default_value_t = false
+    )]
     measured_auto_makeup: bool,
 }
 
@@ -985,11 +1029,19 @@ struct XtcArgs {
     auto_gain: bool,
 
     /// XTC auto gain maximum in dB
-    #[arg(long = "xtc-auto-gain-max-db", default_value = "12.0")]
+    #[arg(
+        id = "xtc_auto_gain_max_db",
+        long = "xtc-auto-gain-max-db",
+        default_value = "12.0"
+    )]
     auto_gain_max_db: f32,
 
     /// XTC auto gain smoothing time in ms
-    #[arg(long = "xtc-auto-gain-smoothing-ms", default_value = "100.0")]
+    #[arg(
+        id = "xtc_auto_gain_smoothing_ms",
+        long = "xtc-auto-gain-smoothing-ms",
+        default_value = "100.0"
+    )]
     auto_gain_smoothing_ms: f32,
 
     /// Enable XTC pinna model
@@ -1036,7 +1088,11 @@ struct DenoiserArgs {
     release_ms: f32,
 
     /// Enable low-latency mode for denoiser (512 FFT vs 2048)
-    #[arg(long = "denoiser-low-latency", default_value_t = false)]
+    #[arg(
+        id = "denoiser_low_latency",
+        long = "denoiser-low-latency",
+        default_value_t = false
+    )]
     low_latency: bool,
 
     /// Enable denoiser polyphonic detection
@@ -2374,6 +2430,7 @@ fn main() {
         Commands::Devices => {
             if let Err(e) = list_devices() {
                 log::error!("Error: {}", e);
+                eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         }
@@ -2388,6 +2445,7 @@ fn main() {
             }
             Err(e) => {
                 log::error!("Error: {}", e);
+                eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         },
@@ -2449,6 +2507,7 @@ fn main() {
                 &plugins,
             ) {
                 log::error!("Error: {}", e);
+                eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         }
@@ -4033,21 +4092,21 @@ fn build_traditional_mode_plugins(
 // Tests — regression coverage for CLI bugs documented in
 // reviews/review-app-cli.md.
 //
-// Note: the existing per-plugin clap arg structs have a number of latent
-// "duplicate argument id" issues (e.g. two fields named `config` across
-// `UpmixerArgs` and `AaeArgs`, two `low_latency` fields, several
-// `auto_gain_max_db`/`auto_gain_smoothing_ms`/`auto_gain_enabled`/…) that
-// trigger clap's `debug_assert!` at parse time. They are pre-existing bugs
-// that don't surface in release builds (where `debug_assertions` is off) and
-// were not flagged in reviews/review-app-cli.md, so we deliberately do not
-// fix them here — that's a separate cleanup PR. As a result, the tests below
-// cover only pure helpers; the rack-mode behavioural fixes are intentionally
-// uncovered by automated tests until that cleanup lands.
+// Note: `PluginArgs` flattens many per-plugin arg structs into the `play`
+// command, so reused Rust field names must use plugin-prefixed clap IDs. The
+// parser debug assertion below keeps that invariant visible.
 // ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cli_definition_has_unique_argument_ids() {
+        use clap::CommandFactory;
+
+        Cli::command().debug_assert();
+    }
 
     // -- parse_channel_mapping ------------------------------------------------
 
