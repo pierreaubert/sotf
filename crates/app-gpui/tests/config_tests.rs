@@ -7,6 +7,9 @@
 use sotf_audio_player_gpui::app::state::ui::{
     LUFS_PANEL_MAX_RATIO, LUFS_PANEL_MIN_RATIO, LayoutState, lufs_panel_ratio_from_drag,
 };
+use sotf_audio_player_gpui::app::state::{
+    RACK_STRIP_MAX_HEIGHT, RACK_STRIP_MIN_HEIGHT, rack_strip_height_from_drag,
+};
 use sotf_audio_player_gpui::{
     Config, IconName, IconSize, ImageAccessTracker, PanelLayout, PlaybackDeviceConfig,
     PlaybackState, RecordingConfigState, RecordingDeviceConfig, RecordingSignalType, ScaleType,
@@ -96,6 +99,24 @@ fn test_lufs_level_meter_divider_ratio_clamps_to_meter_bounds() {
     assert_eq!(
         lufs_panel_ratio_from_drag(0.25, 1000.0, 600.0),
         LUFS_PANEL_MAX_RATIO
+    );
+}
+
+#[test]
+fn test_rack_detail_divider_drag_updates_strip_height() {
+    assert_eq!(rack_strip_height_from_drag(180.0, 40.0), 220.0);
+    assert_eq!(rack_strip_height_from_drag(180.0, -30.0), 150.0);
+}
+
+#[test]
+fn test_rack_detail_divider_height_clamps_to_rack_bounds() {
+    assert_eq!(
+        rack_strip_height_from_drag(180.0, -1000.0),
+        RACK_STRIP_MIN_HEIGHT
+    );
+    assert_eq!(
+        rack_strip_height_from_drag(180.0, 1000.0),
+        RACK_STRIP_MAX_HEIGHT
     );
 }
 

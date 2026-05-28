@@ -111,6 +111,7 @@ pub struct VolumeDragState {
 pub enum DividerType {
     InputMeter,
     OutputMeter,
+    RackDetail,
     PluginAutoConfig { plugin_idx: usize },
     PluginAutoOutput { plugin_idx: usize },
 }
@@ -121,6 +122,14 @@ pub struct DividerDragState {
     pub divider_type: DividerType,
     pub start_x: f32,
     pub start_width: f32,
+}
+
+pub const RACK_STRIP_DEFAULT_HEIGHT: f32 = 180.0;
+pub const RACK_STRIP_MIN_HEIGHT: f32 = 128.0;
+pub const RACK_STRIP_MAX_HEIGHT: f32 = 360.0;
+
+pub fn rack_strip_height_from_drag(start_height: f32, drag_delta_y: f32) -> f32 {
+    (start_height + drag_delta_y).clamp(RACK_STRIP_MIN_HEIGHT, RACK_STRIP_MAX_HEIGHT)
 }
 
 /// Queue state — wraps `QueueController` with per-item UI expansion tracking.
@@ -306,7 +315,8 @@ pub struct App {
     pub output_meter_collapsed: bool, // Right meter panel
 
     // Rack panel widths (for resizing)
-    pub input_meter_width: f32,  // Width of input meter panel
+    pub rack_strip_height: f32, // Height of signal-chain strip above plugin detail
+    pub input_meter_width: f32, // Width of input meter panel
     pub output_meter_width: f32, // Width of output meter panel
 
     // Divider drag state
@@ -618,6 +628,7 @@ impl App {
             rack_detail_collapsed: false,
             input_meter_collapsed: false,
             output_meter_collapsed: false,
+            rack_strip_height: RACK_STRIP_DEFAULT_HEIGHT,
             input_meter_width: 80.0,   // Default width for input meter panel
             output_meter_width: 140.0, // Default width for output meter panel
             dragging_divider: None,

@@ -7,7 +7,10 @@ use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
 use crate::app::constants::spacing;
 use crate::app::state::plugin::{PluginUiView, available_controllers};
-use crate::app::state::{DividerDragState, DividerType};
+use crate::app::state::{
+    DividerDragState, DividerType, RACK_STRIP_MAX_HEIGHT, RACK_STRIP_MIN_HEIGHT,
+    rack_strip_height_from_drag,
+};
 use crate::app::types::{PluginUpdateType, Screen};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
@@ -175,6 +178,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let current_hint = self.state.read(cx).app.current_hint.clone();
+        let rack_strip_height = self.state.read(cx).app.rack_strip_height;
 
         div()
             .id("plugins-screen")
@@ -202,7 +206,8 @@ impl PlayerView {
 
                 if let Some(drag) = knob_drag {
                     let mouse_y: f32 = event.position.y.into();
-                    let delta_y = drag.start_y - mouse_y; // Inverted: up = positive (increase)
+                    // Inverted: up = positive (increase)
+                    let delta_y = drag.start_y - mouse_y;
                     // Scale: 150px drag = full range
                     let range = drag.max - drag.min;
                     let value_delta = (delta_y as f64 / 150.0) * range;
@@ -218,6 +223,7 @@ impl PlayerView {
                     cx.notify();
                 } else if let Some(drag) = divider_drag {
                     let mouse_x: f32 = event.position.x.into();
+                    let mouse_y: f32 = event.position.y.into();
                     let delta_x = mouse_x - drag.start_x;
 
                     view.state.update(cx, |state, _cx| {
@@ -232,6 +238,11 @@ impl PlayerView {
                                 // Allow expanding to fit all channels — no fixed upper bound
                                 let new_width = (drag.start_width - delta_x).max(60.0);
                                 state.app.output_meter_width = new_width;
+                            }
+                            DividerType::RackDetail => {
+                                let delta_y = mouse_y - drag.start_x;
+                                state.app.rack_strip_height =
+                                    rack_strip_height_from_drag(drag.start_width, delta_y);
                             }
                             DividerType::PluginAutoConfig { .. }
                             | DividerType::PluginAutoOutput { .. } => {}
@@ -301,7 +312,15 @@ impl PlayerView {
                     d
                         // Plugin Rack Strip (top) - only show if not collapsed
                         .when(!self.state.read(cx).app.rack_detail_collapsed, |d| {
-                            d.child(self.render_plugin_rack(cx))
+                            d.child(
+                                div()
+                                    .h(px(rack_strip_height))
+                                    .min_h(px(RACK_STRIP_MIN_HEIGHT))
+                                    .max_h(px(RACK_STRIP_MAX_HEIGHT))
+                                    .flex_shrink_0()
+                                    .overflow_hidden()
+                                    .child(self.render_plugin_rack(cx)),
+                            )
                         })
                         // Horizontal divider between rack and detail panel
                         .child({
@@ -318,7 +337,8 @@ impl PlayerView {
                                 },
                                 tint_hover: theme.accent,
                             };
-                            let state = self.state.clone();
+                            let state_for_toggle = self.state.clone();
+                            let state_for_drag = self.state.clone();
                             let is_collapsed = self.state.read(cx).app.rack_detail_collapsed;
                             PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
                                 .label("Signal Chain")
@@ -326,8 +346,17 @@ impl PlayerView {
                                 .thickness(px(4.0))
                                 .collapsed(is_collapsed)
                                 .on_toggle(move |collapsed, _window, cx| {
-                                    state.update(cx, |s, _| {
+                                    state_for_toggle.update(cx, |s, _| {
                                         s.app.rack_detail_collapsed = collapsed;
+                                    });
+                                })
+                                .on_drag_start(move |pos, _window, cx| {
+                                    state_for_drag.update(cx, |s, _| {
+                                        s.app.dragging_divider = Some(DividerDragState {
+                                            divider_type: DividerType::RackDetail,
+                                            start_x: pos,
+                                            start_width: s.app.rack_strip_height,
+                                        });
                                     });
                                 })
                         })
