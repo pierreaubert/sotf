@@ -6,10 +6,10 @@ use super::actions::ToggleUpmixerConfig;
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
 use crate::app::constants::spacing;
-use crate::app::state::plugin::{PluginUiView, available_controllers};
+use crate::app::state::plugin::{available_controllers, PluginUiView};
 use crate::app::state::{
-    DividerDragState, DividerType, RACK_STRIP_MAX_HEIGHT, RACK_STRIP_MIN_HEIGHT,
-    rack_strip_height_from_drag,
+    rack_strip_height_from_drag, DividerDragState, DividerType, RACK_STRIP_MAX_HEIGHT,
+    RACK_STRIP_MIN_HEIGHT,
 };
 use crate::app::types::{PluginUpdateType, Screen};
 use crate::components::design::Ds;
@@ -308,60 +308,97 @@ impl PlayerView {
             )
             .when(
                 self.state.read(cx).app.plugin_state.is_rack_available(),
-                |d| {
-                    d
-                        // Plugin Rack Strip (top) - only show if not collapsed
-                        .when(!self.state.read(cx).app.rack_detail_collapsed, |d| {
-                            d.child(
-                                div()
-                                    .h(px(rack_strip_height))
-                                    .min_h(px(RACK_STRIP_MIN_HEIGHT))
-                                    .max_h(px(RACK_STRIP_MAX_HEIGHT))
-                                    .flex_shrink_0()
-                                    .overflow_hidden()
-                                    .child(self.render_plugin_rack(cx)),
-                            )
-                        })
-                        // Horizontal divider between rack and detail panel
-                        .child({
-                            let divider_theme = PaneDividerTheme {
-                                background: theme.background,
-                                background_hover: theme.surface_hover,
-                                background_collapsed: theme.surface,
-                                foreground: theme.text_muted,
-                                foreground_hover: theme.text_secondary,
-                                border: theme.border,
-                                tint: Rgba {
-                                    a: 0.42,
-                                    ..theme.accent
-                                },
-                                tint_hover: theme.accent,
-                            };
-                            let state_for_toggle = self.state.clone();
-                            let state_for_drag = self.state.clone();
-                            let is_collapsed = self.state.read(cx).app.rack_detail_collapsed;
-                            PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
+                |root| {
+                    let rack_detail_collapsed = self.state.read(cx).app.rack_detail_collapsed;
+                    let show_add_plugin_menu =
+                        self.state.read(cx).app.show_add_plugin_menu && !rack_detail_collapsed;
+
+                    root.child(
+                        div()
+                            .relative()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_h_0()
+                            // Plugin Rack Strip (top) - only show if not collapsed
+                            .when(!rack_detail_collapsed, |d| {
+                                d.child(
+                                    div()
+                                        .h(px(rack_strip_height))
+                                        .min_h(px(RACK_STRIP_MIN_HEIGHT))
+                                        .max_h(px(RACK_STRIP_MAX_HEIGHT))
+                                        .flex_shrink_0()
+                                        .overflow_hidden()
+                                        .child(self.render_plugin_rack(cx)),
+                                )
+                            })
+                            // Horizontal divider between rack and detail panel
+                            .child({
+                                let divider_theme = PaneDividerTheme {
+                                    background: theme.background,
+                                    background_hover: theme.surface_hover,
+                                    background_collapsed: theme.surface,
+                                    foreground: theme.text_muted,
+                                    foreground_hover: theme.text_secondary,
+                                    border: theme.border,
+                                    tint: Rgba {
+                                        a: 0.42,
+                                        ..theme.accent
+                                    },
+                                    tint_hover: theme.accent,
+                                };
+                                let state_for_toggle = self.state.clone();
+                                let state_for_drag = self.state.clone();
+                                PaneDivider::horizontal(
+                                    "rack-detail-divider",
+                                    CollapseDirection::Up,
+                                )
                                 .label("Signal Chain")
                                 .theme(divider_theme)
                                 .thickness(px(4.0))
-                                .collapsed(is_collapsed)
+                                .collapsed(rack_detail_collapsed)
                                 .on_toggle(move |collapsed, _window, cx| {
                                     state_for_toggle.update(cx, |s, _| {
                                         s.app.rack_detail_collapsed = collapsed;
                                     });
                                 })
-                                .on_drag_start(move |pos, _window, cx| {
-                                    state_for_drag.update(cx, |s, _| {
-                                        s.app.dragging_divider = Some(DividerDragState {
-                                            divider_type: DividerType::RackDetail,
-                                            start_x: pos,
-                                            start_width: s.app.rack_strip_height,
+                                .on_drag_start(
+                                    move |pos, _window, cx| {
+                                        state_for_drag.update(cx, |s, _| {
+                                            s.app.dragging_divider = Some(DividerDragState {
+                                                divider_type: DividerType::RackDetail,
+                                                start_x: pos,
+                                                start_width: s.app.rack_strip_height,
+                                            });
                                         });
-                                    });
-                                })
-                        })
-                        // Parameter Panel (bottom, fills remaining space)
-                        .child(self.render_plugin_detail_panel(cx))
+                                    },
+                                )
+                            })
+                            // Parameter Panel (bottom, fills remaining space)
+                            .child(self.render_plugin_detail_panel(cx))
+                            // Add plugin menu overlay. Render it after the detail panel so it
+                            // paints over the rack/detail divider instead of being clipped by it.
+                            .when(show_add_plugin_menu, |el| {
+                                el.child(
+                                    div()
+                                        .id("add-plugin-menu")
+                                        .absolute()
+                                        .top(px(rack_strip_height))
+                                        .left_0()
+                                        .right_0()
+                                        .px(d.card)
+                                        .py(d.card)
+                                        .max_h(px(400.0))
+                                        .overflow_y_scroll()
+                                        .bg(theme.surface)
+                                        .border_t_1()
+                                        .border_b_1()
+                                        .border_color(theme.border)
+                                        .shadow_lg()
+                                        .child(self.render_add_plugin_buttons(cx)),
+                                )
+                            }),
+                    )
                 },
             )
     }
@@ -1548,21 +1585,6 @@ impl PlayerView {
                         )
                     }),
             )
-            // Add plugin menu (shown when "+" is clicked)
-            .when(self.state.read(cx).app.show_add_plugin_menu, |el| {
-                el.child(
-                    div()
-                        .id("add-plugin-menu")
-                        .px(d.card)
-                        .py(d.card)
-                        .max_h(px(400.0))
-                        .overflow_y_scroll()
-                        .bg(theme.surface)
-                        .border_t_1()
-                        .border_color(theme.border)
-                        .child(self.render_add_plugin_buttons(cx)),
-                )
-            })
     }
 
     /// Render a side level meter group for the detail panel
