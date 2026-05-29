@@ -135,6 +135,9 @@ cargo build --release --target aarch64-apple-darwin -p sotf-gpui --features hal,
 # Build, sign, and package for MAS.
 ./scripts/build-pkg-mas.sh
 
+# The script writes CFBundleVersion from `git rev-list --count HEAD` by
+# default. Use `--build-number <integer>` only for manual recovery uploads.
+
 # Validate before upload (catches obvious rejections without burning a
 # review slot).
 xcrun altool --validate-app \
