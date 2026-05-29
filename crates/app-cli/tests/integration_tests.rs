@@ -37,6 +37,8 @@ fn demo_audio_path(name: &str) -> PathBuf {
         .join(name)
 }
 
+const PLAY_PARSE_SMOKE_DURATION_SECS: &str = "1";
+
 // ============================================================================
 // player-cli
 // ============================================================================
@@ -117,14 +119,14 @@ fn player_cli_play_with_filter_arg_parses() {
         return;
     }
 
-    // We only verify argument parsing here; actual playback would require
-    // an audio device, so we use --duration 0 to exit immediately after setup.
+    // We only verify argument parsing here. Use a finite duration so the
+    // smoke test cannot enter the CLI's "play until stopped" mode.
     let output = Command::new(cargo_bin("player-cli"))
         .args([
             "play",
             demo.to_str().unwrap(),
             "--duration",
-            "0",
+            PLAY_PARSE_SMOKE_DURATION_SECS,
             "--filter",
             "1000:1.5:3.0",
         ])
@@ -154,7 +156,7 @@ fn player_cli_play_with_rack_arg_parses() {
             "play",
             demo.to_str().unwrap(),
             "--duration",
-            "0",
+            PLAY_PARSE_SMOKE_DURATION_SECS,
             "--rack",
             "eq,limiter",
         ])
@@ -182,7 +184,7 @@ fn player_cli_play_with_lufs_flag_parses() {
             "play",
             demo.to_str().unwrap(),
             "--duration",
-            "0",
+            PLAY_PARSE_SMOKE_DURATION_SECS,
             "--lufs",
         ])
         .output()
@@ -209,9 +211,8 @@ fn player_cli_play_with_loudness_compensation_parses() {
             "play",
             demo.to_str().unwrap(),
             "--duration",
-            "0",
-            "--loudness-compensation",
-            "-20,10",
+            PLAY_PARSE_SMOKE_DURATION_SECS,
+            "--loudness-compensation=-20,10",
         ])
         .output()
         .expect("failed to spawn player-cli");
@@ -267,7 +268,7 @@ fn player_cli_play_with_device_arg_parses() {
             "play",
             demo.to_str().unwrap(),
             "--duration",
-            "0",
+            PLAY_PARSE_SMOKE_DURATION_SECS,
             "--device",
             "default",
         ])
@@ -295,7 +296,7 @@ fn player_cli_play_with_start_time_arg_parses() {
             "play",
             demo.to_str().unwrap(),
             "--duration",
-            "0",
+            PLAY_PARSE_SMOKE_DURATION_SECS,
             "--start-time",
             "5.0",
         ])
@@ -323,7 +324,7 @@ fn player_cli_play_with_loudness_auto_gain_parses() {
             "play",
             demo.to_str().unwrap(),
             "--duration",
-            "0",
+            PLAY_PARSE_SMOKE_DURATION_SECS,
             "--loudness-auto-gain",
             "--loudness-auto-gain-max-db",
             "12.0",
@@ -354,7 +355,7 @@ fn player_cli_play_with_upmixer_args_parses() {
             "play",
             demo.to_str().unwrap(),
             "--duration",
-            "0",
+            PLAY_PARSE_SMOKE_DURATION_SECS,
             "--upmixer",
             "--upmixer-gain-front-direct",
             "1.0",
@@ -385,10 +386,9 @@ fn player_cli_play_with_compressor_args_parses() {
             "play",
             demo.to_str().unwrap(),
             "--duration",
-            "0",
+            PLAY_PARSE_SMOKE_DURATION_SECS,
             "--compressor",
-            "--compressor-threshold-db",
-            "-20.0",
+            "--compressor-threshold-db=-20.0",
             "--compressor-ratio",
             "4.0",
             "--compressor-attack-ms",
