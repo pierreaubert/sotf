@@ -18,10 +18,10 @@
 #   4. App record created in App Store Connect for `org.spinorama.sotf`.
 #
 # Usage:
-#   ./scripts/build-pkg-mas.sh                         # arm64 from default dir
+#   ./scripts/build-pkg-mas.sh                         # arm64, build number = git commit count
 #   ./scripts/build-pkg-mas.sh --binary <path>
 #   ./scripts/build-pkg-mas.sh --arch x86_64 --binary <path>
-#   ./scripts/build-pkg-mas.sh --build-number 17
+#   ./scripts/build-pkg-mas.sh --build-number 17       # manual override
 #
 # Output:
 #   dist/sotf-desktop-<version>-macos-<arch>-mas.pkg
@@ -44,7 +44,7 @@ VERSION=$(grep -m1 '^version = ' "$PROJECT_ROOT/Cargo.toml" \
 # ---- Defaults ----
 ARCH="arm64"
 SOURCE_BINARY=""
-BUILD_NUMBER="1"
+BUILD_NUMBER=""
 
 # ---- Load config (cert names, profile path, optional overrides) ----
 CONFIG_FILE="${HOME}/.sotf-release.conf"
@@ -57,6 +57,8 @@ INFO_PLIST_TEMPLATE="$PROJECT_ROOT/builds/macos/org.spinorama.sotf.plist"
 MAS_DISTRIBUTION_CERT="${MAS_DISTRIBUTION_CERT:-Apple Distribution: Pierre Aubert (RTH7ZJXLT6)}"
 MAS_INSTALLER_CERT="${MAS_INSTALLER_CERT:-3rd Party Mac Developer Installer: Pierre Aubert (RTH7ZJXLT6)}"
 MAS_PROVISIONING_PROFILE="${MAS_PROVISIONING_PROFILE:-$PROJECT_ROOT/builds/macos/sotf-mas.provisionprofile}"
+BUILD_NUMBER_SOURCE="git commit count"
+[ -n "${BUILD_NUMBER:-}" ] && BUILD_NUMBER_SOURCE="configuration"
 
 # ---- Logging ----
 GREEN='\033[0;32m'
@@ -75,16 +77,48 @@ usage() {
     sed -n '2,/^$/p' "$0" | sed 's/^#//' | sed 's/^ //'
 }
 
+derive_build_number_from_git() {
+    local count
+    count=$(git -C "$PROJECT_ROOT" rev-list --count HEAD 2>/dev/null) || return 1
+    case "$count" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    printf '%s' "$count"
+}
+
 # ---- Args ----
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --binary)        SOURCE_BINARY="$2"; shift 2 ;;
         --arch)          ARCH="$2"; shift 2 ;;
-        --build-number)  BUILD_NUMBER="$2"; shift 2 ;;
+        --build-number)  BUILD_NUMBER="$2"; BUILD_NUMBER_SOURCE="command line"; shift 2 ;;
         --help|-h)       usage; exit 0 ;;
         *) log_error "Unknown option: $1"; usage; exit 1 ;;
     esac
 done
+
+if [ -z "${BUILD_NUMBER:-}" ]; then
+    if ! BUILD_NUMBER=$(derive_build_number_from_git); then
+        log_error "Could not derive BUILD_NUMBER from git commit count."
+        log_error "Run from a git checkout, or pass --build-number <integer>."
+        exit 1
+    fi
+fi
+case "$BUILD_NUMBER" in
+    ''|*[!0-9]*)
+        log_error "Build number must be a positive integer, got '$BUILD_NUMBER'"
+        exit 1
+        ;;
+esac
+if [ "$BUILD_NUMBER" -le 0 ]; then
+    log_error "Build number must be greater than zero, got '$BUILD_NUMBER'"
+    exit 1
+fi
+if [ "$BUILD_NUMBER_SOURCE" = "git commit count" ] \
+    && [ "$(git -C "$PROJECT_ROOT" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+    log_warn "Repository is shallow; build number $BUILD_NUMBER may be lower than the full-history commit count."
+    log_warn "Use --build-number <integer> if App Store Connect needs a higher value."
+fi
 
 # Default binary path follows --arch.
 if [ -z "$SOURCE_BINARY" ]; then
@@ -179,7 +213,7 @@ if ! $match_found; then
     exit 1
 fi
 
-log_ok "Version v$VERSION (build #$BUILD_NUMBER)"
+log_ok "Version v$VERSION (build #$BUILD_NUMBER, from $BUILD_NUMBER_SOURCE)"
 log_ok "Binary: $SOURCE_BINARY"
 log_ok "Entitlements: $ENTITLEMENTS"
 log_ok "Provisioning profile: $MAS_PROVISIONING_PROFILE"
