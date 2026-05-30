@@ -226,11 +226,8 @@ impl Platform for AuPlatform {
             let pasteboard: *mut objc::runtime::Object =
                 msg_send![class!(NSPasteboard), generalPasteboard];
             let _: () = msg_send![pasteboard, clearContents];
-            if let Some(text) = item.text()
-                && let Ok(c_text) = std::ffi::CString::new(text)
-            {
-                let ns_string: *mut objc::runtime::Object =
-                    msg_send![class!(NSString), stringWithUTF8String: c_text.as_ptr()];
+            if let Some(text) = item.text() {
+                let ns_string = crate::helpers::ns_string_from_str(&text);
                 let array: *mut objc::runtime::Object =
                     msg_send![class!(NSArray), arrayWithObject: ns_string];
                 let _: bool = msg_send![pasteboard, writeObjects: array];
