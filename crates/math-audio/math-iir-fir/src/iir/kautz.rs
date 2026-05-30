@@ -16,10 +16,9 @@
 //!
 //! Given a measured room response and a flat target, [`KautzFilter::optimize_gains`]
 //! solves the linear least-squares problem `Φ g = t` where `Φ[i][j]` is section j's
-//! dB response at frequency i and `t` is the correction needed. The pseudoinverse
-//! `g = (ΦᵀΦ)⁻¹ Φᵀ t` is computed via Cholesky factorization of the
-//! (n_sections × n_sections) normal equations — cheap for the small systems typical
-//! of room correction (5–10 modes).
+//! dB response at frequency i and `t` is the correction needed. The regularized
+//! system is solved with modified Gram-Schmidt QR on `[Φ; sqrt(λ) I]`, avoiding
+//! the condition-number squaring of normal equations for closely spaced poles.
 
 use ndarray::Array1;
 use num_complex::Complex;
@@ -237,9 +236,10 @@ impl KautzFilter<f64> {
     /// - `Φ[i][j]` = section j's basis function dB response at `freqs[i]`
     /// - `t[i]` = `target_spl[i] - measured_spl[i]` (correction needed in dB)
     ///
-    /// Uses the normal equations `(ΦᵀΦ) g = Φᵀ t` solved via Cholesky factorization.
-    /// This is numerically stable for the small systems (5–10 sections) typical of
-    /// room mode correction.
+    /// Uses modified Gram-Schmidt QR on the augmented regularized system
+    /// `[Φ; sqrt(λ) I]`. This is more robust than normal equations for
+    /// closely spaced room-mode poles because it does not square the condition
+    /// number of `Φ`.
     pub fn optimize_gains(&mut self, freqs: &[f64], measured_spl: &[f64], target_spl: &[f64]) {
         let n = freqs.len();
         let m = self.sections.len();

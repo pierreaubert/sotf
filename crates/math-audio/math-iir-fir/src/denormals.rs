@@ -3,6 +3,12 @@
 //! This module provides a scoped guard to enable "Flush-to-Zero" (FTZ) and
 //! "Denormals-Are-Zero" (DAZ) modes on supported architectures.
 //!
+//! On x86/x86_64 the guard sets both FTZ and DAZ in MXCSR. DAZ is available on
+//! SSE2-era hardware, which covers x86_64 targets; on unsupported hardware the
+//! bit is ignored by the processor. On aarch64 the guard sets FPCR.FZ. Other
+//! architectures use a no-op guard so audio processing code can keep one call
+//! site across targets.
+//!
 //! # Usage
 //!
 //! ```rust

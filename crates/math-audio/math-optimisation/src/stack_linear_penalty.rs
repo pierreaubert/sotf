@@ -40,3 +40,51 @@ pub(crate) fn stack_linear_penalty(dst: &mut LinearPenalty, src: &LinearPenalty)
     dst.ub = ub_new;
     dst.weight = dst.weight.max(src.weight);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+
+    #[test]
+    fn stacks_rows_and_uses_stronger_weight() {
+        let mut dst = LinearPenalty {
+            a: array![[1.0, 0.0]],
+            lb: array![0.0],
+            ub: array![1.0],
+            weight: 10.0,
+        };
+        let src = LinearPenalty {
+            a: array![[0.0, 1.0], [1.0, 1.0]],
+            lb: array![-1.0, 0.5],
+            ub: array![2.0, 3.0],
+            weight: 20.0,
+        };
+
+        stack_linear_penalty(&mut dst, &src);
+
+        assert_eq!(dst.a, array![[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]);
+        assert_eq!(dst.lb, array![0.0, -1.0, 0.5]);
+        assert_eq!(dst.ub, array![1.0, 2.0, 3.0]);
+        assert_eq!(dst.weight, 20.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "LinearPenalty A width mismatch while stacking")]
+    fn rejects_width_mismatch() {
+        let mut dst = LinearPenalty {
+            a: array![[1.0, 0.0]],
+            lb: array![0.0],
+            ub: array![1.0],
+            weight: 10.0,
+        };
+        let src = LinearPenalty {
+            a: array![[1.0, 0.0, 1.0]],
+            lb: array![0.0],
+            ub: array![1.0],
+            weight: 10.0,
+        };
+
+        stack_linear_penalty(&mut dst, &src);
+    }
+}

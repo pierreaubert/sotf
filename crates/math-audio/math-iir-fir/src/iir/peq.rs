@@ -114,7 +114,8 @@ fn a_weighting_db(f: f64) -> f64 {
 /// Compute K-weighting in dB for a given frequency
 ///
 /// K-weighting is used by EBU R128 loudness measurement standard.
-/// It's composed of a pre-filter and RLB weighting.
+/// This helper is a rough analytic approximation of the pre-filter + RLB
+/// cascade, not a bit-exact EBU R128 implementation.
 ///
 /// # Arguments
 /// * `f` - Frequency in Hz

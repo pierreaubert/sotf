@@ -14,12 +14,24 @@ pub fn keanes_bump_objective(x: &Array1<f64>) -> f64 {
         .map(|(i, &xi)| (i + 1) as f64 * xi.powi(2))
         .sum();
 
-    let denom = sum_i_xi2.sqrt();
-    if denom == 0.0 {
-        // All inputs are zero. For N=2, the numerator also vanishes and the limit is 0.
-        // For N != 2, the objective tends to -infinity.
-        if x.len() == 2 { 0.0 } else { f64::NEG_INFINITY }
-    } else {
-        -(sum_cos4 - 2.0 * prod_cos2).abs() / denom
+    let denom = sum_i_xi2.sqrt().max(1.0e-12);
+    -(sum_cos4 - 2.0 * prod_cos2).abs() / denom
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn origin_is_finite_for_standard_2d_and_4d_cases() {
+        assert!(keanes_bump_objective(&Array1::from(vec![0.0, 0.0])).is_finite());
+        assert!(keanes_bump_objective(&Array1::from(vec![0.0; 4])).is_finite());
+    }
+
+    #[test]
+    fn known_2d_minimum_matches_metadata() {
+        let x = Array1::from(vec![1.393249, 0.0]);
+        let value = keanes_bump_objective(&x);
+        assert!((value - -0.673668).abs() < 1e-5, "got {value}");
     }
 }

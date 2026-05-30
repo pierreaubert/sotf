@@ -1,6 +1,6 @@
 [package]
 name = "math-iir-fir"
-version = "0.5.13"
+version = "0.5.14"
 description = "Math-Audio IIR and FIR filters"
 edition = { workspace = true }
 keywords.workspace = true
@@ -30,4 +30,3 @@ harness = false
 [lib]
 name = "math_audio_iir_fir"
 path = "src/mod.rs"
-

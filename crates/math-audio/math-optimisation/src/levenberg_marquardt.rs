@@ -493,8 +493,11 @@ where
     Ok(jac)
 }
 
-/// Finite-difference step size with a relative upper bound.
-/// Uses `eps * (1 + |x|)` so that `h` never grows without bound when `|x|` is huge.
+/// Finite-difference step size scaled to the parameter magnitude.
+///
+/// Uses the standard relative rule `eps * (1 + |x|)` with a lower bound of
+/// `eps`, so coordinates near zero still receive a resolvable central
+/// difference step.
 fn jacobian_step(eps: f64, x: f64) -> f64 {
     (eps * (1.0 + x.abs())).max(eps)
 }
@@ -819,16 +822,10 @@ mod tests {
     }
 
     #[test]
-    fn test_jacobian_step_size_bounded() {
-        // The old formula eps.max(eps * |x|) grows linearly with |x| and has
-        // no upper bound. The new formula caps the growth.
+    fn test_jacobian_step_size_uses_relative_scale() {
         let eps = 1e-8;
         assert!((jacobian_step(eps, 0.0) - eps).abs() < 1e-15);
         assert!((jacobian_step(eps, 1.0) - 2.0e-8).abs() < 1e-15);
-        // For huge x the step should be ~eps * |x|, but capped by the additive 1.0.
-        // With x = 1e12, old code gave 1e4; new code gives ~1e4 as well because
-        // 1 + 1e12 ≈ 1e12. The real protection is that h is always at least eps
-        // and grows linearly with (1 + |x|), which is the standard relative rule.
         let h_large = jacobian_step(eps, 1.0e12);
         assert!(h_large >= eps);
         assert!((h_large - eps * (1.0 + 1.0e12)).abs() < 1.0);

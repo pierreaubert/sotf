@@ -1,3 +1,16 @@
+# 0.5.10
+
+## Bug fixes
+
+- `apply_wls` now uses the documented Cauchy perturbation distribution instead
+  of a uniform perturbation while still clipping candidates to bounds.
+- Clarified the Levenberg-Marquardt finite-difference step documentation.
+
+## Tests
+
+- Added direct tests for mixed-integer rounding/clamping, linear-penalty
+  stacking, and WLS shape/bounds behavior.
+
 # 0.5.9
 
 ## Bug fixes

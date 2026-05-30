@@ -5916,7 +5916,7 @@ dependencies = [
 
 [[package]]
 name = "math-iir-fir"
-version = "0.5.13"
+version = "0.5.14"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -5932,7 +5932,7 @@ dependencies = [
 
 [[package]]
 name = "math-optimisation"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "clap",
  "directories",
@@ -5957,7 +5957,7 @@ dependencies = [
 
 [[package]]
 name = "math-test-functions"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "clap",
  "directories",

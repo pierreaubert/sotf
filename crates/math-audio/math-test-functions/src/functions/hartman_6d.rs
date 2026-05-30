@@ -33,3 +33,23 @@ pub fn hartman_6d(x: &Array1<f64>) -> f64 {
         })
         .sum::<f64>()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_minimum_is_close_to_reference_value() {
+        let x = Array1::from(vec![
+            0.20169, 0.150011, 0.476874, 0.275332, 0.311652, 0.6573,
+        ]);
+        let value = hartman_6d(&x);
+        assert!((value - -3.32237).abs() < 1e-4, "got {value}");
+    }
+
+    #[test]
+    fn finite_inside_unit_box() {
+        let x = Array1::from(vec![0.5; 6]);
+        assert!(hartman_6d(&x).is_finite());
+    }
+}
