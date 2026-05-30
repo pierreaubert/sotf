@@ -14,6 +14,7 @@ Platform-agnostic — the core solver has zero framework dependencies. An option
 - **User preferences** — ratio overrides and manual collapse state
 - **Draggable dividers** — configurable divider size per container
 - **Text-measured sizing** — slots sized by text content via `TextMeasure` trait (from `gpui-pretext`)
+- **Layout diagnostics** — stable solved-tree reports with sizing metadata and warnings
 
 ## Quick Start
 
@@ -53,6 +54,23 @@ let solved = solve(&root, 1200.0, 800.0, &LayoutPreferences::default());
 let sidebar = solved.find("sidebar").unwrap();
 println!("sidebar: {}x{} visible={}", sidebar.width, sidebar.height, sidebar.visible);
 ```
+
+## Layout Diagnostics
+
+Use `SolvedNode::debug_report()` while iterating on complex layouts. If you
+still have the declaration tree, `debug_report_with_source()` adds sizing mode,
+collapse priority, and collapsibility metadata to each line.
+
+```rust
+let solved = solve(&root, 1200.0, 800.0, &LayoutPreferences::default());
+let report = solved.debug_report_with_source(&root);
+
+println!("{report}");
+assert!(report.is_clean());
+```
+
+Reports flag suspicious output such as invalid sizes, hidden nodes without a
+collapse label, and visible children that overflow a parent axis.
 
 ## Sizing Modes
 

@@ -55,7 +55,7 @@ pub mod solver;
 pub mod types;
 
 // Re-exports for convenience
-pub use solved::SolvedNode;
+pub use solved::{LayoutDebugReport, LayoutDebugWarning, LayoutDebugWarningKind, SolvedNode};
 pub use solver::solve;
 pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
