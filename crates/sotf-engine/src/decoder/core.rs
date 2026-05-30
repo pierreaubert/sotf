@@ -260,6 +260,40 @@ pub fn create_decoder_from_source_with_dsd_mode(
             let decoder = SymphoniaDecoder::from_media_source(Box::new(mpd_source), hint, url)?;
             Ok(Box::new(decoder))
         }
+        #[cfg(all(feature = "streaming", feature = "hls"))]
+        AudioSource::Url {
+            url,
+            format_hint,
+            seekable: _,
+        } if is_hls_source(url, format_hint.as_deref()) => {
+            use symphonia::core::formats::probe::Hint;
+
+            let hls_source = sotf_streaming::HlsSource::open(url)
+                .map_err(|e| AudioDecoderError::NetworkError(e.to_string()))?;
+
+            let mut hint = Hint::new();
+            if let Some(detected) = hls_source.format_hint() {
+                hint.with_extension(&detected);
+            } else if let Some(fh) = format_hint
+                && !is_hls_format_hint(fh)
+            {
+                hint.with_extension(fh);
+            }
+
+            let decoder = SymphoniaDecoder::from_media_source(Box::new(hls_source), hint, url)?;
+            Ok(Box::new(decoder))
+        }
+        #[cfg(all(feature = "streaming", not(feature = "hls")))]
+        AudioSource::Url {
+            url,
+            format_hint,
+            seekable: _,
+        } if is_hls_source(url, format_hint.as_deref()) => {
+            Err(AudioDecoderError::UnsupportedFormat(format!(
+                "HLS streaming not available (compile with 'hls' feature): {}",
+                url
+            )))
+        }
         #[cfg(feature = "streaming")]
         AudioSource::Url {
             url,
@@ -300,6 +334,34 @@ pub fn create_decoder_from_source_with_dsd_mode(
             "Driver source does not use a decoder".to_string(),
         )),
     }
+}
+
+#[cfg(feature = "streaming")]
+fn is_hls_source(url: &str, format_hint: Option<&str>) -> bool {
+    if format_hint.is_some_and(is_hls_format_hint) {
+        return true;
+    }
+
+    let path = url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .to_ascii_lowercase();
+    path.ends_with(".m3u8") || path.ends_with(".m3u")
+}
+
+#[cfg(feature = "streaming")]
+fn is_hls_format_hint(format_hint: &str) -> bool {
+    matches!(
+        format_hint.trim().to_ascii_lowercase().as_str(),
+        "hls"
+            | "m3u8"
+            | "m3u"
+            | "application/vnd.apple.mpegurl"
+            | "application/x-mpegurl"
+            | "audio/mpegurl"
+            | "audio/x-mpegurl"
+    )
 }
 
 #[cfg(test)]
@@ -384,6 +446,24 @@ mod tests {
             result,
             Err(AudioDecoderError::UnsupportedFormat(message))
                 if message.contains("cannot carry bit-perfect DoP frames")
+        ));
+    }
+
+    #[cfg(feature = "streaming")]
+    #[test]
+    fn test_hls_source_detection() {
+        assert!(is_hls_source("https://example.test/live/index.m3u8", None));
+        assert!(is_hls_source(
+            "https://example.test/live/index.M3U8?token=abc",
+            None
+        ));
+        assert!(is_hls_source(
+            "https://example.test/live",
+            Some("application/vnd.apple.mpegurl")
+        ));
+        assert!(!is_hls_source(
+            "https://example.test/track.flac",
+            Some("flac")
         ));
     }
 }
