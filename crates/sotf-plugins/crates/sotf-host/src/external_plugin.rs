@@ -13,12 +13,14 @@
 // The actual format-specific hosting (CLAP via clack-host, VST3 via vst3-sys,
 // AU via coreaudio-rs) is behind feature flags and can be implemented incrementally.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::error::PluginError;
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use crate::serialization::{PluginPreset, SerializablePlugin};
 
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -94,6 +96,8 @@ pub enum PluginScanStatus {
     /// The plugin format is recognized, but this build lacks the native loader feature.
     UnsupportedByBuild,
 }
+
+pub const EXTERNAL_PLUGIN_PRESET_ID: &str = "external-plugin";
 
 /// Build-time hosting capability for one external plugin format.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -642,6 +646,19 @@ impl ExternalPlugin {
         Self::new(&state.descriptor, sample_rate)
     }
 
+    pub fn to_placeholder_preset(
+        &self,
+        name: impl Into<String>,
+    ) -> Result<PluginPreset, PluginError> {
+        let mut preset = PluginPreset::new(
+            name.into(),
+            EXTERNAL_PLUGIN_PRESET_ID.to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        );
+        preset.set_external_plugin_state(&self.placeholder_state())?;
+        Ok(preset)
+    }
+
     fn expected_input_len(&self, ctx: &ProcessContext) -> usize {
         ctx.num_frames.saturating_mul(self.input_channels)
     }
@@ -758,6 +775,60 @@ impl Plugin for ExternalPlugin {
             ExternalHostingBackend::AudioUnit => self.process_audio_unit(input, output, ctx),
         };
         Ok(frames)
+    }
+}
+
+impl SerializablePlugin for ExternalPlugin {
+    fn serialize(&self) -> Result<PluginPreset, PluginError> {
+        self.to_placeholder_preset(self.descriptor.name.clone())
+    }
+
+    fn deserialize(&mut self, preset: &PluginPreset) -> Result<(), PluginError> {
+        if !preset.is_compatible(EXTERNAL_PLUGIN_PRESET_ID) {
+            return Err(PluginError::InvalidConfiguration(format!(
+                "external plugin preset expected plugin_id '{}', got '{}'",
+                EXTERNAL_PLUGIN_PRESET_ID, preset.plugin_id
+            )));
+        }
+
+        self.parameters_from_map(&preset.parameters)?;
+
+        let state = preset.external_plugin_state()?.ok_or_else(|| {
+            PluginError::InvalidConfiguration(
+                "external plugin preset is missing external plugin state".to_string(),
+            )
+        })?;
+        if state.format != self.descriptor.format
+            || state.plugin_id != self.descriptor.id
+            || state.plugin_path != self.descriptor.path
+        {
+            return Err(PluginError::InvalidConfiguration(format!(
+                "external plugin preset targets '{}' at {}, not '{}' at {}",
+                state.plugin_id,
+                state.plugin_path.display(),
+                self.descriptor.id,
+                self.descriptor.path.display()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn parameters_to_map(&self) -> HashMap<String, ParameterValue> {
+        HashMap::new()
+    }
+
+    fn parameters_from_map(
+        &mut self,
+        params: &HashMap<String, ParameterValue>,
+    ) -> Result<(), PluginError> {
+        if params.is_empty() {
+            Ok(())
+        } else {
+            Err(PluginError::InvalidConfiguration(
+                "external plugin placeholder presets do not store host-side parameters".to_string(),
+            ))
+        }
     }
 }
 
@@ -1264,6 +1335,95 @@ mod tests {
         assert_eq!(restored.descriptor(), &desc);
         assert_eq!(decoded.sandbox_mode, ExternalPluginSandboxMode::Isolated);
         assert_eq!(decoded.opaque_state, vec![1, 2, 3, 4]);
+
+        fs::remove_file(plugin_path).unwrap();
+        fs::remove_dir_all(tmp_path).unwrap();
+    }
+
+    #[test]
+    fn test_external_plugin_serializable_preset_round_trips_placeholder_state() {
+        let tmp_path = env::temp_dir().join(format!(
+            "sotf-external-plugin-serializable-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp_path).unwrap();
+        let plugin_path = tmp_path.join("serializable.clap");
+        fs::write(&plugin_path, b"stub plugin").unwrap();
+        let desc = PluginDescriptor {
+            id: "test.serializable".into(),
+            name: "Serializable Test".into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: plugin_path.clone(),
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec!["state".into()],
+            scan_status: PluginScanStatus::Discovered,
+        };
+        let mut plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
+
+        let preset = SerializablePlugin::serialize(&plugin).unwrap();
+        let restored_state = preset.external_plugin_state().unwrap().unwrap();
+
+        assert_eq!(preset.plugin_id, EXTERNAL_PLUGIN_PRESET_ID);
+        assert_eq!(restored_state.descriptor, desc);
+        assert_eq!(
+            restored_state.sandbox_mode,
+            ExternalPluginSandboxMode::InProcess
+        );
+        assert!(restored_state.opaque_state.is_empty());
+        SerializablePlugin::deserialize(&mut plugin, &preset).unwrap();
+
+        fs::remove_file(plugin_path).unwrap();
+        fs::remove_dir_all(tmp_path).unwrap();
+    }
+
+    #[test]
+    fn test_external_plugin_deserialize_rejects_different_descriptor() {
+        let tmp_path = env::temp_dir().join(format!(
+            "sotf-external-plugin-mismatch-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp_path).unwrap();
+        let plugin_path = tmp_path.join("mismatch.clap");
+        fs::write(&plugin_path, b"stub plugin").unwrap();
+        let desc = PluginDescriptor {
+            id: "test.mismatch".into(),
+            name: "Mismatch Test".into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: plugin_path.clone(),
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec![],
+            scan_status: PluginScanStatus::Discovered,
+        };
+        let mut plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
+        let mut state = plugin.placeholder_state();
+        state.plugin_id = "other.plugin".into();
+        state.descriptor.id = "other.plugin".into();
+
+        let mut preset = PluginPreset::new(
+            "Other".into(),
+            EXTERNAL_PLUGIN_PRESET_ID.into(),
+            env!("CARGO_PKG_VERSION").into(),
+        );
+        preset.set_external_plugin_state(&state).unwrap();
+
+        assert!(matches!(
+            SerializablePlugin::deserialize(&mut plugin, &preset),
+            Err(PluginError::InvalidConfiguration(_))
+        ));
 
         fs::remove_file(plugin_path).unwrap();
         fs::remove_dir_all(tmp_path).unwrap();
