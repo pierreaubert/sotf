@@ -500,12 +500,50 @@ impl PluginDescriptor {
 ///
 /// Until a native backend is enabled, the plugin runs in deterministic
 /// passthrough mode so graph behavior remains stable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ExternalHostingBackend {
     Passthrough,
     Clap,
     Vst3,
     AudioUnit,
+}
+
+/// Host-side plan for loading an external plugin descriptor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalPluginHostingPlan {
+    pub format: PluginFormat,
+    pub feature: String,
+    pub scan_status: PluginScanStatus,
+    pub backend: ExternalHostingBackend,
+    pub native_backend_available: bool,
+    pub reason: Option<String>,
+}
+
+pub fn plan_external_plugin_hosting(descriptor: &PluginDescriptor) -> ExternalPluginHostingPlan {
+    let backend = select_hosting_backend(descriptor.format);
+    let feature = format_feature(descriptor.format).to_string();
+    let native_backend_available = backend != ExternalHostingBackend::Passthrough;
+    let scan_status = descriptor.format.build_scan_status();
+    let reason = if native_backend_available {
+        None
+    } else {
+        Some(format!(
+            "{} native hosting feature '{}' is disabled; '{}' will run as deterministic passthrough",
+            format_label(descriptor.format),
+            feature,
+            descriptor.name
+        ))
+    };
+
+    ExternalPluginHostingPlan {
+        format: descriptor.format,
+        feature,
+        scan_status,
+        backend,
+        native_backend_available,
+        reason,
+    }
 }
 
 pub struct ExternalPlugin {
@@ -535,8 +573,8 @@ impl ExternalPlugin {
         }
 
         descriptor.validate()?;
-        let hosting_backend = select_hosting_backend(descriptor.format);
-        let instance = try_load_dynamic_backend(descriptor, hosting_backend)?;
+        let hosting_plan = plan_external_plugin_hosting(descriptor);
+        let instance = try_load_dynamic_backend(descriptor, hosting_plan.backend)?;
 
         Ok(Self {
             descriptor: descriptor.clone(),
@@ -544,7 +582,7 @@ impl ExternalPlugin {
             output_channels: descriptor.audio_outputs.max(1),
             _sample_rate: sample_rate,
             parameters: Vec::new(),
-            hosting_backend,
+            hosting_backend: hosting_plan.backend,
             _instance: instance,
         })
     }
@@ -556,6 +594,10 @@ impl ExternalPlugin {
 
     pub fn hosting_backend(&self) -> ExternalHostingBackend {
         self.hosting_backend
+    }
+
+    pub fn hosting_plan(&self) -> ExternalPluginHostingPlan {
+        plan_external_plugin_hosting(&self.descriptor)
     }
 
     /// Serialize descriptor and placeholder state for project/preset storage.
@@ -718,6 +760,22 @@ fn select_hosting_backend(format: PluginFormat) -> ExternalHostingBackend {
                 ExternalHostingBackend::Passthrough
             }
         }
+    }
+}
+
+fn format_feature(format: PluginFormat) -> &'static str {
+    match format {
+        PluginFormat::Clap => "external-plugin-clap",
+        PluginFormat::Vst3 => "external-plugin-vst3",
+        PluginFormat::AudioUnit => "external-plugin-au",
+    }
+}
+
+fn format_label(format: PluginFormat) -> &'static str {
+    match format {
+        PluginFormat::Clap => "CLAP",
+        PluginFormat::Vst3 => "VST3",
+        PluginFormat::AudioUnit => "AudioUnit",
     }
 }
 
@@ -1056,6 +1114,42 @@ mod tests {
             .unwrap();
         assert_eq!(clap.feature, "external-plugin-clap");
         assert_eq!(clap.scan_status, PluginFormat::Clap.build_scan_status());
+    }
+
+    #[test]
+    fn test_external_plugin_hosting_plan_reports_feature_gate() {
+        let desc = PluginDescriptor {
+            id: "planned.plugin".into(),
+            name: "Planned Plugin".into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: PathBuf::from("/tmp/planned-plugin.clap"),
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec![],
+            scan_status: PluginScanStatus::Discovered,
+        };
+
+        let plan = plan_external_plugin_hosting(&desc);
+
+        assert_eq!(plan.format, PluginFormat::Clap);
+        assert_eq!(plan.feature, "external-plugin-clap");
+        assert_eq!(plan.scan_status, PluginFormat::Clap.build_scan_status());
+        assert_eq!(plan.backend, select_hosting_backend(PluginFormat::Clap));
+        if plan.backend == ExternalHostingBackend::Passthrough {
+            assert!(!plan.native_backend_available);
+            assert!(
+                plan.reason
+                    .as_deref()
+                    .unwrap()
+                    .contains("deterministic passthrough")
+            );
+        } else {
+            assert!(plan.native_backend_available);
+            assert_eq!(plan.reason, None);
+        }
     }
 
     #[test]
