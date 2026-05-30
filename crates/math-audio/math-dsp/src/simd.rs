@@ -12,6 +12,11 @@
 // - aarch64: NEON fallback (processes 2 complex f32 at once using 128-bit registers)
 // - fallback: Scalar implementation for all other platforms
 //
+// The explicit AVX2/NEON/FCMA implementations are selected with compile-time
+// `target_feature` cfgs. Portable release builds therefore use the scalar
+// fallback unless built with flags such as `RUSTFLAGS="-C target-feature=+avx2"`
+// (or the corresponding aarch64 features).
+//
 // Performance gains: 2-4x speedup on supported platforms for FFT sizes >= 512
 
 use rustfft::num_complex::Complex;
@@ -985,7 +990,9 @@ pub fn flush_denormals_inplace(samples: &mut [f32]) {
 /// when IIR filter state variables (like biquad y1/y2) contain denormals.
 ///
 /// This function is idempotent and should be called once per audio processing thread.
-/// On unsupported platforms, this is a no-op.
+/// On unsupported platforms, this is a no-op. The register change remains active
+/// on the calling thread; use [`ScopedFtz`] when the effect must be limited to a
+/// lexical scope.
 ///
 /// Returns true if the flags were successfully set, false otherwise (e.g., unsupported platform).
 #[inline]

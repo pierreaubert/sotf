@@ -9,6 +9,7 @@
 // HARD RULES:
 // - No allocations in any method called from process() hot path
 // - All Vecs pre-allocated in new()/initialize()
+// - initialize() may allocate and must be called outside the audio callback
 // - No mutex locks
 // - No unsafe code
 
@@ -107,6 +108,7 @@ pub struct DynamicsCore {
     hold_counter: Vec<usize>,
     hysteresis_db: f32,
     hold_ms: f32,
+    hold_samples_cached: usize,
     range_db: f32,
 }
 
@@ -166,6 +168,7 @@ impl DynamicsCore {
             hold_counter: vec![0; channels],
             hysteresis_db: 3.0,
             hold_ms: 50.0,
+            hold_samples_cached: hold_ms_to_samples(50.0, sample_rate),
             range_db: 40.0,
         };
 
@@ -180,12 +183,16 @@ impl DynamicsCore {
     /// Update sample rate and recompute all derived coefficients.
     ///
     /// Resizes level detectors and lookahead buffer for new sample rate.
+    ///
+    /// This method rebuilds buffers and filter state, so it is not real-time
+    /// safe. Call it from setup or a manager thread, not from the audio callback.
     pub fn initialize(&mut self, sample_rate: u32) {
         self.sample_rate = sample_rate;
 
         // Recompute envelope coefficients
         self.attack_coeff = time_to_coeff(self.attack_ms, sample_rate);
         self.release_coeff = time_to_coeff(self.release_ms, sample_rate);
+        self.hold_samples_cached = hold_ms_to_samples(self.hold_ms, sample_rate);
 
         // Rebuild sidechain filters
         self.rebuild_sidechain_hpf_internal();
@@ -366,6 +373,7 @@ impl DynamicsCore {
     pub fn set_expand_params(&mut self, hysteresis_db: f32, hold_ms: f32, range_db: f32) {
         self.hysteresis_db = hysteresis_db;
         self.hold_ms = hold_ms;
+        self.hold_samples_cached = hold_ms_to_samples(hold_ms, self.sample_rate);
         self.range_db = range_db;
     }
 
@@ -487,7 +495,6 @@ impl DynamicsCore {
         ratio: f32,
         knee_db: f32,
     ) -> f32 {
-        let hold_samples = (self.hold_ms * 0.001 * self.sample_rate as f32) as usize;
         let open_th = threshold;
         let close_th = threshold - self.hysteresis_db;
 
@@ -495,7 +502,7 @@ impl DynamicsCore {
             GateState::Open => {
                 if input_db < open_th {
                     self.gate_state[ch] = GateState::Hold;
-                    self.hold_counter[ch] = hold_samples;
+                    self.hold_counter[ch] = self.hold_samples_cached;
                 }
                 0.0
             }
@@ -651,6 +658,11 @@ fn time_to_coeff(time_ms: f32, sample_rate: u32) -> f32 {
     } else {
         (-1.0 / (time_ms * 0.001 * sample_rate as f32)).exp()
     }
+}
+
+#[inline]
+fn hold_ms_to_samples(hold_ms: f32, sample_rate: u32) -> usize {
+    (hold_ms * 0.001 * sample_rate as f32) as usize
 }
 
 /// Compressor gain reduction: standard soft-knee formula.
@@ -830,6 +842,21 @@ mod tests {
         let atten = core.process_gate_state(0, -10.0, threshold, ratio, knee);
         assert_eq!(atten, 0.0);
         assert_eq!(core.gate_state(0), GateState::Open);
+    }
+
+    #[test]
+    fn test_gate_hold_samples_cached_updates() {
+        let mut core = DynamicsCore::new(DynamicsMode::Expand, 1, 48_000);
+        assert_eq!(core.hold_samples_cached, 2_400);
+
+        core.set_expand_params(3.0, 10.0, 40.0);
+        assert_eq!(core.hold_samples_cached, 480);
+
+        core.initialize(96_000);
+        assert_eq!(core.hold_samples_cached, 960);
+
+        let _ = core.process_gate_state(0, -30.0, -20.0, 4.0, 0.0);
+        assert_eq!(core.hold_counter[0], 960);
     }
 
     #[test]
