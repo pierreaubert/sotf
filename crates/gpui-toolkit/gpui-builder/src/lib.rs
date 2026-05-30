@@ -78,18 +78,15 @@ pub use stories::{
 pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
 };
-<<<<<<< HEAD
 pub use state::{
-    LayoutAction, LayoutCollapsedState, LayoutPreferenceSnapshot, LayoutRatioOverride,
-    LayoutState,
+    LayoutAction, LayoutCollapsedState, LayoutPreferenceSnapshot, LayoutRatioOverride, LayoutState,
 };
 pub use validation::{
     LayoutIssue, LayoutIssueKind, LayoutIssueSeverity, LayoutValidationReport, validate_layout,
-=======
+};
 pub use accessibility::{
     AccessibilityMetadata, AccessibilityNode, AccessibilityRole, AccessibilityTree,
     accessibility_tree_from_solved,
->>>>>>> dc1ce936 (prep for merge)
 };
 
 // gpui-pretext re-exports for text-measured sizing

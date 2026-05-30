@@ -14,6 +14,8 @@ Provides a structured way to define, register, and manage keyboard shortcuts in 
 - **Platform-aware formatting**: Shows Cmd on macOS, Ctrl on Windows/Linux
 - **Documented bindings**: Each binding carries a human-readable description for help UI
 - **Category system**: Organize bindings by category (Navigation, Editing, etc.)
+- **Command palette backend**: Searchable entries derived from documented bindings
+- **Which-key hints**: Next-key hint data for chorded bindings like `ctrl-k ctrl-s`
 
 ## Usage
 
@@ -35,8 +37,26 @@ impl KeybindingProvider for MyAppBindings {
 
 // Register providers and query bindings
 let mut registry = KeybindingRegistry::new();
-registry.register(Box::new(MyAppBindings));
-let bindings = registry.bindings_for(KeymapPreset::Default, None);
+registry.register(MyAppBindings);
+let bindings = registry.get_bindings(KeymapPreset::Default);
+```
+
+## Discovery UI Data
+
+`gpui-keybinding` exposes backend data for command palettes and which-key style
+overlays. UI crates can render these however they like without walking providers
+or reimplementing chord parsing.
+
+```rust
+use gpui_keybinding::{KeybindingRegistry, KeymapPreset};
+
+let registry = KeybindingRegistry::new();
+
+// Searchable command palette rows.
+let matches = registry.search_command_palette(KeymapPreset::Default, "save");
+
+// Next-key hints after the user presses a chord prefix.
+let hints = registry.keybinding_hints(KeymapPreset::Default, "ctrl-k");
 ```
 
 ## Built-in Presets
@@ -58,6 +78,7 @@ src/
 ├── registry.rs  # KeybindingRegistry — collects and queries bindings
 ├── conflict.rs  # Conflict detection
 ├── platform.rs  # Platform-aware key label formatting
+├── discovery.rs # Command palette entries and which-key hints
 └── presets/     # Built-in preset definitions
     ├── default.rs
     ├── vim.rs
