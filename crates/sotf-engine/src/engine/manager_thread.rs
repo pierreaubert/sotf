@@ -7,7 +7,8 @@
 use super::{
     AudioEngineState, ConfigEvent, ConfigWatcher, DecoderCommand, DecoderThread, EngineConfig,
     GcThread, ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
-    PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent, plan_output_access,
+    PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent, plan_dsd_output,
+    plan_output_access,
 };
 use crate::engine::processing_thread::{
     build_plugin_graph_host_with_policy, build_plugin_host_with_policy,
@@ -422,14 +423,7 @@ fn output_access_status_for_config(config: &EngineConfig) -> OutputAccessStatus 
 }
 
 fn dsd_output_status_for_mode(mode: DsdOutputMode) -> DsdOutputStatus {
-    match mode {
-        DsdOutputMode::Disabled => DsdOutputStatus::Disabled,
-        DsdOutputMode::PcmDecode => DsdOutputStatus::PcmDecodeAvailable,
-        DsdOutputMode::DopPreferred => DsdOutputStatus::DopFallbackPcm,
-        DsdOutputMode::DopRequired => DsdOutputStatus::DopUnavailable,
-        DsdOutputMode::NativePreferred => DsdOutputStatus::NativeFallbackPcm,
-        DsdOutputMode::NativeRequired => DsdOutputStatus::NativeUnavailable,
-    }
+    plan_dsd_output(mode).status
 }
 
 fn network_endpoint_status_for_mode(mode: NetworkEndpointMode) -> NetworkEndpointStatus {
@@ -549,16 +543,17 @@ fn run_manager_thread(
             "Exclusive output is required, but no exclusive backend is available".to_string()
         }));
     }
+    let dsd_output_plan = plan_dsd_output(config.dsd_output);
     if config.dsd_output.requires_bitstream_output()
         && matches!(
-            dsd_output_status_for_mode(config.dsd_output),
+            dsd_output_plan.status,
             DsdOutputStatus::DopUnavailable | DsdOutputStatus::NativeUnavailable
         )
     {
-        return Err(
-            "DSD bitstream output is required, but this engine build only supports DSF-to-PCM decode"
-                .to_string(),
-        );
+        return Err(dsd_output_plan.reason.unwrap_or_else(|| {
+            "DSD bitstream output is required, but no DSD bitstream backend is available"
+                .to_string()
+        }));
     }
 
     // Create config update queue for serializing plugin updates

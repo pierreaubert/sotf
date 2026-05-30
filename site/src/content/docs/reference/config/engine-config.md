@@ -76,3 +76,8 @@ The current decoder capability surface is:
 Runtime state reports this as `dsd_output_status`, with distinct fallback and
 unavailable states so UI can tell “playing via PCM fallback” from “required
 bitstream output is impossible.”
+
+Callers can also ask `plan_dsd_output(mode)` before opening a source. The
+returned `DsdOutputPlan` reports the selected backend (`disabled`, `pcm_decoder`,
+`dop_bitstream`, or `native_bitstream`), the runtime status, and the fallback or
+failure reason for preferred/required DoP and native DSD modes.
