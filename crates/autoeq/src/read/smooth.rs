@@ -1,5 +1,7 @@
 use crate::cea2034::Curve;
 use ndarray::Array1;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Psychoacoustic variable smoothing configuration
 ///
@@ -7,7 +9,7 @@ use ndarray::Array1;
 /// - Low frequencies (< 100 Hz): Fine resolution (1/48 octave) to preserve room modes
 /// - High frequencies (> 1 kHz): Coarse resolution (1/6 octave) to ignore comb filtering
 /// - Transition region (100 Hz - 1 kHz): Gradual interpolation between the two
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct PsychoacousticSmoothingConfig {
     /// Smoothing resolution below low_freq (bands per octave, e.g., 48 for 1/48 octave)
     pub low_freq_n: usize,

@@ -158,11 +158,52 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         ));
     }
 
+    if let Some(smoothing) = opt.psychoacoustic_smoothing {
+        if smoothing.low_freq_n == 0 || smoothing.high_freq_n == 0 {
+            result.add_error(
+                "psychoacoustic_smoothing low_freq_n/high_freq_n must be at least 1".to_string(),
+            );
+        }
+        if smoothing.low_freq <= 0.0 || smoothing.high_freq <= smoothing.low_freq {
+            result.add_error(format!(
+                "psychoacoustic_smoothing requires 0 < low_freq < high_freq (got {:.1}..{:.1})",
+                smoothing.low_freq, smoothing.high_freq
+            ));
+        }
+    }
+
+    if let Some(asym) = opt.asymmetric_loss_config {
+        if asym.transition_freq <= 0.0 {
+            result.add_error(format!(
+                "asymmetric_loss_config.transition_freq ({}) must be positive",
+                asym.transition_freq
+            ));
+        }
+        if asym.peak_weight < 0.0
+            || asym.dip_weight < 0.0
+            || asym.bass_peak_weight < 0.0
+            || asym.bass_dip_weight < 0.0
+        {
+            result.add_error("asymmetric_loss_config weights must be non-negative".to_string());
+        }
+    }
+
     if opt.min_db > opt.max_db {
         result.add_error(format!(
             "min_db ({}) must be less than or equal to max_db ({})",
             opt.min_db, opt.max_db
         ));
+    }
+
+    if let Some(excursion) = &opt.excursion_protection {
+        if excursion.f3_reference_min_hz <= 0.0
+            || excursion.f3_reference_max_hz <= excursion.f3_reference_min_hz
+        {
+            result.add_error(format!(
+                "excursion_protection F3 reference band must satisfy 0 < min < max (got {:.1}..{:.1})",
+                excursion.f3_reference_min_hz, excursion.f3_reference_max_hz
+            ));
+        }
     }
 
     if let Some(auto) = &opt.auto_optimizer

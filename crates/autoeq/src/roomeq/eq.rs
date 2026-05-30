@@ -95,6 +95,7 @@ const SCHROEDER_PLAUSIBLE_MAX_HZ: f64 = 800.0;
 /// workflow this estimator feeds. Treat it as a contaminated low-frequency
 /// fit and fall back to the configured Schroeder value instead.
 const MAX_PLAUSIBLE_BASS_RT60_SECONDS: f32 = 3.0;
+const BACKWARD_ELIMINATE_EVAL_WARNING_THRESHOLD: usize = 512;
 
 /// Find the length (in samples) at which to truncate an impulse
 /// response so the Schroeder backward integration sees clean decay
@@ -238,38 +239,50 @@ fn measure_bass_rt60(mono_ir: &[f32], ir_sr: f32) -> Option<f64> {
 
     // The two octave bands immediately below the typical Schroeder
     // region. `compute_rt60_spectrum` runs a bandpass filter per
-    // band and feeds each band to `compute_rt60_broadband`. Pick
-    // the longer of the two valid values because (a) the lower
-    // band is usually what governs modal density, and (b) taking
-    // the max is conservative — it biases toward a higher
-    // Schroeder frequency, which widens the modal-constraint
-    // region rather than under-covering it.
+    // band and feeds each band to `compute_rt60_broadband`. Use a
+    // representative weighted estimate rather than the max, so one
+    // noisy band does not dominate the Schroeder override.
     let bass_centers = [125.0_f32, 250.0];
     let bass_rt60s = math_audio_dsp::analysis::compute_rt60_spectrum(trimmed, ir_sr, &bass_centers);
-    let rejected_rt60_max = bass_rt60s
-        .iter()
-        .copied()
-        .filter(|v| *v > MAX_PLAUSIBLE_BASS_RT60_SECONDS)
-        .fold(0.0_f32, f32::max);
-    if rejected_rt60_max > 0.0 {
-        log::warn!(
-            "  Ignoring implausible bass RT60 {:.3} s (> {:.1} s); \
-             likely low-frequency noise or an unreliable decay fit",
-            rejected_rt60_max,
-            MAX_PLAUSIBLE_BASS_RT60_SECONDS
-        );
+    for (center, rt60) in bass_centers.iter().zip(bass_rt60s.iter()) {
+        if *rt60 > 0.0 && *rt60 <= MAX_PLAUSIBLE_BASS_RT60_SECONDS {
+            log::info!("  Bass RT60 {:.0} Hz: {:.3} s", center, rt60);
+        } else if *rt60 > MAX_PLAUSIBLE_BASS_RT60_SECONDS {
+            log::warn!(
+                "  Ignoring implausible bass RT60 {:.3} s at {:.0} Hz (> {:.1} s); \
+                 likely low-frequency noise or an unreliable decay fit",
+                rt60,
+                center,
+                MAX_PLAUSIBLE_BASS_RT60_SECONDS
+            );
+        } else {
+            log::info!("  Bass RT60 {:.0} Hz: unavailable", center);
+        }
     }
 
-    let rt60_max = bass_rt60s
-        .iter()
-        .copied()
-        .filter(|v| *v > 0.0 && *v <= MAX_PLAUSIBLE_BASS_RT60_SECONDS)
-        .fold(0.0_f32, f32::max);
-    if rt60_max > 0.0 {
-        Some(rt60_max as f64)
-    } else {
-        None
+    let chosen = representative_bass_rt60(&bass_centers, &bass_rt60s);
+    if let Some(rt60) = chosen {
+        log::info!(
+            "  Chosen bass RT60 representative estimate: {:.3} s (inverse-frequency weighted 125/250 Hz)",
+            rt60
+        );
     }
+    chosen
+}
+
+fn representative_bass_rt60(band_centers: &[f32], rt60s: &[f32]) -> Option<f64> {
+    let mut weighted_sum = 0.0;
+    let mut weight_sum = 0.0;
+
+    for (&center, &rt60) in band_centers.iter().zip(rt60s.iter()) {
+        if center > 0.0 && rt60 > 0.0 && rt60 <= MAX_PLAUSIBLE_BASS_RT60_SECONDS {
+            let weight = 1.0 / center as f64;
+            weighted_sum += rt60 as f64 * weight;
+            weight_sum += weight;
+        }
+    }
+
+    (weight_sum > 0.0).then_some(weighted_sum / weight_sum)
 }
 
 /// Decide whether a measured RT60 + `room_dimensions` should
@@ -301,7 +314,7 @@ fn decide_schroeder_override(
     };
 
     log::info!(
-        "  RT60 from measured IR (bass band, max of 125/250 Hz): {:.3} s \
+        "  RT60 from measured IR (representative bass-band 125/250 Hz): {:.3} s \
          (Schroeder backward integration, least-squares T30/T20)",
         rt60
     );
@@ -616,8 +629,14 @@ fn prepare_single_channel_eq(
     // Apply psychoacoustic smoothing if enabled
     let mut normalized_curve = normalized_curve_unsmoothed;
     if config.psychoacoustic {
-        log::info!("  Applying psychoacoustic smoothing (1/48 oct < 100 Hz, 1/6 oct > 1 kHz)");
-        let smoothing_config = crate::read::PsychoacousticSmoothingConfig::default();
+        let smoothing_config = config.psychoacoustic_smoothing_config();
+        log::info!(
+            "  Applying psychoacoustic smoothing (1/{} oct < {:.0} Hz, 1/{} oct > {:.0} Hz)",
+            smoothing_config.low_freq_n,
+            smoothing_config.low_freq,
+            smoothing_config.high_freq_n,
+            smoothing_config.high_freq
+        );
         normalized_curve = crate::read::smooth_psychoacoustic(&normalized_curve, &smoothing_config);
     }
 
@@ -732,6 +751,7 @@ fn prepare_single_channel_eq(
     // Propagate EPA config so compute_base_fitness uses user-provided
     // weights when loss_type == LossType::Epa.
     objective_data.epa_config = config.epa_config.clone();
+    objective_data.asymmetric_loss_config = config.asymmetric_loss_config();
     objective_data.temporal_masking_modes = temporal_masking_modes;
     // Hand the SSIR / decomposed-correction mode list over to the DE
     // optimizer's smart initial-guess generator so filters actually
@@ -995,11 +1015,23 @@ fn backward_eliminate(
     threshold: f64,
 ) -> (Vec<Biquad>, f64) {
     let mut remaining = filters;
+    let worst_case_subset_evals = remaining
+        .len()
+        .saturating_mul(remaining.len().saturating_sub(1))
+        / 2;
+    if worst_case_subset_evals > BACKWARD_ELIMINATE_EVAL_WARNING_THRESHOLD {
+        log::warn!(
+            "  Backward elimination will evaluate up to {} filter subsets for {} filters (O(N^2)); consider lowering num_filters or disabling elimination for large batches",
+            worst_case_subset_evals,
+            remaining.len()
+        );
+    }
 
     // Evaluate current loss from the full filter set
     let peq_vec: Peq = remaining.iter().map(|b| (1.0, b.clone())).collect();
     let x_full = crate::x2peq::peq2x(&peq_vec, peq_model);
     let mut current_loss = crate::optim::compute_base_fitness(&x_full, objective_data);
+    let mut subset: Peq = Vec::with_capacity(remaining.len().saturating_sub(1));
 
     loop {
         if remaining.len() <= 1 {
@@ -1011,12 +1043,14 @@ fn backward_eliminate(
         let mut min_idx = 0;
 
         for i in 0..remaining.len() {
-            let subset: Peq = remaining
-                .iter()
-                .enumerate()
-                .filter(|(j, _)| *j != i)
-                .map(|(_, b)| (1.0, b.clone()))
-                .collect();
+            subset.clear();
+            subset.extend(
+                remaining
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, _)| *j != i)
+                    .map(|(_, b)| (1.0, b.clone())),
+            );
 
             let x_subset = crate::x2peq::peq2x(&subset, peq_model);
             let subset_loss = crate::optim::compute_base_fitness(&x_subset, objective_data);
@@ -1107,7 +1141,11 @@ pub(super) fn resolve_multi_measurement_auto_optimizer_config(
     let data_max_freq = representative_curve.freq[representative_curve.freq.len() - 1];
     let effective_min_freq = config.min_freq.max(data_min_freq);
     let effective_max_freq = config.max_freq.min(data_max_freq);
-    let detected_f3_hz = match super::excursion::detect_f3(&representative_curve, None) {
+    let detected_f3_hz = match super::excursion::detect_f3_with_config(
+        &representative_curve,
+        None,
+        config.excursion_protection.as_ref(),
+    ) {
         Ok(f3_result)
             if f3_result.f3_hz > effective_min_freq && f3_result.f3_hz < effective_max_freq =>
         {
@@ -1411,7 +1449,7 @@ fn optimize_channel_eq_multi_inner(
                     curves.len()
                 );
             }
-            let smoothing_config = crate::read::PsychoacousticSmoothingConfig::default();
+            let smoothing_config = config.psychoacoustic_smoothing_config();
             normalized_curve =
                 crate::read::smooth_psychoacoustic(&normalized_curve, &smoothing_config);
         }
@@ -1475,6 +1513,7 @@ fn optimize_channel_eq_multi_inner(
         // ObjectiveData so `compute_base_fitness` uses the user-provided
         // weights when `loss_type == LossType::Epa`.
         objective_data.epa_config = config.epa_config.clone();
+        objective_data.asymmetric_loss_config = config.asymmetric_loss_config();
         objective_data.smoothness_penalty = optim_params_multi.smoothness_penalty.clone();
 
         if i == 0 {
@@ -1742,7 +1781,7 @@ fn optimize_spatial_robustness(
     // Apply psychoacoustic smoothing if enabled
     if config.psychoacoustic {
         log::info!("  Applying psychoacoustic smoothing to spatially averaged curve");
-        let smoothing_config = crate::read::PsychoacousticSmoothingConfig::default();
+        let smoothing_config = config.psychoacoustic_smoothing_config();
         normalized_curve = crate::read::smooth_psychoacoustic(&normalized_curve, &smoothing_config);
     }
 
@@ -1829,6 +1868,7 @@ fn optimize_spatial_robustness(
     // Propagate EPA config so compute_base_fitness uses user-provided
     // weights when loss_type == LossType::Epa.
     objective_data.epa_config = config.epa_config.clone();
+    objective_data.asymmetric_loss_config = config.asymmetric_loss_config();
     objective_data.smoothness_penalty = optim_params.smoothness_penalty.clone();
 
     let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&optim_params);
@@ -2331,6 +2371,32 @@ mod tests {
         let dc = dc_config_with_dims(4.0, 3.0, 2.5);
         let result = decide_schroeder_override(Some(0.0), &dc, 250.0);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn representative_bass_rt60_weights_125_and_250_hz() {
+        let centers = [125.0_f32, 250.0];
+        let rt60s = [0.30_f32, 0.90];
+
+        let chosen = representative_bass_rt60(&centers, &rt60s).expect("valid RT60 estimate");
+
+        assert!(
+            (chosen - 0.50).abs() < 1e-6,
+            "inverse-frequency weighting should choose 0.50 s, got {chosen:.3}"
+        );
+    }
+
+    #[test]
+    fn representative_bass_rt60_ignores_implausible_band() {
+        let centers = [125.0_f32, 250.0];
+        let rt60s = [MAX_PLAUSIBLE_BASS_RT60_SECONDS + 0.5, 0.60];
+
+        let chosen = representative_bass_rt60(&centers, &rt60s).expect("one valid band remains");
+
+        assert!(
+            (chosen - 0.60).abs() < 1e-6,
+            "only plausible 250 Hz band should remain, got {chosen:.3}"
+        );
     }
 
     // ---------------------------------------------------------------

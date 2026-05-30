@@ -19,8 +19,8 @@ use self::de::optimize_filters_autoeq_with_callback;
 use super::cli::PeqModel;
 use super::constraints::{viol_ceiling_from_spl, viol_min_gain_from_xs, viol_spacing_from_xs};
 use super::loss::{
-    DriversLossData, HeadphoneLossData, LossType, SpeakerLossData, drivers_flat_loss, flat_loss,
-    flat_loss_asymmetric, headphone_loss, speaker_score_loss,
+    AsymmetricLossConfig, DriversLossData, HeadphoneLossData, LossType, SpeakerLossData,
+    drivers_flat_loss, flat_loss, headphone_loss, speaker_score_loss, weighted_mse_asymmetric,
 };
 use super::x2peq::x2spl;
 use crate::Curve;
@@ -204,6 +204,8 @@ pub struct ObjectiveData {
     /// full `bass_dip_weight` / `dip_weight` of the asymmetric config.
     /// Must have the same length as `freqs` when provided.
     pub null_suppression: Option<Array1<f64>>,
+    /// Peak/dip weights for [`LossType::SpeakerFlatAsymmetric`].
+    pub asymmetric_loss_config: AsymmetricLossConfig,
     /// Optional smoothness regularizer on the correction curve.
     /// `None` disables the penalty.
     pub smoothness_penalty: Option<SmoothnessPenaltyConfig>,
@@ -648,15 +650,23 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                     ..Default::default()
                 };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
-                flat_loss_asymmetric(
+                weighted_mse_asymmetric(
                     &data.freqs,
                     &smoothed.spl,
                     data.min_freq,
                     data.max_freq,
+                    &data.asymmetric_loss_config,
                     null_mask,
                 )
             } else {
-                flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq, null_mask)
+                weighted_mse_asymmetric(
+                    &data.freqs,
+                    &error,
+                    data.min_freq,
+                    data.max_freq,
+                    &data.asymmetric_loss_config,
+                    null_mask,
+                )
             };
             let smoothness = data
                 .smoothness_penalty
@@ -882,15 +892,23 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     ..Default::default()
                 };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
-                flat_loss_asymmetric(
+                weighted_mse_asymmetric(
                     &data.freqs,
                     &smoothed.spl,
                     data.min_freq,
                     data.max_freq,
+                    &data.asymmetric_loss_config,
                     null_mask,
                 )
             } else {
-                flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq, null_mask)
+                weighted_mse_asymmetric(
+                    &data.freqs,
+                    &error,
+                    data.min_freq,
+                    data.max_freq,
+                    &data.asymmetric_loss_config,
+                    null_mask,
+                )
             }
         }
         LossType::SpeakerScore => {

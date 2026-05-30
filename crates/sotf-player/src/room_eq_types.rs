@@ -1609,6 +1609,8 @@ pub struct ExcursionProtectionConfig {
     pub enabled: bool,
     pub auto_detect_f3: bool,
     pub manual_f3_hz: f64,
+    pub f3_reference_min_hz: f64,
+    pub f3_reference_max_hz: f64,
     pub filter_order: usize,
     pub filter_type: String,
     pub margin_octaves: f64,
@@ -1620,6 +1622,8 @@ impl Default for ExcursionProtectionConfig {
             enabled: false,
             auto_detect_f3: true,
             manual_f3_hz: 40.0,
+            f3_reference_min_hz: 100.0,
+            f3_reference_max_hz: 200.0,
             filter_order: 4,
             filter_type: "lr".to_string(),
             margin_octaves: 0.25,
@@ -2666,6 +2670,8 @@ impl RoomEqOptimizerConfig {
         if let Some(ref ep) = backend.excursion_protection {
             self.excursion_protection.auto_detect_f3 = ep.auto_detect_f3;
             self.excursion_protection.manual_f3_hz = ep.manual_f3_hz.unwrap_or(40.0);
+            self.excursion_protection.f3_reference_min_hz = ep.f3_reference_min_hz;
+            self.excursion_protection.f3_reference_max_hz = ep.f3_reference_max_hz;
             self.excursion_protection.filter_order = ep.filter_order;
             self.excursion_protection.filter_type = match ep.filter_type {
                 autoeq::roomeq::HighpassType::Butterworth => "bw".to_string(),
@@ -2865,6 +2871,8 @@ impl RoomEqOptimizerConfig {
                 enabled: true,
                 auto_detect_f3: self.excursion_protection.auto_detect_f3,
                 manual_f3_hz: Some(self.excursion_protection.manual_f3_hz),
+                f3_reference_min_hz: self.excursion_protection.f3_reference_min_hz,
+                f3_reference_max_hz: self.excursion_protection.f3_reference_max_hz,
                 filter_order: self.excursion_protection.filter_order,
                 filter_type,
                 margin_octaves: self.excursion_protection.margin_octaves,

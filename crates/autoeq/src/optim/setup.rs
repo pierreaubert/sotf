@@ -91,6 +91,7 @@ pub fn setup_objective_data(
         temporal_masking_modes: Vec::new(),
         detected_problems: Vec::new(),
         null_suppression: None,
+        asymmetric_loss_config: crate::loss::AsymmetricLossConfig::default(),
         smoothness_penalty: params.smoothness_penalty.clone(),
     };
 
@@ -140,6 +141,7 @@ pub fn setup_drivers_objective_data(
         temporal_masking_modes: Vec::new(),
         detected_problems: Vec::new(),
         null_suppression: None,
+        asymmetric_loss_config: crate::loss::AsymmetricLossConfig::default(),
         smoothness_penalty: params.smoothness_penalty.clone(),
     }
 }
@@ -943,6 +945,7 @@ pub fn setup_multisub_objective_data(
         temporal_masking_modes: Vec::new(),
         detected_problems: Vec::new(),
         null_suppression: None,
+        asymmetric_loss_config: crate::loss::AsymmetricLossConfig::default(),
         smoothness_penalty: params.smoothness_penalty.clone(),
     }
 }

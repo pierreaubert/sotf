@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::MeasurementSource;
+use crate::loss::AsymmetricLossConfig;
 use crate::optim::SmoothnessPenaltyConfig;
+use crate::read::PsychoacousticSmoothingConfig;
 
 /// Configuration version (semantic versioning)
 pub fn default_config_version() -> String {
@@ -1150,6 +1152,12 @@ pub struct ExcursionProtectionConfig {
     /// Manual F3 override in Hz (used if auto_detect_f3 is false)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manual_f3_hz: Option<f64>,
+    /// Lower bound of the reference band used for F3 auto-detection.
+    #[serde(default = "default_f3_reference_min_hz")]
+    pub f3_reference_min_hz: f64,
+    /// Upper bound of the reference band used for F3 auto-detection.
+    #[serde(default = "default_f3_reference_max_hz")]
+    pub f3_reference_max_hz: f64,
     /// Filter order (2 = 12dB/oct, 4 = 24dB/oct)
     #[serde(default = "default_filter_order")]
     pub filter_order: usize,
@@ -1164,6 +1172,12 @@ pub struct ExcursionProtectionConfig {
 fn default_true() -> bool {
     true
 }
+fn default_f3_reference_min_hz() -> f64 {
+    100.0
+}
+fn default_f3_reference_max_hz() -> f64 {
+    200.0
+}
 fn default_filter_order() -> usize {
     4
 }
@@ -1177,6 +1191,8 @@ impl Default for ExcursionProtectionConfig {
             enabled: false,
             auto_detect_f3: true,
             manual_f3_hz: None,
+            f3_reference_min_hz: default_f3_reference_min_hz(),
+            f3_reference_max_hz: default_f3_reference_max_hz(),
             filter_order: default_filter_order(),
             filter_type: HighpassType::LinkwitzRiley,
             margin_octaves: default_margin_octaves(),
@@ -2309,12 +2325,18 @@ pub struct OptimizerConfig {
     /// Enable psychoacoustic preprocessing
     #[serde(default = "default_psychoacoustic")]
     pub psychoacoustic: bool,
+    /// Psychoacoustic variable-smoothing settings. `None` preserves the built-in default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub psychoacoustic_smoothing: Option<PsychoacousticSmoothingConfig>,
     /// Loss function smoothing resolution as 1/N octave
     #[serde(default = "default_smooth_n")]
     pub smooth_n: usize,
     /// Enable asymmetric loss (peaks penalized 2x more than dips)
     #[serde(default = "default_asymmetric_loss")]
     pub asymmetric_loss: bool,
+    /// Asymmetric loss weights. `None` preserves the built-in default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asymmetric_loss_config: Option<AsymmetricLossConfig>,
     /// Optimization convergence tolerance (relative)
     #[serde(default = "default_tolerance")]
     pub tolerance: f64,
@@ -2493,8 +2515,10 @@ impl Default for OptimizerConfig {
             bo_acquisition: None,
             bo_ehvi: None,
             psychoacoustic: default_psychoacoustic(),
+            psychoacoustic_smoothing: None,
             smooth_n: default_smooth_n(),
             asymmetric_loss: default_asymmetric_loss(),
+            asymmetric_loss_config: None,
             tolerance: default_tolerance(),
             atolerance: default_atolerance(),
             allow_delay: None,
@@ -2525,6 +2549,18 @@ impl Default for OptimizerConfig {
 }
 
 impl OptimizerConfig {
+    /// Resolve psychoacoustic smoothing settings, falling back to the historical
+    /// 1/48 octave below 100 Hz through 1/6 octave above 1 kHz curve.
+    pub fn psychoacoustic_smoothing_config(&self) -> PsychoacousticSmoothingConfig {
+        self.psychoacoustic_smoothing.unwrap_or_default()
+    }
+
+    /// Resolve asymmetric loss weights, falling back to the historical peak/dip
+    /// weighting.
+    pub fn asymmetric_loss_config(&self) -> AsymmetricLossConfig {
+        self.asymmetric_loss_config.unwrap_or_default()
+    }
+
     /// Resolve the effective `allow_delay` value.
     ///
     /// Defaults to `true` whenever `processing_mode` introduces any non-zero
@@ -3074,6 +3110,40 @@ mod tests {
     fn test_optimizer_config_default_algorithm_is_cmaes() {
         let config = OptimizerConfig::default();
         assert_eq!(config.algorithm, "autoeq:cmaes");
+    }
+
+    #[test]
+    fn test_optimizer_config_resolves_new_acoustic_defaults() {
+        let config = OptimizerConfig::default();
+        assert_eq!(
+            config.psychoacoustic_smoothing_config(),
+            PsychoacousticSmoothingConfig::default()
+        );
+        assert_eq!(
+            config.asymmetric_loss_config(),
+            AsymmetricLossConfig::default()
+        );
+
+        let custom_smoothing = PsychoacousticSmoothingConfig {
+            low_freq_n: 24,
+            high_freq_n: 3,
+            low_freq: 80.0,
+            high_freq: 800.0,
+        };
+        let custom_asym = AsymmetricLossConfig {
+            peak_weight: 3.0,
+            dip_weight: 0.5,
+            bass_peak_weight: 6.0,
+            bass_dip_weight: 0.25,
+            transition_freq: 180.0,
+        };
+        let config = OptimizerConfig {
+            psychoacoustic_smoothing: Some(custom_smoothing),
+            asymmetric_loss_config: Some(custom_asym),
+            ..Default::default()
+        };
+        assert_eq!(config.psychoacoustic_smoothing_config(), custom_smoothing);
+        assert_eq!(config.asymmetric_loss_config(), custom_asym);
     }
 
     #[test]

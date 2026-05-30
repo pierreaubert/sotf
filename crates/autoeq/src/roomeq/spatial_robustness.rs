@@ -202,6 +202,7 @@ pub fn correction_depth_mask(
 ) -> Array1<f64> {
     let len = freq.len();
     let mut mask = Array1::zeros(len);
+    let min_depth = config.min_correction_depth.clamp(0.0, 1.0);
 
     // Sigmoid: maps (threshold - variance) / width through 1/(1+exp(-x))
     for i in 0..len {
@@ -217,7 +218,7 @@ pub fn correction_depth_mask(
                 (config.variance_threshold_db - spatial_variance[i]) / config.transition_width_db;
             1.0 / (1.0 + (-x).exp())
         };
-        mask[i] = config.min_correction_depth + (1.0 - config.min_correction_depth) * sigmoid;
+        mask[i] = min_depth + (1.0 - min_depth) * sigmoid;
     }
 
     // Smooth the mask in log-frequency domain to prevent rapid oscillations
@@ -720,6 +721,22 @@ mod tests {
             depth[0] >= config.min_correction_depth,
             "should never go below min_correction_depth"
         );
+    }
+
+    #[test]
+    fn test_correction_depth_allows_zero_when_configured() {
+        let freq = Array1::from_vec(vec![100.0]);
+        let variance = Array1::from_vec(vec![10.0]);
+        let config = SpatialRobustnessConfig {
+            transition_width_db: 0.0,
+            min_correction_depth: 0.0,
+            mask_smoothing_octaves: 0.0,
+            ..Default::default()
+        };
+
+        let depth = correction_depth_mask(&freq, &variance, &config);
+
+        assert_eq!(depth[0], 0.0);
     }
 
     #[test]

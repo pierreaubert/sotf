@@ -111,7 +111,7 @@
     "version": {
       "description": "Configuration version (semantic versioning, e.g. \"1.0.0\")",
       "type": "string",
-      "default": "2.1.0"
+      "default": "2.0.0"
     }
   },
   "required": [
@@ -314,6 +314,44 @@
             "kind"
           ]
         }
+      ]
+    },
+    "AsymmetricLossConfig": {
+      "description": "Configuration for asymmetric loss weighting.\n\nWeights apply per sample as a multiplier on the squared error. The\npeak / dip split uses a sigmoid crossfade in log frequency around\n`transition_freq` so the transition from bass weighting to mid/treble\nweighting is smooth. Narrow-null suppression is a separate mask passed\nto the loss function at call time (see\n[`crate::roomeq::impulse_analysis::build_null_suppression_mask`]).",
+      "type": "object",
+      "properties": {
+        "bass_dip_weight": {
+          "description": "Weight for bass dips (below `transition_freq`). Default: 1.0\n\nHistorically this defaulted to 0.2 (near-ignore) as a crude\nproxy for \"do not fight acoustic nulls\". With explicit narrow-null\nsuppression in place, broad bass dips (SBIR, baffle step) become\nlegitimate correction targets and the dip weight is aligned with\nthe mid/treble default.",
+          "type": "number",
+          "format": "double"
+        },
+        "bass_peak_weight": {
+          "description": "Weight for bass peaks (below `transition_freq`). Default: 5.0",
+          "type": "number",
+          "format": "double"
+        },
+        "dip_weight": {
+          "description": "Weight for negative errors (dips above `transition_freq`). Default: 1.0",
+          "type": "number",
+          "format": "double"
+        },
+        "peak_weight": {
+          "description": "Weight for positive errors (peaks above `transition_freq`). Default: 2.0",
+          "type": "number",
+          "format": "double"
+        },
+        "transition_freq": {
+          "description": "Transition frequency between bass and mid/treble weighting. Default: 300.0 Hz",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "peak_weight",
+        "dip_weight",
+        "bass_peak_weight",
+        "bass_dip_weight",
+        "transition_freq"
       ]
     },
     "AutoOptimizerConfig": {
@@ -881,7 +919,7 @@
           ]
         },
         "type": {
-          "description": "Crossover type (e.g. \"LR24\", \"LR48\", \"Butterworth24\")",
+          "description": "Crossover type (e.g. \"LR24\", \"LR48\", \"Butterworth24\", \"LinearPhase\")",
           "type": "string"
         }
       },
@@ -1435,6 +1473,18 @@
           "description": "Enable excursion protection",
           "type": "boolean",
           "default": false
+        },
+        "f3_reference_max_hz": {
+          "description": "Upper bound of the reference band used for F3 auto-detection.",
+          "type": "number",
+          "format": "double",
+          "default": 200.0
+        },
+        "f3_reference_min_hz": {
+          "description": "Lower bound of the reference band used for F3 auto-detection.",
+          "type": "number",
+          "format": "double",
+          "default": 100.0
         },
         "filter_order": {
           "description": "Filter order (2 = 12dB/oct, 4 = 24dB/oct)",
@@ -2158,6 +2208,17 @@
           "type": "boolean",
           "default": true
         },
+        "asymmetric_loss_config": {
+          "description": "Asymmetric loss weights. `None` preserves the built-in default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AsymmetricLossConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "atolerance": {
           "description": "Optimization convergence tolerance (absolute)",
           "type": "number",
@@ -2496,6 +2557,17 @@
           "type": "boolean",
           "default": true
         },
+        "psychoacoustic_smoothing": {
+          "description": "Psychoacoustic variable-smoothing settings. `None` preserves the built-in default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PsychoacousticSmoothingConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "refine": {
           "description": "Whether to run local refinement after global optimization",
           "type": "boolean",
@@ -2732,6 +2804,40 @@
           "type": "string",
           "const": "kautz_modal"
         }
+      ]
+    },
+    "PsychoacousticSmoothingConfig": {
+      "description": "Psychoacoustic variable smoothing configuration\n\nDifferent frequency ranges benefit from different smoothing levels:\n- Low frequencies (< 100 Hz): Fine resolution (1/48 octave) to preserve room modes\n- High frequencies (> 1 kHz): Coarse resolution (1/6 octave) to ignore comb filtering\n- Transition region (100 Hz - 1 kHz): Gradual interpolation between the two",
+      "type": "object",
+      "properties": {
+        "high_freq": {
+          "description": "Upper transition frequency in Hz (default: 1000 Hz)",
+          "type": "number",
+          "format": "double"
+        },
+        "high_freq_n": {
+          "description": "Smoothing resolution above high_freq (bands per octave, e.g., 6 for 1/6 octave)",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "low_freq": {
+          "description": "Lower transition frequency in Hz (default: 100 Hz)",
+          "type": "number",
+          "format": "double"
+        },
+        "low_freq_n": {
+          "description": "Smoothing resolution below low_freq (bands per octave, e.g., 48 for 1/48 octave)",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "low_freq_n",
+        "high_freq_n",
+        "low_freq",
+        "high_freq"
       ]
     },
     "RecordingConfiguration": {

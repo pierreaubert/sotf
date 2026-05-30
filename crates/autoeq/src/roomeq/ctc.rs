@@ -26,6 +26,22 @@ use std::path::{Path, PathBuf};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
 const CTC_ARTIFACT_VERSION: &str = "ctc-recommended-v1";
+const CTC_CONDITION_WARNING_THRESHOLD: f64 = 1.0e6;
+
+fn invalid_ctc_configuration(message: impl Into<String>) -> AutoeqError {
+    let message = message.into();
+    log::error!("  CTC configuration invalid: {}", message);
+    AutoeqError::InvalidConfiguration { message }
+}
+
+fn ctc_condition_warning(max_condition: f64) -> Option<String> {
+    (max_condition.is_finite() && max_condition > CTC_CONDITION_WARNING_THRESHOLD).then(|| {
+        format!(
+            "CTC transfer matrix is ill-conditioned: max condition number {:.3e} exceeds {:.3e}; filters may amplify measurement noise or need stronger regularization",
+            max_condition, CTC_CONDITION_WARNING_THRESHOLD
+        )
+    })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CtcReport {
@@ -111,69 +127,52 @@ pub fn maybe_generate_recommended_xtc(
         return Ok(None);
     }
     if config.fir_taps < 16 || !config.fir_taps.is_power_of_two() {
-        return Err(AutoeqError::InvalidConfiguration {
-            message: "ctc.fir_taps must be a power of two >= 16".to_string(),
-        });
+        return Err(invalid_ctc_configuration(
+            "ctc.fir_taps must be a power of two >= 16",
+        ));
     }
 
     let sample_rate_u32 = checked_sample_rate(sample_rate)?;
     let fft_size = config.fir_taps;
     let mut spectrum = match config.matrix_source.as_str() {
         "measured" => {
-            let measurements =
-                config
-                    .measurements
-                    .as_ref()
-                    .ok_or(AutoeqError::InvalidConfiguration {
-                        message: "ctc.matrix_source='measured' requires ctc.measurements"
-                            .to_string(),
-                    })?;
+            let measurements = config.measurements.as_ref().ok_or_else(|| {
+                invalid_ctc_configuration("ctc.matrix_source='measured' requires ctc.measurements")
+            })?;
             load_measured_spectrum(measurements, &config.window, sample_rate_u32, fft_size)?
         }
         "raw_sweep" => {
-            let measurements =
-                config
-                    .measurements
-                    .as_ref()
-                    .ok_or(AutoeqError::InvalidConfiguration {
-                        message: "ctc.matrix_source='raw_sweep' requires ctc.measurements"
-                            .to_string(),
-                    })?;
+            let measurements = config.measurements.as_ref().ok_or_else(|| {
+                invalid_ctc_configuration("ctc.matrix_source='raw_sweep' requires ctc.measurements")
+            })?;
             load_raw_sweep_spectrum(measurements, config, sample_rate_u32, fft_size)?
         }
         "hrtf_database" | "hrtf" => {
-            let hrtf = config
-                .hrtf
-                .as_ref()
-                .ok_or(AutoeqError::InvalidConfiguration {
-                    message: "ctc.matrix_source='hrtf_database' requires ctc.hrtf".to_string(),
-                })?;
+            let hrtf = config.hrtf.as_ref().ok_or_else(|| {
+                invalid_ctc_configuration("ctc.matrix_source='hrtf_database' requires ctc.hrtf")
+            })?;
             load_hrtf_spectrum(hrtf, sample_rate_u32, fft_size)?
         }
         other => {
-            return Err(AutoeqError::InvalidConfiguration {
-                message: format!(
-                    "unsupported ctc.matrix_source '{}'; expected 'measured', 'raw_sweep', or 'hrtf_database'",
-                    other
-                ),
-            });
+            return Err(invalid_ctc_configuration(format!(
+                "unsupported ctc.matrix_source '{}'; expected 'measured', 'raw_sweep', or 'hrtf_database'",
+                other
+            )));
         }
     };
 
     for speaker in &spectrum.speakers {
         if !sys.speakers.contains_key(speaker) {
-            return Err(AutoeqError::InvalidConfiguration {
-                message: format!(
-                    "ctc speaker '{}' is not present in system.speakers",
-                    speaker
-                ),
-            });
+            return Err(invalid_ctc_configuration(format!(
+                "ctc speaker '{}' is not present in system.speakers",
+                speaker
+            )));
         }
     }
     if spectrum.speakers.len() < 2 {
-        return Err(AutoeqError::InvalidConfiguration {
-            message: "ctc requires at least two speaker roles".to_string(),
-        });
+        return Err(invalid_ctc_configuration(
+            "ctc requires at least two speaker roles",
+        ));
     }
     let room_eq_correction_channels = if config.include_room_eq_dsp {
         if let Some(channels) = channels {
@@ -251,6 +250,9 @@ pub fn maybe_generate_recommended_xtc(
         total_error += errors.iter().sum::<f64>() / errors.len().max(1) as f64;
         worst_position_error = worst_position_error.max(errors.iter().copied().fold(0.0, f64::max));
         solved_bins.push(values);
+    }
+    if let Some(message) = ctc_condition_warning(max_condition) {
+        log::warn!("  {}", message);
     }
 
     let latency_samples = config.fir_taps / 2;
@@ -1401,6 +1403,24 @@ mod tests {
         assert!((beta_for_frequency(&cfg, 80.0) - 0.1).abs() < 1e-12);
         assert!((beta_for_frequency(&cfg, 1000.0) - 10.0_f64.powf(-30.0 / 20.0)).abs() < 1e-12);
         assert!((beta_for_frequency(&cfg, 8000.0) - 0.01).abs() < 1e-12);
+    }
+
+    #[test]
+    fn ctc_condition_warning_flags_excessive_condition_number() {
+        assert!(ctc_condition_warning(CTC_CONDITION_WARNING_THRESHOLD * 10.0).is_some());
+        assert!(ctc_condition_warning(CTC_CONDITION_WARNING_THRESHOLD * 0.5).is_none());
+        assert!(ctc_condition_warning(f64::INFINITY).is_none());
+    }
+
+    #[test]
+    fn invalid_ctc_configuration_preserves_error_message() {
+        let err = invalid_ctc_configuration("unsupported ctc.matrix_source 'bad'");
+        match err {
+            AutoeqError::InvalidConfiguration { message } => {
+                assert!(message.contains("unsupported ctc.matrix_source"));
+            }
+            other => panic!("expected InvalidConfiguration, got {other:?}"),
+        }
     }
 
     #[test]

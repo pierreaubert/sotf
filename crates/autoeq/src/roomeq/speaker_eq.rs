@@ -596,7 +596,11 @@ fn maybe_clamp_min_freq_for_target_tilt(
     max_freq: f64,
 ) -> f64 {
     if target_tilt_curve.is_some() && system_has_subwoofer(room_config) {
-        match excursion::detect_f3(curve, None) {
+        match excursion::detect_f3_with_config(
+            curve,
+            None,
+            room_config.optimizer.excursion_protection.as_ref(),
+        ) {
             Ok(f3_result) => {
                 // Only clamp if F3 is above the configured min_freq but still
                 // well below max_freq. A very high "F3" (e.g., on a tilted curve
@@ -695,7 +699,11 @@ fn apply_broadband_precorrection(
     info!("  Broadband pre-correction enabled...");
 
     // Detect F3 to avoid shelf-correcting below the speaker's rolloff.
-    let detected_f3 = match excursion::detect_f3(curve, None) {
+    let detected_f3 = match excursion::detect_f3_with_config(
+        curve,
+        None,
+        room_config.optimizer.excursion_protection.as_ref(),
+    ) {
         Ok(f3_result) if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq * 0.5 => {
             info!("  Broadband: detected speaker F3={:.1}Hz", f3_result.f3_hz);
             Some(f3_result.f3_hz)
@@ -911,7 +919,11 @@ fn build_clamped_optimizer(
     }
 
     if opt.auto_optimizer.as_ref().is_some_and(|auto| auto.enabled) {
-        let detected_f3_hz = match excursion::detect_f3(curve_for_optim, None) {
+        let detected_f3_hz = match excursion::detect_f3_with_config(
+            curve_for_optim,
+            None,
+            opt.excursion_protection.as_ref(),
+        ) {
             Ok(f3_result) if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq => {
                 Some(f3_result.f3_hz)
             }
