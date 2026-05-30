@@ -14,6 +14,9 @@ pub struct SsirConfig {
 
     /// Local Energy Ratio analysis window length in ms.
     /// The RIR is divided into consecutive windows of this length.
+    /// Local maxima above the per-window energy threshold are emitted as
+    /// reflection candidates, then `toa_threshold_ms` / `doa_threshold_deg`
+    /// validation merges candidates that are not distinct.
     /// Default: 1.0 ms (48 samples @ 48kHz).
     pub ler_window_ms: f64,
 
@@ -54,8 +57,12 @@ pub struct SsirConfig {
     /// Default: 2.0 ms.
     pub final_segment_ms: f64,
 
-    /// Minimum peak distance (ms) for direct sound onset detection.
-    /// Peaks closer than this are suppressed when searching for the direct sound.
+    /// Legacy minimum peak distance (ms) for direct sound onset detection.
+    ///
+    /// Retained for config compatibility. The current direct-sound detector
+    /// follows the SSIR 11 dB first-arrival rule without magnitude-greedy
+    /// min-distance suppression, because suppression can discard a valid
+    /// earlier direct arrival near a stronger reflection.
     /// Default: 0.1 ms (5 samples @ 48kHz).
     pub min_peak_distance_ms: f64,
 
@@ -147,11 +154,6 @@ impl SsirConfig {
     /// Final segment duration in samples.
     pub(crate) fn final_segment_samples(&self) -> usize {
         self.ms_to_samples(self.final_segment_ms)
-    }
-
-    /// Minimum peak distance in samples for onset detection.
-    pub(crate) fn min_peak_distance_samples(&self) -> usize {
-        self.ms_to_samples(self.min_peak_distance_ms).max(1)
     }
 }
 

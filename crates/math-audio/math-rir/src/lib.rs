@@ -63,7 +63,9 @@ pub use bands::{
 };
 pub use config::SsirConfig;
 pub use math_audio_iir_fir::filtfilt;
-pub use metrics::{DecayCurve, Iso3382Metrics, analyze_iso3382, estimate_noise_cutoff};
+pub use metrics::{
+    DecayCurve, Iso3382Metrics, analyze_iso3382, estimate_noise_cutoff, schroeder_curve,
+};
 pub use types::{RirSegment, SsirResult};
 
 use detection::{detect_reflections, find_direct_sound_toa};
@@ -525,6 +527,15 @@ mod tests {
         for seg in &result.segments {
             assert!(seg.doa.is_some(), "SRIR segments should have DOA data");
         }
+
+        let ds_doa = result
+            .direct_sound_doa()
+            .expect("direct sound should carry DOA");
+        assert!(
+            ds_doa[0] > 0.5,
+            "front direct sound should point toward +X, got {:?}",
+            ds_doa
+        );
     }
 
     #[test]
@@ -656,5 +667,6 @@ mod tests {
         let result = analyze_rir(&rir, &config);
         assert!(result.num_events() >= 1);
         assert!(result.segments[0].is_direct_sound);
+        assert_eq!(result.segments[0].toa_sample, 0);
     }
 }

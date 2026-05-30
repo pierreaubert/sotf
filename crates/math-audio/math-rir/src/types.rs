@@ -97,4 +97,9 @@ impl SsirResult {
     pub fn direct_sound(&self) -> Option<&RirSegment> {
         self.segments.first().filter(|s| s.is_direct_sound)
     }
+
+    /// Direction of arrival for the direct sound, if detected from SRIR input.
+    pub fn direct_sound_doa(&self) -> Option<[f32; 3]> {
+        self.direct_sound().and_then(|s| s.doa)
+    }
 }

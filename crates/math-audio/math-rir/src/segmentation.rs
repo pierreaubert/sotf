@@ -107,9 +107,10 @@ pub(crate) fn build_segments(
 
 /// Find the onset of a sound event within a pre-onset window.
 ///
-/// Uses a simple energy-rise detector: finds the earliest sample in
-/// [toa - window, toa] where the energy begins rising above the local
-/// background level. This approximates the Defrance onset detection method.
+/// Uses a simple peak-relative energy-rise heuristic: finds the earliest
+/// sample in `[toa - window, toa]` whose energy reaches 10% of the TOA peak.
+/// This is intentionally conservative for hard RIR transients and is not a
+/// full Defrance noise-floor-relative onset detector.
 fn find_onset(rir: &[f32], toa: usize, onset_window: usize) -> usize {
     let start = toa.saturating_sub(onset_window);
     if start >= toa || toa >= rir.len() {

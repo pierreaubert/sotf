@@ -3,8 +3,8 @@ use rayon::prelude::*;
 /// Estimate the mixing time of a room impulse response.
 ///
 /// Uses the Abel & Huang (2006) echo density method: the mixing time is
-/// where the Schroeder energy decay curve transitions from discrete
-/// reflections to a smooth exponential decay.
+/// where the RIR transitions from sparse, discrete reflections to a dense
+/// reverberant tail.
 ///
 /// The algorithm computes the normalized echo density in sliding windows.
 /// When the density exceeds a threshold (indicating the transition from

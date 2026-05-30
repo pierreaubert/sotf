@@ -16,27 +16,23 @@ pub(crate) struct DetectedReflection {
 ///
 /// Implements Algorithm 1 from Pawlak & Lee (2026):
 /// 1. Compute log magnitude: L_x = 20 · log10(|x|)
-/// 2. Find peaks with minimum spacing `delta_min`
-/// 3. Direct sound = **earliest** peak within `DIRECT_SOUND_TIE_DB` (1 dB)
-///    of the global maximum. Magnitude-greedy suppression guarantees the
-///    global max is in the candidate set, so this is equivalent to
-///    "strongest peak" when peaks are well separated in magnitude and to
-///    "earliest arrival of the dominant cluster" when several peaks share
-///    the top level.
+/// 2. Find the global maximum.
+/// 3. Direct sound = the earliest local maximum within 11 dB of that maximum.
 ///
-/// **Bug fixed.** Previously the function returned the first peak in time
-/// order above `global_max − 11 dB`. `find_peaks_with_min_distance`
-/// performs magnitude-greedy non-maximum suppression, so an early weaker
-/// pre-blip above `−11 dB` (e.g. measurement noise) could outrank the
-/// actual direct sound in the time-ordered peak list. With the new
-/// 1 dB tie band, such pre-blips are no longer eligible to "shadow" the
-/// global max.
-pub(crate) fn find_direct_sound_toa(rir: &[f32], config: &SsirConfig) -> Option<usize> {
+/// The direct sound search intentionally does **not** use minimum-distance
+/// peak suppression: magnitude-greedy suppression can discard an earlier,
+/// physically correct direct arrival when a stronger reflection occurs inside
+/// the suppression radius.
+pub(crate) fn find_direct_sound_toa(rir: &[f32], _config: &SsirConfig) -> Option<usize> {
     if rir.is_empty() {
         return None;
     }
-
-    let min_distance = config.min_peak_distance_samples();
+    if rir.iter().all(|&x| x.abs() < 1e-12) {
+        return None;
+    }
+    if rir.len() < 3 {
+        return earliest_abs_max(rir);
+    }
 
     // Step 1: Compute log magnitude (20 * log10(|x|))
     let log_mag: Vec<f64> = rir
@@ -47,40 +43,12 @@ pub(crate) fn find_direct_sound_toa(rir: &[f32], config: &SsirConfig) -> Option<
         })
         .collect();
 
-    // Step 2: Find peaks in log magnitude with minimum distance
-    let peaks = find_peaks_with_min_distance(&log_mag, min_distance);
-    if peaks.is_empty() {
-        // Signals with fewer than 3 samples have no local maxima in the
-        // traditional sense — fall back to the global maximum if one exists.
-        if rir.len() < 3 {
-            return rir
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| {
-                    a.abs()
-                        .partial_cmp(&b.abs())
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .map(|(i, _)| i);
-        }
-        return None;
-    }
+    let global_max = log_mag.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let threshold = global_max - 11.0;
 
-    // Step 3: Find the global maximum of log magnitude among peaks
-    let global_max = peaks
-        .iter()
-        .map(|&i| log_mag[i])
-        .fold(f64::NEG_INFINITY, f64::max);
-
-    // Step 4: Earliest peak within DIRECT_SOUND_TIE_DB of the global max.
-    // `find_peaks_with_min_distance` returns peaks ascending by sample
-    // index, so `.find(...)` returns the earliest qualifying peak.
-    // Magnitude-greedy suppression in `find_peaks_with_min_distance`
-    // always preserves the global max, so the result is never `None`
-    // here (the global max itself is in the tie band).
-    const DIRECT_SOUND_TIE_DB: f64 = 1.0;
-    let tie_threshold = global_max - DIRECT_SOUND_TIE_DB;
-    peaks.into_iter().find(|&i| log_mag[i] >= tie_threshold)
+    local_peak_indices(&log_mag)
+        .into_iter()
+        .find(|&i| log_mag[i] >= threshold)
 }
 
 /// Detect early reflections using Local Energy Ratio (LER).
@@ -115,15 +83,16 @@ pub(crate) fn detect_reflections(
 
     let mut raw_detections: Vec<(usize, f64)> = (0..num_windows)
         .into_par_iter()
-        .filter_map(|i| {
+        .flat_map(|i| {
             let win_start = i * window_len;
             let win_end = ((i + 1) * window_len).min(rir.len());
             if win_start >= rir.len() {
-                return None;
+                return Vec::new();
             }
 
             // Compute energies in this window
             let mut energies: Vec<f64> = (win_start..win_end)
+                .filter(|&j| j < ds_start || j >= ds_end)
                 .map(|j| {
                     let s = rir[j] as f64;
                     s * s
@@ -131,7 +100,7 @@ pub(crate) fn detect_reflections(
                 .collect();
 
             if energies.is_empty() {
-                return None;
+                return Vec::new();
             }
 
             // Compute median energy
@@ -140,26 +109,18 @@ pub(crate) fn detect_reflections(
             // Threshold: energy must exceed `energy_threshold` times the median
             let threshold = config.energy_threshold * median;
 
-            // Find the sample with maximum energy above threshold
-            let mut best_idx = None;
-            let mut best_energy = 0.0;
-
+            let mut detections = Vec::new();
             for (j, &sample) in rir.iter().enumerate().take(win_end).skip(win_start) {
+                if j >= ds_start && j < ds_end {
+                    continue;
+                }
                 let e = (sample as f64) * (sample as f64);
-                if e > threshold && e > best_energy {
-                    best_energy = e;
-                    best_idx = Some(j);
+                if e > threshold && is_local_energy_peak(rir, j, win_start, win_end) {
+                    detections.push((j, e));
                 }
             }
 
-            best_idx.and_then(|idx| {
-                // Skip if within direct sound window
-                if idx >= ds_start && idx < ds_end {
-                    None
-                } else {
-                    Some((idx, best_energy))
-                }
-            })
+            detections
         })
         .collect();
 
@@ -220,7 +181,9 @@ fn validate_and_merge(reflections: &mut Vec<DetectedReflection>, config: &SsirCo
                 reflections[i] = reflections[i + 1].clone();
             }
             reflections.remove(i + 1);
-            // Don't advance i — re-check with the next element
+            // Re-check both the next pair and, if replacement moved a later
+            // event leftward, the previous neighbor.
+            i = i.saturating_sub(1);
         }
     }
 }
@@ -243,49 +206,73 @@ fn angular_distance(a: &[f32; 3], b: &[f32; 3]) -> f64 {
     cos_angle.acos()
 }
 
-/// Find local maxima in a signal with minimum spacing.
-fn find_peaks_with_min_distance(signal: &[f64], min_distance: usize) -> Vec<usize> {
+fn earliest_abs_max(rir: &[f32]) -> Option<usize> {
+    let mut best_idx = None;
+    let mut best = f32::NEG_INFINITY;
+    for (i, &sample) in rir.iter().enumerate() {
+        let abs = sample.abs();
+        if abs > best {
+            best = abs;
+            best_idx = Some(i);
+        }
+    }
+    best_idx
+}
+
+/// Find local maxima in a signal, returning the first sample of a plateau.
+fn local_peak_indices(signal: &[f64]) -> Vec<usize> {
     let mut peaks = Vec::new();
     let len = signal.len();
-    if len < 3 {
+    if len < 2 {
         return peaks;
     }
 
-    // Find all local maxima
-    for i in 1..len - 1 {
-        if signal[i] > signal[i - 1] && signal[i] >= signal[i + 1] {
-            peaks.push(i);
+    let mut i = 0;
+    while i < len {
+        let plateau_start = i;
+        let mut plateau_end = i;
+        while plateau_end + 1 < len && signal[plateau_end + 1] == signal[plateau_start] {
+            plateau_end += 1;
+        }
+
+        let left_lower = plateau_start == 0 || signal[plateau_start] > signal[plateau_start - 1];
+        let right_lower = plateau_end + 1 == len || signal[plateau_end] > signal[plateau_end + 1];
+        let has_neighbor = plateau_start > 0 || plateau_end + 1 < len;
+
+        if has_neighbor && left_lower && right_lower {
+            peaks.push(plateau_start);
+        }
+
+        i = plateau_end + 1;
+    }
+
+    peaks
+}
+
+fn is_local_energy_peak(rir: &[f32], idx: usize, start: usize, end: usize) -> bool {
+    if idx >= rir.len() || idx < start || idx >= end {
+        return false;
+    }
+
+    let e = (rir[idx] as f64) * (rir[idx] as f64);
+    let left = idx.checked_sub(1).filter(|&i| i >= start);
+    let right = (idx + 1 < end && idx + 1 < rir.len()).then_some(idx + 1);
+
+    if let Some(left) = left {
+        let left_e = (rir[left] as f64) * (rir[left] as f64);
+        if e <= left_e {
+            return false;
         }
     }
 
-    if min_distance <= 1 {
-        return peaks;
-    }
-
-    // Enforce minimum distance: greedily keep peaks by descending magnitude
-    let mut indexed: Vec<(usize, f64)> = peaks.iter().map(|&i| (i, signal[i])).collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    let mut kept = Vec::new();
-    let mut suppressed = vec![false; len];
-
-    for (idx, _) in indexed {
-        if suppressed[idx] {
-            continue;
-        }
-        kept.push(idx);
-        // Suppress nearby peaks
-        let start = idx.saturating_sub(min_distance);
-        let end = (idx + min_distance + 1).min(len);
-        for (j, flag) in suppressed.iter_mut().enumerate().take(end).skip(start) {
-            if j != idx {
-                *flag = true;
-            }
+    if let Some(right) = right {
+        let right_e = (rir[right] as f64) * (rir[right] as f64);
+        if e < right_e {
+            return false;
         }
     }
 
-    kept.sort();
-    kept
+    true
 }
 
 /// Compute the median of a mutable slice (partially sorts in place).
@@ -321,18 +308,22 @@ mod tests {
     #[test]
     fn test_find_peaks_basic() {
         let signal = vec![0.0, 1.0, 0.0, 2.0, 0.0, 3.0, 0.0];
-        let peaks = find_peaks_with_min_distance(&signal, 1);
+        let peaks = local_peak_indices(&signal);
         assert_eq!(peaks, vec![1, 3, 5]);
     }
 
     #[test]
-    fn test_find_peaks_min_distance() {
-        let signal = vec![0.0, 1.0, 0.5, 2.0, 0.0, 0.5, 3.0, 0.0];
-        let peaks = find_peaks_with_min_distance(&signal, 3);
-        // Should keep 6 (val=3.0) and suppress 3 (val=2.0, within distance 3 of 6)
-        // Then keep 1 (val=1.0, distance 5 from 6)
-        assert!(peaks.contains(&6));
-        assert!(peaks.contains(&1));
+    fn test_find_peaks_plateau_uses_first_sample() {
+        let signal = vec![0.0, 5.0, 5.0, 5.0, 0.0];
+        let peaks = local_peak_indices(&signal);
+        assert_eq!(peaks, vec![1]);
+    }
+
+    #[test]
+    fn test_find_peaks_accepts_edge_plateau() {
+        let signal = vec![5.0, 5.0, 0.0, 1.0, 0.0];
+        let peaks = local_peak_indices(&signal);
+        assert_eq!(peaks, vec![0, 3]);
     }
 
     #[test]
@@ -401,20 +392,17 @@ mod tests {
     }
 
     #[test]
-    fn test_find_direct_sound_strongest_within_envelope() {
-        // The OLD implementation returned the first peak above
-        // `global_max − 11 dB` in time order — even when an earlier
-        // pre-blip was nowhere near the global max in magnitude. With
-        // the new "earliest peak in 1 dB tie band" rule we return the
-        // true direct sound (the global max) here.
-        //
-        // Three peaks:
-        //   sample  50 → 0.30 (≈ −10.5 dB pre-blip, INSIDE 11 dB envelope)
-        //   sample 100 → 1.00 (global max — true direct sound)
-        //   sample 300 → 0.18 (≈ −14.9 dB late reflection, outside envelope)
-        //
-        // OLD code: returns 50 (first peak above −11 dB threshold).
-        // NEW code: returns 100 (only peak in the 1 dB tie band).
+    fn test_find_direct_sound_toa_short_rir_tie_prefers_earliest() {
+        let rir = vec![1.0f32, -1.0f32];
+        let config = SsirConfig::new(48000.0);
+        let toa = find_direct_sound_toa(&rir, &config);
+        assert_eq!(toa, Some(0), "ties should prefer the earliest arrival");
+    }
+
+    #[test]
+    fn test_find_direct_sound_earliest_above_11db_threshold() {
+        // Algorithm 1 uses the first local maximum inside the 11 dB envelope,
+        // not the strongest peak in a narrower tie band.
         let mut rir = vec![0.0001f32; 500];
         rir[50] = 0.30;
         rir[100] = 1.0;
@@ -422,19 +410,29 @@ mod tests {
 
         let config = SsirConfig::new(48000.0);
         let toa = find_direct_sound_toa(&rir, &config);
-        assert_eq!(
-            toa,
-            Some(100),
-            "should return the strongest peak (sample 100), not the earlier \
-             pre-blip at sample 50 that the OLD code returned"
-        );
+        assert_eq!(toa, Some(50));
+    }
+
+    #[test]
+    fn test_find_direct_sound_ignores_min_distance_suppression_order() {
+        let mut rir = vec![0.0001f32; 500];
+        rir[100] = 0.5; // direct sound, within 11 dB of the reflection
+        rir[130] = 1.0; // stronger floor reflection inside min-distance radius
+
+        let config = SsirConfig {
+            sample_rate: 48000.0,
+            min_peak_distance_ms: 1.0,
+            ..SsirConfig::default()
+        };
+
+        let toa = find_direct_sound_toa(&rir, &config);
+        assert_eq!(toa, Some(100));
     }
 
     #[test]
     fn test_find_direct_sound_earliest_in_tie_band() {
-        // When several peaks are within DIRECT_SOUND_TIE_DB (1 dB) of the
-        // global max, return the earliest — the earliest arrival of the
-        // dominant cluster is the physical direct sound.
+        // When several peaks satisfy the 11 dB direct-sound envelope, return
+        // the earliest qualifying local maximum.
         let mut rir = vec![0.0001f32; 500];
         rir[100] = 1.0;
         rir[200] = 1.0;
@@ -444,7 +442,7 @@ mod tests {
         assert_eq!(
             toa,
             Some(100),
-            "earliest peak in the tie band should be the direct sound"
+            "earliest peak in the direct-sound envelope should be returned"
         );
     }
 
@@ -460,5 +458,53 @@ mod tests {
             m
         );
         assert_eq!(m, 2.0, "median of [1, 2, 3] should be 2.0");
+    }
+
+    #[test]
+    fn test_detect_reflections_keeps_multiple_peaks_in_ler_window() {
+        let mut rir = vec![0.0001f32; 2400];
+        rir[48] = 1.0;
+        rir[288] = 0.5;
+        rir[320] = 0.4;
+
+        let config = SsirConfig {
+            sample_rate: 48000.0,
+            mixing_time_ms: Some(40.0),
+            ..SsirConfig::default()
+        };
+
+        let reflections = detect_reflections(&rir, 48, None, &config);
+        let toas: Vec<usize> = reflections.iter().map(|r| r.toa_sample).collect();
+        assert!(
+            toas.contains(&288) && toas.contains(&320),
+            "expected both same-window reflections, got {toas:?}"
+        );
+    }
+
+    #[test]
+    fn test_validate_and_merge_rechecks_previous_neighbor_after_replacement() {
+        let mut reflections = vec![
+            DetectedReflection {
+                toa_sample: 100,
+                peak_energy: 1.0,
+                doa: Some([1.0, 0.0, 0.0]),
+            },
+            DetectedReflection {
+                toa_sample: 140,
+                peak_energy: 0.1,
+                doa: Some([0.0, 1.0, 0.0]),
+            },
+            DetectedReflection {
+                toa_sample: 150,
+                peak_energy: 2.0,
+                doa: Some([1.0, 0.0, 0.0]),
+            },
+        ];
+        let config = SsirConfig::new(48000.0);
+
+        validate_and_merge(&mut reflections, &config);
+
+        assert_eq!(reflections.len(), 1);
+        assert_eq!(reflections[0].toa_sample, 150);
     }
 }
