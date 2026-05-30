@@ -6,9 +6,10 @@
 
 use super::{AudioFrame, DecoderCommand, DecoderMessage, DecoderResponse, ThreadEvent};
 use crate::decoder::{
-    AudioDecoder, AudioSource, AudioSpec, DecodedAudio, create_decoder_from_source,
+    AudioDecoder, AudioSource, AudioSpec, DecodedAudio, create_decoder_from_source_with_dsd_mode,
 };
 use sotf_plugins::{Plugin, ProcessContext, ResamplerPlugin};
+use sotf_types::DsdOutputMode;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::{Duration, Instant};
 
@@ -222,6 +223,7 @@ impl DecoderThread {
         target_sample_rate: u32,
         frame_size: usize,
         recycle_rx: Receiver<Vec<f32>>,
+        dsd_output: DsdOutputMode,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
         let (response_tx, response_rx) = std::sync::mpsc::channel();
@@ -237,6 +239,7 @@ impl DecoderThread {
                     target_sample_rate,
                     frame_size,
                     recycle_rx,
+                    dsd_output,
                 ) {
                     log::error!("[Decoder Thread] Error: {}", e);
                 }
@@ -305,6 +308,7 @@ struct DecoderState {
     /// Queued next source for gapless playback. When set and the current source ends,
     /// the decoder seamlessly transitions to this source without sending EndOfStream/Flush.
     queued_next: Option<AudioSource>,
+    dsd_output: DsdOutputMode,
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_input_buffer: Vec<f32>,
@@ -321,7 +325,7 @@ struct DecoderState {
 }
 
 impl DecoderState {
-    fn new(recycle_rx: Receiver<Vec<f32>>) -> Self {
+    fn new(recycle_rx: Receiver<Vec<f32>>, dsd_output: DsdOutputMode) -> Self {
         let mut frame_buffer_pool = Vec::with_capacity(DECODER_LOCAL_FRAME_POOL_SIZE);
         for _ in 0..DECODER_LOCAL_FRAME_POOL_SIZE {
             frame_buffer_pool.push(Vec::with_capacity(DECODER_LOCAL_FRAME_CAPACITY));
@@ -345,6 +349,7 @@ impl DecoderState {
             frame_buffer_pool,
             recycle_rx,
             queued_next: None,
+            dsd_output,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_input_buffer: Vec::new(),
             #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -367,7 +372,7 @@ impl DecoderState {
         target_sample_rate: u32,
         frame_size: usize,
     ) -> Result<(), String> {
-        let decoder = create_decoder_from_source(&source)
+        let decoder = create_decoder_from_source_with_dsd_mode(&source, self.dsd_output)
             .map_err(|e| format!("Failed to create decoder: {:?}", e))?;
 
         // Get audio spec
@@ -422,7 +427,7 @@ impl DecoderState {
         };
 
         let current_spec = self.spec.as_ref().ok_or("No spec")?.clone();
-        let next_decoder = create_decoder_from_source(&next_source)
+        let next_decoder = create_decoder_from_source_with_dsd_mode(&next_source, self.dsd_output)
             .map_err(|e| format!("Failed to create decoder: {:?}", e))?;
         let next_spec = next_decoder.spec().clone();
 
@@ -1297,8 +1302,9 @@ fn run_decoder_thread(
     target_sample_rate: u32,
     frame_size: usize,
     recycle_rx: Receiver<Vec<f32>>,
+    dsd_output: DsdOutputMode,
 ) -> Result<(), String> {
-    let mut state = DecoderState::new(recycle_rx);
+    let mut state = DecoderState::new(recycle_rx, dsd_output);
 
     log::info!(
         "[Decoder Thread] Started - target {}Hz, frame size {}",
@@ -1714,7 +1720,7 @@ mod tests {
         let (_recycle_tx, recycle_rx) = std::sync::mpsc::channel();
         let (done_tx, done_rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let mut state = DecoderState::new(recycle_rx);
+            let mut state = DecoderState::new(recycle_rx, DsdOutputMode::Disabled);
             state.start_silent_source(2);
             let result =
                 state.process_hal_input(&message_tx, &command_rx, &response_tx, 16, 48_000);
@@ -1824,7 +1830,7 @@ mod tests {
     #[test]
     fn silent_source_fallback_uses_configured_channel_count() {
         let (_recycle_tx, recycle_rx) = std::sync::mpsc::channel();
-        let mut state = DecoderState::new(recycle_rx);
+        let mut state = DecoderState::new(recycle_rx, DsdOutputMode::Disabled);
         state.start_silent_source(6);
 
         let (message_tx, message_rx) = std::sync::mpsc::sync_channel(1);

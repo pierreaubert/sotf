@@ -93,8 +93,11 @@ impl DsdOutputMode {
 pub enum DsdOutputStatus {
     #[default]
     Disabled,
+    PcmDecodeAvailable,
     PcmDecodeUnavailable,
+    DopFallbackPcm,
     DopUnavailable,
+    NativeFallbackPcm,
     NativeUnavailable,
 }
 

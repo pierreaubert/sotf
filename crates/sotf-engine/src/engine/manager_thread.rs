@@ -448,11 +448,11 @@ fn output_access_status_for_config(config: &EngineConfig) -> OutputAccessStatus 
 fn dsd_output_status_for_mode(mode: DsdOutputMode) -> DsdOutputStatus {
     match mode {
         DsdOutputMode::Disabled => DsdOutputStatus::Disabled,
-        DsdOutputMode::PcmDecode => DsdOutputStatus::PcmDecodeUnavailable,
-        DsdOutputMode::DopPreferred | DsdOutputMode::DopRequired => DsdOutputStatus::DopUnavailable,
-        DsdOutputMode::NativePreferred | DsdOutputMode::NativeRequired => {
-            DsdOutputStatus::NativeUnavailable
-        }
+        DsdOutputMode::PcmDecode => DsdOutputStatus::PcmDecodeAvailable,
+        DsdOutputMode::DopPreferred => DsdOutputStatus::DopFallbackPcm,
+        DsdOutputMode::DopRequired => DsdOutputStatus::DopUnavailable,
+        DsdOutputMode::NativePreferred => DsdOutputStatus::NativeFallbackPcm,
+        DsdOutputMode::NativeRequired => DsdOutputStatus::NativeUnavailable,
     }
 }
 
@@ -572,6 +572,17 @@ fn run_manager_thread(
                 .to_string(),
         );
     }
+    if config.dsd_output.requires_bitstream_output()
+        && matches!(
+            dsd_output_status_for_mode(config.dsd_output),
+            DsdOutputStatus::DopUnavailable | DsdOutputStatus::NativeUnavailable
+        )
+    {
+        return Err(
+            "DSD bitstream output is required, but this engine build only supports DSF-to-PCM decode"
+                .to_string(),
+        );
+    }
 
     // Create config update queue for serializing plugin updates
     let mut config_update_queue = ConfigUpdateQueue::new();
@@ -617,6 +628,7 @@ fn run_manager_thread(
         config.output_sample_rate,
         config.frame_size,
         decoder_recycle_rx,
+        config.dsd_output,
     )?;
 
     let mut processing_thread = ProcessingThread::new(
@@ -2804,7 +2816,7 @@ mod tests {
         assert_eq!(state.output_access_status, expected_output_access_status);
         assert_eq!(
             state.dsd_output_status,
-            sotf_types::DsdOutputStatus::DopUnavailable
+            sotf_types::DsdOutputStatus::DopFallbackPcm
         );
         assert_eq!(
             state.oversampling_policy,
@@ -2813,6 +2825,30 @@ mod tests {
         assert_eq!(
             state.network_endpoint_status,
             sotf_types::NetworkEndpointStatus::EndpointUnavailable
+        );
+    }
+
+    #[test]
+    fn test_dsd_output_statuses_distinguish_pcm_fallbacks_from_required_bitstream() {
+        assert_eq!(
+            dsd_output_status_for_mode(sotf_types::DsdOutputMode::PcmDecode),
+            sotf_types::DsdOutputStatus::PcmDecodeAvailable
+        );
+        assert_eq!(
+            dsd_output_status_for_mode(sotf_types::DsdOutputMode::DopPreferred),
+            sotf_types::DsdOutputStatus::DopFallbackPcm
+        );
+        assert_eq!(
+            dsd_output_status_for_mode(sotf_types::DsdOutputMode::DopRequired),
+            sotf_types::DsdOutputStatus::DopUnavailable
+        );
+        assert_eq!(
+            dsd_output_status_for_mode(sotf_types::DsdOutputMode::NativePreferred),
+            sotf_types::DsdOutputStatus::NativeFallbackPcm
+        );
+        assert_eq!(
+            dsd_output_status_for_mode(sotf_types::DsdOutputMode::NativeRequired),
+            sotf_types::DsdOutputStatus::NativeUnavailable
         );
     }
 

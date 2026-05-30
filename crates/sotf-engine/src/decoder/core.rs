@@ -1,6 +1,7 @@
 use crate::decoder::error::{AudioDecoderError, AudioDecoderResult};
 use crate::decoder::formats::{AudioFormat, SymphoniaDecoder};
 use crate::decoder::source::AudioSource;
+use sotf_types::DsdOutputMode;
 use std::path::Path;
 use std::time::Duration;
 
@@ -125,6 +126,14 @@ pub trait AudioDecoder {
 
 /// Create a decoder for the given audio file
 pub fn create_decoder<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
+    create_decoder_with_dsd_mode(path, DsdOutputMode::Disabled)
+}
+
+/// Create a decoder for the given audio file using the requested DSD policy.
+pub fn create_decoder_with_dsd_mode<P: AsRef<Path>>(
+    path: P,
+    dsd_output: DsdOutputMode,
+) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
     let path = path.as_ref();
 
     // First, validate the file extension to detect unsupported formats early
@@ -146,10 +155,7 @@ pub fn create_decoder<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Box<dyn Aud
     if let Ok(format) = AudioFormat::from_path(path)
         && format.is_dsd()
     {
-        return Err(AudioDecoderError::UnsupportedFormat(format!(
-            "{} is recognized, but DSD/SACD decoding and DoP/native output are not available in this build",
-            format
-        )));
+        return create_dsd_decoder(path, format, dsd_output);
     }
 
     // Route IAMF files to the dedicated IAMF decoder
@@ -162,6 +168,38 @@ pub fn create_decoder<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Box<dyn Aud
     // Create unified Symphonia decoder that handles format detection internally
     let decoder = SymphoniaDecoder::new(path)?;
     Ok(Box::new(decoder))
+}
+
+fn create_dsd_decoder(
+    path: &Path,
+    format: AudioFormat,
+    dsd_output: DsdOutputMode,
+) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
+    match dsd_output {
+        DsdOutputMode::Disabled => Err(AudioDecoderError::UnsupportedFormat(format!(
+            "{} is recognized, but DSD output is disabled in the engine config",
+            format
+        ))),
+        DsdOutputMode::PcmDecode | DsdOutputMode::DopPreferred | DsdOutputMode::NativePreferred => {
+            match format {
+                AudioFormat::DsdDsf => Ok(Box::new(crate::decoder::dsd::DsfPcmDecoder::new(path)?)),
+                AudioFormat::DsdDff => Ok(Box::new(crate::decoder::dsd::DffPcmDecoder::new(path)?)),
+                AudioFormat::SacdIso => Err(AudioDecoderError::UnsupportedFormat(
+                    "SACD ISO decoding is not available yet; extract DSF tracks or convert to PCM"
+                        .to_string(),
+                )),
+                _ => unreachable!("create_dsd_decoder called for non-DSD format"),
+            }
+        }
+        DsdOutputMode::DopRequired => Err(AudioDecoderError::UnsupportedFormat(format!(
+            "{} requires DoP output, but the current playback backend cannot carry bit-perfect DoP frames",
+            format
+        ))),
+        DsdOutputMode::NativeRequired => Err(AudioDecoderError::UnsupportedFormat(format!(
+            "{} requires native DSD output, but the current playback backend cannot carry native DSD frames",
+            format
+        ))),
+    }
 }
 
 /// Probe an audio file to get basic information without creating a full decoder
@@ -192,8 +230,15 @@ pub fn probe_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<(AudioFormat, A
 pub fn create_decoder_from_source(
     source: &AudioSource,
 ) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
+    create_decoder_from_source_with_dsd_mode(source, DsdOutputMode::Disabled)
+}
+
+pub fn create_decoder_from_source_with_dsd_mode(
+    source: &AudioSource,
+    dsd_output: DsdOutputMode,
+) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
     match source {
-        AudioSource::File(path) => create_decoder(path),
+        AudioSource::File(path) => create_decoder_with_dsd_mode(path, dsd_output),
         #[cfg(feature = "streaming")]
         AudioSource::Url {
             url,
@@ -324,7 +369,21 @@ mod tests {
         assert!(matches!(
             result,
             Err(AudioDecoderError::UnsupportedFormat(message))
-                if message.contains("DSD/SACD decoding")
+                if message.contains("DSD output is disabled")
+        ));
+    }
+
+    #[test]
+    fn test_create_decoder_reports_required_dsd_bitstream_gap() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.dsf");
+        std::fs::write(&path, []).unwrap();
+
+        let result = create_decoder_with_dsd_mode(&path, DsdOutputMode::DopRequired);
+        assert!(matches!(
+            result,
+            Err(AudioDecoderError::UnsupportedFormat(message))
+                if message.contains("cannot carry bit-perfect DoP frames")
         ));
     }
 }
