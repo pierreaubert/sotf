@@ -47,6 +47,11 @@ Runtime state reports the result as `output_access_status`:
 | `fallback_shared` | Exclusive was preferred but unavailable, so shared output is active. |
 | `unsupported` | Exclusive was required but this build/backend cannot provide it. |
 
+Callers can ask `plan_output_access(mode, output_device)` before starting the
+engine. The returned `OutputAccessPlan` includes the selected backend
+(`shared_cpal`, `core_audio_hog_mode`, `asio`, or `ios_system_output`), the
+initial status, and a user-facing reason when the request must fall back or fail.
+
 ## DSD Output
 
 `dsd_output` controls DSD/SACD handling:

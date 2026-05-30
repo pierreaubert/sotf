@@ -1,8 +1,7 @@
-//! Audio devices stub for iOS.
+//! Audio device facade for iOS.
 //!
 //! Provides the same data types as the desktop `devices` module (AudioDevice,
-//! AudioConfig, AudioState, SharedAudioState) but with stub implementations
-//! for functions that require cpal.
+//! AudioConfig, AudioState, SharedAudioState) without depending on cpal.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -41,50 +40,100 @@ pub struct AudioState {
 
 pub type SharedAudioState = Arc<Mutex<AudioState>>;
 
-/// iOS stub: returns a single "System Output" device
+pub const IOS_SYSTEM_OUTPUT_ID: &str = "ios-system-output";
+pub const IOS_SYSTEM_OUTPUT_NAME: &str = "System Output";
+const IOS_SAMPLE_RATES: &[u32] = &[44_100, 48_000];
+
+pub const ASIO_DEVICE_PREFIX: &str = "ASIO:";
+
+pub fn is_asio_device(identifier: &str) -> bool {
+    identifier.len() >= ASIO_DEVICE_PREFIX.len()
+        && identifier[..ASIO_DEVICE_PREFIX.len()].eq_ignore_ascii_case(ASIO_DEVICE_PREFIX)
+}
+
+pub fn strip_asio_prefix(identifier: &str) -> &str {
+    if is_asio_device(identifier) {
+        &identifier[ASIO_DEVICE_PREFIX.len()..]
+    } else {
+        identifier
+    }
+}
+
+pub fn list_asio_devices() -> Vec<String> {
+    Vec::new()
+}
+
+fn ios_default_output_config() -> AudioConfig {
+    AudioConfig {
+        sample_rate: 48_000,
+        channels: 2,
+        buffer_size: None,
+        sample_format: "f32".to_string(),
+    }
+}
+
+fn matches_ios_output(identifier: &str) -> bool {
+    identifier == IOS_SYSTEM_OUTPUT_ID || identifier.eq_ignore_ascii_case(IOS_SYSTEM_OUTPUT_NAME)
+}
+
+fn ios_config_supported(config: &AudioConfig) -> bool {
+    IOS_SAMPLE_RATES.contains(&config.sample_rate)
+        && (1..=2).contains(&config.channels)
+        && config.sample_format == "f32"
+}
+
+/// iOS exposes the app's system output route as a single selectable device.
 pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> {
     let mut devices_map = HashMap::new();
     devices_map.insert("input".to_string(), Vec::new());
     devices_map.insert(
         "output".to_string(),
         vec![AudioDevice {
-            device_id: Some("ios-system-output".to_string()),
-            name: "System Output".to_string(),
+            device_id: Some(IOS_SYSTEM_OUTPUT_ID.to_string()),
+            name: IOS_SYSTEM_OUTPUT_NAME.to_string(),
             display_info: Some("iOS Audio".to_string()),
             is_input: false,
             is_default: true,
-            supported_configs: vec![AudioConfig {
-                sample_rate: 48000,
-                channels: 2,
-                buffer_size: None,
-                sample_format: "f32".to_string(),
-            }],
-            default_config: Some(AudioConfig {
-                sample_rate: 48000,
-                channels: 2,
-                buffer_size: None,
-                sample_format: "f32".to_string(),
-            }),
-            available_sample_rates: vec![44100, 48000],
+            supported_configs: vec![ios_default_output_config()],
+            default_config: Some(ios_default_output_config()),
+            available_sample_rates: IOS_SAMPLE_RATES.to_vec(),
         }],
     );
     Ok(devices_map)
 }
 
-pub fn get_device_supported_sample_rates(_device_identifier: Option<&str>) -> Option<Vec<u32>> {
-    Some(vec![44100, 48000])
+pub fn get_device_supported_sample_rates(device_identifier: Option<&str>) -> Option<Vec<u32>> {
+    if device_identifier.is_none_or(matches_ios_output) {
+        Some(IOS_SAMPLE_RATES.to_vec())
+    } else {
+        None
+    }
 }
 
-pub fn get_device_current_sample_rate(_device_identifier: Option<&str>) -> Option<u32> {
-    Some(48000)
+pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option<u32> {
+    if device_identifier.is_none_or(matches_ios_output) {
+        Some(48_000)
+    } else {
+        None
+    }
 }
 
 pub fn verify_working_sample_rate(
-    _device_identifier: Option<&str>,
+    device_identifier: Option<&str>,
     requested_rate: u32,
-    _requested_channels: usize,
+    requested_channels: usize,
 ) -> Option<u32> {
-    Some(requested_rate)
+    if device_identifier.is_some_and(|identifier| !matches_ios_output(identifier)) {
+        return None;
+    }
+    if requested_channels == 0 || requested_channels > 2 {
+        return None;
+    }
+    if IOS_SAMPLE_RATES.contains(&requested_rate) {
+        Some(requested_rate)
+    } else {
+        Some(48_000)
+    }
 }
 
 pub fn is_null_device(_name: &str) -> bool {
@@ -92,12 +141,34 @@ pub fn is_null_device(_name: &str) -> bool {
 }
 
 pub fn set_audio_device(
-    _device_identifier: String,
-    _is_input: bool,
-    _config: AudioConfig,
-    _audio_state: &SharedAudioState,
+    device_identifier: String,
+    is_input: bool,
+    config: AudioConfig,
+    audio_state: &SharedAudioState,
 ) -> Result<String, String> {
-    Err("Audio device selection not available on iOS".to_string())
+    if is_input {
+        return Err("iOS input device selection is managed by AVAudioSession".to_string());
+    }
+    if !matches_ios_output(&device_identifier) {
+        return Err(format!("Device '{}' not found", device_identifier));
+    }
+    if !ios_config_supported(&config) {
+        return Err(format!(
+            "Configuration not supported by iOS output '{}': sample_rate={}, channels={}, format={}",
+            device_identifier, config.sample_rate, config.channels, config.sample_format
+        ));
+    }
+
+    let mut state = audio_state
+        .lock()
+        .map_err(|e| format!("Failed to lock audio state: {}", e))?;
+    state.selected_output_device = Some(IOS_SYSTEM_OUTPUT_ID.to_string());
+    state.output_config = Some(config.clone());
+
+    Ok(format!(
+        "Successfully configured output device '{}' with sample_rate={}, channels={}, format={}",
+        device_identifier, config.sample_rate, config.channels, config.sample_format
+    ))
 }
 
 pub fn get_audio_config(audio_state: &SharedAudioState) -> Result<AudioState, String> {
@@ -108,11 +179,22 @@ pub fn get_audio_config(audio_state: &SharedAudioState) -> Result<AudioState, St
 }
 
 pub fn get_device_properties(
-    _device_identifier: String,
-    _is_input: bool,
+    device_identifier: String,
+    is_input: bool,
 ) -> Result<serde_json::Value, String> {
+    if is_input {
+        return Err("iOS input device properties are managed by AVAudioSession".to_string());
+    }
+    if !matches_ios_output(&device_identifier) {
+        return Err(format!("Device '{}' not found", device_identifier));
+    }
+
     Ok(serde_json::json!({
-        "name": "System Output",
+        "id": IOS_SYSTEM_OUTPUT_ID,
+        "name": IOS_SYSTEM_OUTPUT_NAME,
         "type": "output",
+        "sample_rates": IOS_SAMPLE_RATES,
+        "channels": 2,
+        "sample_format": "f32",
     }))
 }

@@ -5,7 +5,7 @@
 // Highest priority thread that reads from queue and outputs to hardware.
 // Must be real-time safe (no allocations, no locks in callback).
 
-use super::{PlaybackCommand, ProcessingMessage, ThreadEvent};
+use super::{PlaybackCommand, ProcessingMessage, ThreadEvent, plan_output_access};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::{Consumer, CopyToUninit, Producer, RingBuffer, chunks::WriteChunkUninit};
@@ -631,24 +631,12 @@ fn flush_completed(
     !state.flush_requested.load(Ordering::Relaxed)
 }
 
+#[cfg(test)]
 fn output_access_status_for_device(
     mode: OutputAccessMode,
     output_device: Option<&str>,
 ) -> OutputAccessStatus {
-    match mode {
-        OutputAccessMode::Shared => OutputAccessStatus::Shared,
-        OutputAccessMode::ExclusivePreferred | OutputAccessMode::ExclusiveRequired => {
-            if output_device.is_some_and(crate::devices::is_asio_device) {
-                OutputAccessStatus::ExclusiveActive
-            } else if cfg!(target_os = "macos") {
-                OutputAccessStatus::ExclusivePending
-            } else if matches!(mode, OutputAccessMode::ExclusivePreferred) {
-                OutputAccessStatus::FallbackShared
-            } else {
-                OutputAccessStatus::Unsupported
-            }
-        }
-    }
+    plan_output_access(mode, output_device).status
 }
 
 #[cfg(target_os = "macos")]
@@ -704,14 +692,14 @@ fn run_playback_thread(
     let backend_exclusive_active = output_device
         .as_deref()
         .is_some_and(crate::devices::is_asio_device);
-    let mut output_access_status =
-        output_access_status_for_device(output_access, output_device.as_deref());
+    let output_access_plan = plan_output_access(output_access, output_device.as_deref());
+    let mut output_access_status = output_access_plan.status;
     if output_access.requires_exclusive() && output_access_status == OutputAccessStatus::Unsupported
     {
-        return Err(
-            "Exclusive output is required, but the selected cpal backend cannot open an exclusive stream"
-                .to_string(),
-        );
+        return Err(output_access_plan.reason.unwrap_or_else(|| {
+            "Exclusive output is required, but the selected backend cannot open an exclusive stream"
+                .to_string()
+        }));
     }
 
     // Strip ASIO prefix from device name for actual device lookup

@@ -7,7 +7,7 @@
 use super::{
     AudioEngineState, ConfigEvent, ConfigWatcher, DecoderCommand, DecoderThread, EngineConfig,
     GcThread, ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
-    PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent,
+    PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent, plan_output_access,
 };
 use crate::engine::processing_thread::{
     build_plugin_graph_host_with_policy, build_plugin_host_with_policy,
@@ -17,7 +17,7 @@ use arc_swap::ArcSwap;
 use sotf_streaming::{PcmStreamHandle, PcmStreamServer, PcmStreamServerConfig};
 use sotf_types::{
     DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy, NetworkEndpointMode,
-    NetworkEndpointStatus, OutputAccessMode, OutputAccessStatus,
+    NetworkEndpointStatus, OutputAccessStatus,
 };
 use std::any::Any;
 use std::collections::VecDeque;
@@ -417,32 +417,8 @@ impl Drop for ManagerThread {
     }
 }
 
-#[cfg(not(target_os = "ios"))]
-fn output_device_uses_exclusive_backend(output_device: Option<&str>) -> bool {
-    output_device.is_some_and(crate::devices::is_asio_device)
-}
-
-#[cfg(target_os = "ios")]
-fn output_device_uses_exclusive_backend(output_device: Option<&str>) -> bool {
-    let _ = output_device;
-    false
-}
-
 fn output_access_status_for_config(config: &EngineConfig) -> OutputAccessStatus {
-    match config.output_access {
-        OutputAccessMode::Shared => OutputAccessStatus::Shared,
-        OutputAccessMode::ExclusivePreferred | OutputAccessMode::ExclusiveRequired => {
-            if output_device_uses_exclusive_backend(config.output_device.as_deref()) {
-                OutputAccessStatus::ExclusiveActive
-            } else if cfg!(target_os = "macos") {
-                OutputAccessStatus::ExclusivePending
-            } else if matches!(config.output_access, OutputAccessMode::ExclusivePreferred) {
-                OutputAccessStatus::FallbackShared
-            } else {
-                OutputAccessStatus::Unsupported
-            }
-        }
-    }
+    plan_output_access(config.output_access, config.output_device.as_deref()).status
 }
 
 fn dsd_output_status_for_mode(mode: DsdOutputMode) -> DsdOutputStatus {
@@ -564,13 +540,14 @@ fn run_manager_thread(
     log::debug!("[Manager Thread] Starting with config: {:?}", config);
     state.store(Arc::new(initial_engine_state_from_config(&config)));
 
+    let output_access_plan =
+        plan_output_access(config.output_access, config.output_device.as_deref());
     if config.output_access.requires_exclusive()
-        && output_access_status_for_config(&config) == OutputAccessStatus::Unsupported
+        && output_access_plan.status == OutputAccessStatus::Unsupported
     {
-        return Err(
-            "Exclusive output is required, but this engine build only has shared cpal output for the selected device"
-                .to_string(),
-        );
+        return Err(output_access_plan.reason.unwrap_or_else(|| {
+            "Exclusive output is required, but no exclusive backend is available".to_string()
+        }));
     }
     if config.dsd_output.requires_bitstream_output()
         && matches!(

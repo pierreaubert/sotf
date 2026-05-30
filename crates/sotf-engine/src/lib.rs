@@ -51,9 +51,9 @@ pub mod engine;
 #[cfg(not(target_os = "ios"))]
 pub use engine::CpalSink;
 pub use engine::{
-    AudioEngine, AudioEngineState, AudioSink, EngineConfig, PlaybackState, PluginConfig,
-    PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig, SinkConfig, SinkOpenResult,
-    SinkType,
+    AudioEngine, AudioEngineState, AudioSink, EngineConfig, OutputAccessBackend, OutputAccessPlan,
+    PlaybackState, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
+    SinkConfig, SinkOpenResult, SinkType, plan_output_access,
 };
 pub use sotf_types::{
     DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy, LatencyCompensationMode,
