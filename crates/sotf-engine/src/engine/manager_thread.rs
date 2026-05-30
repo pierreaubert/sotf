@@ -992,6 +992,11 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             new_state.last_error = Some(err);
             state.store(Arc::new(new_state));
         }
+        ThreadEvent::StreamMetadataChanged(stream_metadata) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.stream_metadata = stream_metadata;
+            state.store(Arc::new(new_state));
+        }
         ThreadEvent::PlaybackUnderrun(underruns) => {
             let mut new_state = (**state.load()).clone();
             new_state.underruns = underruns;
@@ -2516,6 +2521,26 @@ mod tests {
         assert_eq!(s.playback_frames_written, 39);
         assert_eq!(s.playback_frames_dropped, 1);
         assert_eq!(s.playback_effective_sample_rate, 48_000);
+    }
+
+    #[test]
+    fn test_handle_thread_event_updates_stream_metadata() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+        let metadata = sotf_types::StreamMetadata {
+            stream_title: Some("Artist - Song".to_string()),
+            stream_url: Some("https://station.example/live".to_string()),
+            content_type: Some("audio/mpeg".to_string()),
+            bitrate_kbps: Some(192),
+        };
+
+        handle_thread_event(
+            ThreadEvent::StreamMetadataChanged(Some(metadata.clone())),
+            &state,
+        );
+        assert_eq!(state.load().stream_metadata, Some(metadata));
+
+        handle_thread_event(ThreadEvent::StreamMetadataChanged(None), &state);
+        assert!(state.load().stream_metadata.is_none());
     }
 
     #[test]

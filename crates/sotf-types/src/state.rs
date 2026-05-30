@@ -78,6 +78,19 @@ pub enum PlaybackState {
     Paused,
 }
 
+/// Stream metadata reported by live/network audio sources.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct StreamMetadata {
+    /// ICY stream title (typically "Artist - Track").
+    pub stream_title: Option<String>,
+    /// ICY stream URL, if provided.
+    pub stream_url: Option<String>,
+    /// HTTP content type detected for the stream.
+    pub content_type: Option<String>,
+    /// Reported stream bitrate in kbps.
+    pub bitrate_kbps: Option<u32>,
+}
+
 /// Lifecycle event reported for an isolated external plugin worker.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -229,6 +242,9 @@ pub struct AudioEngineState {
     /// Runtime network endpoint capability status.
     #[serde(default)]
     pub network_endpoint_status: NetworkEndpointStatus,
+    /// Current live stream metadata (ICY/content-type/bitrate), if any.
+    #[serde(default)]
+    pub stream_metadata: Option<StreamMetadata>,
     /// Last error message, if any
     pub last_error: Option<String>,
     /// Seek in progress flag
@@ -269,6 +285,7 @@ impl Default for AudioEngineState {
             oversampling_policy: EngineOversamplingPolicy::PluginPreferred,
             network_endpoint: NetworkEndpointConfig::default(),
             network_endpoint_status: NetworkEndpointStatus::Disabled,
+            stream_metadata: None,
             last_error: None,
             seeking: false,
             isolated_external_plugin_worker_statuses: Vec::new(),

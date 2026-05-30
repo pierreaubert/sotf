@@ -11,6 +11,7 @@ use crate::decoder::AudioSource;
 use crate::devices::verify_working_sample_rate;
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe_file};
+use sotf_types::StreamMetadata;
 
 /// Cache for verified working sample rates per device.
 /// The verification probe (creating test streams) is expensive (~300ms per rate)
@@ -156,6 +157,8 @@ pub struct AudioEngineManager {
     allow_virtual_output: bool,
     /// Last source seen during event polling (for detecting gapless transitions)
     last_seen_source: Mutex<Option<crate::decoder::AudioSource>>,
+    /// Last stream metadata seen during event polling.
+    last_seen_stream_metadata: Mutex<Option<StreamMetadata>>,
 }
 
 /// Commands for controlling the streaming (kept for API compatibility)
@@ -177,6 +180,8 @@ pub enum StreamingEvent {
     /// Decoder seamlessly transitioned to a new source (gapless playback).
     /// Contains the new audio source.
     GaplessTransition(crate::decoder::AudioSource),
+    /// Live stream metadata changed (ICY/content-type/bitrate).
+    StreamMetadataChanged(Option<StreamMetadata>),
 }
 
 /// Current state of the streaming manager
@@ -248,6 +253,7 @@ impl AudioEngineManager {
             current_muted: AtomicBool::new(false),
             allow_virtual_output: false,
             last_seen_source: Mutex::new(None),
+            last_seen_stream_metadata: Mutex::new(None),
         }
     }
 
@@ -775,6 +781,7 @@ impl AudioEngineManager {
 
         self.set_state(StreamingState::Idle);
         *lock_recover(&self.last_seen_source, "last_seen_source") = None;
+        *lock_recover(&self.last_seen_stream_metadata, "last_seen_stream_metadata") = None;
 
         if let Some(e) = shutdown_error {
             Err(e)
@@ -1035,6 +1042,17 @@ impl AudioEngineManager {
         // Check engine state for end-of-stream or error
         let engine_state = self.get_engine_state();
         let current_state = self.get_state();
+
+        {
+            let mut last_stream_metadata =
+                lock_recover(&self.last_seen_stream_metadata, "last_seen_stream_metadata");
+            if *last_stream_metadata != engine_state.stream_metadata {
+                *last_stream_metadata = engine_state.stream_metadata.clone();
+                return Some(StreamingEvent::StreamMetadataChanged(
+                    engine_state.stream_metadata.clone(),
+                ));
+            }
+        }
 
         // Detect gapless transition: current_source changed while still playing
         if engine_state.playback_state == PlaybackState::Playing

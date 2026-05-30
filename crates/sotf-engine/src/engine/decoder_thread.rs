@@ -6,10 +6,13 @@
 
 use super::{AudioFrame, DecoderCommand, DecoderMessage, DecoderResponse, ThreadEvent};
 use crate::decoder::{
-    AudioDecoder, AudioSource, AudioSpec, DecodedAudio, create_decoder_from_source_with_dsd_mode,
+    AudioDecoder, AudioSource, AudioSpec, DecodedAudio,
+    create_decoder_from_source_with_dsd_mode_and_metadata,
 };
 use sotf_plugins::{Plugin, ProcessContext, ResamplerPlugin};
 use sotf_types::DsdOutputMode;
+#[cfg(feature = "streaming")]
+use sotf_types::StreamMetadata;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::{Duration, Instant};
 
@@ -309,6 +312,10 @@ struct DecoderState {
     /// the decoder seamlessly transitions to this source without sending EndOfStream/Flush.
     queued_next: Option<AudioSource>,
     dsd_output: DsdOutputMode,
+    #[cfg(feature = "streaming")]
+    stream_metadata_rx: Option<crate::decoder::SourceMetadataReceiver>,
+    #[cfg(feature = "streaming")]
+    stream_metadata: Option<StreamMetadata>,
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_input_buffer: Vec<f32>,
@@ -350,6 +357,10 @@ impl DecoderState {
             recycle_rx,
             queued_next: None,
             dsd_output,
+            #[cfg(feature = "streaming")]
+            stream_metadata_rx: None,
+            #[cfg(feature = "streaming")]
+            stream_metadata: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_input_buffer: Vec::new(),
             #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -372,8 +383,9 @@ impl DecoderState {
         target_sample_rate: u32,
         frame_size: usize,
     ) -> Result<(), String> {
-        let decoder = create_decoder_from_source_with_dsd_mode(&source, self.dsd_output)
-            .map_err(|e| format!("Failed to create decoder: {:?}", e))?;
+        let (decoder, metadata_rx) =
+            create_decoder_from_source_with_dsd_mode_and_metadata(&source, self.dsd_output)
+                .map_err(|e| format!("Failed to create decoder: {:?}", e))?;
 
         // Get audio spec
         let spec = decoder.spec().clone();
@@ -409,6 +421,12 @@ impl DecoderState {
         self.paused = false;
         self.current_source = Some(source);
         self.spec = Some(spec);
+        #[cfg(feature = "streaming")]
+        {
+            self.stream_metadata_rx = metadata_rx;
+        }
+        #[cfg(not(feature = "streaming"))]
+        let _ = metadata_rx;
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
@@ -427,8 +445,9 @@ impl DecoderState {
         };
 
         let current_spec = self.spec.as_ref().ok_or("No spec")?.clone();
-        let next_decoder = create_decoder_from_source_with_dsd_mode(&next_source, self.dsd_output)
-            .map_err(|e| format!("Failed to create decoder: {:?}", e))?;
+        let (next_decoder, metadata_rx) =
+            create_decoder_from_source_with_dsd_mode_and_metadata(&next_source, self.dsd_output)
+                .map_err(|e| format!("Failed to create decoder: {:?}", e))?;
         let next_spec = next_decoder.spec().clone();
 
         let compatible = current_spec.channels == next_spec.channels
@@ -448,11 +467,72 @@ impl DecoderState {
         self.decoder = Some(next_decoder);
         self.current_source = Some(next_source.clone());
         self.spec = Some(next_spec);
+        #[cfg(feature = "streaming")]
+        {
+            self.stream_metadata_rx = metadata_rx;
+        }
+        #[cfg(not(feature = "streaming"))]
+        let _ = metadata_rx;
         self.decode_buffer = None;
         self.paused = false;
         self.silent_source = false;
 
         Ok(Some(next_source))
+    }
+
+    #[cfg(feature = "streaming")]
+    fn clear_stream_metadata(&mut self, event_tx: &Sender<ThreadEvent>) {
+        self.stream_metadata_rx = None;
+        if self.stream_metadata.take().is_some() {
+            event_tx.send(ThreadEvent::StreamMetadataChanged(None)).ok();
+        }
+    }
+
+    #[cfg(feature = "streaming")]
+    fn poll_stream_metadata(&mut self, event_tx: &Sender<ThreadEvent>) {
+        use std::sync::mpsc::TryRecvError;
+
+        let mut changed = false;
+        loop {
+            let event = match self.stream_metadata_rx.as_ref() {
+                Some(rx) => match rx.try_recv() {
+                    Ok(event) => event,
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        self.stream_metadata_rx = None;
+                        break;
+                    }
+                },
+                None => break,
+            };
+
+            let mut next = self.stream_metadata.clone().unwrap_or_default();
+            match event {
+                sotf_streaming::StreamMetadata::Icy(icy) => {
+                    next.stream_title = icy.stream_title;
+                    next.stream_url = icy.stream_url;
+                    changed = true;
+                }
+                sotf_streaming::StreamMetadata::ContentType(content_type) => {
+                    next.content_type = Some(content_type);
+                    changed = true;
+                }
+                sotf_streaming::StreamMetadata::Bitrate(kbps) => {
+                    next.bitrate_kbps = Some(kbps);
+                    changed = true;
+                }
+            }
+
+            self.stream_metadata = Some(next);
+        }
+
+        if changed {
+            event_tx
+                .send(ThreadEvent::StreamMetadataChanged(
+                    self.stream_metadata.clone(),
+                ))
+                .ok();
+        }
     }
 
     fn send_decoder_message(
@@ -1327,6 +1407,8 @@ fn run_decoder_thread(
                 DecoderCommand::Play(source) => {
                     message_tx.send(DecoderMessage::Flush).ok();
                     state.stop();
+                    #[cfg(feature = "streaming")]
+                    state.clear_stream_metadata(&event_tx);
                     if let Err(e) = state.play(source, target_sample_rate, frame_size) {
                         log::debug!("[Decoder Thread] Play failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
@@ -1342,6 +1424,8 @@ fn run_decoder_thread(
                 DecoderCommand::PlayAt(source, position) => {
                     message_tx.send(DecoderMessage::Flush).ok();
                     state.stop();
+                    #[cfg(feature = "streaming")]
+                    state.clear_stream_metadata(&event_tx);
                     if let Err(e) = state.play(source, target_sample_rate, frame_size) {
                         log::debug!("[Decoder Thread] PlayAt (load) failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
@@ -1397,6 +1481,8 @@ fn run_decoder_thread(
                 }
                 DecoderCommand::Stop => {
                     state.stop();
+                    #[cfg(feature = "streaming")]
+                    state.clear_stream_metadata(&event_tx);
                     message_tx.send(DecoderMessage::Flush).ok();
                     log::debug!("[Decoder Thread] Stopped");
                     response_tx.send(DecoderResponse::Ok).ok();
@@ -1407,6 +1493,9 @@ fn run_decoder_thread(
                 }
             }
         }
+
+        #[cfg(feature = "streaming")]
+        state.poll_stream_metadata(&event_tx);
 
         // Generate frames based on mode
         if state.silent_source && !state.paused {
@@ -1432,6 +1521,8 @@ fn run_decoder_thread(
                         match cmd {
                             DecoderCommand::Stop => {
                                 state.stop();
+                                #[cfg(feature = "streaming")]
+                                state.clear_stream_metadata(&event_tx);
                                 message_tx.send(DecoderMessage::Flush).ok();
                                 log::debug!("[Decoder Thread] Stopped (from HAL interrupt)");
                                 response_tx.send(DecoderResponse::Ok).ok();
@@ -1462,6 +1553,8 @@ fn run_decoder_thread(
                             DecoderCommand::Play(path) => {
                                 message_tx.send(DecoderMessage::Flush).ok();
                                 state.stop();
+                                #[cfg(feature = "streaming")]
+                                state.clear_stream_metadata(&event_tx);
                                 if let Err(e) = state.play(path, target_sample_rate, frame_size) {
                                     log::debug!(
                                         "[Decoder Thread] Play failed (from HAL interrupt): {}",
@@ -1480,6 +1573,8 @@ fn run_decoder_thread(
                             DecoderCommand::PlayAt(path, position) => {
                                 message_tx.send(DecoderMessage::Flush).ok();
                                 state.stop();
+                                #[cfg(feature = "streaming")]
+                                state.clear_stream_metadata(&event_tx);
                                 if let Err(e) = state.play(path, target_sample_rate, frame_size) {
                                     log::debug!(
                                         "[Decoder Thread] PlayAt failed (from HAL interrupt): {}",
@@ -1532,6 +1627,8 @@ fn run_decoder_thread(
                 Err(e) => {
                     crate::rate_limited_log!(warn, 5, "[Decoder Thread] HAL input error: {}", e);
                     state.stop();
+                    #[cfg(feature = "streaming")]
+                    state.clear_stream_metadata(&event_tx);
                 }
             }
 
@@ -1565,6 +1662,8 @@ fn run_decoder_thread(
                 Ok(DecoderLoopAction::Stop) => {
                     // End of stream - stop
                     state.stop();
+                    #[cfg(feature = "streaming")]
+                    state.clear_stream_metadata(&event_tx);
                 }
                 Ok(DecoderLoopAction::Interrupted(cmd)) => {
                     // Handle interruption command immediately
@@ -1572,6 +1671,8 @@ fn run_decoder_thread(
                         DecoderCommand::Play(path) => {
                             message_tx.send(DecoderMessage::Flush).ok();
                             state.stop();
+                            #[cfg(feature = "streaming")]
+                            state.clear_stream_metadata(&event_tx);
                             if let Err(e) = state.play(path, target_sample_rate, frame_size) {
                                 log::debug!("[Decoder Thread] Play failed: {}", e);
                                 event_tx.send(ThreadEvent::DecoderError(e)).ok();
@@ -1587,6 +1688,8 @@ fn run_decoder_thread(
                         DecoderCommand::PlayAt(path, position) => {
                             message_tx.send(DecoderMessage::Flush).ok();
                             state.stop();
+                            #[cfg(feature = "streaming")]
+                            state.clear_stream_metadata(&event_tx);
                             if let Err(e) = state.play(path, target_sample_rate, frame_size) {
                                 log::debug!("[Decoder Thread] PlayAt (load) failed: {}", e);
                                 event_tx.send(ThreadEvent::DecoderError(e)).ok();
@@ -1645,6 +1748,8 @@ fn run_decoder_thread(
                         }
                         DecoderCommand::Stop => {
                             state.stop();
+                            #[cfg(feature = "streaming")]
+                            state.clear_stream_metadata(&event_tx);
                             message_tx.send(DecoderMessage::Flush).ok();
                             log::debug!("[Decoder Thread] Stopped");
                             response_tx.send(DecoderResponse::Ok).ok();
@@ -1658,6 +1763,8 @@ fn run_decoder_thread(
                 Err(e) => {
                     crate::rate_limited_log!(warn, 5, "[Decoder Thread] Error: {}", e);
                     state.stop();
+                    #[cfg(feature = "streaming")]
+                    state.clear_stream_metadata(&event_tx);
                 }
             }
         } else {

@@ -13,6 +13,7 @@ pub use sotf_types::{
     IsolatedExternalPluginWorkerStatus, LatencyCompensationMode, NetworkEndpointConfig,
     NetworkEndpointMode, NetworkEndpointStatus, OutputAccessMode, OutputAccessStatus,
     PlaybackState, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
+    StreamMetadata,
 };
 
 // ============================================================================
@@ -245,6 +246,8 @@ pub enum ThreadEvent {
     DecoderGaplessTransition(AudioSource),
     /// Decoder error
     DecoderError(String),
+    /// Live stream metadata update (ICY/content-type/bitrate).
+    StreamMetadataChanged(Option<StreamMetadata>),
     PlaybackChannelsChanged(usize),
     PlaybackOutputDeviceChanged(String),
     PlaybackOutputAccessChanged(sotf_types::OutputAccessStatus),

@@ -9,9 +9,12 @@ pub mod source;
 pub mod stream;
 
 // Re-export the main API
+pub use core::SourceMetadataReceiver;
 pub use core::{
     AudioDecoder, AudioSpec, DecodedAudio, create_decoder, create_decoder_from_source,
-    create_decoder_from_source_with_dsd_mode, create_decoder_with_dsd_mode, probe_file,
+    create_decoder_from_source_with_dsd_mode,
+    create_decoder_from_source_with_dsd_mode_and_metadata, create_decoder_with_dsd_mode,
+    probe_file,
 };
 pub use dsd::{DffPcmDecoder, DsfPcmDecoder};
 pub use error::{AudioDecoderError, AudioDecoderResult};

@@ -1010,6 +1010,10 @@ fn api_capabilities_json() -> Value {
 fn api_state_json(state: &Arc<ServerState>, adapter: &MpdPlayerAdapter) -> Value {
     let status = adapter.status();
     let current_song = adapter.current_song().map(|song| mpd_song_json(&song));
+    let stream_metadata = {
+        let player = state.player.lock();
+        player.get_engine_state().stream_metadata
+    };
     let (album_count, track_count) = {
         let library = state.library.lock();
         let track_count = library
@@ -1036,6 +1040,7 @@ fn api_state_json(state: &Arc<ServerState>, adapter: &MpdPlayerAdapter) -> Value
             "albums": album_count,
             "tracks": track_count,
         },
+        "stream_metadata": stream_metadata,
     })
 }
 

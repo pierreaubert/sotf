@@ -237,8 +237,25 @@ pub fn create_decoder_from_source_with_dsd_mode(
     source: &AudioSource,
     dsd_output: DsdOutputMode,
 ) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
+    let (decoder, _metadata_rx) =
+        create_decoder_from_source_with_dsd_mode_and_metadata(source, dsd_output)?;
+    Ok(decoder)
+}
+
+#[cfg(feature = "streaming")]
+pub type SourceMetadataReceiver = std::sync::mpsc::Receiver<sotf_streaming::StreamMetadata>;
+#[cfg(not(feature = "streaming"))]
+pub type SourceMetadataReceiver = ();
+
+/// Create a decoder from an `AudioSource`, optionally returning live stream metadata updates.
+///
+/// For local files and non-streaming sources, metadata updates are `None`.
+pub fn create_decoder_from_source_with_dsd_mode_and_metadata(
+    source: &AudioSource,
+    dsd_output: DsdOutputMode,
+) -> AudioDecoderResult<(Box<dyn AudioDecoder>, Option<SourceMetadataReceiver>)> {
     match source {
-        AudioSource::File(path) => create_decoder_with_dsd_mode(path, dsd_output),
+        AudioSource::File(path) => Ok((create_decoder_with_dsd_mode(path, dsd_output)?, None)),
         #[cfg(feature = "streaming")]
         AudioSource::Url {
             url,
@@ -247,7 +264,7 @@ pub fn create_decoder_from_source_with_dsd_mode(
         } if url.starts_with("mpd-stream://") => {
             use symphonia::core::formats::probe::Hint;
 
-            let (mpd_source, _metadata_rx) = sotf_streaming::MpdStreamSource::open(url)
+            let (mpd_source, metadata_rx) = sotf_streaming::MpdStreamSource::open(url)
                 .map_err(AudioDecoderError::NetworkError)?;
 
             let mut hint = Hint::new();
@@ -258,7 +275,7 @@ pub fn create_decoder_from_source_with_dsd_mode(
             }
 
             let decoder = SymphoniaDecoder::from_media_source(Box::new(mpd_source), hint, url)?;
-            Ok(Box::new(decoder))
+            Ok((Box::new(decoder), Some(metadata_rx)))
         }
         #[cfg(all(feature = "streaming", feature = "hls"))]
         AudioSource::Url {
@@ -281,7 +298,7 @@ pub fn create_decoder_from_source_with_dsd_mode(
             }
 
             let decoder = SymphoniaDecoder::from_media_source(Box::new(hls_source), hint, url)?;
-            Ok(Box::new(decoder))
+            Ok((Box::new(decoder), None))
         }
         #[cfg(all(feature = "streaming", not(feature = "hls")))]
         AudioSource::Url {
@@ -302,7 +319,7 @@ pub fn create_decoder_from_source_with_dsd_mode(
         } => {
             use symphonia::core::formats::probe::Hint;
 
-            let (http_source, _metadata_rx) = sotf_streaming::HttpMediaSource::open(url)
+            let (http_source, metadata_rx) = sotf_streaming::HttpMediaSource::open(url)
                 .map_err(|e| AudioDecoderError::NetworkError(e.to_string()))?;
 
             // Build hint from explicit format_hint or from URL/content-type detection
@@ -314,7 +331,7 @@ pub fn create_decoder_from_source_with_dsd_mode(
             }
 
             let decoder = SymphoniaDecoder::from_media_source(Box::new(http_source), hint, url)?;
-            Ok(Box::new(decoder))
+            Ok((Box::new(decoder), Some(metadata_rx)))
         }
         #[cfg(not(feature = "streaming"))]
         AudioSource::Url { url, .. } => Err(AudioDecoderError::UnsupportedFormat(format!(
