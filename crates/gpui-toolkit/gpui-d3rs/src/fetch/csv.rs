@@ -2,7 +2,7 @@
 //!
 //! High-level functions for parsing comma-separated and tab-separated values.
 
-use super::dsv::{DsvParser, DsvRow};
+use super::dsv::{DsvParseError, DsvParser, DsvRow};
 
 /// Options for CSV/TSV parsing.
 #[derive(Debug, Clone, Default)]
@@ -40,6 +40,11 @@ pub fn parse_csv(text: &str) -> Vec<DsvRow> {
     DsvParser::new(',').parse(text)
 }
 
+/// Parse a CSV string into rows, returning structured errors.
+pub fn try_parse_csv(text: &str) -> Result<Vec<DsvRow>, DsvParseError> {
+    DsvParser::new(',').try_parse(text)
+}
+
 /// Parse a CSV string with options.
 ///
 /// # Example
@@ -63,6 +68,17 @@ pub fn parse_csv_with_options(text: &str, options: &CsvOptions) -> Vec<DsvRow> {
         .parse(text)
 }
 
+/// Parse a CSV string with options, returning structured errors.
+pub fn try_parse_csv_with_options(
+    text: &str,
+    options: &CsvOptions,
+) -> Result<Vec<DsvRow>, DsvParseError> {
+    DsvParser::new(',')
+        .skip_empty_lines(options.skip_empty_lines)
+        .trim_values(options.trim_values)
+        .try_parse(text)
+}
+
 /// Parse a TSV (tab-separated) string into rows.
 ///
 /// # Example
@@ -79,12 +95,28 @@ pub fn parse_tsv(text: &str) -> Vec<DsvRow> {
     DsvParser::new('\t').parse(text)
 }
 
+/// Parse a TSV string, returning structured errors.
+pub fn try_parse_tsv(text: &str) -> Result<Vec<DsvRow>, DsvParseError> {
+    DsvParser::new('\t').try_parse(text)
+}
+
 /// Parse a TSV string with options.
 pub fn parse_tsv_with_options(text: &str, options: &CsvOptions) -> Vec<DsvRow> {
     DsvParser::new('\t')
         .skip_empty_lines(options.skip_empty_lines)
         .trim_values(options.trim_values)
         .parse(text)
+}
+
+/// Parse a TSV string with options, returning structured errors.
+pub fn try_parse_tsv_with_options(
+    text: &str,
+    options: &CsvOptions,
+) -> Result<Vec<DsvRow>, DsvParseError> {
+    DsvParser::new('\t')
+        .skip_empty_lines(options.skip_empty_lines)
+        .trim_values(options.trim_values)
+        .try_parse(text)
 }
 
 /// Format rows as CSV text.
@@ -136,5 +168,11 @@ mod tests {
         let result = format_csv(&[row], &["x", "y"]);
         assert!(result.starts_with("x,y"));
         assert!(result.contains("1,2"));
+    }
+
+    #[test]
+    fn test_try_parse_csv_reports_errors() {
+        let err = try_parse_csv("name,value\nalice,\"broken").unwrap_err();
+        assert_eq!(err.line, 2);
     }
 }

@@ -9,6 +9,7 @@
 pub use gpui;
 
 pub mod momentum;
+pub mod native;
 pub mod platform_view;
 
 // ── System chrome styling ────────────────────────────────────────────────────

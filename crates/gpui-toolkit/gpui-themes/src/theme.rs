@@ -314,11 +314,7 @@ impl ThemeTransition {
     }
 
     pub fn effective_duration_ms(self, reduce_motion: bool) -> u16 {
-        if reduce_motion {
-            0
-        } else {
-            self.duration_ms
-        }
+        if reduce_motion { 0 } else { self.duration_ms }
     }
 }
 
@@ -422,6 +418,184 @@ impl BuiltInThemePreset {
             BuiltInThemePreset::Deuteranopia => EditorTheme::deuteranopia(),
             BuiltInThemePreset::Tritanopia => EditorTheme::tritanopia(),
         }
+    }
+}
+
+/// Curated ANSI terminal palette presets for `sotf-tui`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TuiThemePreset {
+    SolarizedDark,
+    SolarizedLight,
+    Dracula,
+    GruvboxDark,
+    TokyoNight,
+}
+
+impl TuiThemePreset {
+    pub fn all() -> &'static [TuiThemePreset] {
+        &[
+            Self::SolarizedDark,
+            Self::SolarizedLight,
+            Self::Dracula,
+            Self::GruvboxDark,
+            Self::TokyoNight,
+        ]
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::SolarizedDark => "Solarized Dark",
+            Self::SolarizedLight => "Solarized Light",
+            Self::Dracula => "Dracula",
+            Self::GruvboxDark => "Gruvbox Dark",
+            Self::TokyoNight => "Tokyo Night",
+        }
+    }
+
+    pub fn palette(self) -> TuiAnsiPalette {
+        match self {
+            Self::SolarizedDark => TuiAnsiPalette::new(
+                self,
+                Color::from_hex(0x002b36),
+                Color::from_hex(0x839496),
+                [
+                    0x073642, 0xdc322f, 0x859900, 0xb58900, 0x268bd2, 0xd33682, 0x2aa198, 0xeee8d5,
+                    0x002b36, 0xcb4b16, 0x586e75, 0x657b83, 0x839496, 0x6c71c4, 0x93a1a1, 0xfdf6e3,
+                ],
+            ),
+            Self::SolarizedLight => TuiAnsiPalette::new(
+                self,
+                Color::from_hex(0xfdf6e3),
+                Color::from_hex(0x657b83),
+                [
+                    0x073642, 0xdc322f, 0x859900, 0xb58900, 0x268bd2, 0xd33682, 0x2aa198, 0xeee8d5,
+                    0x002b36, 0xcb4b16, 0x586e75, 0x657b83, 0x839496, 0x6c71c4, 0x93a1a1, 0xfdf6e3,
+                ],
+            ),
+            Self::Dracula => TuiAnsiPalette::new(
+                self,
+                Color::from_hex(0x282a36),
+                Color::from_hex(0xf8f8f2),
+                [
+                    0x21222c, 0xff5555, 0x50fa7b, 0xf1fa8c, 0xbd93f9, 0xff79c6, 0x8be9fd, 0xf8f8f2,
+                    0x6272a4, 0xff6e6e, 0x69ff94, 0xffffa5, 0xd6acff, 0xff92df, 0xa4ffff, 0xffffff,
+                ],
+            ),
+            Self::GruvboxDark => TuiAnsiPalette::new(
+                self,
+                Color::from_hex(0x282828),
+                Color::from_hex(0xebdbb2),
+                [
+                    0x282828, 0xcc241d, 0x98971a, 0xd79921, 0x458588, 0xb16286, 0x689d6a, 0xa89984,
+                    0x928374, 0xfb4934, 0xb8bb26, 0xfabd2f, 0x83a598, 0xd3869b, 0x8ec07c, 0xebdbb2,
+                ],
+            ),
+            Self::TokyoNight => TuiAnsiPalette::new(
+                self,
+                Color::from_hex(0x1a1b26),
+                Color::from_hex(0xc0caf5),
+                [
+                    0x15161e, 0xf7768e, 0x9ece6a, 0xe0af68, 0x7aa2f7, 0xbb9af7, 0x7dcfff, 0xa9b1d6,
+                    0x414868, 0xf7768e, 0x9ece6a, 0xe0af68, 0x7aa2f7, 0xbb9af7, 0x7dcfff, 0xc0caf5,
+                ],
+            ),
+        }
+    }
+}
+
+/// 16-color ANSI terminal palette.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TuiAnsiPalette {
+    pub preset: TuiThemePreset,
+    pub name: String,
+    pub background: Color,
+    pub foreground: Color,
+    pub ansi: [Color; 16],
+}
+
+impl TuiAnsiPalette {
+    fn new(
+        preset: TuiThemePreset,
+        background: Color,
+        foreground: Color,
+        ansi_hex: [u32; 16],
+    ) -> Self {
+        Self {
+            preset,
+            name: preset.name().to_string(),
+            background,
+            foreground,
+            ansi: ansi_hex.map(Color::from_hex),
+        }
+    }
+
+    pub fn to_editor_theme(&self) -> EditorTheme {
+        let mut theme = if relative_luminance(self.background) >= 0.5 {
+            EditorTheme::light()
+        } else {
+            EditorTheme::dark()
+        };
+        theme.name = self.name.clone();
+        theme.background = self.background;
+        theme.surface = self.ansi[0];
+        theme.text_primary = self.foreground;
+        theme.accent = self.ansi[4];
+        theme.accent_hover = self.ansi[12];
+        theme.accent_muted = self.ansi[4].with_alpha(0.32);
+        theme.error = self.ansi[1];
+        theme.success = self.ansi[2];
+        theme.warning = self.ansi[3];
+        theme.info = self.ansi[6];
+        theme
+    }
+}
+
+/// Theme gallery entry for a local marketplace or import screen.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThemeGalleryEntry {
+    pub id: String,
+    pub display_name: String,
+    pub tags: Vec<String>,
+    pub accessibility: AccessibilityPalette,
+    pub appearance: ThemeAppearance,
+}
+
+/// Lightweight gallery manifest derived from built-ins and community bundles.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ThemeGallery {
+    pub entries: Vec<ThemeGalleryEntry>,
+}
+
+impl ThemeGallery {
+    pub fn from_built_ins() -> Self {
+        let entries = BuiltInThemePreset::all()
+            .iter()
+            .map(|preset| {
+                let theme = preset.to_theme();
+                ThemeGalleryEntry {
+                    id: preset.id().to_string(),
+                    display_name: preset.name().to_string(),
+                    tags: vec!["built-in".to_string()],
+                    accessibility: preset.accessibility(),
+                    appearance: theme.appearance(),
+                }
+            })
+            .collect();
+        Self { entries }
+    }
+
+    pub fn with_community_bundle(mut self, bundle: &CommunityThemeBundle) -> Self {
+        self.entries.push(ThemeGalleryEntry {
+            id: bundle.manifest.id.clone(),
+            display_name: bundle.manifest.display_name.clone(),
+            tags: bundle.manifest.tags.clone(),
+            accessibility: bundle.manifest.accessibility,
+            appearance: bundle.theme.appearance(),
+        });
+        self.entries
+            .sort_by(|a, b| a.display_name.cmp(&b.display_name));
+        self
     }
 }
 
@@ -2076,5 +2250,33 @@ mod tests {
             Some(BuiltInThemePreset::HighContrast)
         );
         assert_eq!(BuiltInThemePreset::from_id("tokyo-night"), None);
+    }
+
+    #[test]
+    fn test_tui_presets_have_full_ansi_palettes() {
+        for preset in TuiThemePreset::all() {
+            let palette = preset.palette();
+            assert_eq!(palette.ansi.len(), 16);
+            assert_eq!(palette.name, preset.name());
+            assert_eq!(palette.to_editor_theme().name, preset.name());
+        }
+    }
+
+    #[test]
+    fn test_theme_gallery_contains_builtins_and_community() {
+        let mut manifest = CommunityThemeManifest::for_theme(&EditorTheme::nord());
+        manifest.tags = vec!["cool".to_string()];
+        let bundle = CommunityThemeBundle::new(manifest, EditorTheme::nord());
+
+        let gallery = ThemeGallery::from_built_ins().with_community_bundle(&bundle);
+
+        assert!(
+            gallery
+                .entries
+                .iter()
+                .any(|entry| entry.id == "high_contrast"
+                    && entry.accessibility == AccessibilityPalette::HighContrast)
+        );
+        assert!(gallery.entries.iter().any(|entry| entry.id == "nord"));
     }
 }

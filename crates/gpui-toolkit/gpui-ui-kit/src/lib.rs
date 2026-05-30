@@ -13,6 +13,7 @@ pub mod accessibility;
 pub mod animation;
 pub mod color_tokens;
 pub mod i18n;
+pub mod mobile;
 pub mod theme;
 
 // Core components
@@ -50,6 +51,7 @@ pub mod audio_design_tokens;
 // Data display
 pub mod avatar;
 pub mod badge;
+pub mod collection_diff;
 pub mod empty_state;
 pub mod image_view;
 pub mod keyboard_shortcut_label;
@@ -191,6 +193,11 @@ pub use animation::{
 pub use accessibility::{
     AccessibilityExt, AccessibilityNode, AccessibilityTree, AriaLive, AriaProps, AriaRole,
     AriaState,
+};
+pub use collection_diff::{CollectionPatch, diff_by_key, is_content_only_update};
+pub use mobile::{
+    ContextPreview, DynamicTypePolicy, EdgeInsets, PullToRefreshState, SwipeAction, SwipeDirection,
+    WaveformScrubber,
 };
 
 // Theme and i18n

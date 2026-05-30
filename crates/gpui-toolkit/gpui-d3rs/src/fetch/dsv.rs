@@ -7,6 +7,30 @@ use std::collections::HashMap;
 /// A row from a DSV file, stored as a HashMap of column name to value.
 pub type DsvRow = HashMap<String, String>;
 
+/// Recoverable DSV parse error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DsvParseError {
+    pub line: usize,
+    pub message: String,
+}
+
+impl DsvParseError {
+    fn new(line: usize, message: impl Into<String>) -> Self {
+        Self {
+            line,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for DsvParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "line {}: {}", self.line, self.message)
+    }
+}
+
+impl std::error::Error for DsvParseError {}
+
 /// A DSV parser that can be configured with any delimiter.
 ///
 /// # Example
@@ -52,16 +76,21 @@ impl DsvParser {
     ///
     /// The first line is treated as the header row.
     pub fn parse(&self, text: &str) -> Vec<DsvRow> {
+        self.try_parse(text).unwrap_or_default()
+    }
+
+    /// Parse a DSV string into rows, returning structured errors.
+    pub fn try_parse(&self, text: &str) -> Result<Vec<DsvRow>, DsvParseError> {
         let mut lines = text.lines();
 
         // Get header line
         let header_line = match lines.next() {
             Some(line) => line,
-            None => return Vec::new(),
+            None => return Ok(Vec::new()),
         };
 
         let headers: Vec<String> = self
-            .parse_line(header_line)
+            .try_parse_line(header_line, 1)?
             .into_iter()
             .map(|s| {
                 if self.trim_values {
@@ -73,42 +102,51 @@ impl DsvParser {
             .collect();
 
         // Parse data lines
-        lines
-            .filter(|line| !self.skip_empty_lines || !line.trim().is_empty())
-            .map(|line| {
-                let values = self.parse_line(line);
-                let mut row = DsvRow::new();
-                for (i, header) in headers.iter().enumerate() {
-                    let value = values.get(i).cloned().unwrap_or_default();
-                    let value = if self.trim_values {
-                        value.trim().to_string()
-                    } else {
-                        value
-                    };
-                    row.insert(header.clone(), value);
-                }
-                row
-            })
-            .collect()
+        let mut rows = Vec::new();
+        for (line_index, line) in lines.enumerate() {
+            if self.skip_empty_lines && line.trim().is_empty() {
+                continue;
+            }
+            let values = self.try_parse_line(line, line_index + 2)?;
+            let mut row = DsvRow::new();
+            for (i, header) in headers.iter().enumerate() {
+                let value = values.get(i).cloned().unwrap_or_default();
+                let value = if self.trim_values {
+                    value.trim().to_string()
+                } else {
+                    value
+                };
+                row.insert(header.clone(), value);
+            }
+            rows.push(row);
+        }
+        Ok(rows)
     }
 
     /// Parse a DSV string without headers (returns arrays of strings).
     pub fn parse_rows(&self, text: &str) -> Vec<Vec<String>> {
+        self.try_parse_rows(text).unwrap_or_default()
+    }
+
+    /// Parse rows without headers, returning structured errors.
+    pub fn try_parse_rows(&self, text: &str) -> Result<Vec<Vec<String>>, DsvParseError> {
         text.lines()
-            .filter(|line| !self.skip_empty_lines || !line.trim().is_empty())
-            .map(|line| {
-                let values = self.parse_line(line);
-                if self.trim_values {
-                    values.into_iter().map(|s| s.trim().to_string()).collect()
-                } else {
-                    values
-                }
+            .enumerate()
+            .filter(|(_, line)| !self.skip_empty_lines || !line.trim().is_empty())
+            .map(|(line_index, line)| {
+                self.try_parse_line(line, line_index + 1).map(|values| {
+                    if self.trim_values {
+                        values.into_iter().map(|s| s.trim().to_string()).collect()
+                    } else {
+                        values
+                    }
+                })
             })
             .collect()
     }
 
-    /// Parse a single line, handling quoted fields.
-    fn parse_line(&self, line: &str) -> Vec<String> {
+    /// Parse a single line, handling quoted fields and invalid quote state.
+    fn try_parse_line(&self, line: &str, line_number: usize) -> Result<Vec<String>, DsvParseError> {
         let mut result = Vec::new();
         let mut current = String::new();
         let mut in_quotes = false;
@@ -138,7 +176,11 @@ impl DsvParser {
         }
 
         result.push(current);
-        result
+        if in_quotes {
+            Err(DsvParseError::new(line_number, "unterminated quoted field"))
+        } else {
+            Ok(result)
+        }
     }
 
     /// Format rows as DSV text.
@@ -204,6 +246,11 @@ pub fn parse_dsv(text: &str, delimiter: char) -> Vec<DsvRow> {
     DsvParser::new(delimiter).parse(text)
 }
 
+/// Parse a DSV string with the given delimiter, returning structured errors.
+pub fn try_parse_dsv(text: &str, delimiter: char) -> Result<Vec<DsvRow>, DsvParseError> {
+    DsvParser::new(delimiter).try_parse(text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,6 +289,18 @@ mod tests {
         let rows = parser.parse_rows(data);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0], vec!["1", "2", "3"]);
+    }
+
+    #[test]
+    fn test_try_parse_reports_unclosed_quote() {
+        let parser = DsvParser::new(',');
+        let err = parser
+            .try_parse("name,value\nalice,\"broken")
+            .expect_err("unterminated quote should be an error");
+
+        assert_eq!(err.line, 2);
+        assert!(err.message.contains("unterminated"));
+        assert!(parser.parse("name,value\nalice,\"broken").is_empty());
     }
 
     #[test]
