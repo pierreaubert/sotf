@@ -80,8 +80,8 @@ impl Delaunay {
                     let x = points[2 * i];
                     let y = points[2 * i + 1];
                     Point {
-                        x: x + (x + y).sin() * r,
-                        y: y + (x - y).cos() * r,
+                        x: x + jitter_unit(i, x, y, 0x9e37_79b9_7f4a_7c15) * r,
+                        y: y + jitter_unit(i, x, y, 0xbf58_476d_1ce4_e5b9) * r,
                     }
                 })
                 .collect();
@@ -92,7 +92,10 @@ impl Delaunay {
             hull = tri2.hull;
         }
 
-        // Compute inedges
+        // Compute inedges. If the input was collinear, the triangulation
+        // above was built from jittered coordinates, but delaunator keeps
+        // the same vertex indices, so these edge maps still refer to the
+        // original points stored on `self`.
         for (e, _) in halfedges.iter().enumerate() {
             let p = triangles[if e % 3 == 2 { e - 2 } else { e + 1 }];
             if halfedges[e] == NO_EDGE || inedges[p] == NO_EDGE {
@@ -221,6 +224,13 @@ impl Delaunay {
         result
     }
 
+    /// Find a point near `(x, y)` by greedy descent across the Delaunay graph.
+    ///
+    /// This matches d3-delaunay's local search: starting at `start`, each
+    /// step moves to an adjacent vertex that is closer to the query. It is
+    /// fast and exact for the common "near previous query" workflow, but
+    /// queries outside the hull, or adversarial start vertices, are not a
+    /// global nearest-neighbor guarantee.
     pub fn find(&self, x: f64, y: f64, start: usize) -> usize {
         if x.is_nan() || y.is_nan() {
             return NO_EDGE;
@@ -360,6 +370,22 @@ fn bbox_scale_sq(coords: &[f64]) -> f64 {
     if s2 > 0.0 { s2 } else { 1.0 }
 }
 
+fn splitmix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
+}
+
+fn jitter_unit(i: usize, x: f64, y: f64, salt: u64) -> f64 {
+    let seed = (i as u64).wrapping_mul(0xd6e8_feb8_6659_fd93)
+        ^ x.to_bits().rotate_left(17)
+        ^ y.to_bits().rotate_left(41)
+        ^ salt;
+    let unit = ((splitmix64(seed) >> 11) as f64) * (1.0 / ((1_u64 << 53) as f64));
+    unit * 2.0 - 1.0
+}
+
 /// Test whether all returned triangles are degenerate (collinear within
 /// a bounding-box-relative tolerance).
 ///
@@ -468,6 +494,22 @@ mod tests {
         assert!(
             !is_collinear(&tris, &coords),
             "is_collinear must return false for NaN-containing input"
+        );
+    }
+
+    #[test]
+    fn test_collinear_jitter_hash_is_deterministic() {
+        let x = 1_000_000.0;
+        let y = -1_000_000.0;
+        let first_x = jitter_unit(7, x, y, 0x9e37_79b9_7f4a_7c15);
+        let first_y = jitter_unit(7, x, y, 0xbf58_476d_1ce4_e5b9);
+        assert_eq!(first_x, jitter_unit(7, x, y, 0x9e37_79b9_7f4a_7c15));
+        assert_eq!(first_y, jitter_unit(7, x, y, 0xbf58_476d_1ce4_e5b9));
+        assert!((-1.0..=1.0).contains(&first_x));
+        assert!((-1.0..=1.0).contains(&first_y));
+        assert_ne!(
+            first_x, first_y,
+            "independent salts should decorrelate x/y jitter"
         );
     }
 

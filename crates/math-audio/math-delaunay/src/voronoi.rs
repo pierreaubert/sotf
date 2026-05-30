@@ -27,8 +27,20 @@ pub struct Voronoi<'a> {
 }
 
 impl<'a> Voronoi<'a> {
-    /// Create a Voronoi diagram from a Delaunay triangulation and bounds [xmin, ymin, xmax, ymax].
+    /// Create a Voronoi diagram from a Delaunay triangulation and bounds
+    /// `[xmin, ymin, xmax, ymax]`.
+    ///
+    /// Bounds must be finite and ordered (`xmin < xmax`, `ymin < ymax`).
     pub fn new(delaunay: &'a Delaunay, [xmin, ymin, xmax, ymax]: [f64; 4]) -> Self {
+        debug_assert!(
+            xmin.is_finite()
+                && ymin.is_finite()
+                && xmax.is_finite()
+                && ymax.is_finite()
+                && xmin < xmax
+                && ymin < ymax,
+            "Voronoi bounds must be finite and ordered"
+        );
         let n_triangles = delaunay.triangles.len() / 3;
         let n_points = delaunay.len();
         let mut circumcenters = vec![0.0; n_triangles * 2];
@@ -442,6 +454,17 @@ impl<'a> Voronoi<'a> {
                 c1 = self.regioncode(x1, y1);
             }
         }
+        if c0 == 0 && c1 == 0 {
+            return if flip {
+                Some([x1, y1, x0, y0])
+            } else {
+                Some([x0, y0, x1, y1])
+            };
+        }
+        debug_assert!(
+            c0 == 0 && c1 == 0,
+            "clip_segment exceeded its safety iteration limit"
+        );
         None // safety limit reached
     }
 
@@ -490,10 +513,20 @@ impl<'a> Voronoi<'a> {
                     x = self.xmin;
                     y = self.ymin;
                 }
-                _ => return j,
+                _ => {
+                    debug_assert!(
+                        matches!(
+                            e0,
+                            0b0101 | 0b0100 | 0b0110 | 0b0010 | 0b1010 | 0b1000 | 0b1001 | 0b0001
+                        ),
+                        "unexpected Voronoi edge code {e0:04b}"
+                    );
+                    return j;
+                }
             }
             // D3: if ((P[j] !== x || P[j + 1] !== y) && this.contains(i, x, y))
-            let dup = j + 1 < p.len() && p[j] == x && p[j + 1] == y;
+            let eps = self.epsilon();
+            let dup = j + 1 < p.len() && (p[j] - x).abs() <= eps && (p[j + 1] - y).abs() <= eps;
             if !dup && self.contains(i, x, y) {
                 p.splice(j..j, [x, y]);
                 j += 2;
