@@ -99,6 +99,20 @@ let viewports = [
 let matrix = solve_snapshot_matrix(&root, &viewports, &LayoutPreferences::default());
 println!("{}", matrix.to_markdown_table());
 ```
+## Layout Validation
+
+Run validation in examples, tests, or debug tooling before solving a layout tree:
+
+```rust
+use gpui_builder::validate_layout;
+
+let report = validate_layout(&root);
+assert!(report.is_clean(), "{report}");
+```
+
+Validation reports hard errors for ids and numeric constraints that can make layout
+behavior ambiguous, and warnings for quality issues such as unlabeled collapsible
+slots, duplicate display tiers, and empty containers.
 
 ## Sizing Modes
 

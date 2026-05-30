@@ -10,6 +10,7 @@
 
 use gpui_builder::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode, solve,
+    validate_layout,
 };
 
 static RACK_TIERS: &[DisplayTier<'_>] = &[
@@ -87,8 +88,16 @@ fn main() {
     .into_node();
     root_children[1] = content;
 
-    let root =
-        ContainerNode::new("root", Axis::Vertical, Sizing::flex(0.0), &root_children).into_node();
+    let root = LayoutNode::Container(ContainerNode {
+        id: "root",
+        axis: Axis::Vertical,
+        auto_axis: None,
+        sizing: Sizing::flex(0.0),
+        children: &root_children,
+        divider_size: 0.0,
+    });
+    let validation = validate_layout(&root);
+    assert!(validation.is_clean(), "{validation}");
 
     // --- Scenario 1: Wide desktop window ---
     println!("=== Wide desktop (1200x800) ===");
