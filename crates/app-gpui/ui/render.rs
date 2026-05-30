@@ -1,3 +1,9 @@
+#[derive(Debug)]
+pub(crate) struct PendingGeometrySave {
+    geometry: crate::config::WindowGeometry,
+    sequence: u64,
+}
+
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Focus view on first render to activate macOS menu bar
@@ -91,27 +97,56 @@ impl Render for PlayerView {
                 height: window_bounds.size.height.into(),
             };
             self.last_saved_window_bounds = Some(window_bounds);
-            // Always update the pending geometry — the in-flight task will
-            // read it right before writing.
-            *self.pending_geometry_save.lock() = Some(geometry);
+            self.geometry_save_sequence = self.geometry_save_sequence.wrapping_add(1);
+            let geometry_sequence = self.geometry_save_sequence;
+            *self.pending_geometry_save.lock() = Some(PendingGeometrySave {
+                geometry,
+                sequence: geometry_sequence,
+            });
 
             // Only spawn a new debounce task if none is in flight. Without
             // this guard, every render frame the window moved ≥1 px would
-            // schedule a fresh 1 s timer task — a 3 s drag would fire 30+
-            // disk writes 1 s after the drag ended. The running task drains
-            // `pending_geometry_save` when its timer fires so the final
-            // position is always the one persisted.
+            // schedule a fresh 1 s timer task. The running task waits until
+            // the sequence is stable for a full debounce interval, so a long
+            // drag produces one save after the final move instead of periodic
+            // writes during the drag.
             if !self.geometry_save_pending {
                 self.geometry_save_pending = true;
                 let pending = self.pending_geometry_save.clone();
+                let mut last_seen_sequence = geometry_sequence;
                 self.geometry_save_task = Some(cx.spawn(async move |this, cx| {
-                    // Wait for a period of stability (1 second) before saving
-                    cx.background_executor().timer(Duration::from_secs(1)).await;
+                    loop {
+                        cx.background_executor().timer(Duration::from_secs(1)).await;
 
-                    let geometry = pending.lock().take();
-                    let _ = this.update(cx, |view, cx| {
-                        view.geometry_save_pending = false;
-                        if let Some(geometry) = geometry {
+                        let current_sequence = pending.lock().as_ref().map(|save| save.sequence);
+                        let Some(current_sequence) = current_sequence else {
+                            let _ = this.update(cx, |view, _cx| {
+                                view.geometry_save_pending = false;
+                            });
+                            break;
+                        };
+
+                        if current_sequence != last_seen_sequence {
+                            last_seen_sequence = current_sequence;
+                            continue;
+                        }
+
+                        let geometry = {
+                            let mut pending = pending.lock();
+                            match pending.as_ref() {
+                                Some(save) if save.sequence == current_sequence => {
+                                    pending.take().map(|save| save.geometry)
+                                }
+                                _ => None,
+                            }
+                        };
+
+                        let Some(geometry) = geometry else {
+                            continue;
+                        };
+
+                        let _ = this.update(cx, |view, cx| {
+                            view.geometry_save_pending = false;
                             view.state.update(cx, |state, cx| {
                                 let layout = state.layout.read(cx);
                                 if let Err(e) =
@@ -124,8 +159,9 @@ impl Render for PlayerView {
                                     );
                                 }
                             });
-                        }
-                    });
+                        });
+                        break;
+                    }
                 }));
             }
         }

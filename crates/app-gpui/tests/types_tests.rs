@@ -12,6 +12,7 @@ use sotf_audio_player_gpui::{
     PlaybackDeviceConfig, PlotSmoothing, PluginViewMode, QueueItem, RecordingDeviceConfig,
     RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode, RoomEqAlgorithm,
     RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration, ToastMessage, ToastType,
+    engine_stop_without_queue_should_clear, screen_shows_rack_data,
 };
 use std::path::PathBuf;
 
@@ -44,6 +45,43 @@ fn test_screen_copy_clone() {
     let cloned = screen;
     assert_eq!(screen, copied);
     assert_eq!(screen, cloned);
+}
+
+#[test]
+fn test_tick_rack_data_is_screen_and_layout_gated() {
+    assert!(screen_shows_rack_data(Screen::Studio, LayoutMode::Compact));
+    assert!(screen_shows_rack_data(
+        Screen::PluginGraph,
+        LayoutMode::Compact
+    ));
+    assert!(screen_shows_rack_data(
+        Screen::Library,
+        LayoutMode::Expanded
+    ));
+    assert!(screen_shows_rack_data(Screen::Queue, LayoutMode::Expanded));
+
+    assert!(!screen_shows_rack_data(
+        Screen::Library,
+        LayoutMode::Compact
+    ));
+    assert!(!screen_shows_rack_data(Screen::Queue, LayoutMode::Compact));
+    assert!(!screen_shows_rack_data(
+        Screen::Settings,
+        LayoutMode::Expanded
+    ));
+    assert!(!screen_shows_rack_data(
+        Screen::Spinorama,
+        LayoutMode::Expanded
+    ));
+}
+
+#[test]
+fn test_engine_stop_without_queue_clear_predicate() {
+    assert!(engine_stop_without_queue_should_clear(true, false, false));
+
+    assert!(!engine_stop_without_queue_should_clear(false, false, false));
+    assert!(!engine_stop_without_queue_should_clear(true, true, false));
+    assert!(!engine_stop_without_queue_should_clear(true, false, true));
 }
 
 #[test]
