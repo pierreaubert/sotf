@@ -1,6 +1,6 @@
 [package]
 name = "plugins-ffi"
-version = "0.5.3"
+version = "0.6.0"
 edition.workspace = true
 repository.workspace = true
 keywords.workspace = true
@@ -12,7 +12,7 @@ license.workspace = true
 [lib]
 crate-type = ["staticlib", "cdylib"]
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[dependencies]
 plugins-bridge = { path = "../plugins-bridge" }
 sotf-host = { workspace = true }
 sotf-plugins = { workspace = true }
@@ -20,6 +20,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
 # GPUI AU rendering (linked into the same staticlib to avoid duplicate Rust runtime symbols)
 gpui-au = { workspace = true }
 gpui = { workspace = true }
@@ -30,5 +31,5 @@ sotf-plugin-eq = { workspace = true, features = ["gpui-ui"] }
 math-iir-fir = { workspace = true }
 gpui-ui-kit = { workspace = true }
 
-[target.'cfg(target_os = "macos")'.build-dependencies]
+[build-dependencies]
 cbindgen = { workspace = true }

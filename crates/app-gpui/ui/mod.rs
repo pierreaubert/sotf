@@ -101,45 +101,17 @@ pub fn combined_scale_bounds(min_px: Option<f32>, max_px: Option<f32>) -> (f32, 
     (min, max)
 }
 
-/// Snapshot of observable tick state used to suppress redundant
-/// `cx.notify()` calls. Every notify re-renders the whole view tree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TickSnapshot {
-    is_playing: bool,
-    /// Position in centiseconds — sub-frame precision is unnecessary for
-    /// UI refresh and avoids float-equality pitfalls.
-    position_centiseconds: u64,
-    duration_centiseconds: u64,
-    current_screen: Screen,
-    queue_index: Option<usize>,
-    has_compressor: bool,
-    spectrum_present: bool,
-    has_toast: bool,
-    federation_scan_active: bool,
-    library_stats_computing: bool,
-}
-
-/// Screens where the plugin rack (and therefore compressor visualisation +
-/// per-channel level meters) is visible.
-fn screen_shows_rack(screen: Screen) -> bool {
-    matches!(
-        screen,
-        Screen::Studio | Screen::PluginGraph | Screen::Library | Screen::Queue
-    )
-}
-
 /// `PlayerView` is GPUI's view type. The code-review (`reviews/review-app-gpui.md`)
 /// flags `impl PlayerView { … }` as a god-class spread across ~12 files (ui/mod.rs,
 /// components/recording/capture.rs, components/plugins/ui_rack.rs,
 /// components/room_eq/step_3_configure.rs, components/spinorama_eq/mod.rs, etc.).
-/// The fix is to extract `RoomEqController`, `SpinoramaEqController`,
+/// The long-term fix is to extract `RoomEqController`, `SpinoramaEqController`,
 /// `RecordingController`, and `PluginRackController` as `Entity<>` sub-views.
 ///
-/// **DEFERRED (multi-day refactor, not a bug fix).** This refactor is tracked
-/// alongside the existing Plugin Controller Phase-3 effort (see auto-memory:
-/// "Controller Consolidation — Phase 3"). Pursue it once that phase lands;
-/// the controller-extraction pattern from `controllers/library.rs` and
-/// `controllers/queue.rs` is the template.
+/// This hotfix moves the red-review tick/engine logic into `ui/tick.rs` so the
+/// central file no longer owns every timer concern. The larger controller
+/// extraction remains tracked alongside the existing Plugin Controller Phase-3
+/// effort (see auto-memory: "Controller Consolidation — Phase 3").
 pub struct PlayerView {
     pub state: Entity<AppState>,
     pub focus_handle: FocusHandle,
@@ -161,10 +133,12 @@ pub struct PlayerView {
     /// spawning a new task while this is set — without this guard, every
     /// frame the window moved ≥1 px would schedule a fresh 1 s timer task.
     geometry_save_pending: bool,
+    /// Monotonic sequence for geometry changes. The debounce task saves
+    /// only when this sequence has stayed stable for a full debounce period.
+    geometry_save_sequence: u64,
     /// Latest geometry the user moved to; the in-flight save task drains
     /// this when its timer fires.
-    pending_geometry_save:
-        std::sync::Arc<parking_lot::Mutex<Option<crate::config::WindowGeometry>>>,
+    pending_geometry_save: std::sync::Arc<parking_lot::Mutex<Option<PendingGeometrySave>>>,
     /// Cached engine index of the compressor plugin. Outer `Option` tracks
     /// cache validity; inner `Option<usize>` is the lookup result (`None`
     /// when the rack has no compressor). Invalidated on structural plugin
@@ -295,8 +269,6 @@ impl PlayerView {
                             Self::apply_plugin_update(state, update_type);
                         }
 
-                        Self::sync_chain_autogain(state, frame_count);
-
                         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                         for event in &media_events {
                             Self::handle_media_control_event(state, event);
@@ -376,6 +348,7 @@ impl PlayerView {
             update_frame_count: 0,
             geometry_save_task: None,
             geometry_save_pending: false,
+            geometry_save_sequence: 0,
             pending_geometry_save: std::sync::Arc::new(parking_lot::Mutex::new(None)),
             compressor_engine_idx_cache: None,
             last_tick_snapshot: None,
@@ -495,295 +468,6 @@ impl PlayerView {
         }
 
         Some(focused)
-    }
-
-    /// Build a `TickSnapshot` from the current state. Cheap (no allocation,
-    /// just a few field reads). Used to suppress `cx.notify()` when no
-    /// observable state changed in the tick.
-    fn tick_snapshot(view: &PlayerView, cx: &mut Context<Self>) -> TickSnapshot {
-        let state = view.state.read(cx);
-        let position_centiseconds = (state.app.playback.position_secs.max(0.0) * 100.0) as u64;
-        let duration_centiseconds = (state.app.playback.duration_secs.max(0.0) * 100.0) as u64;
-        TickSnapshot {
-            is_playing: state.app.playback.is_playing,
-            position_centiseconds,
-            duration_centiseconds,
-            current_screen: state.app.ui_state.current_screen,
-            queue_index: state.app.playback.current_queue_index,
-            has_compressor: state.app.playback.compressor_info.is_some(),
-            spectrum_present: state.app.playback.spectrum_info.is_some(),
-            has_toast: state.app.ui_state.toast_message.is_some(),
-            federation_scan_active: state.app.federation.scan_progress.is_some(),
-            library_stats_computing: state.app.library_stats_computing,
-        }
-    }
-
-    /// Sync playback position, duration, and analyzer data from the audio engine.
-    ///
-    /// Locks the player, reads the engine's `PlaybackState`, copies position/duration
-    /// into app state, reads cached analyzer plugin data (loudness, spectrum, compressor),
-    /// drops the player lock, then updates level meters.
-    ///
-    /// Screen-gated: compressor downcast and level-meter recomputation are
-    /// skipped when the current screen does not show them. Spectrum read
-    /// remains gated by `spectrum_visible || Screen::Spectrum`. IN/OUT
-    /// loudness reads stay unconditional because `sync_chain_autogain` and
-    /// the footer transport bar both consume them.
-    ///
-    /// `compressor_idx_cache` is borrowed across ticks so the
-    /// `compressor_engine_index()` lookup is amortised. It's invalidated by
-    /// the tick wrapper whenever `apply_plugin_update` runs.
-    ///
-    /// Returns `(engine_playback_state, was_playing)` for use by downstream methods.
-    fn sync_playback_data(
-        state: &mut AppState,
-        frame_count: u64,
-        compressor_idx_cache: &mut Option<Option<usize>>,
-    ) -> (sotf_audio_player::PlaybackState, bool) {
-        let current_screen = state.app.ui_state.current_screen;
-        let should_update_spectrum = frame_count.is_multiple_of(2);
-        let include_spectrum = should_update_spectrum
-            && (state.app.spectrum_visible || current_screen == Screen::Spectrum);
-        let include_compressor = screen_shows_rack(current_screen);
-        let include_level_meters = screen_shows_rack(current_screen);
-
-        let mut player = state.player.lock();
-        let playback_state = player.get_playback_state();
-
-        let was_playing = state.app.playback.is_playing;
-        state.app.playback.is_playing = playback_state.is_playing;
-        state.app.playback.position_secs = playback_state.position_secs;
-        state.app.playback.duration_secs = state.app.get_current_track_duration();
-
-        // Read analyzer data from the shared cache (no audio pipeline blocking).
-        // IN/OUT loudness is needed regardless of screen (chain-autogain +
-        // footer transport bar). Spectrum and compressor are screen-gated.
-        {
-            let graph = &state.app.plugin_state.graph;
-
-            state.app.playback.input_loudness_info = graph
-                .input_monitor_engine_index()
-                .and_then(|idx| player.get_cached_plugin_data(idx))
-                .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
-
-            state.app.playback.loudness_info = graph
-                .output_monitor_engine_index()
-                .and_then(|idx| player.get_cached_plugin_data(idx))
-                .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
-
-            if include_spectrum {
-                state.app.playback.spectrum_info = graph
-                    .spectrum_engine_index()
-                    .and_then(|idx| player.get_cached_plugin_data(idx))
-                    .and_then(|d| d.downcast_ref::<sotf_audio_player::SpectrumData>().cloned());
-            }
-
-            if include_compressor {
-                // Cache the compressor engine index across ticks. The outer
-                // tick wrapper invalidates the cache (sets it to None) on
-                // structural plugin graph changes.
-                let idx = match *compressor_idx_cache {
-                    Some(cached) => cached,
-                    None => {
-                        let found = graph.compressor_engine_index();
-                        *compressor_idx_cache = Some(found);
-                        found
-                    }
-                };
-                state.app.playback.compressor_info = idx
-                    .and_then(|i| player.get_cached_plugin_data(i))
-                    .and_then(|d| d.downcast_ref::<sotf_plugins::CompressorData>().cloned());
-            } else {
-                // Drop stale data so off-screen widgets don't observe
-                // pre-screen-switch values when they next become visible.
-                state.app.playback.compressor_info = None;
-            }
-        }
-
-        drop(player);
-
-        if include_level_meters {
-            state.app.update_level_meter_groups();
-            state.app.update_level_meter_peak_hold();
-        }
-
-        (playback_state, was_playing)
-    }
-
-    /// Keep the rack AutoGain trim aligned with the current IN/OUT loudness.
-    fn sync_chain_autogain(state: &mut AppState, frame_count: u64) {
-        const UPDATE_INTERVAL_FRAMES: u64 = 5;
-        const DEAD_BAND_DB: f64 = 0.25;
-        const MAX_GAIN_DB: f64 = 24.0;
-
-        if !state.app.plugin_state.chain_autogain {
-            return;
-        }
-
-        let last_frame = state.app.plugin_state.chain_autogain_last_frame;
-        if last_frame != 0 && frame_count.wrapping_sub(last_frame) < UPDATE_INTERVAL_FRAMES {
-            return;
-        }
-
-        let Some(input) = state.app.playback.input_loudness_info.as_ref() else {
-            return;
-        };
-        let Some(output) = state.app.playback.loudness_info.as_ref() else {
-            return;
-        };
-
-        let input_lufs = input.momentary_lufs;
-        let output_lufs = output.momentary_lufs;
-        if !input_lufs.is_finite() || !output_lufs.is_finite() {
-            return;
-        }
-
-        let residual_db = input_lufs - output_lufs;
-        if residual_db.abs() < DEAD_BAND_DB {
-            return;
-        }
-
-        let current_gain_db = state
-            .app
-            .plugin_state
-            .graph
-            .chain_auto_gain_db()
-            .unwrap_or(0.0);
-        let next_gain_db = (current_gain_db + residual_db).clamp(-MAX_GAIN_DB, MAX_GAIN_DB);
-        if (next_gain_db - current_gain_db).abs() < 0.1 {
-            return;
-        }
-
-        state
-            .app
-            .plugin_state
-            .graph
-            .set_chain_auto_gain(Some(next_gain_db));
-        state.app.plugin_state.chain_autogain_last_frame = frame_count;
-
-        let Some(engine_index) = state.app.plugin_state.graph.chain_auto_gain_engine_index() else {
-            return;
-        };
-
-        if let Err(e) = state.player.lock().set_plugin_parameter(
-            engine_index,
-            "gain_db".to_string(),
-            format!("{next_gain_db:.3}"),
-        ) {
-            log::warn!("Failed to update chain AutoGain: {}", e);
-        }
-    }
-
-    /// Handle engine crash, errors, gapless transitions, and track auto-advance.
-    ///
-    /// Priority: fatal crash > playback error > engine restart > gapless transition > track end.
-    fn handle_engine_state(
-        state: &mut AppState,
-        playback_state: &sotf_audio_player::PlaybackState,
-        was_playing: bool,
-    ) {
-        if playback_state.engine_fatal {
-            log::error!("[GPUI] Engine crashed fatally, cannot auto-restart");
-            state.app.playback.is_playing = false;
-            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
-                "Audio engine crashed. Please play a new track to restart.",
-            ));
-        } else if let Some(ref err) = playback_state.last_error {
-            log::error!("[GPUI] Playback error: {}", err);
-            state.app.playback.is_playing = false;
-            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
-                "Playback error: {}",
-                err
-            )));
-        } else if playback_state.engine_restarted {
-            log::info!("[GPUI] Engine auto-restarted after crash, resuming playback");
-            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::info(
-                "Engine restarted, resuming playback",
-            ));
-        } else if playback_state.gapless_transition.is_some() {
-            // Gapless transition — engine already playing the new file,
-            // just advance the queue UI to match.
-            state.app.stop_track_tracking();
-            let _ = state.app.next_track();
-            if let Some(path) = state.app.get_current_track_path() {
-                state.app.start_track_tracking(path);
-            }
-        } else if (playback_state.track_ended || (was_playing && !playback_state.is_playing))
-            && state.app.playback.current_queue_index.is_some()
-        {
-            // Track ended — auto-advance to next in queue
-            state.app.stop_track_tracking();
-            if let Some(path) = state.app.next_track() {
-                Self::play_track_auto_advance(state, path);
-            } else {
-                state.app.playback.is_playing = false;
-            }
-        } else if was_playing && !playback_state.is_playing {
-            // Engine stopped but we have no queue context (e.g. single-shot
-            // playback finished, HAL stream ended, or the engine was
-            // stopped externally). The previous chain only cleared
-            // `is_playing` inside the queue branch, leaving stale state
-            // until the user touched transport. Mirror the cleanup the
-            // queue branch does.
-            log::info!("[GPUI] Engine stopped without queue context — clearing playing state");
-            state.app.playback.is_playing = false;
-            state.app.stop_track_tracking();
-        }
-    }
-
-    /// Queue the next file for gapless playback when near the end of the current track.
-    ///
-    /// Only queues when channel counts match (engine constraint for gapless transitions).
-    fn handle_gapless_prequeue(
-        state: &mut AppState,
-        playback_state: &sotf_audio_player::PlaybackState,
-    ) {
-        if !playback_state.is_playing || state.app.playback.current_queue_index.is_none() {
-            return;
-        }
-
-        let position = playback_state.position_secs;
-        let duration = state.app.playback.duration_secs;
-        let near_end = duration > 0.0 && position > 0.0 && (duration - position) < 10.0;
-
-        if near_end && let Some(next_track) = state.app.queue_state.peek_next_track() {
-            let next_ch = next_track.channels.unwrap_or(2) as usize;
-            let current_ch = state
-                .app
-                .playback
-                .current_queue_index
-                .and_then(|idx| state.app.queue_state.get(idx))
-                .and_then(|item| item.current_track())
-                .and_then(|t| t.channels)
-                .unwrap_or(2) as usize;
-
-            // Only gapless when channel count matches (engine constraint)
-            if next_ch == current_ch {
-                let _ = state.player.lock().queue_next(next_track.path.clone());
-            }
-        }
-    }
-
-    /// Run periodic background housekeeping: startup DB check, scan updates,
-    /// toast updates, library cache validation, and pending stats pickup.
-    fn tick_background_tasks(state: &mut AppState) {
-        state.app.check_library_on_startup();
-
-        state.app.scan_ctrl.update_all();
-        state.app.update_library_scan();
-        state.app.update_federation_scan();
-        state.app.update_cast_discovery();
-        state.app.update_remote_server_discovery();
-        state.app.update_remote_server_probe();
-        state.app.update_toast();
-
-        state.app.library_state.ensure_cache_valid();
-
-        let pending = state.app.pending_library_stats.lock().take();
-        if let Some(stats) = pending {
-            state.app.library_stats = stats;
-            state.app.library_stats_computing = false;
-        }
     }
 
     #[cfg(target_os = "ios")]
@@ -1948,5 +1632,6 @@ include!("search.rs");
 include!("select.rs");
 include!("split_view.rs");
 include!("switch.rs");
+include!("tick.rs");
 include!("three_panel_layout.rs");
 include!("volume.rs");

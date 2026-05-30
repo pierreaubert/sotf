@@ -51,6 +51,11 @@ Apple Distribution cert, and the entitlements you're allowed to claim.
 > uploading, but only if the profile is already on disk — pick correctly
 > in the UI on the first try and save yourself a round trip.
 
+For TestFlight, the script also copies the profile's application identifier
+into the signed app entitlements as `com.apple.application-identifier`. If
+Apple reports ITMS-90886, regenerate an explicit `org.spinorama.sotf`
+profile and rebuild so the signed App ID and embedded profile match.
+
 The build script's preflight will tell you when this step is missing — it
 already does, today. After this you can run the script and it will produce
 a signed `.pkg`.

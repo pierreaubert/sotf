@@ -2463,18 +2463,17 @@ pub(crate) fn render_room_eq_epa_card(
     report: &RoomEqReportData,
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
-    let channels_with_epa: Vec<&RoomEqReportChannel> = report
+    let channels_with_epa: Vec<_> = report
         .channels
         .iter()
-        .filter(|channel| channel.epa.is_some())
+        .filter_map(|channel| channel.epa.as_ref().map(|epa| (channel, epa)))
         .collect();
     if channels_with_epa.is_empty() {
         return div().into_any_element();
     }
 
     let mut content = VStack::new().spacing(StackSpacing::Md);
-    for channel in channels_with_epa {
-        let epa = channel.epa.as_ref().unwrap();
+    for (channel, epa) in channels_with_epa {
         content = content.child(
             VStack::new()
                 .spacing(StackSpacing::Xs)
@@ -2954,26 +2953,29 @@ fn room_eq_average_spl_in_range(curve: &RoomEqReportCurve, min_freq: f64, max_fr
 
 /// Interpolate a sampled curve at a single frequency using log-frequency linear interpolation.
 fn interpolate_value_at(frequencies: &[f64], values: &[f64], target_freq: f64) -> f64 {
-    if frequencies.is_empty() || values.is_empty() {
+    let mut points = frequencies.iter().copied().zip(values.iter().copied());
+    let Some((mut prev_freq, mut prev_value)) = points.next() else {
         return 0.0;
+    };
+
+    if target_freq <= prev_freq {
+        return prev_value;
     }
-    if target_freq <= frequencies[0] {
-        return values[0];
-    }
-    if target_freq >= *frequencies.last().unwrap() {
-        return *values.last().unwrap();
-    }
-    for i in 0..frequencies.len() - 1 {
-        if target_freq >= frequencies[i] && target_freq <= frequencies[i + 1] {
-            let denom = frequencies[i + 1].ln() - frequencies[i].ln();
+
+    for (freq, value) in points {
+        if target_freq <= freq {
+            let denom = freq.ln() - prev_freq.ln();
             if denom.abs() < 1e-12 {
-                return values[i];
+                return prev_value;
             }
-            let t = (target_freq.ln() - frequencies[i].ln()) / denom;
-            return values[i] + t * (values[i + 1] - values[i]);
+            let t = (target_freq.ln() - prev_freq.ln()) / denom;
+            return prev_value + t * (value - prev_value);
         }
+        prev_freq = freq;
+        prev_value = value;
     }
-    *values.last().unwrap()
+
+    prev_value
 }
 
 // === Free functions for channel configuration UI ===

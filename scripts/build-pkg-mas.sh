@@ -53,6 +53,7 @@ CONFIG_FILE="${HOME}/.sotf-release.conf"
 
 ENTITLEMENTS="$PROJECT_ROOT/builds/macos/entitlements-mas.plist"
 INFO_PLIST_TEMPLATE="$PROJECT_ROOT/builds/macos/org.spinorama.sotf.plist"
+PB=/usr/libexec/PlistBuddy
 
 MAS_DISTRIBUTION_CERT="${MAS_DISTRIBUTION_CERT:-Apple Distribution: Pierre Aubert (RTH7ZJXLT6)}"
 MAS_INSTALLER_CERT="${MAS_INSTALLER_CERT:-3rd Party Mac Developer Installer: Pierre Aubert (RTH7ZJXLT6)}"
@@ -213,11 +214,38 @@ if ! $match_found; then
     exit 1
 fi
 
+PROFILE_APP_ID=$("$PB" -c "Print :Entitlements:application-identifier" "$PROFILE_PLIST" 2>/dev/null || true)
+if [ -z "$PROFILE_APP_ID" ]; then
+    PROFILE_APP_ID=$("$PB" -c "Print :Entitlements:com.apple.application-identifier" "$PROFILE_PLIST" 2>/dev/null || true)
+fi
+if [ -z "$PROFILE_APP_ID" ]; then
+    log_error "Provisioning profile does not contain an application identifier entitlement."
+    log_error "Regenerate the Mac App Store Distribution profile for explicit App ID $BUNDLE_ID."
+    exit 1
+fi
+PROFILE_BUNDLE_ID="${PROFILE_APP_ID#*.}"
+if [ "$PROFILE_BUNDLE_ID" = "$PROFILE_APP_ID" ] || [ -z "$PROFILE_BUNDLE_ID" ]; then
+    log_error "Provisioning profile application identifier is malformed: $PROFILE_APP_ID"
+    exit 1
+fi
+if [[ "$PROFILE_APP_ID" == *"*"* ]]; then
+    log_error "Provisioning profile uses wildcard application identifier: $PROFILE_APP_ID"
+    log_error "TestFlight needs an explicit App ID for $BUNDLE_ID."
+    exit 1
+fi
+if [ "$PROFILE_BUNDLE_ID" != "$BUNDLE_ID" ]; then
+    log_error "Provisioning profile App ID does not match bundle id."
+    log_error "  Profile application identifier: $PROFILE_APP_ID"
+    log_error "  Expected bundle id suffix: $BUNDLE_ID"
+    exit 1
+fi
+
 log_ok "Version v$VERSION (build #$BUILD_NUMBER, from $BUILD_NUMBER_SOURCE)"
 log_ok "Binary: $SOURCE_BINARY"
 log_ok "Entitlements: $ENTITLEMENTS"
 log_ok "Provisioning profile: $MAS_PROVISIONING_PROFILE"
 log_ok "Profile lists distribution cert ($DIST_CERT_SHA1)"
+log_ok "Profile application identifier: $PROFILE_APP_ID"
 
 # ---- Build paths ----
 BUILD_DIR=$(mktemp -d -t sotf-mas-build.XXXXXX)
@@ -329,17 +357,11 @@ cp "$MAS_PROVISIONING_PROFILE" "$APP_BUNDLE/Contents/embedded.provisionprofile"
 log_step "Stripping extended attributes from bundle"
 xattr -cr "$APP_BUNDLE"
 
-# ---- Patch entitlements with team identifier ----
-# Native macOS binaries (non-Catalyst) must NOT carry `application-identifier`
-# in their signed entitlements — that's an iOS/Catalyst convention. App Store
-# Connect rejects with "key 'application-identifier' is not supported" (409)
-# if you put it in. The bundle identity for MAS comes from the embedded
-# provisioning profile instead.
-#
-# `com.apple.developer.team-identifier` IS valid on macOS and recommended.
-# We do NOT touch application-identifier here despite TestFlight's 90886
-# warning — that warning is a known soft-positive for non-Catalyst macOS
-# apps and doesn't block App Review for production release.
+# ---- Patch entitlements with MAS identity ----
+# TestFlight requires the signed app entitlements to match the embedded
+# provisioning profile. macOS uses `com.apple.application-identifier` in the
+# signed entitlements, while profiles commonly expose the same value under
+# `Entitlements.application-identifier`.
 TEAM_ID=$(printf '%s' "$MAS_DISTRIBUTION_CERT" | sed -E 's/.*\(([A-Z0-9]+)\)[^)]*$/\1/')
 if ! [[ "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
     log_error "Could not extract 10-char Apple Team ID from MAS_DISTRIBUTION_CERT='$MAS_DISTRIBUTION_CERT'"
@@ -350,24 +372,30 @@ cp "$ENTITLEMENTS" "$SIGN_ENTITLEMENTS"
 # Use PlistBuddy rather than `plutil -replace`: plutil interprets dots in
 # the key path as nested-dict navigation, so a literal top-level key like
 # `com.apple.developer.team-identifier` is silently rejected.
-PB=/usr/libexec/PlistBuddy
 "$PB" -c "Set :com.apple.developer.team-identifier $TEAM_ID" "$SIGN_ENTITLEMENTS" 2>/dev/null \
     || "$PB" -c "Add :com.apple.developer.team-identifier string $TEAM_ID" "$SIGN_ENTITLEMENTS"
+"$PB" -c "Set :com.apple.application-identifier $PROFILE_APP_ID" "$SIGN_ENTITLEMENTS" 2>/dev/null \
+    || "$PB" -c "Add :com.apple.application-identifier string $PROFILE_APP_ID" "$SIGN_ENTITLEMENTS"
 plutil -lint "$SIGN_ENTITLEMENTS" >/dev/null
 
-# Pre-sign sanity: confirm team-identifier actually landed.
+# Pre-sign sanity: confirm identity entitlements actually landed.
 if ! "$PB" -c "Print :com.apple.developer.team-identifier" "$SIGN_ENTITLEMENTS" >/dev/null 2>&1; then
     log_error "Entitlements patch failed: com.apple.developer.team-identifier not found"
     cat "$SIGN_ENTITLEMENTS" >&2
     exit 1
 fi
-# Belt-and-braces: ensure no stale application-identifier slipped in.
-if "$PB" -c "Print :application-identifier" "$SIGN_ENTITLEMENTS" >/dev/null 2>&1; then
-    log_error "Refusing to sign: application-identifier present in entitlements."
-    log_error "Apple rejects this on native macOS (validation 409). Remove from $ENTITLEMENTS."
+if [ "$("$PB" -c "Print :com.apple.application-identifier" "$SIGN_ENTITLEMENTS" 2>/dev/null)" != "$PROFILE_APP_ID" ]; then
+    log_error "Entitlements patch failed: com.apple.application-identifier does not match $PROFILE_APP_ID"
+    cat "$SIGN_ENTITLEMENTS" >&2
     exit 1
 fi
-log_info "Signing with team-identifier = $TEAM_ID (no application-identifier — native macOS)"
+# Belt-and-braces: ensure no stale iOS/Catalyst key slipped in.
+if "$PB" -c "Print :application-identifier" "$SIGN_ENTITLEMENTS" >/dev/null 2>&1; then
+    log_error "Refusing to sign: application-identifier present in entitlements."
+    log_error "Native macOS should use com.apple.application-identifier. Remove the iOS key from $ENTITLEMENTS."
+    exit 1
+fi
+log_info "Signing with team-identifier = $TEAM_ID and application-identifier = $PROFILE_APP_ID"
 
 # ---- Code-sign with Apple Distribution cert + patched MAS entitlements ----
 log_step "Code-signing .app with $MAS_DISTRIBUTION_CERT"
@@ -383,17 +411,26 @@ log_step "Verifying .app signature"
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 codesign -dv --entitlements - "$APP_BUNDLE" 2>&1 | sed 's/^/    /' | head -40
 
-# Post-sign sanity: confirm team-identifier landed (and that we did NOT
-# accidentally sign with application-identifier — Apple rejects 409 if so).
+# Post-sign sanity: confirm the macOS application identifier and team
+# identifier match the embedded provisioning profile.
 SIGNED_ENT=$(codesign -d --entitlements :- "$APP_BUNDLE" 2>/dev/null)
-if ! echo "$SIGNED_ENT" | grep -q "<key>com.apple.developer.team-identifier</key>"; then
+if ! printf '%s\n' "$SIGNED_ENT" | grep -Fq "<key>com.apple.developer.team-identifier</key>"; then
     log_error "Signed bundle missing com.apple.developer.team-identifier."
     log_error "Check that PlistBuddy patch above succeeded."
     exit 1
 fi
-if echo "$SIGNED_ENT" | grep -q "<key>application-identifier</key>"; then
-    log_error "Signed bundle ended up with application-identifier — Apple will reject."
-    log_error "Native macOS apps must not carry this key in entitlements."
+if ! printf '%s\n' "$SIGNED_ENT" | grep -Fq "<key>com.apple.application-identifier</key>"; then
+    log_error "Signed bundle missing com.apple.application-identifier."
+    log_error "TestFlight rejects bundles whose signed App ID does not match the profile."
+    exit 1
+fi
+if ! printf '%s\n' "$SIGNED_ENT" | grep -Fq "<string>$PROFILE_APP_ID</string>"; then
+    log_error "Signed bundle application identifier does not match profile: $PROFILE_APP_ID"
+    exit 1
+fi
+if printf '%s\n' "$SIGNED_ENT" | grep -Fq "<key>application-identifier</key>"; then
+    log_error "Signed bundle ended up with iOS application-identifier key."
+    log_error "Native macOS apps should carry com.apple.application-identifier instead."
     exit 1
 fi
 

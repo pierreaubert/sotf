@@ -431,12 +431,14 @@ fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::Param
 
 /// Get the global (non-band) ParamSpec array for a plugin type.
 /// Used by `AuHostState` to determine the global param offset for band-based plugins.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn global_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::ParamSpec] {
     get_param_specs(plugin_type)
 }
 
 /// Get band template info for a plugin type: `(params_per_band, max_bands)`.
 /// Returns `None` for plugins without dynamic bands.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn band_template_info(plugin_type: &str) -> Option<(usize, usize)> {
     get_band_template(plugin_type).map(|(template, max_bands)| (template.len(), max_bands))
 }
