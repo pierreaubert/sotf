@@ -56,6 +56,26 @@ assert!(report.is_clean());
 Reports flag suspicious output such as invalid sizes, hidden nodes without a
 collapse label, and visible children that overflow a parent axis.
 
+## Layout Inspection
+
+Export declared and solved trees as owned, stable records for debug overlays,
+showcase tooling, and snapshot tests:
+
+```rust
+use gpui_builder::{inspect_layout, inspect_solved};
+
+let declared = inspect_layout(&root);
+println!("{declared}");
+
+let solved = solve(&root, 1200.0, 800.0, &LayoutPreferences::default());
+let solved_export = inspect_solved(&solved);
+println!("{solved_export}");
+```
+
+The inspection output includes stable node paths, sizing summaries,
+container metadata, slot collapse metadata, display tiers, resolved sizes,
+visibility, active tiers, and resolved axes.
+
 ## Macro DSL
 
 Use `solve_layout!` when you want to describe and solve a nested tree in one
@@ -82,6 +102,7 @@ let solved = solve_layout! {
         slot content(Sizing::flex(300.0));
     }
 };
+```
 
 ## Responsive Snapshots
 
@@ -99,6 +120,7 @@ let viewports = [
 let matrix = solve_snapshot_matrix(&root, &viewports, &LayoutPreferences::default());
 println!("{}", matrix.to_markdown_table());
 ```
+
 ## Layout Validation
 
 Run validation in examples, tests, or debug tooling before solving a layout tree:

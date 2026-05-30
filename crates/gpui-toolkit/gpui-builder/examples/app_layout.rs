@@ -9,8 +9,8 @@
 //! Run: cargo run -p gpui-builder --example app_layout
 
 use gpui_builder::{
-    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode, solve,
-    validate_layout,
+    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
+    inspect_layout, inspect_solved, solve, validate_layout,
 };
 
 static RACK_TIERS: &[DisplayTier<'_>] = &[
@@ -99,9 +99,14 @@ fn main() {
     let validation = validate_layout(&root);
     assert!(validation.is_clean(), "{validation}");
 
+    println!("=== Layout inspection ===");
+    print!("{}", inspect_layout(&root));
+    println!();
+
     // --- Scenario 1: Wide desktop window ---
     println!("=== Wide desktop (1200x800) ===");
     let solved = solve(&root, 1200.0, 800.0, &LayoutPreferences::default());
+    print!("{}", inspect_solved(&solved));
     print_solved(&solved, 0);
 
     let tabs = solved.collapsed_tabs();

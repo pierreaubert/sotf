@@ -51,6 +51,7 @@
 pub mod compat;
 #[macro_use]
 mod macros;
+pub mod inspector;
 pub mod plugin_chassis;
 pub mod snapshots;
 pub mod solved;
@@ -59,6 +60,11 @@ pub mod types;
 pub mod validation;
 
 // Re-exports for convenience
+pub use inspector::{
+    ContainerInspection, DisplayTierInspection, LayoutInspection, LayoutInspectionKind,
+    LayoutInspectionNode, SizingInspection, SlotInspection, SolvedInspection, SolvedInspectionNode,
+    inspect_layout, inspect_solved,
+};
 pub use solved::{LayoutDebugReport, LayoutDebugWarning, LayoutDebugWarningKind, SolvedNode};
 pub use snapshots::{LayoutSnapshot, LayoutSnapshotMatrix, LayoutViewport, solve_snapshot_matrix};
 pub use solver::solve;
