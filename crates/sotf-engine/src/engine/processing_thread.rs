@@ -75,6 +75,7 @@ impl ProcessingThread {
         gc_tx: super::GcSender,
         recycle_rx: Receiver<Vec<f32>>,
         decoder_recycle_tx: SyncSender<Vec<f32>>,
+        #[cfg(feature = "streaming")] network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
         let (response_tx, response_rx) = std::sync::mpsc::channel();
@@ -94,6 +95,8 @@ impl ProcessingThread {
                     gc_tx,
                     recycle_rx,
                     decoder_recycle_tx,
+                    #[cfg(feature = "streaming")]
+                    network_stream_tap,
                 ) {
                     log::debug!("[Processing Thread] Error: {}", e);
                 }
@@ -173,10 +176,17 @@ struct ProcessingState {
     frames_over_budget: u64,
     /// RT diagnostics: how many recycle misses (fallback Vec allocation)
     recycle_miss_count: u64,
+    /// Optional nonblocking tap for live network PCM streaming.
+    #[cfg(feature = "streaming")]
+    network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
 }
 
 impl ProcessingState {
-    fn new(channels: usize, sample_rate: u32) -> Self {
+    fn new(
+        channels: usize,
+        sample_rate: u32,
+        #[cfg(feature = "streaming")] network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
+    ) -> Self {
         Self {
             host: PluginHost::new(channels, sample_rate),
             prev_host: None,
@@ -197,6 +207,8 @@ impl ProcessingState {
             last_rt_diag: std::time::Instant::now(),
             frames_over_budget: 0,
             recycle_miss_count: 0,
+            #[cfg(feature = "streaming")]
+            network_stream_tap,
         }
     }
 
@@ -468,6 +480,7 @@ fn run_processing_thread(
     _gc_tx: super::GcSender,
     recycle_rx: Receiver<Vec<f32>>,
     decoder_recycle_tx: SyncSender<Vec<f32>>,
+    #[cfg(feature = "streaming")] network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
 ) -> Result<(), String> {
     // Enable FTZ/DAZ CPU flags to prevent denormal numbers from causing
     // performance issues in IIR filters and other DSP code
@@ -480,7 +493,12 @@ fn run_processing_thread(
         Err(e) => log::warn!("[Processing Thread] Failed to set RT priority: {e}"),
     }
 
-    let mut state = ProcessingState::new(channels, sample_rate);
+    let mut state = ProcessingState::new(
+        channels,
+        sample_rate,
+        #[cfg(feature = "streaming")]
+        network_stream_tap,
+    );
 
     log::info!(
         "[Processing Thread] Started - {}Hz, {} channels",
@@ -621,6 +639,16 @@ fn run_processing_thread(
                             output_channels,
                             output_sample_rate,
                         );
+
+                        #[cfg(feature = "streaming")]
+                        if let Some(tap) = &state.network_stream_tap {
+                            tap.publish(
+                                &processed_frame.data,
+                                processed_frame.num_frames,
+                                processed_frame.num_channels,
+                                processed_frame.sample_rate,
+                            );
+                        }
 
                         let mut pending_msg = Some(ProcessingMessage::Frame(processed_frame));
                         // Retry sending until the message is delivered or we shut down
@@ -1149,7 +1177,12 @@ mod tests {
         let mut host = PluginHost::new(2, 48_000);
         host.add_plugin(Box::new(plugin)).unwrap();
 
-        let mut state = ProcessingState::new(2, 48_000);
+        let mut state = ProcessingState::new(
+            2,
+            48_000,
+            #[cfg(feature = "streaming")]
+            None,
+        );
         state.host = host;
         (state, tempdir)
     }

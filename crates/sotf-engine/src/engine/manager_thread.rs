@@ -13,6 +13,8 @@ use crate::engine::processing_thread::{
     build_plugin_graph_host_with_policy, build_plugin_host_with_policy,
 };
 use arc_swap::ArcSwap;
+#[cfg(feature = "streaming")]
+use sotf_streaming::{PcmStreamHandle, PcmStreamServer, PcmStreamServerConfig};
 use sotf_types::{
     DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy, NetworkEndpointMode,
     NetworkEndpointStatus, OutputAccessMode, OutputAccessStatus,
@@ -469,6 +471,68 @@ fn network_endpoint_status_for_mode(mode: NetworkEndpointMode) -> NetworkEndpoin
     }
 }
 
+#[cfg(feature = "streaming")]
+fn start_network_stream_server(
+    config: &EngineConfig,
+    state: &Arc<ArcSwap<AudioEngineState>>,
+) -> Option<(PcmStreamServer, PcmStreamHandle)> {
+    if config.network_endpoint.mode != NetworkEndpointMode::HttpEndpoint {
+        return None;
+    }
+
+    let initial_channels = match u16::try_from(config.output_channels.max(1)) {
+        Ok(channels) => channels,
+        Err(_) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.network_endpoint_status = NetworkEndpointStatus::EndpointUnavailable;
+            new_state.last_error = Some(format!(
+                "Network streaming endpoint does not support {} output channels",
+                config.output_channels
+            ));
+            state.store(Arc::new(new_state));
+            return None;
+        }
+    };
+
+    let server_config = PcmStreamServerConfig {
+        bind_addr: config.network_endpoint.bind_addr.clone(),
+        port: config.network_endpoint.port,
+        initial_sample_rate: config.output_sample_rate,
+        initial_channels,
+        ..PcmStreamServerConfig::default()
+    };
+
+    match PcmStreamServer::start(server_config) {
+        Ok(server) => {
+            let handle = server.handle();
+            let local_addr = server.local_addr();
+            let mut new_state = (**state.load()).clone();
+            new_state.network_endpoint.port = local_addr.port();
+            new_state.network_endpoint_status = NetworkEndpointStatus::EndpointRunning;
+            new_state.last_error = None;
+            state.store(Arc::new(new_state));
+            log::info!(
+                "[Manager Thread] Network PCM streaming endpoint running at http://{}/stream.wav",
+                local_addr
+            );
+            Some((server, handle))
+        }
+        Err(e) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.network_endpoint_status = NetworkEndpointStatus::EndpointUnavailable;
+            new_state.last_error = Some(format!("Network streaming endpoint failed: {}", e));
+            state.store(Arc::new(new_state));
+            log::warn!(
+                "[Manager Thread] Network PCM streaming endpoint failed to start on {}:{}: {}",
+                config.network_endpoint.bind_addr,
+                config.network_endpoint.port,
+                e
+            );
+            None
+        }
+    }
+}
+
 fn initial_engine_state_from_config(config: &EngineConfig) -> AudioEngineState {
     AudioEngineState {
         sample_rate: config.output_sample_rate,
@@ -537,6 +601,13 @@ fn run_manager_thread(
     let mut gc_thread = GcThread::new()?;
     let gc_tx = gc_thread.sender();
 
+    #[cfg(feature = "streaming")]
+    let mut network_stream_server = start_network_stream_server(&config, &state);
+    #[cfg(feature = "streaming")]
+    let network_stream_tap = network_stream_server
+        .as_ref()
+        .map(|(_, handle)| handle.clone());
+
     // Create threads
     let mut decoder_thread = DecoderThread::new(
         decoder_tx,
@@ -556,6 +627,8 @@ fn run_manager_thread(
         gc_tx,
         recycle_rx,
         decoder_recycle_tx,
+        #[cfg(feature = "streaming")]
+        network_stream_tap,
     )?;
 
     // Determine actual output channel count by loading plugin chain first
@@ -827,6 +900,10 @@ fn run_manager_thread(
     decoder_thread.shutdown();
     processing_thread.shutdown();
     playback_thread.shutdown();
+    #[cfg(feature = "streaming")]
+    if let Some((server, _)) = network_stream_server.as_mut() {
+        server.shutdown();
+    }
     gc_thread.shutdown(); // Last — other threads may still send garbage during shutdown
 
     log::debug!("[Manager Thread] Stopped");
@@ -2734,5 +2811,37 @@ mod tests {
             state.network_endpoint_status,
             sotf_types::NetworkEndpointStatus::EndpointUnavailable
         );
+    }
+
+    #[cfg(feature = "streaming")]
+    #[test]
+    fn test_start_network_stream_server_updates_state_and_publishes_audio() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+        let config = EngineConfig {
+            output_sample_rate: 48_000,
+            output_channels: 2,
+            network_endpoint: sotf_types::NetworkEndpointConfig {
+                mode: sotf_types::NetworkEndpointMode::HttpEndpoint,
+                bind_addr: "127.0.0.1".to_string(),
+                port: 0,
+            },
+            ..EngineConfig::default()
+        };
+
+        let Some((mut server, handle)) = start_network_stream_server(&config, &state) else {
+            panic!("expected network stream server to start");
+        };
+
+        let current = state.load();
+        assert_eq!(
+            current.network_endpoint_status,
+            sotf_types::NetworkEndpointStatus::EndpointRunning
+        );
+        assert_ne!(current.network_endpoint.port, 0);
+
+        assert!(handle.publish(&[0.0, 0.0, 0.25, -0.25], 2, 2, 48_000));
+        assert_eq!(handle.stats().published_chunks, 1);
+
+        server.shutdown();
     }
 }

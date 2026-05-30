@@ -141,5 +141,6 @@ pub enum NetworkEndpointStatus {
     Disabled,
     InputClientAvailable,
     InputClientUnavailable,
+    EndpointRunning,
     EndpointUnavailable,
 }
