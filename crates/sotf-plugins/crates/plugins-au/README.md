@@ -39,6 +39,19 @@ Builds the FFI staticlib for the target arch, runs `xcodegen` if needed, runs `x
 
 **Then double-click the .pkg** to install under `/Applications/SOTFAudioUnits.app`, and launch that app once so macOS registers each bundled `.appex` extension.
 
+### iOS AUv3 scaffold
+
+```bash
+just build-au-ios-simulator
+just build-au-ios-device
+```
+
+The iOS project is generated from `project-ios.yml` and currently includes the
+EQ AUv3 extension plus the shared `GenericRustAudioUnit` FFI bridge. It uses a
+UIKit fallback view while GPUI-on-iOS is validated. The same preset document,
+MIDI output, Note Expression, and parameter/state FFI headers are used by the
+macOS and iOS AU targets.
+
 ### Both arches (release flow)
 
 ```bash

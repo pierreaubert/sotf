@@ -1,3 +1,28 @@
+# 0.6.0
+
+## New
+
+- Added ABI v3 capability metadata for AUv3, Windows/VST3, SwiftPM, preset
+  documents, MIDI output, and Note Expression support.
+- Added an iOS AUv3 scaffold with an iOS container app, EQ AU extension,
+  XcodeGen spec, UIKit fallback view, and device/simulator build recipes.
+- Added Swift Package Manager support with a C target modulemap, generated
+  public headers, SwiftPM build validation, and an XCFramework staging recipe.
+- Added Windows/VST3 FFI discovery metadata for native-language hosts using
+  the portable C ABI.
+- Added preset document helpers for UTType metadata, JSON export/import,
+  safe filename suggestions, full-state documents, and macOS bookmarks.
+- Added MIDI/Note Expression input and output bridge support, including AU
+  MIDI event parsing, output queues/accessors, and ProcessContext
+  Note Expression events.
+
+## Changes
+
+- `build.rs` now runs cbindgen and syncs generated headers to the root FFI
+  header, AU shared header, and SwiftPM include header.
+- Bumped the crate version to 0.6.0 because the exported FFI ABI version moved
+  from 2 to 3.
+
 # 0.5.3
 
 ## New
