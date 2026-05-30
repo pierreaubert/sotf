@@ -161,17 +161,18 @@ fn test_recording_config_state_serialization() {
 
 #[test]
 fn test_config_serialization() {
-    use gpui_themes::{AccessibilityPalette, ThemeModePreference};
+    use gpui_themes::{AccessibilityPalette, ThemeModePreference, ThemeSchedule, TimeOfDay};
     use sotf_audio_player::ReleaseChannel;
     use sotf_audio_player_gpui::i18n::Language;
     use sotf_audio_player_gpui::keybindings::KeymapPreset;
     use sotf_audio_player_gpui::theme::ThemeId;
 
+    let schedule = ThemeSchedule::new(TimeOfDay::new(6, 30), TimeOfDay::new(21, 15));
     let config = Config {
         directories: Vec::new(),
         last_loaded_plugin_preset: Some("test_preset".to_string()),
         theme: ThemeId::default(),
-        theme_mode_preference: ThemeModePreference::default(),
+        theme_mode_preference: ThemeModePreference::Scheduled { schedule },
         accessibility_palette: AccessibilityPalette::default(),
         reduce_motion: false,
         language: Language::default(),
@@ -203,7 +204,7 @@ fn test_config_serialization() {
     assert_eq!(deserialized.scanner_threads, Some(2));
     assert_eq!(
         deserialized.theme_mode_preference,
-        ThemeModePreference::FollowSystem
+        ThemeModePreference::Scheduled { schedule }
     );
     assert_eq!(
         deserialized.accessibility_palette,
@@ -293,6 +294,25 @@ fn test_app_theme_policy_updates_theme_state() {
 
     app.set_reduce_motion(true);
     assert_eq!(app.theme_transition_duration_ms(), 0);
+}
+
+#[test]
+fn test_app_scheduled_theme_switching_updates_at_boundaries() {
+    use gpui_themes::{ThemeAppearance, ThemeSchedule, TimeOfDay};
+    use sotf_audio_player_gpui::{App, theme::ThemeId};
+
+    let mut app = App::new();
+    let schedule = ThemeSchedule::new(TimeOfDay::new(6, 30), TimeOfDay::new(21, 15));
+
+    app.set_theme_schedule_at_minutes(schedule, ThemeAppearance::Dark, 7 * 60);
+    assert_eq!(app.theme_schedule(), schedule);
+    assert_eq!(app.ui_state.theme_id, ThemeId::Light);
+
+    assert!(!app.refresh_scheduled_theme_at_minutes(8 * 60));
+    assert_eq!(app.ui_state.theme_id, ThemeId::Light);
+
+    assert!(app.refresh_scheduled_theme_at_minutes(22 * 60));
+    assert_eq!(app.ui_state.theme_id, ThemeId::Dark);
 }
 
 // ============================================================================

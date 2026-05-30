@@ -111,6 +111,7 @@ struct TickSnapshot {
     position_centiseconds: u64,
     duration_centiseconds: u64,
     current_screen: Screen,
+    theme_id: crate::theme::ThemeId,
     queue_index: Option<usize>,
     has_compressor: bool,
     spectrum_present: bool,
@@ -312,6 +313,7 @@ impl PlayerView {
                         Self::handle_engine_state(state, &playback_state, was_playing);
                         Self::handle_gapless_prequeue(state, &playback_state);
                         Self::tick_background_tasks(state);
+                        state.app.refresh_scheduled_theme();
                     });
 
                     // Background stats computation (outside state update)
@@ -509,6 +511,7 @@ impl PlayerView {
             position_centiseconds,
             duration_centiseconds,
             current_screen: state.app.ui_state.current_screen,
+            theme_id: state.app.ui_state.theme_id,
             queue_index: state.app.playback.current_queue_index,
             has_compressor: state.app.playback.compressor_info.is_some(),
             spectrum_present: state.app.playback.spectrum_info.is_some(),

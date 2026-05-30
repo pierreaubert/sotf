@@ -7,7 +7,9 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use gpui::Entity;
-use gpui_themes::{AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeTransition};
+use gpui_themes::{
+    AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeSchedule, ThemeTransition,
+};
 use gpui_ui_kit::workflow::NodeId;
 use sotf_audio_player::{Player, QueueController, QueuePlaybackEffect};
 
@@ -1602,12 +1604,81 @@ impl App {
         preference: ThemeModePreference,
         system_appearance: ThemeAppearance,
     ) {
-        let appearance = preference.resolve(system_appearance, current_minutes_after_midnight());
+        self.set_theme_mode_preference_at_minutes(
+            preference,
+            system_appearance,
+            current_minutes_after_midnight(),
+        );
+    }
+
+    pub fn set_theme_mode_preference_at_minutes(
+        &mut self,
+        preference: ThemeModePreference,
+        system_appearance: ThemeAppearance,
+        minutes_after_midnight: u16,
+    ) {
+        let appearance = preference.resolve(system_appearance, minutes_after_midnight);
         self.ui_state.theme_mode_preference = preference;
         self.apply_theme(ThemeId::for_accessibility_palette(
             self.ui_state.accessibility_palette,
             appearance,
         ));
+    }
+
+    pub fn theme_schedule(&self) -> ThemeSchedule {
+        match &self.ui_state.theme_mode_preference {
+            ThemeModePreference::Scheduled { schedule } => *schedule,
+            _ => ThemeSchedule::default(),
+        }
+    }
+
+    pub fn set_theme_schedule(&mut self, schedule: ThemeSchedule) {
+        self.set_theme_schedule_with_system(schedule, ThemeAppearance::Dark);
+    }
+
+    pub fn set_theme_schedule_with_system(
+        &mut self,
+        schedule: ThemeSchedule,
+        system_appearance: ThemeAppearance,
+    ) {
+        self.set_theme_mode_preference_with_system(
+            ThemeModePreference::Scheduled { schedule },
+            system_appearance,
+        );
+    }
+
+    pub fn set_theme_schedule_at_minutes(
+        &mut self,
+        schedule: ThemeSchedule,
+        system_appearance: ThemeAppearance,
+        minutes_after_midnight: u16,
+    ) {
+        self.set_theme_mode_preference_at_minutes(
+            ThemeModePreference::Scheduled { schedule },
+            system_appearance,
+            minutes_after_midnight,
+        );
+    }
+
+    pub fn refresh_scheduled_theme(&mut self) -> bool {
+        self.refresh_scheduled_theme_at_minutes(current_minutes_after_midnight())
+    }
+
+    pub fn refresh_scheduled_theme_at_minutes(&mut self, minutes_after_midnight: u16) -> bool {
+        let ThemeModePreference::Scheduled { schedule } = &self.ui_state.theme_mode_preference
+        else {
+            return false;
+        };
+        let appearance = schedule.resolve_at_minutes(minutes_after_midnight);
+        let theme_id =
+            ThemeId::for_accessibility_palette(self.ui_state.accessibility_palette, appearance);
+
+        if self.ui_state.theme_id == theme_id {
+            false
+        } else {
+            self.apply_theme(theme_id);
+            true
+        }
     }
 
     /// Set an accessibility palette and apply the matching theme.

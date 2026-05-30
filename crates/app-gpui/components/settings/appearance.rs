@@ -6,11 +6,19 @@ use crate::theme::ThemeId;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_themes::{AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeSchedule};
-use gpui_ui_kit::{
-    Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, Toggle,
-    ToggleSize, ToggleStyle,
+use gpui_themes::{
+    AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeSchedule, TimeOfDay,
 };
+use gpui_ui_kit::{
+    Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, NumberInput,
+    NumberInputSize, Toggle, ToggleSize, ToggleStyle,
+};
+
+#[derive(Clone, Copy)]
+enum ScheduleBoundary {
+    LightStart,
+    DarkStart,
+}
 
 fn theme_mode_value(preference: &ThemeModePreference) -> &'static str {
     match preference {
@@ -21,16 +29,44 @@ fn theme_mode_value(preference: &ThemeModePreference) -> &'static str {
     }
 }
 
-fn theme_mode_preference_from_value(value: &SharedString) -> Option<ThemeModePreference> {
+fn theme_mode_preference_from_value(
+    value: &SharedString,
+    schedule: ThemeSchedule,
+) -> Option<ThemeModePreference> {
     match value.as_ref() {
         "follow_system" => Some(ThemeModePreference::FollowSystem),
         "light" => Some(ThemeModePreference::Light),
         "dark" => Some(ThemeModePreference::Dark),
-        "scheduled" => Some(ThemeModePreference::Scheduled {
-            schedule: ThemeSchedule::default(),
-        }),
+        "scheduled" => Some(ThemeModePreference::Scheduled { schedule }),
         _ => None,
     }
+}
+
+fn schedule_from_preference(preference: &ThemeModePreference) -> ThemeSchedule {
+    match preference {
+        ThemeModePreference::Scheduled { schedule } => *schedule,
+        _ => ThemeSchedule::default(),
+    }
+}
+
+fn clamp_hour(value: f64) -> u8 {
+    value.round().clamp(0.0, 23.0) as u8
+}
+
+fn clamp_minute(value: f64) -> u8 {
+    value.round().clamp(0.0, 59.0) as u8
+}
+
+fn set_schedule_boundary(
+    mut schedule: ThemeSchedule,
+    boundary: ScheduleBoundary,
+    time: TimeOfDay,
+) -> ThemeSchedule {
+    match boundary {
+        ScheduleBoundary::LightStart => schedule.light_start = time,
+        ScheduleBoundary::DarkStart => schedule.dark_start = time,
+    }
+    schedule
 }
 
 fn accessibility_value(palette: AccessibilityPalette) -> &'static str {
@@ -61,6 +97,82 @@ fn theme_appearance_from_window(window: &Window) -> ThemeAppearance {
     }
 }
 
+fn render_schedule_time_row(
+    d: Ds,
+    theme: crate::theme::Theme,
+    state_entity: Entity<crate::app::AppState>,
+    id_prefix: &'static str,
+    label: &'static str,
+    boundary: ScheduleBoundary,
+    time: TimeOfDay,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(d.gap)
+        .child(
+            div()
+                .w(rems(5.5))
+                .text_size(d.text_sm)
+                .text_color(theme.text_secondary)
+                .child(label),
+        )
+        .child({
+            let state_entity = state_entity.clone();
+            NumberInput::new(SharedString::from(format!("{id_prefix}-hour")))
+                .value(time.hour as f64)
+                .range(0.0, 23.0)
+                .step(1.0)
+                .decimals(0)
+                .unit("h")
+                .size(NumberInputSize::Sm)
+                .width(76.0)
+                .aria_label(format!("{label} hour"))
+                .on_change(move |value, window, cx| {
+                    let system_appearance = theme_appearance_from_window(window);
+                    state_entity.update(cx, |state, _cx| {
+                        let schedule = state.app.theme_schedule();
+                        let current = match boundary {
+                            ScheduleBoundary::LightStart => schedule.light_start,
+                            ScheduleBoundary::DarkStart => schedule.dark_start,
+                        };
+                        let next = TimeOfDay::new(clamp_hour(value), current.minute);
+                        state.app.set_theme_schedule_with_system(
+                            set_schedule_boundary(schedule, boundary, next),
+                            system_appearance,
+                        );
+                    });
+                })
+        })
+        .child({
+            let state_entity = state_entity.clone();
+            NumberInput::new(SharedString::from(format!("{id_prefix}-minute")))
+                .value(time.minute as f64)
+                .range(0.0, 59.0)
+                .step(15.0)
+                .decimals(0)
+                .unit("min")
+                .size(NumberInputSize::Sm)
+                .width(92.0)
+                .aria_label(format!("{label} minute"))
+                .on_change(move |value, window, cx| {
+                    let system_appearance = theme_appearance_from_window(window);
+                    state_entity.update(cx, |state, _cx| {
+                        let schedule = state.app.theme_schedule();
+                        let current = match boundary {
+                            ScheduleBoundary::LightStart => schedule.light_start,
+                            ScheduleBoundary::DarkStart => schedule.dark_start,
+                        };
+                        let next = TimeOfDay::new(current.hour, clamp_minute(value));
+                        state.app.set_theme_schedule_with_system(
+                            set_schedule_boundary(schedule, boundary, next),
+                            system_appearance,
+                        );
+                    });
+                })
+        })
+}
+
 impl PlayerView {
     /// Render theme settings content
     pub(crate) fn render_theme_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -68,6 +180,11 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme_id = state.app.ui_state.theme_id;
         let theme_mode_preference = state.app.ui_state.theme_mode_preference.clone();
+        let schedule = schedule_from_preference(&theme_mode_preference);
+        let is_scheduled = matches!(
+            &theme_mode_preference,
+            ThemeModePreference::Scheduled { .. }
+        );
         let accessibility_palette = state.app.ui_state.accessibility_palette;
         let reduce_motion = state.app.ui_state.reduce_motion;
         let theme = state.app.ui_state.theme.clone();
@@ -102,7 +219,9 @@ impl PlayerView {
                             .selected(theme_mode_value(&theme_mode_preference))
                             .theme(theme.to_button_set_theme())
                             .on_change(move |value, window, cx| {
-                                if let Some(preference) = theme_mode_preference_from_value(value) {
+                                if let Some(preference) =
+                                    theme_mode_preference_from_value(value, schedule)
+                                {
                                     let system_appearance = theme_appearance_from_window(window);
                                     state_entity.update(cx, |state, _cx| {
                                         state.app.set_theme_mode_preference_with_system(
@@ -112,6 +231,33 @@ impl PlayerView {
                                     });
                                 }
                             })
+                    })
+                    .when(is_scheduled, |section| {
+                        section.child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .items_center()
+                                .gap(d.section)
+                                .child(render_schedule_time_row(
+                                    d,
+                                    theme.clone(),
+                                    self.state.clone(),
+                                    "theme-light-start",
+                                    "Light starts",
+                                    ScheduleBoundary::LightStart,
+                                    schedule.light_start,
+                                ))
+                                .child(render_schedule_time_row(
+                                    d,
+                                    theme.clone(),
+                                    self.state.clone(),
+                                    "theme-dark-start",
+                                    "Dark starts",
+                                    ScheduleBoundary::DarkStart,
+                                    schedule.dark_start,
+                                )),
+                        )
                     }),
             )
             .child(
