@@ -1,3 +1,15 @@
+# 0.6.3
+
+## Accessibility tree model
+
+- New `accessibility` module with a pure accessibility representation for solved layouts:
+  `AccessibilityTree`, `AccessibilityNode`, `AccessibilityRole`, and `AccessibilityMetadata`.
+- Added `accessibility_tree_from_solved(&SolvedNode, metadata)` to derive a hierarchical
+  accessibility view from solver output while preserving visibility/collapse semantics.
+- Added default role mapping for container/slot/collapsed-tab cases, with optional
+  per-node overrides for role, label, and description.
+- Re-exported the accessibility API from `lib.rs`.
+
 # 0.6.2
 
 ## Plugin chassis layout primitives

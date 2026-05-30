@@ -152,6 +152,7 @@ let solved = solve(&root, 1200.0, 800.0, &prefs);
 assert!(solved.find("library").is_some());
 ```
 
+<<<<<<< HEAD
 ## Macro DSL
 
 Use `solve_layout!` when you want to describe and solve a nested tree in one
@@ -211,6 +212,38 @@ assert!(report.is_clean(), "{report}");
 Validation reports hard errors for ids and numeric constraints that can make layout
 behavior ambiguous, and warnings for quality issues such as unlabeled collapsible
 slots, duplicate display tiers, and empty containers.
+=======
+## Accessibility Tree
+
+Use `accessibility_tree_from_solved` to build a platform-agnostic accessibility tree from
+`SolvedNode` output. You can attach optional per-node metadata for role/label/description.
+
+```rust
+use gpui_builder::{
+    AccessibilityMetadata,
+    AccessibilityRole,
+    accessibility_tree_from_solved,
+};
+
+let tree = accessibility_tree_from_solved(
+    &solved,
+    &[
+        (
+            "sidebar",
+            AccessibilityMetadata {
+                role: Some(AccessibilityRole::Region),
+                label: Some("Navigation Sidebar"),
+                description: Some("Primary navigation and filters"),
+            },
+        ),
+    ],
+);
+
+let sidebar = tree.find("sidebar").unwrap();
+assert_eq!(sidebar.label.as_deref(), Some("Navigation Sidebar"));
+```
+
+>>>>>>> dc1ce936 (prep for merge)
 ## Sizing Modes
 
 | Mode | Constructor | Behavior |
