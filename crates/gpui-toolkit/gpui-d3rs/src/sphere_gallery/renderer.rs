@@ -595,15 +595,15 @@ impl SphereGalleryRenderer {
         let buffer_slice = staging_buffer.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            tx.send(result).unwrap();
+            let _ = tx.send(result);
         });
 
         let _ = self.device.poll(wgpu::PollType::Wait {
             submission_index: Default::default(),
-            timeout: None,
+            timeout: Some(std::time::Duration::from_secs(5)),
         });
 
-        match rx.recv() {
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
             Ok(Ok(())) => {
                 let data = buffer_slice.get_mapped_range();
                 let mut pixels = Vec::with_capacity((self.width * self.height * 4) as usize);
