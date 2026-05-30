@@ -28,59 +28,22 @@ fn app_tree() -> (
     [LayoutNode<'static>; 3], // root children need content ref
 ) {
     let content_children = [
-        LayoutNode::Slot(SlotNode {
-            id: "library",
-            sizing: Sizing::fractional(0.30, 100.0),
-            priority: 0.5,
-            collapsible: true,
-            display_tiers: &[],
-            collapse_label: Some("Library"),
-        }),
-        LayoutNode::Slot(SlotNode {
-            id: "queue",
-            sizing: Sizing::flex(200.0),
-            priority: 1.0,
-            collapsible: false,
-            display_tiers: &[],
-            collapse_label: None,
-        }),
-        LayoutNode::Slot(SlotNode {
-            id: "rack",
-            sizing: Sizing::fractional(0.30, 0.0),
-            priority: 0.3,
-            collapsible: true,
-            display_tiers: RACK_TIERS,
-            collapse_label: Some("Rack"),
-        }),
+        SlotNode::new("library", Sizing::fractional(0.30, 100.0))
+            .collapsible(0.5, "Library")
+            .into_node(),
+        LayoutNode::slot("queue", Sizing::flex(200.0)),
+        SlotNode::new("rack", Sizing::fractional(0.30, 0.0))
+            .display_tiers(RACK_TIERS)
+            .collapsible(0.3, "Rack")
+            .into_node(),
     ];
     // We can't return a reference to a local, so we return the parts
     // and assemble outside.
     let root_children = [
-        LayoutNode::Slot(SlotNode {
-            id: "header",
-            sizing: Sizing::Fixed(40.0),
-            priority: 1.0,
-            collapsible: false,
-            display_tiers: &[],
-            collapse_label: None,
-        }),
+        LayoutNode::slot("header", Sizing::Fixed(40.0)),
         // placeholder — will be replaced
-        LayoutNode::Slot(SlotNode {
-            id: "_placeholder",
-            sizing: Sizing::flex(0.0),
-            priority: 1.0,
-            collapsible: false,
-            display_tiers: &[],
-            collapse_label: None,
-        }),
-        LayoutNode::Slot(SlotNode {
-            id: "footer",
-            sizing: Sizing::Fixed(100.0),
-            priority: 1.0,
-            collapsible: false,
-            display_tiers: &[],
-            collapse_label: None,
-        }),
+        LayoutNode::slot("_placeholder", Sizing::flex(0.0)),
+        LayoutNode::slot("footer", Sizing::Fixed(100.0)),
     ];
     (content_children, root_children)
 }
@@ -113,24 +76,19 @@ fn main() {
     let (content_children, mut root_children) = app_tree();
 
     // Build the content container referencing content_children
-    let content = LayoutNode::Container(ContainerNode {
-        id: "content",
-        axis: Axis::Horizontal,
-        auto_axis: Some(1.0), // switch to vertical when height > width
-        sizing: Sizing::flex(0.0),
-        children: &content_children,
-        divider_size: 6.0,
-    });
+    let content = ContainerNode::new(
+        "content",
+        Axis::Horizontal,
+        Sizing::flex(0.0),
+        &content_children,
+    )
+    .auto_axis(1.0) // switch to vertical when height > width
+    .divider_size(6.0)
+    .into_node();
     root_children[1] = content;
 
-    let root = LayoutNode::Container(ContainerNode {
-        id: "root",
-        axis: Axis::Vertical,
-        auto_axis: None,
-        sizing: Sizing::flex(0.0),
-        children: &root_children,
-        divider_size: 0.0,
-    });
+    let root =
+        ContainerNode::new("root", Axis::Vertical, Sizing::flex(0.0), &root_children).into_node();
 
     // --- Scenario 1: Wide desktop window ---
     println!("=== Wide desktop (1200x800) ===");

@@ -21,32 +21,16 @@ Platform-agnostic — the core solver has zero framework dependencies. An option
 use gpui_builder::{solve, LayoutNode, ContainerNode, SlotNode, Sizing, Axis, LayoutPreferences};
 
 let children = [
-    LayoutNode::Slot(SlotNode {
-        id: "sidebar",
-        sizing: Sizing::fractional(0.2, 120.0),
-        priority: 0.5,
-        collapsible: true,
-        display_tiers: &[],
-        collapse_label: Some("Sidebar"),
-    }),
-    LayoutNode::Slot(SlotNode {
-        id: "content",
-        sizing: Sizing::flex(300.0),
-        priority: 1.0,
-        collapsible: false,
-        display_tiers: &[],
-        collapse_label: None,
-    }),
+    SlotNode::new("sidebar", Sizing::fractional(0.2, 120.0))
+        .collapsible(0.5, "Sidebar")
+        .into_node(),
+    LayoutNode::slot("content", Sizing::flex(300.0)),
 ];
 
-let root = LayoutNode::Container(ContainerNode {
-    id: "root",
-    axis: Axis::Horizontal,
-    auto_axis: Some(1.0), // switch to vertical in portrait
-    sizing: Sizing::flex(0.0),
-    children: &children,
-    divider_size: 6.0,
-});
+let root = ContainerNode::new("root", Axis::Horizontal, Sizing::flex(0.0), &children)
+    .auto_axis(1.0) // switch to vertical in portrait
+    .divider_size(6.0)
+    .into_node();
 
 let solved = solve(&root, 1200.0, 800.0, &LayoutPreferences::default());
 

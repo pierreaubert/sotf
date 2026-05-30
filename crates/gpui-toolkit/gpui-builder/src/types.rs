@@ -208,6 +208,28 @@ pub enum LayoutNode<'a> {
 }
 
 impl<'a> LayoutNode<'a> {
+    /// Construct a leaf node with default slot options.
+    ///
+    /// Use [`SlotNode::new`] when you need to chain slot-specific options such
+    /// as collapse labels or display tiers before converting into a
+    /// `LayoutNode`.
+    pub const fn slot(id: &'a str, sizing: Sizing<'a>) -> Self {
+        LayoutNode::Slot(SlotNode::new(id, sizing))
+    }
+
+    /// Construct a container node with default container options.
+    ///
+    /// Use [`ContainerNode::new`] when you need to chain options such as
+    /// `auto_axis` or `divider_size` before converting into a `LayoutNode`.
+    pub const fn container(
+        id: &'a str,
+        axis: Axis,
+        sizing: Sizing<'a>,
+        children: &'a [LayoutNode<'a>],
+    ) -> Self {
+        LayoutNode::Container(ContainerNode::new(id, axis, sizing, children))
+    }
+
     /// Returns the node's unique identifier.
     pub fn id(&self) -> &'a str {
         match self {
@@ -241,6 +263,18 @@ impl<'a> LayoutNode<'a> {
     }
 }
 
+impl<'a> From<SlotNode<'a>> for LayoutNode<'a> {
+    fn from(slot: SlotNode<'a>) -> Self {
+        LayoutNode::Slot(slot)
+    }
+}
+
+impl<'a> From<ContainerNode<'a>> for LayoutNode<'a> {
+    fn from(container: ContainerNode<'a>) -> Self {
+        LayoutNode::Container(container)
+    }
+}
+
 /// A leaf node: a named slot where the consumer renders content.
 #[derive(Debug, Clone, Copy)]
 pub struct SlotNode<'a> {
@@ -256,6 +290,51 @@ pub struct SlotNode<'a> {
     pub display_tiers: &'a [DisplayTier<'a>],
     /// Tab label when this slot is collapsed. `None` = no tab.
     pub collapse_label: Option<&'a str>,
+}
+
+impl<'a> SlotNode<'a> {
+    /// Construct a slot with the standard non-collapsible defaults.
+    pub const fn new(id: &'a str, sizing: Sizing<'a>) -> Self {
+        Self {
+            id,
+            sizing,
+            priority: 1.0,
+            collapsible: false,
+            display_tiers: &[],
+            collapse_label: None,
+        }
+    }
+
+    /// Set the collapse priority.
+    pub const fn priority(mut self, priority: f32) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    /// Mark the slot as collapsible and set its collapse tab label.
+    pub const fn collapsible(mut self, priority: f32, collapse_label: &'a str) -> Self {
+        self.priority = priority;
+        self.collapsible = true;
+        self.collapse_label = Some(collapse_label);
+        self
+    }
+
+    /// Set display tiers used by responsive renderers.
+    pub const fn display_tiers(mut self, display_tiers: &'a [DisplayTier<'a>]) -> Self {
+        self.display_tiers = display_tiers;
+        self
+    }
+
+    /// Set or clear the collapse tab label without changing collapsibility.
+    pub const fn collapse_label(mut self, collapse_label: Option<&'a str>) -> Self {
+        self.collapse_label = collapse_label;
+        self
+    }
+
+    /// Convert this slot into a layout node.
+    pub const fn into_node(self) -> LayoutNode<'a> {
+        LayoutNode::Slot(self)
+    }
 }
 
 /// A container node: arranges children along an axis.
@@ -275,6 +354,42 @@ pub struct ContainerNode<'a> {
     pub children: &'a [LayoutNode<'a>],
     /// Pixel size to reserve between each pair of visible children (for dividers).
     pub divider_size: f32,
+}
+
+impl<'a> ContainerNode<'a> {
+    /// Construct a container with no auto-axis switching or dividers.
+    pub const fn new(
+        id: &'a str,
+        axis: Axis,
+        sizing: Sizing<'a>,
+        children: &'a [LayoutNode<'a>],
+    ) -> Self {
+        Self {
+            id,
+            axis,
+            auto_axis: None,
+            sizing,
+            children,
+            divider_size: 0.0,
+        }
+    }
+
+    /// Flip the container axis when the available width/height crosses `threshold`.
+    pub const fn auto_axis(mut self, threshold: f32) -> Self {
+        self.auto_axis = Some(threshold);
+        self
+    }
+
+    /// Reserve a fixed divider size between visible children.
+    pub const fn divider_size(mut self, divider_size: f32) -> Self {
+        self.divider_size = divider_size;
+        self
+    }
+
+    /// Convert this container into a layout node.
+    pub const fn into_node(self) -> LayoutNode<'a> {
+        LayoutNode::Container(self)
+    }
 }
 
 // ============================================================================
@@ -308,5 +423,122 @@ impl<'a> LayoutPreferences<'a> {
         self.collapsed
             .iter()
             .any(|(slot_id, collapsed)| *slot_id == id && *collapsed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::solve;
+
+    #[test]
+    fn slot_constructor_uses_non_collapsible_defaults() {
+        let slot = SlotNode::new("main", Sizing::flex(100.0));
+
+        assert_eq!(slot.id, "main");
+        assert_eq!(slot.sizing, Sizing::flex(100.0));
+        assert_eq!(slot.priority, 1.0);
+        assert!(!slot.collapsible);
+        assert!(slot.display_tiers.is_empty());
+        assert_eq!(slot.collapse_label, None);
+    }
+
+    #[test]
+    fn fluent_slot_options_set_collapse_and_tiers() {
+        static TIERS: &[DisplayTier<'_>] = &[
+            DisplayTier {
+                name: "Full",
+                min_size: 200.0,
+            },
+            DisplayTier {
+                name: "Mini",
+                min_size: 100.0,
+            },
+        ];
+
+        let slot = SlotNode::new("rack", Sizing::fractional(0.3, 80.0))
+            .display_tiers(TIERS)
+            .collapsible(0.4, "Rack");
+
+        assert_eq!(slot.priority, 0.4);
+        assert!(slot.collapsible);
+        assert_eq!(slot.display_tiers, TIERS);
+        assert_eq!(slot.collapse_label, Some("Rack"));
+    }
+
+    #[test]
+    fn container_constructors_use_default_options() {
+        let children = [LayoutNode::slot("main", Sizing::flex(0.0))];
+        let container = ContainerNode::new("root", Axis::Vertical, Sizing::flex(0.0), &children);
+
+        assert_eq!(container.id, "root");
+        assert_eq!(container.axis, Axis::Vertical);
+        assert_eq!(container.auto_axis, None);
+        assert_eq!(container.sizing, Sizing::flex(0.0));
+        assert_eq!(container.children.len(), 1);
+        assert_eq!(container.divider_size, 0.0);
+
+        let node = LayoutNode::container("root", Axis::Vertical, Sizing::flex(0.0), &children);
+        assert!(matches!(node, LayoutNode::Container(_)));
+    }
+
+    #[test]
+    fn fluent_constructors_match_explicit_struct_layout() {
+        let explicit_children = [
+            LayoutNode::Slot(SlotNode {
+                id: "sidebar",
+                sizing: Sizing::fractional(0.25, 100.0),
+                priority: 0.5,
+                collapsible: true,
+                display_tiers: &[],
+                collapse_label: Some("Sidebar"),
+            }),
+            LayoutNode::Slot(SlotNode {
+                id: "main",
+                sizing: Sizing::flex(200.0),
+                priority: 1.0,
+                collapsible: false,
+                display_tiers: &[],
+                collapse_label: None,
+            }),
+        ];
+        let explicit = LayoutNode::Container(ContainerNode {
+            id: "root",
+            axis: Axis::Horizontal,
+            auto_axis: Some(1.0),
+            sizing: Sizing::flex(0.0),
+            children: &explicit_children,
+            divider_size: 6.0,
+        });
+
+        let fluent_children = [
+            SlotNode::new("sidebar", Sizing::fractional(0.25, 100.0))
+                .collapsible(0.5, "Sidebar")
+                .into(),
+            LayoutNode::slot("main", Sizing::flex(200.0)),
+        ];
+        let fluent = ContainerNode::new(
+            "root",
+            Axis::Horizontal,
+            Sizing::flex(0.0),
+            &fluent_children,
+        )
+        .auto_axis(1.0)
+        .divider_size(6.0)
+        .into_node();
+
+        let explicit_solved = solve(&explicit, 1000.0, 600.0, &LayoutPreferences::default());
+        let fluent_solved = solve(&fluent, 1000.0, 600.0, &LayoutPreferences::default());
+
+        for id in ["root", "sidebar", "main"] {
+            let explicit = explicit_solved.find(id).unwrap();
+            let fluent = fluent_solved.find(id).unwrap();
+            assert_eq!(fluent.width, explicit.width, "width mismatch for {id}");
+            assert_eq!(fluent.height, explicit.height, "height mismatch for {id}");
+            assert_eq!(
+                fluent.visible, explicit.visible,
+                "visibility mismatch for {id}"
+            );
+        }
     }
 }
