@@ -9,8 +9,16 @@ use super::{
     GcThread, ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
     PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent,
 };
-use crate::engine::processing_thread::{build_plugin_graph_host, build_plugin_host};
+use crate::engine::processing_thread::{
+    build_plugin_graph_host_with_policy, build_plugin_host_with_policy,
+};
 use arc_swap::ArcSwap;
+#[cfg(feature = "streaming")]
+use sotf_streaming::{PcmStreamHandle, PcmStreamServer, PcmStreamServerConfig};
+use sotf_types::{
+    DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy, NetworkEndpointMode,
+    NetworkEndpointStatus, OutputAccessMode, OutputAccessStatus,
+};
 use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
@@ -409,6 +417,142 @@ impl Drop for ManagerThread {
     }
 }
 
+#[cfg(not(target_os = "ios"))]
+fn output_device_uses_exclusive_backend(output_device: Option<&str>) -> bool {
+    output_device.is_some_and(crate::devices::is_asio_device)
+}
+
+#[cfg(target_os = "ios")]
+fn output_device_uses_exclusive_backend(output_device: Option<&str>) -> bool {
+    let _ = output_device;
+    false
+}
+
+fn output_access_status_for_config(config: &EngineConfig) -> OutputAccessStatus {
+    match config.output_access {
+        OutputAccessMode::Shared => OutputAccessStatus::Shared,
+        OutputAccessMode::ExclusivePreferred | OutputAccessMode::ExclusiveRequired => {
+            if output_device_uses_exclusive_backend(config.output_device.as_deref()) {
+                OutputAccessStatus::ExclusiveActive
+            } else if cfg!(target_os = "macos") {
+                OutputAccessStatus::ExclusivePending
+            } else if matches!(config.output_access, OutputAccessMode::ExclusivePreferred) {
+                OutputAccessStatus::FallbackShared
+            } else {
+                OutputAccessStatus::Unsupported
+            }
+        }
+    }
+}
+
+fn dsd_output_status_for_mode(mode: DsdOutputMode) -> DsdOutputStatus {
+    match mode {
+        DsdOutputMode::Disabled => DsdOutputStatus::Disabled,
+        DsdOutputMode::PcmDecode => DsdOutputStatus::PcmDecodeAvailable,
+        DsdOutputMode::DopPreferred => DsdOutputStatus::DopFallbackPcm,
+        DsdOutputMode::DopRequired => DsdOutputStatus::DopUnavailable,
+        DsdOutputMode::NativePreferred => DsdOutputStatus::NativeFallbackPcm,
+        DsdOutputMode::NativeRequired => DsdOutputStatus::NativeUnavailable,
+    }
+}
+
+fn network_endpoint_status_for_mode(mode: NetworkEndpointMode) -> NetworkEndpointStatus {
+    match mode {
+        NetworkEndpointMode::Disabled => NetworkEndpointStatus::Disabled,
+        NetworkEndpointMode::InputClient => {
+            #[cfg(feature = "streaming")]
+            {
+                NetworkEndpointStatus::InputClientAvailable
+            }
+            #[cfg(not(feature = "streaming"))]
+            {
+                NetworkEndpointStatus::InputClientUnavailable
+            }
+        }
+        NetworkEndpointMode::HttpEndpoint => NetworkEndpointStatus::EndpointUnavailable,
+    }
+}
+
+#[cfg(feature = "streaming")]
+fn start_network_stream_server(
+    config: &EngineConfig,
+    state: &Arc<ArcSwap<AudioEngineState>>,
+) -> Option<(PcmStreamServer, PcmStreamHandle)> {
+    if config.network_endpoint.mode != NetworkEndpointMode::HttpEndpoint {
+        return None;
+    }
+
+    let initial_channels = match u16::try_from(config.output_channels.max(1)) {
+        Ok(channels) => channels,
+        Err(_) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.network_endpoint_status = NetworkEndpointStatus::EndpointUnavailable;
+            new_state.last_error = Some(format!(
+                "Network streaming endpoint does not support {} output channels",
+                config.output_channels
+            ));
+            state.store(Arc::new(new_state));
+            return None;
+        }
+    };
+
+    let server_config = PcmStreamServerConfig {
+        bind_addr: config.network_endpoint.bind_addr.clone(),
+        port: config.network_endpoint.port,
+        initial_sample_rate: config.output_sample_rate,
+        initial_channels,
+        ..PcmStreamServerConfig::default()
+    };
+
+    match PcmStreamServer::start(server_config) {
+        Ok(server) => {
+            let handle = server.handle();
+            let local_addr = server.local_addr();
+            let mut new_state = (**state.load()).clone();
+            new_state.network_endpoint.port = local_addr.port();
+            new_state.network_endpoint_status = NetworkEndpointStatus::EndpointRunning;
+            new_state.last_error = None;
+            state.store(Arc::new(new_state));
+            log::info!(
+                "[Manager Thread] Network PCM streaming endpoint running at http://{}/stream.wav",
+                local_addr
+            );
+            Some((server, handle))
+        }
+        Err(e) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.network_endpoint_status = NetworkEndpointStatus::EndpointUnavailable;
+            new_state.last_error = Some(format!("Network streaming endpoint failed: {}", e));
+            state.store(Arc::new(new_state));
+            log::warn!(
+                "[Manager Thread] Network PCM streaming endpoint failed to start on {}:{}: {}",
+                config.network_endpoint.bind_addr,
+                config.network_endpoint.port,
+                e
+            );
+            None
+        }
+    }
+}
+
+fn initial_engine_state_from_config(config: &EngineConfig) -> AudioEngineState {
+    AudioEngineState {
+        sample_rate: config.output_sample_rate,
+        num_channels: config.output_channels,
+        volume: config.volume,
+        muted: config.muted,
+        latency_compensation_enabled: config.latency_compensation.is_enabled(),
+        output_access_mode: config.output_access,
+        output_access_status: output_access_status_for_config(config),
+        dsd_output_mode: config.dsd_output,
+        dsd_output_status: dsd_output_status_for_mode(config.dsd_output),
+        oversampling_policy: config.oversampling_policy,
+        network_endpoint: config.network_endpoint.clone(),
+        network_endpoint_status: network_endpoint_status_for_mode(config.network_endpoint.mode),
+        ..AudioEngineState::default()
+    }
+}
+
 /// Main manager thread function
 fn run_manager_thread(
     config: EngineConfig,
@@ -418,6 +562,27 @@ fn run_manager_thread(
     plugin_data_cache: PluginDataCache,
 ) -> Result<(), String> {
     log::debug!("[Manager Thread] Starting with config: {:?}", config);
+    state.store(Arc::new(initial_engine_state_from_config(&config)));
+
+    if config.output_access.requires_exclusive()
+        && output_access_status_for_config(&config) == OutputAccessStatus::Unsupported
+    {
+        return Err(
+            "Exclusive output is required, but this engine build only has shared cpal output for the selected device"
+                .to_string(),
+        );
+    }
+    if config.dsd_output.requires_bitstream_output()
+        && matches!(
+            dsd_output_status_for_mode(config.dsd_output),
+            DsdOutputStatus::DopUnavailable | DsdOutputStatus::NativeUnavailable
+        )
+    {
+        return Err(
+            "DSD bitstream output is required, but this engine build only supports DSF-to-PCM decode"
+                .to_string(),
+        );
+    }
 
     // Create config update queue for serializing plugin updates
     let mut config_update_queue = ConfigUpdateQueue::new();
@@ -449,6 +614,13 @@ fn run_manager_thread(
     let mut gc_thread = GcThread::new()?;
     let gc_tx = gc_thread.sender();
 
+    #[cfg(feature = "streaming")]
+    let mut network_stream_server = start_network_stream_server(&config, &state);
+    #[cfg(feature = "streaming")]
+    let network_stream_tap = network_stream_server
+        .as_ref()
+        .map(|(_, handle)| handle.clone());
+
     // Create threads
     let mut decoder_thread = DecoderThread::new(
         decoder_tx,
@@ -456,6 +628,7 @@ fn run_manager_thread(
         config.output_sample_rate,
         config.frame_size,
         decoder_recycle_rx,
+        config.dsd_output,
     )?;
 
     let mut processing_thread = ProcessingThread::new(
@@ -468,6 +641,8 @@ fn run_manager_thread(
         gc_tx,
         recycle_rx,
         decoder_recycle_tx,
+        #[cfg(feature = "streaming")]
+        network_stream_tap,
     )?;
 
     // Determine actual output channel count by loading plugin chain first
@@ -479,10 +654,11 @@ fn run_manager_thread(
 
         let start = std::time::Instant::now();
         // Build host locally to avoid blocking audio thread later
-        let host_result = build_plugin_host(
+        let host_result = build_plugin_host_with_policy(
             &config.plugins,
             config.output_sample_rate,
             config.input_channels,
+            config.oversampling_policy,
         );
 
         match host_result {
@@ -595,6 +771,7 @@ fn run_manager_thread(
         config.output_device.clone(),
         recycle_tx,
         config.allow_virtual_output,
+        config.output_access,
     )?;
 
     // Set initial volume and mute
@@ -685,6 +862,7 @@ fn run_manager_thread(
                 plugins,
                 config.output_sample_rate,
                 config.input_channels,
+                config.oversampling_policy,
             ) {
                 log::error!("[Manager Thread] Failed to apply config update: {}", e);
                 let mut new_state = (**state.load()).clone();
@@ -736,6 +914,10 @@ fn run_manager_thread(
     decoder_thread.shutdown();
     processing_thread.shutdown();
     playback_thread.shutdown();
+    #[cfg(feature = "streaming")]
+    if let Some((server, _)) = network_stream_server.as_mut() {
+        server.shutdown();
+    }
     gc_thread.shutdown(); // Last — other threads may still send garbage during shutdown
 
     log::debug!("[Manager Thread] Stopped");
@@ -772,6 +954,11 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             new_state.playback_output_device = Some(device_name);
             state.store(Arc::new(new_state));
         }
+        ThreadEvent::PlaybackOutputAccessChanged(status) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.output_access_status = status;
+            state.store(Arc::new(new_state));
+        }
         ThreadEvent::PlaybackStats {
             callback_count,
             buffer_fill_percent,
@@ -803,6 +990,11 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             let mut new_state = (**state.load()).clone();
             new_state.playback_state = PlaybackState::Stopped;
             new_state.last_error = Some(err);
+            state.store(Arc::new(new_state));
+        }
+        ThreadEvent::StreamMetadataChanged(stream_metadata) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.stream_metadata = stream_metadata;
             state.store(Arc::new(new_state));
         }
         ThreadEvent::PlaybackUnderrun(underruns) => {
@@ -843,7 +1035,10 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
                 // is ahead of actual playback by the total pipeline latency.
                 // When processing is bypassed, audio passes through without
                 // plugin processing, so effective latency is 0.
-                let latency_sec = if new_state.sample_rate > 0 && !new_state.processing_bypassed {
+                let latency_sec = if new_state.sample_rate > 0
+                    && new_state.latency_compensation_enabled
+                    && !new_state.processing_bypassed
+                {
                     new_state.plugin_latency_samples as f64 / new_state.sample_rate as f64
                 } else {
                     0.0
@@ -858,7 +1053,10 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             new_state.plugin_latency_samples = latency_samples;
             // Adjust displayed position to compensate for the latency delta,
             // preventing a visible position jump when plugins change mid-stream.
-            if new_state.sample_rate > 0 && old_latency != latency_samples {
+            if new_state.sample_rate > 0
+                && new_state.latency_compensation_enabled
+                && old_latency != latency_samples
+            {
                 let delta_sec =
                     (latency_samples as f64 - old_latency as f64) / new_state.sample_rate as f64;
                 new_state.position = (new_state.position - delta_sec).max(0.0);
@@ -1118,6 +1316,8 @@ fn apply_plugin_update(
     sample_rate: u32,
 
     input_channels: usize,
+
+    oversampling_policy: EngineOversamplingPolicy,
 ) -> Result<(), ConfigError> {
     log::debug!(
         "[Manager Thread] apply_plugin_update: Starting update with {} plugins at {}Hz",
@@ -1133,11 +1333,12 @@ fn apply_plugin_update(
 
     log::debug!("[Manager Thread] Building plugin host locally...");
 
-    let (host, build_warnings) =
-        build_plugin_host(&plugins, sample_rate, input_channels).map_err(|e| {
-            log::error!("[Manager Thread] Local build failed: {}", e);
-            ConfigError::ProcessingError { reason: e }
-        })?;
+    let host_result =
+        build_plugin_host_with_policy(&plugins, sample_rate, input_channels, oversampling_policy);
+    let (host, build_warnings) = host_result.map_err(|e| {
+        log::error!("[Manager Thread] Local build failed: {}", e);
+        ConfigError::ProcessingError { reason: e }
+    })?;
 
     for w in &build_warnings {
         log::warn!("[Manager Thread] {}", w);
@@ -1275,12 +1476,6 @@ fn apply_plugin_update(
     })
 }
 
-// Actually, I'll do it in one go if possible.
-
-// `run_manager_thread` has `config`.
-
-// `apply_plugin_update` is called in `run_manager_thread`.
-
 /// Build a DawHost from a graph config and convert to a linear `Vec<PluginConfig>` isn't
 /// possible for graph topologies. Instead, build the host directly and send it to the
 /// processing thread. This reuses the same host-swap mechanism as `apply_plugin_update`.
@@ -1291,6 +1486,7 @@ fn apply_plugin_graph_update(
     graph_config: super::types::PluginGraphConfig,
     sample_rate: u32,
     input_channels: usize,
+    oversampling_policy: EngineOversamplingPolicy,
 ) -> Result<(), ConfigError> {
     log::debug!(
         "[Manager Thread] apply_plugin_graph_update: {} nodes, {} edges at {}Hz",
@@ -1299,11 +1495,16 @@ fn apply_plugin_graph_update(
         sample_rate
     );
 
-    let (host, build_warnings) =
-        build_plugin_graph_host(&graph_config, sample_rate, input_channels).map_err(|e| {
-            log::error!("[Manager Thread] Graph build failed: {}", e);
-            ConfigError::ProcessingError { reason: e }
-        })?;
+    let host_result = build_plugin_graph_host_with_policy(
+        &graph_config,
+        sample_rate,
+        input_channels,
+        oversampling_policy,
+    );
+    let (host, build_warnings) = host_result.map_err(|e| {
+        log::error!("[Manager Thread] Graph build failed: {}", e);
+        ConfigError::ProcessingError { reason: e }
+    })?;
 
     for w in &build_warnings {
         log::warn!("[Manager Thread] {}", w);
@@ -1814,6 +2015,7 @@ fn handle_command(
                 plugins,
                 config.output_sample_rate,
                 config.input_channels,
+                config.oversampling_policy,
             ) {
                 Ok(()) => {
                     let mut new_state = (**state.load()).clone();
@@ -1846,6 +2048,7 @@ fn handle_command(
                 graph_config,
                 config.output_sample_rate,
                 config.input_channels,
+                config.oversampling_policy,
             ) {
                 Ok(()) => {
                     let mut new_state = (**state.load()).clone();
@@ -2277,6 +2480,23 @@ mod tests {
     }
 
     #[test]
+    fn test_handle_thread_event_updates_output_access_status() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+
+        handle_thread_event(
+            ThreadEvent::PlaybackOutputAccessChanged(
+                sotf_types::OutputAccessStatus::FallbackShared,
+            ),
+            &state,
+        );
+
+        assert_eq!(
+            state.load().output_access_status,
+            sotf_types::OutputAccessStatus::FallbackShared
+        );
+    }
+
+    #[test]
     fn test_handle_thread_event_updates_playback_stats() {
         let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
 
@@ -2301,6 +2521,26 @@ mod tests {
         assert_eq!(s.playback_frames_written, 39);
         assert_eq!(s.playback_frames_dropped, 1);
         assert_eq!(s.playback_effective_sample_rate, 48_000);
+    }
+
+    #[test]
+    fn test_handle_thread_event_updates_stream_metadata() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+        let metadata = sotf_types::StreamMetadata {
+            stream_title: Some("Artist - Song".to_string()),
+            stream_url: Some("https://station.example/live".to_string()),
+            content_type: Some("audio/mpeg".to_string()),
+            bitrate_kbps: Some(192),
+        };
+
+        handle_thread_event(
+            ThreadEvent::StreamMetadataChanged(Some(metadata.clone())),
+            &state,
+        );
+        assert_eq!(state.load().stream_metadata, Some(metadata));
+
+        handle_thread_event(ThreadEvent::StreamMetadataChanged(None), &state);
+        assert!(state.load().stream_metadata.is_none());
     }
 
     #[test]
@@ -2367,6 +2607,23 @@ mod tests {
         handle_thread_event(ThreadEvent::PluginLatencyUpdate(4800), &state);
 
         assert!((state.load().position - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_latency_update_skips_position_shift_when_compensation_disabled() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            position: 10.0,
+            sample_rate: 48000,
+            plugin_latency_samples: 0,
+            latency_compensation_enabled: false,
+            ..AudioEngineState::default()
+        }));
+
+        handle_thread_event(ThreadEvent::PluginLatencyUpdate(4800), &state);
+
+        let s = state.load();
+        assert_eq!(s.plugin_latency_samples, 4800);
+        assert!((s.position - 10.0).abs() < 1e-9);
     }
 
     #[test]
@@ -2534,5 +2791,121 @@ mod tests {
             "Should apply latency compensation, got position={}",
             s.position
         );
+    }
+
+    #[test]
+    fn test_position_update_skips_latency_when_compensation_disabled() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            playback_state: PlaybackState::Playing,
+            sample_rate: 48000,
+            plugin_latency_samples: 4800,
+            latency_compensation_enabled: false,
+            ..AudioEngineState::default()
+        }));
+
+        handle_thread_event(ThreadEvent::PositionUpdate(5.0), &state);
+
+        let s = state.load();
+        assert!((s.position - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_initial_engine_state_surfaces_feature_policies() {
+        let config = EngineConfig {
+            output_sample_rate: 96_000,
+            output_channels: 6,
+            volume: 0.5,
+            muted: true,
+            latency_compensation: sotf_types::LatencyCompensationMode::Disabled,
+            output_access: sotf_types::OutputAccessMode::ExclusivePreferred,
+            dsd_output: sotf_types::DsdOutputMode::DopPreferred,
+            oversampling_policy: sotf_types::EngineOversamplingPolicy::Force2x,
+            network_endpoint: sotf_types::NetworkEndpointConfig {
+                mode: sotf_types::NetworkEndpointMode::HttpEndpoint,
+                ..Default::default()
+            },
+            ..EngineConfig::default()
+        };
+
+        let state = initial_engine_state_from_config(&config);
+
+        assert_eq!(state.sample_rate, 96_000);
+        assert_eq!(state.num_channels, 6);
+        assert_eq!(state.volume, 0.5);
+        assert!(state.muted);
+        assert!(!state.latency_compensation_enabled);
+        #[cfg(target_os = "macos")]
+        let expected_output_access_status = sotf_types::OutputAccessStatus::ExclusivePending;
+        #[cfg(not(target_os = "macos"))]
+        let expected_output_access_status = sotf_types::OutputAccessStatus::FallbackShared;
+        assert_eq!(state.output_access_status, expected_output_access_status);
+        assert_eq!(
+            state.dsd_output_status,
+            sotf_types::DsdOutputStatus::DopFallbackPcm
+        );
+        assert_eq!(
+            state.oversampling_policy,
+            sotf_types::EngineOversamplingPolicy::Force2x
+        );
+        assert_eq!(
+            state.network_endpoint_status,
+            sotf_types::NetworkEndpointStatus::EndpointUnavailable
+        );
+    }
+
+    #[test]
+    fn test_dsd_output_statuses_distinguish_pcm_fallbacks_from_required_bitstream() {
+        assert_eq!(
+            dsd_output_status_for_mode(sotf_types::DsdOutputMode::PcmDecode),
+            sotf_types::DsdOutputStatus::PcmDecodeAvailable
+        );
+        assert_eq!(
+            dsd_output_status_for_mode(sotf_types::DsdOutputMode::DopPreferred),
+            sotf_types::DsdOutputStatus::DopFallbackPcm
+        );
+        assert_eq!(
+            dsd_output_status_for_mode(sotf_types::DsdOutputMode::DopRequired),
+            sotf_types::DsdOutputStatus::DopUnavailable
+        );
+        assert_eq!(
+            dsd_output_status_for_mode(sotf_types::DsdOutputMode::NativePreferred),
+            sotf_types::DsdOutputStatus::NativeFallbackPcm
+        );
+        assert_eq!(
+            dsd_output_status_for_mode(sotf_types::DsdOutputMode::NativeRequired),
+            sotf_types::DsdOutputStatus::NativeUnavailable
+        );
+    }
+
+    #[cfg(feature = "streaming")]
+    #[test]
+    fn test_start_network_stream_server_updates_state_and_publishes_audio() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+        let config = EngineConfig {
+            output_sample_rate: 48_000,
+            output_channels: 2,
+            network_endpoint: sotf_types::NetworkEndpointConfig {
+                mode: sotf_types::NetworkEndpointMode::HttpEndpoint,
+                bind_addr: "127.0.0.1".to_string(),
+                port: 0,
+            },
+            ..EngineConfig::default()
+        };
+
+        let Some((mut server, handle)) = start_network_stream_server(&config, &state) else {
+            panic!("expected network stream server to start");
+        };
+
+        let current = state.load();
+        assert_eq!(
+            current.network_endpoint_status,
+            sotf_types::NetworkEndpointStatus::EndpointRunning
+        );
+        assert_ne!(current.network_endpoint.port, 0);
+
+        assert!(handle.publish(&[0.0, 0.0, 0.25, -0.25], 2, 2, 48_000));
+        assert_eq!(handle.stats().published_chunks, 1);
+
+        server.shutdown();
     }
 }

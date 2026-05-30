@@ -1,6 +1,9 @@
 //! Audio engine configuration.
 
-use super::{PluginConfig, SinkType};
+use super::{
+    DsdOutputMode, EngineOversamplingPolicy, LatencyCompensationMode, NetworkEndpointConfig,
+    OutputAccessMode, PluginConfig, SinkType,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -60,10 +63,30 @@ pub struct EngineConfig {
     /// Output sink type (cpal, PipeWire, AirPlay, etc.)
     #[serde(skip)]
     pub sink_type: SinkType,
+
+    /// User-visible transport latency compensation policy.
+    #[serde(default)]
+    pub latency_compensation: LatencyCompensationMode,
+
+    /// Output access mode. `ExclusiveRequired` fails if no exclusive backend is available.
+    #[serde(default)]
+    pub output_access: OutputAccessMode,
+
+    /// Requested DSD output behavior for DSD-capable decoders/backends.
+    #[serde(default)]
+    pub dsd_output: DsdOutputMode,
+
+    /// Host oversampling behavior for alias-prone plugins.
+    #[serde(default)]
+    pub oversampling_policy: EngineOversamplingPolicy,
+
+    /// Network streaming endpoint configuration.
+    #[serde(default)]
+    pub network_endpoint: NetworkEndpointConfig,
 }
 
-fn default_engine_config_version() -> u32 {
-    1
+const fn default_engine_config_version() -> u32 {
+    2
 }
 
 impl Default for EngineConfig {
@@ -78,6 +101,11 @@ impl Default for EngineConfig {
             driver_mode: false,
             allow_virtual_output: false,
             sink_type: SinkType::default(),
+            latency_compensation: LatencyCompensationMode::default(),
+            output_access: OutputAccessMode::default(),
+            dsd_output: DsdOutputMode::default(),
+            oversampling_policy: EngineOversamplingPolicy::default(),
+            network_endpoint: NetworkEndpointConfig::default(),
             output_device: None,
             plugins: Vec::new(),
             volume: 1.0,
@@ -121,7 +149,7 @@ impl EngineConfig {
         config.sanitize();
 
         // Check if migration is needed
-        const LATEST_VERSION: u32 = 1;
+        const LATEST_VERSION: u32 = default_engine_config_version();
         let original_version = config.version;
 
         if config.version < LATEST_VERSION {
@@ -161,7 +189,7 @@ impl EngineConfig {
     /// configs (v0, default-initialized) are silently upgraded by stamping
     /// the latest version onto them.
     fn migrate(mut config: EngineConfig) -> Result<EngineConfig, Box<dyn std::error::Error>> {
-        const LATEST_VERSION: u32 = 1;
+        const LATEST_VERSION: u32 = default_engine_config_version();
 
         if config.version > LATEST_VERSION {
             return Err(format!(
@@ -171,8 +199,8 @@ impl EngineConfig {
             .into());
         }
 
-        // v0 → v1: no field migration needed (v0 was never serialized in the wild);
-        // simply stamp the current version.
+        // v0/v1 → v2: new engine feature policy fields all have serde defaults;
+        // simply stamp the current version after deserialization.
         config.version = LATEST_VERSION;
         Ok(config)
     }
@@ -238,5 +266,52 @@ mod tests {
         config.sanitize();
         assert_eq!(config.frame_size, 1024);
         assert_eq!(config.output_sample_rate, 48000);
+    }
+
+    #[test]
+    fn default_config_exposes_product_review_feature_policies() {
+        let config = EngineConfig::default();
+        assert_eq!(
+            config.latency_compensation,
+            LatencyCompensationMode::Enabled
+        );
+        assert_eq!(config.output_access, OutputAccessMode::Shared);
+        assert_eq!(config.dsd_output, DsdOutputMode::Disabled);
+        assert_eq!(
+            config.oversampling_policy,
+            EngineOversamplingPolicy::PluginPreferred
+        );
+        assert_eq!(config.network_endpoint, NetworkEndpointConfig::default());
+    }
+
+    #[test]
+    fn deserializes_legacy_config_with_feature_policy_defaults() {
+        let json = r#"{
+            "version": 1,
+            "frame_size": 512,
+            "buffer_ms": 100,
+            "output_sample_rate": 48000,
+            "input_channels": 2,
+            "output_channels": 2,
+            "plugins": [],
+            "volume": 1.0,
+            "muted": false,
+            "driver_mode": false,
+            "allow_virtual_output": false
+        }"#;
+
+        let config: EngineConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            config.latency_compensation,
+            LatencyCompensationMode::Enabled
+        );
+        assert_eq!(
+            config.oversampling_policy,
+            EngineOversamplingPolicy::PluginPreferred
+        );
+        assert_eq!(
+            config.network_endpoint.mode,
+            crate::NetworkEndpointMode::Disabled
+        );
     }
 }

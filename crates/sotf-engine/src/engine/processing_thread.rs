@@ -15,6 +15,7 @@ use sotf_plugins::IsolatedExternalPluginWorkerReport;
 use sotf_plugins::{Host, Plugin, PluginHost};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_plugins::{PluginSandboxBackendCode, PluginSandboxStatusCode};
+use sotf_types::EngineOversamplingPolicy;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_types::{
     IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
@@ -74,6 +75,7 @@ impl ProcessingThread {
         gc_tx: super::GcSender,
         recycle_rx: Receiver<Vec<f32>>,
         decoder_recycle_tx: SyncSender<Vec<f32>>,
+        #[cfg(feature = "streaming")] network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
         let (response_tx, response_rx) = std::sync::mpsc::channel();
@@ -93,6 +95,8 @@ impl ProcessingThread {
                     gc_tx,
                     recycle_rx,
                     decoder_recycle_tx,
+                    #[cfg(feature = "streaming")]
+                    network_stream_tap,
                 ) {
                     log::debug!("[Processing Thread] Error: {}", e);
                 }
@@ -172,10 +176,17 @@ struct ProcessingState {
     frames_over_budget: u64,
     /// RT diagnostics: how many recycle misses (fallback Vec allocation)
     recycle_miss_count: u64,
+    /// Optional nonblocking tap for live network PCM streaming.
+    #[cfg(feature = "streaming")]
+    network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
 }
 
 impl ProcessingState {
-    fn new(channels: usize, sample_rate: u32) -> Self {
+    fn new(
+        channels: usize,
+        sample_rate: u32,
+        #[cfg(feature = "streaming")] network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
+    ) -> Self {
         Self {
             host: PluginHost::new(channels, sample_rate),
             prev_host: None,
@@ -196,6 +207,8 @@ impl ProcessingState {
             last_rt_diag: std::time::Instant::now(),
             frames_over_budget: 0,
             recycle_miss_count: 0,
+            #[cfg(feature = "streaming")]
+            network_stream_tap,
         }
     }
 
@@ -467,6 +480,7 @@ fn run_processing_thread(
     _gc_tx: super::GcSender,
     recycle_rx: Receiver<Vec<f32>>,
     decoder_recycle_tx: SyncSender<Vec<f32>>,
+    #[cfg(feature = "streaming")] network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
 ) -> Result<(), String> {
     // Enable FTZ/DAZ CPU flags to prevent denormal numbers from causing
     // performance issues in IIR filters and other DSP code
@@ -479,7 +493,12 @@ fn run_processing_thread(
         Err(e) => log::warn!("[Processing Thread] Failed to set RT priority: {e}"),
     }
 
-    let mut state = ProcessingState::new(channels, sample_rate);
+    let mut state = ProcessingState::new(
+        channels,
+        sample_rate,
+        #[cfg(feature = "streaming")]
+        network_stream_tap,
+    );
 
     log::info!(
         "[Processing Thread] Started - {}Hz, {} channels",
@@ -620,6 +639,16 @@ fn run_processing_thread(
                             output_channels,
                             output_sample_rate,
                         );
+
+                        #[cfg(feature = "streaming")]
+                        if let Some(tap) = &state.network_stream_tap {
+                            tap.publish(
+                                &processed_frame.data,
+                                processed_frame.num_frames,
+                                processed_frame.num_channels,
+                                processed_frame.sample_rate,
+                            );
+                        }
 
                         let mut pending_msg = Some(ProcessingMessage::Frame(processed_frame));
                         // Retry sending until the message is delivered or we shut down
@@ -870,6 +899,14 @@ fn isolated_external_plugin_sandbox_backend(
 // Plugin Factory
 // ============================================================================
 
+fn configure_host_oversampling(
+    host: &mut PluginHost,
+    policy: EngineOversamplingPolicy,
+) -> Result<(), String> {
+    host.set_plugin_preferred_oversampling_enabled(policy.plugin_preferred_enabled());
+    host.set_forced_oversampling_factor(policy.forced_factor())
+}
+
 /// Build a plugin host from configs.
 ///
 /// Plugins that fail to create or have channel mismatches are skipped rather
@@ -880,7 +917,22 @@ pub fn build_plugin_host(
     sample_rate: u32,
     channels: usize,
 ) -> Result<(PluginHost, Vec<String>), String> {
+    build_plugin_host_with_policy(
+        configs,
+        sample_rate,
+        channels,
+        EngineOversamplingPolicy::PluginPreferred,
+    )
+}
+
+pub fn build_plugin_host_with_policy(
+    configs: &[PluginConfig],
+    sample_rate: u32,
+    channels: usize,
+    oversampling_policy: EngineOversamplingPolicy,
+) -> Result<(PluginHost, Vec<String>), String> {
     let mut host = PluginHost::new(channels, sample_rate);
+    configure_host_oversampling(&mut host, oversampling_policy)?;
     let mut current_channels = channels;
     let mut warnings: Vec<String> = Vec::new();
 
@@ -949,15 +1001,31 @@ pub fn build_plugin_host(
 /// needed for multi-driver crossover setups.
 ///
 /// Nodes that fail to create are skipped, and edges referencing them are dropped.
+#[allow(dead_code)]
 pub fn build_plugin_graph_host(
     config: &super::types::PluginGraphConfig,
     sample_rate: u32,
     channels: usize,
 ) -> Result<(PluginHost, Vec<String>), String> {
+    build_plugin_graph_host_with_policy(
+        config,
+        sample_rate,
+        channels,
+        EngineOversamplingPolicy::PluginPreferred,
+    )
+}
+
+pub fn build_plugin_graph_host_with_policy(
+    config: &super::types::PluginGraphConfig,
+    sample_rate: u32,
+    channels: usize,
+    oversampling_policy: EngineOversamplingPolicy,
+) -> Result<(PluginHost, Vec<String>), String> {
     use sotf_plugins::GraphEdge;
     use std::collections::HashMap;
 
     let mut host = PluginHost::new(channels, sample_rate);
+    configure_host_oversampling(&mut host, oversampling_policy)?;
     let mut id_map: HashMap<usize, usize> = HashMap::new();
     let mut warnings: Vec<String> = Vec::new();
 
@@ -1109,7 +1177,12 @@ mod tests {
         let mut host = PluginHost::new(2, 48_000);
         host.add_plugin(Box::new(plugin)).unwrap();
 
-        let mut state = ProcessingState::new(2, 48_000);
+        let mut state = ProcessingState::new(
+            2,
+            48_000,
+            #[cfg(feature = "streaming")]
+            None,
+        );
         state.host = host;
         (state, tempdir)
     }

@@ -4,12 +4,12 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use symphonia::core::audio::{Audio, GenericAudioBufferRef};
+use symphonia::core::codecs::CodecParameters;
 use symphonia::core::codecs::audio::{
-    well_known, AudioCodecId, AudioCodecParameters, AudioDecoder as SymphoniaAudioDecoder,
-    AudioDecoderOptions, CODEC_ID_NULL_AUDIO,
+    AudioCodecId, AudioCodecParameters, AudioDecoder as SymphoniaAudioDecoder, AudioDecoderOptions,
+    CODEC_ID_NULL_AUDIO, well_known,
 };
 use symphonia::core::codecs::registry::CodecRegistry;
-use symphonia::core::codecs::CodecParameters;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::{Hint, Probe};
 use symphonia::core::formats::{FormatOptions, FormatReader, Track, TrackType};
@@ -733,7 +733,11 @@ mod tests_decoder {
         let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
 
         for frame in 0..512 {
-            let sample = if frame % 2 == 0 { i16::MAX / 4 } else { -i16::MAX / 4 };
+            let sample = if frame % 2 == 0 {
+                i16::MAX / 4
+            } else {
+                -i16::MAX / 4
+            };
             writer.write_sample(sample).unwrap();
             writer.write_sample(-sample).unwrap();
         }
@@ -824,6 +828,9 @@ pub enum AudioFormat {
     Wav,
     Vorbis,
     Aiff,
+    DsdDsf,
+    DsdDff,
+    SacdIso,
     #[cfg(feature = "iamf")]
     Iamf,
 }
@@ -848,6 +855,9 @@ impl AudioFormat {
             "wav" => Ok(AudioFormat::Wav),
             "ogg" | "oga" => Ok(AudioFormat::Vorbis),
             "aiff" | "aif" => Ok(AudioFormat::Aiff),
+            "dsf" => Ok(AudioFormat::DsdDsf),
+            "dff" => Ok(AudioFormat::DsdDff),
+            "iso" => Ok(AudioFormat::SacdIso),
             #[cfg(feature = "iamf")]
             "iamf" => Ok(AudioFormat::Iamf),
             _ => Err(AudioDecoderError::UnsupportedFormat(format!(
@@ -867,6 +877,9 @@ impl AudioFormat {
             AudioFormat::Wav => "WAV",
             AudioFormat::Vorbis => "Vorbis",
             AudioFormat::Aiff => "AIFF",
+            AudioFormat::DsdDsf => "DSD DSF",
+            AudioFormat::DsdDff => "DSD DFF",
+            AudioFormat::SacdIso => "SACD ISO",
             #[cfg(feature = "iamf")]
             AudioFormat::Iamf => "IAMF",
         }
@@ -882,6 +895,9 @@ impl AudioFormat {
             AudioFormat::Wav => "wav",
             AudioFormat::Vorbis => "ogg",
             AudioFormat::Aiff => "aiff",
+            AudioFormat::DsdDsf => "dsf",
+            AudioFormat::DsdDff => "dff",
+            AudioFormat::SacdIso => "iso",
             #[cfg(feature = "iamf")]
             AudioFormat::Iamf => "iamf",
         }
@@ -897,9 +913,20 @@ impl AudioFormat {
             AudioFormat::Wav => true,
             AudioFormat::Vorbis => false,
             AudioFormat::Aiff => true,
+            AudioFormat::DsdDsf => true,
+            AudioFormat::DsdDff => true,
+            AudioFormat::SacdIso => true,
             #[cfg(feature = "iamf")]
             AudioFormat::Iamf => false, // Depends on inner codec, assume lossy
         }
+    }
+
+    /// Check if the format carries DSD/SACD audio.
+    pub fn is_dsd(&self) -> bool {
+        matches!(
+            self,
+            AudioFormat::DsdDsf | AudioFormat::DsdDff | AudioFormat::SacdIso
+        )
     }
 
     /// Get all supported formats
@@ -917,6 +944,15 @@ impl AudioFormat {
         #[cfg(feature = "iamf")]
         formats.push(AudioFormat::Iamf);
         formats
+    }
+
+    /// Get recognized DSD/SACD containers that currently need a dedicated decoder path.
+    pub fn recognized_dsd_formats() -> Vec<AudioFormat> {
+        vec![
+            AudioFormat::DsdDsf,
+            AudioFormat::DsdDff,
+            AudioFormat::SacdIso,
+        ]
     }
 
     /// Get a user-friendly description of supported formats
@@ -998,6 +1034,20 @@ mod tests {
             AudioFormat::Aiff
         );
 
+        // Test recognized DSD/SACD containers
+        assert_eq!(
+            AudioFormat::from_path("test.dsf").unwrap(),
+            AudioFormat::DsdDsf
+        );
+        assert_eq!(
+            AudioFormat::from_path("test.dff").unwrap(),
+            AudioFormat::DsdDff
+        );
+        assert_eq!(
+            AudioFormat::from_path("test.iso").unwrap(),
+            AudioFormat::SacdIso
+        );
+
         // Test with path
         assert_eq!(
             AudioFormat::from_path(PathBuf::from("path/to/music.flac")).unwrap(),
@@ -1053,6 +1103,12 @@ mod tests {
         assert_eq!(aiff.as_str(), "AIFF");
         assert_eq!(aiff.extension(), "aiff");
         assert!(aiff.is_lossless());
+
+        let dsd = AudioFormat::DsdDsf;
+        assert_eq!(dsd.as_str(), "DSD DSF");
+        assert_eq!(dsd.extension(), "dsf");
+        assert!(dsd.is_lossless());
+        assert!(dsd.is_dsd());
     }
 
     #[test]
@@ -1067,6 +1123,7 @@ mod tests {
         assert!(formats.contains(&AudioFormat::Wav));
         assert!(formats.contains(&AudioFormat::Vorbis));
         assert!(formats.contains(&AudioFormat::Aiff));
+        assert!(!formats.contains(&AudioFormat::DsdDsf));
 
         let formats_string = AudioFormat::supported_formats_string();
         assert!(formats_string.contains("FLAC"));
@@ -1076,5 +1133,19 @@ mod tests {
         assert!(formats_string.contains("WAV"));
         assert!(formats_string.contains("Vorbis"));
         assert!(formats_string.contains("AIFF"));
+        assert!(!formats_string.contains("DSD DSF"));
+    }
+
+    #[test]
+    fn test_recognized_dsd_formats_are_listed_separately() {
+        let formats = AudioFormat::recognized_dsd_formats();
+        assert_eq!(
+            formats,
+            vec![
+                AudioFormat::DsdDsf,
+                AudioFormat::DsdDff,
+                AudioFormat::SacdIso
+            ]
+        );
     }
 }

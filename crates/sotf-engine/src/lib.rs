@@ -55,6 +55,11 @@ pub use engine::{
     PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig, SinkConfig, SinkOpenResult,
     SinkType,
 };
+pub use sotf_types::{
+    DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy, LatencyCompensationMode,
+    NetworkEndpointConfig, NetworkEndpointMode, NetworkEndpointStatus, OutputAccessMode,
+    OutputAccessStatus,
+};
 
 // Re-export driver-common types for daemon and other consumers
 pub use driver_common::{self, AudioDriver, DriverConfig, DriverStatus};

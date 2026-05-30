@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create engine with custom config
     let config = EngineConfig {
-        version: 1,
+        version: 2,
         frame_size: 1024,
         buffer_ms: 200, // 200ms latency
         output_sample_rate: 48000,
@@ -41,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         driver_mode: false,
         allow_virtual_output: false,
         sink_type: Default::default(),
+        ..EngineConfig::default()
     };
 
     println!("Creating audio engine...");

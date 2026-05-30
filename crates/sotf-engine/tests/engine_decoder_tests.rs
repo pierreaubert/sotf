@@ -4,6 +4,7 @@
 
 use hound::{WavSpec, WavWriter};
 use sotf_audio::engine::{DecoderCommand, DecoderMessage, DecoderThread, ThreadEvent};
+use sotf_types::DsdOutputMode;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel};
 use std::time::Duration;
@@ -17,8 +18,15 @@ fn create_decoder(
     frame_size: usize,
 ) -> (DecoderThread, std::sync::mpsc::Sender<Vec<f32>>) {
     let (recycle_tx, recycle_rx) = channel();
-    let decoder = DecoderThread::new(message_tx, event_tx, sample_rate, frame_size, recycle_rx)
-        .expect("Failed to create decoder thread");
+    let decoder = DecoderThread::new(
+        message_tx,
+        event_tx,
+        sample_rate,
+        frame_size,
+        recycle_rx,
+        DsdOutputMode::Disabled,
+    )
+    .expect("Failed to create decoder thread");
     (decoder, recycle_tx)
 }
 

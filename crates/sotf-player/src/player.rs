@@ -1,5 +1,5 @@
 use sotf_audio::decoder::AudioSource;
-use sotf_audio::engine::PluginConfig;
+use sotf_audio::engine::{PluginConfig, StreamMetadata};
 use sotf_audio::manager::{AudioEngineManager, StreamingEvent, StreamingState};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -22,6 +22,8 @@ pub struct PlaybackState {
     /// Set when the engine seamlessly transitioned to a new source (gapless playback).
     /// Cleared after being read.
     pub gapless_transition: Option<AudioSource>,
+    /// Latest live stream metadata from ICY/content-type/bitrate updates.
+    pub stream_metadata: Option<StreamMetadata>,
 }
 
 /// Saved configuration for restarting after a crash.
@@ -301,6 +303,10 @@ impl Player {
         self.manager.get_position()
     }
 
+    pub fn get_engine_state(&self) -> sotf_audio::engine::AudioEngineState {
+        self.manager.get_engine_state()
+    }
+
     /// Seek to a specific position in seconds
     pub fn seek(&self, position_secs: f64) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.seek(position_secs)?;
@@ -404,6 +410,7 @@ impl Player {
         let mut last_error: Option<String> = None;
         let mut track_ended = false;
         let mut gapless_transition: Option<AudioSource> = None;
+        let mut stream_metadata_event: Option<Option<StreamMetadata>> = None;
         for event in self.manager.drain_events() {
             match event {
                 StreamingEvent::Error(msg) => last_error = Some(msg),
@@ -415,6 +422,9 @@ impl Player {
                         config.last_position_secs = 0.0;
                     }
                     gapless_transition = Some(source);
+                }
+                StreamingEvent::StreamMetadataChanged(metadata) => {
+                    stream_metadata_event = Some(metadata);
                 }
                 _ => {}
             }
@@ -456,6 +466,8 @@ impl Player {
             .manager
             .get_audio_info()
             .map(|info| info.spec.sample_rate);
+        let engine_state = self.manager.get_engine_state();
+        let stream_metadata = stream_metadata_event.unwrap_or(engine_state.stream_metadata);
 
         // Read and clear one-shot flags
         let engine_restarted = self.engine_restarted_flag;
@@ -472,6 +484,7 @@ impl Player {
             engine_fatal,
             track_ended,
             gapless_transition,
+            stream_metadata,
         }
     }
 
@@ -532,6 +545,7 @@ mod tests {
         assert!(state.last_error.is_none());
         assert!(!state.engine_restarted);
         assert!(!state.engine_fatal);
+        assert!(state.stream_metadata.is_none());
     }
 
     #[test]

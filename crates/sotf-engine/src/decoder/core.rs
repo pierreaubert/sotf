@@ -1,6 +1,7 @@
 use crate::decoder::error::{AudioDecoderError, AudioDecoderResult};
 use crate::decoder::formats::{AudioFormat, SymphoniaDecoder};
 use crate::decoder::source::AudioSource;
+use sotf_types::DsdOutputMode;
 use std::path::Path;
 use std::time::Duration;
 
@@ -125,6 +126,14 @@ pub trait AudioDecoder {
 
 /// Create a decoder for the given audio file
 pub fn create_decoder<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
+    create_decoder_with_dsd_mode(path, DsdOutputMode::Disabled)
+}
+
+/// Create a decoder for the given audio file using the requested DSD policy.
+pub fn create_decoder_with_dsd_mode<P: AsRef<Path>>(
+    path: P,
+    dsd_output: DsdOutputMode,
+) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
     let path = path.as_ref();
 
     // First, validate the file extension to detect unsupported formats early
@@ -143,6 +152,12 @@ pub fn create_decoder<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Box<dyn Aud
         ));
     }
 
+    if let Ok(format) = AudioFormat::from_path(path)
+        && format.is_dsd()
+    {
+        return create_dsd_decoder(path, format, dsd_output);
+    }
+
     // Route IAMF files to the dedicated IAMF decoder
     #[cfg(feature = "iamf")]
     if let Ok(AudioFormat::Iamf) = AudioFormat::from_path(path) {
@@ -153,6 +168,38 @@ pub fn create_decoder<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Box<dyn Aud
     // Create unified Symphonia decoder that handles format detection internally
     let decoder = SymphoniaDecoder::new(path)?;
     Ok(Box::new(decoder))
+}
+
+fn create_dsd_decoder(
+    path: &Path,
+    format: AudioFormat,
+    dsd_output: DsdOutputMode,
+) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
+    match dsd_output {
+        DsdOutputMode::Disabled => Err(AudioDecoderError::UnsupportedFormat(format!(
+            "{} is recognized, but DSD output is disabled in the engine config",
+            format
+        ))),
+        DsdOutputMode::PcmDecode | DsdOutputMode::DopPreferred | DsdOutputMode::NativePreferred => {
+            match format {
+                AudioFormat::DsdDsf => Ok(Box::new(crate::decoder::dsd::DsfPcmDecoder::new(path)?)),
+                AudioFormat::DsdDff => Ok(Box::new(crate::decoder::dsd::DffPcmDecoder::new(path)?)),
+                AudioFormat::SacdIso => Err(AudioDecoderError::UnsupportedFormat(
+                    "SACD ISO decoding is not available yet; extract DSF tracks or convert to PCM"
+                        .to_string(),
+                )),
+                _ => unreachable!("create_dsd_decoder called for non-DSD format"),
+            }
+        }
+        DsdOutputMode::DopRequired => Err(AudioDecoderError::UnsupportedFormat(format!(
+            "{} requires DoP output, but the current playback backend cannot carry bit-perfect DoP frames",
+            format
+        ))),
+        DsdOutputMode::NativeRequired => Err(AudioDecoderError::UnsupportedFormat(format!(
+            "{} requires native DSD output, but the current playback backend cannot carry native DSD frames",
+            format
+        ))),
+    }
 }
 
 /// Probe an audio file to get basic information without creating a full decoder
@@ -183,8 +230,32 @@ pub fn probe_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<(AudioFormat, A
 pub fn create_decoder_from_source(
     source: &AudioSource,
 ) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
+    create_decoder_from_source_with_dsd_mode(source, DsdOutputMode::Disabled)
+}
+
+pub fn create_decoder_from_source_with_dsd_mode(
+    source: &AudioSource,
+    dsd_output: DsdOutputMode,
+) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
+    let (decoder, _metadata_rx) =
+        create_decoder_from_source_with_dsd_mode_and_metadata(source, dsd_output)?;
+    Ok(decoder)
+}
+
+#[cfg(feature = "streaming")]
+pub type SourceMetadataReceiver = std::sync::mpsc::Receiver<sotf_streaming::StreamMetadata>;
+#[cfg(not(feature = "streaming"))]
+pub type SourceMetadataReceiver = ();
+
+/// Create a decoder from an `AudioSource`, optionally returning live stream metadata updates.
+///
+/// For local files and non-streaming sources, metadata updates are `None`.
+pub fn create_decoder_from_source_with_dsd_mode_and_metadata(
+    source: &AudioSource,
+    dsd_output: DsdOutputMode,
+) -> AudioDecoderResult<(Box<dyn AudioDecoder>, Option<SourceMetadataReceiver>)> {
     match source {
-        AudioSource::File(path) => create_decoder(path),
+        AudioSource::File(path) => Ok((create_decoder_with_dsd_mode(path, dsd_output)?, None)),
         #[cfg(feature = "streaming")]
         AudioSource::Url {
             url,
@@ -193,7 +264,7 @@ pub fn create_decoder_from_source(
         } if url.starts_with("mpd-stream://") => {
             use symphonia::core::formats::probe::Hint;
 
-            let (mpd_source, _metadata_rx) = sotf_streaming::MpdStreamSource::open(url)
+            let (mpd_source, metadata_rx) = sotf_streaming::MpdStreamSource::open(url)
                 .map_err(AudioDecoderError::NetworkError)?;
 
             let mut hint = Hint::new();
@@ -204,7 +275,41 @@ pub fn create_decoder_from_source(
             }
 
             let decoder = SymphoniaDecoder::from_media_source(Box::new(mpd_source), hint, url)?;
-            Ok(Box::new(decoder))
+            Ok((Box::new(decoder), Some(metadata_rx)))
+        }
+        #[cfg(all(feature = "streaming", feature = "hls"))]
+        AudioSource::Url {
+            url,
+            format_hint,
+            seekable: _,
+        } if is_hls_source(url, format_hint.as_deref()) => {
+            use symphonia::core::formats::probe::Hint;
+
+            let hls_source = sotf_streaming::HlsSource::open(url)
+                .map_err(|e| AudioDecoderError::NetworkError(e.to_string()))?;
+
+            let mut hint = Hint::new();
+            if let Some(detected) = hls_source.format_hint() {
+                hint.with_extension(&detected);
+            } else if let Some(fh) = format_hint
+                && !is_hls_format_hint(fh)
+            {
+                hint.with_extension(fh);
+            }
+
+            let decoder = SymphoniaDecoder::from_media_source(Box::new(hls_source), hint, url)?;
+            Ok((Box::new(decoder), None))
+        }
+        #[cfg(all(feature = "streaming", not(feature = "hls")))]
+        AudioSource::Url {
+            url,
+            format_hint,
+            seekable: _,
+        } if is_hls_source(url, format_hint.as_deref()) => {
+            Err(AudioDecoderError::UnsupportedFormat(format!(
+                "HLS streaming not available (compile with 'hls' feature): {}",
+                url
+            )))
         }
         #[cfg(feature = "streaming")]
         AudioSource::Url {
@@ -214,7 +319,7 @@ pub fn create_decoder_from_source(
         } => {
             use symphonia::core::formats::probe::Hint;
 
-            let (http_source, _metadata_rx) = sotf_streaming::HttpMediaSource::open(url)
+            let (http_source, metadata_rx) = sotf_streaming::HttpMediaSource::open(url)
                 .map_err(|e| AudioDecoderError::NetworkError(e.to_string()))?;
 
             // Build hint from explicit format_hint or from URL/content-type detection
@@ -226,7 +331,7 @@ pub fn create_decoder_from_source(
             }
 
             let decoder = SymphoniaDecoder::from_media_source(Box::new(http_source), hint, url)?;
-            Ok(Box::new(decoder))
+            Ok((Box::new(decoder), Some(metadata_rx)))
         }
         #[cfg(not(feature = "streaming"))]
         AudioSource::Url { url, .. } => Err(AudioDecoderError::UnsupportedFormat(format!(
@@ -246,6 +351,34 @@ pub fn create_decoder_from_source(
             "Driver source does not use a decoder".to_string(),
         )),
     }
+}
+
+#[cfg(feature = "streaming")]
+fn is_hls_source(url: &str, format_hint: Option<&str>) -> bool {
+    if format_hint.is_some_and(is_hls_format_hint) {
+        return true;
+    }
+
+    let path = url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .to_ascii_lowercase();
+    path.ends_with(".m3u8") || path.ends_with(".m3u")
+}
+
+#[cfg(feature = "streaming")]
+fn is_hls_format_hint(format_hint: &str) -> bool {
+    matches!(
+        format_hint.trim().to_ascii_lowercase().as_str(),
+        "hls"
+            | "m3u8"
+            | "m3u"
+            | "application/vnd.apple.mpegurl"
+            | "application/x-mpegurl"
+            | "audio/mpegurl"
+            | "audio/x-mpegurl"
+    )
 }
 
 #[cfg(test)]
@@ -302,6 +435,52 @@ mod tests {
         assert!(matches!(
             result,
             Err(AudioDecoderError::UnsupportedFormat(_))
+        ));
+    }
+
+    #[test]
+    fn test_create_decoder_recognizes_dsd_as_unsupported_decoder_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.dsf");
+        std::fs::write(&path, []).unwrap();
+
+        let result = create_decoder(&path);
+        assert!(matches!(
+            result,
+            Err(AudioDecoderError::UnsupportedFormat(message))
+                if message.contains("DSD output is disabled")
+        ));
+    }
+
+    #[test]
+    fn test_create_decoder_reports_required_dsd_bitstream_gap() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.dsf");
+        std::fs::write(&path, []).unwrap();
+
+        let result = create_decoder_with_dsd_mode(&path, DsdOutputMode::DopRequired);
+        assert!(matches!(
+            result,
+            Err(AudioDecoderError::UnsupportedFormat(message))
+                if message.contains("cannot carry bit-perfect DoP frames")
+        ));
+    }
+
+    #[cfg(feature = "streaming")]
+    #[test]
+    fn test_hls_source_detection() {
+        assert!(is_hls_source("https://example.test/live/index.m3u8", None));
+        assert!(is_hls_source(
+            "https://example.test/live/index.M3U8?token=abc",
+            None
+        ));
+        assert!(is_hls_source(
+            "https://example.test/live",
+            Some("application/vnd.apple.mpegurl")
+        ));
+        assert!(!is_hls_source(
+            "https://example.test/track.flac",
+            Some("flac")
         ));
     }
 }
