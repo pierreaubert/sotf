@@ -3,10 +3,13 @@
 // ============================================================================
 
 use crate::error::PluginError;
+use crate::external_plugin::ExternalPluginState;
 use crate::parameters::ParameterValue;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+const EXTERNAL_PLUGIN_STATE_DATA_KEY: &str = "external_plugin_state";
 
 /// Trait for plugins that support preset serialization
 ///
@@ -129,6 +132,35 @@ impl PluginPreset {
             (Some(a), Some(b)) => a == b,
             _ => self.version == current_version,
         }
+    }
+
+    /// Store external CLAP/VST3/AU descriptor and opaque state in this preset.
+    ///
+    /// The value is kept in `data` so projects can round-trip external plugin
+    /// metadata even when native format loading is feature-gated.
+    pub fn set_external_plugin_state(
+        &mut self,
+        state: &ExternalPluginState,
+    ) -> Result<(), PluginError> {
+        state
+            .validate_descriptor_consistency()
+            .map_err(PluginError::InvalidConfiguration)?;
+        let value = serde_json::to_value(state)?;
+        self.data
+            .insert(EXTERNAL_PLUGIN_STATE_DATA_KEY.to_string(), value);
+        Ok(())
+    }
+
+    /// Read external plugin descriptor and opaque state from this preset.
+    pub fn external_plugin_state(&self) -> Result<Option<ExternalPluginState>, PluginError> {
+        let Some(value) = self.data.get(EXTERNAL_PLUGIN_STATE_DATA_KEY) else {
+            return Ok(None);
+        };
+        let state: ExternalPluginState = serde_json::from_value(value.clone())?;
+        state
+            .validate_descriptor_consistency()
+            .map_err(PluginError::InvalidConfiguration)?;
+        Ok(Some(state))
     }
 
     /// Add a tag to the preset
@@ -620,5 +652,41 @@ mod tests {
         names.sort_unstable();
 
         assert_eq!(names, vec!["Another", "Good"]);
+    }
+
+    #[test]
+    fn preset_round_trips_external_plugin_state_data() {
+        let descriptor = crate::external_plugin::PluginDescriptor {
+            id: "com.example.delay".into(),
+            name: "Example Delay".into(),
+            vendor: "Example".into(),
+            version: "1.0".into(),
+            format: crate::external_plugin::PluginFormat::Clap,
+            path: "/Library/Audio/Plug-Ins/CLAP/ExampleDelay.clap".into(),
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec!["delay".into()],
+            scan_status: crate::external_plugin::PluginScanStatus::UnsupportedByBuild,
+        };
+        let state = ExternalPluginState::new(
+            descriptor.clone(),
+            crate::external_plugin::ExternalPluginSandboxMode::Isolated,
+            vec![1, 3, 5, 8],
+        );
+        let mut preset =
+            PluginPreset::new("External".into(), "external-plugin".into(), "1.0.0".into());
+
+        preset.set_external_plugin_state(&state).unwrap();
+        let json = serde_json::to_string(&preset).unwrap();
+        let decoded: PluginPreset = serde_json::from_str(&json).unwrap();
+        let restored = decoded.external_plugin_state().unwrap().unwrap();
+
+        assert_eq!(restored.descriptor, descriptor);
+        assert_eq!(
+            restored.sandbox_mode,
+            crate::external_plugin::ExternalPluginSandboxMode::Isolated
+        );
+        assert_eq!(restored.opaque_state, vec![1, 3, 5, 8]);
     }
 }

@@ -283,10 +283,7 @@ pub trait Host {
         index: usize,
         param_id: &str,
         value: super::parameters::ParameterValue,
-    ) -> Result<(), String> {
-        let _ = (index, param_id, value);
-        Err("set_plugin_parameter not implemented for this host".to_string())
-    }
+    ) -> Result<(), String>;
     fn process(&mut self, input: &[f32], output: &mut [f32]) -> Result<usize, String>;
     fn process_f64(&mut self, input: &[f64], output: &mut [f64]) -> Result<usize, String>;
     fn reset(&mut self);
@@ -3233,11 +3230,11 @@ fn sandbox_reason_text(
     match status {
         PluginSandboxStatusCode::Unsupported => Some(match backend {
             PluginSandboxBackendCode::MacosProcessIsolation => {
-                "macOS sandbox backend is not implemented yet; worker uses process isolation"
+                "macOS native sandbox backend is unavailable in this build; worker uses process isolation"
                     .to_string()
             }
             PluginSandboxBackendCode::WindowsProcessIsolation => {
-                "Windows sandbox backend is not implemented yet; worker uses process isolation"
+                "Windows native sandbox backend is unavailable in this build; worker uses process isolation"
                     .to_string()
             }
             PluginSandboxBackendCode::LinuxLandlock => {
@@ -3295,6 +3292,14 @@ impl Host for DawHost {
     }
     fn get_plugin(&self, i: usize) -> Option<&dyn Plugin> {
         self.get_plugin(i)
+    }
+    fn set_plugin_parameter(
+        &mut self,
+        i: usize,
+        param_id: &str,
+        value: super::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        DawHost::set_plugin_parameter(self, i, param_id, value)
     }
     fn input_channels(&self) -> usize {
         self.input_channels()
@@ -4947,6 +4952,34 @@ mod tests {
         g.process(&input, &mut output).unwrap();
 
         assert_eq!(output, vec![0.5; 4]);
+    }
+
+    #[test]
+    fn test_host_trait_set_plugin_parameter_uses_dawhost_queue() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(GainPlugin::new(2, 1.0))).unwrap();
+        g.build().unwrap();
+
+        {
+            let host: &mut dyn Host = &mut g;
+            host.set_plugin_parameter(0, "gain", crate::parameters::ParameterValue::Float(0.25))
+                .unwrap();
+        }
+
+        let param_id = crate::parameters::ParameterId::from("gain");
+        let queued_value = g
+            .get_plugin(0)
+            .unwrap()
+            .get_parameter(&param_id)
+            .and_then(|v| v.as_float())
+            .unwrap();
+        assert_eq!(queued_value, 1.0);
+
+        let input = vec![1.0f32; 4];
+        let mut output = vec![0.0f32; 4];
+        g.process(&input, &mut output).unwrap();
+
+        assert_eq!(output, vec![0.25; 4]);
     }
 
     #[test]

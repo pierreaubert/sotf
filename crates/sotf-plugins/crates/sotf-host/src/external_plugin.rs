@@ -103,6 +103,16 @@ pub struct PluginFormatCapability {
     pub scan_status: PluginScanStatus,
 }
 
+/// How the scanner should annotate discovered plugins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PluginScanStatusMode {
+    /// Preserve raw discovery status; callers can probe/build-annotate later.
+    DiscoveryOnly,
+    /// Mark each result according to this build's native hosting capability.
+    #[default]
+    BuildCapability,
+}
+
 /// Metadata about a discovered external plugin.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginDescriptor {
@@ -165,6 +175,22 @@ impl ExternalPluginState {
             opaque_state,
         }
     }
+
+    pub fn validate_descriptor_consistency(&self) -> Result<(), String> {
+        if self.schema_version != Self::SCHEMA_VERSION {
+            return Err(format!(
+                "Unsupported external plugin state schema version {}",
+                self.schema_version
+            ));
+        }
+        if self.format != self.descriptor.format
+            || self.plugin_id != self.descriptor.id
+            || self.plugin_path != self.descriptor.path
+        {
+            return Err("External plugin state descriptor fields are inconsistent".to_string());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -181,6 +207,7 @@ pub struct PluginScanner {
     /// Discovered plugins
     pub plugins: Vec<PluginDescriptor>,
     seen_paths: HashSet<PathBuf>,
+    scan_status_mode: PluginScanStatusMode,
 }
 
 impl PluginScanner {
@@ -188,7 +215,24 @@ impl PluginScanner {
         Self {
             plugins: Vec::new(),
             seen_paths: HashSet::new(),
+            scan_status_mode: PluginScanStatusMode::default(),
         }
+    }
+
+    pub fn with_scan_status_mode(scan_status_mode: PluginScanStatusMode) -> Self {
+        Self {
+            plugins: Vec::new(),
+            seen_paths: HashSet::new(),
+            scan_status_mode,
+        }
+    }
+
+    pub fn set_scan_status_mode(&mut self, scan_status_mode: PluginScanStatusMode) {
+        self.scan_status_mode = scan_status_mode;
+    }
+
+    pub fn scan_status_mode(&self) -> PluginScanStatusMode {
+        self.scan_status_mode
     }
 
     /// Scan standard plugin directories for all supported formats.
@@ -362,8 +406,15 @@ impl PluginScanner {
             audio_outputs: 2,
             is_instrument: false,
             categories: Vec::new(),
-            scan_status: format.build_scan_status(),
+            scan_status: self.scan_status_for_format(format),
         });
+    }
+
+    fn scan_status_for_format(&self, format: PluginFormat) -> PluginScanStatus {
+        match self.scan_status_mode {
+            PluginScanStatusMode::DiscoveryOnly => PluginScanStatus::Discovered,
+            PluginScanStatusMode::BuildCapability => format.build_scan_status(),
+        }
     }
 
     fn detect_format(&self, path: &Path) -> PluginFormat {
@@ -521,18 +572,7 @@ impl ExternalPlugin {
         state: &ExternalPluginState,
         sample_rate: u32,
     ) -> Result<Self, String> {
-        if state.schema_version != ExternalPluginState::SCHEMA_VERSION {
-            return Err(format!(
-                "Unsupported external plugin state schema version {}",
-                state.schema_version
-            ));
-        }
-        if state.format != state.descriptor.format
-            || state.plugin_id != state.descriptor.id
-            || state.plugin_path != state.descriptor.path
-        {
-            return Err("External plugin state descriptor fields are inconsistent".to_string());
-        }
+        state.validate_descriptor_consistency()?;
         Self::new(&state.descriptor, sample_rate)
     }
 
@@ -979,6 +1019,30 @@ mod tests {
 
         fs::remove_file(&plugin_file).unwrap();
         fs::remove_dir_all(&nested).unwrap();
+        fs::remove_dir_all(&root).unwrap_or_else(|_| ());
+    }
+
+    #[test]
+    fn test_external_plugin_scanner_can_preserve_discovered_status() {
+        let root = env::temp_dir().join(format!(
+            "sotf-external-plugin-discovered-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let plugin_file = root.join("raw-discovery.clap");
+
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&plugin_file, b"stub").unwrap();
+
+        let mut scanner = PluginScanner::with_scan_status_mode(PluginScanStatusMode::DiscoveryOnly);
+        scanner.scan_directory(&root, PluginFormat::Clap);
+
+        assert_eq!(scanner.plugins.len(), 1);
+        assert_eq!(scanner.plugins[0].scan_status, PluginScanStatus::Discovered);
+
+        fs::remove_file(&plugin_file).unwrap();
         fs::remove_dir_all(&root).unwrap_or_else(|_| ());
     }
 

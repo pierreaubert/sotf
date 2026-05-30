@@ -82,8 +82,8 @@ pub use analyzer_spectrum::{
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 pub use external_plugin::{
     ExternalHostingBackend, ExternalPlugin, ExternalPluginSandboxMode, ExternalPluginState,
-    PluginDescriptor, PluginFormat, PluginFormatCapability, PluginScanStatus, PluginScanner,
-    plugin_format_capabilities,
+    PluginDescriptor, PluginFormat, PluginFormatCapability, PluginScanStatus, PluginScanStatusMode,
+    PluginScanner, plugin_format_capabilities,
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use external_plugin_host::{ExternalPluginHostBlockStatus, ExternalPluginHostProxy};
