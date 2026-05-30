@@ -7,7 +7,10 @@
 
 use std::time::Duration;
 
-use crate::external_plugin::{ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor};
+use crate::external_plugin::{
+    ExternalPluginHostingPlan, ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor,
+    plan_external_plugin_hosting,
+};
 use crate::external_plugin_host::{ExternalPluginHostBlockStatus, ExternalPluginHostProxy};
 use crate::external_plugin_ipc::{PluginIpcLayout, PluginSandboxRuntimeStatus};
 use crate::external_plugin_process::{
@@ -98,6 +101,10 @@ impl IsolatedExternalPlugin {
 
     pub fn descriptor(&self) -> &PluginDescriptor {
         &self.descriptor
+    }
+
+    pub fn hosting_plan(&self) -> ExternalPluginHostingPlan {
+        plan_external_plugin_hosting(&self.descriptor)
     }
 
     pub fn placeholder_state(&self) -> ExternalPluginState {
@@ -431,5 +438,23 @@ mod tests {
         assert_eq!(decoded.sandbox_mode, ExternalPluginSandboxMode::Isolated);
         assert_eq!(decoded.opaque_state, vec![9, 8, 7]);
         assert_eq!(restored.descriptor(), plugin.descriptor());
+    }
+
+    #[test]
+    fn isolated_external_plugin_reports_same_hosting_plan_as_descriptor() {
+        let plugin = IsolatedExternalPlugin::new(
+            descriptor(),
+            48_000,
+            IsolatedExternalPluginConfig {
+                start_worker: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            plugin.hosting_plan(),
+            plan_external_plugin_hosting(plugin.descriptor())
+        );
     }
 }
