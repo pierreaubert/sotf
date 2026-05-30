@@ -1,3 +1,23 @@
+# 0.5.2
+
+## Fixes
+
+- `keanes_bump_objective` now remains finite at the origin for both 2D and
+  higher-dimensional inputs.
+- `keanes_bump_constraint1` treats missing first-four dimensions as zero so
+  short inputs violate the product constraint instead of appearing satisfied.
+- Corrected stale comments for `step` and `alpine_n2`.
+
+## Documentation
+
+- Documented benchmark aliases and near-duplicates in the README.
+
+## Tests
+
+- Added direct constrained-helper coverage for Keane, Mishra's Bird,
+  Binh-Korn, and Rosenbrock disk constraints.
+- Added local coverage for Hartman 6D and Lampinen simplified helpers.
+
 # 0.5.1
 
 ## Fixes

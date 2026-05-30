@@ -36,11 +36,17 @@ pub enum BiquadFilterType {
     Highshelf,
     /// All-pass filter
     AllPass,
-    /// Low-shelf filter (Orfanidis design with prescribed Nyquist gain)
+    /// Low-shelf filter (Orfanidis design with prescribed Nyquist gain).
+    /// Rare near-degenerate solve cases fall back to a symmetric numerator
+    /// (`d = 0`) rather than dividing by a near-zero quadratic coefficient.
     LowshelfOrf,
-    /// High-shelf filter (Orfanidis design with prescribed Nyquist gain)
+    /// High-shelf filter (Orfanidis design with prescribed Nyquist gain).
+    /// Rare near-degenerate solve cases fall back to a symmetric numerator
+    /// (`d = 0`) rather than dividing by a near-zero quadratic coefficient.
     HighshelfOrf,
-    /// Peaking filter (Vicanek matched analog response)
+    /// Peaking filter (Vicanek matched analog response). Rare
+    /// near-degenerate solve cases fall back to a symmetric numerator
+    /// (`d = 0`) rather than dividing by a near-zero quadratic coefficient.
     PeakMatched,
 }
 
@@ -455,6 +461,10 @@ impl<T: FilterFloat> Biquad<T> {
                 let known = p * p / two + b1 * b1 + c1 + p * p / two * cos_2w0;
                 let d_coeff = half - half * cos_2w0;
 
+                // Orfanidis solves a quadratic for the remaining numerator
+                // split. At pathological frequencies, the quadratic
+                // coefficient can vanish; use the symmetric split (`d = 0`)
+                // instead of amplifying roundoff with a near-zero divide.
                 let eps: T = lit(1e-15);
                 let d_sq = if d_coeff.abs() > eps {
                     (target - known) / d_coeff
@@ -496,6 +506,7 @@ impl<T: FilterFloat> Biquad<T> {
                 let known = p * p / two + b1 * b1 + c1 + p * p / two * cos_2w0;
                 let d_coeff = half - half * cos_2w0;
 
+                // See the low-shelf Orfanidis fallback above.
                 let eps: T = lit(1e-15);
                 let d_sq = if d_coeff.abs() > eps {
                     (target - known) / d_coeff
@@ -540,6 +551,8 @@ impl<T: FilterFloat> Biquad<T> {
                 let known = (p * p) / two + b1 * b1 + c1 + (p * p) / two * cos_2w0;
                 let d_coeff = half - half * cos_2w0;
 
+                // Vicanek's matched peak uses the same quadratic split; when
+                // the coefficient collapses, use the symmetric numerator.
                 let eps: T = lit(1e-15);
                 let d_sq = if d_coeff.abs() > eps {
                     (target_num_sq - known) / d_coeff

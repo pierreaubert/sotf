@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.14] - 2026-05-30
+
+### Changed
+- `generate_fir_from_response` now validates that frequency points are finite,
+  positive, non-empty, and strictly increasing, and that target magnitudes are
+  finite before log-frequency interpolation.
+- Updated Kautz documentation to describe the QR-based regularized
+  least-squares solve.
+- Documented the rare symmetric-numerator fallback used by Orfanidis shelves
+  and PeakMatched filters when their quadratic split is near-degenerate.
+- Clarified that K-weighting is an approximation and documented
+  `ScopedFlushToZero` FTZ/DAZ behavior across architectures.
+
 ## [0.5.13] - 2025-05-13
 
 ### Changed

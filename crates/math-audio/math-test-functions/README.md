@@ -122,6 +122,18 @@ let result6 = katsuura(&x);    // Fractal-like landscape
 - **Discontinuous**: `step`, `de_jong_step2`
 - **Constrained**: `keanes_bump_*`, `binh_korn_*`
 
+### **Aliases And Near-Duplicates**
+
+Some names are kept for compatibility with common benchmark catalogs rather
+than to imply distinct landscapes:
+
+- `step` and `de_jong_step2` use the same step formula.
+- `tablet` and `discus` are the same ill-conditioned quadratic form.
+- `quadratic` is equivalent to `sphere`.
+- `rosenbrock_objective` is the 2D Rosenbrock objective used with constrained
+  Rosenbrock examples.
+- `levi13` / `levy_n13` and `zakharov2` / `zakharov` are catalog aliases.
+
 ## Benchmarking Guide
 
 ### **Algorithm Testing Workflow**

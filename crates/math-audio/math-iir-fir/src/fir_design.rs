@@ -135,7 +135,9 @@ impl Default for FirDesignConfig {
 /// * Vector of FIR coefficients
 ///
 /// # Panics
-/// Panics if freqs and magnitude_db have different lengths
+/// Panics if `freqs` and `magnitude_db` have different lengths, if either
+/// slice is empty, if any frequency or magnitude is non-finite, if any
+/// frequency is non-positive, or if frequencies are not strictly increasing.
 pub fn generate_fir_from_response(
     freqs: &[f64],
     magnitude_db: &[f64],
@@ -145,6 +147,22 @@ pub fn generate_fir_from_response(
         freqs.len(),
         magnitude_db.len(),
         "freqs and magnitude_db must have same length"
+    );
+    assert!(
+        !freqs.is_empty(),
+        "freqs and magnitude_db must not be empty"
+    );
+    assert!(
+        freqs.iter().all(|f| f.is_finite() && *f > 0.0),
+        "freqs must contain finite positive values"
+    );
+    assert!(
+        freqs.windows(2).all(|w| w[0] < w[1]),
+        "freqs must be strictly increasing"
+    );
+    assert!(
+        magnitude_db.iter().all(|db| db.is_finite()),
+        "magnitude_db must contain finite values"
     );
     assert!(
         config.phase != FirPhase::Kirkeby,
@@ -891,6 +909,51 @@ mod tests {
             n_taps: 256,
             sample_rate: 48_000.0,
             phase: FirPhase::Kirkeby,
+            ..Default::default()
+        };
+
+        let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
+    }
+
+    #[test]
+    #[should_panic(expected = "freqs must be strictly increasing")]
+    fn test_generate_fir_from_response_rejects_unsorted_freqs() {
+        let freqs = vec![20.0, 1000.0, 100.0];
+        let magnitude_db = vec![0.0, 0.0, 0.0];
+        let config = FirDesignConfig {
+            n_taps: 128,
+            sample_rate: 48_000.0,
+            phase: FirPhase::Linear,
+            ..Default::default()
+        };
+
+        let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
+    }
+
+    #[test]
+    #[should_panic(expected = "freqs must contain finite positive values")]
+    fn test_generate_fir_from_response_rejects_nonpositive_freqs() {
+        let freqs = vec![0.0, 100.0, 1000.0];
+        let magnitude_db = vec![0.0, 0.0, 0.0];
+        let config = FirDesignConfig {
+            n_taps: 128,
+            sample_rate: 48_000.0,
+            phase: FirPhase::Linear,
+            ..Default::default()
+        };
+
+        let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
+    }
+
+    #[test]
+    #[should_panic(expected = "magnitude_db must contain finite values")]
+    fn test_generate_fir_from_response_rejects_nonfinite_magnitude() {
+        let freqs = vec![20.0, 100.0, 1000.0];
+        let magnitude_db = vec![0.0, f64::NAN, 0.0];
+        let config = FirDesignConfig {
+            n_taps: 128,
+            sample_rate: 48_000.0,
+            phase: FirPhase::Linear,
             ..Default::default()
         };
 

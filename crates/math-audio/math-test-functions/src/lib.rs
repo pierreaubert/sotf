@@ -1905,6 +1905,37 @@ mod tests {
             "keanes_bump_objective at origin should be finite, got {}",
             val
         );
+
+        let x4 = Array1::from_vec(vec![0.0; 4]);
+        let val4 = keanes_bump_objective(&x4);
+        assert!(
+            val4.is_finite(),
+            "4D keanes_bump_objective at origin should be finite, got {}",
+            val4
+        );
+    }
+
+    #[test]
+    fn test_constrained_helpers_are_exercised_directly() {
+        let binh_inside = Array1::from_vec(vec![0.0, 0.0]);
+        assert!(binh_korn_constraint1(&binh_inside) <= 0.0);
+        assert!(binh_korn_constraint2(&binh_inside) <= 0.0);
+
+        let keane = Array1::from_vec(vec![1.0, 1.0, 1.0, 1.0]);
+        assert!(keanes_bump_constraint1(&keane) <= 0.0);
+        assert!(keanes_bump_constraint2(&keane) <= 0.0);
+
+        let keane_short = Array1::from_vec(vec![1.0, 1.0]);
+        assert!(
+            keanes_bump_constraint1(&keane_short) > 0.0,
+            "missing Keane dimensions should violate product constraint"
+        );
+
+        let mishra_center = Array1::from_vec(vec![-5.0, -5.0]);
+        assert!(mishras_bird_constraint(&mishra_center) < 0.0);
+
+        let rosenbrock_origin = Array1::from_vec(vec![0.0, 0.0]);
+        assert!(rosenbrock_disk_constraint(&rosenbrock_origin) <= 0.0);
     }
 
     #[test]

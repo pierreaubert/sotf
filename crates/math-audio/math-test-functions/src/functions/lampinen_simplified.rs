@@ -19,3 +19,23 @@ pub fn lampinen_simplified(x: &Array1<f64>) -> f64 {
 
     -sum // Minimize negative (i.e., maximize original)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handles_short_vectors() {
+        let x = Array1::from(vec![1.0, 2.0]);
+        let value = lampinen_simplified(&x);
+        assert!(value.is_finite());
+    }
+
+    #[test]
+    fn handles_tail_variables() {
+        let x = Array1::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+        let value = lampinen_simplified(&x);
+        assert!(value.is_finite());
+        assert_eq!(value, -15.0);
+    }
+}
