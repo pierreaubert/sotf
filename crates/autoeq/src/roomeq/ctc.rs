@@ -65,6 +65,8 @@ pub struct CtcReport {
     pub room_eq_correction_channels: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivered_response: Option<CtcDeliveredResponseMetrics>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binaural_diagnostics: Option<CtcBinauralDiagnostics>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -74,6 +76,25 @@ pub struct CtcDeliveredResponseMetrics {
     pub mean_crosstalk_db: f64,
     pub worst_crosstalk_db: f64,
     pub mean_channel_balance_db: f64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct CtcBinauralDiagnostics {
+    pub ild_error_db: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub itd_error_proxy_us: Option<f64>,
+    pub cue_deviation_score: f64,
+    pub externalization_risk: String,
+    pub imaging_risk: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hrtf_candidate_comparison: Option<CtcHrtfCandidateComparison>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct CtcHrtfCandidateComparison {
+    pub candidate_count: usize,
+    pub selected_source: String,
+    pub advisory: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +118,8 @@ struct CtcArtifact {
     room_eq_correction_channels: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     delivered_response: Option<CtcDeliveredResponseMetrics>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    binaural_diagnostics: Option<CtcBinauralDiagnostics>,
     filters: Vec<CtcFirFilterArtifact>,
 }
 
@@ -312,6 +335,12 @@ pub fn maybe_generate_recommended_xtc(
         || max_electrical_sum_gain_db >= config.regularization.max_gain_db - 0.25;
     let delivered_response =
         compute_delivered_response_metrics(&spectrum, &filters, config.fir_taps, latency_samples)?;
+    let binaural_diagnostics = compute_binaural_diagnostics(
+        &spectrum,
+        &delivered_response,
+        max_condition_json,
+        driver_headroom_limited,
+    );
 
     std::fs::create_dir_all(output_dir)?;
     let artifact_path = output_dir.join("recommended_xtc_matrix.json");
@@ -334,6 +363,7 @@ pub fn maybe_generate_recommended_xtc(
         room_eq_correction_applied,
         room_eq_correction_channels: room_eq_correction_channels.clone(),
         delivered_response: Some(delivered_response.clone()),
+        binaural_diagnostics: Some(binaural_diagnostics.clone()),
         filters,
     };
     let json = serde_json::to_vec_pretty(&artifact)?;
@@ -359,7 +389,54 @@ pub fn maybe_generate_recommended_xtc(
         room_eq_correction_applied,
         room_eq_correction_channels,
         delivered_response: Some(delivered_response),
+        binaural_diagnostics: Some(binaural_diagnostics),
     }))
+}
+
+fn compute_binaural_diagnostics(
+    spectrum: &MatrixSpectrum,
+    delivered: &CtcDeliveredResponseMetrics,
+    max_condition_number: f64,
+    driver_headroom_limited: bool,
+) -> CtcBinauralDiagnostics {
+    let crosstalk_risk = delivered.worst_crosstalk_db > -12.0;
+    let target_risk = delivered.worst_target_error > 1.0;
+    let condition_risk = max_condition_number > CTC_CONDITION_WARNING_THRESHOLD;
+    let externalization_risk = if driver_headroom_limited || condition_risk || target_risk {
+        "high".to_string()
+    } else if delivered.worst_crosstalk_db > -20.0 || delivered.mean_channel_balance_db > 2.0 {
+        "moderate".to_string()
+    } else {
+        "low".to_string()
+    };
+    let imaging_risk = if crosstalk_risk || delivered.mean_channel_balance_db > 3.0 {
+        "high".to_string()
+    } else if delivered.mean_channel_balance_db > 1.5 {
+        "moderate".to_string()
+    } else {
+        "low".to_string()
+    };
+
+    CtcBinauralDiagnostics {
+        ild_error_db: delivered.mean_channel_balance_db,
+        itd_error_proxy_us: None,
+        cue_deviation_score: delivered.mean_target_error
+            + 10.0_f64.powf(delivered.mean_crosstalk_db / 20.0)
+            + delivered.mean_channel_balance_db / 20.0,
+        externalization_risk,
+        imaging_risk,
+        hrtf_candidate_comparison: spectrum.source.contains("hrtf").then(|| {
+            CtcHrtfCandidateComparison {
+                candidate_count: spectrum.positions.len().max(1),
+                selected_source: spectrum.source.clone(),
+                advisory: if spectrum.positions.len() > 1 {
+                    "robust_head_position_average".to_string()
+                } else {
+                    "single_hrtf_candidate".to_string()
+                },
+            }
+        }),
+    }
 }
 
 fn compute_delivered_response_metrics(
@@ -2086,6 +2163,7 @@ mod tests {
             pre_ir: None,
             post_ir: None,
             fir_temporal_masking: None,
+            direct_early_late_correction: None,
             target_curve: None,
         }
     }

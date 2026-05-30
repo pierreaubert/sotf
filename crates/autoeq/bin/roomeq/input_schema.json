@@ -354,6 +354,58 @@
         "transition_freq"
       ]
     },
+    "AudibilityDeadbandConfig": {
+      "description": "Audibility/JND deadband applied to spectral objective residuals after\nperceptual or octave smoothing.",
+      "type": "object",
+      "properties": {
+        "bass_db": {
+          "description": "Bass threshold in dB.",
+          "type": "number",
+          "format": "double",
+          "default": 0.25
+        },
+        "bass_mid_hz": {
+          "description": "Bass/mid transition frequency.",
+          "type": "number",
+          "format": "double",
+          "default": 250.0
+        },
+        "disable_below_schroeder": {
+          "description": "Do not apply the deadband below the resolved Schroeder/modal region.",
+          "type": "boolean",
+          "default": true
+        },
+        "enabled": {
+          "description": "Enable the deadband.",
+          "type": "boolean",
+          "default": true
+        },
+        "mid_db": {
+          "description": "Midrange threshold in dB.",
+          "type": "number",
+          "format": "double",
+          "default": 0.75
+        },
+        "mid_treble_hz": {
+          "description": "Mid/treble transition frequency.",
+          "type": "number",
+          "format": "double",
+          "default": 2000.0
+        },
+        "schroeder_hz": {
+          "description": "Schroeder fallback used when no measured value is available.",
+          "type": "number",
+          "format": "double",
+          "default": 250.0
+        },
+        "treble_db": {
+          "description": "Treble threshold in dB.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        }
+      }
+    },
     "AutoOptimizerConfig": {
       "description": "Opt-in automatic room EQ optimizer bound selection.",
       "type": "object",
@@ -1375,6 +1427,41 @@
         }
       }
     },
+    "EarlyLateCorrectionConfig": {
+      "description": "Direct/early/late impulse-response reporting windows for FIR and\nmixed-phase modes.",
+      "type": "object",
+      "properties": {
+        "direct_window_ms": {
+          "description": "End of the direct-sound window in milliseconds.",
+          "type": "number",
+          "format": "double",
+          "default": 5.0
+        },
+        "early_cue_risk_db": {
+          "description": "Advisory threshold for direct/early correction energy.",
+          "type": "number",
+          "format": "double",
+          "default": -18.0
+        },
+        "early_window_ms": {
+          "description": "End of the direct-plus-early window in milliseconds.",
+          "type": "number",
+          "format": "double",
+          "default": 30.0
+        },
+        "enabled": {
+          "description": "Enable direct/early/late correction-energy reporting.",
+          "type": "boolean",
+          "default": true
+        },
+        "late_window_ms": {
+          "description": "End of the late-reflection summary window in milliseconds.",
+          "type": "number",
+          "format": "double",
+          "default": 120.0
+        }
+      }
+    },
     "EpaConfig": {
       "description": "Configuration for EPA scoring.",
       "type": "object",
@@ -1708,6 +1795,42 @@
           "description": "Use shelving filters only",
           "type": "boolean",
           "default": false
+        }
+      }
+    },
+    "HighFrequencyCorrectionConfig": {
+      "description": "Safer high-frequency correction behavior when users opt above the\nconservative RoomEQ correction ceiling.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Enable the high-frequency safeguard.",
+          "type": "boolean",
+          "default": true
+        },
+        "extra_deadband_db": {
+          "description": "Minimum extra deadband added above `start_hz`.",
+          "type": "number",
+          "format": "double",
+          "default": 0.75
+        },
+        "max_q": {
+          "description": "If the global Q bound is still at/above this value, cap it when the\npolicy is applied. Frequency-selective Q caps are not available in the\ncurrent PEQ parameterization, so this is intentionally conservative.",
+          "type": "number",
+          "format": "double",
+          "default": 2.0
+        },
+        "smoothing_n": {
+          "description": "Stronger psychoacoustic smoothing resolution above the guard start,\nexpressed as 1/N octave. Lower N means broader smoothing.",
+          "type": "integer",
+          "format": "uint",
+          "default": 3,
+          "minimum": 0
+        },
+        "start_hz": {
+          "description": "Frequency above which the safeguard is considered active.",
+          "type": "number",
+          "format": "double",
+          "default": 1600.0
         }
       }
     },
@@ -2225,6 +2348,17 @@
           "format": "double",
           "default": 0.00001
         },
+        "audibility_deadband": {
+          "description": "Audibility/JND deadband for spectral residual objectives.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudibilityDeadbandConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "auto_optimizer": {
           "description": "Automatic selection of filter count and optimizer bounds.",
           "anyOf": [
@@ -2309,6 +2443,17 @@
             }
           ]
         },
+        "early_late_correction": {
+          "description": "Direct/early/late correction-energy report settings.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EarlyLateCorrectionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "elimination_threshold": {
           "description": "Backward elimination threshold",
           "type": "number",
@@ -2353,6 +2498,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/GroupDelayOptimizationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "high_frequency_correction": {
+          "description": "Safeguards for high-frequency correction above the conservative range.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HighFrequencyCorrectionConfig"
             },
             {
               "type": "null"
@@ -2518,6 +2674,17 @@
           "type": "string",
           "default": "pk"
         },
+        "perceptual_policy": {
+          "description": "Product-level perceptual policy preset. When omitted, legacy optimizer\ndefaults are preserved.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PerceptualPolicyConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "phase_alignment": {
           "description": "Phase alignment configuration for subwoofer integration",
           "anyOf": [
@@ -2644,6 +2811,17 @@
           "format": "double",
           "default": 0.00001
         },
+        "validation_bundle": {
+          "description": "Validation/listening-test descriptor generation.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ValidationBundleConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "vog": {
           "description": "Voice of God optimization configuration (v2)",
           "anyOf": [
@@ -2656,6 +2834,57 @@
           ]
         }
       }
+    },
+    "PerceptualPolicyConfig": {
+      "description": "Perceptual policy selector layered above the detailed optimizer settings.",
+      "type": "object",
+      "properties": {
+        "apply_defaults": {
+          "description": "Fill policy-derived defaults into lower-level settings.",
+          "type": "boolean",
+          "default": true
+        },
+        "override_existing": {
+          "description": "Override explicit lower-level settings instead of only filling missing\noptional fields and primitive values that are still at their defaults.",
+          "type": "boolean",
+          "default": false
+        },
+        "preset": {
+          "description": "Preset to apply.",
+          "$ref": "#/$defs/PerceptualPolicyPreset",
+          "default": "reference"
+        }
+      }
+    },
+    "PerceptualPolicyPreset": {
+      "description": "Product-level perceptual policy preset.\n\nPolicies fill in coherent defaults for the lower-level RoomEQ knobs. Omitted\npolicies preserve the historical optimizer defaults.",
+      "oneOf": [
+        {
+          "description": "Conservative reference correction with strong early-cue preservation.",
+          "type": "string",
+          "const": "reference"
+        },
+        {
+          "description": "Music listening target with broad in-room tilt and robust LF correction.",
+          "type": "string",
+          "const": "music"
+        },
+        {
+          "description": "Home-cinema target policy with role-aware dialog and X-curve shaping.",
+          "type": "string",
+          "const": "cinema"
+        },
+        {
+          "description": "Quiet-listening policy with headroom/bass restraint and dialog emphasis.",
+          "type": "string",
+          "const": "night"
+        },
+        {
+          "description": "Speech-intelligibility policy with stronger dialog-band correction.",
+          "type": "string",
+          "const": "speech"
+        }
+      ]
     },
     "PhaseAlignmentConfig": {
       "description": "Phase alignment configuration for subwoofer integration",
@@ -3868,6 +4097,38 @@
           "type": "number",
           "format": "double",
           "default": 8000.0
+        }
+      }
+    },
+    "ValidationBundleConfig": {
+      "description": "Validation/listening-test descriptor generation.",
+      "type": "object",
+      "properties": {
+        "abx": {
+          "description": "Include ABX descriptors for before/after listening checks.",
+          "type": "boolean",
+          "default": true
+        },
+        "enabled": {
+          "description": "Generate a JSON validation bundle descriptor alongside RoomEQ output.",
+          "type": "boolean",
+          "default": true
+        },
+        "mushra": {
+          "description": "Include MUSHRA descriptors for multi-condition preference tests.",
+          "type": "boolean",
+          "default": true
+        },
+        "perceptual_regression_summary": {
+          "description": "Include perceptual regression summaries and advisories.",
+          "type": "boolean",
+          "default": true
+        },
+        "target_lufs": {
+          "description": "Loudness target for matched program-material assets.",
+          "type": "number",
+          "format": "double",
+          "default": -23.0
         }
       }
     },

@@ -188,6 +188,72 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         }
     }
 
+    if let Some(deadband) = opt.audibility_deadband {
+        if deadband.bass_db < 0.0 || deadband.mid_db < 0.0 || deadband.treble_db < 0.0 {
+            result.add_error("audibility_deadband thresholds must be non-negative".to_string());
+        }
+        if deadband.bass_mid_hz <= 0.0 || deadband.mid_treble_hz <= deadband.bass_mid_hz {
+            result.add_error(format!(
+                "audibility_deadband requires 0 < bass_mid_hz < mid_treble_hz (got {:.1}..{:.1})",
+                deadband.bass_mid_hz, deadband.mid_treble_hz
+            ));
+        }
+        if deadband.schroeder_hz <= 0.0 {
+            result.add_error(format!(
+                "audibility_deadband.schroeder_hz ({}) must be positive",
+                deadband.schroeder_hz
+            ));
+        }
+    }
+
+    if let Some(hf) = opt.high_frequency_correction {
+        if hf.start_hz <= 0.0 {
+            result.add_error(format!(
+                "high_frequency_correction.start_hz ({}) must be positive",
+                hf.start_hz
+            ));
+        }
+        if hf.extra_deadband_db < 0.0 {
+            result.add_error(format!(
+                "high_frequency_correction.extra_deadband_db ({}) must be non-negative",
+                hf.extra_deadband_db
+            ));
+        }
+        if hf.smoothing_n == 0 {
+            result
+                .add_error("high_frequency_correction.smoothing_n must be at least 1".to_string());
+        }
+        if hf.max_q <= 0.0 {
+            result.add_error(format!(
+                "high_frequency_correction.max_q ({}) must be positive",
+                hf.max_q
+            ));
+        }
+    }
+
+    if let Some(early_late) = opt.early_late_correction {
+        if early_late.direct_window_ms <= 0.0
+            || early_late.early_window_ms <= early_late.direct_window_ms
+            || early_late.late_window_ms <= early_late.early_window_ms
+        {
+            result.add_error(format!(
+                "early_late_correction windows must satisfy 0 < direct < early < late (got {:.1}, {:.1}, {:.1} ms)",
+                early_late.direct_window_ms,
+                early_late.early_window_ms,
+                early_late.late_window_ms
+            ));
+        }
+        if !early_late.early_cue_risk_db.is_finite() {
+            result.add_error("early_late_correction.early_cue_risk_db must be finite".to_string());
+        }
+    }
+
+    if let Some(bundle) = opt.validation_bundle
+        && !bundle.target_lufs.is_finite()
+    {
+        result.add_error("validation_bundle.target_lufs must be finite".to_string());
+    }
+
     if opt.min_db > opt.max_db {
         result.add_error(format!(
             "min_db ({}) must be less than or equal to max_db ({})",

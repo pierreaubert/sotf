@@ -21,6 +21,7 @@ fn test_chain(channel: &str, final_curve: &Curve) -> ChannelDspChain {
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
     }
 }
 
@@ -278,6 +279,9 @@ fn perceptual_metrics_report_epa_and_timing_confidence() {
         bass_management: None,
         timing_diagnostics: None,
         ctc: None,
+        perceptual_policy: None,
+        bootstrap_uncertainty: None,
+        validation_bundle: None,
     };
 
     update_perceptual_metrics(&mut metadata, None, None);
@@ -366,6 +370,9 @@ fn perceptual_metrics_report_role_bass_dialog_and_headroom_guards() {
         bass_management: None,
         timing_diagnostics: None,
         ctc: None,
+        perceptual_policy: None,
+        bootstrap_uncertainty: None,
+        validation_bundle: None,
     };
 
     update_perceptual_metrics(&mut metadata, Some(&channels), None);

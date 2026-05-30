@@ -93,6 +93,7 @@ pub fn setup_objective_data(
         null_suppression: None,
         asymmetric_loss_config: crate::loss::AsymmetricLossConfig::default(),
         smoothness_penalty: params.smoothness_penalty.clone(),
+        audibility_deadband: params.audibility_deadband,
     };
 
     Ok((objective_data, use_cea))
@@ -143,6 +144,7 @@ pub fn setup_drivers_objective_data(
         null_suppression: None,
         asymmetric_loss_config: crate::loss::AsymmetricLossConfig::default(),
         smoothness_penalty: params.smoothness_penalty.clone(),
+        audibility_deadband: params.audibility_deadband,
     }
 }
 
@@ -947,6 +949,7 @@ pub fn setup_multisub_objective_data(
         null_suppression: None,
         asymmetric_loss_config: crate::loss::AsymmetricLossConfig::default(),
         smoothness_penalty: params.smoothness_penalty.clone(),
+        audibility_deadband: params.audibility_deadband,
     }
 }
 

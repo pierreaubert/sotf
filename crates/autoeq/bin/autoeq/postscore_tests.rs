@@ -70,6 +70,7 @@ mod tests {
             null_suppression: None,
             asymmetric_loss_config: autoeq::loss::AsymmetricLossConfig::default(),
             smoothness_penalty: None,
+            audibility_deadband: None,
         };
 
         let opt_params = vec![500.0, 2.0, -2.0]; // Example PEQ params

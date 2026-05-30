@@ -209,6 +209,9 @@ pub struct ObjectiveData {
     /// Optional smoothness regularizer on the correction curve.
     /// `None` disables the penalty.
     pub smoothness_penalty: Option<SmoothnessPenaltyConfig>,
+    /// Optional audibility/JND deadband applied to residual errors before
+    /// spectral objective scoring.
+    pub audibility_deadband: Option<crate::roomeq::AudibilityDeadbandConfig>,
 }
 
 /// Data for multi-objective optimization across multiple measurements
@@ -511,6 +514,72 @@ fn compute_smoothness_penalty(
     cfg.tv2_weight * acc
 }
 
+fn maybe_smooth_error(
+    freqs: &Array1<f64>,
+    error: Array1<f64>,
+    smooth: bool,
+    smooth_n: usize,
+) -> Array1<f64> {
+    if !smooth {
+        return error;
+    }
+    let curve = Curve {
+        freq: freqs.clone(),
+        spl: error,
+        phase: None,
+        ..Default::default()
+    };
+    crate::read::smooth_one_over_n_octave(&curve, smooth_n).spl
+}
+
+fn apply_audibility_deadband(
+    freqs: &Array1<f64>,
+    error: &Array1<f64>,
+    min_freq: f64,
+    max_freq: f64,
+    config: Option<&crate::roomeq::AudibilityDeadbandConfig>,
+) -> Array1<f64> {
+    let Some(config) = config.filter(|cfg| cfg.enabled) else {
+        return error.clone();
+    };
+
+    let mut out = error.clone();
+    for (idx, value) in out.iter_mut().enumerate() {
+        let Some(&freq) = freqs.get(idx) else {
+            continue;
+        };
+        if freq < min_freq || freq > max_freq {
+            continue;
+        }
+        if config.disable_below_schroeder && freq < config.schroeder_hz {
+            continue;
+        }
+        let threshold = audibility_deadband_threshold(freq, config);
+        let magnitude = value.abs();
+        if magnitude <= threshold {
+            *value = 0.0;
+        } else {
+            *value = value.signum() * (magnitude - threshold);
+        }
+    }
+    out
+}
+
+fn audibility_deadband_threshold(
+    freq: f64,
+    config: &crate::roomeq::AudibilityDeadbandConfig,
+) -> f64 {
+    if freq <= config.bass_mid_hz {
+        config.bass_db
+    } else if freq >= config.mid_treble_hz {
+        config.treble_db
+    } else {
+        let t = (freq.ln() - config.bass_mid_hz.ln())
+            / (config.mid_treble_hz.ln() - config.bass_mid_hz.ln());
+        config.mid_db + t * (config.treble_db - config.mid_db)
+    }
+}
+
 /// Clamp negative filter gains (cuts) to a frequency-dependent minimum.
 ///
 /// Mirrors `clamp_gains_to_envelope` but for cuts: if a filter's gain is negative
@@ -611,18 +680,15 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
         LossType::HeadphoneFlat | LossType::SpeakerFlat => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
-            let base_loss = if data.smooth {
-                let curve = Curve {
-                    freq: data.freqs.clone(),
-                    spl: error,
-                    phase: None,
-                    ..Default::default()
-                };
-                let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
-                flat_loss(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
-            } else {
-                flat_loss(&data.freqs, &error, data.min_freq, data.max_freq)
-            };
+            let error = maybe_smooth_error(&data.freqs, error, data.smooth, data.smooth_n);
+            let error = apply_audibility_deadband(
+                &data.freqs,
+                &error,
+                data.min_freq,
+                data.max_freq,
+                data.audibility_deadband.as_ref(),
+            );
+            let base_loss = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
             let smoothness = data
                 .smoothness_penalty
                 .as_ref()
@@ -642,32 +708,22 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
             let null_mask = data.null_suppression.as_ref();
-            let base_loss = if data.smooth {
-                let curve = Curve {
-                    freq: data.freqs.clone(),
-                    spl: error,
-                    phase: None,
-                    ..Default::default()
-                };
-                let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
-                weighted_mse_asymmetric(
-                    &data.freqs,
-                    &smoothed.spl,
-                    data.min_freq,
-                    data.max_freq,
-                    &data.asymmetric_loss_config,
-                    null_mask,
-                )
-            } else {
-                weighted_mse_asymmetric(
-                    &data.freqs,
-                    &error,
-                    data.min_freq,
-                    data.max_freq,
-                    &data.asymmetric_loss_config,
-                    null_mask,
-                )
-            };
+            let error = maybe_smooth_error(&data.freqs, error, data.smooth, data.smooth_n);
+            let error = apply_audibility_deadband(
+                &data.freqs,
+                &error,
+                data.min_freq,
+                data.max_freq,
+                data.audibility_deadband.as_ref(),
+            );
+            let base_loss = weighted_mse_asymmetric(
+                &data.freqs,
+                &error,
+                data.min_freq,
+                data.max_freq,
+                &data.asymmetric_loss_config,
+                null_mask,
+            );
             let smoothness = data
                 .smoothness_penalty
                 .as_ref()
@@ -688,6 +744,13 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
             if let Some(ref sd) = data.speaker_score_data {
                 let error = &peq_spl - &data.deviation;
                 let s = speaker_score_loss(sd, &data.freqs, &peq_spl);
+                let error = apply_audibility_deadband(
+                    &data.freqs,
+                    &error,
+                    data.min_freq,
+                    data.max_freq,
+                    data.audibility_deadband.as_ref(),
+                );
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq) / 3.0;
                 // SpeakerScore fitness: minimize (100 - score + flatness/3)
                 // - 100.0: reference ceiling for Harman speaker score (typical range 0-100)
@@ -715,6 +778,13 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             if let Some(ref _hd) = data.headphone_score_data {
                 let error = &data.deviation - &peq_spl;
+                let error = apply_audibility_deadband(
+                    &data.freqs,
+                    &error,
+                    data.min_freq,
+                    data.max_freq,
+                    data.audibility_deadband.as_ref(),
+                );
                 let error_curve = Curve {
                     freq: data.freqs.clone(),
                     spl: error.clone(),
@@ -746,6 +816,14 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
             let epa_config = data.epa_config.clone().unwrap_or_default();
+            let error = maybe_smooth_error(&data.freqs, error, data.smooth, data.smooth_n);
+            let error = apply_audibility_deadband(
+                &data.freqs,
+                &error,
+                data.min_freq,
+                data.max_freq,
+                data.audibility_deadband.as_ref(),
+            );
             // Flatness now honors the EpaConfig blend (ERB-dominant by
             // default) instead of going through the generic `flat_loss`,
             // so the whole EPA objective is user-tunable.
@@ -809,180 +887,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
         return compute_multi_objective_fitness(x, mo);
     }
 
-    match data.loss_type {
-        LossType::DriversFlat => {
-            // Multi-driver crossover optimization
-            if let Some(ref drivers_data) = data.drivers_data {
-                let n_drivers = drivers_data.drivers.len();
-                // Parameter layout depends on whether frequencies are fixed:
-                // - Fixed freqs: [gains(N), delays(N)]
-                // - Optimizing freqs: [gains(N), delays(N), xovers(N-1)]
-                let gains = &x[0..n_drivers];
-                let delays = &x[n_drivers..2 * n_drivers];
-
-                // Use fixed frequencies if provided, otherwise extract from parameter vector
-                let xover_freqs: Vec<f64> = if let Some(ref fixed) = data.fixed_crossover_freqs {
-                    fixed.clone()
-                } else {
-                    let xover_freqs_log10 = &x[2 * n_drivers..];
-                    xover_freqs_log10
-                        .iter()
-                        .map(|f| 10.0_f64.powf(*f))
-                        .collect()
-                };
-
-                drivers_flat_loss(
-                    drivers_data,
-                    gains,
-                    &xover_freqs,
-                    Some(delays),
-                    data.srate,
-                    data.min_freq,
-                    data.max_freq,
-                )
-            } else {
-                log::error!("drivers-flat loss requested but driver data is missing");
-                f64::INFINITY
-            }
-        }
-        LossType::MultiSubFlat => {
-            if let Some(ref drivers_data) = data.drivers_data {
-                let n_drivers = drivers_data.drivers.len();
-                let gains = &x[0..n_drivers];
-                let delays = &x[n_drivers..2 * n_drivers];
-
-                crate::loss::multisub_flat_loss(
-                    drivers_data,
-                    gains,
-                    delays,
-                    data.srate,
-                    data.min_freq,
-                    data.max_freq,
-                )
-            } else {
-                log::error!("multi-sub-flat loss requested but driver data is missing");
-                f64::INFINITY
-            }
-        }
-        LossType::HeadphoneFlat | LossType::SpeakerFlat => {
-            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
-            let error = &peq_spl - &data.deviation;
-            if data.smooth {
-                let curve = Curve {
-                    freq: data.freqs.clone(),
-                    spl: error,
-                    phase: None,
-                    ..Default::default()
-                };
-                let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
-                flat_loss(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
-            } else {
-                flat_loss(&data.freqs, &error, data.min_freq, data.max_freq)
-            }
-        }
-        LossType::SpeakerFlatAsymmetric => {
-            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
-            let error = &peq_spl - &data.deviation;
-            let null_mask = data.null_suppression.as_ref();
-            if data.smooth {
-                let curve = Curve {
-                    freq: data.freqs.clone(),
-                    spl: error,
-                    phase: None,
-                    ..Default::default()
-                };
-                let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
-                weighted_mse_asymmetric(
-                    &data.freqs,
-                    &smoothed.spl,
-                    data.min_freq,
-                    data.max_freq,
-                    &data.asymmetric_loss_config,
-                    null_mask,
-                )
-            } else {
-                weighted_mse_asymmetric(
-                    &data.freqs,
-                    &error,
-                    data.min_freq,
-                    data.max_freq,
-                    &data.asymmetric_loss_config,
-                    null_mask,
-                )
-            }
-        }
-        LossType::SpeakerScore => {
-            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
-            if let Some(ref sd) = data.speaker_score_data {
-                let error = &peq_spl - &data.deviation;
-                let s = speaker_score_loss(sd, &data.freqs, &peq_spl);
-                let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq) / 3.0;
-                // SpeakerScore fitness: minimize (100 - score + flatness/3)
-                // - 100.0: reference ceiling for Harman speaker score (typical range 0-100)
-                // - /3.0: reduces flatness weight to ~25% vs score (empirically tuned)
-                100.0 - s + p
-            } else {
-                log::error!("speaker score loss requested but score data is missing");
-                f64::INFINITY
-            }
-        }
-        LossType::HeadphoneScore => {
-            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
-            if let Some(ref _hd) = data.headphone_score_data {
-                // Compute remaining deviation: target - (input + peq) = deviation - peq
-                // where deviation = target - input
-                let error = &data.deviation - &peq_spl;
-
-                // Use headphone_loss on the remaining deviation
-                let error_curve = Curve {
-                    freq: data.freqs.clone(),
-                    spl: error.clone(),
-                    phase: None,
-                    ..Default::default()
-                };
-                let s = headphone_loss(&error_curve);
-                let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
-                // HeadphoneScore fitness: minimize (1000 - score + flatness*20)
-                // - 1000.0: reference ceiling for Olive preference score (max ~114.49)
-                // - *20.0: amplifies flatness term (headphone score has small dynamic range)
-                1000.0 - s + p * 20.0
-            } else {
-                log::error!("headphone score loss requested but headphone data is missing");
-                f64::INFINITY
-            }
-        }
-        LossType::Epa => {
-            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
-            let error = &peq_spl - &data.deviation;
-            let flatness = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
-            let freqs_vec: Vec<f64> = data.freqs.iter().copied().collect();
-            let corrected_spl: Vec<f64> = data
-                .freqs
-                .iter()
-                .enumerate()
-                .map(|(i, _)| data.target[i] + data.deviation[i] + peq_spl[i])
-                .collect();
-            let epa_config = data.epa_config.clone().unwrap_or_default();
-            // Use the `_normalized` variant because `corrected_spl` is built
-            // from level-relative (target + deviation + PEQ) components —
-            // it is not absolute dB SPL. The normalized helper denormalizes
-            // against `epa_config.listening_level_phon` so the loudness /
-            // loudness-balance penalties are properly calibrated.
-            let base_loss = crate::loss::epa::score::epa_loss_normalized(
-                &freqs_vec,
-                &corrected_spl,
-                &epa_config,
-                flatness,
-            );
-            let temporal_masking = crate::loss::epa::score::temporal_masking_penalty(
-                &freqs_vec,
-                peq_spl.as_slice().unwrap_or(&[]),
-                &data.temporal_masking_modes,
-                &epa_config.temporal_masking,
-            );
-            base_loss + temporal_masking
-        }
-    }
+    compute_base_fitness_single(x, data)
 }
 
 /// Compute objective function value including penalty terms for constraints
@@ -1410,5 +1315,32 @@ mod smoothness_penalty_tests {
             compute_smoothness_penalty(&y, &freqs, 20.0, 20_000.0, &cfg),
             0.0
         );
+    }
+}
+
+#[cfg(test)]
+mod audibility_deadband_tests {
+    use super::apply_audibility_deadband;
+    use crate::roomeq::AudibilityDeadbandConfig;
+    use ndarray::array;
+
+    #[test]
+    fn deadband_zeroes_inaudible_midrange_residuals() {
+        let freqs = array![100.0, 1_000.0, 4_000.0];
+        let error = array![0.2, 0.5, -1.5];
+        let cfg = AudibilityDeadbandConfig {
+            bass_db: 0.25,
+            mid_db: 0.75,
+            treble_db: 1.0,
+            disable_below_schroeder: true,
+            schroeder_hz: 250.0,
+            ..Default::default()
+        };
+
+        let out = apply_audibility_deadband(&freqs, &error, 20.0, 20_000.0, Some(&cfg));
+
+        assert_eq!(out[0], 0.2, "below Schroeder is preserved by default");
+        assert_eq!(out[1], 0.0, "midrange residual below JND is ignored");
+        assert!(out[2] < 0.0 && out[2].abs() < error[2].abs());
     }
 }

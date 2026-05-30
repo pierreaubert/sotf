@@ -47,6 +47,7 @@ mod tests {
             null_suppression: None,
             asymmetric_loss_config: autoeq::loss::AsymmetricLossConfig::default(),
             smoothness_penalty: None,
+            audibility_deadband: None,
         }
     }
 

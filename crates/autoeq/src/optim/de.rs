@@ -671,6 +671,7 @@ mod tests {
             null_suppression: None,
             asymmetric_loss_config: crate::loss::AsymmetricLossConfig::default(),
             smoothness_penalty: None,
+            audibility_deadband: None,
         }
     }
 

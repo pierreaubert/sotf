@@ -1289,6 +1289,7 @@ mod tests {
                 pre_ir: None,
                 post_ir: None,
                 fir_temporal_masking: None,
+        direct_early_late_correction: None,
             },
         );
 
@@ -1320,6 +1321,7 @@ mod tests {
                 pre_ir: None,
                 post_ir: None,
                 fir_temporal_masking: None,
+        direct_early_late_correction: None,
             },
         );
 
@@ -1345,6 +1347,9 @@ mod tests {
                 bass_management: None,
                 timing_diagnostics: None,
                 ctc: None,
+                perceptual_policy: None,
+                bootstrap_uncertainty: None,
+                validation_bundle: None,
             }),
         }
     }
@@ -1376,6 +1381,7 @@ mod tests {
                 pre_ir: None,
                 post_ir: None,
                 fir_temporal_masking: None,
+                direct_early_late_correction: None,
             },
         );
 
@@ -1754,6 +1760,7 @@ mod tests {
                 pre_ir: None,
                 post_ir: None,
                 fir_temporal_masking: None,
+                direct_early_late_correction: None,
             },
         );
         let output = DspChainOutput {
@@ -1804,6 +1811,7 @@ mod tests {
                 pre_ir: None,
                 post_ir: None,
                 fir_temporal_masking: None,
+                direct_early_late_correction: None,
             },
         );
         let output = DspChainOutput {
@@ -1838,6 +1846,7 @@ mod tests {
                 pre_ir: None,
                 post_ir: None,
                 fir_temporal_masking: None,
+                direct_early_late_correction: None,
             },
         );
         channels.insert(
@@ -1856,6 +1865,7 @@ mod tests {
                 pre_ir: None,
                 post_ir: None,
                 fir_temporal_masking: None,
+                direct_early_late_correction: None,
             },
         );
         let output = DspChainOutput {
@@ -1894,6 +1904,7 @@ mod tests {
                     pre_ir: None,
                     post_ir: None,
                     fir_temporal_masking: None,
+                    direct_early_late_correction: None,
                 },
             );
         }
@@ -2025,6 +2036,7 @@ mod tests {
                 pre_ir: None,
                 post_ir: None,
                 fir_temporal_masking: None,
+                direct_early_late_correction: None,
             },
         );
 

@@ -188,7 +188,203 @@ pub(super) fn refresh_final_reports(
         }
     }
 
+    refresh_direct_early_late_reports(result, config);
+    refresh_perceptual_policy_reports(result, config);
+
     update_perceptual_metrics(&mut result.metadata, Some(&result.channels), Some(config));
+}
+
+pub(super) fn refresh_direct_early_late_reports(
+    result: &mut RoomOptimizationResult,
+    config: &RoomConfig,
+) {
+    let Some(early_late_cfg) = config.optimizer.early_late_correction_config() else {
+        return;
+    };
+    for chain in result.channels.values_mut() {
+        chain.direct_early_late_correction = match (&chain.pre_ir, &chain.post_ir) {
+            (Some(pre), Some(post)) => {
+                direct_early_late_correction_metrics(pre, post, &early_late_cfg)
+            }
+            _ => None,
+        };
+    }
+}
+
+pub(super) fn refresh_perceptual_policy_reports(
+    result: &mut RoomOptimizationResult,
+    config: &RoomConfig,
+) {
+    result.metadata.perceptual_policy = build_perceptual_policy_report(config);
+    result.metadata.bootstrap_uncertainty = build_bootstrap_uncertainty_report(config);
+}
+
+pub(super) fn generate_validation_bundle_report(
+    result: &mut RoomOptimizationResult,
+    config: &RoomConfig,
+    output_dir: Option<&Path>,
+) -> Result<()> {
+    let Some(bundle) = config.optimizer.validation_bundle_config() else {
+        result.metadata.validation_bundle = None;
+        return Ok(());
+    };
+
+    let output_dir = output_dir.unwrap_or(Path::new("."));
+    std::fs::create_dir_all(output_dir)?;
+    let artifact_path = output_dir.join("roomeq_validation_bundle.json");
+    let mut advisories = Vec::new();
+
+    if let Some(metrics) = result.metadata.perceptual_metrics.as_ref() {
+        if metrics.epa_preference_delta < 0.0 {
+            advisories.push("perceptual_metric_regressed".to_string());
+        }
+        if let Some(advisory) = metrics.early_cue_advisory.as_ref()
+            && advisory != "ok"
+        {
+            advisories.push(advisory.clone());
+        }
+    }
+    if result
+        .metadata
+        .ctc
+        .as_ref()
+        .is_some_and(|ctc| ctc.driver_headroom_limited || ctc.max_condition_number > 1.0e6)
+    {
+        advisories.push("ctc_headroom_or_condition_risk".to_string());
+    }
+    advisories.push("program_material_required_for_wav_assets".to_string());
+
+    let payload = serde_json::json!({
+        "version": "roomeq-validation-bundle-v1",
+        "target_lufs": bundle.target_lufs,
+        "policy": result.metadata.perceptual_policy,
+        "abx": bundle.abx.then(|| serde_json::json!({
+            "enabled": true,
+            "conditions": ["before", "after"],
+            "loudness_match_lufs": bundle.target_lufs
+        })),
+        "mushra": bundle.mushra.then(|| serde_json::json!({
+            "enabled": true,
+            "reference": "before",
+            "conditions": ["before", "after"],
+            "loudness_match_lufs": bundle.target_lufs
+        })),
+        "perceptual_regression_summary": bundle.perceptual_regression_summary.then(|| serde_json::json!({
+            "combined_pre_score": result.combined_pre_score,
+            "combined_post_score": result.combined_post_score,
+            "epa": result.metadata.perceptual_metrics,
+            "bootstrap_uncertainty": result.metadata.bootstrap_uncertainty,
+            "ctc": result.metadata.ctc,
+        })),
+        "advisories": advisories,
+    });
+    std::fs::write(&artifact_path, serde_json::to_vec_pretty(&payload)?)?;
+
+    result.metadata.validation_bundle = Some(crate::roomeq::types::ValidationBundleReport {
+        artifact: artifact_path.to_string_lossy().to_string(),
+        target_lufs: bundle.target_lufs,
+        abx: bundle.abx,
+        mushra: bundle.mushra,
+        perceptual_regression_summary: bundle.perceptual_regression_summary,
+        advisories,
+    });
+    Ok(())
+}
+
+fn build_perceptual_policy_report(
+    config: &RoomConfig,
+) -> Option<crate::roomeq::types::PerceptualPolicyReport> {
+    let policy = config.optimizer.perceptual_policy?;
+    Some(crate::roomeq::types::PerceptualPolicyReport {
+        preset: policy.preset,
+        loss_type: config.optimizer.loss_type.clone(),
+        target_response: config.optimizer.target_response.clone(),
+        audibility_deadband: config.optimizer.audibility_deadband_config(),
+        high_frequency_correction: config.optimizer.high_frequency_correction,
+    })
+}
+
+fn build_bootstrap_uncertainty_report(
+    config: &RoomConfig,
+) -> Option<crate::roomeq::types::BootstrapUncertaintyReport> {
+    let multi = config.optimizer.multi_measurement.as_ref()?;
+    let bootstrap = multi.bootstrap_uncertainty.clone()?;
+    Some(crate::roomeq::types::BootstrapUncertaintyReport {
+        num_resamples: bootstrap.num_resamples,
+        alpha: bootstrap.alpha,
+        scalarisation: bootstrap.scalarisation,
+        cvar_alpha: bootstrap.cvar_alpha,
+        used_for_correction_depth_mask: multi.strategy
+            == crate::roomeq::MultiMeasurementStrategy::SpatialRobustness,
+    })
+}
+
+fn direct_early_late_correction_metrics(
+    pre: &crate::roomeq::types::IrWaveform,
+    post: &crate::roomeq::types::IrWaveform,
+    config: &crate::roomeq::EarlyLateCorrectionConfig,
+) -> Option<crate::roomeq::types::DirectEarlyLateCorrectionMetrics> {
+    if pre.time_ms.len() != post.time_ms.len()
+        || pre.amplitude.len() != post.amplitude.len()
+        || pre.time_ms.len() != pre.amplitude.len()
+    {
+        return None;
+    }
+
+    let mut direct = 0.0_f64;
+    let mut early = 0.0_f64;
+    let mut late = 0.0_f64;
+    let mut total = 0.0_f64;
+
+    for ((time_ms, pre_amp), post_amp) in pre
+        .time_ms
+        .iter()
+        .zip(pre.amplitude.iter())
+        .zip(post.amplitude.iter())
+    {
+        let energy = (post_amp - pre_amp).powi(2);
+        total += energy;
+        if *time_ms <= config.direct_window_ms {
+            direct += energy;
+        } else if *time_ms <= config.early_window_ms {
+            early += energy;
+        } else if *time_ms <= config.late_window_ms {
+            late += energy;
+        }
+    }
+
+    if total <= 1e-24 {
+        return None;
+    }
+
+    let direct_energy_db = energy_ratio_to_db(direct / total);
+    let early_energy_db = energy_ratio_to_db(early / total);
+    let late_energy_db = energy_ratio_to_db(late / total);
+    let direct_plus_early_energy_db = energy_ratio_to_db((direct + early) / total);
+    let advisory = if direct_plus_early_energy_db > config.early_cue_risk_db {
+        "direct_early_correction_risk".to_string()
+    } else {
+        "ok".to_string()
+    };
+
+    Some(crate::roomeq::types::DirectEarlyLateCorrectionMetrics {
+        direct_window_ms: config.direct_window_ms,
+        early_window_ms: config.early_window_ms,
+        late_window_ms: config.late_window_ms,
+        direct_energy_db,
+        early_energy_db,
+        late_energy_db,
+        direct_plus_early_energy_db,
+        advisory,
+    })
+}
+
+fn energy_ratio_to_db(ratio: f64) -> f64 {
+    if ratio <= 1e-30 {
+        -300.0
+    } else {
+        10.0 * ratio.log10()
+    }
 }
 
 pub(super) fn build_timing_diagnostics(
@@ -392,6 +588,21 @@ pub(super) fn update_perceptual_metrics(
                 .filter_map(|chain| chain.fir_temporal_masking.as_ref().map(|m| m.penalty)),
         )
     });
+    let direct_plus_early_correction_energy_db = channels.and_then(|channels| {
+        max_optional(channels.values().filter_map(|chain| {
+            chain
+                .direct_early_late_correction
+                .as_ref()
+                .map(|m| m.direct_plus_early_energy_db)
+        }))
+    });
+    let early_cue_advisory = channels.and_then(|channels| {
+        channels
+            .values()
+            .filter_map(|chain| chain.direct_early_late_correction.as_ref())
+            .find(|metrics| metrics.advisory != "ok")
+            .map(|metrics| metrics.advisory.clone())
+    });
     let headroom_risk = headroom_peak_boost_db.map(|peak_boost| {
         let margin_db = config
             .and_then(|cfg| cfg.system.as_ref())
@@ -430,6 +641,8 @@ pub(super) fn update_perceptual_metrics(
         fir_pre_ringing_audible_db,
         fir_post_ringing_audible_db,
         fir_temporal_masking_penalty,
+        direct_plus_early_correction_energy_db,
+        early_cue_advisory,
     });
 }
 

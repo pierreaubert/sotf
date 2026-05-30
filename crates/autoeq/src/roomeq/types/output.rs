@@ -130,6 +130,10 @@ pub struct ChannelDspChain {
     /// FIR impulse-response temporal masking metrics (optional, FIR/phase modes)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fir_temporal_masking: Option<crate::loss::epa::score::TemporalIrMaskingMetrics>,
+    /// Direct/early/late correction-energy metrics (optional, FIR/phase modes
+    /// or any channel with phase-derived IRs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direct_early_late_correction: Option<DirectEarlyLateCorrectionMetrics>,
 }
 
 /// DSP chain for an individual driver in a multi-driver speaker
@@ -180,6 +184,77 @@ pub struct EpaMultichannelMetrics {
     pub standard: String,
 }
 
+/// Correction-energy split across direct, early, and late IR windows.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DirectEarlyLateCorrectionMetrics {
+    /// Direct-sound window end in milliseconds.
+    pub direct_window_ms: f64,
+    /// Early-reflection window end in milliseconds.
+    pub early_window_ms: f64,
+    /// Late summary window end in milliseconds.
+    pub late_window_ms: f64,
+    /// Correction energy in the direct window, dB relative to total correction energy.
+    pub direct_energy_db: f64,
+    /// Correction energy in the early window, dB relative to total correction energy.
+    pub early_energy_db: f64,
+    /// Correction energy in the late window, dB relative to total correction energy.
+    pub late_energy_db: f64,
+    /// Direct + early correction energy, dB relative to total correction energy.
+    pub direct_plus_early_energy_db: f64,
+    /// Advisory when FIR/mixed-phase correction may be altering direct/early cues.
+    pub advisory: String,
+}
+
+/// Resolved perceptual policy metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PerceptualPolicyReport {
+    /// Policy preset requested by the user or UI.
+    pub preset: crate::roomeq::PerceptualPolicyPreset,
+    /// Effective loss type after policy resolution.
+    pub loss_type: String,
+    /// Effective target response after policy resolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_response: Option<crate::roomeq::TargetResponseConfig>,
+    /// Effective audibility deadband.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audibility_deadband: Option<crate::roomeq::AudibilityDeadbandConfig>,
+    /// Effective high-frequency safeguard.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub high_frequency_correction: Option<crate::roomeq::HighFrequencyCorrectionConfig>,
+}
+
+/// Bootstrap uncertainty reporting summary.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BootstrapUncertaintyReport {
+    /// Number of case-bootstrap resamples.
+    pub num_resamples: usize,
+    /// Two-sided alpha used for confidence bands.
+    pub alpha: f64,
+    /// Scalarisation used for uncertainty-aware optimization.
+    pub scalarisation: crate::roomeq::BootstrapScalarisation,
+    /// CVaR tail fraction when scalarisation is CVaR.
+    pub cvar_alpha: f64,
+    /// Whether bootstrap confidence width was folded into correction-depth masks.
+    pub used_for_correction_depth_mask: bool,
+}
+
+/// Validation/listening-test bundle descriptor.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ValidationBundleReport {
+    /// JSON artifact path.
+    pub artifact: String,
+    /// Target loudness for matched validation assets.
+    pub target_lufs: f64,
+    /// ABX descriptor included.
+    pub abx: bool,
+    /// MUSHRA descriptor included.
+    pub mushra: bool,
+    /// Perceptual regression summary included.
+    pub perceptual_regression_summary: bool,
+    /// Bundle advisories.
+    pub advisories: Vec<String>,
+}
+
 /// Compact perceptual scorecard for downstream QA and UIs.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PerceptualMetrics {
@@ -226,6 +301,13 @@ pub struct PerceptualMetrics {
     /// Maximum FIR temporal masking penalty across channels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fir_temporal_masking_penalty: Option<f64>,
+    /// Maximum direct + early correction energy across channels, dB relative
+    /// to total correction energy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direct_plus_early_correction_energy_db: Option<f64>,
+    /// Worst direct/early cue advisory across channels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub early_cue_advisory: Option<String>,
 }
 
 /// Optimization metadata
@@ -292,4 +374,13 @@ pub struct OptimizationMetadata {
     /// Cross-talk cancellation / binaural-aware correction artifact summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ctc: Option<crate::roomeq::ctc::CtcReport>,
+    /// Resolved perceptual policy metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perceptual_policy: Option<PerceptualPolicyReport>,
+    /// Bootstrap uncertainty summary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootstrap_uncertainty: Option<BootstrapUncertaintyReport>,
+    /// Validation/listening-test bundle descriptor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_bundle: Option<ValidationBundleReport>,
 }

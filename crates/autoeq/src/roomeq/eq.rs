@@ -1709,12 +1709,43 @@ fn optimize_spatial_robustness(
         None => SpatialRobustnessConfig::default(),
     };
 
-    // Analyze spatial robustness
-    let analysis = spatial_robustness::try_analyze_spatial_robustness_weighted(
-        curves,
-        &sr_config,
-        multi_config.weights.as_deref(),
-    )?;
+    // Analyze spatial robustness, optionally with bootstrap confidence bands.
+    let mut analysis = if let Some(boot_cfg) = multi_config.bootstrap_uncertainty.as_ref() {
+        let bootstrap = spatial_robustness::BootstrapConfig {
+            num_resamples: boot_cfg.num_resamples,
+            alpha: boot_cfg.alpha,
+            seed: boot_cfg.seed,
+        };
+        spatial_robustness::analyze_spatial_robustness_with_bootstrap(
+            curves,
+            &sr_config,
+            &bootstrap,
+            multi_config.weights.as_deref(),
+        )?
+    } else {
+        spatial_robustness::try_analyze_spatial_robustness_weighted(
+            curves,
+            &sr_config,
+            multi_config.weights.as_deref(),
+        )?
+    };
+
+    if let Some(bootstrap) = analysis.bootstrap.as_ref() {
+        let confidence_width = &bootstrap.upper.spl - &bootstrap.lower.spl;
+        let uncertainty_depth = spatial_robustness::correction_depth_mask(
+            &analysis.averaged_curve.freq,
+            &confidence_width,
+            &sr_config,
+        );
+        analysis.correction_depth = &analysis.correction_depth * &uncertainty_depth;
+        let mean_width =
+            confidence_width.iter().sum::<f64>() / confidence_width.len().max(1) as f64;
+        log::info!(
+            "  Bootstrap uncertainty mask: mean CI width={:.2} dB, depth multiplier mean={:.2}",
+            mean_width,
+            uncertainty_depth.iter().sum::<f64>() / uncertainty_depth.len().max(1) as f64,
+        );
+    }
 
     log::info!(
         "  Spatial robustness: {} positions, variance range {:.1}-{:.1} dB",

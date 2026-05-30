@@ -551,6 +551,37 @@ Controls the optimization algorithm, constraints, and advanced features.
       "bass_peak_weight": 5.0,
       "bass_dip_weight": 1.0,
       "transition_freq": 300.0
+    },
+    "perceptual_policy": {
+      "preset": "music",
+      "apply_defaults": true,
+      "override_existing": false
+    },
+    "audibility_deadband": {
+      "enabled": true,
+      "bass_db": 0.25,
+      "mid_db": 0.75,
+      "treble_db": 1.0,
+      "disable_below_schroeder": true
+    },
+    "high_frequency_correction": {
+      "enabled": true,
+      "start_hz": 1600.0,
+      "extra_deadband_db": 0.75,
+      "smoothing_n": 3,
+      "max_q": 2.0
+    },
+    "early_late_correction": {
+      "enabled": true,
+      "direct_window_ms": 5.0,
+      "early_window_ms": 30.0,
+      "late_window_ms": 120.0
+    },
+    "validation_bundle": {
+      "enabled": true,
+      "abx": true,
+      "mushra": true,
+      "target_lufs": -23.0
     }
   }
 }
@@ -585,6 +616,11 @@ Controls the optimization algorithm, constraints, and advanced features.
 | `psychoacoustic_smoothing` | object | - | Optional variable smoothing config. Defaults preserve `1/48` octave below 100 Hz through `1/6` octave above 1 kHz |
 | `asymmetric_loss` | boolean | `true` | Penalize peaks 2x more than dips (psychoacoustically correct) |
 | `asymmetric_loss_config` | object | - | Optional peak/dip weighting config. Defaults preserve peak `2.0`, dip `1.0`, bass peak `5.0`, bass dip `1.0`, transition `300 Hz` |
+| `perceptual_policy` | object | - | Product preset (`reference`, `music`, `cinema`, `night`, `speech`) that fills coherent defaults for target, smoothing, loss, robustness, early-cue, and validation settings |
+| `audibility_deadband` | object | - | JND-style residual deadband applied after smoothing so sub-threshold errors do not consume filters |
+| `high_frequency_correction` | object | - | Safer opt-in high-frequency behavior: stronger smoothing/deadband and default-Q capping above `start_hz` |
+| `early_late_correction` | object | - | Direct/early/late correction-energy report windows for FIR and mixed-phase safety advisories |
+| `validation_bundle` | object | - | Emit `roomeq_validation_bundle.json` with loudness-matched ABX/MUSHRA descriptors and perceptual regression summaries |
 | `tolerance` | number | `1e-5` | Optimization convergence tolerance (relative) |
 | `atolerance` | number | `1e-5` | Optimization convergence tolerance (absolute) |
 | `allow_delay` | boolean | - | Allow inter-speaker delay optimization. Default: false for IIR, true for FIR/mixed. |
