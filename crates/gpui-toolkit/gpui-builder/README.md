@@ -54,6 +54,29 @@ let sidebar = solved.find("sidebar").unwrap();
 println!("sidebar: {}x{} visible={}", sidebar.width, sidebar.height, sidebar.visible);
 ```
 
+## Layout Stories
+
+Define Storybook-style layout catalogs for docs, examples, tests, and future
+visual tooling:
+
+```rust
+use gpui_builder::{LayoutScenario, LayoutStory, LayoutStoryCatalog};
+
+let scenarios = [
+    LayoutScenario::new("desktop", "Desktop", 1200.0, 800.0),
+    LayoutScenario::new("narrow", "Narrow", 500.0, 800.0),
+];
+let story = LayoutStory::new("shell", "Application shell", root, &scenarios);
+let stories = [story];
+let catalog = LayoutStoryCatalog::new(&stories);
+
+println!("{catalog}");
+let solved = catalog.solve_all();
+```
+
+Scenarios can also carry ratio overrides and collapsed-slot preferences, so the
+same catalog can drive responsive examples and regression snapshots.
+
 ## Sizing Modes
 
 | Mode | Constructor | Behavior |

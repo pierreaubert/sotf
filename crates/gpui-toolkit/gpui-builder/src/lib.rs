@@ -52,11 +52,16 @@ pub mod compat;
 pub mod plugin_chassis;
 pub mod solved;
 pub mod solver;
+pub mod stories;
 pub mod types;
 
 // Re-exports for convenience
 pub use solved::SolvedNode;
 pub use solver::solve;
+pub use stories::{
+    LayoutScenario, LayoutStory, LayoutStoryCatalog, SolvedLayoutScenario, StoryCollapsedState,
+    StoryRatioOverride,
+};
 pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
 };
