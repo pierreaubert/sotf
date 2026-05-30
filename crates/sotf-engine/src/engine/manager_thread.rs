@@ -434,6 +434,8 @@ fn output_access_status_for_config(config: &EngineConfig) -> OutputAccessStatus 
         OutputAccessMode::ExclusivePreferred | OutputAccessMode::ExclusiveRequired => {
             if output_device_uses_exclusive_backend(config.output_device.as_deref()) {
                 OutputAccessStatus::ExclusiveActive
+            } else if cfg!(target_os = "macos") {
+                OutputAccessStatus::ExclusivePending
             } else if matches!(config.output_access, OutputAccessMode::ExclusivePreferred) {
                 OutputAccessStatus::FallbackShared
             } else {
@@ -2795,10 +2797,11 @@ mod tests {
         assert_eq!(state.volume, 0.5);
         assert!(state.muted);
         assert!(!state.latency_compensation_enabled);
-        assert_eq!(
-            state.output_access_status,
-            sotf_types::OutputAccessStatus::FallbackShared
-        );
+        #[cfg(target_os = "macos")]
+        let expected_output_access_status = sotf_types::OutputAccessStatus::ExclusivePending;
+        #[cfg(not(target_os = "macos"))]
+        let expected_output_access_status = sotf_types::OutputAccessStatus::FallbackShared;
+        assert_eq!(state.output_access_status, expected_output_access_status);
         assert_eq!(
             state.dsd_output_status,
             sotf_types::DsdOutputStatus::DopUnavailable

@@ -40,6 +40,7 @@ impl OutputAccessMode {
 pub enum OutputAccessStatus {
     #[default]
     Shared,
+    ExclusivePending,
     ExclusiveActive,
     FallbackShared,
     Unsupported,

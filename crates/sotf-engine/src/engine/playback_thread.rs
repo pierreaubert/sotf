@@ -300,6 +300,199 @@ fn coreaudio_output_device_id(_name: &str) -> Option<u32> {
     None
 }
 
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct CoreAudioExclusiveModeGuard {
+    device_id: Option<u32>,
+    device_name: String,
+    acquired_by_guard: bool,
+}
+
+#[cfg(target_os = "macos")]
+impl CoreAudioExclusiveModeGuard {
+    fn inactive() -> Self {
+        Self::default()
+    }
+
+    fn activate_for_device(
+        &mut self,
+        device_name: &str,
+        mode: OutputAccessMode,
+    ) -> Result<OutputAccessStatus, String> {
+        if !mode.prefers_exclusive() {
+            self.release();
+            return Ok(OutputAccessStatus::Shared);
+        }
+
+        let Some(device_id) = coreaudio_output_device_id(device_name) else {
+            return self.unavailable_for_mode(
+                device_name,
+                mode,
+                "CoreAudio device id could not be resolved".to_string(),
+            );
+        };
+
+        let current_pid = std::process::id() as i32;
+        if self.acquired_by_guard && self.device_id == Some(device_id) {
+            match coreaudio::audio_unit::macos_helpers::get_hogging_pid(device_id) {
+                Ok(owner) if owner == current_pid => {
+                    return Ok(OutputAccessStatus::ExclusiveActive);
+                }
+                Ok(owner) => {
+                    log::warn!(
+                        "[Playback Thread] CoreAudio exclusive ownership for '{}' moved to pid {}; reacquiring",
+                        self.device_name,
+                        owner
+                    );
+                    self.device_id = None;
+                    self.device_name.clear();
+                    self.acquired_by_guard = false;
+                }
+                Err(e) => {
+                    return self.unavailable_for_mode(
+                        device_name,
+                        mode,
+                        format!("CoreAudio hog-mode owner query failed: {}", e),
+                    );
+                }
+            }
+        }
+
+        self.release();
+
+        let owner = match coreaudio::audio_unit::macos_helpers::get_hogging_pid(device_id) {
+            Ok(owner) => owner,
+            Err(e) => {
+                return self.unavailable_for_mode(
+                    device_name,
+                    mode,
+                    format!("CoreAudio hog-mode owner query failed: {}", e),
+                );
+            }
+        };
+
+        if owner == current_pid {
+            self.device_id = Some(device_id);
+            self.device_name = device_name.to_string();
+            self.acquired_by_guard = false;
+            return Ok(OutputAccessStatus::ExclusiveActive);
+        }
+
+        if owner != -1 {
+            return self.unavailable_for_mode(
+                device_name,
+                mode,
+                format!("device is already hogged by pid {}", owner),
+            );
+        }
+
+        let new_owner = match coreaudio::audio_unit::macos_helpers::toggle_hog_mode(device_id) {
+            Ok(owner) => owner,
+            Err(e) => {
+                return self.unavailable_for_mode(
+                    device_name,
+                    mode,
+                    format!("CoreAudio hog-mode acquisition failed: {}", e),
+                );
+            }
+        };
+
+        if new_owner == current_pid {
+            self.device_id = Some(device_id);
+            self.device_name = device_name.to_string();
+            self.acquired_by_guard = true;
+            Ok(OutputAccessStatus::ExclusiveActive)
+        } else {
+            self.unavailable_for_mode(
+                device_name,
+                mode,
+                format!("CoreAudio returned hog owner pid {}", new_owner),
+            )
+        }
+    }
+
+    fn unavailable_for_mode(
+        &mut self,
+        device_name: &str,
+        mode: OutputAccessMode,
+        reason: String,
+    ) -> Result<OutputAccessStatus, String> {
+        self.release();
+        if mode.requires_exclusive() {
+            Err(format!(
+                "Exclusive output is required, but CoreAudio exclusive mode could not be acquired for '{}': {}",
+                device_name, reason
+            ))
+        } else {
+            log::warn!(
+                "[Playback Thread] CoreAudio exclusive output unavailable for '{}': {}; falling back to shared output",
+                device_name,
+                reason
+            );
+            Ok(OutputAccessStatus::FallbackShared)
+        }
+    }
+
+    fn release(&mut self) {
+        if self.acquired_by_guard
+            && let Some(device_id) = self.device_id
+        {
+            let current_pid = std::process::id() as i32;
+            match coreaudio::audio_unit::macos_helpers::get_hogging_pid(device_id) {
+                Ok(owner) if owner == current_pid => {
+                    match coreaudio::audio_unit::macos_helpers::toggle_hog_mode(device_id) {
+                        Ok(-1) => {
+                            log::info!(
+                                "[Playback Thread] Released CoreAudio exclusive mode for '{}'",
+                                self.device_name
+                            );
+                        }
+                        Ok(owner) => {
+                            log::warn!(
+                                "[Playback Thread] CoreAudio exclusive release for '{}' left owner pid {}",
+                                self.device_name,
+                                owner
+                            );
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[Playback Thread] Failed to release CoreAudio exclusive mode for '{}': {}",
+                                self.device_name,
+                                e
+                            );
+                        }
+                    }
+                }
+                Ok(owner) => {
+                    log::debug!(
+                        "[Playback Thread] CoreAudio exclusive mode for '{}' is now owned by pid {}; not releasing",
+                        self.device_name,
+                        owner
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[Playback Thread] Failed to query CoreAudio exclusive owner during release for '{}': {}",
+                        self.device_name,
+                        e
+                    );
+                }
+            }
+        }
+
+        self.device_id = None;
+        self.device_name.clear();
+        self.acquired_by_guard = false;
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for CoreAudioExclusiveModeGuard {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
 struct RebuiltPlaybackStream {
     device: Device,
     device_name: String,
@@ -447,6 +640,8 @@ fn output_access_status_for_device(
         OutputAccessMode::ExclusivePreferred | OutputAccessMode::ExclusiveRequired => {
             if output_device.is_some_and(crate::devices::is_asio_device) {
                 OutputAccessStatus::ExclusiveActive
+            } else if cfg!(target_os = "macos") {
+                OutputAccessStatus::ExclusivePending
             } else if matches!(mode, OutputAccessMode::ExclusivePreferred) {
                 OutputAccessStatus::FallbackShared
             } else {
@@ -454,6 +649,24 @@ fn output_access_status_for_device(
             }
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn set_output_access_status(
+    event_tx: &Sender<ThreadEvent>,
+    status: &mut OutputAccessStatus,
+    new_status: OutputAccessStatus,
+    context: &str,
+) {
+    if *status == new_status {
+        return;
+    }
+    *status = new_status;
+    send_playback_event(
+        event_tx,
+        ThreadEvent::PlaybackOutputAccessChanged(new_status),
+        context,
+    );
 }
 
 fn initial_buffer_size(status: OutputAccessStatus, frame_size: usize) -> cpal::BufferSize {
@@ -487,7 +700,11 @@ fn run_playback_thread(
 
     // Initialize cpal host — ASIO host if "ASIO:" prefix, default otherwise
     let host = crate::devices::get_host_for_device(output_device.as_deref());
-    let output_access_status =
+    #[cfg(target_os = "macos")]
+    let backend_exclusive_active = output_device
+        .as_deref()
+        .is_some_and(crate::devices::is_asio_device);
+    let mut output_access_status =
         output_access_status_for_device(output_access, output_device.as_deref());
     if output_access.requires_exclusive() && output_access_status == OutputAccessStatus::Unsupported
     {
@@ -509,6 +726,20 @@ fn run_playback_thread(
     // Select output device. Keep the sanitized device name so recovery can
     // re-resolve the CoreAudio device if the current handle is invalidated.
     let mut device = select_playback_device(&host, output_device.as_deref(), allow_virtual_output)?;
+    let mut device_name = device
+        .description()
+        .map(|d| d.name().to_string())
+        .unwrap_or_else(|_| "Unknown".to_string());
+
+    #[cfg(target_os = "macos")]
+    let mut coreaudio_exclusive_mode = CoreAudioExclusiveModeGuard::inactive();
+
+    #[cfg(target_os = "macos")]
+    if output_access_status == OutputAccessStatus::ExclusivePending {
+        let activated =
+            coreaudio_exclusive_mode.activate_for_device(&device_name, output_access)?;
+        output_access_status = activated;
+    }
 
     // Track current channel count (can change dynamically)
     let mut channels = initial_channels;
@@ -610,11 +841,6 @@ fn run_playback_thread(
         "initial playback channels",
     );
 
-    // Get device name for logging
-    let mut device_name = device
-        .description()
-        .map(|d| d.name().to_string())
-        .unwrap_or_else(|_| "Unknown".to_string());
     let mut coreaudio_device_id = coreaudio_output_device_id(&device_name);
     send_playback_event(
         &event_tx,
@@ -1140,6 +1366,30 @@ fn run_playback_thread(
                     );
                 }
 
+                #[cfg(target_os = "macos")]
+                if output_access.prefers_exclusive() && !backend_exclusive_active {
+                    match coreaudio_exclusive_mode.activate_for_device(&device_name, output_access)
+                    {
+                        Ok(status) => {
+                            set_output_access_status(
+                                &event_tx,
+                                &mut output_access_status,
+                                status,
+                                "recovered playback output access",
+                            );
+                        }
+                        Err(e) => {
+                            log::error!("[Playback Thread] {}", e);
+                            send_playback_event(
+                                &event_tx,
+                                ThreadEvent::ProcessingError(e),
+                                "exclusive recovery failure",
+                            );
+                            break;
+                        }
+                    }
+                }
+
                 match rebuild_playback_stream(
                     &host,
                     RebuildPlaybackParams {
@@ -1148,7 +1398,7 @@ fn run_playback_thread(
                         sample_rate: config.sample_rate,
                         requested_channels: channels,
                         buffer_ms,
-                        buffer_size: config.buffer_size,
+                        buffer_size: initial_buffer_size(output_access_status, frame_size),
                         event_tx: event_tx.clone(),
                         old_state: &state,
                     },
@@ -2112,6 +2362,21 @@ mod tests {
     }
 
     #[test]
+    fn macos_exclusive_output_uses_coreaudio_hog_mode_guard() {
+        let source = include_str!("playback_thread.rs");
+
+        assert!(
+            source.contains("struct CoreAudioExclusiveModeGuard")
+                && source.contains("get_hogging_pid(device_id)")
+                && source.contains("toggle_hog_mode(device_id)")
+                && source.contains("impl Drop for CoreAudioExclusiveModeGuard")
+                && source.contains("activate_for_device(&device_name, output_access)")
+                && source.contains("PlaybackOutputAccessChanged(new_status)"),
+            "macOS exclusive output should acquire CoreAudio hog mode before stream build, publish access changes, and release ownership on drop"
+        );
+    }
+
+    #[test]
     fn playback_recovery_ignores_coreaudio_identity_change_while_callbacks_advance() {
         let mut last_stream_error_count = 0;
         let mut last_callback_count = 41;
@@ -2286,18 +2551,28 @@ mod tests {
     }
 
     #[test]
-    fn exclusive_preferred_reports_shared_fallback_for_cpal_devices() {
+    fn exclusive_preferred_reports_platform_initial_status_for_cpal_devices() {
+        #[cfg(target_os = "macos")]
+        let expected = OutputAccessStatus::ExclusivePending;
+        #[cfg(not(target_os = "macos"))]
+        let expected = OutputAccessStatus::FallbackShared;
+
         assert_eq!(
             output_access_status_for_device(OutputAccessMode::ExclusivePreferred, None),
-            OutputAccessStatus::FallbackShared
+            expected
         );
     }
 
     #[test]
-    fn exclusive_required_reports_unsupported_without_exclusive_backend() {
+    fn exclusive_required_reports_platform_initial_status_without_exclusive_backend() {
+        #[cfg(target_os = "macos")]
+        let expected = OutputAccessStatus::ExclusivePending;
+        #[cfg(not(target_os = "macos"))]
+        let expected = OutputAccessStatus::Unsupported;
+
         assert_eq!(
             output_access_status_for_device(OutputAccessMode::ExclusiveRequired, None),
-            OutputAccessStatus::Unsupported
+            expected
         );
     }
 
@@ -2320,6 +2595,10 @@ mod tests {
         );
         assert_eq!(
             initial_buffer_size(OutputAccessStatus::FallbackShared, 256),
+            cpal::BufferSize::Default
+        );
+        assert_eq!(
+            initial_buffer_size(OutputAccessStatus::ExclusivePending, 256),
             cpal::BufferSize::Default
         );
     }
