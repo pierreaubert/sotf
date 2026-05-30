@@ -1625,6 +1625,19 @@ impl App {
         Ok(())
     }
 
+    pub fn set_community_theme_json_draft(&mut self, json: impl Into<String>) {
+        self.ui_state.community_theme_json_draft = json.into();
+    }
+
+    pub fn apply_community_theme_json_draft(&mut self) -> Result<(), String> {
+        let json = self.ui_state.community_theme_json_draft.clone();
+        let trimmed = json.trim();
+        if trimmed.is_empty() {
+            return Err("community theme JSON is empty".to_string());
+        }
+        self.set_community_theme_from_json(trimmed)
+    }
+
     /// Set the light/dark mode policy and apply its current effective theme.
     pub fn set_theme_mode_preference(&mut self, preference: ThemeModePreference) {
         self.set_theme_mode_preference_with_system(preference, ThemeAppearance::Dark);

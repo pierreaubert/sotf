@@ -10,8 +10,8 @@ use gpui_themes::{
     AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeSchedule, TimeOfDay,
 };
 use gpui_ui_kit::{
-    Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, NumberInput,
-    NumberInputSize, Toggle, ToggleSize, ToggleStyle,
+    Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, Input, InputSize,
+    NumberInput, NumberInputSize, Toggle, ToggleSize, ToggleStyle,
 };
 
 #[derive(Clone, Copy)]
@@ -242,6 +242,7 @@ impl PlayerView {
         let accessibility_palette = state.app.ui_state.accessibility_palette;
         let theme_accent_preference = state.app.ui_state.theme_accent_preference;
         let community_theme_id = state.app.ui_state.community_theme_id;
+        let community_theme_json_draft = state.app.ui_state.community_theme_json_draft.clone();
         let reduce_motion = state.app.ui_state.reduce_motion;
         let theme = state.app.ui_state.theme.clone();
         let base_theme = crate::theme::Theme::from_id(theme_id);
@@ -446,7 +447,89 @@ impl PlayerView {
                         }
 
                         container
-                    }),
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(d.gap)
+                            .child(
+                                div()
+                                    .text_size(d.text_xs)
+                                    .text_color(theme.text_secondary)
+                                    .child("Import JSON"),
+                            )
+                            .child(
+                                Input::new("community-theme-json-input")
+                                    .value(SharedString::from(community_theme_json_draft))
+                                    .placeholder(SharedString::from(
+                                        "{\"manifest\": {...}, \"theme\": {...}}",
+                                    ))
+                                    .size(InputSize::Sm)
+                                    .on_text_change({
+                                        let state_entity = self.state.clone();
+                                        move |value, _window, cx| {
+                                            state_entity.update(cx, |state, _cx| {
+                                                state.app.set_community_theme_json_draft(value);
+                                            });
+                                        }
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap(d.grid)
+                                    .child(
+                                        Button::new("community-theme-import-apply", "Apply JSON")
+                                            .variant(ButtonVariant::Primary)
+                                            .size(ButtonSize::Xs)
+                                            .theme(theme.to_button_theme())
+                                            .build()
+                                            .on_click(cx.listener(
+                                                move |view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| match state
+                                                        .app
+                                                        .apply_community_theme_json_draft()
+                                                    {
+                                                        Ok(()) => {
+                                                            state.app.ui_state.toast_message = Some(
+                                                                crate::app::ToastMessage::success(
+                                                                    "Imported community theme"
+                                                                        .to_string(),
+                                                                ),
+                                                            );
+                                                        }
+                                                        Err(error) => {
+                                                            state.app.ui_state.toast_message = Some(
+                                                                crate::app::ToastMessage::error(
+                                                                    error,
+                                                                ),
+                                                            );
+                                                        }
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        Button::new("community-theme-import-clear", "Clear")
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Xs)
+                                            .theme(theme.to_button_theme())
+                                            .build()
+                                            .on_click(cx.listener(
+                                                move |view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state
+                                                            .app
+                                                            .set_community_theme_json_draft("");
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    ),
+                            ),
+                    ),
             )
             .child(
                 div()

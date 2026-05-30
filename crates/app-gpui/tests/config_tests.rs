@@ -268,6 +268,7 @@ fn test_theme_mode_and_motion_state_defaults() {
     assert_eq!(state.accessibility_palette, AccessibilityPalette::Standard);
     assert_eq!(state.theme_accent_preference, ThemeAccentPreference::Theme);
     assert_eq!(state.community_theme_id, None);
+    assert!(state.community_theme_json_draft.is_empty());
     assert!(!state.reduce_motion);
 }
 
@@ -336,6 +337,27 @@ fn test_app_community_theme_selection_updates_theme_state() {
     app.set_theme(ThemeId::Light);
     assert_eq!(app.ui_state.community_theme_id, None);
     assert_eq!(app.ui_state.theme_id, ThemeId::Light);
+}
+
+#[test]
+fn test_app_community_theme_json_draft_import_flow() {
+    use sotf_audio_player_gpui::{App, theme::CommunityThemeId};
+
+    let mut app = App::new();
+    let json = CommunityThemeId::Nord.to_community_json().unwrap();
+    app.set_community_theme_json_draft(json.clone());
+    assert_eq!(app.ui_state.community_theme_json_draft, json);
+    app.apply_community_theme_json_draft().unwrap();
+    assert_eq!(
+        app.ui_state.community_theme_id,
+        Some(CommunityThemeId::Nord)
+    );
+
+    app.set_community_theme_json_draft("");
+    assert!(app.apply_community_theme_json_draft().is_err());
+
+    app.set_community_theme_json_draft("{\"manifest\":{},\"theme\":{}}");
+    assert!(app.apply_community_theme_json_draft().is_err());
 }
 
 #[test]
