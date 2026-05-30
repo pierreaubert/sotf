@@ -10,6 +10,7 @@
 
 use gpui_builder::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode, solve,
+    validate_layout,
 };
 
 static RACK_TIERS: &[DisplayTier<'_>] = &[
@@ -131,6 +132,8 @@ fn main() {
         children: &root_children,
         divider_size: 0.0,
     });
+    let validation = validate_layout(&root);
+    assert!(validation.is_clean(), "{validation}");
 
     // --- Scenario 1: Wide desktop window ---
     println!("=== Wide desktop (1200x800) ===");

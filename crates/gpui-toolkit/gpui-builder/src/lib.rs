@@ -53,12 +53,16 @@ pub mod plugin_chassis;
 pub mod solved;
 pub mod solver;
 pub mod types;
+pub mod validation;
 
 // Re-exports for convenience
 pub use solved::SolvedNode;
 pub use solver::solve;
 pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
+};
+pub use validation::{
+    LayoutIssue, LayoutIssueKind, LayoutIssueSeverity, LayoutValidationReport, validate_layout,
 };
 
 // gpui-pretext re-exports for text-measured sizing

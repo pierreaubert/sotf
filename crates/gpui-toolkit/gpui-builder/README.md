@@ -54,6 +54,21 @@ let sidebar = solved.find("sidebar").unwrap();
 println!("sidebar: {}x{} visible={}", sidebar.width, sidebar.height, sidebar.visible);
 ```
 
+## Layout Validation
+
+Run validation in examples, tests, or debug tooling before solving a layout tree:
+
+```rust
+use gpui_builder::validate_layout;
+
+let report = validate_layout(&root);
+assert!(report.is_clean(), "{report}");
+```
+
+Validation reports hard errors for ids and numeric constraints that can make layout
+behavior ambiguous, and warnings for quality issues such as unlabeled collapsible
+slots, duplicate display tiers, and empty containers.
+
 ## Sizing Modes
 
 | Mode | Constructor | Behavior |
