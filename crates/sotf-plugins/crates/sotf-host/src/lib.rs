@@ -83,8 +83,8 @@ pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams
 pub use external_plugin::{
     EXTERNAL_PLUGIN_PRESET_ID, ExternalHostingBackend, ExternalPlugin, ExternalPluginHostingPlan,
     ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor, PluginFormat,
-    PluginFormatCapability, PluginScanStatus, PluginScanStatusMode, PluginScanner,
-    plan_external_plugin_hosting, plugin_format_capabilities,
+    PluginFormatCapability, PluginScanStatus, PluginScanStatusMode, PluginScanSummary,
+    PluginScanner, plan_external_plugin_hosting, plugin_format_capabilities,
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use external_plugin_host::{ExternalPluginHostBlockStatus, ExternalPluginHostProxy};

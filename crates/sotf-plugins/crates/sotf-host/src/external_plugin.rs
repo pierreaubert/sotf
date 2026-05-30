@@ -97,6 +97,25 @@ pub enum PluginScanStatus {
     UnsupportedByBuild,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginScanSummary {
+    pub total: usize,
+    pub discovered: usize,
+    pub loadable: usize,
+    pub unsupported_by_build: usize,
+}
+
+impl PluginScanSummary {
+    pub fn record(&mut self, status: PluginScanStatus) {
+        self.total += 1;
+        match status {
+            PluginScanStatus::Discovered => self.discovered += 1,
+            PluginScanStatus::Loadable => self.loadable += 1,
+            PluginScanStatus::UnsupportedByBuild => self.unsupported_by_build += 1,
+        }
+    }
+}
+
 pub const EXTERNAL_PLUGIN_PRESET_ID: &str = "external-plugin";
 
 /// Build-time hosting capability for one external plugin format.
@@ -444,6 +463,14 @@ impl PluginScanner {
     /// List all discovered plugins.
     pub fn list(&self) -> &[PluginDescriptor] {
         &self.plugins
+    }
+
+    pub fn summary(&self) -> PluginScanSummary {
+        let mut summary = PluginScanSummary::default();
+        for plugin in &self.plugins {
+            summary.record(plugin.scan_status);
+        }
+        summary
     }
 }
 
@@ -1197,6 +1224,47 @@ mod tests {
 
         fs::remove_file(&plugin_file).unwrap();
         fs::remove_dir_all(&root).unwrap_or_else(|_| ());
+    }
+
+    #[test]
+    fn test_external_plugin_scan_summary_counts_statuses() {
+        let descriptor = |id: &str, status: PluginScanStatus| PluginDescriptor {
+            id: id.into(),
+            name: id.into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: PathBuf::from(format!("/tmp/{id}.clap")),
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec![],
+            scan_status: status,
+        };
+        let mut scanner = PluginScanner::new();
+        scanner.plugins.push(descriptor(
+            "discovered.plugin",
+            PluginScanStatus::Discovered,
+        ));
+        scanner
+            .plugins
+            .push(descriptor("loadable.plugin", PluginScanStatus::Loadable));
+        scanner.plugins.push(descriptor(
+            "unsupported.plugin",
+            PluginScanStatus::UnsupportedByBuild,
+        ));
+
+        let summary = scanner.summary();
+
+        assert_eq!(
+            summary,
+            PluginScanSummary {
+                total: 3,
+                discovered: 1,
+                loadable: 1,
+                unsupported_by_build: 1,
+            }
+        );
     }
 
     #[test]
