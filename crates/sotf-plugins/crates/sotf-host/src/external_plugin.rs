@@ -101,6 +101,9 @@ pub struct PluginFormatCapability {
     pub format: PluginFormat,
     pub feature: String,
     pub scan_status: PluginScanStatus,
+    pub backend: ExternalHostingBackend,
+    pub native_backend_available: bool,
+    pub reason: Option<String>,
 }
 
 /// How the scanner should annotate discovered plugins.
@@ -443,17 +446,38 @@ impl PluginScanner {
 /// Build-time format hosting capability matrix.
 pub fn plugin_format_capabilities() -> Vec<PluginFormatCapability> {
     [
-        (PluginFormat::Clap, "external-plugin-clap"),
-        (PluginFormat::Vst3, "external-plugin-vst3"),
-        (PluginFormat::AudioUnit, "external-plugin-au"),
+        PluginFormat::Clap,
+        PluginFormat::Vst3,
+        PluginFormat::AudioUnit,
     ]
     .into_iter()
-    .map(|(format, feature)| PluginFormatCapability {
-        format,
-        feature: feature.to_string(),
-        scan_status: format.build_scan_status(),
-    })
+    .map(plugin_format_capability)
     .collect()
+}
+
+fn plugin_format_capability(format: PluginFormat) -> PluginFormatCapability {
+    let feature = format_feature(format).to_string();
+    let scan_status = format.build_scan_status();
+    let backend = select_hosting_backend(format);
+    let native_backend_available = backend != ExternalHostingBackend::Passthrough;
+    let reason = if native_backend_available {
+        None
+    } else {
+        Some(format!(
+            "{} native hosting feature '{}' is disabled; discovered plugins will be reported as unsupported-by-build",
+            format_label(format),
+            feature
+        ))
+    };
+
+    PluginFormatCapability {
+        format,
+        feature,
+        scan_status,
+        backend,
+        native_backend_available,
+        reason,
+    }
 }
 
 impl PluginDescriptor {
@@ -1114,6 +1138,21 @@ mod tests {
             .unwrap();
         assert_eq!(clap.feature, "external-plugin-clap");
         assert_eq!(clap.scan_status, PluginFormat::Clap.build_scan_status());
+        assert_eq!(clap.backend, select_hosting_backend(PluginFormat::Clap));
+        assert_eq!(
+            clap.native_backend_available,
+            clap.backend != ExternalHostingBackend::Passthrough
+        );
+        if clap.native_backend_available {
+            assert_eq!(clap.reason, None);
+        } else {
+            assert!(
+                clap.reason
+                    .as_deref()
+                    .unwrap()
+                    .contains("unsupported-by-build")
+            );
+        }
     }
 
     #[test]
