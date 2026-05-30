@@ -25,7 +25,7 @@ use crate::{
     StereoImagerPluginParams, TransientShaperPlugin, TransientShaperPluginParams, UpmixerPlugin,
     UpmixerPluginParams, XtcPlugin, XtcPluginParams,
 };
-use crate::{ExternalPlugin, PluginDescriptor, PluginFormat};
+use crate::{ExternalPlugin, PluginDescriptor, PluginFormat, PluginScanStatus};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::{
     ExternalPluginSandboxPolicy, ExternalPluginSandboxTiming, ExternalPluginTrust,
@@ -740,6 +740,8 @@ struct ExternalPluginDescriptorSeed {
     categories: Option<Vec<String>>,
     #[serde(default)]
     format: Option<String>,
+    #[serde(default)]
+    scan_status: Option<PluginScanStatus>,
 }
 
 fn parse_external_plugin_descriptor(
@@ -763,6 +765,7 @@ fn parse_external_plugin_descriptor(
             is_instrument: None,
             categories: None,
             format: None,
+            scan_status: None,
         }
     } else {
         serde_json::from_value(parameters.clone())
@@ -796,6 +799,9 @@ fn parse_external_plugin_descriptor(
         audio_outputs: audio_outputs.max(1),
         is_instrument: seed.is_instrument.unwrap_or(false),
         categories,
+        scan_status: seed
+            .scan_status
+            .unwrap_or_else(|| format.build_scan_status()),
     })
 }
 
@@ -991,6 +997,7 @@ mod tests {
             audio_outputs: 2,
             is_instrument: false,
             categories: vec!["testing".into()],
+            scan_status: PluginScanStatus::Discovered,
         };
 
         let plugin = create_plugin(

@@ -22,7 +22,9 @@ pub use sotf_host::error;
 pub use sotf_host::layout_solver;
 pub use sotf_host::param_registry;
 pub use sotf_host::{
-    ExternalHostingBackend, ExternalPlugin, PluginDescriptor, PluginFormat, PluginScanner,
+    ExternalHostingBackend, ExternalPlugin, ExternalPluginSandboxMode, ExternalPluginState,
+    PluginDescriptor, PluginFormat, PluginFormatCapability, PluginScanStatus, PluginScanner,
+    plugin_format_capabilities,
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use sotf_host::{

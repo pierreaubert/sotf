@@ -6,7 +6,7 @@
 mod common;
 
 use sotf_audio::engine::{
-    AudioFrame, PlaybackCommand, PlaybackThread, ProcessingMessage, ThreadEvent,
+    AudioFrame, OutputAccessMode, PlaybackCommand, PlaybackThread, ProcessingMessage, ThreadEvent,
 };
 use std::sync::mpsc::{channel, sync_channel};
 use std::time::Duration;
@@ -28,6 +28,7 @@ fn test_playback_thread_creation() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     );
 
     assert!(
@@ -53,6 +54,7 @@ fn test_playback_send_commands() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -87,6 +89,7 @@ fn test_playback_volume_commands() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -115,6 +118,7 @@ fn test_playback_shutdown() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -143,6 +147,7 @@ fn test_playback_receives_frames() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -188,6 +193,7 @@ fn test_playback_detects_underrun() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -233,6 +239,7 @@ fn test_playback_handles_eos() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -265,6 +272,7 @@ fn test_playback_handles_flush() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -304,6 +312,7 @@ fn test_playback_channel_update() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -332,6 +341,7 @@ fn test_playback_rapid_volume_changes() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -361,6 +371,7 @@ fn test_playback_rapid_mute_toggle() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -391,6 +402,7 @@ fn test_playback_mixed_commands() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -436,6 +448,7 @@ fn test_playback_different_sample_rates() {
             common::blackhole_device_option(),
             sync_channel::<Vec<f32>>(64).0,
             true,
+            OutputAccessMode::Shared,
         );
 
         match result {
@@ -480,6 +493,7 @@ fn test_playback_different_channel_counts() {
             common::blackhole_device_option(),
             sync_channel::<Vec<f32>>(64).0,
             true,
+            OutputAccessMode::Shared,
         );
 
         match result {
@@ -518,6 +532,7 @@ fn test_playback_drop_cleanup() {
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
         true,
+        OutputAccessMode::Shared,
     )
     .expect("Failed to create playback thread with BlackHole");
 

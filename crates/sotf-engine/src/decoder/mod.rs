@@ -18,7 +18,7 @@ pub use core::{
 };
 pub use dsd::{DffPcmDecoder, DsfPcmDecoder};
 pub use error::{AudioDecoderError, AudioDecoderResult};
-pub use formats::AudioFormat;
+pub use formats::{AudioFormat, DsdDecodeCapability};
 pub use pcm_reader::PcmDecoder;
 pub use source::{AudioSource, ServiceId};
 pub use stream::{AudioStream, StreamConfig, StreamEvent, StreamPosition, StreamState};

@@ -739,6 +739,23 @@ mod tests {
     }
 
     #[test]
+    fn dsf_pcm_decoder_clears_reused_destination_at_eof() {
+        let payload = vec![0xff; 8];
+        let bytes = minimal_dsf(1, 64, 8, &payload);
+        let mut decoder = DsfPcmDecoder::from_bytes(bytes).unwrap();
+        let mut dest = DecodedAudio::new(decoder.spec().clone());
+
+        assert_eq!(decoder.decode_into(&mut dest).unwrap(), 1);
+        dest.samples.extend_from_slice(&[0.25, -0.25]);
+        dest.frame_position = 99;
+
+        assert_eq!(decoder.decode_into(&mut dest).unwrap(), 0);
+        assert!(dest.samples.is_empty());
+        assert_eq!(dest.spec, *decoder.spec());
+        assert_eq!(dest.frame_position, decoder.position());
+    }
+
+    #[test]
     fn dff_pcm_decoder_converts_uncompressed_interleaved_dsd_bytes() {
         let mut payload = Vec::new();
         for _ in 0..8 {
@@ -756,6 +773,22 @@ mod tests {
         assert_eq!(dest.spec.channels, 2);
         assert_eq!(dest.samples, vec![1.0, -1.0]);
         assert_eq!(decoder.format(), AudioFormat::DsdDff);
+    }
+
+    #[test]
+    fn dff_pcm_decoder_clears_reused_destination_at_eof() {
+        let bytes = minimal_dff(1, &[0xff; 8]);
+        let mut decoder = DffPcmDecoder::from_bytes(bytes).unwrap();
+        let mut dest = DecodedAudio::new(decoder.spec().clone());
+
+        assert_eq!(decoder.decode_into(&mut dest).unwrap(), 1);
+        dest.samples.extend_from_slice(&[0.25, -0.25]);
+        dest.frame_position = 99;
+
+        assert_eq!(decoder.decode_into(&mut dest).unwrap(), 0);
+        assert!(dest.samples.is_empty());
+        assert_eq!(dest.spec, *decoder.spec());
+        assert_eq!(dest.frame_position, decoder.position());
     }
 
     #[test]

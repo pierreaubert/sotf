@@ -7,7 +7,6 @@
 
 use crate::message::MidiMessage;
 use crate::sequencer::{MidiClip, MidiEvent};
-use std::io::Read;
 use std::path::Path;
 
 /// Import a Standard MIDI File into a Vec of MidiClips (one per track).
@@ -18,8 +17,7 @@ use std::path::Path;
 ///
 /// Returns one MidiClip per MIDI track in the file.
 pub fn import_midi_file(path: &Path, sample_rate: u32) -> Result<Vec<MidiClip>, String> {
-    let data =
-        std::fs::read(path).map_err(|e| format!("Failed to read MIDI file: {e}"))?;
+    let data = std::fs::read(path).map_err(|e| format!("Failed to read MIDI file: {e}"))?;
     parse_smf(&data, sample_rate)
 }
 
@@ -29,21 +27,33 @@ pub fn parse_smf(data: &[u8], sample_rate: u32) -> Result<Vec<MidiClip>, String>
 
     // Parse header chunk
     let header = parse_header(data, &mut pos)?;
+    if header.format > 1 {
+        return Err(format!(
+            "SMF format {} is not supported (only Type 0 and Type 1)",
+            header.format
+        ));
+    }
     let ticks_per_beat = header.division as f64;
 
-    let mut clips = Vec::new();
+    let mut tracks = Vec::new();
 
     // Parse track chunks
-    for _ in 0..header.num_tracks {
+    for track_index in 0..header.num_tracks {
         if pos >= data.len() {
-            break;
+            return Err(format!(
+                "Expected track {} of {}, but file ended early",
+                track_index + 1,
+                header.num_tracks
+            ));
         }
-        let track_events = parse_track(data, &mut pos)?;
-
-        // Convert tick-based events to sample-based MidiClip
-        let clip = ticks_to_samples(&track_events, ticks_per_beat, sample_rate);
-        clips.push(clip);
+        tracks.push(parse_track(data, &mut pos)?);
     }
+
+    let tempo_map = TempoMap::from_tracks(&tracks);
+    let clips = tracks
+        .iter()
+        .map(|track| ticks_to_samples(&track.events, &tempo_map, ticks_per_beat, sample_rate))
+        .collect();
 
     Ok(clips)
 }
@@ -54,9 +64,86 @@ struct SmfHeader {
     division: u16,
 }
 
+#[derive(Debug, Clone)]
 struct TrackEvent {
-    tick: u64,        // Absolute tick position
+    tick: u64, // Absolute tick position
     message: MidiMessage,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TempoEvent {
+    tick: u64,
+    microseconds_per_beat: u32,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedTrack {
+    events: Vec<TrackEvent>,
+    tempos: Vec<TempoEvent>,
+}
+
+#[derive(Debug, Clone)]
+struct TempoMap {
+    events: Vec<TempoEvent>,
+}
+
+impl TempoMap {
+    const DEFAULT_US_PER_BEAT: u32 = 500_000;
+
+    fn from_tracks(tracks: &[ParsedTrack]) -> Self {
+        let mut events = vec![TempoEvent {
+            tick: 0,
+            microseconds_per_beat: Self::DEFAULT_US_PER_BEAT,
+        }];
+        events.extend(tracks.iter().flat_map(|track| track.tempos.iter().copied()));
+        events.sort_by_key(|event| event.tick);
+
+        let mut deduped: Vec<TempoEvent> = Vec::with_capacity(events.len());
+        for event in events {
+            if let Some(last) = deduped.last_mut()
+                && last.tick == event.tick
+            {
+                *last = event;
+                continue;
+            }
+            deduped.push(event);
+        }
+
+        Self { events: deduped }
+    }
+
+    fn samples_for_tick(&self, tick: u64, ticks_per_beat: f64, sample_rate: u32) -> u64 {
+        let mut sample_position = 0.0;
+        let mut last_tick = 0u64;
+        let mut tempo_us_per_beat = Self::DEFAULT_US_PER_BEAT as f64;
+
+        for event in &self.events {
+            if event.tick > tick {
+                break;
+            }
+            if event.tick > last_tick {
+                sample_position += ticks_to_samples_f64(
+                    event.tick - last_tick,
+                    tempo_us_per_beat,
+                    ticks_per_beat,
+                    sample_rate,
+                );
+            }
+            last_tick = event.tick;
+            tempo_us_per_beat = event.microseconds_per_beat as f64;
+        }
+
+        if tick > last_tick {
+            sample_position += ticks_to_samples_f64(
+                tick - last_tick,
+                tempo_us_per_beat,
+                ticks_per_beat,
+                sample_rate,
+            );
+        }
+
+        sample_position as u64
+    }
 }
 
 fn parse_header(data: &[u8], pos: &mut usize) -> Result<SmfHeader, String> {
@@ -86,7 +173,7 @@ fn parse_header(data: &[u8], pos: &mut usize) -> Result<SmfHeader, String> {
     })
 }
 
-fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> {
+fn parse_track(data: &[u8], pos: &mut usize) -> Result<ParsedTrack, String> {
     if data.len() < *pos + 8 {
         return Err("File too short for track chunk".into());
     }
@@ -98,19 +185,35 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
     *pos += 4;
 
     let chunk_len = read_u32_be(data, pos) as usize;
-    let track_end = *pos + chunk_len;
+    let track_end = (*pos).checked_add(chunk_len).ok_or_else(|| {
+        format!(
+            "Track chunk length {} overflows parser position {}",
+            chunk_len, *pos
+        )
+    })?;
+    if track_end > data.len() {
+        return Err(format!(
+            "Track chunk extends past end of file: end {} > file length {}",
+            track_end,
+            data.len()
+        ));
+    }
 
     let mut events = Vec::new();
+    let mut tempos = Vec::new();
     let mut abs_tick: u64 = 0;
     let mut running_status: u8 = 0;
 
-    while *pos < track_end && *pos < data.len() {
+    while *pos < track_end {
         // Read variable-length delta time
-        let delta = read_vlq(data, pos)?;
+        let delta = read_vlq_in_track(data, pos, track_end, "delta-time")?;
         abs_tick += delta;
 
-        if *pos >= track_end || *pos >= data.len() {
-            break;
+        if *pos >= track_end {
+            return Err(format!(
+                "Track ended after delta-time at tick {} without an event",
+                abs_tick
+            ));
         }
 
         let status_byte = data[*pos];
@@ -119,16 +222,25 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
         if status_byte == 0xFF {
             running_status = 0;
             *pos += 1; // skip 0xFF
-            if *pos >= track_end || *pos >= data.len() {
-                break;
-            }
-            let _meta_type = data[*pos];
+            ensure_available(*pos, 1, track_end, "meta event type")?;
+            let meta_type = data[*pos];
             *pos += 1;
-            if *pos >= track_end {
-                break;
+            let length = read_vlq_in_track(data, pos, track_end, "meta event length")? as usize;
+            ensure_available(*pos, length, track_end, "meta event payload")?;
+            if meta_type == 0x51 {
+                if length != 3 {
+                    return Err(format!(
+                        "Set Tempo meta event at tick {} has length {}, expected 3",
+                        abs_tick, length
+                    ));
+                }
+                let tempo = read_tempo_us_per_beat(data, *pos)?;
+                tempos.push(TempoEvent {
+                    tick: abs_tick,
+                    microseconds_per_beat: tempo,
+                });
             }
-            let length = read_vlq(data, pos)? as usize;
-            *pos = (*pos + length).min(track_end);
+            *pos += length;
             continue;
         }
 
@@ -136,11 +248,9 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
         if status_byte == 0xF0 || status_byte == 0xF7 {
             running_status = 0;
             *pos += 1;
-            if *pos >= track_end {
-                break;
-            }
-            let length = read_vlq(data, pos)? as usize;
-            *pos = (*pos + length).min(track_end);
+            let length = read_vlq_in_track(data, pos, track_end, "SysEx event length")? as usize;
+            ensure_available(*pos, length, track_end, "SysEx event payload")?;
+            *pos += length;
             continue;
         }
 
@@ -167,8 +277,9 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
         let message = match msg_type {
             0x80 => {
                 // Note Off
-                let note = data.get(data_start).copied().unwrap_or(0) & 0x7F;
-                let velocity = data.get(data_start + 1).copied().unwrap_or(0) & 0x7F;
+                let bytes = read_channel_data(data, data_start, track_end, 2, "Note Off")?;
+                let note = bytes[0] & 0x7F;
+                let velocity = bytes[1] & 0x7F;
                 *pos = data_start + 2;
                 MidiMessage::NoteOff {
                     channel,
@@ -178,8 +289,9 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
             }
             0x90 => {
                 // Note On
-                let note = data.get(data_start).copied().unwrap_or(0) & 0x7F;
-                let velocity = data.get(data_start + 1).copied().unwrap_or(0) & 0x7F;
+                let bytes = read_channel_data(data, data_start, track_end, 2, "Note On")?;
+                let note = bytes[0] & 0x7F;
+                let velocity = bytes[1] & 0x7F;
                 *pos = data_start + 2;
                 if velocity == 0 {
                     MidiMessage::NoteOff {
@@ -197,8 +309,10 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
             }
             0xA0 => {
                 // Polyphonic Aftertouch
-                let note = data.get(data_start).copied().unwrap_or(0) & 0x7F;
-                let pressure = data.get(data_start + 1).copied().unwrap_or(0) & 0x7F;
+                let bytes =
+                    read_channel_data(data, data_start, track_end, 2, "Polyphonic Aftertouch")?;
+                let note = bytes[0] & 0x7F;
+                let pressure = bytes[1] & 0x7F;
                 *pos = data_start + 2;
                 MidiMessage::PolyphonicAftertouch {
                     channel,
@@ -208,8 +322,9 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
             }
             0xB0 => {
                 // Control Change
-                let controller = data.get(data_start).copied().unwrap_or(0) & 0x7F;
-                let value = data.get(data_start + 1).copied().unwrap_or(0) & 0x7F;
+                let bytes = read_channel_data(data, data_start, track_end, 2, "Control Change")?;
+                let controller = bytes[0] & 0x7F;
+                let value = bytes[1] & 0x7F;
                 *pos = data_start + 2;
                 MidiMessage::ControlChange {
                     channel,
@@ -219,20 +334,24 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
             }
             0xC0 => {
                 // Program Change (1 data byte)
-                let program = data.get(data_start).copied().unwrap_or(0) & 0x7F;
+                let bytes = read_channel_data(data, data_start, track_end, 1, "Program Change")?;
+                let program = bytes[0] & 0x7F;
                 *pos = data_start + 1;
                 MidiMessage::ProgramChange { channel, program }
             }
             0xD0 => {
                 // Channel Aftertouch (1 data byte)
-                let pressure = data.get(data_start).copied().unwrap_or(0) & 0x7F;
+                let bytes =
+                    read_channel_data(data, data_start, track_end, 1, "Channel Aftertouch")?;
+                let pressure = bytes[0] & 0x7F;
                 *pos = data_start + 1;
                 MidiMessage::ChannelAftertouch { channel, pressure }
             }
             0xE0 => {
                 // Pitch Bend
-                let lsb = data.get(data_start).copied().unwrap_or(0) as u16;
-                let msb = data.get(data_start + 1).copied().unwrap_or(0) as u16;
+                let bytes = read_channel_data(data, data_start, track_end, 2, "Pitch Bend")?;
+                let lsb = bytes[0] as u16;
+                let msb = bytes[1] as u16;
                 *pos = data_start + 2;
                 MidiMessage::PitchBend {
                     channel,
@@ -240,9 +359,10 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
                 }
             }
             _ => {
-                // Unknown — skip 2 bytes
-                *pos = data_start + 2;
-                continue;
+                return Err(format!(
+                    "Unsupported MIDI status 0x{:02X} at tick {}",
+                    status, abs_tick
+                ));
             }
         };
 
@@ -255,24 +375,24 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<Vec<TrackEvent>, String> 
     // Ensure we're at the end of the track chunk
     *pos = track_end;
 
-    Ok(events)
+    Ok(ParsedTrack { events, tempos })
 }
 
 /// Convert tick-based events to sample-based MidiClip.
-/// Assumes 120 BPM default (standard for files without tempo events).
-fn ticks_to_samples(events: &[TrackEvent], ticks_per_beat: f64, sample_rate: u32) -> MidiClip {
-    // Default tempo: 120 BPM = 500000 microseconds per beat
-    let tempo_us_per_beat = 500_000.0;
-    let seconds_per_tick = (tempo_us_per_beat / 1_000_000.0) / ticks_per_beat;
-    let samples_per_tick = seconds_per_tick * sample_rate as f64;
-
+/// Uses the SMF tempo map, falling back to the standard 120 BPM default.
+fn ticks_to_samples(
+    events: &[TrackEvent],
+    tempo_map: &TempoMap,
+    ticks_per_beat: f64,
+    sample_rate: u32,
+) -> MidiClip {
     let duration_ticks = events.last().map_or(0, |e| e.tick) + 1;
-    let duration_samples = (duration_ticks as f64 * samples_per_tick) as u64;
+    let duration_samples = tempo_map.samples_for_tick(duration_ticks, ticks_per_beat, sample_rate);
 
     let mut clip = MidiClip::new(duration_samples.max(1));
 
     for event in events {
-        let time_samples = (event.tick as f64 * samples_per_tick) as u64;
+        let time_samples = tempo_map.samples_for_tick(event.tick, ticks_per_beat, sample_rate);
         clip.add_event(MidiEvent {
             time_samples,
             message: event.message.clone(),
@@ -281,6 +401,77 @@ fn ticks_to_samples(events: &[TrackEvent], ticks_per_beat: f64, sample_rate: u32
 
     clip.sort();
     clip
+}
+
+fn ticks_to_samples_f64(
+    ticks: u64,
+    tempo_us_per_beat: f64,
+    ticks_per_beat: f64,
+    sample_rate: u32,
+) -> f64 {
+    let seconds_per_tick = (tempo_us_per_beat / 1_000_000.0) / ticks_per_beat;
+    ticks as f64 * seconds_per_tick * sample_rate as f64
+}
+
+fn ensure_available(
+    start: usize,
+    len: usize,
+    track_end: usize,
+    context: &str,
+) -> Result<(), String> {
+    let end = start
+        .checked_add(len)
+        .ok_or_else(|| format!("{context} length overflow"))?;
+    if end > track_end {
+        return Err(format!(
+            "Truncated {context}: need bytes [{}..{}), track ends at {}",
+            start, end, track_end
+        ));
+    }
+    Ok(())
+}
+
+fn read_channel_data<'a>(
+    data: &'a [u8],
+    start: usize,
+    track_end: usize,
+    len: usize,
+    message_name: &str,
+) -> Result<&'a [u8], String> {
+    ensure_available(start, len, track_end, message_name)?;
+    Ok(&data[start..start + len])
+}
+
+fn read_tempo_us_per_beat(data: &[u8], pos: usize) -> Result<u32, String> {
+    let bytes = data
+        .get(pos..pos + 3)
+        .ok_or_else(|| "Truncated Set Tempo meta event".to_string())?;
+    let tempo = ((bytes[0] as u32) << 16) | ((bytes[1] as u32) << 8) | bytes[2] as u32;
+    if tempo == 0 {
+        return Err("Set Tempo meta event has zero microseconds per beat".to_string());
+    }
+    Ok(tempo)
+}
+
+fn read_vlq_in_track(
+    data: &[u8],
+    pos: &mut usize,
+    track_end: usize,
+    context: &str,
+) -> Result<u64, String> {
+    let mut value: u64 = 0;
+    for _ in 0..4 {
+        if *pos >= track_end {
+            return Err(format!("Truncated {context} VLQ at track boundary"));
+        }
+        let byte = data[*pos];
+        *pos += 1;
+        value = (value << 7) | (byte & 0x7F) as u64;
+        if byte & 0x80 == 0 {
+            return Ok(value);
+        }
+    }
+    Err(format!("{context} VLQ too long"))
 }
 
 fn read_u16_be(data: &[u8], pos: &mut usize) -> u16 {
@@ -298,6 +489,7 @@ fn read_u32_be(data: &[u8], pos: &mut usize) -> u32 {
     val
 }
 
+#[cfg(test)]
 fn read_vlq(data: &[u8], pos: &mut usize) -> Result<u64, String> {
     let mut value: u64 = 0;
     for _ in 0..4 {
@@ -370,7 +562,11 @@ mod tests {
         assert_eq!(clip.events[0].time_samples, 0);
         assert!(matches!(
             clip.events[0].message,
-            MidiMessage::NoteOn { note: 60, velocity: 100, .. }
+            MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100,
+                ..
+            }
         ));
 
         // Second event: Note Off at tick 480 (1 beat at 120 BPM = 0.5 sec = 24000 samples)
@@ -379,6 +575,114 @@ mod tests {
             clip.events[1].message,
             MidiMessage::NoteOff { note: 60, .. }
         ));
+    }
+
+    fn tempo_meta(us_per_beat: u32) -> [u8; 6] {
+        [
+            0xFF,
+            0x51,
+            0x03,
+            ((us_per_beat >> 16) & 0xFF) as u8,
+            ((us_per_beat >> 8) & 0xFF) as u8,
+            (us_per_beat & 0xFF) as u8,
+        ]
+    }
+
+    #[test]
+    fn test_parse_smf_honors_tempo_change() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+
+        let mut track_data = Vec::new();
+        track_data.extend_from_slice(&[0x00, 0x90, 60, 100]);
+        track_data.extend_from_slice(&[0x83, 0x60]);
+        track_data.extend_from_slice(&tempo_meta(1_000_000));
+        track_data.extend_from_slice(&[0x83, 0x60, 0x80, 60, 0]);
+        track_data.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(track_data.len() as u32).to_be_bytes());
+        data.extend_from_slice(&track_data);
+
+        let clips = parse_smf(&data, 48_000).unwrap();
+        assert_eq!(clips.len(), 1);
+        assert_eq!(clips[0].events.len(), 2);
+        assert_eq!(clips[0].events[0].time_samples, 0);
+        assert_eq!(
+            clips[0].events[1].time_samples, 72_000,
+            "first beat is 120 BPM (24k samples), second beat is 60 BPM (48k samples)"
+        );
+    }
+
+    #[test]
+    fn test_parse_smf_applies_conductor_track_tempo_map() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&2u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+
+        let mut conductor = Vec::new();
+        conductor.extend_from_slice(&[0x00]);
+        conductor.extend_from_slice(&tempo_meta(1_000_000));
+        conductor.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(conductor.len() as u32).to_be_bytes());
+        data.extend_from_slice(&conductor);
+
+        let mut notes = Vec::new();
+        notes.extend_from_slice(&[0x00, 0x90, 64, 100]);
+        notes.extend_from_slice(&[0x83, 0x60, 0x80, 64, 0]);
+        notes.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(notes.len() as u32).to_be_bytes());
+        data.extend_from_slice(&notes);
+
+        let clips = parse_smf(&data, 48_000).unwrap();
+        assert_eq!(clips.len(), 2);
+        assert!(clips[0].events.is_empty());
+        assert_eq!(clips[1].events[1].time_samples, 48_000);
+    }
+
+    #[test]
+    fn test_parse_smf_rejects_truncated_meta_event() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+
+        let track_data = vec![0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1];
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(track_data.len() as u32).to_be_bytes());
+        data.extend_from_slice(&track_data);
+
+        let err = parse_smf(&data, 48_000).unwrap_err();
+        assert!(err.contains("Truncated meta event payload"), "{err}");
+    }
+
+    #[test]
+    fn test_parse_smf_rejects_truncated_channel_event() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+
+        let track_data = vec![0x00, 0x90, 60];
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(track_data.len() as u32).to_be_bytes());
+        data.extend_from_slice(&track_data);
+
+        let err = parse_smf(&data, 48_000).unwrap_err();
+        assert!(err.contains("Truncated Note On"), "{err}");
     }
 
     #[test]
@@ -424,18 +728,34 @@ mod tests {
         let clips = parse_smf(&data, 48000).unwrap();
         assert_eq!(clips.len(), 1);
         let evts = &clips[0].events;
-        assert_eq!(evts.len(), 3, "should parse 3 note-on events via running status");
+        assert_eq!(
+            evts.len(),
+            3,
+            "should parse 3 note-on events via running status"
+        );
         assert!(matches!(
             evts[0].message,
-            MidiMessage::NoteOn { note: 60, velocity: 100, .. }
+            MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100,
+                ..
+            }
         ));
         assert!(matches!(
             evts[1].message,
-            MidiMessage::NoteOn { note: 62, velocity: 90, .. }
+            MidiMessage::NoteOn {
+                note: 62,
+                velocity: 90,
+                ..
+            }
         ));
         assert!(matches!(
             evts[2].message,
-            MidiMessage::NoteOn { note: 64, velocity: 80, .. }
+            MidiMessage::NoteOn {
+                note: 64,
+                velocity: 80,
+                ..
+            }
         ));
     }
 

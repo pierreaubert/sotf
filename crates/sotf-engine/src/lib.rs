@@ -15,7 +15,7 @@ pub use devices_stub::SharedAudioState;
 pub mod decoder;
 pub use decoder::{
     AudioDecoder, AudioDecoderError, AudioDecoderResult, AudioFormat, AudioStream, DecodedAudio,
-    StreamConfig, create_decoder, probe_file,
+    DsdDecodeCapability, StreamConfig, create_decoder, probe_file,
 };
 
 pub use decoder::core::AudioSpec;

@@ -223,6 +223,7 @@ fn test_descriptor(name: &str) -> (tempfile::TempDir, PluginDescriptor) {
         audio_outputs: 2,
         is_instrument: false,
         categories: Vec::new(),
+        scan_status: sotf_host::PluginScanStatus::Discovered,
     };
     (dir, descriptor)
 }

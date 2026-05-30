@@ -1,7 +1,7 @@
 //! MIDI manager stub for platforms without MIDI support (tvOS).
 
 use crate::config::MidiConfig;
-use crate::device::MidiDeviceInfo;
+use crate::device::{MidiDeviceChange, MidiDeviceInfo, MidiDeviceSnapshot};
 use crate::error::Result;
 use crate::message::MidiMessage;
 use std::sync::Arc;
@@ -29,6 +29,18 @@ impl MidiManager {
 
     pub fn list_output_devices(&mut self) -> Result<Vec<MidiDeviceInfo>> {
         Ok(vec![])
+    }
+
+    pub fn device_snapshot(&self) -> Result<MidiDeviceSnapshot> {
+        Ok(MidiDeviceSnapshot::default())
+    }
+
+    pub fn poll_device_changes(
+        &self,
+        previous: &mut MidiDeviceSnapshot,
+    ) -> Result<Vec<MidiDeviceChange>> {
+        *previous = MidiDeviceSnapshot::default();
+        Ok(Vec::new())
     }
 
     pub fn connect_input<F>(&mut self, _port_index: usize, _callback: F) -> Result<()>
@@ -62,6 +74,22 @@ impl MidiManager {
     }
 
     pub fn send_raw(&self, _bytes: &[u8]) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn send_clock_start(&self) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn send_clock_continue(&self) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn send_clock_stop(&self) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn send_clock_tick(&self) -> Result<()> {
         Ok(())
     }
 

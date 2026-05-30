@@ -566,6 +566,7 @@ mod tests {
             audio_outputs: 2,
             is_instrument: false,
             categories: Vec::new(),
+            scan_status: crate::external_plugin::PluginScanStatus::Discovered,
         };
         let shared =
             SecurePluginSharedMemory::create(PluginIpcLayout::new(48_000, 64, 2, 2).unwrap())
@@ -596,6 +597,7 @@ mod tests {
             audio_outputs: 2,
             is_instrument: false,
             categories: Vec::new(),
+            scan_status: crate::external_plugin::PluginScanStatus::Discovered,
         };
         let shared =
             SecurePluginSharedMemory::create(PluginIpcLayout::new(48_000, 64, 2, 2).unwrap())

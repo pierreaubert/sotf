@@ -61,6 +61,7 @@
 //! ```
 
 pub mod auto_map;
+pub mod clock;
 pub mod config;
 pub mod device;
 pub mod error;
@@ -77,10 +78,17 @@ pub mod mapping_engine;
 pub mod message;
 pub mod profiles;
 pub mod sequencer;
+pub mod smf;
 pub mod templates;
 
+pub use clock::{
+    MIDI_CLOCK_CONTINUE, MIDI_CLOCK_PPQ, MIDI_CLOCK_START, MIDI_CLOCK_STOP, MIDI_CLOCK_TICK,
+    clock_tick_interval_samples, schedule_clock_ticks_for_block,
+};
 pub use config::{DeviceConfig, DeviceProfile, MidiConfig};
-pub use device::{MidiDevice, MidiDeviceInfo};
+pub use device::{
+    MidiDevice, MidiDeviceChange, MidiDeviceChangeKind, MidiDeviceInfo, MidiDeviceSnapshot,
+};
 pub use error::{MidiError, Result};
 pub use layout::{ControllerLayout, MidiControlId, PhysicalControl, PhysicalControlKind};
 pub use manager::MidiManager;
