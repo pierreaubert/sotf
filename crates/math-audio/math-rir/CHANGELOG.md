@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-05-30
+
+### Added
+- Added `SsirResult::direct_sound_doa()` for callers that need the detected
+  direct-sound direction without indexing the first segment.
+- Added `schroeder_curve()` as a public direct-sound-anchored convenience
+  wrapper around `DecayCurve::from_rir`.
+
+### Fixed
+- `detection::find_direct_sound_toa` now follows the SSIR 11 dB rule using
+  unsuppressed local maxima in time order, so a stronger nearby reflection can
+  no longer hide the earlier direct arrival through min-distance suppression.
+- Short-RIR direct-sound fallback now prefers the earliest sample when absolute
+  peak magnitudes tie.
+- Plateau local maxima now report the first plateau sample, avoiding a
+  one-sample-late bias on broadened arrivals.
+- LER reflection detection now excludes the direct-sound window from the local
+  median and can emit multiple local maxima from the same analysis window,
+  leaving TOA/DOA validation to merge only non-distinct candidates.
+- Reflection merging now re-checks the previous neighbor after replacing an
+  event with a higher-energy later event, removing order-dependent leftovers.
+
+### Changed
+- Clarified LER window behavior, the peak-relative onset heuristic, and the
+  Abel-Huang echo-density mixing-time documentation.
+
+### Tests
+- Added regression coverage for direct-sound min-distance suppression,
+  short-RIR ties, plateau peaks, same-window reflections, merge re-anchoring,
+  direct-sound DOA access, and the public Schroeder curve helper.
+
 ## [0.5.5] - 2025-05-13
 
 ### Added

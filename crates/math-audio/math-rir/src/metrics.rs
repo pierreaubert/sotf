@@ -153,6 +153,25 @@ impl DecayCurve {
     }
 }
 
+/// Compute a direct-sound-anchored Schroeder decay curve for a RIR.
+///
+/// This is a convenience wrapper around [`DecayCurve::from_rir`]. It detects
+/// the direct sound with the SSIR detector, falls back to sample 0 when no
+/// direct sound can be identified, and uses the automatic noise-tail cutoff.
+pub fn schroeder_curve(rir: &[f32], sample_rate: f64) -> DecayCurve {
+    if rir.is_empty() || sample_rate <= 0.0 {
+        return DecayCurve {
+            samples: Vec::new(),
+            sample_rate,
+            noise_cutoff_sample: 0,
+        };
+    }
+
+    let cfg = SsirConfig::new(sample_rate);
+    let start = find_direct_sound_toa(rir, &cfg).unwrap_or(0);
+    DecayCurve::from_rir(rir, sample_rate, start, None)
+}
+
 /// Least-squares linear fit `y = slope·x + intercept`. Returns
 /// `(slope, intercept, r²)`. `None` if `n < 2` or `Var(x) = 0`.
 fn linear_fit<X, Y>(xs: X, ys: Y) -> Option<(f64, f64, f64)>
@@ -435,6 +454,21 @@ mod tests {
             assert!(w[1] <= w[0] + 1e-9, "non-monotonic: {} -> {}", w[0], w[1]);
         }
         // First sample must be 0 dB by construction.
+        assert!(curve.samples[0].abs() < 1e-9);
+    }
+
+    #[test]
+    fn schroeder_curve_helper_anchors_at_detected_direct_sound() {
+        let sr = 48000.0;
+        let mut rir = vec![0.0f32; 4096];
+        rir[96] = 1.0;
+        rir[97] = 0.5;
+        rir[500] = 0.1;
+
+        let curve = schroeder_curve(&rir, sr);
+        assert!(!curve.samples.is_empty());
+        assert_eq!(curve.sample_rate, sr);
+        assert!(curve.noise_cutoff_sample >= 96);
         assert!(curve.samples[0].abs() < 1e-9);
     }
 
