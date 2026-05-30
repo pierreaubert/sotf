@@ -5888,7 +5888,7 @@ checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "math-delaunay"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "delaunator",
 ]

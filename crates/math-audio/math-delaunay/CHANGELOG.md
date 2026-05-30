@@ -1,3 +1,13 @@
+# 0.5.3
+
+## Fixes
+
+- Collinear retry jitter now uses a deterministic coordinate hash instead of trigonometric coordinate patterns.
+- `Delaunay::find` now documents its local greedy-descent contract.
+- Voronoi clipping and corner walking now have debug guards for unexpected safety-limit and edge-code states.
+- Voronoi corner insertion now de-duplicates with the same bounds-relative epsilon used by cell polygon cleanup.
+- Voronoi bounds now have a documented finite, ordered precondition with a debug assertion.
+
 # 0.5.2
 
 ## Fixes
