@@ -10,6 +10,7 @@ use crate::app::theme::{Theme, ThemeId};
 use crate::app::types::{ContextMenuState, ToastMessage};
 use crate::app::{ActiveMenu, InputMode, LayoutMode, Screen, SettingsTab};
 use gpui::EventEmitter;
+use gpui_themes::{AccessibilityPalette, ThemeModePreference};
 use sotf_audio_player::ReleaseChannel;
 
 #[derive(Debug, Clone)]
@@ -139,6 +140,9 @@ pub struct UIState {
     pub window_width: f32,
     pub theme_id: ThemeId,
     pub theme: Theme,
+    pub theme_mode_preference: ThemeModePreference,
+    pub accessibility_palette: AccessibilityPalette,
+    pub reduce_motion: bool,
     pub language: Language,
     pub translations: Translations,
     pub keymap_preset: KeymapPreset,
@@ -183,6 +187,9 @@ impl Default for UIState {
             window_width: constants::ui::DEFAULT_WINDOW_WIDTH,
             theme_id: ThemeId::default(),
             theme: Theme::from_id(ThemeId::default()),
+            theme_mode_preference: ThemeModePreference::default(),
+            accessibility_palette: AccessibilityPalette::default(),
+            reduce_motion: false,
             language: Language::default(),
             translations: Translations::for_language(Language::default()),
             keymap_preset: KeymapPreset::default(),

@@ -7,6 +7,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use gpui::Entity;
+use gpui_themes::{AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeTransition};
 use gpui_ui_kit::workflow::NodeId;
 use sotf_audio_player::{Player, QueueController, QueuePlaybackEffect};
 
@@ -584,6 +585,13 @@ impl Default for App {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn current_minutes_after_midnight() -> u16 {
+    use chrono::Timelike;
+
+    let now = chrono::Local::now();
+    (now.hour() * 60 + now.minute()) as u16
 }
 
 impl App {
@@ -1272,6 +1280,9 @@ impl App {
         // Restore theme
         self.ui_state.theme_id = config.theme;
         self.ui_state.theme = Theme::from_id(config.theme);
+        self.ui_state.theme_mode_preference = config.theme_mode_preference;
+        self.ui_state.accessibility_palette = config.accessibility_palette;
+        self.ui_state.reduce_motion = config.reduce_motion;
 
         // Restore language
         self.ui_state.language = config.language;
@@ -1465,6 +1476,9 @@ impl App {
             directories: self.library_state.library.directories.clone(),
             last_loaded_plugin_preset: self.plugin_state.last_loaded_preset.clone(),
             theme: self.ui_state.theme_id,
+            theme_mode_preference: self.ui_state.theme_mode_preference.clone(),
+            accessibility_palette: self.ui_state.accessibility_palette,
+            reduce_motion: self.ui_state.reduce_motion,
             language: self.ui_state.language,
             keymap_preset: self.ui_state.keymap_preset,
             panel_layout: PanelLayout {
@@ -1563,8 +1577,8 @@ impl App {
 
     /// Cycle to the next theme
     pub fn next_theme(&mut self) {
-        self.ui_state.theme_id = self.ui_state.theme_id.next();
-        self.ui_state.theme = Theme::from_id(self.ui_state.theme_id);
+        let theme_id = self.ui_state.theme_id.next();
+        self.set_theme(theme_id);
     }
 
     /// Cycle to the next language
@@ -1575,6 +1589,68 @@ impl App {
 
     /// Set a specific theme
     pub fn set_theme(&mut self, theme_id: ThemeId) {
+        self.apply_theme(theme_id);
+        self.ui_state.theme_mode_preference = theme_id.mode_preference();
+        self.ui_state.accessibility_palette = theme_id.accessibility_palette();
+    }
+
+    /// Set the light/dark mode policy and apply its current effective theme.
+    pub fn set_theme_mode_preference(&mut self, preference: ThemeModePreference) {
+        self.set_theme_mode_preference_with_system(preference, ThemeAppearance::Dark);
+    }
+
+    /// Set the light/dark mode policy using the supplied system appearance.
+    pub fn set_theme_mode_preference_with_system(
+        &mut self,
+        preference: ThemeModePreference,
+        system_appearance: ThemeAppearance,
+    ) {
+        let appearance = preference.resolve(system_appearance, current_minutes_after_midnight());
+        self.ui_state.theme_mode_preference = preference;
+        self.apply_theme(ThemeId::for_accessibility_palette(
+            self.ui_state.accessibility_palette,
+            appearance,
+        ));
+    }
+
+    /// Set an accessibility palette and apply the matching theme.
+    pub fn set_accessibility_palette(&mut self, palette: AccessibilityPalette) {
+        self.set_accessibility_palette_with_system(palette, ThemeAppearance::Dark);
+    }
+
+    /// Set an accessibility palette using the supplied system appearance.
+    pub fn set_accessibility_palette_with_system(
+        &mut self,
+        palette: AccessibilityPalette,
+        system_appearance: ThemeAppearance,
+    ) {
+        let appearance = self.resolved_theme_appearance_with_system(system_appearance);
+        self.ui_state.accessibility_palette = palette;
+        self.apply_theme(ThemeId::for_accessibility_palette(palette, appearance));
+    }
+
+    pub fn set_reduce_motion(&mut self, reduce_motion: bool) {
+        self.ui_state.reduce_motion = reduce_motion;
+    }
+
+    pub fn resolved_theme_appearance(&self) -> ThemeAppearance {
+        self.resolved_theme_appearance_with_system(ThemeAppearance::Dark)
+    }
+
+    pub fn resolved_theme_appearance_with_system(
+        &self,
+        system_appearance: ThemeAppearance,
+    ) -> ThemeAppearance {
+        self.ui_state
+            .theme_mode_preference
+            .resolve(system_appearance, current_minutes_after_midnight())
+    }
+
+    pub fn theme_transition_duration_ms(&self) -> u16 {
+        ThemeTransition::default().effective_duration_ms(self.ui_state.reduce_motion)
+    }
+
+    fn apply_theme(&mut self, theme_id: ThemeId) {
         self.ui_state.theme_id = theme_id;
         self.ui_state.theme = Theme::from_id(theme_id);
     }

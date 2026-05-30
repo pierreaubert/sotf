@@ -164,6 +164,7 @@ fn test_recording_config_state_serialization() {
 
 #[test]
 fn test_config_serialization() {
+    use gpui_themes::{AccessibilityPalette, ThemeModePreference};
     use sotf_audio_player::ReleaseChannel;
     use sotf_audio_player_gpui::i18n::Language;
     use sotf_audio_player_gpui::keybindings::KeymapPreset;
@@ -173,6 +174,9 @@ fn test_config_serialization() {
         directories: Vec::new(),
         last_loaded_plugin_preset: Some("test_preset".to_string()),
         theme: ThemeId::default(),
+        theme_mode_preference: ThemeModePreference::default(),
+        accessibility_palette: AccessibilityPalette::default(),
+        reduce_motion: false,
         language: Language::default(),
         keymap_preset: KeymapPreset::default(),
         panel_layout: PanelLayout::default(),
@@ -200,11 +204,98 @@ fn test_config_serialization() {
     assert!((deserialized.volume - 0.75).abs() < 0.001);
     assert!(deserialized.muted);
     assert_eq!(deserialized.scanner_threads, Some(2));
+    assert_eq!(
+        deserialized.theme_mode_preference,
+        ThemeModePreference::FollowSystem
+    );
+    assert_eq!(
+        deserialized.accessibility_palette,
+        AccessibilityPalette::Standard
+    );
+    assert!(!deserialized.reduce_motion);
 }
 
 #[test]
 fn test_config_default_volume() {
     assert!((default_volume() - 0.1).abs() < 0.001);
+}
+
+#[test]
+fn test_theme_accessibility_palette_mapping() {
+    use gpui_themes::{AccessibilityPalette, ThemeAppearance};
+    use sotf_audio_player_gpui::theme::ThemeId;
+
+    assert_eq!(
+        ThemeId::for_accessibility_palette(AccessibilityPalette::Standard, ThemeAppearance::Light),
+        ThemeId::Light
+    );
+    assert_eq!(
+        ThemeId::for_accessibility_palette(
+            AccessibilityPalette::HighContrast,
+            ThemeAppearance::Dark
+        ),
+        ThemeId::BlackAndWhite
+    );
+    assert_eq!(
+        ThemeId::for_accessibility_palette(AccessibilityPalette::Protanopia, ThemeAppearance::Dark),
+        ThemeId::Protanopia
+    );
+    assert_eq!(
+        ThemeId::Deuteranopia.accessibility_palette(),
+        AccessibilityPalette::Deuteranopia
+    );
+}
+
+#[test]
+fn test_theme_mode_and_motion_state_defaults() {
+    use gpui_themes::{AccessibilityPalette, ThemeModePreference};
+    use sotf_audio_player_gpui::app::state::UIState;
+
+    let state = UIState::default();
+    assert_eq!(
+        state.theme_mode_preference,
+        ThemeModePreference::FollowSystem
+    );
+    assert_eq!(state.accessibility_palette, AccessibilityPalette::Standard);
+    assert!(!state.reduce_motion);
+}
+
+#[test]
+fn test_app_theme_policy_updates_theme_state() {
+    use gpui_themes::{AccessibilityPalette, ThemeAppearance, ThemeModePreference};
+    use sotf_audio_player_gpui::{App, theme::ThemeId};
+
+    let mut app = App::new();
+
+    app.set_theme_mode_preference_with_system(
+        ThemeModePreference::FollowSystem,
+        ThemeAppearance::Light,
+    );
+    assert_eq!(app.ui_state.theme_id, ThemeId::Light);
+    assert_eq!(
+        app.ui_state.accessibility_palette,
+        AccessibilityPalette::Standard
+    );
+
+    app.set_accessibility_palette_with_system(
+        AccessibilityPalette::Protanopia,
+        ThemeAppearance::Light,
+    );
+    assert_eq!(app.ui_state.theme_id, ThemeId::Protanopia);
+    assert_eq!(
+        app.ui_state.accessibility_palette,
+        AccessibilityPalette::Protanopia
+    );
+
+    app.set_theme_mode_preference_with_system(ThemeModePreference::Dark, ThemeAppearance::Dark);
+    assert_eq!(app.ui_state.theme_id, ThemeId::Protanopia);
+    assert_eq!(
+        app.ui_state.accessibility_palette,
+        AccessibilityPalette::Protanopia
+    );
+
+    app.set_reduce_motion(true);
+    assert_eq!(app.theme_transition_duration_ms(), 0);
 }
 
 // ============================================================================

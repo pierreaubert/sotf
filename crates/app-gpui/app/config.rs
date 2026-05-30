@@ -7,6 +7,7 @@ use crate::components::plugins::theme::RackThemeState;
 use crate::i18n::Language;
 use crate::keybindings::KeymapPreset;
 use crate::theme::ThemeId;
+use gpui_themes::{AccessibilityPalette, ThemeModePreference};
 
 pub(crate) fn default_recording_paths() -> (Option<String>, Option<String>) {
     let Some(base_dir) = sotf_audio_player::config::get_recordings_dir() else {
@@ -259,6 +260,15 @@ pub struct Config {
     /// Selected theme
     #[serde(default)]
     pub theme: ThemeId,
+    /// Light/dark mode policy for app-wide theme selection
+    #[serde(default)]
+    pub theme_mode_preference: ThemeModePreference,
+    /// Accessibility palette preset applied to the global app theme
+    #[serde(default)]
+    pub accessibility_palette: AccessibilityPalette,
+    /// Disable theme and UI transition motion
+    #[serde(default)]
+    pub reduce_motion: bool,
     /// Selected language
     #[serde(default)]
     pub language: Language,
@@ -331,6 +341,9 @@ impl Config {
                 directories: Vec::new(),
                 last_loaded_plugin_preset: None,
                 theme: ThemeId::default(),
+                theme_mode_preference: ThemeModePreference::default(),
+                accessibility_palette: AccessibilityPalette::default(),
+                reduce_motion: false,
                 language: Language::default(),
                 keymap_preset: KeymapPreset::default(),
                 panel_layout: PanelLayout::default(),

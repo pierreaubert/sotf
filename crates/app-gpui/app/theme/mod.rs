@@ -7,6 +7,7 @@
 
 use gpui::{App, Rgba, SharedString};
 use gpui_design::DesignExt;
+use gpui_themes::{AccessibilityPalette, ThemeAppearance, ThemeModePreference};
 use gpui_ui_kit::theme::{Theme as UiKitTheme, ThemeVariant as UiKitThemeVariant};
 use serde::{Deserialize, Serialize};
 
@@ -20,8 +21,12 @@ pub enum ThemeId {
     Forest,
     BlackAndWhite,
     Onyx,
+    Protanopia,
+    Deuteranopia,
+    Tritanopia,
 }
 
+pub mod accessible;
 pub mod black;
 pub mod black_and_white;
 pub mod forest;
@@ -38,6 +43,9 @@ impl ThemeId {
             ThemeId::Forest,
             ThemeId::BlackAndWhite,
             ThemeId::Onyx,
+            ThemeId::Protanopia,
+            ThemeId::Deuteranopia,
+            ThemeId::Tritanopia,
         ]
     }
 
@@ -49,6 +57,46 @@ impl ThemeId {
             ThemeId::Forest => "Forest",
             ThemeId::BlackAndWhite => "Black & White",
             ThemeId::Onyx => "Onyx",
+            ThemeId::Protanopia => "Protanopia",
+            ThemeId::Deuteranopia => "Deuteranopia",
+            ThemeId::Tritanopia => "Tritanopia",
+        }
+    }
+
+    pub fn accessibility_palette(&self) -> AccessibilityPalette {
+        match self {
+            ThemeId::BlackAndWhite => AccessibilityPalette::HighContrast,
+            ThemeId::Protanopia => AccessibilityPalette::Protanopia,
+            ThemeId::Deuteranopia => AccessibilityPalette::Deuteranopia,
+            ThemeId::Tritanopia => AccessibilityPalette::Tritanopia,
+            _ => AccessibilityPalette::Standard,
+        }
+    }
+
+    pub fn mode_preference(&self) -> ThemeModePreference {
+        match self {
+            ThemeId::Light => ThemeModePreference::Light,
+            _ => ThemeModePreference::Dark,
+        }
+    }
+
+    pub fn for_appearance(appearance: ThemeAppearance) -> ThemeId {
+        match appearance {
+            ThemeAppearance::Light => ThemeId::Light,
+            ThemeAppearance::Dark => ThemeId::Dark,
+        }
+    }
+
+    pub fn for_accessibility_palette(
+        palette: AccessibilityPalette,
+        appearance: ThemeAppearance,
+    ) -> ThemeId {
+        match palette {
+            AccessibilityPalette::Standard => ThemeId::for_appearance(appearance),
+            AccessibilityPalette::HighContrast => ThemeId::BlackAndWhite,
+            AccessibilityPalette::Protanopia => ThemeId::Protanopia,
+            AccessibilityPalette::Deuteranopia => ThemeId::Deuteranopia,
+            AccessibilityPalette::Tritanopia => ThemeId::Tritanopia,
         }
     }
 
@@ -59,7 +107,10 @@ impl ThemeId {
             ThemeId::Midnight => ThemeId::Forest,
             ThemeId::Forest => ThemeId::BlackAndWhite,
             ThemeId::BlackAndWhite => ThemeId::Onyx,
-            ThemeId::Onyx => ThemeId::Dark,
+            ThemeId::Onyx => ThemeId::Protanopia,
+            ThemeId::Protanopia => ThemeId::Deuteranopia,
+            ThemeId::Deuteranopia => ThemeId::Tritanopia,
+            ThemeId::Tritanopia => ThemeId::Dark,
         }
     }
 }
@@ -73,6 +124,9 @@ impl From<ThemeId> for UiKitThemeVariant {
             ThemeId::Forest => UiKitThemeVariant::Forest,
             ThemeId::BlackAndWhite => UiKitThemeVariant::BlackAndWhite,
             ThemeId::Onyx => UiKitThemeVariant::Onyx,
+            ThemeId::Protanopia | ThemeId::Deuteranopia | ThemeId::Tritanopia => {
+                UiKitThemeVariant::Dark
+            }
         }
     }
 }
@@ -300,6 +354,9 @@ impl Theme {
             ThemeId::Forest => Self::forest(),
             ThemeId::BlackAndWhite => Self::black_and_white(),
             ThemeId::Onyx => Self::onyx(),
+            ThemeId::Protanopia => Self::protanopia(),
+            ThemeId::Deuteranopia => Self::deuteranopia(),
+            ThemeId::Tritanopia => Self::tritanopia(),
         }
     }
 }
