@@ -462,12 +462,14 @@ mod platform {
     #[cfg(target_os = "windows")]
     const BACKEND_NAME: &str = "windows-process-isolation";
     #[cfg(target_os = "macos")]
-    const BACKEND_NOTE: &str = "macOS platform sandbox backend is not implemented yet; worker uses process isolation";
+    const BACKEND_NOTE: &str =
+        "macOS platform sandbox backend is not implemented yet; worker uses process isolation";
     #[cfg(target_os = "windows")]
-    const BACKEND_NOTE: &str = "Windows platform sandbox backend is not implemented yet; worker uses process isolation";
+    const BACKEND_NOTE: &str =
+        "Windows platform sandbox backend is not implemented yet; worker uses process isolation";
 
-    use std::path::Path;
     use std::fs::OpenOptions;
+    use std::path::Path;
 
     use crate::external_plugin::PluginDescriptor;
     use crate::external_plugin_ipc;

@@ -244,13 +244,34 @@ invariant_test!(invariants_xtc, sotf_plugin_xtc::params::Params);
 
 // Missing plugins added for coverage audit
 invariant_test!(invariants_de_esser, sotf_plugin_de_esser::params::Params);
-invariant_test!(invariants_stereo_imager, sotf_plugin_stereo_imager::params::Params);
-invariant_test!(invariants_dynamic_eq, sotf_plugin_dynamic_eq::params::Params);
-invariant_test!(invariants_fir_designer, sotf_plugin_fir_designer::params::Params);
-invariant_test!(invariants_linear_phase_eq, sotf_plugin_linear_phase_eq::params::Params);
-invariant_test!(invariants_spectral_compressor, sotf_plugin_spectral_compressor::params::Params);
-invariant_test!(invariants_saturation, sotf_plugin_saturation::params::Params);
-invariant_test!(invariants_transient_shaper, sotf_plugin_transient_shaper::params::Params);
+invariant_test!(
+    invariants_stereo_imager,
+    sotf_plugin_stereo_imager::params::Params
+);
+invariant_test!(
+    invariants_dynamic_eq,
+    sotf_plugin_dynamic_eq::params::Params
+);
+invariant_test!(
+    invariants_fir_designer,
+    sotf_plugin_fir_designer::params::Params
+);
+invariant_test!(
+    invariants_linear_phase_eq,
+    sotf_plugin_linear_phase_eq::params::Params
+);
+invariant_test!(
+    invariants_spectral_compressor,
+    sotf_plugin_spectral_compressor::params::Params
+);
+invariant_test!(
+    invariants_saturation,
+    sotf_plugin_saturation::params::Params
+);
+invariant_test!(
+    invariants_transient_shaper,
+    sotf_plugin_transient_shaper::params::Params
+);
 // Note: multiband_compressor and multiband_expander have dynamic per-band params
 // and do not implement PluginParamDef on a single Params type. Their layouts
 // are audited manually in the plugin-ui-check report.

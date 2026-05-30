@@ -27,8 +27,8 @@ use sotf_plugins::{
     ExpanderPlugin, GainPlugin, GatePlugin, HissReducerPlugin, InPlacePlugin, InPlacePluginAdapter,
     LimiterPlugin, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
     LoudnessMonitorPlugin, MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
-    Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
-    UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams, SPEECH_DENOISER_FRAME_SIZE,
+    Plugin, ProcessContext, SPEECH_DENOISER_FRAME_SIZE, SpectrumAnalyzerPlugin, SpectrumConfig,
+    SpeechDenoiserPlugin, UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
 };
 
 // ============================================================================

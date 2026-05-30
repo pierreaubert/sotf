@@ -1,6 +1,6 @@
 use sotf_host::parameters::ParameterValue;
 use sotf_host::plugin::{InPlacePlugin, ProcessContext};
-use sotf_plugin_speech_denoiser::{SpeechDenoiserPlugin, SPEECH_DENOISER_FRAME_SIZE};
+use sotf_plugin_speech_denoiser::{SPEECH_DENOISER_FRAME_SIZE, SpeechDenoiserPlugin};
 
 #[test]
 fn disabled_is_transparent() {

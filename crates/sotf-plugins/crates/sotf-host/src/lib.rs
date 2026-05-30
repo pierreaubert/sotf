@@ -87,8 +87,8 @@ pub use external_plugin::{
 pub use external_plugin_host::{ExternalPluginHostBlockStatus, ExternalPluginHostProxy};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use external_plugin_ipc::{
-    PluginIpcLayout, PluginSandboxBackendCode, PluginSandboxRuntimeStatus,
-    PluginSandboxStatusCode, SecurePluginSharedMemory,
+    PluginIpcLayout, PluginSandboxBackendCode, PluginSandboxRuntimeStatus, PluginSandboxStatusCode,
+    SecurePluginSharedMemory,
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use external_plugin_isolated::{IsolatedExternalPlugin, IsolatedExternalPluginConfig};

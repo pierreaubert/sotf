@@ -1502,7 +1502,14 @@ pub fn render_eq_plugin(
             fir_length,
             auto_gain,
             mix,
-        } => Some((latency_samples, latency_ms, fir_length, "Linear", auto_gain, mix)),
+        } => Some((
+            latency_samples,
+            latency_ms,
+            fir_length,
+            "Linear",
+            auto_gain,
+            mix,
+        )),
         EqViewMode::FirDesigner {
             latency_samples,
             latency_ms,
@@ -1546,8 +1553,8 @@ pub fn render_eq_plugin(
                 .child(format!("Mix: {:.0}%", mix * 100.0))
         },
     );
-    let lp_analysis =
-        fir_summary.map(|(latency_samples, latency_ms, fir_length, phase_mode, _, _)| {
+    let lp_analysis = fir_summary.map(
+        |(latency_samples, latency_ms, fir_length, phase_mode, _, _)| {
             render_linear_phase_analysis(
                 &ds,
                 latency_samples,
@@ -1556,11 +1563,16 @@ pub fn render_eq_plugin(
                 phase_mode,
                 theme,
             )
-        });
+        },
+    );
 
     // Algorithm info bar for Standard EQ
     let eq_header = if matches!(state.mode, EqViewMode::Standard) {
-        let topo_label = if state.topology > 0.5 { "SVF" } else { "Biquad" };
+        let topo_label = if state.topology > 0.5 {
+            "SVF"
+        } else {
+            "Biquad"
+        };
         Some(
             div()
                 .flex()
@@ -1575,10 +1587,7 @@ pub fn render_eq_plugin(
                 .text_color(theme.text_secondary)
                 .child(format!("Filters: {}", state.num_filters))
                 .child(format!("Topology: {topo_label}"))
-                .child(format!(
-                    "TDF-II: {}",
-                    if state.tdf2 { "on" } else { "off" }
-                )),
+                .child(format!("TDF-II: {}", if state.tdf2 { "on" } else { "off" })),
         )
     } else {
         None

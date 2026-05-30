@@ -36,16 +36,32 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "library.directory_count" => json!(app.library.directories.len()),
         "library.album_count" => json!(app.library.albums.len()),
         "library.track_count" => json!(
-            app.library.albums.iter().map(|a| a.tracks.len()).sum::<usize>()
+            app.library
+                .albums
+                .iter()
+                .map(|a| a.tracks.len())
+                .sum::<usize>()
         ),
 
         // Recording
         "recording.step" => json!(format!("{:?}", app.recording.step)),
-        "recording.all_done" => json!(
-            app.recording.channel_recordings.iter().all(|c| c.state == sotf_audio_player::recording_types::ChannelRecordingState::Done)
-        ),
+        "recording.all_done" => {
+            json!(
+                app.recording
+                    .channel_recordings
+                    .iter()
+                    .all(|c| c.state
+                        == sotf_audio_player::recording_types::ChannelRecordingState::Done)
+            )
+        }
         "recording.done_count" => json!(
-            app.recording.channel_recordings.iter().filter(|c| c.state == sotf_audio_player::recording_types::ChannelRecordingState::Done).count()
+            app.recording
+                .channel_recordings
+                .iter()
+                .filter(
+                    |c| c.state == sotf_audio_player::recording_types::ChannelRecordingState::Done
+                )
+                .count()
         ),
         "recording.channel_count" => json!(app.recording.channel_recordings.len()),
         "recording.status" => json!(app.recording.status_message),
@@ -57,12 +73,22 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "roomeq.optimization_status" => json!(format!("{:?}", app.room_eq.opt_status)),
         "roomeq.result_count" => json!(app.room_eq.channel_results.len()),
         "roomeq.has_dsp_output" => json!(app.room_eq.dsp_output.is_some()),
-        "roomeq.dsp_channel_count" => json!(app.room_eq.dsp_output.as_ref().map(|d| d.channels.len())),
+        "roomeq.dsp_channel_count" => {
+            json!(app.room_eq.dsp_output.as_ref().map(|d| d.channels.len()))
+        }
         "roomeq.filter_count" => json!(
-            app.room_eq.channel_results.iter().map(|r| r.eq_filters.len()).sum::<usize>()
+            app.room_eq
+                .channel_results
+                .iter()
+                .map(|r| r.eq_filters.len())
+                .sum::<usize>()
         ),
-        "roomeq.average_pre_score" => json!(average_room_eq_score(&app.room_eq.channel_results, |r| r.pre_score)),
-        "roomeq.average_post_score" => json!(average_room_eq_score(&app.room_eq.channel_results, |r| r.post_score)),
+        "roomeq.average_pre_score" => {
+            json!(average_room_eq_score(&app.room_eq.channel_results, |r| r.pre_score))
+        }
+        "roomeq.average_post_score" => {
+            json!(average_room_eq_score(&app.room_eq.channel_results, |r| r.post_score))
+        }
         "roomeq.status" => json!(app.room_eq.opt_status_message.as_deref().unwrap_or("")),
         "roomeq.error" => json!(app.room_eq.opt_error.as_deref().unwrap_or("")),
 
@@ -86,7 +112,12 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "playlists.count" => json!(app.playlist_controller.playlists().len()),
 
         // Level meters
-        "level_meters.channel_count" => json!(app.level_meter_groups.iter().map(|g| g.channels.len()).sum::<usize>()),
+        "level_meters.channel_count" => json!(
+            app.level_meter_groups
+                .iter()
+                .map(|g| g.channels.len())
+                .sum::<usize>()
+        ),
 
         // Cast
         "cast.device_count" => json!(app.cast_devices.len()),

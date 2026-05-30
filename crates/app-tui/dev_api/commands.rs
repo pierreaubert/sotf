@@ -91,11 +91,7 @@ pub enum DevCommand {
         reply: mpsc::SyncSender<DevQueryReply>,
     },
     /// Gracefully quit the app.
-    Quit {
-        reply: mpsc::SyncSender<DevReply>,
-    },
+    Quit { reply: mpsc::SyncSender<DevReply> },
     /// Seed demo audio into the library.
-    QaSeed {
-        reply: mpsc::SyncSender<DevReply>,
-    },
+    QaSeed { reply: mpsc::SyncSender<DevReply> },
 }

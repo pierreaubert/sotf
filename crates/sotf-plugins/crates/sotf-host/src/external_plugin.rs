@@ -419,10 +419,7 @@ impl ExternalPlugin {
         output: &mut [f32],
         ctx: &ProcessContext,
     ) -> usize {
-        for sample in output
-            .iter_mut()
-            .take(self.expected_output_len(ctx))
-        {
+        for sample in output.iter_mut().take(self.expected_output_len(ctx)) {
             *sample = 0.0;
         }
 
@@ -449,12 +446,7 @@ impl ExternalPlugin {
         self.process_passthrough(input, output, ctx)
     }
 
-    fn process_audio_unit(
-        &self,
-        input: &[f32],
-        output: &mut [f32],
-        ctx: &ProcessContext,
-    ) -> usize {
+    fn process_audio_unit(&self, input: &[f32], output: &mut [f32], ctx: &ProcessContext) -> usize {
         self.process_passthrough(input, output, ctx)
     }
 }
@@ -637,15 +629,13 @@ fn load_dynamic_library_with_symbols(
 
     for symbol in symbols {
         unsafe {
-            library
-                .get::<*const c_void>(symbol)
-                .map_err(|err| {
-                    format!(
-                        "{format_name} plugin '{}' is missing required symbol '{}': {err}",
-                        library_path.display(),
-                        String::from_utf8_lossy(&symbol[..symbol.len().saturating_sub(1)])
-                    )
-                })?
+            library.get::<*const c_void>(symbol).map_err(|err| {
+                format!(
+                    "{format_name} plugin '{}' is missing required symbol '{}': {err}",
+                    library_path.display(),
+                    String::from_utf8_lossy(&symbol[..symbol.len().saturating_sub(1)])
+                )
+            })?
         };
     }
 

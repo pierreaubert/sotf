@@ -55,8 +55,10 @@ fn query_queue() {
 fn query_library_counts() {
     let app = make_app();
     // Empty library in read-only mode
-    let dirs: usize = serde_json::from_value(resolve("library.directory_count", &app).unwrap()).unwrap();
-    let albums: usize = serde_json::from_value(resolve("library.album_count", &app).unwrap()).unwrap();
+    let dirs: usize =
+        serde_json::from_value(resolve("library.directory_count", &app).unwrap()).unwrap();
+    let albums: usize =
+        serde_json::from_value(resolve("library.album_count", &app).unwrap()).unwrap();
     assert_eq!(dirs, 0);
     assert_eq!(albums, 0);
 }

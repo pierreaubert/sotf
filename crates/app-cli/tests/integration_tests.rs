@@ -454,11 +454,16 @@ fn recorder_cli_invalid_channel_config_fails() {
     // so let's test the invalid case directly.
     let output = Command::new(cargo_bin("sotf-recorder-cli"))
         .args([
-            "--signal", "tone",
-            "--freq", "1000",
-            "--duration", "1",
-            "--hwaudio-send-to", "0,1",
-            "--hwaudio-record-from", "0,1,2",
+            "--signal",
+            "tone",
+            "--freq",
+            "1000",
+            "--duration",
+            "1",
+            "--hwaudio-send-to",
+            "0,1",
+            "--hwaudio-record-from",
+            "0,1,2",
         ])
         .output()
         .expect("failed to spawn sotf-recorder-cli");
@@ -480,11 +485,16 @@ fn recorder_cli_tone_signal_dry_run() {
     // verify that argument parsing succeeds and the config is printed.
     let output = Command::new(cargo_bin("sotf-recorder-cli"))
         .args([
-            "--signal", "tone",
-            "--freq", "1000",
-            "--duration", "0.5",
-            "--hwaudio-send-to", "0",
-            "--hwaudio-record-from", "0",
+            "--signal",
+            "tone",
+            "--freq",
+            "1000",
+            "--duration",
+            "0.5",
+            "--hwaudio-send-to",
+            "0",
+            "--hwaudio-record-from",
+            "0",
         ])
         .output()
         .expect("failed to spawn sotf-recorder-cli");
@@ -502,12 +512,18 @@ fn recorder_cli_tone_signal_dry_run() {
 fn recorder_cli_sweep_signal_dry_run() {
     let output = Command::new(cargo_bin("sotf-recorder-cli"))
         .args([
-            "--signal", "sweep",
-            "--start-freq", "20",
-            "--end-freq", "20000",
-            "--duration", "0.5",
-            "--hwaudio-send-to", "0",
-            "--hwaudio-record-from", "0",
+            "--signal",
+            "sweep",
+            "--start-freq",
+            "20",
+            "--end-freq",
+            "20000",
+            "--duration",
+            "0.5",
+            "--hwaudio-send-to",
+            "0",
+            "--hwaudio-record-from",
+            "0",
         ])
         .output()
         .expect("failed to spawn sotf-recorder-cli");
@@ -523,10 +539,14 @@ fn recorder_cli_sweep_signal_dry_run() {
 fn recorder_cli_pink_noise_signal_dry_run() {
     let output = Command::new(cargo_bin("sotf-recorder-cli"))
         .args([
-            "--signal", "pink-noise",
-            "--duration", "0.5",
-            "--hwaudio-send-to", "0",
-            "--hwaudio-record-from", "0",
+            "--signal",
+            "pink-noise",
+            "--duration",
+            "0.5",
+            "--hwaudio-send-to",
+            "0",
+            "--hwaudio-record-from",
+            "0",
         ])
         .output()
         .expect("failed to spawn sotf-recorder-cli");
@@ -542,12 +562,18 @@ fn recorder_cli_pink_noise_signal_dry_run() {
 fn recorder_cli_custom_sample_rate_parses() {
     let output = Command::new(cargo_bin("sotf-recorder-cli"))
         .args([
-            "--signal", "tone",
-            "--freq", "1000",
-            "--duration", "0.5",
-            "--sample-rate", "44100",
-            "--hwaudio-send-to", "0",
-            "--hwaudio-record-from", "0",
+            "--signal",
+            "tone",
+            "--freq",
+            "1000",
+            "--duration",
+            "0.5",
+            "--sample-rate",
+            "44100",
+            "--hwaudio-send-to",
+            "0",
+            "--hwaudio-record-from",
+            "0",
         ])
         .output()
         .expect("failed to spawn sotf-recorder-cli");

@@ -79,8 +79,9 @@ mod desktop {
 
         let sandbox_policy = sandbox_policy(&args)?;
         if sandbox_policy.timing == ExternalPluginSandboxTiming::BeforePluginLoad {
-            let status = enter_external_plugin_sandbox(&sandbox_policy, &descriptor, &shared_memory)
-                .map_err(|err| format!("failed to enter pre-load worker sandbox: {err}"))?;
+            let status =
+                enter_external_plugin_sandbox(&sandbox_policy, &descriptor, &shared_memory)
+                    .map_err(|err| format!("failed to enter pre-load worker sandbox: {err}"))?;
             publish_sandbox_runtime_status(&shared, &status);
         }
 
@@ -88,8 +89,9 @@ mod desktop {
             .map_err(|err| format!("failed to create external plugin wrapper: {err}"))?;
 
         if sandbox_policy.timing == ExternalPluginSandboxTiming::AfterPluginLoad {
-            let status = enter_external_plugin_sandbox(&sandbox_policy, &descriptor, &shared_memory)
-                .map_err(|err| format!("failed to enter post-load worker sandbox: {err}"))?;
+            let status =
+                enter_external_plugin_sandbox(&sandbox_policy, &descriptor, &shared_memory)
+                    .map_err(|err| format!("failed to enter post-load worker sandbox: {err}"))?;
             publish_sandbox_runtime_status(&shared, &status);
         }
         if sandbox_policy.timing == ExternalPluginSandboxTiming::Disabled {

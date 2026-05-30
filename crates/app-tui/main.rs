@@ -9,6 +9,8 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use sotf_audio_player::Player;
 use sotf_audio_player_tui::app::{App, InputMode, Screen};
+#[cfg(feature = "dev-api")]
+use sotf_audio_player_tui::dev_api::{DevCommand, DevQueryReply, DevReply};
 use sotf_audio_player_tui::events::{
     AppEvent, PlayerCommand, handle_events, handle_key_event, handle_media_control_event,
     poll_bass_anchor_capture, poll_delay_detection, poll_federation_scan, poll_federation_test,
@@ -16,8 +18,6 @@ use sotf_audio_player_tui::events::{
     poll_probe_capture, poll_recording, poll_room_eq_optimization, poll_save_recordings,
     poll_spinorama_optimization, poll_spinorama_speaker_load, poll_spl_calibration_capture,
 };
-#[cfg(feature = "dev-api")]
-use sotf_audio_player_tui::dev_api::{DevCommand, DevQueryReply, DevReply};
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::ui;
 use sotf_media_controls::{MediaPlayback, MediaPosition};
@@ -358,7 +358,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dev_api_rx: Option<DevApiRx> = None;
 
     // Main loop
-    let result = run_app(&mut terminal, &mut app, &mut player, &mut media_controls, dev_api_rx);
+    let result = run_app(
+        &mut terminal,
+        &mut app,
+        &mut player,
+        &mut media_controls,
+        dev_api_rx,
+    );
 
     // Save configuration before exit (skip in read-only mode)
     if !app.read_only
@@ -1103,7 +1109,11 @@ fn process_dev_command(
     use sotf_audio_player_tui::events::handle_key_event;
 
     match cmd {
-        DevCommand::Action { name, payload: _, reply } => {
+        DevCommand::Action {
+            name,
+            payload: _,
+            reply,
+        } => {
             let result = dispatch_tui_action(app, &name);
             let dev_reply = match result {
                 Ok(()) => DevReply::ok(),

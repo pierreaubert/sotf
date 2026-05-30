@@ -8,5 +8,5 @@ pub mod commands;
 pub mod queries;
 mod server;
 
-pub use commands::{DevCommand, DevReply, DevQueryReply};
+pub use commands::{DevCommand, DevQueryReply, DevReply};
 pub use server::start;

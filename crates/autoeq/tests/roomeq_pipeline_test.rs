@@ -1,9 +1,9 @@
 use autoeq::roomeq::{
-    default_config_version, optimize_room, optimize_room_with_probe_arrivals, CtcConfig,
-    CtcMeasurementConfig, CtcMeasurementFileConfig, CtcRegularizationConfig, CtcWindowConfig,
-    MeasurementSource, OptimizerConfig, PipelineControl, PipelineEvent, PipelineObserver,
-    PipelineStepId, PipelineStepStatus, ProcessingMode, RoomConfig, RoomPipeline,
-    RoomPipelineRequest, SpeakerConfig, SystemConfig, SystemModel,
+    CtcConfig, CtcMeasurementConfig, CtcMeasurementFileConfig, CtcRegularizationConfig,
+    CtcWindowConfig, MeasurementSource, OptimizerConfig, PipelineControl, PipelineEvent,
+    PipelineObserver, PipelineStepId, PipelineStepStatus, ProcessingMode, RoomConfig, RoomPipeline,
+    RoomPipelineRequest, SpeakerConfig, SystemConfig, SystemModel, default_config_version,
+    optimize_room, optimize_room_with_probe_arrivals,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -139,17 +139,21 @@ fn topology_workflow_emits_live_iteration_progress() {
         !progress_events.is_empty(),
         "workflow channel optimization should emit per-iteration progress events"
     );
-    assert!(progress_events
-        .iter()
-        .all(|event| event.channel.as_ref().is_some_and(|name| !name.is_empty())));
+    assert!(
+        progress_events
+            .iter()
+            .all(|event| event.channel.as_ref().is_some_and(|name| !name.is_empty()))
+    );
     assert!(progress_events.iter().any(|event| {
         event
             .loss
             .is_some_and(|loss| loss.is_finite() && loss > 0.0)
     }));
-    assert!(progress_events
-        .iter()
-        .any(|event| event.overall_progress > 0.0));
+    assert!(
+        progress_events
+            .iter()
+            .any(|event| event.overall_progress > 0.0)
+    );
 }
 
 #[test]
@@ -175,10 +179,12 @@ fn topology_workflow_iteration_progress_can_cancel_run() {
     .run(Some(observer));
 
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("stopped by observer"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("stopped by observer")
+    );
 }
 
 #[test]
@@ -264,10 +270,12 @@ fn pipeline_observer_can_cancel_run() {
     .run(Some(observer));
 
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("stopped by observer"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("stopped by observer")
+    );
 }
 
 #[test]

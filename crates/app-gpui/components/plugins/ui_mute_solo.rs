@@ -16,7 +16,7 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_plugins::ChannelState;
-use sotf_plugins::param_specs::{find_by_key as pk, channel_mute_solo::PARAMS as CMS};
+use sotf_plugins::param_specs::{channel_mute_solo::PARAMS as CMS, find_by_key as pk};
 
 /// State for rendering the Channel Mute/Solo plugin
 pub struct ChannelMuteSoloRenderState<'a> {
@@ -228,7 +228,11 @@ pub fn render_mute_solo_plugin(
                                 theme.background
                             })
                             .border_1()
-                            .border_color(if is_dimmed { theme.accent } else { theme.border })
+                            .border_color(if is_dimmed {
+                                theme.accent
+                            } else {
+                                theme.border
+                            })
                             .flex()
                             .items_center()
                             .justify_center()

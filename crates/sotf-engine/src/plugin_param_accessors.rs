@@ -226,11 +226,7 @@ fn index_to_tilt_reference(index: f64) -> TiltReferenceFreq {
 
 #[inline]
 fn b2f(b: bool) -> f64 {
-    if b {
-        1.0
-    } else {
-        0.0
-    }
+    if b { 1.0 } else { 0.0 }
 }
 
 #[inline]

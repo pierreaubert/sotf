@@ -509,7 +509,6 @@ pub mod automation_utils {
             samples_per_step,
         }
     }
-
 }
 
 #[cfg(test)]

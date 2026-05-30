@@ -538,11 +538,17 @@ fn external_plugin_isolation_requested(
     parameters: &serde_json::Value,
     trust: ExternalPluginTrust,
 ) -> bool {
-    if let Some(isolated) = parameters.get("isolated").and_then(serde_json::Value::as_bool) {
+    if let Some(isolated) = parameters
+        .get("isolated")
+        .and_then(serde_json::Value::as_bool)
+    {
         return isolated;
     }
 
-    if let Some(isolation) = parameters.get("isolation").and_then(serde_json::Value::as_str) {
+    if let Some(isolation) = parameters
+        .get("isolation")
+        .and_then(serde_json::Value::as_str)
+    {
         let isolation = isolation.to_ascii_lowercase();
         if isolation == "disabled" || isolation == "off" || isolation == "false" {
             return false;
@@ -1034,18 +1040,20 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     #[test]
     fn create_external_plugin_can_opt_into_process_isolation() {
-        let config = parse_isolated_external_plugin_config(&serde_json::json!({
-            "worker_path": "/usr/bin/sotf-test-worker",
-            "worker_args": ["--once", "--idle-sleep-micros", "250"],
-            "worker_env": {
-                "SOTF_TEST_WORKER": "1"
-            },
-            "start_worker": false,
-            "plugin_trust": "signed",
-            "deadline_micros": 250,
-            "max_block_frames": 1024,
-        }),
-            ExternalPluginTrust::Signed)
+        let config = parse_isolated_external_plugin_config(
+            &serde_json::json!({
+                "worker_path": "/usr/bin/sotf-test-worker",
+                "worker_args": ["--once", "--idle-sleep-micros", "250"],
+                "worker_env": {
+                    "SOTF_TEST_WORKER": "1"
+                },
+                "start_worker": false,
+                "plugin_trust": "signed",
+                "deadline_micros": 250,
+                "max_block_frames": 1024,
+            }),
+            ExternalPluginTrust::Signed,
+        )
         .unwrap();
 
         assert_eq!(
@@ -1072,12 +1080,14 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     #[test]
     fn isolated_external_plugin_config_maps_trust_to_sandbox_timing() {
-        let signed = parse_isolated_external_plugin_config(&serde_json::json!({
-            "plugin_trust": "signed",
-            "sandbox_read_paths": ["/Library/Audio/Plug-Ins"],
-            "sandbox_write_paths": ["/tmp/sotf-plugin-cache"],
-        }),
-            ExternalPluginTrust::Signed)
+        let signed = parse_isolated_external_plugin_config(
+            &serde_json::json!({
+                "plugin_trust": "signed",
+                "sandbox_read_paths": ["/Library/Audio/Plug-Ins"],
+                "sandbox_write_paths": ["/tmp/sotf-plugin-cache"],
+            }),
+            ExternalPluginTrust::Signed,
+        )
         .unwrap();
         assert_eq!(
             signed.sandbox_policy.timing,
@@ -1089,10 +1099,12 @@ mod tests {
             vec![PathBuf::from("/Library/Audio/Plug-Ins")]
         );
 
-        let untrusted = parse_isolated_external_plugin_config(&serde_json::json!({
-            "plugin_trust": "untrusted"
-        }),
-            ExternalPluginTrust::Untrusted)
+        let untrusted = parse_isolated_external_plugin_config(
+            &serde_json::json!({
+                "plugin_trust": "untrusted"
+            }),
+            ExternalPluginTrust::Untrusted,
+        )
         .unwrap();
         assert_eq!(
             untrusted.sandbox_policy.timing,
