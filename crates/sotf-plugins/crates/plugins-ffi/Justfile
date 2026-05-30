@@ -13,3 +13,36 @@ lint-ffi:
 
 [group('qa-plugins')]
 qa-ffi: lint-ffi test-ffi
+
+[group('build')]
+build-spm-package:
+	swift build \
+		--package-path crates/sotf-plugins/crates/plugins-ffi \
+		--scratch-path /private/tmp/sotf-plugin-ffi-spm-build \
+		--cache-path /private/tmp/sotf-plugin-ffi-spm-cache
+
+[group('build')]
+build-spm-xcframework:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	PKG_DIR="crates/sotf-plugins/crates/plugins-ffi"
+	OUT_DIR="$PKG_DIR/SwiftPackage/Artifacts"
+	HEADERS="$PKG_DIR/SwiftPackage/Sources/SOTFPluginFFI/include"
+	rm -rf "$OUT_DIR"
+	mkdir -p "$OUT_DIR/macos-arm64" "$OUT_DIR/ios-arm64" "$OUT_DIR/ios-simulator-arm64"
+
+	cargo build --release -p plugins-ffi --target aarch64-apple-darwin
+	cp target/aarch64-apple-darwin/release/libplugins_ffi.a "$OUT_DIR/macos-arm64/libsotf_audio_plugins_ffi.a"
+
+	cargo build --release -p plugins-ffi --target aarch64-apple-ios
+	cp target/aarch64-apple-ios/release/libplugins_ffi.a "$OUT_DIR/ios-arm64/libsotf_audio_plugins_ffi.a"
+
+	cargo build --release -p plugins-ffi --target aarch64-apple-ios-sim
+	cp target/aarch64-apple-ios-sim/release/libplugins_ffi.a "$OUT_DIR/ios-simulator-arm64/libsotf_audio_plugins_ffi.a"
+
+	xcodebuild -create-xcframework \
+		-library "$OUT_DIR/macos-arm64/libsotf_audio_plugins_ffi.a" -headers "$HEADERS" \
+		-library "$OUT_DIR/ios-arm64/libsotf_audio_plugins_ffi.a" -headers "$HEADERS" \
+		-library "$OUT_DIR/ios-simulator-arm64/libsotf_audio_plugins_ffi.a" -headers "$HEADERS" \
+		-output "$OUT_DIR/SOTFPluginFFI.xcframework"
+	echo "✅ SwiftPM XCFramework: $OUT_DIR/SOTFPluginFFI.xcframework"

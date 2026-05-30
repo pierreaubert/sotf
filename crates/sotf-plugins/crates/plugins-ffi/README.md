@@ -12,11 +12,17 @@ and UI adapters mature.
 - `plugin_create` / `plugin_process` / parameter and state calls for audio
   plugins.
 - `plugin_process_with_midi` for allocation-free MIDI input bridging.
-- `plugin_process_with_events` reserves ABI slots for MIDI output and Note
-  Expression; those currently report unsupported until the core plugin trait
-  can produce outgoing events.
+- `plugin_process_with_events` accepts MIDI input and copies queued MIDI output
+  and Note Expression events into host-provided buffers.
+- `plugin_enqueue_midi_output_event` and
+  `plugin_enqueue_note_expression_output_event` let AUv3/VST3 wrappers bridge
+  instrument-style output without allocating in the render callback.
 - `plugin_preset_document_info` advertises the preset UTType,
   `.sotfpreset` extension, and document-state schema for AUv3 preset browsers.
+- `plugin_export_preset_json`, `plugin_import_preset_json`, and
+  `plugin_suggest_preset_filename` implement user-preset document round trips.
+- `plugin_vst3_ffi_descriptor` exposes stable Windows/VST3 loader metadata for
+  COM-style C#, Python, and other native bindings.
 - `plugin_ffi_capabilities` and `plugin_ffi_platform_info_json` let AUv3,
   SwiftPM, and future VST3 hosts feature-detect the current target.
 
@@ -40,3 +46,23 @@ source tree.
 and place it where the consuming Xcode project can resolve
 `-lsotf_audio_plugins_ffi`; the package supplies the headers and linker
 metadata for the common Apple frameworks.
+
+For binary-style distribution, run:
+
+```bash
+just build-spm-xcframework
+```
+
+This stages macOS, iOS device, and iOS simulator static libraries and wraps
+them with the generated headers into
+`SwiftPackage/Artifacts/SOTFPluginFFI.xcframework`.
+
+## Windows VST3 FFI
+
+`plugin_vst3_ffi_descriptor()` is the native-language discovery entrypoint.
+Windows hosts can load the dynamic library, check the descriptor, then use the
+same opaque-handle lifecycle as AUv3 (`plugin_create`, `plugin_process*`,
+parameter, state, preset, and event functions). `plugins-nih` remains the
+Rust-native VST3 plugin wrapper; this FFI surface is for external host
+languages that need a stable C ABI. The descriptor reports no native COM
+factory yet; hosts should call the exported C ABI directly.

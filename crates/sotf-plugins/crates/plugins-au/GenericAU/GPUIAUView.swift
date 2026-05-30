@@ -1,6 +1,7 @@
 // GPUIAUView.swift
 // NSView subclass that hosts GPUI rendering via Metal for Audio Unit plugin UIs.
 
+#if os(macOS)
 import AppKit
 import AudioToolbox
 
@@ -10,7 +11,7 @@ public class GPUIAUView: NSView {
     private var renderTimer: Timer?
     private let pluginType: String
     /// Atomic parameter cache for thread-safe UI rendering.
-    nonisolated(unsafe) private var paramCache: UnsafeMutableRawPointer?
+    nonisolated(unsafe) private var paramCache: OpaquePointer?
     /// Reference to the AU for parameter writes through AUParameterTree.
     /// Strong ref: AU must outlive the GPUI view (callback userdata points to it).
     private var audioUnit: GenericRustAudioUnit?
@@ -68,7 +69,7 @@ public class GPUIAUView: NSView {
     /// Create a nonisolated parameter observer closure.
     /// Must be a static/nonisolated method so the returned closure doesn't inherit @MainActor.
     nonisolated private static func makeParamObserver(
-        cachePtr: UnsafeMutableRawPointer,
+        cachePtr: OpaquePointer,
         index: Int
     ) -> AUParameterObserver {
         return { _, value in
@@ -82,7 +83,7 @@ public class GPUIAUView: NSView {
     }
 
     /// Push parameter metadata (name, unit, range) into the Rust cache.
-    private static func setParamMeta(cache: UnsafeMutableRawPointer?, index: Int, param: AUParameter) {
+    private static func setParamMeta(cache: OpaquePointer?, index: Int, param: AUParameter) {
         guard let cache = cache else { return }
         let name = param.displayName
         let unitStr = param.unitName ?? ""
@@ -336,3 +337,4 @@ private let gpuiResetParamCallback: ResetParamCallback = { userdata, paramIndex 
         }
     }
 }
+#endif

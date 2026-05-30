@@ -96,6 +96,55 @@ impl MidiEvent {
     }
 }
 
+/// Per-note expression kind timestamped relative to a processing block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteExpressionKind {
+    PitchBend,
+    Pressure,
+    Timbre,
+    Brightness,
+    Volume,
+    Pan,
+}
+
+/// A per-note expression event timestamped relative to the start of a block.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NoteExpressionEvent {
+    /// Sample offset within the current block.
+    pub sample_offset: usize,
+    /// Host-assigned note ID when available.
+    pub note_id: i32,
+    /// MIDI channel for MPE-style expression.
+    pub channel: u8,
+    /// MIDI note number.
+    pub note: u8,
+    /// Expression semantic.
+    pub expression: NoteExpressionKind,
+    /// Normalized or unit-specific expression value supplied by the host.
+    pub value: f64,
+}
+
+impl NoteExpressionEvent {
+    /// Create a block-relative per-note expression event.
+    pub const fn new(
+        sample_offset: usize,
+        note_id: i32,
+        channel: u8,
+        note: u8,
+        expression: NoteExpressionKind,
+        value: f64,
+    ) -> Self {
+        Self {
+            sample_offset,
+            note_id,
+            channel,
+            note,
+            expression,
+            value,
+        }
+    }
+}
+
 /// Musical time signature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimeSignature {
@@ -222,6 +271,8 @@ pub struct ProcessContext<'a> {
     pub transport: TransportInfo,
     /// MIDI events scheduled within this processing block.
     pub midi_events: &'a [MidiEvent],
+    /// Per-note expression events scheduled within this processing block.
+    pub note_expression_events: &'a [NoteExpressionEvent],
 }
 
 impl<'a> ProcessContext<'a> {
@@ -232,6 +283,7 @@ impl<'a> ProcessContext<'a> {
             num_frames,
             transport: TransportInfo::at_sample(0, sample_rate),
             midi_events: &[],
+            note_expression_events: &[],
         }
     }
 
@@ -263,6 +315,22 @@ impl<'a> ProcessContext<'a> {
             num_frames: self.num_frames,
             transport: self.transport,
             midi_events,
+            note_expression_events: &[],
+        }
+    }
+
+    /// Return a copy with borrowed MIDI and per-note expression events.
+    pub const fn with_events<'b>(
+        self,
+        midi_events: &'b [MidiEvent],
+        note_expression_events: &'b [NoteExpressionEvent],
+    ) -> ProcessContext<'b> {
+        ProcessContext {
+            sample_rate: self.sample_rate,
+            num_frames: self.num_frames,
+            transport: self.transport,
+            midi_events,
+            note_expression_events,
         }
     }
 }
@@ -764,6 +832,7 @@ mod tests {
         assert_eq!(ctx.transport.ppq_position, 0.0);
         assert!(ctx.transport.loop_range.is_none());
         assert!(ctx.midi_events.is_empty());
+        assert!(ctx.note_expression_events.is_empty());
     }
 
     #[test]
@@ -785,6 +854,29 @@ mod tests {
         assert_eq!(ctx.midi_events.len(), 1);
         assert_eq!(ctx.midi_events[0].sample_offset, 12);
         assert_eq!(ctx.midi_events[0].message.as_bytes(), &[0x90, 60, 100]);
+    }
+
+    #[test]
+    fn process_context_borrows_note_expression_events_without_copying() {
+        let midi_events = [MidiEvent::new(12, MidiMessage::note_on(0, 60, 100))];
+        let note_events = [NoteExpressionEvent::new(
+            24,
+            7,
+            0,
+            60,
+            NoteExpressionKind::PitchBend,
+            0.5,
+        )];
+        let ctx = ProcessContext::new(48_000, 128).with_events(&midi_events, &note_events);
+
+        assert_eq!(ctx.midi_events.len(), 1);
+        assert_eq!(ctx.note_expression_events.len(), 1);
+        assert_eq!(ctx.note_expression_events[0].sample_offset, 24);
+        assert_eq!(ctx.note_expression_events[0].note_id, 7);
+        assert_eq!(
+            ctx.note_expression_events[0].expression,
+            NoteExpressionKind::PitchBend
+        );
     }
 
     #[test]

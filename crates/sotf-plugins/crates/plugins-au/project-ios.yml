@@ -1,0 +1,80 @@
+name: SOTFAudioUnits-iOS
+options:
+  bundleIdPrefix: org.spinorama
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  MARKETING_VERSION: 0.6.1
+  CURRENT_PROJECT_VERSION: 1
+  IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+  SWIFT_VERSION: "6.0"
+
+targetTemplates:
+  SOTFiOSAudioUnitExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: GenericAU
+        name: GenericAU
+        createIntermediateGroups: true
+      - path: GenericAUiOS
+        name: GenericAUiOS
+        createIntermediateGroups: true
+      - path: Shared
+        name: Shared
+        createIntermediateGroups: true
+        headerVisibility: public
+    settings:
+      SWIFT_OBJC_BRIDGING_HEADER: Shared/BridgingHeader.h
+      CODE_SIGN_IDENTITY: "-"
+      CODE_SIGN_STYLE: Automatic
+      LIBRARY_SEARCH_PATHS:
+        - $(PROJECT_DIR)/Resources
+      HEADER_SEARCH_PATHS:
+        - $(PROJECT_DIR)/Shared
+      SKIP_INSTALL: false
+      EXTENSION_SAFE_API_ONLY: true
+      OTHER_LDFLAGS:
+        - -lsotf_audio_plugins_ffi
+        - -lsqlite3
+    dependencies:
+      - sdk: AVFoundation.framework
+      - sdk: AudioToolbox.framework
+      - sdk: CoreAudioKit.framework
+      - sdk: CoreGraphics.framework
+      - sdk: CoreText.framework
+      - sdk: Foundation.framework
+      - sdk: Metal.framework
+      - sdk: QuartzCore.framework
+      - sdk: UIKit.framework
+
+targets:
+  SOTFAudioUnits-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: App-iOS
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.iOS
+      INFOPLIST_FILE: App-iOS/Info.plist
+      CODE_SIGN_IDENTITY: "-"
+      CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - target: EQiOSAudioUnit
+        embed: true
+
+  EQiOSAudioUnit:
+    templates:
+      - SOTFiOSAudioUnitExtension
+    sources:
+      - path: EQiOSAudioUnit
+        name: EQiOSAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.iOS.EQAudioUnit
+      INFOPLIST_FILE: EQiOSAudioUnit/Info.plist

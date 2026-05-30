@@ -19,6 +19,8 @@ include = [
     "PluginMidiEvent",
     "PluginNoteExpressionEvent",
     "PluginNoteExpressionKind",
+    "PluginVst3FfiDescriptor",
+    "PluginSwiftPackageInfo",
 ]
 
 [export.rename]
@@ -31,3 +33,5 @@ include = [
 "PluginMidiEvent" = "PluginMidiEvent"
 "PluginNoteExpressionEvent" = "PluginNoteExpressionEvent"
 "PluginNoteExpressionKind" = "PluginNoteExpressionKind"
+"PluginVst3FfiDescriptor" = "PluginVst3FfiDescriptor"
+"PluginSwiftPackageInfo" = "PluginSwiftPackageInfo"

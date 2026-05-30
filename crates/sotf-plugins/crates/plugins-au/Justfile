@@ -62,6 +62,9 @@ sync-au-versions:
 
 	# App container MARKETING_VERSION in project.yml
 	sed -i '' "s/MARKETING_VERSION: .*/MARKETING_VERSION: $WS_VERSION/" "$AU_DIR/project.yml"
+	if [ -f "$AU_DIR/project-ios.yml" ]; then
+		sed -i '' "s/MARKETING_VERSION: .*/MARKETING_VERSION: $WS_VERSION/" "$AU_DIR/project-ios.yml"
+	fi
 	echo "  project.yml MARKETING_VERSION → $WS_VERSION"
 
 # ----------------------------------------------------------------------
@@ -123,6 +126,30 @@ build-au-ffi-x86_64:
 		{{au_dir}}/Resources/libsotf_audio_plugins_ffi.a
 	echo "✅ FFI library (x86_64): {{au_dir}}/Resources/libsotf_audio_plugins_ffi.a"
 
+# Build the plugins-ffi staticlib for iOS devices and stage it for Xcode.
+[group('build-ios')]
+build-au-ffi-ios-arm64:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "Building plugins-ffi for iOS device arm64..."
+	cargo build --release -p plugins-ffi --target aarch64-apple-ios
+	mkdir -p {{au_dir}}/Resources
+	cp target/aarch64-apple-ios/release/libplugins_ffi.a \
+		{{au_dir}}/Resources/libsotf_audio_plugins_ffi.a
+	echo "✅ FFI library (iOS arm64): {{au_dir}}/Resources/libsotf_audio_plugins_ffi.a"
+
+# Build the plugins-ffi staticlib for the iOS simulator and stage it for Xcode.
+[group('build-ios')]
+build-au-ffi-ios-simulator-arm64:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "Building plugins-ffi for iOS simulator arm64..."
+	cargo build --release -p plugins-ffi --target aarch64-apple-ios-sim
+	mkdir -p {{au_dir}}/Resources
+	cp target/aarch64-apple-ios-sim/release/libplugins_ffi.a \
+		{{au_dir}}/Resources/libsotf_audio_plugins_ffi.a
+	echo "✅ FFI library (iOS simulator arm64): {{au_dir}}/Resources/libsotf_audio_plugins_ffi.a"
+
 # ----------------------------------------------------------------------
 # Xcode build (per-arch)
 # ----------------------------------------------------------------------
@@ -183,6 +210,55 @@ build-au-all-x86_64: build-au-xcode-x86_64 sync-au-versions
 [group('build-macos')]
 build-au-all: build-au-all-arm64 build-au-all-x86_64
 	@echo "✅ AU packages built for arm64 and x86_64"
+
+# Build the iOS AUv3 container + EQ extension for a device destination.
+[group('build-ios')]
+build-au-ios-device: sync-au-versions build-au-ffi-ios-arm64
+	#!/usr/bin/env bash
+	set -euo pipefail
+	cd {{au_dir}}
+	if [ ! -d "SOTFAudioUnits-iOS.xcodeproj" ] || [ "project-ios.yml" -nt "SOTFAudioUnits-iOS.xcodeproj/project.pbxproj" ]; then
+		echo "Generating iOS Xcode project..."
+		xcodegen generate --spec project-ios.yml
+	fi
+	rm -rf build/au-ios-device
+	xcodebuild -project SOTFAudioUnits-iOS.xcodeproj \
+		-scheme SOTFAudioUnits-iOS \
+		-configuration Release \
+		-sdk iphoneos \
+		-destination 'generic/platform=iOS' \
+		-derivedDataPath build/au-ios-device \
+		ARCHS=arm64 \
+		ONLY_ACTIVE_ARCH=NO \
+		build
+	echo "✅ iOS AUv3 device build: build/au-ios-device/Build/Products/Release-iphoneos/SOTFAudioUnits-iOS.app"
+
+# Build the iOS AUv3 container + EQ extension for the arm64 simulator.
+[group('build-ios')]
+build-au-ios-simulator: sync-au-versions build-au-ffi-ios-simulator-arm64
+	#!/usr/bin/env bash
+	set -euo pipefail
+	cd {{au_dir}}
+	if [ ! -d "SOTFAudioUnits-iOS.xcodeproj" ] || [ "project-ios.yml" -nt "SOTFAudioUnits-iOS.xcodeproj/project.pbxproj" ]; then
+		echo "Generating iOS Xcode project..."
+		xcodegen generate --spec project-ios.yml
+	fi
+	rm -rf build/au-ios-simulator
+	xcodebuild -project SOTFAudioUnits-iOS.xcodeproj \
+		-scheme SOTFAudioUnits-iOS \
+		-configuration Debug \
+		-sdk iphonesimulator \
+		-destination 'generic/platform=iOS Simulator' \
+		-derivedDataPath build/au-ios-simulator \
+		ARCHS=arm64 \
+		ONLY_ACTIVE_ARCH=NO \
+		build
+	echo "✅ iOS AUv3 simulator build: build/au-ios-simulator/Build/Products/Debug-iphonesimulator/SOTFAudioUnits-iOS.app"
+
+# Build both iOS AUv3 validation targets.
+[group('build-ios')]
+build-au-ios: build-au-ios-device build-au-ios-simulator
+	@echo "✅ iOS AUv3 device and simulator builds completed"
 
 # Validate all Audio Units with auval (against whichever arch is currently registered).
 [group('build-macos')]

@@ -6,6 +6,7 @@
 import AVFoundation
 import AudioToolbox
 import CoreAudioKit
+import Foundation
 import UniformTypeIdentifiers
 
 // MARK: - Render State (shared between main thread and render thread via pointer)
@@ -18,6 +19,10 @@ private struct RenderState {
     var scratchIn: UnsafeMutablePointer<Float>?
     var scratchOut: UnsafeMutablePointer<Float>?
     var scratchCapacity: Int
+    var midiIn: UnsafeMutablePointer<PluginMidiEvent>?
+    var midiOut: UnsafeMutablePointer<PluginMidiEvent>?
+    var noteExpressionOut: UnsafeMutablePointer<PluginNoteExpressionEvent>?
+    var eventCapacity: Int
 }
 
 /// Base AUAudioUnit that delegates all processing to a Rust plugin via FFI.
@@ -72,7 +77,15 @@ open class GenericRustAudioUnit: AUAudioUnit {
         // Allocate render state on the heap
         renderStatePtr = .allocate(capacity: 1)
         renderStatePtr.initialize(to: RenderState(
-            handle: nil, channels: 0, scratchIn: nil, scratchOut: nil, scratchCapacity: 0
+            handle: nil,
+            channels: 0,
+            scratchIn: nil,
+            scratchOut: nil,
+            scratchCapacity: 0,
+            midiIn: nil,
+            midiOut: nil,
+            noteExpressionOut: nil,
+            eventCapacity: 0
         ))
 
         // Start with a default stereo format; the host will set the actual format before rendering
@@ -107,6 +120,9 @@ open class GenericRustAudioUnit: AUAudioUnit {
         }
         state.scratchIn?.deallocate()
         state.scratchOut?.deallocate()
+        state.midiIn?.deallocate()
+        state.midiOut?.deallocate()
+        state.noteExpressionOut?.deallocate()
         renderStatePtr.deallocate()
     }
 
@@ -217,7 +233,7 @@ open class GenericRustAudioUnit: AUAudioUnit {
         let paramId = param.identifier
         let normalized = Double(normalize(value: value, param: param))
 
-        paramId.withCString { idPtr in
+        _ = paramId.withCString { idPtr in
             plugin_set_parameter(handle, idPtr, normalized)
         }
     }
@@ -303,6 +319,17 @@ open class GenericRustAudioUnit: AUAudioUnit {
             renderStatePtr.pointee.scratchOut = .allocate(capacity: needed)
             renderStatePtr.pointee.scratchCapacity = needed
         }
+
+        let eventCapacity = 256
+        if renderStatePtr.pointee.eventCapacity < eventCapacity {
+            renderStatePtr.pointee.midiIn?.deallocate()
+            renderStatePtr.pointee.midiOut?.deallocate()
+            renderStatePtr.pointee.noteExpressionOut?.deallocate()
+            renderStatePtr.pointee.midiIn = .allocate(capacity: eventCapacity)
+            renderStatePtr.pointee.midiOut = .allocate(capacity: eventCapacity)
+            renderStatePtr.pointee.noteExpressionOut = .allocate(capacity: eventCapacity)
+            renderStatePtr.pointee.eventCapacity = eventCapacity
+        }
     }
 
     public override func deallocateRenderResources() {
@@ -315,6 +342,7 @@ open class GenericRustAudioUnit: AUAudioUnit {
         // Capture the POINTER, not the values. The pointed-to struct is updated
         // by allocateRenderResources, so the render thread always sees current state.
         let statePtr = renderStatePtr
+        let midiOutputBlock = midiOutputEventBlock
 
         return { (
             actionFlags,
@@ -364,9 +392,49 @@ open class GenericRustAudioUnit: AUAudioUnit {
                 }
             }
 
-            // Process through Rust plugin
-            let result = plugin_process(handle, scratchIn, scratchOut, frames)
+            let midiInCount = Self.copyMIDIInputEvents(
+                from: realtimeEventListHead,
+                to: state.midiIn,
+                capacity: state.eventCapacity,
+                frameCount: frames
+            )
+
+            // Process through Rust plugin and copy any queued MIDI/Note Expression output events.
+            var midiOutCount = 0
+            var noteExpressionOutCount = 0
+            let result = plugin_process_with_events(
+                handle,
+                scratchIn,
+                scratchOut,
+                frames,
+                state.midiIn,
+                midiInCount,
+                nil,
+                0,
+                state.midiOut,
+                state.eventCapacity,
+                &midiOutCount,
+                state.noteExpressionOut,
+                state.eventCapacity,
+                &noteExpressionOutCount
+            )
             guard result == 0 else { return OSStatus(kAudioUnitErr_FailedInitialization) }
+
+            if let midiOutputBlock = midiOutputBlock, let midiOut = state.midiOut {
+                for i in 0..<midiOutCount {
+                    var event = midiOut[i]
+                    withUnsafeBytes(of: &event.data) { bytes in
+                        if let base = bytes.baseAddress {
+                            _ = midiOutputBlock(
+                                AUEventSampleTime(event.sample_offset),
+                                0,
+                                Int(event.len),
+                                base.assumingMemoryBound(to: UInt8.self)
+                            )
+                        }
+                    }
+                }
+            }
 
             // Deinterleave output back to AU's buffers
             if outputBufferList.count == 1 && outputBufferList[0].mNumberChannels == UInt32(channels) {
@@ -399,6 +467,14 @@ open class GenericRustAudioUnit: AUAudioUnit {
     @available(macOS 11.0, iOS 14.0, *)
     public static var sotfPresetType: UTType {
         UTType(exportedAs: sotfPresetTypeIdentifier)
+    }
+
+    public override var supportsMPE: Bool {
+        plugin_ffi_capabilities().supports_note_expression
+    }
+
+    public override var midiOutputNames: [String] {
+        plugin_ffi_capabilities().supports_midi_output ? ["MIDI Output"] : []
     }
 
     public override var fullState: [String: Any]? {
@@ -469,6 +545,35 @@ open class GenericRustAudioUnit: AUAudioUnit {
         }
     }
 
+    public func exportPreset(named name: String) -> Data? {
+        guard let handle = renderStatePtr.pointee.handle else { return nil }
+        var len = 0
+        let ptr = name.withCString { namePtr in
+            plugin_export_preset_json(handle, namePtr, &len)
+        }
+        guard let ptr = ptr, len > 0 else { return nil }
+        defer { plugin_free_state(ptr, len) }
+        return Data(bytes: ptr, count: len)
+    }
+
+    public func importPresetDocument(_ data: Data) -> Bool {
+        guard let handle = renderStatePtr.pointee.handle else { return false }
+        return data.withUnsafeBytes { bytes in
+            guard let ptr = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return false }
+            return plugin_import_preset_json(handle, ptr, bytes.count) == 0
+        }
+    }
+
+    public func suggestedPresetFilename(named name: String) -> String? {
+        guard let handle = renderStatePtr.pointee.handle else { return nil }
+        let ptr = name.withCString { namePtr in
+            plugin_suggest_preset_filename(handle, namePtr)
+        }
+        guard let ptr = ptr else { return nil }
+        defer { plugin_free_string(ptr) }
+        return String(cString: ptr)
+    }
+
     #if os(macOS)
     public func makePresetBookmark(for url: URL) throws -> Data {
         try url.bookmarkData(options: [.withSecurityScope],
@@ -483,6 +588,44 @@ open class GenericRustAudioUnit: AUAudioUnit {
                 bookmarkDataIsStale: &stale)
     }
     #endif
+
+    private static func copyMIDIInputEvents(
+        from eventList: UnsafePointer<AURenderEvent>?,
+        to buffer: UnsafeMutablePointer<PluginMidiEvent>?,
+        capacity: Int,
+        frameCount: Int
+    ) -> Int {
+        guard let buffer = buffer, capacity > 0 else { return 0 }
+
+        var count = 0
+        var event = eventList
+        while let current = event, count < capacity {
+            let head = current.pointee.head
+            if head.eventType == .MIDI {
+                let midi = current.pointee.MIDI
+                if midi.length > 0 && midi.length <= 3 {
+                    let maxOffset = max(frameCount - 1, 0)
+                    let rawOffset = midi.eventSampleTime
+                    let sampleOffset: Int
+                    if rawOffset <= 0 {
+                        sampleOffset = 0
+                    } else if rawOffset >= AUEventSampleTime(maxOffset) {
+                        sampleOffset = maxOffset
+                    } else {
+                        sampleOffset = Int(rawOffset)
+                    }
+                    buffer[count] = PluginMidiEvent(
+                        sample_offset: sampleOffset,
+                        data: (midi.data.0, midi.data.1, midi.data.2),
+                        len: UInt8(midi.length)
+                    )
+                    count += 1
+                }
+            }
+            event = UnsafePointer(head.next)
+        }
+        return count
+    }
 }
 
 // MARK: - Helper Functions

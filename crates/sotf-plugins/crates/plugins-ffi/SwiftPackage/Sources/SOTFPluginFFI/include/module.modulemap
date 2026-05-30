@@ -1,0 +1,4 @@
+module SOTFPluginFFI {
+    umbrella header "SOTFPluginFFI.h"
+    export *
+}

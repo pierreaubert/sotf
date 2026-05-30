@@ -6,6 +6,7 @@
 // hosts (REAPER, Logic, etc.) render a blank window because GPUIAUView
 // stays at .zero size.
 
+#if os(macOS)
 import AppKit
 import CoreAudioKit
 import AudioToolbox
@@ -56,3 +57,4 @@ open class GenericRustViewController: AUViewController {
         }
     }
 }
+#endif

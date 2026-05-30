@@ -90,6 +90,7 @@ typedef struct PluginFfiCapabilities {
   bool supports_ios_au_v3;
   bool supports_windows_vst3;
   bool supports_swift_package;
+  bool supports_preset_documents;
 } PluginFfiCapabilities;
 
 /**
@@ -103,6 +104,36 @@ typedef struct PluginPresetDocumentInfo {
   bool supports_full_state_for_document;
   bool supports_security_scoped_bookmarks;
 } PluginPresetDocumentInfo;
+
+/**
+ * Windows/VST3 loader metadata for C#/Python hosts.
+ */
+typedef struct PluginVst3FfiDescriptor {
+  uint32_t abi_version;
+  uint8_t class_id[16];
+  const char *component_name;
+  const char *vendor;
+  const char *sdk_version;
+  const char *entrypoint;
+  bool supports_com_factory;
+  bool supports_audio_effects;
+  bool supports_instruments;
+  bool supports_midi_output;
+  bool supports_note_expression;
+} PluginVst3FfiDescriptor;
+
+/**
+ * Swift Package distribution metadata.
+ */
+typedef struct PluginSwiftPackageInfo {
+  const char *package_name;
+  const char *product_name;
+  const char *target_name;
+  const char *library_name;
+  const char *umbrella_header;
+  bool supports_staticlib;
+  bool supports_xcframework;
+} PluginSwiftPackageInfo;
 
 /**
  * Raw MIDI event scheduled within a processing block.
@@ -202,6 +233,16 @@ char *plugin_ffi_platform_info_json(void);
 struct PluginPresetDocumentInfo plugin_preset_document_info(void);
 
 /**
+ * Get Windows/VST3 FFI metadata for native language bindings.
+ */
+struct PluginVst3FfiDescriptor plugin_vst3_ffi_descriptor(void);
+
+/**
+ * Get Swift Package metadata for Xcode/SwiftPM integrations.
+ */
+struct PluginSwiftPackageInfo plugin_swift_package_info(void);
+
+/**
  * Create a new plugin instance
  *
  * # Arguments
@@ -282,10 +323,9 @@ int plugin_process_with_midi(struct PluginHandle *handle,
 /**
  * Process audio with MIDI/note-expression input and output ABI slots.
  *
- * Incoming MIDI is bridged into ProcessContext. MIDI output and note
- * expression are explicit ABI slots so AUv3/VST3 hosts can feature-detect
- * support, but the current core plugin trait does not yet produce outgoing
- * events; output counts are therefore set to zero.
+ * Incoming MIDI is bridged into ProcessContext. Queued MIDI output and Note
+ * Expression events are copied into host-provided buffers without allocating
+ * on the render path.
  */
 int plugin_process_with_events(struct PluginHandle *handle,
                                const float *input,
@@ -301,6 +341,38 @@ int plugin_process_with_events(struct PluginHandle *handle,
                                struct PluginNoteExpressionEvent *_note_expression_output,
                                size_t _note_expression_output_capacity,
                                size_t *note_expression_output_count);
+
+/**
+ * Clear queued MIDI and Note Expression output events.
+ */
+int plugin_clear_output_events(struct PluginHandle *handle);
+
+/**
+ * Queue one outgoing MIDI event for the next event-aware process call.
+ */
+int plugin_enqueue_midi_output_event(struct PluginHandle *handle, struct PluginMidiEvent event);
+
+/**
+ * Queue one outgoing Note Expression event for the next event-aware process call.
+ */
+int plugin_enqueue_note_expression_output_event(struct PluginHandle *handle,
+                                                struct PluginNoteExpressionEvent event);
+
+/**
+ * Copy queued outgoing MIDI events without processing audio.
+ */
+int plugin_get_midi_output_events(struct PluginHandle *handle,
+                                  struct PluginMidiEvent *out,
+                                  size_t capacity,
+                                  size_t *out_count);
+
+/**
+ * Copy queued outgoing Note Expression events without processing audio.
+ */
+int plugin_get_note_expression_output_events(struct PluginHandle *handle,
+                                             struct PluginNoteExpressionEvent *out,
+                                             size_t capacity,
+                                             size_t *out_count);
 
 /**
  * Get the number of parameters
@@ -386,6 +458,28 @@ int plugin_load_state(struct PluginHandle *handle, const uint8_t *data, size_t l
  * Free a state buffer returned by plugin_save_state().
  */
 void plugin_free_state(uint8_t *data, size_t len);
+
+/**
+ * Export a named preset document as JSON bytes.
+ *
+ * The returned buffer uses the preset document schema advertised by
+ * plugin_preset_document_info() and must be freed with plugin_free_state().
+ */
+uint8_t *plugin_export_preset_json(const struct PluginHandle *handle,
+                                   const char *preset_name,
+                                   size_t *out_len);
+
+/**
+ * Import a JSON preset document created by plugin_export_preset_json().
+ */
+int plugin_import_preset_json(struct PluginHandle *handle, const uint8_t *data, size_t len);
+
+/**
+ * Suggest a filesystem-safe preset filename.
+ *
+ * Caller must free the returned string with plugin_free_string().
+ */
+char *plugin_suggest_preset_filename(const struct PluginHandle *handle, const char *preset_name);
 
 /**
  * Get the list of available plugin types as a JSON array string.
