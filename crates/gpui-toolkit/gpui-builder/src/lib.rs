@@ -52,12 +52,15 @@ pub mod compat;
 #[macro_use]
 mod macros;
 pub mod plugin_chassis;
+pub mod snapshots;
 pub mod solved;
 pub mod solver;
 pub mod types;
 
 // Re-exports for convenience
 pub use solved::{LayoutDebugReport, LayoutDebugWarning, LayoutDebugWarningKind, SolvedNode};
+pub use snapshots::{LayoutSnapshot, LayoutSnapshotMatrix, LayoutViewport, solve_snapshot_matrix};
+pub use solved::SolvedNode;
 pub use solver::solve;
 pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,

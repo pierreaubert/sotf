@@ -82,6 +82,22 @@ let solved = solve_layout! {
         slot content(Sizing::flex(300.0));
     }
 };
+
+## Responsive Snapshots
+
+Use `solve_snapshot_matrix` to inspect the same layout across named viewport
+sizes from tests, examples, or CI logs without running the GPUI showcase.
+
+```rust
+use gpui_builder::{LayoutPreferences, LayoutViewport, solve_snapshot_matrix};
+
+let viewports = [
+    LayoutViewport::new("desktop", 1200.0, 800.0),
+    LayoutViewport::new("portrait", 500.0, 800.0),
+];
+
+let matrix = solve_snapshot_matrix(&root, &viewports, &LayoutPreferences::default());
+println!("{}", matrix.to_markdown_table());
 ```
 
 ## Sizing Modes

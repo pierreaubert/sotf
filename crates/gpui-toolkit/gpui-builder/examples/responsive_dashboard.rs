@@ -6,11 +6,13 @@
 //! - Display tiers for adaptive content
 //! - Solved layout diagnostics for copy/pasteable debug output
 //! - Simulating a window resize sequence
+//! - Snapshot matrix output across a resize sequence
 //!
 //! Run: cargo run -p gpui-builder --example responsive_dashboard
 
 use gpui_builder::{
-    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode, solve,
+    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, LayoutViewport, Sizing,
+    SlotNode, solve, solve_snapshot_matrix,
 };
 
 static CHART_TIERS: &[DisplayTier<'_>] = &[
@@ -125,12 +127,12 @@ fn main() {
     });
 
     // Simulate a window resize sequence
-    let sizes = [
-        (1920.0, 1080.0, "Full HD desktop"),
-        (1280.0, 720.0, "Laptop"),
-        (800.0, 600.0, "Small window"),
-        (500.0, 800.0, "Tall/narrow (portrait)"),
-        (400.0, 300.0, "Very small"),
+    let viewports = [
+        LayoutViewport::new("Full HD desktop", 1920.0, 1080.0),
+        LayoutViewport::new("Laptop", 1280.0, 720.0),
+        LayoutViewport::new("Small window", 800.0, 600.0),
+        LayoutViewport::new("Tall/narrow (portrait)", 500.0, 800.0),
+        LayoutViewport::new("Very small", 400.0, 300.0),
     ];
 
     for (w, h, label) in sizes {
@@ -145,6 +147,10 @@ fn main() {
         }
         println!();
     }
+
+    let matrix = solve_snapshot_matrix(&root, &viewports, &LayoutPreferences::default());
+    println!("{}", matrix.to_text());
+    println!("{}", matrix.to_markdown_table());
 
     // Show flex weight effect: chart gets 2x the space of table
     println!("=== Flex weight demo (1200x800) ===");
