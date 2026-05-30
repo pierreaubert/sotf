@@ -56,6 +56,7 @@ pub mod plugin_chassis;
 pub mod snapshots;
 pub mod solved;
 pub mod solver;
+pub mod stories;
 pub mod types;
 pub mod validation;
 
@@ -68,6 +69,10 @@ pub use inspector::{
 pub use solved::{LayoutDebugReport, LayoutDebugWarning, LayoutDebugWarningKind, SolvedNode};
 pub use snapshots::{LayoutSnapshot, LayoutSnapshotMatrix, LayoutViewport, solve_snapshot_matrix};
 pub use solver::solve;
+pub use stories::{
+    LayoutScenario, LayoutStory, LayoutStoryCatalog, SolvedLayoutScenario, StoryCollapsedState,
+    StoryRatioOverride,
+};
 pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
 };

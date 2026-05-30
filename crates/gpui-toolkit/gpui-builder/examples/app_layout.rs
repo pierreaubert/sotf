@@ -9,8 +9,8 @@
 //! Run: cargo run -p gpui-builder --example app_layout
 
 use gpui_builder::{
-    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
-    inspect_layout, inspect_solved, solve, validate_layout,
+    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, LayoutScenario, LayoutStory,
+    LayoutStoryCatalog, Sizing, SlotNode, inspect_layout, inspect_solved, solve, validate_layout,
 };
 
 static RACK_TIERS: &[DisplayTier<'_>] = &[
@@ -101,6 +101,23 @@ fn main() {
 
     println!("=== Layout inspection ===");
     print!("{}", inspect_layout(&root));
+    println!();
+
+    let user_ratios = [("library", Axis::Horizontal, 0.45)];
+    let user_collapsed = [("rack", true)];
+    let scenarios = [
+        LayoutScenario::new("desktop", "Wide desktop", 1200.0, 800.0),
+        LayoutScenario::new("narrow", "Narrow window", 500.0, 800.0),
+        LayoutScenario::new("portrait", "Tall window", 600.0, 1000.0),
+        LayoutScenario::new("custom", "User preferences", 1200.0, 800.0)
+            .with_preferences(&user_ratios, &user_collapsed),
+    ];
+    let story = LayoutStory::new("app-layout", "Music player app layout", root, &scenarios)
+        .with_description("SotF shell with library, queue, rack, header, and footer regions");
+    let stories = [story];
+    let catalog = LayoutStoryCatalog::new(&stories);
+    println!("=== Story catalog ===");
+    print!("{catalog}");
     println!();
 
     // --- Scenario 1: Wide desktop window ---
