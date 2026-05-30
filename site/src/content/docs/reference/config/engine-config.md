@@ -27,6 +27,11 @@ the engine.
 | `oversampling_policy` | `EngineOversamplingPolicy` | `plugin_preferred` | Lets alias-prone plugins request host oversampling, or forces 2x/4x. |
 | `network_endpoint` | `NetworkEndpointConfig` | disabled | Configures network input/client or HTTP endpoint mode. |
 
+`network_endpoint.mode` can be `disabled`, `input_client`, or `http_endpoint`.
+Callers can ask `plan_network_endpoint(config)` before startup. The returned
+`NetworkEndpointPlan` reports the selected backend, initial status, and a reason
+when the endpoint requires the `streaming` feature or a runtime HTTP bind.
+
 ## Output Access
 
 `output_access` requests the output device access mode:

@@ -19,6 +19,9 @@ pub use audio_sink::{AudioSink, SinkConfig, SinkOpenResult, SinkType};
 mod dsd_output;
 pub use dsd_output::{DsdOutputBackend, DsdOutputPlan, plan_dsd_output};
 
+mod network_endpoint;
+pub use network_endpoint::{NetworkEndpointBackend, NetworkEndpointPlan, plan_network_endpoint};
+
 mod output_access;
 pub use output_access::{OutputAccessBackend, OutputAccessPlan, plan_output_access};
 

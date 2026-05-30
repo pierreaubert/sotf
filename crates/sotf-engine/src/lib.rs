@@ -52,9 +52,10 @@ pub mod engine;
 pub use engine::CpalSink;
 pub use engine::{
     AudioEngine, AudioEngineState, AudioSink, DsdOutputBackend, DsdOutputPlan, EngineConfig,
-    OutputAccessBackend, OutputAccessPlan, PlaybackState, PluginConfig, PluginGraphConfig,
-    PluginGraphEdgeConfig, PluginGraphNodeConfig, SinkConfig, SinkOpenResult, SinkType,
-    plan_dsd_output, plan_output_access,
+    NetworkEndpointBackend, NetworkEndpointPlan, OutputAccessBackend, OutputAccessPlan,
+    PlaybackState, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
+    SinkConfig, SinkOpenResult, SinkType, plan_dsd_output, plan_network_endpoint,
+    plan_output_access,
 };
 pub use sotf_types::{
     DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy, LatencyCompensationMode,

@@ -8,7 +8,7 @@ use super::{
     AudioEngineState, ConfigEvent, ConfigWatcher, DecoderCommand, DecoderThread, EngineConfig,
     GcThread, ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
     PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent, plan_dsd_output,
-    plan_output_access,
+    plan_network_endpoint, plan_output_access,
 };
 use crate::engine::processing_thread::{
     build_plugin_graph_host_with_policy, build_plugin_host_with_policy,
@@ -426,23 +426,6 @@ fn dsd_output_status_for_mode(mode: DsdOutputMode) -> DsdOutputStatus {
     plan_dsd_output(mode).status
 }
 
-fn network_endpoint_status_for_mode(mode: NetworkEndpointMode) -> NetworkEndpointStatus {
-    match mode {
-        NetworkEndpointMode::Disabled => NetworkEndpointStatus::Disabled,
-        NetworkEndpointMode::InputClient => {
-            #[cfg(feature = "streaming")]
-            {
-                NetworkEndpointStatus::InputClientAvailable
-            }
-            #[cfg(not(feature = "streaming"))]
-            {
-                NetworkEndpointStatus::InputClientUnavailable
-            }
-        }
-        NetworkEndpointMode::HttpEndpoint => NetworkEndpointStatus::EndpointUnavailable,
-    }
-}
-
 #[cfg(feature = "streaming")]
 fn start_network_stream_server(
     config: &EngineConfig,
@@ -518,7 +501,7 @@ fn initial_engine_state_from_config(config: &EngineConfig) -> AudioEngineState {
         dsd_output_status: dsd_output_status_for_mode(config.dsd_output),
         oversampling_policy: config.oversampling_policy,
         network_endpoint: config.network_endpoint.clone(),
-        network_endpoint_status: network_endpoint_status_for_mode(config.network_endpoint.mode),
+        network_endpoint_status: plan_network_endpoint(&config.network_endpoint).status,
         ..AudioEngineState::default()
     }
 }
