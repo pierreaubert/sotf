@@ -29,6 +29,7 @@ gpui-builder = { workspace = true }
 gpui-design = { workspace = true, features = ["gpui"] }
 gpui-keybinding = { workspace = true }
 gpui-ui-kit = { workspace = true }
+gpui-themes = { workspace = true }
 gpui-px = { workspace = true, features = ["gpui"] }
 gpui-d3rs = { workspace = true, features = ["gpui", "gpu-3d"] }
 glam = { workspace = true }

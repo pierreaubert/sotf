@@ -1,0 +1,171 @@
+use super::{GraphLineColors, PluginColorMap, Theme, rgb};
+use gpui::Rgba;
+
+impl Theme {
+    /// Protanopia-safe dark theme using blue, yellow, teal, and purple separation.
+    pub fn protanopia() -> Self {
+        Self::dark().with_accessible_semantics(
+            rgb(0x0072b2),
+            rgb(0x009e73),
+            rgb(0xe69f00),
+            rgb(0xcc79a7),
+            rgb(0x56b4e9),
+            rgb(0xf0e442),
+        )
+    }
+
+    /// Deuteranopia-safe dark theme using blue/orange/pink separation.
+    pub fn deuteranopia() -> Self {
+        Self::dark().with_accessible_semantics(
+            rgb(0x0072b2),
+            rgb(0x56b4e9),
+            rgb(0xe69f00),
+            rgb(0xd55e00),
+            rgb(0xcc79a7),
+            rgb(0xf0e442),
+        )
+    }
+
+    /// Tritanopia-safe dark theme using magenta, green, orange, and blue separation.
+    pub fn tritanopia() -> Self {
+        Self::dark().with_accessible_semantics(
+            rgb(0xcc79a7),
+            rgb(0x009e73),
+            rgb(0xd55e00),
+            rgb(0xe64b35),
+            rgb(0x999999),
+            rgb(0x0072b2),
+        )
+    }
+
+    fn with_accessible_semantics(
+        mut self,
+        accent: Rgba,
+        success: Rgba,
+        warning: Rgba,
+        error: Rgba,
+        info: Rgba,
+        secondary: Rgba,
+    ) -> Self {
+        let accent_muted = Self::with_opacity(accent, 0.35);
+        self.surface_selected = accent_muted;
+        self.border_focused = accent;
+        self.accent = accent;
+        self.accent_hover = lighten(accent, 0.12);
+        self.accent_muted = accent_muted;
+        self.text_on_accent = readable_text_color(accent);
+        self.text_on_accent_muted = Self::with_opacity(self.text_on_accent, 0.8);
+        self.icon_on_accent = self.text_on_accent;
+
+        self.success = success;
+        self.warning = warning;
+        self.error = error;
+        self.info = info;
+        self.meter_normal = success;
+        self.meter_warning = warning;
+        self.meter_clip = error;
+        self.button_mute_active = error;
+        self.button_solo_active = warning;
+        self.button_dim_active = secondary;
+        self.progress_bar_fill = accent;
+        self.toast_success_bg = Self::with_opacity(success, 0.22);
+        self.toast_error_bg = Self::with_opacity(error, 0.22);
+        self.toast_info_bg = Self::with_opacity(info, 0.22);
+        self.toast_warning_bg = Self::with_opacity(warning, 0.22);
+
+        self.plugin_colors = PluginColorMap {
+            eq: accent,
+            gain: success,
+            upmixer: secondary,
+            compressor: error,
+            limiter: warning,
+            gate: secondary,
+            loudness: info,
+            binaural: rgb(0xcc79a7),
+            convolution: accent,
+            monitor: success,
+            spectrum: secondary,
+            mute_solo: info,
+        };
+        self.graph_colors = GraphLineColors {
+            input: info,
+            target: success,
+            filter_response: warning,
+            corrected: accent,
+            error,
+            deviation: secondary,
+            grid: self.grid_color,
+            secondary_line: self.text_secondary,
+            directivity_er: rgb(0xcc79a7),
+            directivity_sp: secondary,
+        };
+        self.band_colors = vec![
+            error,
+            warning,
+            success,
+            info,
+            accent,
+            secondary,
+            rgb(0xcc79a7),
+            rgb(0x999999),
+        ];
+        self.channel_colors = vec![info, error, success, warning, secondary, accent];
+
+        self.eq_curve_colors.curve_boost = success;
+        self.eq_curve_colors.curve_cut = error;
+        self.eq_curve_colors.fill_boost = Self::with_opacity(success, 0.28);
+        self.eq_curve_colors.fill_cut = Self::with_opacity(error, 0.28);
+        self.spectrum_colors.bass = success;
+        self.spectrum_colors.mids = warning;
+        self.spectrum_colors.treble = error;
+        self.meter_colors.normal = success;
+        self.meter_colors.warning = warning;
+        self.meter_colors.clip = error;
+        self.drag_over_highlight = Self::with_opacity(accent, 0.25);
+        self.drag_over_border = accent;
+        self.neutral_indicator = accent;
+        self.warning_background = Self::with_opacity(warning, 0.2);
+        self.optimization_color = secondary;
+        self
+    }
+}
+
+fn lighten(color: Rgba, amount: f32) -> Rgba {
+    Rgba {
+        r: (color.r + amount).clamp(0.0, 1.0),
+        g: (color.g + amount).clamp(0.0, 1.0),
+        b: (color.b + amount).clamp(0.0, 1.0),
+        a: color.a,
+    }
+}
+
+fn readable_text_color(background: Rgba) -> Rgba {
+    let black = rgb(0x000000);
+    let white = rgb(0xffffff);
+
+    if contrast_ratio(black, background) >= contrast_ratio(white, background) {
+        black
+    } else {
+        white
+    }
+}
+
+fn contrast_ratio(foreground: Rgba, background: Rgba) -> f32 {
+    let foreground_luminance = relative_luminance(foreground);
+    let background_luminance = relative_luminance(background);
+    let lighter = foreground_luminance.max(background_luminance);
+    let darker = foreground_luminance.min(background_luminance);
+    (lighter + 0.05) / (darker + 0.05)
+}
+
+fn relative_luminance(color: Rgba) -> f32 {
+    fn channel(value: f32) -> f32 {
+        if value <= 0.03928 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
+}

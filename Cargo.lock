@@ -10343,6 +10343,7 @@ dependencies = [
  "gpui-ios",
  "gpui-keybinding",
  "gpui-px",
+ "gpui-themes",
  "gpui-ui-kit",
  "gpui_linux",
  "gpui_macos",

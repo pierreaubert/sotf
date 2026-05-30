@@ -6,9 +6,60 @@ use crate::theme::ThemeId;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_themes::{AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeSchedule};
 use gpui_ui_kit::{
-    Button, ButtonSet, ButtonSetOption, ButtonSize, ButtonVariant, Toggle, ToggleStyle,
+    Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, Toggle,
+    ToggleSize, ToggleStyle,
 };
+
+fn theme_mode_value(preference: &ThemeModePreference) -> &'static str {
+    match preference {
+        ThemeModePreference::FollowSystem => "follow_system",
+        ThemeModePreference::Light => "light",
+        ThemeModePreference::Dark => "dark",
+        ThemeModePreference::Scheduled { .. } => "scheduled",
+    }
+}
+
+fn theme_mode_preference_from_value(value: &SharedString) -> Option<ThemeModePreference> {
+    match value.as_ref() {
+        "follow_system" => Some(ThemeModePreference::FollowSystem),
+        "light" => Some(ThemeModePreference::Light),
+        "dark" => Some(ThemeModePreference::Dark),
+        "scheduled" => Some(ThemeModePreference::Scheduled {
+            schedule: ThemeSchedule::default(),
+        }),
+        _ => None,
+    }
+}
+
+fn accessibility_value(palette: AccessibilityPalette) -> &'static str {
+    match palette {
+        AccessibilityPalette::Standard => "standard",
+        AccessibilityPalette::HighContrast => "high_contrast",
+        AccessibilityPalette::Protanopia => "protanopia",
+        AccessibilityPalette::Deuteranopia => "deuteranopia",
+        AccessibilityPalette::Tritanopia => "tritanopia",
+    }
+}
+
+fn accessibility_palette_from_value(value: &SharedString) -> Option<AccessibilityPalette> {
+    match value.as_ref() {
+        "standard" => Some(AccessibilityPalette::Standard),
+        "high_contrast" => Some(AccessibilityPalette::HighContrast),
+        "protanopia" => Some(AccessibilityPalette::Protanopia),
+        "deuteranopia" => Some(AccessibilityPalette::Deuteranopia),
+        "tritanopia" => Some(AccessibilityPalette::Tritanopia),
+        _ => None,
+    }
+}
+
+fn theme_appearance_from_window(window: &Window) -> ThemeAppearance {
+    match window.appearance() {
+        WindowAppearance::Dark | WindowAppearance::VibrantDark => ThemeAppearance::Dark,
+        WindowAppearance::Light | WindowAppearance::VibrantLight => ThemeAppearance::Light,
+    }
+}
 
 impl PlayerView {
     /// Render theme settings content
@@ -16,41 +67,156 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme_id = state.app.ui_state.theme_id;
+        let theme_mode_preference = state.app.ui_state.theme_mode_preference.clone();
+        let accessibility_palette = state.app.ui_state.accessibility_palette;
+        let reduce_motion = state.app.ui_state.reduce_motion;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
 
-        div().flex().flex_col().gap(d.section_lg).child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.gap_md)
-                .child(
-                    div()
-                        .text_size(d.text_sm)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_primary)
-                        .child(translations.settings_theme),
-                )
-                .child({
-                    let mut container = div().flex().flex_wrap().gap(d.section);
+        div()
+            .flex()
+            .flex_col()
+            .gap(d.section_lg)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .child(
+                        div()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
+                            .child("Mode"),
+                    )
+                    .child({
+                        let state_entity = self.state.clone();
+                        ButtonSet::new("theme-mode-select")
+                            .size(ButtonSetSize::Sm)
+                            .options(vec![
+                                ButtonSetOption::new("follow_system", "System"),
+                                ButtonSetOption::new("light", "Light"),
+                                ButtonSetOption::new("dark", "Dark"),
+                                ButtonSetOption::new("scheduled", "Scheduled"),
+                            ])
+                            .selected(theme_mode_value(&theme_mode_preference))
+                            .theme(theme.to_button_set_theme())
+                            .on_change(move |value, window, cx| {
+                                if let Some(preference) = theme_mode_preference_from_value(value) {
+                                    let system_appearance = theme_appearance_from_window(window);
+                                    state_entity.update(cx, |state, _cx| {
+                                        state.app.set_theme_mode_preference_with_system(
+                                            preference,
+                                            system_appearance,
+                                        );
+                                    });
+                                }
+                            })
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .child(
+                        div()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
+                            .child("Accessibility"),
+                    )
+                    .child({
+                        let state_entity = self.state.clone();
+                        ButtonSet::new("theme-accessibility-select")
+                            .size(ButtonSetSize::Sm)
+                            .options(
+                                AccessibilityPalette::all()
+                                    .iter()
+                                    .map(|palette| {
+                                        ButtonSetOption::new(
+                                            accessibility_value(*palette),
+                                            palette.name(),
+                                        )
+                                    })
+                                    .collect(),
+                            )
+                            .selected(accessibility_value(accessibility_palette))
+                            .theme(theme.to_button_set_theme())
+                            .on_change(move |value, window, cx| {
+                                if let Some(palette) = accessibility_palette_from_value(value) {
+                                    let system_appearance = theme_appearance_from_window(window);
+                                    state_entity.update(cx, |state, _cx| {
+                                        state.app.set_accessibility_palette_with_system(
+                                            palette,
+                                            system_appearance,
+                                        );
+                                    });
+                                }
+                            })
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap(d.section)
+                            .child(
+                                div()
+                                    .text_size(d.text_sm)
+                                    .text_color(theme.text_secondary)
+                                    .child("Motion"),
+                            )
+                            .child(
+                                Toggle::new("theme-reduce-motion")
+                                    .size(ToggleSize::Sm)
+                                    .checked(reduce_motion)
+                                    .label("Reduce motion")
+                                    .style(ToggleStyle::Segmented)
+                                    .theme(theme.to_toggle_theme())
+                                    .on_change({
+                                        let state_entity = self.state.clone();
+                                        move |enabled, _window, cx| {
+                                            state_entity.update(cx, |state, _cx| {
+                                                state.app.set_reduce_motion(enabled);
+                                            });
+                                        }
+                                    }),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap_md)
+                    .child(
+                        div()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
+                            .child(translations.settings_theme),
+                    )
+                    .child({
+                        let mut container = div().flex().flex_wrap().gap(d.section);
 
-                    for id in ThemeId::all().iter() {
-                        let is_selected = theme_id == *id;
-                        let preview_theme = crate::theme::Theme::from_id(*id);
+                        for id in ThemeId::all().iter() {
+                            let is_selected = theme_id == *id;
+                            let preview_theme = crate::theme::Theme::from_id(*id);
 
-                        container = container.child(self.render_theme_preview_card(
-                            *id,
-                            preview_theme,
-                            is_selected,
-                            theme.clone(),
-                            translations.settings_active,
-                            cx,
-                        ));
-                    }
+                            container = container.child(self.render_theme_preview_card(
+                                *id,
+                                preview_theme,
+                                is_selected,
+                                theme.clone(),
+                                translations.settings_active,
+                                cx,
+                            ));
+                        }
 
-                    container
-                }),
-        )
+                        container
+                    }),
+            )
     }
 
     /// Render language settings content
