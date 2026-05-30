@@ -485,6 +485,7 @@ impl PlaybackThread {
         _output_device: Option<String>,
         recycle_tx: SyncSender<Vec<f32>>,
         _allow_virtual_output: bool,
+        _output_access: sotf_types::OutputAccessMode,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
 

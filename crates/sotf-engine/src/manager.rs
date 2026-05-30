@@ -439,7 +439,7 @@ impl AudioEngineManager {
         let volume = f32::from_bits(self.current_volume.load(Ordering::Relaxed));
         let muted = self.current_muted.load(Ordering::Relaxed);
         let config = EngineConfig {
-            version: 1,
+            version: 2,
             frame_size: 1024,
             buffer_ms: 200, // 200ms latency
             output_sample_rate,
@@ -454,6 +454,7 @@ impl AudioEngineManager {
             driver_mode: false,
             allow_virtual_output: self.allow_virtual_output,
             sink_type: Default::default(),
+            ..EngineConfig::default()
         };
 
         log::info!(
@@ -632,7 +633,7 @@ impl AudioEngineManager {
         let volume = f32::from_bits(self.current_volume.load(Ordering::Relaxed));
         let muted = self.current_muted.load(Ordering::Relaxed);
         let config = EngineConfig {
-            version: 1,
+            version: 2,
             frame_size: 1024,
             buffer_ms: 200, // 200ms latency
             output_sample_rate: sample_rate,
@@ -647,6 +648,7 @@ impl AudioEngineManager {
             driver_mode: true,
             allow_virtual_output: false,
             sink_type: Default::default(),
+            ..EngineConfig::default()
         };
 
         log::info!(

@@ -1,6 +1,9 @@
 //! Playback state and audio frame types.
 
-use super::AudioSource;
+use super::{
+    AudioSource, DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy, NetworkEndpointConfig,
+    NetworkEndpointStatus, OutputAccessMode, OutputAccessStatus,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -202,6 +205,30 @@ pub struct AudioEngineState {
     pub playback_effective_sample_rate: u64,
     /// Total plugin chain latency in samples (for position compensation)
     pub plugin_latency_samples: usize,
+    /// Whether transport position should compensate for plugin latency.
+    #[serde(default)]
+    pub latency_compensation_enabled: bool,
+    /// Requested output access mode.
+    #[serde(default)]
+    pub output_access_mode: OutputAccessMode,
+    /// Actual output access status reported by the backend.
+    #[serde(default)]
+    pub output_access_status: OutputAccessStatus,
+    /// Requested DSD output behavior.
+    #[serde(default)]
+    pub dsd_output_mode: DsdOutputMode,
+    /// Runtime DSD capability status.
+    #[serde(default)]
+    pub dsd_output_status: DsdOutputStatus,
+    /// Active host oversampling policy.
+    #[serde(default)]
+    pub oversampling_policy: EngineOversamplingPolicy,
+    /// Configured network endpoint.
+    #[serde(default)]
+    pub network_endpoint: NetworkEndpointConfig,
+    /// Runtime network endpoint capability status.
+    #[serde(default)]
+    pub network_endpoint_status: NetworkEndpointStatus,
     /// Last error message, if any
     pub last_error: Option<String>,
     /// Seek in progress flag
@@ -234,6 +261,14 @@ impl Default for AudioEngineState {
             playback_frames_dropped: 0,
             playback_effective_sample_rate: 0,
             plugin_latency_samples: 0,
+            latency_compensation_enabled: true,
+            output_access_mode: OutputAccessMode::Shared,
+            output_access_status: OutputAccessStatus::Shared,
+            dsd_output_mode: DsdOutputMode::Disabled,
+            dsd_output_status: DsdOutputStatus::Disabled,
+            oversampling_policy: EngineOversamplingPolicy::PluginPreferred,
+            network_endpoint: NetworkEndpointConfig::default(),
+            network_endpoint_status: NetworkEndpointStatus::Disabled,
             last_error: None,
             seeking: false,
             isolated_external_plugin_worker_statuses: Vec::new(),

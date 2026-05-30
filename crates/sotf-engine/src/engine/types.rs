@@ -9,8 +9,10 @@ use std::sync::Arc;
 
 // Re-export shared types from sotf-types
 pub use sotf_types::{
-    AudioEngineState, AudioFrame, IsolatedExternalPluginWorkerStatus, PlaybackState, PluginConfig,
-    PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
+    AudioEngineState, AudioFrame, DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy,
+    IsolatedExternalPluginWorkerStatus, LatencyCompensationMode, NetworkEndpointConfig,
+    NetworkEndpointMode, NetworkEndpointStatus, OutputAccessMode, OutputAccessStatus,
+    PlaybackState, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
 };
 
 // ============================================================================
@@ -245,6 +247,7 @@ pub enum ThreadEvent {
     DecoderError(String),
     PlaybackChannelsChanged(usize),
     PlaybackOutputDeviceChanged(String),
+    PlaybackOutputAccessChanged(sotf_types::OutputAccessStatus),
     /// Playback thread hardware-consumption diagnostics changed.
     PlaybackStats {
         callback_count: u64,

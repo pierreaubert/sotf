@@ -15,6 +15,7 @@ use sotf_plugins::IsolatedExternalPluginWorkerReport;
 use sotf_plugins::{Host, Plugin, PluginHost};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_plugins::{PluginSandboxBackendCode, PluginSandboxStatusCode};
+use sotf_types::EngineOversamplingPolicy;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_types::{
     IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
@@ -870,6 +871,14 @@ fn isolated_external_plugin_sandbox_backend(
 // Plugin Factory
 // ============================================================================
 
+fn configure_host_oversampling(
+    host: &mut PluginHost,
+    policy: EngineOversamplingPolicy,
+) -> Result<(), String> {
+    host.set_plugin_preferred_oversampling_enabled(policy.plugin_preferred_enabled());
+    host.set_forced_oversampling_factor(policy.forced_factor())
+}
+
 /// Build a plugin host from configs.
 ///
 /// Plugins that fail to create or have channel mismatches are skipped rather
@@ -880,7 +889,22 @@ pub fn build_plugin_host(
     sample_rate: u32,
     channels: usize,
 ) -> Result<(PluginHost, Vec<String>), String> {
+    build_plugin_host_with_policy(
+        configs,
+        sample_rate,
+        channels,
+        EngineOversamplingPolicy::PluginPreferred,
+    )
+}
+
+pub fn build_plugin_host_with_policy(
+    configs: &[PluginConfig],
+    sample_rate: u32,
+    channels: usize,
+    oversampling_policy: EngineOversamplingPolicy,
+) -> Result<(PluginHost, Vec<String>), String> {
     let mut host = PluginHost::new(channels, sample_rate);
+    configure_host_oversampling(&mut host, oversampling_policy)?;
     let mut current_channels = channels;
     let mut warnings: Vec<String> = Vec::new();
 
@@ -949,15 +973,31 @@ pub fn build_plugin_host(
 /// needed for multi-driver crossover setups.
 ///
 /// Nodes that fail to create are skipped, and edges referencing them are dropped.
+#[allow(dead_code)]
 pub fn build_plugin_graph_host(
     config: &super::types::PluginGraphConfig,
     sample_rate: u32,
     channels: usize,
 ) -> Result<(PluginHost, Vec<String>), String> {
+    build_plugin_graph_host_with_policy(
+        config,
+        sample_rate,
+        channels,
+        EngineOversamplingPolicy::PluginPreferred,
+    )
+}
+
+pub fn build_plugin_graph_host_with_policy(
+    config: &super::types::PluginGraphConfig,
+    sample_rate: u32,
+    channels: usize,
+    oversampling_policy: EngineOversamplingPolicy,
+) -> Result<(PluginHost, Vec<String>), String> {
     use sotf_plugins::GraphEdge;
     use std::collections::HashMap;
 
     let mut host = PluginHost::new(channels, sample_rate);
+    configure_host_oversampling(&mut host, oversampling_policy)?;
     let mut id_map: HashMap<usize, usize> = HashMap::new();
     let mut warnings: Vec<String> = Vec::new();
 

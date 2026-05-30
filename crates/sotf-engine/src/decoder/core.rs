@@ -143,6 +143,15 @@ pub fn create_decoder<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Box<dyn Aud
         ));
     }
 
+    if let Ok(format) = AudioFormat::from_path(path)
+        && format.is_dsd()
+    {
+        return Err(AudioDecoderError::UnsupportedFormat(format!(
+            "{} is recognized, but DSD/SACD decoding and DoP/native output are not available in this build",
+            format
+        )));
+    }
+
     // Route IAMF files to the dedicated IAMF decoder
     #[cfg(feature = "iamf")]
     if let Ok(AudioFormat::Iamf) = AudioFormat::from_path(path) {
@@ -302,6 +311,20 @@ mod tests {
         assert!(matches!(
             result,
             Err(AudioDecoderError::UnsupportedFormat(_))
+        ));
+    }
+
+    #[test]
+    fn test_create_decoder_recognizes_dsd_as_unsupported_decoder_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.dsf");
+        std::fs::write(&path, []).unwrap();
+
+        let result = create_decoder(&path);
+        assert!(matches!(
+            result,
+            Err(AudioDecoderError::UnsupportedFormat(message))
+                if message.contains("DSD/SACD decoding")
         ));
     }
 }

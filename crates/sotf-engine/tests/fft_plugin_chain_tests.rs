@@ -38,7 +38,7 @@ fn test_fft_chain_arbitrary_frame_sizes() {
     // 2. Create Engine with a specific non-power-of-two frame size
     // This often happens in practice due to resampling or hardware constraints.
     let config = EngineConfig {
-        version: 1,
+        version: 2,
         frame_size: 1115, // Arbitrary non-power-of-two size
         buffer_ms: 100,
         output_sample_rate: sample_rate,
@@ -53,6 +53,7 @@ fn test_fft_chain_arbitrary_frame_sizes() {
         driver_mode: false,
         allow_virtual_output: true,
         sink_type: Default::default(),
+        ..EngineConfig::default()
     };
 
     let engine = AudioEngine::new(config).expect("Failed to create engine");

@@ -9,6 +9,7 @@ use super::{PlaybackCommand, ProcessingMessage, ThreadEvent};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::{Consumer, CopyToUninit, Producer, RingBuffer, chunks::WriteChunkUninit};
+use sotf_types::{OutputAccessMode, OutputAccessStatus};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
@@ -90,6 +91,7 @@ impl PlaybackThread {
         output_device: Option<String>,
         recycle_tx: SyncSender<Vec<f32>>,
         allow_virtual_output: bool,
+        output_access: OutputAccessMode,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
 
@@ -108,6 +110,7 @@ impl PlaybackThread {
                     output_device,
                     recycle_tx,
                     allow_virtual_output,
+                    output_access,
                 ) {
                     log::debug!("[Playback Thread] Error: {}", e);
                     send_playback_event(
@@ -435,6 +438,32 @@ fn flush_completed(
     !state.flush_requested.load(Ordering::Relaxed)
 }
 
+fn output_access_status_for_device(
+    mode: OutputAccessMode,
+    output_device: Option<&str>,
+) -> OutputAccessStatus {
+    match mode {
+        OutputAccessMode::Shared => OutputAccessStatus::Shared,
+        OutputAccessMode::ExclusivePreferred | OutputAccessMode::ExclusiveRequired => {
+            if output_device.is_some_and(crate::devices::is_asio_device) {
+                OutputAccessStatus::ExclusiveActive
+            } else if matches!(mode, OutputAccessMode::ExclusivePreferred) {
+                OutputAccessStatus::FallbackShared
+            } else {
+                OutputAccessStatus::Unsupported
+            }
+        }
+    }
+}
+
+fn initial_buffer_size(status: OutputAccessStatus, frame_size: usize) -> cpal::BufferSize {
+    if status == OutputAccessStatus::ExclusiveActive {
+        cpal::BufferSize::Fixed(frame_size.clamp(1, u32::MAX as usize) as u32)
+    } else {
+        cpal::BufferSize::Default
+    }
+}
+
 /// Main playback thread function
 fn run_playback_thread(
     message_rx: Receiver<ProcessingMessage>,
@@ -447,6 +476,7 @@ fn run_playback_thread(
     output_device: Option<String>,
     recycle_tx: SyncSender<Vec<f32>>,
     allow_virtual_output: bool,
+    output_access: OutputAccessMode,
 ) -> Result<(), String> {
     // Elevate thread priority for lowest audio latency
     match super::rt_priority::set_realtime_priority(super::rt_priority::RtPriority::Playback) {
@@ -457,6 +487,15 @@ fn run_playback_thread(
 
     // Initialize cpal host — ASIO host if "ASIO:" prefix, default otherwise
     let host = crate::devices::get_host_for_device(output_device.as_deref());
+    let output_access_status =
+        output_access_status_for_device(output_access, output_device.as_deref());
+    if output_access.requires_exclusive() && output_access_status == OutputAccessStatus::Unsupported
+    {
+        return Err(
+            "Exclusive output is required, but the selected cpal backend cannot open an exclusive stream"
+                .to_string(),
+        );
+    }
 
     // Strip ASIO prefix from device name for actual device lookup
     let output_device = output_device.map(|d| {
@@ -479,7 +518,7 @@ fn run_playback_thread(
     let mut config = StreamConfig {
         channels: channels as u16,
         sample_rate,
-        buffer_size: cpal::BufferSize::Default,
+        buffer_size: initial_buffer_size(output_access_status, frame_size),
     };
 
     // Detect the best output sample format for this device + config.
@@ -582,12 +621,18 @@ fn run_playback_thread(
         ThreadEvent::PlaybackOutputDeviceChanged(device_name.clone()),
         "initial playback output device",
     );
+    send_playback_event(
+        &event_tx,
+        ThreadEvent::PlaybackOutputAccessChanged(output_access_status),
+        "initial playback output access",
+    );
 
     log::info!(
-        "[Playback Thread] Started - {}Hz, {} channels, format: {:?}, device: '{}'",
+        "[Playback Thread] Started - {}Hz, {} channels, format: {:?}, access: {:?}, device: '{}'",
         sample_rate,
         channels,
         output_format,
+        output_access_status,
         device_name
     );
 
@@ -2033,12 +2078,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        PlaybackState, apply_volume, fallback_output_format, is_virtual_output_device_name,
+        PlaybackState, apply_volume, fallback_output_format, initial_buffer_size,
+        is_virtual_output_device_name, output_access_status_for_device,
         pick_preferred_output_format, playback_buffer_capacity, playback_recovery_reason,
         read_ring_buffer, request_flush,
     };
     use cpal::SampleFormat;
     use rtrb::RingBuffer;
+    use sotf_types::{OutputAccessMode, OutputAccessStatus};
     use std::sync::atomic::Ordering;
     use std::time::{Duration, Instant};
 
@@ -2236,6 +2283,45 @@ mod tests {
     fn playback_buffer_capacity_scales_with_latency_budget() {
         assert_eq!(playback_buffer_capacity(48_000, 2, 100), 9_600);
         assert_eq!(playback_buffer_capacity(48_000, 2, 250), 24_000);
+    }
+
+    #[test]
+    fn exclusive_preferred_reports_shared_fallback_for_cpal_devices() {
+        assert_eq!(
+            output_access_status_for_device(OutputAccessMode::ExclusivePreferred, None),
+            OutputAccessStatus::FallbackShared
+        );
+    }
+
+    #[test]
+    fn exclusive_required_reports_unsupported_without_exclusive_backend() {
+        assert_eq!(
+            output_access_status_for_device(OutputAccessMode::ExclusiveRequired, None),
+            OutputAccessStatus::Unsupported
+        );
+    }
+
+    #[test]
+    fn asio_output_reports_exclusive_active() {
+        assert_eq!(
+            output_access_status_for_device(
+                OutputAccessMode::ExclusivePreferred,
+                Some("ASIO:Focusrite USB ASIO"),
+            ),
+            OutputAccessStatus::ExclusiveActive
+        );
+    }
+
+    #[test]
+    fn exclusive_active_uses_fixed_initial_buffer_size() {
+        assert_eq!(
+            initial_buffer_size(OutputAccessStatus::ExclusiveActive, 256),
+            cpal::BufferSize::Fixed(256)
+        );
+        assert_eq!(
+            initial_buffer_size(OutputAccessStatus::FallbackShared, 256),
+            cpal::BufferSize::Default
+        );
     }
 
     #[test]

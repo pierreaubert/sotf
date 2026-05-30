@@ -4,9 +4,9 @@
 
 use crate::automation::{ParameterAutomation, automation_utils};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-use crate::external_plugin_isolated::IsolatedExternalPlugin;
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::external_plugin_ipc::{PluginSandboxBackendCode, PluginSandboxStatusCode};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use crate::external_plugin_isolated::IsolatedExternalPlugin;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::external_plugin_process::ExternalPluginProcessEvent;
 use crate::parameters::{ParameterId, ParameterValue};
@@ -641,6 +641,10 @@ pub struct DawHost {
     cached_frames_identity: bool,
     /// True if all plugins return input_rate unchanged from output_sample_rate()
     cached_rate_identity: bool,
+    /// Whether plugins may request their own preferred oversampling wrapper.
+    plugin_preferred_oversampling_enabled: bool,
+    /// Force an oversampling wrapper around all same-I/O plugins when set.
+    forced_oversampling_factor: Option<u32>,
     /// Cached per-node output frame ratios for non-identity chains (rare)
     /// Only populated when cached_frames_identity is false
     cached_output_frame_ratios: Vec<(NodeId, f64)>,
@@ -709,6 +713,8 @@ impl DawHost {
             has_variable_frame_plugin: false,
             cached_frames_identity: true,
             cached_rate_identity: true,
+            plugin_preferred_oversampling_enabled: true,
+            forced_oversampling_factor: None,
             cached_output_frame_ratios: Vec::new(),
             analyzer_indices: Vec::new(),
             cached_latency: None,
@@ -738,6 +744,25 @@ impl DawHost {
     }
     pub fn set_parallel_enabled(&mut self, e: bool) {
         self.parallel_enabled = e;
+    }
+
+    /// Enable or disable plugins' `preferred_oversampling()` requests.
+    pub fn set_plugin_preferred_oversampling_enabled(&mut self, enabled: bool) {
+        self.plugin_preferred_oversampling_enabled = enabled;
+    }
+
+    /// Force a host oversampling wrapper around same-I/O plugins.
+    pub fn set_forced_oversampling_factor(&mut self, factor: Option<u32>) -> Result<(), String> {
+        if let Some(factor) = factor
+            && factor != 2
+            && factor != 4
+        {
+            return Err(format!(
+                "Invalid forced oversampling factor {factor}: expected 2 or 4"
+            ));
+        }
+        self.forced_oversampling_factor = factor;
+        Ok(())
     }
 
     /// Set an automation curve for a parameter on a specific node.
@@ -859,7 +884,7 @@ impl DawHost {
             self.graph_next_node_id
                 .store(self.next_node_id, Ordering::Release);
         }
-        plugin = Self::auto_oversample_plugin(plugin)?;
+        plugin = self.auto_oversample_plugin(plugin)?;
         plugin.initialize(self.sample_rate)?;
         let input_channels = plugin.input_channels();
         let output_channels = plugin.output_channels();
@@ -891,8 +916,16 @@ impl DawHost {
         Ok(())
     }
 
-    fn auto_oversample_plugin(plugin: Box<dyn Plugin>) -> Result<Box<dyn Plugin>, String> {
-        let Some(factor) = plugin.preferred_oversampling() else {
+    fn auto_oversample_plugin(&self, plugin: Box<dyn Plugin>) -> Result<Box<dyn Plugin>, String> {
+        let factor = self.forced_oversampling_factor.or_else(|| {
+            if self.plugin_preferred_oversampling_enabled {
+                plugin.preferred_oversampling()
+            } else {
+                None
+            }
+        });
+
+        let Some(factor) = factor else {
             return Ok(plugin);
         };
         if factor != 2 && factor != 4 {
@@ -3214,14 +3247,15 @@ fn sandbox_reason_text(
                 "sandbox backend is unsupported on this platform".to_string()
             }
         }),
-        PluginSandboxStatusCode::Disabled => {
-            Some("sandbox disabled by policy".to_string())
-        }
+        PluginSandboxStatusCode::Disabled => Some("sandbox disabled by policy".to_string()),
         PluginSandboxStatusCode::Enforced | PluginSandboxStatusCode::Unknown => None,
     }
 }
 
-#[cfg(all(test, any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+#[cfg(all(
+    test,
+    any(target_os = "linux", target_os = "macos", target_os = "windows")
+))]
 mod sandbox_reason_tests {
     use super::*;
 
@@ -3700,6 +3734,39 @@ mod tests {
         let info = g.get_plugin(0).unwrap().info();
         assert_eq!(info.name, "PrefersOversampling(2x)");
         assert_eq!(g.get_plugin(0).unwrap().preferred_oversampling(), None);
+    }
+
+    #[test]
+    fn test_preferred_oversampling_can_be_disabled() {
+        let mut g = DawHost::new(2, 48000);
+        g.set_plugin_preferred_oversampling_enabled(false);
+        g.add_plugin(Box::new(PrefersOversamplingPlugin {
+            inner: ScalerPlugin::new(2, 1.0),
+            factor: 2,
+        }))
+        .unwrap();
+
+        let plugin = g.get_plugin(0).unwrap();
+        assert_eq!(plugin.info().name, "PrefersOversampling");
+        assert_eq!(plugin.preferred_oversampling(), Some(2));
+    }
+
+    #[test]
+    fn test_forced_oversampling_wraps_same_io_plugins() {
+        let mut g = DawHost::new(2, 48000);
+        g.set_forced_oversampling_factor(Some(4)).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+
+        let plugin = g.get_plugin(0).unwrap();
+        assert_eq!(plugin.info().name, "Scaler(4x)");
+        assert_eq!(plugin.preferred_oversampling(), None);
+    }
+
+    #[test]
+    fn test_forced_oversampling_rejects_invalid_factor() {
+        let mut g = DawHost::new(2, 48000);
+        let err = g.set_forced_oversampling_factor(Some(3)).unwrap_err();
+        assert!(err.contains("Invalid forced oversampling factor"));
     }
 
     /// Mock variable-frame plugin that returns a configurable output frame count.
