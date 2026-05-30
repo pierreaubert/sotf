@@ -6,7 +6,7 @@
 use crate::app::constants;
 use crate::app::i18n::{Language, Translations};
 use crate::app::keybindings::KeymapPreset;
-use crate::app::theme::{Theme, ThemeId};
+use crate::app::theme::{CommunityThemeId, Theme, ThemeAccentPreference, ThemeId};
 use crate::app::types::{ContextMenuState, ToastMessage};
 use crate::app::{ActiveMenu, InputMode, LayoutMode, Screen, SettingsTab};
 use gpui::EventEmitter;
@@ -142,6 +142,9 @@ pub struct UIState {
     pub theme: Theme,
     pub theme_mode_preference: ThemeModePreference,
     pub accessibility_palette: AccessibilityPalette,
+    pub theme_accent_preference: ThemeAccentPreference,
+    pub community_theme_id: Option<CommunityThemeId>,
+    pub community_theme_json_draft: String,
     pub reduce_motion: bool,
     pub language: Language,
     pub translations: Translations,
@@ -189,6 +192,9 @@ impl Default for UIState {
             theme: Theme::from_id(ThemeId::default()),
             theme_mode_preference: ThemeModePreference::default(),
             accessibility_palette: AccessibilityPalette::default(),
+            theme_accent_preference: ThemeAccentPreference::default(),
+            community_theme_id: None,
+            community_theme_json_draft: String::new(),
             reduce_motion: false,
             language: Language::default(),
             translations: Translations::for_language(Language::default()),

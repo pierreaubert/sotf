@@ -34,7 +34,7 @@ pub use keybindings::{
     get_keybindings,
 };
 pub use state::{App, AppState};
-pub use theme::{Theme, ThemeId};
+pub use theme::{CommunityThemeId, Theme, ThemeId};
 
 // Re-export everything publicly
 pub use crate::components::plugins::get_param_count;

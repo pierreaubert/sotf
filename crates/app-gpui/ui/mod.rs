@@ -284,6 +284,7 @@ impl PlayerView {
                         Self::handle_engine_state(state, &playback_state, was_playing);
                         Self::handle_gapless_prequeue(state, &playback_state);
                         Self::tick_background_tasks(state);
+                        state.app.refresh_scheduled_theme();
                     });
 
                     // Background stats computation (outside state update)
@@ -469,6 +470,7 @@ impl PlayerView {
 
         Some(focused)
     }
+
 
     #[cfg(target_os = "ios")]
     fn drain_ios_remote_commands(state: &mut AppState) {
