@@ -54,6 +54,59 @@ let sidebar = solved.find("sidebar").unwrap();
 println!("sidebar: {}x{} visible={}", sidebar.width, sidebar.height, sidebar.visible);
 ```
 
+## Layout State
+
+Use `LayoutState` for mutable, persistent user-driven overrides and convert it to solver input
+right before calling `solve`.
+
+```rust
+use gpui_builder::{
+    solve,
+    Axis,
+    ContainerNode,
+    LayoutNode,
+    LayoutState,
+    Sizing,
+    SlotNode,
+};
+
+let children = [
+    LayoutNode::Slot(SlotNode {
+        id: "library",
+        sizing: Sizing::fractional(0.30, 100.0),
+        priority: 0.5,
+        collapsible: true,
+        display_tiers: &[],
+        collapse_label: Some("Library"),
+    }),
+    LayoutNode::Slot(SlotNode {
+        id: "queue",
+        sizing: Sizing::flex(200.0),
+        priority: 1.0,
+        collapsible: false,
+        display_tiers: &[],
+        collapse_label: None,
+    }),
+];
+
+let root = LayoutNode::Container(ContainerNode {
+    id: "root",
+    axis: Axis::Horizontal,
+    auto_axis: None,
+    sizing: Sizing::flex(0.0),
+    children: &children,
+    divider_size: 0.0,
+});
+
+let mut state = LayoutState::new();
+state.set_ratio("library", Axis::Horizontal, 0.45);
+state.set_collapsed("queue", true);
+
+let prefs = state.preferences().as_preferences();
+let solved = solve(&root, 1200.0, 800.0, &prefs);
+assert!(solved.find("library").is_some());
+```
+
 ## Sizing Modes
 
 | Mode | Constructor | Behavior |

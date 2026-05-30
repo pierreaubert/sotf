@@ -50,6 +50,7 @@
 
 pub mod compat;
 pub mod plugin_chassis;
+pub mod state;
 pub mod solved;
 pub mod solver;
 pub mod types;
@@ -59,6 +60,10 @@ pub use solved::SolvedNode;
 pub use solver::solve;
 pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
+};
+pub use state::{
+    LayoutAction, LayoutCollapsedState, LayoutPreferenceSnapshot, LayoutRatioOverride,
+    LayoutState,
 };
 
 // gpui-pretext re-exports for text-measured sizing
