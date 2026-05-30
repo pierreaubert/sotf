@@ -6,7 +6,7 @@
 //! - Export to JSON and Rust
 
 use crate::showcase::ComponentShowcase;
-use crate::theme::{Color, ColorGroup, EditorTheme};
+use crate::theme::{BuiltInThemePreset, Color, ColorGroup, EditorTheme};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
@@ -623,14 +623,9 @@ impl ThemeEditor {
 
     /// Load a preset theme
     fn load_preset(&mut self, preset: &str, cx: &mut Context<Self>) {
-        self.theme = match preset {
-            "dark" => EditorTheme::dark(),
-            "light" => EditorTheme::light(),
-            "high_contrast" => EditorTheme::high_contrast(),
-            "nord" => EditorTheme::nord(),
-            "dracula" => EditorTheme::dracula(),
-            _ => EditorTheme::dark(),
-        };
+        self.theme = BuiltInThemePreset::from_id(preset)
+            .unwrap_or_default()
+            .to_theme();
         self.showcase.update(cx, |showcase, _| {
             showcase.set_theme(self.theme.clone());
         });

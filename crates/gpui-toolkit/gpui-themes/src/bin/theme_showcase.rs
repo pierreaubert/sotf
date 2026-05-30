@@ -6,71 +6,29 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_design::DesignExt;
 use gpui_miniapp::{MiniApp, MiniAppConfig};
-use gpui_themes::{ComponentShowcase, EditorTheme};
+use gpui_themes::{BuiltInThemePreset, ComponentShowcase};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
-/// Available theme presets
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ThemePreset {
-    Dark,
-    Light,
-    HighContrast,
-    Nord,
-    Dracula,
-}
-
-impl ThemePreset {
-    fn all() -> &'static [ThemePreset] {
-        &[
-            ThemePreset::Dark,
-            ThemePreset::Light,
-            ThemePreset::HighContrast,
-            ThemePreset::Nord,
-            ThemePreset::Dracula,
-        ]
-    }
-
-    fn name(&self) -> &'static str {
-        match self {
-            ThemePreset::Dark => "Dark",
-            ThemePreset::Light => "Light",
-            ThemePreset::HighContrast => "High Contrast",
-            ThemePreset::Nord => "Nord",
-            ThemePreset::Dracula => "Dracula",
-        }
-    }
-
-    fn to_theme(self) -> EditorTheme {
-        match self {
-            ThemePreset::Dark => EditorTheme::dark(),
-            ThemePreset::Light => EditorTheme::light(),
-            ThemePreset::HighContrast => EditorTheme::high_contrast(),
-            ThemePreset::Nord => EditorTheme::nord(),
-            ThemePreset::Dracula => EditorTheme::dracula(),
-        }
-    }
-}
-
 /// Theme showcase application
 struct ThemeShowcase {
-    current_theme: ThemePreset,
+    current_theme: BuiltInThemePreset,
     showcase: Entity<ComponentShowcase>,
 }
 
 impl ThemeShowcase {
     fn new(cx: &mut Context<Self>) -> Self {
-        let theme = ThemePreset::Dark.to_theme();
+        let theme = BuiltInThemePreset::Dark.to_theme();
         let showcase = cx.new(|_| ComponentShowcase::new(theme));
 
         Self {
-            current_theme: ThemePreset::Dark,
+            current_theme: BuiltInThemePreset::Dark,
             showcase,
         }
     }
 
-    fn set_theme(&mut self, preset: ThemePreset, cx: &mut Context<Self>) {
+    fn set_theme(&mut self, preset: BuiltInThemePreset, cx: &mut Context<Self>) {
         self.current_theme = preset;
         let theme = preset.to_theme();
         self.showcase.update(cx, |showcase, _| {
@@ -108,7 +66,7 @@ impl ThemeShowcase {
                                     .size(TextSize::Md)
                                     .color(theme.text_secondary.to_rgba()),
                             )
-                            .children(ThemePreset::all().iter().map(|preset| {
+                            .children(BuiltInThemePreset::all().iter().map(|preset| {
                                 let is_selected = *preset == current;
                                 Button::new(
                                     SharedString::from(format!("theme-{:?}", preset)),

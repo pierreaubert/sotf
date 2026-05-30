@@ -71,6 +71,529 @@ pub struct MeterColors {
     pub text: Color,
 }
 
+/// Current version for shareable community theme bundles.
+pub const COMMUNITY_THEME_SCHEMA_VERSION: u32 = 1;
+
+/// Resolved light/dark appearance after system preference and scheduling are applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeAppearance {
+    Light,
+    #[default]
+    Dark,
+}
+
+/// Time of day used by scheduled appearance switching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimeOfDay {
+    pub hour: u8,
+    pub minute: u8,
+}
+
+impl TimeOfDay {
+    pub const fn new(hour: u8, minute: u8) -> Self {
+        Self { hour, minute }
+    }
+
+    pub fn checked_new(hour: u8, minute: u8) -> Option<Self> {
+        if hour < 24 && minute < 60 {
+            Some(Self { hour, minute })
+        } else {
+            None
+        }
+    }
+
+    pub const fn minutes_after_midnight(self) -> u16 {
+        self.hour as u16 * 60 + self.minute as u16
+    }
+}
+
+impl Default for TimeOfDay {
+    fn default() -> Self {
+        Self::new(0, 0)
+    }
+}
+
+/// Local schedule for apps that do not rely only on the operating system setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeSchedule {
+    #[serde(default = "ThemeSchedule::default_light_start")]
+    pub light_start: TimeOfDay,
+    #[serde(default = "ThemeSchedule::default_dark_start")]
+    pub dark_start: TimeOfDay,
+}
+
+impl ThemeSchedule {
+    pub const fn new(light_start: TimeOfDay, dark_start: TimeOfDay) -> Self {
+        Self {
+            light_start,
+            dark_start,
+        }
+    }
+
+    pub const fn default_light_start() -> TimeOfDay {
+        TimeOfDay::new(7, 0)
+    }
+
+    pub const fn default_dark_start() -> TimeOfDay {
+        TimeOfDay::new(18, 0)
+    }
+
+    pub fn resolve_at_minutes(self, minutes_after_midnight: u16) -> ThemeAppearance {
+        let minute = minutes_after_midnight % (24 * 60);
+        let light_start = self.light_start.minutes_after_midnight();
+        let dark_start = self.dark_start.minutes_after_midnight();
+
+        if light_start == dark_start {
+            return ThemeAppearance::Dark;
+        }
+
+        let is_light = if light_start < dark_start {
+            minute >= light_start && minute < dark_start
+        } else {
+            minute >= light_start || minute < dark_start
+        };
+
+        if is_light {
+            ThemeAppearance::Light
+        } else {
+            ThemeAppearance::Dark
+        }
+    }
+}
+
+impl Default for ThemeSchedule {
+    fn default() -> Self {
+        Self::new(Self::default_light_start(), Self::default_dark_start())
+    }
+}
+
+/// Per-app theme mode override.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum ThemeModePreference {
+    #[default]
+    FollowSystem,
+    Light,
+    Dark,
+    Scheduled {
+        schedule: ThemeSchedule,
+    },
+}
+
+impl ThemeModePreference {
+    pub fn resolve(
+        &self,
+        system_appearance: ThemeAppearance,
+        minutes_after_midnight: u16,
+    ) -> ThemeAppearance {
+        match self {
+            Self::FollowSystem => system_appearance,
+            Self::Light => ThemeAppearance::Light,
+            Self::Dark => ThemeAppearance::Dark,
+            Self::Scheduled { schedule } => schedule.resolve_at_minutes(minutes_after_midnight),
+        }
+    }
+}
+
+/// Accessibility classification for presets and community themes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AccessibilityPalette {
+    #[default]
+    Standard,
+    HighContrast,
+    Protanopia,
+    Deuteranopia,
+    Tritanopia,
+}
+
+impl AccessibilityPalette {
+    pub fn all() -> &'static [AccessibilityPalette] {
+        &[
+            AccessibilityPalette::Standard,
+            AccessibilityPalette::HighContrast,
+            AccessibilityPalette::Protanopia,
+            AccessibilityPalette::Deuteranopia,
+            AccessibilityPalette::Tritanopia,
+        ]
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            AccessibilityPalette::Standard => "Standard",
+            AccessibilityPalette::HighContrast => "High Contrast",
+            AccessibilityPalette::Protanopia => "Protanopia",
+            AccessibilityPalette::Deuteranopia => "Deuteranopia",
+            AccessibilityPalette::Tritanopia => "Tritanopia",
+        }
+    }
+
+    pub fn is_color_blind_safe(self) -> bool {
+        matches!(
+            self,
+            AccessibilityPalette::Protanopia
+                | AccessibilityPalette::Deuteranopia
+                | AccessibilityPalette::Tritanopia
+        )
+    }
+}
+
+/// Origin for an accent palette seed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AccentSource {
+    #[default]
+    Theme,
+    System,
+    Wallpaper,
+    User,
+}
+
+/// Harmonized accent colors generated from a system, wallpaper, user, or preset seed.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AccentPalette {
+    pub source: AccentSource,
+    pub seed: Color,
+    pub accent: Color,
+    pub accent_hover: Color,
+    pub accent_muted: Color,
+    pub text_on_accent: Color,
+}
+
+impl AccentPalette {
+    pub fn from_seed(seed: Color, source: AccentSource, appearance: ThemeAppearance) -> Self {
+        let hover_delta = match appearance {
+            ThemeAppearance::Light => -0.08,
+            ThemeAppearance::Dark => 0.12,
+        };
+        let muted_lightness = match appearance {
+            ThemeAppearance::Light => 0.88,
+            ThemeAppearance::Dark => 0.24,
+        };
+        let (h, s, _) = seed.to_hsl();
+        let accent_muted =
+            Color::from_hsl(h, (s * 0.55).clamp(0.25, 0.8), muted_lightness).with_alpha(0.85);
+
+        Self {
+            source,
+            seed,
+            accent: seed,
+            accent_hover: shift_lightness(seed, hover_delta),
+            accent_muted,
+            text_on_accent: readable_text_color(seed),
+        }
+    }
+}
+
+/// Easing curve for theme transitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeTransitionEasing {
+    Linear,
+    #[default]
+    EaseOut,
+    EaseInOut,
+}
+
+/// Theme transition settings shared by frontends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeTransition {
+    pub duration_ms: u16,
+    pub easing: ThemeTransitionEasing,
+    pub cross_fade: bool,
+}
+
+impl ThemeTransition {
+    pub fn disabled() -> Self {
+        Self {
+            duration_ms: 0,
+            easing: ThemeTransitionEasing::Linear,
+            cross_fade: false,
+        }
+    }
+
+    pub fn effective_duration_ms(self, reduce_motion: bool) -> u16 {
+        if reduce_motion {
+            0
+        } else {
+            self.duration_ms
+        }
+    }
+}
+
+impl Default for ThemeTransition {
+    fn default() -> Self {
+        Self {
+            duration_ms: 220,
+            easing: ThemeTransitionEasing::EaseOut,
+            cross_fade: true,
+        }
+    }
+}
+
+/// Built-in editor theme presets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BuiltInThemePreset {
+    #[default]
+    Dark,
+    Light,
+    HighContrast,
+    Nord,
+    Dracula,
+    Protanopia,
+    Deuteranopia,
+    Tritanopia,
+}
+
+impl BuiltInThemePreset {
+    pub fn all() -> &'static [BuiltInThemePreset] {
+        &[
+            BuiltInThemePreset::Dark,
+            BuiltInThemePreset::Light,
+            BuiltInThemePreset::HighContrast,
+            BuiltInThemePreset::Nord,
+            BuiltInThemePreset::Dracula,
+            BuiltInThemePreset::Protanopia,
+            BuiltInThemePreset::Deuteranopia,
+            BuiltInThemePreset::Tritanopia,
+        ]
+    }
+
+    pub fn id(self) -> &'static str {
+        match self {
+            BuiltInThemePreset::Dark => "dark",
+            BuiltInThemePreset::Light => "light",
+            BuiltInThemePreset::HighContrast => "high_contrast",
+            BuiltInThemePreset::Nord => "nord",
+            BuiltInThemePreset::Dracula => "dracula",
+            BuiltInThemePreset::Protanopia => "protanopia",
+            BuiltInThemePreset::Deuteranopia => "deuteranopia",
+            BuiltInThemePreset::Tritanopia => "tritanopia",
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            BuiltInThemePreset::Dark => "Dark",
+            BuiltInThemePreset::Light => "Light",
+            BuiltInThemePreset::HighContrast => "High Contrast",
+            BuiltInThemePreset::Nord => "Nord",
+            BuiltInThemePreset::Dracula => "Dracula",
+            BuiltInThemePreset::Protanopia => "Protanopia",
+            BuiltInThemePreset::Deuteranopia => "Deuteranopia",
+            BuiltInThemePreset::Tritanopia => "Tritanopia",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        match normalize_theme_id(id).as_str() {
+            "dark" => Some(Self::Dark),
+            "light" => Some(Self::Light),
+            "high_contrast" | "highcontrast" => Some(Self::HighContrast),
+            "nord" => Some(Self::Nord),
+            "dracula" => Some(Self::Dracula),
+            "protanopia" => Some(Self::Protanopia),
+            "deuteranopia" => Some(Self::Deuteranopia),
+            "tritanopia" => Some(Self::Tritanopia),
+            _ => None,
+        }
+    }
+
+    pub fn accessibility(self) -> AccessibilityPalette {
+        match self {
+            BuiltInThemePreset::HighContrast => AccessibilityPalette::HighContrast,
+            BuiltInThemePreset::Protanopia => AccessibilityPalette::Protanopia,
+            BuiltInThemePreset::Deuteranopia => AccessibilityPalette::Deuteranopia,
+            BuiltInThemePreset::Tritanopia => AccessibilityPalette::Tritanopia,
+            _ => AccessibilityPalette::Standard,
+        }
+    }
+
+    pub fn to_theme(self) -> EditorTheme {
+        match self {
+            BuiltInThemePreset::Dark => EditorTheme::dark(),
+            BuiltInThemePreset::Light => EditorTheme::light(),
+            BuiltInThemePreset::HighContrast => EditorTheme::high_contrast(),
+            BuiltInThemePreset::Nord => EditorTheme::nord(),
+            BuiltInThemePreset::Dracula => EditorTheme::dracula(),
+            BuiltInThemePreset::Protanopia => EditorTheme::protanopia(),
+            BuiltInThemePreset::Deuteranopia => EditorTheme::deuteranopia(),
+            BuiltInThemePreset::Tritanopia => EditorTheme::tritanopia(),
+        }
+    }
+}
+
+/// Metadata wrapper for shareable JSON theme files.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CommunityThemeManifest {
+    #[serde(default = "default_community_theme_schema_version")]
+    pub schema_version: u32,
+    pub id: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub license: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub accessibility: AccessibilityPalette,
+    #[serde(default)]
+    pub preferred_mode: ThemeModePreference,
+    #[serde(default)]
+    pub accent_source: AccentSource,
+    #[serde(default)]
+    pub transition: ThemeTransition,
+}
+
+impl CommunityThemeManifest {
+    pub fn for_theme(theme: &EditorTheme) -> Self {
+        Self {
+            schema_version: COMMUNITY_THEME_SCHEMA_VERSION,
+            id: slugify_theme_name(&theme.name),
+            display_name: theme.name.clone(),
+            author: String::new(),
+            license: String::new(),
+            tags: Vec::new(),
+            accessibility: AccessibilityPalette::Standard,
+            preferred_mode: ThemeModePreference::default(),
+            accent_source: AccentSource::Theme,
+            transition: ThemeTransition::default(),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.schema_version != COMMUNITY_THEME_SCHEMA_VERSION {
+            return Err(format!(
+                "unsupported community theme schema version {}",
+                self.schema_version
+            ));
+        }
+        if self.id.trim().is_empty() {
+            return Err("theme manifest id must not be empty".to_string());
+        }
+        if self.display_name.trim().is_empty() {
+            return Err("theme manifest display_name must not be empty".to_string());
+        }
+        Ok(())
+    }
+}
+
+/// Shareable JSON theme bundle used by theme galleries and local imports.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommunityThemeBundle {
+    pub manifest: CommunityThemeManifest,
+    pub theme: EditorTheme,
+}
+
+impl CommunityThemeBundle {
+    pub fn new(manifest: CommunityThemeManifest, theme: EditorTheme) -> Self {
+        Self { manifest, theme }
+    }
+
+    pub fn from_theme(theme: EditorTheme) -> Self {
+        Self {
+            manifest: CommunityThemeManifest::for_theme(&theme),
+            theme,
+        }
+    }
+
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        self.manifest.validate()?;
+        self.theme.validate()
+    }
+}
+
+fn default_community_theme_schema_version() -> u32 {
+    COMMUNITY_THEME_SCHEMA_VERSION
+}
+
+fn normalize_theme_id(id: &str) -> String {
+    id.chars()
+        .filter_map(|c| {
+            if c.is_ascii_alphanumeric() {
+                Some(c.to_ascii_lowercase())
+            } else if c == '-' || c == '_' || c.is_ascii_whitespace() {
+                Some('_')
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn slugify_theme_name(name: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_dash = false;
+
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            last_was_dash = false;
+        } else if !last_was_dash && !slug.is_empty() {
+            slug.push('-');
+            last_was_dash = true;
+        }
+    }
+
+    if slug.ends_with('-') {
+        slug.pop();
+    }
+
+    if slug.is_empty() {
+        "custom-theme".to_string()
+    } else {
+        slug
+    }
+}
+
+fn shift_lightness(color: Color, delta: f32) -> Color {
+    let (h, s, l) = color.to_hsl();
+    Color::from_hsl(h, s, (l + delta).clamp(0.0, 1.0))
+}
+
+fn readable_text_color(background: Color) -> Color {
+    let black = Color::from_hex(0x000000);
+    let white = Color::from_hex(0xffffff);
+
+    if contrast_ratio(black, background) >= contrast_ratio(white, background) {
+        black
+    } else {
+        white
+    }
+}
+
+fn contrast_ratio(foreground: Color, background: Color) -> f32 {
+    let foreground_luminance = relative_luminance(foreground);
+    let background_luminance = relative_luminance(background);
+    let lighter = foreground_luminance.max(background_luminance);
+    let darker = foreground_luminance.min(background_luminance);
+    (lighter + 0.05) / (darker + 0.05)
+}
+
+fn relative_luminance(color: Color) -> f32 {
+    fn channel(value: u8) -> f32 {
+        let value = value as f32 / 255.0;
+        if value <= 0.03928 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
+}
+
 /// Complete theme definition with all UI colors
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditorTheme {
@@ -171,6 +694,163 @@ impl Default for EditorTheme {
 }
 
 impl EditorTheme {
+    pub fn preset(preset: BuiltInThemePreset) -> Self {
+        preset.to_theme()
+    }
+
+    pub fn accessibility_preset(accessibility: AccessibilityPalette) -> Self {
+        match accessibility {
+            AccessibilityPalette::Standard => Self::dark(),
+            AccessibilityPalette::HighContrast => Self::high_contrast(),
+            AccessibilityPalette::Protanopia => Self::protanopia(),
+            AccessibilityPalette::Deuteranopia => Self::deuteranopia(),
+            AccessibilityPalette::Tritanopia => Self::tritanopia(),
+        }
+    }
+
+    /// Infer whether the theme is visually light or dark from the main background.
+    pub fn appearance(&self) -> ThemeAppearance {
+        if relative_luminance(self.background) >= 0.5 {
+            ThemeAppearance::Light
+        } else {
+            ThemeAppearance::Dark
+        }
+    }
+
+    /// Return a copy with the supplied accent palette applied to common accent slots.
+    pub fn with_accent_palette(mut self, palette: AccentPalette) -> Self {
+        self.accent = palette.accent;
+        self.accent_hover = palette.accent_hover;
+        self.accent_muted = palette.accent_muted;
+        self.text_on_accent = palette.text_on_accent;
+        self.text_on_accent_muted = palette.text_on_accent.with_alpha(0.8);
+        self.border_focused = palette.accent;
+        self.progress_bar_fill = palette.accent;
+        self.drag_over_border = palette.accent;
+        self.drag_over_highlight = palette.accent.with_alpha(0.25);
+        self.neutral_indicator = palette.accent;
+        self.optimization_color = palette.accent_hover;
+        self
+    }
+
+    /// Return a copy with a harmonized accent generated from a system, wallpaper, or user seed.
+    pub fn with_accent_seed(self, seed: Color, source: AccentSource) -> Self {
+        let palette = AccentPalette::from_seed(seed, source, self.appearance());
+        self.with_accent_palette(palette)
+    }
+
+    pub fn to_community_bundle(&self) -> CommunityThemeBundle {
+        CommunityThemeBundle::from_theme(self.clone())
+    }
+
+    pub fn to_community_json(&self) -> Result<String, serde_json::Error> {
+        self.to_community_bundle().to_json()
+    }
+
+    /// Validate WCAG AA contrast for core text/accent pairings.
+    pub fn validate_accessibility(&self) -> Result<(), String> {
+        let text_background = contrast_ratio(self.text_primary, self.background);
+        if text_background < 4.5 {
+            return Err(format!(
+                "text_primary/background contrast {:.2}:1 is below WCAG AA",
+                text_background
+            ));
+        }
+
+        let text_surface = contrast_ratio(self.text_primary, self.surface);
+        if text_surface < 4.5 {
+            return Err(format!(
+                "text_primary/surface contrast {:.2}:1 is below WCAG AA",
+                text_surface
+            ));
+        }
+
+        let accent_text = contrast_ratio(self.text_on_accent, self.accent);
+        if accent_text < 4.5 {
+            return Err(format!(
+                "text_on_accent/accent contrast {:.2}:1 is below WCAG AA",
+                accent_text
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn with_accessible_semantics(
+        mut self,
+        name: &str,
+        accent: Color,
+        success: Color,
+        warning: Color,
+        error: Color,
+        info: Color,
+        secondary: Color,
+    ) -> Self {
+        self.name = name.to_string();
+        self = self.with_accent_seed(accent, AccentSource::Theme);
+        self.success = success;
+        self.warning = warning;
+        self.error = error;
+        self.info = info;
+        self.meter_normal = success;
+        self.meter_warning = warning;
+        self.meter_clip = error;
+        self.button_mute_active = error;
+        self.button_solo_active = warning;
+        self.button_dim_active = secondary;
+        self.toast_success_bg = success.with_alpha(0.22);
+        self.toast_error_bg = error.with_alpha(0.22);
+        self.toast_info_bg = info.with_alpha(0.22);
+        self.toast_warning_bg = warning.with_alpha(0.22);
+        self.plugin_colors = PluginColors {
+            eq: accent,
+            gain: success,
+            upmixer: secondary,
+            compressor: error,
+            limiter: warning,
+            gate: secondary,
+            loudness: info,
+            binaural: Color::from_hex(0xcc79a7),
+            convolution: accent,
+            monitor: success,
+            spectrum: secondary,
+            mute_solo: info,
+        };
+        self.graph_colors = GraphColors {
+            input: info,
+            target: success,
+            filter_response: warning,
+            corrected: accent,
+            error,
+            deviation: secondary,
+            grid: self.grid_color,
+            secondary_line: self.text_secondary,
+            directivity_er: Color::from_hex(0xcc79a7),
+            directivity_sp: secondary,
+        };
+        self.band_colors = vec![
+            error,
+            warning,
+            success,
+            info,
+            accent,
+            secondary,
+            Color::from_hex(0xcc79a7),
+            Color::from_hex(0x999999),
+        ];
+        self.eq_curve_colors.curve_boost = success;
+        self.eq_curve_colors.curve_cut = error;
+        self.eq_curve_colors.fill_boost = success.with_alpha(0.28);
+        self.eq_curve_colors.fill_cut = error.with_alpha(0.28);
+        self.spectrum_colors.bass = success;
+        self.spectrum_colors.mids = warning;
+        self.spectrum_colors.treble = error;
+        self.meter_colors.normal = success;
+        self.meter_colors.warning = warning;
+        self.meter_colors.clip = error;
+        self
+    }
+
     /// Create the default dark theme
     pub fn dark() -> Self {
         Self {
@@ -562,6 +1242,45 @@ impl EditorTheme {
             font_family: ".SystemUI".to_string(),
             design_language: "neutral".to_string(),
         }
+    }
+
+    /// Create a dark palette tuned for protanopia-safe semantic separation.
+    pub fn protanopia() -> Self {
+        Self::dark().with_accessible_semantics(
+            "Protanopia",
+            Color::from_hex(0x0072b2),
+            Color::from_hex(0x009e73),
+            Color::from_hex(0xe69f00),
+            Color::from_hex(0xcc79a7),
+            Color::from_hex(0x56b4e9),
+            Color::from_hex(0xf0e442),
+        )
+    }
+
+    /// Create a dark palette tuned for deuteranopia-safe semantic separation.
+    pub fn deuteranopia() -> Self {
+        Self::dark().with_accessible_semantics(
+            "Deuteranopia",
+            Color::from_hex(0x0072b2),
+            Color::from_hex(0x56b4e9),
+            Color::from_hex(0xe69f00),
+            Color::from_hex(0xd55e00),
+            Color::from_hex(0xcc79a7),
+            Color::from_hex(0xf0e442),
+        )
+    }
+
+    /// Create a dark palette tuned for tritanopia-safe semantic separation.
+    pub fn tritanopia() -> Self {
+        Self::dark().with_accessible_semantics(
+            "Tritanopia",
+            Color::from_hex(0xcc79a7),
+            Color::from_hex(0x009e73),
+            Color::from_hex(0xd55e00),
+            Color::from_hex(0xe64b35),
+            Color::from_hex(0x999999),
+            Color::from_hex(0x0072b2),
+        )
     }
 
     /// Create a Nord theme
@@ -1270,5 +1989,92 @@ mod tests {
         assert!(theme.validate().is_ok());
         theme.band_colors.clear();
         assert!(theme.validate().is_err());
+    }
+
+    #[test]
+    fn test_theme_schedule_resolves_day_and_night() {
+        let schedule = ThemeSchedule::new(TimeOfDay::new(7, 30), TimeOfDay::new(18, 0));
+
+        assert_eq!(schedule.resolve_at_minutes(8 * 60), ThemeAppearance::Light);
+        assert_eq!(schedule.resolve_at_minutes(20 * 60), ThemeAppearance::Dark);
+        assert_eq!(
+            ThemeModePreference::Scheduled { schedule }.resolve(ThemeAppearance::Light, 23 * 60),
+            ThemeAppearance::Dark
+        );
+    }
+
+    #[test]
+    fn test_theme_schedule_supports_wraparound_light_period() {
+        let schedule = ThemeSchedule::new(TimeOfDay::new(18, 0), TimeOfDay::new(7, 0));
+
+        assert_eq!(schedule.resolve_at_minutes(23 * 60), ThemeAppearance::Light);
+        assert_eq!(schedule.resolve_at_minutes(12 * 60), ThemeAppearance::Dark);
+    }
+
+    #[test]
+    fn test_accent_palette_applies_readable_text() {
+        let seed = Color::from_hex(0xf0e442);
+        let palette = AccentPalette::from_seed(seed, AccentSource::System, ThemeAppearance::Dark);
+        let theme = EditorTheme::dark().with_accent_palette(palette);
+
+        assert_eq!(theme.accent, seed);
+        assert_eq!(theme.border_focused, seed);
+        assert!(contrast_ratio(theme.text_on_accent, theme.accent) >= 4.5);
+    }
+
+    #[test]
+    fn test_color_blind_presets_are_accessible() {
+        for preset in [
+            BuiltInThemePreset::Protanopia,
+            BuiltInThemePreset::Deuteranopia,
+            BuiltInThemePreset::Tritanopia,
+        ] {
+            let theme = preset.to_theme();
+            assert!(preset.accessibility().is_color_blind_safe());
+            assert!(
+                theme.validate_accessibility().is_ok(),
+                "{} should meet core contrast requirements",
+                preset.name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_community_theme_bundle_roundtrip() {
+        let mut manifest = CommunityThemeManifest::for_theme(&EditorTheme::dracula());
+        manifest.author = "SOTF".to_string();
+        manifest.tags = vec!["community".to_string(), "dark".to_string()];
+        manifest.accessibility = AccessibilityPalette::Standard;
+
+        let bundle = CommunityThemeBundle::new(manifest, EditorTheme::dracula());
+        let json = bundle.to_json().unwrap();
+        let loaded = CommunityThemeBundle::from_json(&json).unwrap();
+
+        assert_eq!(
+            loaded.manifest.schema_version,
+            COMMUNITY_THEME_SCHEMA_VERSION
+        );
+        assert_eq!(loaded.manifest.id, "dracula");
+        assert_eq!(loaded.manifest.author, "SOTF");
+        assert_eq!(loaded.theme.name, "Dracula");
+        assert!(loaded.validate().is_ok());
+    }
+
+    #[test]
+    fn test_transition_respects_reduce_motion() {
+        let transition = ThemeTransition::default();
+
+        assert_eq!(transition.effective_duration_ms(false), 220);
+        assert_eq!(transition.effective_duration_ms(true), 0);
+        assert_eq!(ThemeTransition::disabled().effective_duration_ms(false), 0);
+    }
+
+    #[test]
+    fn test_builtin_preset_lookup_accepts_friendly_ids() {
+        assert_eq!(
+            BuiltInThemePreset::from_id("High Contrast"),
+            Some(BuiltInThemePreset::HighContrast)
+        );
+        assert_eq!(BuiltInThemePreset::from_id("tokyo-night"), None);
     }
 }

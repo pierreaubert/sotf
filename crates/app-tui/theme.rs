@@ -8,17 +8,61 @@ use ratatui::style::Color;
 pub enum ThemeType {
     Dark,
     Light,
+    Solarized,
+    Dracula,
+    Gruvbox,
+    TokyoNight,
 }
 
 impl ThemeType {
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::Dark,
+            Self::Light,
+            Self::Solarized,
+            Self::Dracula,
+            Self::Gruvbox,
+            Self::TokyoNight,
+        ]
+    }
+
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
+        match normalize_theme_name(s).as_str() {
             "dark" => Some(ThemeType::Dark),
             "light" => Some(ThemeType::Light),
+            "solarized" | "solarized_dark" => Some(ThemeType::Solarized),
+            "dracula" => Some(ThemeType::Dracula),
+            "gruvbox" | "gruvbox_dark" => Some(ThemeType::Gruvbox),
+            "tokyonight" | "tokyo_night" => Some(ThemeType::TokyoNight),
             _ => None,
         }
     }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ThemeType::Dark => "Dark",
+            ThemeType::Light => "Light",
+            ThemeType::Solarized => "Solarized",
+            ThemeType::Dracula => "Dracula",
+            ThemeType::Gruvbox => "Gruvbox",
+            ThemeType::TokyoNight => "Tokyo Night",
+        }
+    }
+}
+
+fn normalize_theme_name(s: &str) -> String {
+    s.chars()
+        .filter_map(|c| {
+            if c.is_ascii_alphanumeric() {
+                Some(c.to_ascii_lowercase())
+            } else if c == '-' || c == '_' || c.is_ascii_whitespace() {
+                Some('_')
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Color scheme for the TUI
@@ -114,13 +158,133 @@ impl Theme {
         }
     }
 
+    /// Create a Solarized Dark terminal preset.
+    pub fn solarized() -> Self {
+        Self {
+            bg_primary: rgb(0x002b36),
+            bg_secondary: rgb(0x073642),
+            bg_selected: rgb(0x586e75),
+            bg_highlight: rgb(0x073642),
+
+            fg_primary: rgb(0xeee8d5),
+            fg_secondary: rgb(0x93a1a1),
+            fg_selected: rgb(0xfdf6e3),
+            fg_muted: rgb(0x839496),
+
+            accent_primary: rgb(0x268bd2),
+            accent_secondary: rgb(0x2aa198),
+            accent_success: rgb(0x859900),
+            accent_warning: rgb(0xb58900),
+            accent_error: rgb(0xdc322f),
+            accent_info: rgb(0x268bd2),
+
+            border_color: rgb(0x586e75),
+            title_color: rgb(0xb58900),
+            playing_indicator: rgb(0x859900),
+            current_track: rgb(0x268bd2),
+        }
+    }
+
+    /// Create a Dracula terminal preset.
+    pub fn dracula() -> Self {
+        Self {
+            bg_primary: rgb(0x282a36),
+            bg_secondary: rgb(0x21222c),
+            bg_selected: rgb(0x44475a),
+            bg_highlight: rgb(0x343746),
+
+            fg_primary: rgb(0xf8f8f2),
+            fg_secondary: rgb(0xcfcfd8),
+            fg_selected: rgb(0xf8f8f2),
+            fg_muted: rgb(0x6272a4),
+
+            accent_primary: rgb(0xbd93f9),
+            accent_secondary: rgb(0xff79c6),
+            accent_success: rgb(0x50fa7b),
+            accent_warning: rgb(0xf1fa8c),
+            accent_error: rgb(0xff5555),
+            accent_info: rgb(0x8be9fd),
+
+            border_color: rgb(0x6272a4),
+            title_color: rgb(0xff79c6),
+            playing_indicator: rgb(0x50fa7b),
+            current_track: rgb(0x8be9fd),
+        }
+    }
+
+    /// Create a Gruvbox Dark terminal preset.
+    pub fn gruvbox() -> Self {
+        Self {
+            bg_primary: rgb(0x282828),
+            bg_secondary: rgb(0x3c3836),
+            bg_selected: rgb(0x504945),
+            bg_highlight: rgb(0x3c3836),
+
+            fg_primary: rgb(0xebdbb2),
+            fg_secondary: rgb(0xd5c4a1),
+            fg_selected: rgb(0xfbf1c7),
+            fg_muted: rgb(0xa89984),
+
+            accent_primary: rgb(0x83a598),
+            accent_secondary: rgb(0xd3869b),
+            accent_success: rgb(0xb8bb26),
+            accent_warning: rgb(0xfabd2f),
+            accent_error: rgb(0xfb4934),
+            accent_info: rgb(0x8ec07c),
+
+            border_color: rgb(0x665c54),
+            title_color: rgb(0xfabd2f),
+            playing_indicator: rgb(0xb8bb26),
+            current_track: rgb(0x83a598),
+        }
+    }
+
+    /// Create a Tokyo Night terminal preset.
+    pub fn tokyo_night() -> Self {
+        Self {
+            bg_primary: rgb(0x1a1b26),
+            bg_secondary: rgb(0x24283b),
+            bg_selected: rgb(0x3b4261),
+            bg_highlight: rgb(0x292e42),
+
+            fg_primary: rgb(0xc0caf5),
+            fg_secondary: rgb(0xa9b1d6),
+            fg_selected: rgb(0xffffff),
+            fg_muted: rgb(0x565f89),
+
+            accent_primary: rgb(0x7aa2f7),
+            accent_secondary: rgb(0xbb9af7),
+            accent_success: rgb(0x9ece6a),
+            accent_warning: rgb(0xe0af68),
+            accent_error: rgb(0xf7768e),
+            accent_info: rgb(0x7dcfff),
+
+            border_color: rgb(0x414868),
+            title_color: rgb(0xbb9af7),
+            playing_indicator: rgb(0x9ece6a),
+            current_track: rgb(0x7aa2f7),
+        }
+    }
+
     /// Create a theme based on type
     pub fn from_type(theme_type: ThemeType) -> Self {
         match theme_type {
             ThemeType::Dark => Self::dark(),
             ThemeType::Light => Self::light(),
+            ThemeType::Solarized => Self::solarized(),
+            ThemeType::Dracula => Self::dracula(),
+            ThemeType::Gruvbox => Self::gruvbox(),
+            ThemeType::TokyoNight => Self::tokyo_night(),
         }
     }
+}
+
+fn rgb(hex: u32) -> Color {
+    Color::Rgb(
+        ((hex >> 16) & 0xff) as u8,
+        ((hex >> 8) & 0xff) as u8,
+        (hex & 0xff) as u8,
+    )
 }
 
 impl Default for Theme {
@@ -142,6 +306,17 @@ mod tests {
         assert_eq!(ThemeType::from_str("light"), Some(ThemeType::Light));
         assert_eq!(ThemeType::from_str("Light"), Some(ThemeType::Light));
         assert_eq!(ThemeType::from_str("LIGHT"), Some(ThemeType::Light));
+
+        assert_eq!(
+            ThemeType::from_str("solarized-dark"),
+            Some(ThemeType::Solarized)
+        );
+        assert_eq!(ThemeType::from_str("Dracula"), Some(ThemeType::Dracula));
+        assert_eq!(ThemeType::from_str("gruvbox"), Some(ThemeType::Gruvbox));
+        assert_eq!(
+            ThemeType::from_str("Tokyo Night"),
+            Some(ThemeType::TokyoNight)
+        );
 
         assert_eq!(ThemeType::from_str("invalid"), None);
         assert_eq!(ThemeType::from_str(""), None);
@@ -171,6 +346,28 @@ mod tests {
 
         let light = Theme::from_type(ThemeType::Light);
         assert_eq!(light.bg_primary, Color::Rgb(255, 255, 255));
+    }
+
+    #[test]
+    fn test_tui_preset_theme_names_and_colors() {
+        assert_eq!(ThemeType::all().len(), 6);
+        assert_eq!(ThemeType::TokyoNight.name(), "Tokyo Night");
+
+        let solarized = Theme::from_type(ThemeType::Solarized);
+        assert_eq!(solarized.bg_primary, Color::Rgb(0, 43, 54));
+        assert_eq!(solarized.accent_primary, Color::Rgb(38, 139, 210));
+
+        let dracula = Theme::from_type(ThemeType::Dracula);
+        assert_eq!(dracula.bg_primary, Color::Rgb(40, 42, 54));
+        assert_eq!(dracula.accent_secondary, Color::Rgb(255, 121, 198));
+
+        let gruvbox = Theme::from_type(ThemeType::Gruvbox);
+        assert_eq!(gruvbox.bg_primary, Color::Rgb(40, 40, 40));
+        assert_eq!(gruvbox.title_color, Color::Rgb(250, 189, 47));
+
+        let tokyo = Theme::from_type(ThemeType::TokyoNight);
+        assert_eq!(tokyo.bg_primary, Color::Rgb(26, 27, 38));
+        assert_eq!(tokyo.accent_info, Color::Rgb(125, 207, 255));
     }
 
     #[test]
