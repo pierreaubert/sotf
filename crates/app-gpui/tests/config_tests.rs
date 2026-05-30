@@ -53,6 +53,7 @@ fn test_panel_layout_default() {
     assert!((layout.meters_ratio - 0.25).abs() < 0.001);
     assert!((layout.queue_list_ratio - 0.30).abs() < 0.001);
     assert!((layout.lufs_ratio - 0.25).abs() < 0.001);
+    assert!((layout.rack_detail_ratio - 0.22).abs() < 0.001);
 }
 
 #[test]
@@ -62,6 +63,7 @@ fn test_panel_layout_serialization() {
         meters_ratio: 0.3,
         queue_list_ratio: 0.4,
         lufs_ratio: 0.2,
+        rack_detail_ratio: 0.24,
         library_h_ratio: 0.3,
         queue_h_ratio: 0.4,
         rack_h_ratio: 0.3,
@@ -73,6 +75,7 @@ fn test_panel_layout_serialization() {
     let deserialized: PanelLayout = serde_json::from_str(&json).unwrap();
     assert!((deserialized.queue_ratio - 0.5).abs() < 0.001);
     assert!((deserialized.meters_ratio - 0.3).abs() < 0.001);
+    assert!((deserialized.rack_detail_ratio - 0.24).abs() < 0.001);
 }
 
 #[test]

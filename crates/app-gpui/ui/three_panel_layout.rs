@@ -16,12 +16,10 @@ impl PlayerView {
             )
         };
         let library_node = solved.find("library").unwrap();
-        let queue_node = solved.find("queue").unwrap();
         let rack_node = solved.find("rack").unwrap();
         let library_visible = library_node.visible;
         let rack_visible = rack_node.visible;
         let library_width = library_node.width;
-        let queue_height = queue_node.height;
         let rack_width = rack_node.width;
         let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
@@ -54,7 +52,7 @@ impl PlayerView {
             // disagreed with the solved layout (which clamps + adjusts the
             // configured ratios) and snapped the divider on the first
             // movement.
-            .on_mouse_move(cx.listener(move |view, event: &MouseMoveEvent, window, cx| {
+            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
                 let (
                     is_dragging_lib_queue,
                     is_dragging_queue_rack,
@@ -66,6 +64,7 @@ impl PlayerView {
                     anchor_rack,
                     anchor_queue_list,
                     anchor_meters,
+                    anchor_lufs,
                     library_h_ratio,
                     rack_h_ratio,
                     rack_collapsed,
@@ -83,6 +82,7 @@ impl PlayerView {
                         layout.drag_anchor_rack_h_ratio,
                         layout.drag_anchor_queue_list_ratio,
                         layout.drag_anchor_meters_ratio,
+                        layout.drag_anchor_lufs_ratio,
                         layout.library_h_ratio,
                         layout.rack_h_ratio,
                         layout.rack_panel_collapsed,
@@ -94,6 +94,9 @@ impl PlayerView {
                 let window_width: f32 = window_size.width.into();
                 let mouse_x: f32 = mouse_pos.x.into();
                 let dx = mouse_x - anchor_pos;
+                let window_height: f32 = window_size.height.into();
+                let mouse_y: f32 = mouse_pos.y.into();
+                let dy = mouse_y - anchor_pos;
 
                 if is_dragging_lib_queue && window_width > 0.0 {
                     let new_ratio = (anchor_lib + dx / window_width).clamp(0.15, 0.50);
@@ -120,7 +123,11 @@ impl PlayerView {
                 // shouldn't be dragging two dividers simultaneously.
                 if is_dragging_queue_list || is_dragging_meters {
                     let queue_start = library_h_ratio * window_width;
-                    let rack_width = if rack_collapsed { 0.0 } else { rack_h_ratio * window_width };
+                    let rack_width = if rack_collapsed {
+                        0.0
+                    } else {
+                        rack_h_ratio * window_width
+                    };
                     let queue_width = window_width - queue_start - rack_width;
 
                     if queue_width > 0.0 {
@@ -145,11 +152,11 @@ impl PlayerView {
                     }
                 }
 
-                if is_dragging_lufs {
-                    let mouse_y: f32 = mouse_pos.y.into();
+                if is_dragging_lufs && window_height > 0.0 {
+                    let new_ratio = (anchor_lufs + dy / window_height).clamp(0.20, 0.82);
                     view.state.update(cx, |state, cx| {
                         state.layout.update(cx, |layout, _| {
-                            layout.update_lufs_panel_drag(mouse_y, queue_height);
+                            layout.lufs_panel_ratio = new_ratio;
                         });
                     });
                 }
@@ -169,11 +176,9 @@ impl PlayerView {
                             layout.is_dragging_queue_rack_divider = false;
                             layout.is_dragging_queue_list_divider = false;
                             layout.is_dragging_meters_divider = false;
-                            layout.end_lufs_panel_drag();
+                            layout.is_dragging_lufs_divider = false;
 
-                            if any_dragging
-                                && let Err(e) = state.app.save_config(layout)
-                            {
+                            if any_dragging && let Err(e) = state.app.save_config(layout) {
                                 log::warn!("Failed to save panel layout: {}", e);
                             }
                         });
@@ -297,12 +302,10 @@ impl PlayerView {
             )
         };
         let library_node = solved.find("library").unwrap();
-        let queue_node = solved.find("queue").unwrap();
         let rack_node = solved.find("rack").unwrap();
         let library_visible = library_node.visible;
         let rack_visible = rack_node.visible;
         let library_height = library_node.height;
-        let queue_height = queue_node.height;
         let rack_height = rack_node.height;
         let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
@@ -327,7 +330,7 @@ impl PlayerView {
             .bg(theme.background)
             // Global mouse move handler for all divider dragging (vertical layout).
             // Delta-based — see horizontal-layout handler comment.
-            .on_mouse_move(cx.listener(move |view, event: &MouseMoveEvent, window, cx| {
+            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
                 let (
                     is_dragging_lib_queue,
                     is_dragging_queue_rack,
@@ -339,6 +342,7 @@ impl PlayerView {
                     anchor_rack_v,
                     anchor_queue_list,
                     anchor_meters,
+                    anchor_lufs,
                 ) = {
                     let layout = view.state.read(cx).layout.read(cx);
                     (
@@ -352,6 +356,7 @@ impl PlayerView {
                         layout.drag_anchor_rack_v_ratio,
                         layout.drag_anchor_queue_list_ratio,
                         layout.drag_anchor_meters_ratio,
+                        layout.drag_anchor_lufs_ratio,
                     )
                 };
 
@@ -415,12 +420,17 @@ impl PlayerView {
                 }
 
                 if is_dragging_lufs {
-                    let mouse_y: f32 = mouse_pos.y.into();
-                    view.state.update(cx, |state, cx| {
-                        state.layout.update(cx, |layout, _| {
-                            layout.update_lufs_panel_drag(mouse_y, queue_height);
+                    let window_height: f32 = window_size.height.into();
+                    if window_height > 0.0 {
+                        let mouse_y: f32 = mouse_pos.y.into();
+                        let dy = mouse_y - anchor_pos;
+                        let new_ratio = (anchor_lufs + dy / window_height).clamp(0.20, 0.82);
+                        view.state.update(cx, |state, cx| {
+                            state.layout.update(cx, |layout, _| {
+                                layout.lufs_panel_ratio = new_ratio;
+                            });
                         });
-                    });
+                    }
                 }
             }))
             .on_mouse_up(
@@ -438,11 +448,9 @@ impl PlayerView {
                             layout.is_dragging_queue_rack_divider = false;
                             layout.is_dragging_queue_list_divider = false;
                             layout.is_dragging_meters_divider = false;
-                            layout.end_lufs_panel_drag();
+                            layout.is_dragging_lufs_divider = false;
 
-                            if any_dragging
-                                && let Err(e) = state.app.save_config(layout)
-                            {
+                            if any_dragging && let Err(e) = state.app.save_config(layout) {
                                 log::warn!("Failed to save panel layout: {}", e);
                             }
                         });
@@ -581,12 +589,13 @@ impl PlayerView {
                     .child("OUTPUT"),
             )
             // Output meters
-            .child(
-                div()
-                    .flex_1()
-                    .p(d.pad_y)
-                    .child(self.render_side_meter(cx, output_channels, "", true, false)),
-            )
+            .child(div().flex_1().p(d.pad_y).child(self.render_side_meter(
+                cx,
+                output_channels,
+                "",
+                true,
+                false,
+            )))
     }
 
     /// Render queue content for 3-panel layout

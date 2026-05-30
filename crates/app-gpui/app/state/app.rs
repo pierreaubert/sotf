@@ -1302,6 +1302,7 @@ impl App {
             meters_panel_ratio: config.panel_layout.meters_ratio,
             queue_list_ratio: config.panel_layout.queue_list_ratio,
             lufs_panel_ratio: config.panel_layout.lufs_ratio,
+            rack_detail_ratio: config.panel_layout.rack_detail_ratio,
             library_h_ratio: config.panel_layout.library_h_ratio,
             queue_h_ratio: config.panel_layout.queue_h_ratio,
             rack_h_ratio: config.panel_layout.rack_h_ratio,
@@ -1310,6 +1311,7 @@ impl App {
             rack_v_ratio: config.panel_layout.rack_v_ratio,
             ..Default::default()
         };
+        self.rack_detail_collapsed = config.panel_layout.rack_detail_ratio <= 0.05;
 
         // Restore volume and muted state
         // self.playback.volume = config.volume; // Always start at default (10%) per requirement
@@ -1470,6 +1472,7 @@ impl App {
                 meters_ratio: layout.meters_panel_ratio,
                 queue_list_ratio: layout.queue_list_ratio,
                 lufs_ratio: layout.lufs_panel_ratio,
+                rack_detail_ratio: layout.rack_detail_ratio,
                 // 3-Panel Layout ratios
                 library_h_ratio: layout.library_h_ratio,
                 queue_h_ratio: layout.queue_h_ratio,

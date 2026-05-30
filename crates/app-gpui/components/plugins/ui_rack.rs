@@ -6,11 +6,8 @@ use super::actions::ToggleUpmixerConfig;
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
 use crate::app::constants::spacing;
-use crate::app::state::plugin::{available_controllers, PluginUiView};
-use crate::app::state::{
-    rack_strip_height_from_drag, DividerDragState, DividerType, RACK_STRIP_MAX_HEIGHT,
-    RACK_STRIP_MIN_HEIGHT,
-};
+use crate::app::state::plugin::{PluginUiView, available_controllers};
+use crate::app::state::{DividerDragState, DividerType};
 use crate::app::types::{PluginUpdateType, Screen};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
@@ -178,7 +175,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let current_hint = self.state.read(cx).app.current_hint.clone();
-        let rack_strip_height = self.state.read(cx).app.rack_strip_height;
 
         div()
             .id("plugins-screen")
@@ -195,19 +191,18 @@ impl PlayerView {
             .on_action(cx.listener(Self::on_reset_plugin_param))
             .on_action(cx.listener(Self::on_start_knob_drag))
             // Global mouse move handler for knob/slider and divider dragging
-            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _window, cx| {
-                let state_read = view.state.read(cx);
-
-                // Handle knob/slider dragging
-                let knob_drag = state_read.app.knob_drag;
-
-                // Handle divider dragging
-                let divider_drag = state_read.app.dragging_divider.clone();
+            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
+                let (knob_drag, divider_drag) = {
+                    let state_read = view.state.read(cx);
+                    (
+                        state_read.app.knob_drag,
+                        state_read.app.dragging_divider.clone(),
+                    )
+                };
 
                 if let Some(drag) = knob_drag {
                     let mouse_y: f32 = event.position.y.into();
-                    // Inverted: up = positive (increase)
-                    let delta_y = drag.start_y - mouse_y;
+                    let delta_y = drag.start_y - mouse_y; // Inverted: up = positive (increase)
                     // Scale: 150px drag = full range
                     let range = drag.max - drag.min;
                     let value_delta = (delta_y as f64 / 150.0) * range;
@@ -222,27 +217,34 @@ impl PlayerView {
                     });
                     cx.notify();
                 } else if let Some(drag) = divider_drag {
-                    let mouse_x: f32 = event.position.x.into();
-                    let mouse_y: f32 = event.position.y.into();
-                    let delta_x = mouse_x - drag.start_x;
-
-                    view.state.update(cx, |state, _cx| {
+                    view.state.update(cx, |state, cx| {
                         match drag.divider_type {
                             DividerType::InputMeter => {
                                 // Dragging right increases input meter width
+                                let mouse_x: f32 = event.position.x.into();
+                                let delta_x = mouse_x - drag.start_x;
                                 let new_width = (drag.start_width + delta_x).clamp(60.0, 200.0);
                                 state.app.input_meter_width = new_width;
                             }
                             DividerType::OutputMeter => {
                                 // Dragging left increases output meter width
                                 // Allow expanding to fit all channels — no fixed upper bound
+                                let mouse_x: f32 = event.position.x.into();
+                                let delta_x = mouse_x - drag.start_x;
                                 let new_width = (drag.start_width - delta_x).max(60.0);
                                 state.app.output_meter_width = new_width;
                             }
                             DividerType::RackDetail => {
-                                let delta_y = mouse_y - drag.start_x;
-                                state.app.rack_strip_height =
-                                    rack_strip_height_from_drag(drag.start_width, delta_y);
+                                let window_height: f32 = window.bounds().size.height.into();
+                                if window_height > 0.0 {
+                                    let mouse_y: f32 = event.position.y.into();
+                                    let delta_y = mouse_y - drag.start_x;
+                                    let new_ratio = (drag.start_width + delta_y / window_height)
+                                        .clamp(0.12, 0.65);
+                                    state.layout.update(cx, |layout, _| {
+                                        layout.rack_detail_ratio = new_ratio;
+                                    });
+                                }
                             }
                             DividerType::PluginAutoConfig { .. }
                             | DividerType::PluginAutoOutput { .. } => {}
@@ -255,12 +257,16 @@ impl PlayerView {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
+                    view.state.update(cx, |state, cx| {
                         if state.app.knob_drag.is_some() {
                             state.app.knob_drag = None;
                         }
-                        if state.app.dragging_divider.is_some() {
-                            state.app.dragging_divider = None;
+                        let had_divider_drag = state.app.dragging_divider.take().is_some();
+                        if had_divider_drag {
+                            let layout = state.layout.read(cx).clone();
+                            if let Err(e) = state.app.save_config(&layout) {
+                                log::warn!("Failed to save panel layout: {}", e);
+                            }
                         }
                     });
                 }),
@@ -308,97 +314,75 @@ impl PlayerView {
             )
             .when(
                 self.state.read(cx).app.plugin_state.is_rack_available(),
-                |root| {
-                    let rack_detail_collapsed = self.state.read(cx).app.rack_detail_collapsed;
-                    let show_add_plugin_menu =
-                        self.state.read(cx).app.show_add_plugin_menu && !rack_detail_collapsed;
-
-                    root.child(
-                        div()
-                            .relative()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_h_0()
-                            // Plugin Rack Strip (top) - only show if not collapsed
-                            .when(!rack_detail_collapsed, |d| {
-                                d.child(
-                                    div()
-                                        .h(px(rack_strip_height))
-                                        .min_h(px(RACK_STRIP_MIN_HEIGHT))
-                                        .max_h(px(RACK_STRIP_MAX_HEIGHT))
-                                        .flex_shrink_0()
-                                        .overflow_hidden()
-                                        .child(self.render_plugin_rack(cx)),
-                                )
-                            })
-                            // Horizontal divider between rack and detail panel
-                            .child({
-                                let divider_theme = PaneDividerTheme {
-                                    background: theme.background,
-                                    background_hover: theme.surface_hover,
-                                    background_collapsed: theme.surface,
-                                    foreground: theme.text_muted,
-                                    foreground_hover: theme.text_secondary,
-                                    border: theme.border,
-                                    tint: Rgba {
-                                        a: 0.42,
-                                        ..theme.accent
-                                    },
-                                    tint_hover: theme.accent,
-                                };
-                                let state_for_toggle = self.state.clone();
-                                let state_for_drag = self.state.clone();
-                                PaneDivider::horizontal(
-                                    "rack-detail-divider",
-                                    CollapseDirection::Up,
-                                )
+                |d| {
+                    let (is_collapsed, rack_detail_ratio) = {
+                        let state = self.state.read(cx);
+                        let layout = state.layout.read(cx);
+                        (
+                            state.app.rack_detail_collapsed || layout.rack_detail_ratio <= 0.05,
+                            layout.rack_detail_ratio.clamp(0.12, 0.65),
+                        )
+                    };
+                    d
+                        // Plugin Rack Strip (top) - only show if not collapsed
+                        .when(!is_collapsed, |d| {
+                            d.child(
+                                div()
+                                    .h(relative(rack_detail_ratio))
+                                    .flex_shrink_0()
+                                    .overflow_hidden()
+                                    .child(self.render_plugin_rack(cx)),
+                            )
+                        })
+                        // Horizontal divider between rack and detail panel
+                        .child({
+                            let divider_theme = PaneDividerTheme {
+                                background: theme.background,
+                                background_hover: theme.surface_hover,
+                                background_collapsed: theme.surface,
+                                foreground: theme.text_muted,
+                                foreground_hover: theme.text_secondary,
+                                border: theme.border,
+                                tint: Rgba {
+                                    a: 0.42,
+                                    ..theme.accent
+                                },
+                                tint_hover: theme.accent,
+                            };
+                            let state_for_toggle = self.state.clone();
+                            let state_for_drag = self.state.clone();
+                            PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
                                 .label("Signal Chain")
                                 .theme(divider_theme)
                                 .thickness(px(4.0))
-                                .collapsed(rack_detail_collapsed)
+                                .collapsed(is_collapsed)
                                 .on_toggle(move |collapsed, _window, cx| {
-                                    state_for_toggle.update(cx, |s, _| {
+                                    state_for_toggle.update(cx, |s, cx| {
                                         s.app.rack_detail_collapsed = collapsed;
+                                        s.layout.update(cx, |layout, _| {
+                                            layout.rack_detail_ratio =
+                                                if collapsed { 0.0 } else { 0.22 };
+                                            if let Err(e) = s.app.save_config(layout) {
+                                                log::debug!("Config save failed: {e}");
+                                            }
+                                        });
                                     });
                                 })
-                                .on_drag_start(
-                                    move |pos, _window, cx| {
-                                        state_for_drag.update(cx, |s, _| {
-                                            s.app.dragging_divider = Some(DividerDragState {
-                                                divider_type: DividerType::RackDetail,
-                                                start_x: pos,
-                                                start_width: s.app.rack_strip_height,
-                                            });
+                                .on_drag_start(move |pos, _window, cx| {
+                                    state_for_drag.update(cx, |s, cx| {
+                                        let start_width =
+                                            s.layout.read(cx).rack_detail_ratio.clamp(0.12, 0.65);
+                                        s.app.rack_detail_collapsed = false;
+                                        s.app.dragging_divider = Some(DividerDragState {
+                                            divider_type: DividerType::RackDetail,
+                                            start_x: pos,
+                                            start_width,
                                         });
-                                    },
-                                )
-                            })
-                            // Parameter Panel (bottom, fills remaining space)
-                            .child(self.render_plugin_detail_panel(cx))
-                            // Add plugin menu overlay. Render it after the detail panel so it
-                            // paints over the rack/detail divider instead of being clipped by it.
-                            .when(show_add_plugin_menu, |el| {
-                                el.child(
-                                    div()
-                                        .id("add-plugin-menu")
-                                        .absolute()
-                                        .top(px(rack_strip_height))
-                                        .left_0()
-                                        .right_0()
-                                        .px(d.card)
-                                        .py(d.card)
-                                        .max_h(px(400.0))
-                                        .overflow_y_scroll()
-                                        .bg(theme.surface)
-                                        .border_t_1()
-                                        .border_b_1()
-                                        .border_color(theme.border)
-                                        .shadow_lg()
-                                        .child(self.render_add_plugin_buttons(cx)),
-                                )
-                            }),
-                    )
+                                    });
+                                })
+                        })
+                        // Parameter Panel (bottom, fills remaining space)
+                        .child(self.render_plugin_detail_panel(cx))
                 },
             )
     }
@@ -1585,6 +1569,21 @@ impl PlayerView {
                         )
                     }),
             )
+            // Add plugin menu (shown when "+" is clicked)
+            .when(self.state.read(cx).app.show_add_plugin_menu, |el| {
+                el.child(
+                    div()
+                        .id("add-plugin-menu")
+                        .px(d.card)
+                        .py(d.card)
+                        .max_h(px(400.0))
+                        .overflow_y_scroll()
+                        .bg(theme.surface)
+                        .border_t_1()
+                        .border_color(theme.border)
+                        .child(self.render_add_plugin_buttons(cx)),
+                )
+            })
     }
 
     /// Render a side level meter group for the detail panel
