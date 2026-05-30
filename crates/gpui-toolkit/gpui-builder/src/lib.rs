@@ -49,6 +49,8 @@
 //! ```
 
 pub mod compat;
+#[macro_use]
+mod macros;
 pub mod plugin_chassis;
 pub mod solved;
 pub mod solver;
