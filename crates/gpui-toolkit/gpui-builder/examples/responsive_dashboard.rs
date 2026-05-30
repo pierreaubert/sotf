@@ -4,6 +4,7 @@
 //! - Deeply nested layout (3 levels)
 //! - Multiple flex children with different weights
 //! - Display tiers for adaptive content
+//! - Solved layout diagnostics for copy/pasteable debug output
 //! - Simulating a window resize sequence
 //!
 //! Run: cargo run -p gpui-builder --example responsive_dashboard
@@ -135,7 +136,7 @@ fn main() {
     for (w, h, label) in sizes {
         println!("=== {label} ({w:.0}x{h:.0}) ===");
         let solved = solve(&root, w, h, &LayoutPreferences::default());
-        print_tree(&solved, 0);
+        print!("{}", solved.debug_report_with_source(&root));
 
         let tabs = solved.collapsed_tabs();
         if !tabs.is_empty() {
@@ -156,29 +157,4 @@ fn main() {
         table.height,
         chart.height / table.height,
     );
-}
-
-fn print_tree(node: &gpui_builder::SolvedNode, indent: usize) {
-    let pad = " ".repeat(indent);
-    if !node.visible {
-        println!("{pad}{} (collapsed)", node.id);
-        return;
-    }
-    let axis = match node.resolved_axis {
-        Some(Axis::Horizontal) => " [row]",
-        Some(Axis::Vertical) => " [col]",
-        None => "",
-    };
-    let tier = node
-        .active_tier
-        .as_deref()
-        .map(|t| format!(" tier={t}"))
-        .unwrap_or_default();
-    println!(
-        "{pad}{}{axis}  {:.0}x{:.0}{tier}",
-        node.id, node.width, node.height,
-    );
-    for child in &node.children {
-        print_tree(child, indent + 2);
-    }
 }
