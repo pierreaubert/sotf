@@ -54,6 +54,7 @@ mod macros;
 pub mod inspector;
 pub mod plugin_chassis;
 pub mod snapshots;
+pub mod state;
 pub mod solved;
 pub mod solver;
 pub mod stories;
@@ -75,6 +76,10 @@ pub use stories::{
 };
 pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
+};
+pub use state::{
+    LayoutAction, LayoutCollapsedState, LayoutPreferenceSnapshot, LayoutRatioOverride,
+    LayoutState,
 };
 pub use validation::{
     LayoutIssue, LayoutIssueKind, LayoutIssueSeverity, LayoutValidationReport, validate_layout,

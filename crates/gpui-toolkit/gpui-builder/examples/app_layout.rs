@@ -9,8 +9,9 @@
 //! Run: cargo run -p gpui-builder --example app_layout
 
 use gpui_builder::{
-    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, LayoutScenario, LayoutStory,
-    LayoutStoryCatalog, Sizing, SlotNode, inspect_layout, inspect_solved, solve, validate_layout,
+    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, LayoutScenario, LayoutState,
+    LayoutStory, LayoutStoryCatalog, Sizing, SlotNode, inspect_layout, inspect_solved, solve,
+    validate_layout,
 };
 
 static RACK_TIERS: &[DisplayTier<'_>] = &[
@@ -151,11 +152,16 @@ fn main() {
 
     // --- Scenario 4: User dragged library wider, collapsed rack ---
     println!("=== User prefs: library=45%, rack collapsed (1200x800) ===");
-    let prefs = LayoutPreferences {
-        ratios: &[("library", Axis::Horizontal, 0.45)],
-        collapsed: &[("rack", true)],
-    };
-    let solved = solve(&root, 1200.0, 800.0, &prefs);
+    let mut layout_state = LayoutState::new();
+    layout_state.set_ratio("library", Axis::Horizontal, 0.45);
+    layout_state.set_collapsed("rack", true);
+
+    let solved = solve(
+        &root,
+        1200.0,
+        800.0,
+        &layout_state.preferences().as_preferences(),
+    );
     print_solved(&solved, 0);
 
     let tabs = solved.collapsed_tabs();

@@ -99,6 +99,59 @@ let solved = catalog.solve_all();
 Scenarios can also carry ratio overrides and collapsed-slot preferences, so the
 same catalog can drive responsive examples and regression snapshots.
 
+## Layout State
+
+Use `LayoutState` for mutable, persistent user-driven overrides and convert it to solver input
+right before calling `solve`.
+
+```rust
+use gpui_builder::{
+    solve,
+    Axis,
+    ContainerNode,
+    LayoutNode,
+    LayoutState,
+    Sizing,
+    SlotNode,
+};
+
+let children = [
+    LayoutNode::Slot(SlotNode {
+        id: "library",
+        sizing: Sizing::fractional(0.30, 100.0),
+        priority: 0.5,
+        collapsible: true,
+        display_tiers: &[],
+        collapse_label: Some("Library"),
+    }),
+    LayoutNode::Slot(SlotNode {
+        id: "queue",
+        sizing: Sizing::flex(200.0),
+        priority: 1.0,
+        collapsible: false,
+        display_tiers: &[],
+        collapse_label: None,
+    }),
+];
+
+let root = LayoutNode::Container(ContainerNode {
+    id: "root",
+    axis: Axis::Horizontal,
+    auto_axis: None,
+    sizing: Sizing::flex(0.0),
+    children: &children,
+    divider_size: 0.0,
+});
+
+let mut state = LayoutState::new();
+state.set_ratio("library", Axis::Horizontal, 0.45);
+state.set_collapsed("queue", true);
+
+let prefs = state.preferences().as_preferences();
+let solved = solve(&root, 1200.0, 800.0, &prefs);
+assert!(solved.find("library").is_some());
+```
+
 ## Macro DSL
 
 Use `solve_layout!` when you want to describe and solve a nested tree in one
@@ -158,7 +211,6 @@ assert!(report.is_clean(), "{report}");
 Validation reports hard errors for ids and numeric constraints that can make layout
 behavior ambiguous, and warnings for quality issues such as unlabeled collapsible
 slots, duplicate display tiers, and empty containers.
-
 ## Sizing Modes
 
 | Mode | Constructor | Behavior |
