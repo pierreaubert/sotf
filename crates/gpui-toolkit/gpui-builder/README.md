@@ -54,6 +54,34 @@ let sidebar = solved.find("sidebar").unwrap();
 println!("sidebar: {}x{} visible={}", sidebar.width, sidebar.height, sidebar.visible);
 ```
 
+## Macro DSL
+
+Use `solve_layout!` when you want to describe and solve a nested tree in one
+expression without manually threading child arrays through every container.
+Node identifiers become layout ids via `stringify!`, and the macro returns a
+`SolvedNode`.
+
+```rust
+use gpui_builder::{Axis, LayoutPreferences, Sizing, solve_layout};
+
+let solved = solve_layout! {
+    width: 1200.0,
+    height: 800.0,
+    prefs: &LayoutPreferences::default(),
+    container root(Axis::Horizontal, Sizing::flex(0.0);
+        auto_axis = 1.0,
+        divider_size = 6.0
+    ) {
+        slot sidebar(Sizing::fractional(0.2, 120.0);
+            priority = 0.5,
+            collapsible = true,
+            collapse_label = "Sidebar"
+        );
+        slot content(Sizing::flex(300.0));
+    }
+};
+```
+
 ## Sizing Modes
 
 | Mode | Constructor | Behavior |
