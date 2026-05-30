@@ -21,6 +21,7 @@ use sotf_audio_player::autoeq::speaker::{
     SpeakerOptimizationProgress,
 };
 use sotf_audio_player::autoeq::types::SpeakerConfigType;
+use std::sync::OnceLock;
 
 mod step_1_select;
 mod step_2_configure;
@@ -43,8 +44,16 @@ mod step_4_export;
 // Each function now creates its own `smol::channel` (bounded(1) for a
 // oneshot, unbounded for the progress stream), spawns a thread that
 // sends to its own channel, and `cx.spawn`-awaits the channel directly.
-// No globals, no polling. Same pattern as `room_eq/step_4_optimise.rs`.
+// No globals, no polling. The short network/API workers share one Tokio
+// runtime instead of allocating a runtime per request.
 // ──────────────────────────────────────────────────────────────────────
+
+fn spinorama_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Runtime::new().expect("Failed to create spinorama tokio runtime")
+    })
+}
 
 /// One progress sample from the optimizer:
 /// `(iteration, loss, optional_score, progress_pct)`.
@@ -74,8 +83,7 @@ fn spawn_spinorama_curves_thread(
             speaker,
             version
         );
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-        let result = rt.block_on(async {
+        let result = spinorama_runtime().block_on(async {
             // Fetch CEA2034 measurement data
             let plot_data =
                 autoeq::read::fetch_measurement_plot_data(&speaker, &version, "CEA2034")
@@ -191,8 +199,7 @@ fn spawn_phase_data_check_thread(
     let curve_name = "Estimated In-Room Response".to_string();
 
     std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-        let has_phase = rt.block_on(async {
+        let has_phase = spinorama_runtime().block_on(async {
             match autoeq::read::read_spinorama(&speaker, &version, &measurement, &curve_name).await
             {
                 Ok(curve) => curve.phase.is_some(),
@@ -283,6 +290,8 @@ impl PlayerView {
                         .clone(),
                 )
             };
+            let request_speaker = speaker.clone();
+            let request_version = version.clone();
             log::info!(
                 "Auto-loading spinorama curves for {} / {}",
                 speaker,
@@ -310,32 +319,27 @@ impl PlayerView {
                     return;
                 };
                 state_for_poll.update(cx, |state, cx| {
-                    state
-                        .app
-                        .measurement_state
-                        .spinorama_eq_state
-                        .loading_spinorama_curves = false;
+                    let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                    if spinorama.selected_speaker.as_deref() != Some(request_speaker.as_str())
+                        || spinorama.selected_version != request_version
+                    {
+                        log::debug!(
+                            "Discarding stale spinorama curves for {} / {}",
+                            request_speaker,
+                            request_version
+                        );
+                        return;
+                    }
+                    spinorama.loading_spinorama_curves = false;
                     match result {
                         Ok(curves) => {
                             log::info!("Auto-loaded spinorama curves successfully");
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .spinorama_curves = curves;
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .spinorama_curves_error = None;
+                            spinorama.spinorama_curves = curves;
+                            spinorama.spinorama_curves_error = None;
                         }
                         Err(e) => {
                             log::error!("Failed to auto-load spinorama curves: {}", e);
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .spinorama_curves_error = Some(e);
+                            spinorama.spinorama_curves_error = Some(e);
                         }
                     }
                     cx.notify();
@@ -548,8 +552,8 @@ impl PlayerView {
         // Per-request oneshot channel — no shared global state.
         let (tx, rx) = smol::channel::bounded::<Result<Vec<String>, String>>(1);
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-            let result = rt.block_on(async { autoeq::fetch_available_speakers().await });
+            let result =
+                spinorama_runtime().block_on(async { autoeq::fetch_available_speakers().await });
             let _ = tx.send_blocking(result.map_err(|e| e.to_string()));
         });
 
@@ -643,6 +647,32 @@ impl PlayerView {
                 .app
                 .measurement_state
                 .spinorama_eq_state
+                .selected_version
+                .clear();
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .selected_measurement = "CEA2034".to_string();
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .spinorama_curves = crate::app::types::SpinoramaCurves::default();
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .spinorama_curves_error = None;
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .loading_spinorama_curves = false;
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
                 .loading_versions = true;
         });
         cx.notify();
@@ -659,8 +689,7 @@ impl PlayerView {
         let (tx, rx) = smol::channel::bounded::<Result<Vec<String>, String>>(1);
         let speaker_for_fetch = speaker_name.clone();
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-            let result = rt.block_on(async {
+            let result = spinorama_runtime().block_on(async {
                 let encoded_speaker = urlencoding::encode(&speaker_for_fetch);
                 let url = format!(
                     "https://api.spinorama.org/v1/speaker/{}/versions",
@@ -695,27 +724,25 @@ impl PlayerView {
                     );
                     let first_version = versions.first().cloned();
                     let selected_version = first_version.clone();
-                    state_entity.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .available_versions = versions;
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .loading_versions = false;
+                    let still_current = state_entity.update(cx, |state, cx| {
+                        let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                        if spinorama.selected_speaker.as_deref() != Some(speaker_for_poll.as_str())
+                        {
+                            log::debug!("Discarding stale versions for {}", speaker_for_poll);
+                            return false;
+                        }
+                        spinorama.available_versions = versions;
+                        spinorama.loading_versions = false;
                         // Auto-select first version if available
                         if let Some(ref version) = selected_version {
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .selected_version = version.clone();
+                            spinorama.selected_version = version.clone();
                         }
                         cx.notify();
+                        true
                     });
+                    if !still_current {
+                        return;
+                    }
                     // Fetch measurements for the selected version
                     if let Some(version) = selected_version {
                         let _ = view.update(cx, |view, cx| {
@@ -726,14 +753,15 @@ impl PlayerView {
                 Err(e) => {
                     log::error!("Failed to fetch versions: {}", e);
                     state_entity.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .loading_versions = false;
+                        let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                        if spinorama.selected_speaker.as_deref() != Some(speaker_for_poll.as_str())
+                        {
+                            log::debug!("Discarding stale versions error for {}", speaker_for_poll);
+                            return;
+                        }
+                        spinorama.loading_versions = false;
                         let msg = format!("Failed to fetch versions: {}", e);
-                        state.app.measurement_state.spinorama_eq_state.error_message =
-                            Some(msg.clone());
+                        spinorama.error_message = Some(msg.clone());
                         state.app.ui_state.toast_message =
                             Some(crate::app::ToastMessage::error(msg));
                         cx.notify();
@@ -768,6 +796,26 @@ impl PlayerView {
                 .spinorama_eq_state
                 .available_measurements
                 .clear();
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .has_phase_data = false;
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .spinorama_curves = crate::app::types::SpinoramaCurves::default();
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .spinorama_curves_error = None;
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .loading_spinorama_curves = false;
         });
         cx.notify();
 
@@ -778,8 +826,7 @@ impl PlayerView {
         let (measurements_tx, measurements_rx) =
             smol::channel::bounded::<Result<Vec<String>, String>>(1);
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-            let result = rt.block_on(async {
+            let result = spinorama_runtime().block_on(async {
                 let encoded_speaker = urlencoding::encode(&speaker_name);
                 let encoded_version = urlencoding::encode(&version_name);
                 let url = format!(
@@ -826,31 +873,30 @@ impl PlayerView {
                             .unwrap_or_else(|| "CEA2034".to_string())
                     };
                     let measurement_for_phase = selected_measurement.clone();
-                    state_entity.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .available_measurements = measurements;
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .loading_measurements = false;
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .selected_measurement = selected_measurement;
+                    let still_current = state_entity.update(cx, |state, cx| {
+                        let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                        if spinorama.selected_speaker.as_deref() != Some(speaker_for_poll.as_str())
+                            || spinorama.selected_version != version_for_poll
+                        {
+                            log::debug!(
+                                "Discarding stale measurements for {} / {}",
+                                speaker_for_poll,
+                                version_for_poll
+                            );
+                            return false;
+                        }
+                        spinorama.available_measurements = measurements;
+                        spinorama.loading_measurements = false;
+                        spinorama.selected_measurement = selected_measurement;
                         if has_cea2034 {
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .loading_spinorama_curves = true;
+                            spinorama.loading_spinorama_curves = true;
                         }
                         cx.notify();
+                        true
                     });
+                    if !still_current {
+                        return;
+                    }
 
                     // Fire-and-await: each follow-up has its own channel,
                     // so a second `fetch_measurements` for a different
@@ -872,11 +918,19 @@ impl PlayerView {
                     // Phase check first (it tends to complete sooner).
                     if let Ok(has_phase) = phase_rx.recv().await {
                         state_entity.update(cx, |state, cx| {
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .has_phase_data = has_phase;
+                            let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                            if spinorama.selected_speaker.as_deref()
+                                != Some(speaker_for_poll.as_str())
+                                || spinorama.selected_version != version_for_poll
+                            {
+                                log::debug!(
+                                    "Discarding stale phase check for {} / {}",
+                                    speaker_for_poll,
+                                    version_for_poll
+                                );
+                                return;
+                            }
+                            spinorama.has_phase_data = has_phase;
                             log::info!("Phase data availability: {}", has_phase);
                             cx.notify();
                         });
@@ -886,32 +940,28 @@ impl PlayerView {
                         && let Ok(curves_result) = curves_rx.recv().await
                     {
                         state_entity.update(cx, |state, cx| {
-                            state
-                                .app
-                                .measurement_state
-                                .spinorama_eq_state
-                                .loading_spinorama_curves = false;
+                            let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                            if spinorama.selected_speaker.as_deref()
+                                != Some(speaker_for_poll.as_str())
+                                || spinorama.selected_version != version_for_poll
+                            {
+                                log::debug!(
+                                    "Discarding stale spinorama curves for {} / {}",
+                                    speaker_for_poll,
+                                    version_for_poll
+                                );
+                                return;
+                            }
+                            spinorama.loading_spinorama_curves = false;
                             match curves_result {
                                 Ok(curves) => {
                                     log::info!("Auto-loaded spinorama curves successfully");
-                                    state
-                                        .app
-                                        .measurement_state
-                                        .spinorama_eq_state
-                                        .spinorama_curves = curves;
-                                    state
-                                        .app
-                                        .measurement_state
-                                        .spinorama_eq_state
-                                        .spinorama_curves_error = None;
+                                    spinorama.spinorama_curves = curves;
+                                    spinorama.spinorama_curves_error = None;
                                 }
                                 Err(e) => {
                                     log::error!("Failed to auto-load spinorama curves: {}", e);
-                                    state
-                                        .app
-                                        .measurement_state
-                                        .spinorama_eq_state
-                                        .spinorama_curves_error = Some(e);
+                                    spinorama.spinorama_curves_error = Some(e);
                                 }
                             }
                             cx.notify();
@@ -921,14 +971,20 @@ impl PlayerView {
                 Err(e) => {
                     log::error!("Failed to fetch measurements: {}", e);
                     state_entity.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .loading_measurements = false;
+                        let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                        if spinorama.selected_speaker.as_deref() != Some(speaker_for_poll.as_str())
+                            || spinorama.selected_version != version_for_poll
+                        {
+                            log::debug!(
+                                "Discarding stale measurements error for {} / {}",
+                                speaker_for_poll,
+                                version_for_poll
+                            );
+                            return;
+                        }
+                        spinorama.loading_measurements = false;
                         let msg = format!("Failed to fetch measurements: {}", e);
-                        state.app.measurement_state.spinorama_eq_state.error_message =
-                            Some(msg.clone());
+                        spinorama.error_message = Some(msg.clone());
                         state.app.ui_state.toast_message =
                             Some(crate::app::ToastMessage::error(msg));
                         cx.notify();
@@ -962,6 +1018,27 @@ impl PlayerView {
                 .measurement_state
                 .spinorama_eq_state
                 .has_phase_data = false;
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .available_measurements
+                .clear();
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .spinorama_curves = crate::app::types::SpinoramaCurves::default();
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .spinorama_curves_error = None;
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .loading_spinorama_curves = false;
         });
         cx.notify();
 

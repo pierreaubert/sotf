@@ -121,11 +121,10 @@ struct TickSnapshot {
 
 /// Screens where the plugin rack (and therefore compressor visualisation +
 /// per-channel level meters) is visible.
-fn screen_shows_rack(screen: Screen) -> bool {
-    matches!(
-        screen,
-        Screen::Studio | Screen::PluginGraph | Screen::Library | Screen::Queue
-    )
+fn screen_shows_rack(screen: Screen, layout_mode: crate::app::LayoutMode) -> bool {
+    matches!(screen, Screen::Studio | Screen::PluginGraph)
+        || (matches!(screen, Screen::Library | Screen::Queue)
+            && layout_mode == crate::app::LayoutMode::Expanded)
 }
 
 /// `PlayerView` is GPUI's view type. The code-review (`reviews/review-app-gpui.md`)
@@ -294,8 +293,6 @@ impl PlayerView {
                             *compressor_cache = None;
                             Self::apply_plugin_update(state, update_type);
                         }
-
-                        Self::sync_chain_autogain(state, frame_count);
 
                         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                         for event in &media_events {
@@ -541,13 +538,17 @@ impl PlayerView {
         compressor_idx_cache: &mut Option<Option<usize>>,
     ) -> (sotf_audio_player::PlaybackState, bool) {
         let current_screen = state.app.ui_state.current_screen;
+        let layout_mode = state.app.ui_state.layout_mode;
         let should_update_spectrum = frame_count.is_multiple_of(2);
         let include_spectrum = should_update_spectrum
             && (state.app.spectrum_visible || current_screen == Screen::Spectrum);
-        let include_compressor = screen_shows_rack(current_screen);
-        let include_level_meters = screen_shows_rack(current_screen);
+        let include_rack_data = screen_shows_rack(current_screen, layout_mode);
+        let include_compressor = include_rack_data;
+        let include_level_meters = include_rack_data;
+        let can_update_autogain = state.app.plugin_state.pending_plugin_update.is_none();
 
-        let mut player = state.player.lock();
+        let player_handle = state.player.clone();
+        let mut player = player_handle.lock();
         let playback_state = player.get_playback_state();
 
         let was_playing = state.app.playback.is_playing;
@@ -600,6 +601,18 @@ impl PlayerView {
             }
         }
 
+        if can_update_autogain
+            && let Some((engine_index, next_gain_db)) =
+                Self::sync_chain_autogain(state, frame_count)
+            && let Err(e) = player.set_plugin_parameter(
+                engine_index,
+                "gain_db".to_string(),
+                format!("{next_gain_db:.3}"),
+            )
+        {
+            log::warn!("Failed to update chain AutoGain: {}", e);
+        }
+
         drop(player);
 
         if include_level_meters {
@@ -611,36 +624,36 @@ impl PlayerView {
     }
 
     /// Keep the rack AutoGain trim aligned with the current IN/OUT loudness.
-    fn sync_chain_autogain(state: &mut AppState, frame_count: u64) {
+    fn sync_chain_autogain(state: &mut AppState, frame_count: u64) -> Option<(usize, f64)> {
         const UPDATE_INTERVAL_FRAMES: u64 = 5;
         const DEAD_BAND_DB: f64 = 0.25;
         const MAX_GAIN_DB: f64 = 24.0;
 
         if !state.app.plugin_state.chain_autogain {
-            return;
+            return None;
         }
 
         let last_frame = state.app.plugin_state.chain_autogain_last_frame;
         if last_frame != 0 && frame_count.wrapping_sub(last_frame) < UPDATE_INTERVAL_FRAMES {
-            return;
+            return None;
         }
 
         let Some(input) = state.app.playback.input_loudness_info.as_ref() else {
-            return;
+            return None;
         };
         let Some(output) = state.app.playback.loudness_info.as_ref() else {
-            return;
+            return None;
         };
 
         let input_lufs = input.momentary_lufs;
         let output_lufs = output.momentary_lufs;
         if !input_lufs.is_finite() || !output_lufs.is_finite() {
-            return;
+            return None;
         }
 
         let residual_db = input_lufs - output_lufs;
         if residual_db.abs() < DEAD_BAND_DB {
-            return;
+            return None;
         }
 
         let current_gain_db = state
@@ -651,7 +664,7 @@ impl PlayerView {
             .unwrap_or(0.0);
         let next_gain_db = (current_gain_db + residual_db).clamp(-MAX_GAIN_DB, MAX_GAIN_DB);
         if (next_gain_db - current_gain_db).abs() < 0.1 {
-            return;
+            return None;
         }
 
         state
@@ -661,17 +674,12 @@ impl PlayerView {
             .set_chain_auto_gain(Some(next_gain_db));
         state.app.plugin_state.chain_autogain_last_frame = frame_count;
 
-        let Some(engine_index) = state.app.plugin_state.graph.chain_auto_gain_engine_index() else {
-            return;
-        };
-
-        if let Err(e) = state.player.lock().set_plugin_parameter(
-            engine_index,
-            "gain_db".to_string(),
-            format!("{next_gain_db:.3}"),
-        ) {
-            log::warn!("Failed to update chain AutoGain: {}", e);
-        }
+        state
+            .app
+            .plugin_state
+            .graph
+            .chain_auto_gain_engine_index()
+            .map(|engine_index| (engine_index, next_gain_db))
     }
 
     /// Handle engine crash, errors, gapless transitions, and track auto-advance.
