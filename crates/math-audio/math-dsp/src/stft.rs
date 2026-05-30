@@ -384,9 +384,6 @@ pub struct DualWindowStft {
     fft: RealFftProcessor,
     /// Window read buffer
     window_buf: Vec<f32>,
-    /// COLA normalization factor
-    #[allow(dead_code)]
-    cola_norm: Vec<f32>,
 }
 
 /// Design a dual-window pair satisfying the COLA (Constant Overlap-Add) condition.
@@ -471,7 +468,6 @@ impl DualWindowStft {
             output_read_pos: 0,
             fft,
             window_buf: vec![0.0; analysis_size],
-            cola_norm: vec![1.0; analysis_size],
         }
     }
 
@@ -861,6 +857,12 @@ mod tests {
                  IFFT scale or synthesis-window normalization may be wrong"
             );
         }
+    }
+
+    #[test]
+    fn test_dual_window_stft_latency_reports_analysis_fill_delay() {
+        let stft = DualWindowStft::new(512, 128, 64);
+        assert_eq!(stft.latency_samples(), 512);
     }
 
     #[test]

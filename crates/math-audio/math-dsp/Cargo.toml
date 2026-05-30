@@ -1,6 +1,6 @@
 [package]
 name = "math-dsp"
-version = "0.5.19"
+version = "0.5.20"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "DSP utilities: signal generation, FFT analysis, and audio analysis tools"

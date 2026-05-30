@@ -2,6 +2,10 @@
 //!
 //! Implements K-weighting, momentary/short-term/integrated loudness,
 //! sample peak, and true peak (4x oversampling).
+//!
+//! The true-peak FIR phase table is the ITU-R BS.1770-4 48 kHz reference
+//! filter. Non-48 kHz meters still run, but their true-peak values should be
+//! treated as approximate unless the input has been resampled to 48 kHz.
 
 use std::collections::VecDeque;
 use std::f64::consts::PI;
@@ -12,6 +16,7 @@ use std::f64::consts::PI;
 const MAX_GATING_BLOCKS: usize = 100;
 #[cfg(not(test))]
 const MAX_GATING_BLOCKS: usize = 36_000;
+const TRUE_PEAK_FIR_REFERENCE_SAMPLE_RATE: u32 = 48_000;
 
 // ── Mode bitflags ───────────────────────────────────────────────────────────
 
@@ -24,6 +29,7 @@ impl Mode {
     pub const S: Mode = Mode(1 << 1);
     pub const I: Mode = Mode(1 << 2);
     pub const SAMPLE_PEAK: Mode = Mode(1 << 3);
+    /// 4x true-peak mode using the BS.1770-4 48 kHz reference FIR table.
     pub const TRUE_PEAK: Mode = Mode(1 << 4);
 
     pub const fn all() -> Mode {
@@ -173,6 +179,10 @@ impl KWeightFilter {
 
 /// 4x oversampling FIR for true peak detection.
 /// 48-tap polyphase filter (4 phases × 12 taps) from BS.1770-4 Table 2.
+///
+/// The table is specified for 48 kHz input. `EbuR128::new` logs a warning when
+/// true-peak mode is requested at another sample rate rather than failing, since
+/// loudness-only and ReplayGain callers commonly analyze native-rate content.
 const TRUE_PEAK_FIR_PHASES: [[f64; 12]; 4] = [
     [
         0.0017089843750,
@@ -388,6 +398,13 @@ impl EbuR128 {
         let filters: Vec<KWeightFilter> =
             (0..nc).map(|_| KWeightFilter::new(sample_rate)).collect();
         let channel_weights: Vec<f64> = (0..nc).map(|ch| channel_weight(ch, nc)).collect();
+
+        if mode.has(Mode::TRUE_PEAK) && sample_rate != TRUE_PEAK_FIR_REFERENCE_SAMPLE_RATE {
+            log::warn!(
+                "EbuR128 true-peak mode uses the BS.1770-4 48 kHz FIR table; \
+                 sample_rate={sample_rate} true-peak results are approximate"
+            );
+        }
 
         let true_peak_detector = if mode.has(Mode::TRUE_PEAK) {
             Some(TruePeakDetector::new(nc))
@@ -718,6 +735,12 @@ mod tests {
 
         let peak = meter.sample_peak(0).unwrap();
         assert!((peak - 0.9).abs() < 1e-6, "Expected peak ~0.9, got {peak}");
+    }
+
+    #[test]
+    fn true_peak_non_reference_sample_rate_is_allowed() {
+        let meter = EbuR128::new(2, 44_100, Mode::TRUE_PEAK).unwrap();
+        assert!(meter.true_peak_detector.is_some());
     }
 
     #[test]

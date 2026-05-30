@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.20] - 2026-05-30
+
+### Fixed
+- `adaa`: ADAA2 near-coincident fallback now evaluates the published
+  three-sample centroid instead of a middle-sample-biased weighted average.
+- `adaa`: `dilog_neg` now uses the exact `Li_2(-1)` value near `z = 1`,
+  avoiding slow alternating-series convergence at the worst-conditioned point.
+- `dynamics_core`: expand-mode gate hold samples are cached when hold time or
+  sample rate changes, removing the per-sample hold-time multiply from the hot
+  path.
+- `ebur128`: true-peak mode now documents the BS.1770-4 48 kHz FIR-table
+  assumption and logs a warning for non-48 kHz meters while preserving
+  native-rate analysis.
+
+### Changed
+- `stft`: removed unused `DualWindowStft` COLA state and added explicit
+  coverage for the current analysis-window fill latency contract.
+- `rtpghi` and `simd`: clarified zero-allocation RTPGHI scratch ordering,
+  compile-time SIMD feature selection, and scoped FTZ/DAZ usage.
+
 ## [0.5.19] - 2025-05-13
 
 ### Added

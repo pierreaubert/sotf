@@ -203,7 +203,8 @@ impl RtpghiProcessor {
                 });
             }
         }
-        // Sort descending by magnitude (highest first) -- no heap allocation needed
+        // Sort descending by magnitude (highest first) while reusing scratch storage.
+        // This preserves the priority integration order without allocating a BinaryHeap.
         self.scratch_heap.sort_unstable_by(|a, b| b.cmp(a));
 
         // Integrate phases starting from loudest bins

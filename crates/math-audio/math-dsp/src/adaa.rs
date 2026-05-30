@@ -130,7 +130,7 @@ impl Adaa2 {
 
         let diff = (x - self.x_prev2) * 0.5;
         let result = if diff.abs() < EPSILON {
-            (self.f)((x + self.x_prev2) * 0.25 + x_prev1 * 0.5)
+            (self.f)((x + x_prev1 + self.x_prev2) / 3.0)
         } else {
             (d1 - self.d1_prev) / diff
         };
@@ -182,6 +182,9 @@ fn tanh_ad2(x: f64) -> f64 {
 fn dilog_neg(z: f64) -> f64 {
     if z < 1e-15 {
         return 0.0;
+    }
+    if (1.0 - z).abs() < 1e-12 {
+        return -std::f64::consts::PI * std::f64::consts::PI / 12.0;
     }
     if z <= 1.0 {
         // Li_2(-z) = sum_{k=1}^{inf} (-z)^k / k^2
@@ -433,6 +436,29 @@ mod tests {
     }
 
     #[test]
+    fn test_adaa2_fallback_uses_three_sample_centroid() {
+        fn f(x: f64) -> f64 {
+            x
+        }
+        fn ad1(x: f64) -> f64 {
+            0.5 * x * x
+        }
+        fn ad2(x: f64) -> f64 {
+            x * x * x / 6.0
+        }
+
+        let mut adaa = Adaa2::new(f, ad1, ad2);
+        adaa.x_prev1 = 2.0;
+        adaa.x_prev2 = 0.0;
+
+        let y = adaa.process(0.0);
+        assert!(
+            (y - (2.0_f32 / 3.0)).abs() < 1e-6,
+            "ADAA2 fallback must evaluate the three-sample centroid, got {y}"
+        );
+    }
+
+    #[test]
     fn test_dilog_neg_basic() {
         // Li_2(0) = 0
         assert!((dilog_neg(0.0)).abs() < 1e-15);
@@ -442,6 +468,12 @@ mod tests {
         assert!(
             (actual - expected).abs() < 1e-4,
             "Li_2(-1): expected {expected}, got {actual}"
+        );
+
+        let near_one = dilog_neg(1.0 - 1e-13);
+        assert!(
+            (near_one - expected).abs() < 1e-12,
+            "Li_2 near -1 should use the stable reference value"
         );
     }
 }
