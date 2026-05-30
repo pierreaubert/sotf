@@ -2,7 +2,7 @@
 
 use crate::components::design::Ds;
 use crate::i18n::Language;
-use crate::theme::{ThemeAccentPreference, ThemeId};
+use crate::theme::{CommunityThemeId, ThemeAccentPreference, ThemeId};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -241,6 +241,7 @@ impl PlayerView {
         );
         let accessibility_palette = state.app.ui_state.accessibility_palette;
         let theme_accent_preference = state.app.ui_state.theme_accent_preference;
+        let community_theme_id = state.app.ui_state.community_theme_id;
         let reduce_motion = state.app.ui_state.reduce_motion;
         let theme = state.app.ui_state.theme.clone();
         let base_theme = crate::theme::Theme::from_id(theme_id);
@@ -424,13 +425,46 @@ impl PlayerView {
                             .text_size(d.text_sm)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
+                            .child("Community"),
+                    )
+                    .child({
+                        let mut container = div().flex().flex_wrap().gap(d.section);
+
+                        for id in CommunityThemeId::all().iter() {
+                            let is_selected = community_theme_id == Some(*id);
+                            let preview_theme =
+                                id.theme().with_accent_preference(theme_accent_preference);
+
+                            container = container.child(self.render_community_theme_preview_card(
+                                *id,
+                                preview_theme,
+                                is_selected,
+                                theme.clone(),
+                                translations.settings_active,
+                                cx,
+                            ));
+                        }
+
+                        container
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap_md)
+                    .child(
+                        div()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
                             .child(translations.settings_theme),
                     )
                     .child({
                         let mut container = div().flex().flex_wrap().gap(d.section);
 
                         for id in ThemeId::all().iter() {
-                            let is_selected = theme_id == *id;
+                            let is_selected = community_theme_id.is_none() && theme_id == *id;
                             let preview_theme = crate::theme::Theme::from_id(*id);
 
                             container = container.child(self.render_theme_preview_card(
@@ -735,6 +769,174 @@ impl PlayerView {
                         ),
                 )
             })
+    }
+
+    fn render_community_theme_preview_card(
+        &self,
+        theme_id: CommunityThemeId,
+        preview_theme: crate::theme::Theme,
+        is_selected: bool,
+        current_theme: crate::theme::Theme,
+        active_label: &'static str,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
+        let tags = theme_id.tags().join(" / ");
+        div()
+            .flex()
+            .flex_col()
+            .w(rems(14.5))
+            .rounded(d.r_md)
+            .overflow_hidden()
+            .border_2()
+            .border_color(if is_selected {
+                current_theme.accent
+            } else {
+                current_theme.border
+            })
+            .bg(preview_theme.surface)
+            .shadow_md()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.grid)
+                    .p(d.pad_x)
+                    .bg(preview_theme.background)
+                    .border_b_1()
+                    .border_color(preview_theme.border)
+                    .child(
+                        div()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(preview_theme.text_primary)
+                            .child(theme_id.name()),
+                    )
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(preview_theme.text_muted)
+                            .child(theme_id.author()),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .p(d.pad_x)
+                    .gap(d.gap)
+                    .child(
+                        div()
+                            .flex()
+                            .gap(d.grid)
+                            .child(self.render_color_swatch(
+                                &d,
+                                "BG",
+                                preview_theme.background,
+                                preview_theme.text_primary,
+                            ))
+                            .child(self.render_color_swatch(
+                                &d,
+                                "Surf",
+                                preview_theme.surface,
+                                preview_theme.text_primary,
+                            ))
+                            .child(self.render_color_swatch(
+                                &d,
+                                "Accent",
+                                preview_theme.accent,
+                                preview_theme.text_on_accent,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap(d.grid)
+                            .child(self.render_color_swatch(
+                                &d,
+                                "EQ",
+                                preview_theme.plugin_colors.eq,
+                                preview_theme.text_primary,
+                            ))
+                            .child(self.render_color_swatch(
+                                &d,
+                                "Meter",
+                                preview_theme.meter_normal,
+                                preview_theme.text_primary,
+                            ))
+                            .child(self.render_color_swatch(
+                                &d,
+                                "Graph",
+                                preview_theme.graph_colors.corrected,
+                                preview_theme.text_primary,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(preview_theme.text_muted)
+                            .child(tags),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap(d.grid)
+                            .child(
+                                Button::new(
+                                    SharedString::from(format!(
+                                        "community-theme-apply-{}",
+                                        theme_id.value()
+                                    )),
+                                    if is_selected { active_label } else { "Apply" },
+                                )
+                                .variant(if is_selected {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
+                                .size(ButtonSize::Xs)
+                                .theme(preview_theme.to_button_theme())
+                                .build()
+                                .on_click(cx.listener(
+                                    move |view, _: &ClickEvent, _window, cx| {
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.set_community_theme(theme_id);
+                                        });
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                            .child(
+                                Button::new(
+                                    SharedString::from(format!(
+                                        "community-theme-json-{}",
+                                        theme_id.value()
+                                    )),
+                                    "JSON",
+                                )
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Xs)
+                                .theme(preview_theme.to_button_theme())
+                                .build()
+                                .on_click(cx.listener(
+                                    move |view, _: &ClickEvent, _window, cx| {
+                                        let json = theme_id.to_community_json().unwrap_or_default();
+                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                            json,
+                                        ));
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.ui_state.toast_message =
+                                                Some(crate::app::ToastMessage::success(format!(
+                                                    "Copied {} JSON",
+                                                    theme_id.name()
+                                                )));
+                                        });
+                                        cx.notify();
+                                    },
+                                )),
+                            ),
+                    ),
+            )
     }
 
     /// Render a small color swatch with label

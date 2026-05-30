@@ -165,7 +165,7 @@ fn test_config_serialization() {
     use sotf_audio_player::ReleaseChannel;
     use sotf_audio_player_gpui::i18n::Language;
     use sotf_audio_player_gpui::keybindings::KeymapPreset;
-    use sotf_audio_player_gpui::theme::{ThemeAccentPreference, ThemeId};
+    use sotf_audio_player_gpui::theme::{CommunityThemeId, ThemeAccentPreference, ThemeId};
 
     let schedule = ThemeSchedule::new(TimeOfDay::new(6, 30), TimeOfDay::new(21, 15));
     let config = Config {
@@ -175,6 +175,7 @@ fn test_config_serialization() {
         theme_mode_preference: ThemeModePreference::Scheduled { schedule },
         accessibility_palette: AccessibilityPalette::default(),
         theme_accent_preference: ThemeAccentPreference::System,
+        community_theme_id: Some(CommunityThemeId::Nord),
         reduce_motion: false,
         language: Language::default(),
         keymap_preset: KeymapPreset::default(),
@@ -214,6 +215,10 @@ fn test_config_serialization() {
     assert_eq!(
         deserialized.theme_accent_preference,
         ThemeAccentPreference::System
+    );
+    assert_eq!(
+        deserialized.community_theme_id,
+        Some(CommunityThemeId::Nord)
     );
     assert!(!deserialized.reduce_motion);
 }
@@ -262,7 +267,75 @@ fn test_theme_mode_and_motion_state_defaults() {
     );
     assert_eq!(state.accessibility_palette, AccessibilityPalette::Standard);
     assert_eq!(state.theme_accent_preference, ThemeAccentPreference::Theme);
+    assert_eq!(state.community_theme_id, None);
     assert!(!state.reduce_motion);
+}
+
+#[test]
+fn test_community_theme_preset_exports_valid_bundle() {
+    use gpui_themes::CommunityThemeBundle;
+    use sotf_audio_player_gpui::theme::{CommunityThemeId, Theme};
+
+    for id in CommunityThemeId::all() {
+        let json = id.to_community_json().unwrap();
+        let bundle = CommunityThemeBundle::from_json(&json).unwrap();
+        assert_eq!(bundle.manifest.id, id.value());
+        assert_eq!(bundle.manifest.display_name, id.name());
+        assert!(bundle.validate().is_ok());
+
+        let app_theme = Theme::from_community_bundle(&bundle).unwrap();
+        assert_eq!(app_theme.accent, bundle.theme.accent.to_rgba());
+        assert!(!app_theme.band_colors.is_empty());
+        assert_eq!(app_theme.channel_colors, app_theme.band_colors);
+    }
+}
+
+#[test]
+fn test_app_community_theme_selection_updates_theme_state() {
+    use sotf_audio_player_gpui::{
+        App,
+        theme::{CommunityThemeId, ThemeAccentPreference, ThemeId},
+    };
+
+    let mut app = App::new();
+    app.set_community_theme(CommunityThemeId::Dracula);
+    assert_eq!(
+        app.ui_state.community_theme_id,
+        Some(CommunityThemeId::Dracula)
+    );
+    assert_eq!(app.ui_state.theme_id, ThemeId::Dark);
+    assert_eq!(
+        app.ui_state.theme.accent,
+        CommunityThemeId::Dracula.theme().accent
+    );
+
+    app.set_theme_accent_preference(ThemeAccentPreference::Mint);
+    let accent = ThemeAccentPreference::Mint
+        .seed_and_source()
+        .unwrap()
+        .0
+        .to_rgba();
+    assert_eq!(
+        app.ui_state.community_theme_id,
+        Some(CommunityThemeId::Dracula)
+    );
+    assert_eq!(app.ui_state.theme.accent, accent);
+
+    app.set_theme_accent_preference(ThemeAccentPreference::Theme);
+    let json = CommunityThemeId::Nord.to_community_json().unwrap();
+    app.set_community_theme_from_json(&json).unwrap();
+    assert_eq!(
+        app.ui_state.community_theme_id,
+        Some(CommunityThemeId::Nord)
+    );
+    assert_eq!(
+        app.ui_state.theme.accent,
+        CommunityThemeId::Nord.theme().accent
+    );
+
+    app.set_theme(ThemeId::Light);
+    assert_eq!(app.ui_state.community_theme_id, None);
+    assert_eq!(app.ui_state.theme_id, ThemeId::Light);
 }
 
 #[test]

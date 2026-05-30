@@ -8,14 +8,15 @@ use std::sync::Arc;
 
 use gpui::Entity;
 use gpui_themes::{
-    AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeSchedule, ThemeTransition,
+    AccessibilityPalette, CommunityThemeBundle, ThemeAppearance, ThemeModePreference,
+    ThemeSchedule, ThemeTransition,
 };
 use gpui_ui_kit::workflow::NodeId;
 use sotf_audio_player::{Player, QueueController, QueuePlaybackEffect};
 
 use crate::i18n::{Language, Translations};
 use crate::keybindings::KeymapPreset;
-use crate::theme::{Theme, ThemeAccentPreference, ThemeId};
+use crate::theme::{CommunityThemeId, Theme, ThemeAccentPreference, ThemeId};
 
 use crate::app::debug::StateHistory;
 use crate::app::types::{
@@ -1284,7 +1285,12 @@ impl App {
         self.ui_state.theme_mode_preference = config.theme_mode_preference;
         self.ui_state.accessibility_palette = config.accessibility_palette;
         self.ui_state.theme_accent_preference = config.theme_accent_preference;
-        self.apply_theme(config.theme);
+        self.ui_state.community_theme_id = config.community_theme_id;
+        if let Some(theme_id) = self.ui_state.community_theme_id {
+            self.set_community_theme(theme_id);
+        } else {
+            self.apply_theme(config.theme);
+        }
         self.ui_state.reduce_motion = config.reduce_motion;
 
         // Restore language
@@ -1480,6 +1486,7 @@ impl App {
             theme_mode_preference: self.ui_state.theme_mode_preference.clone(),
             accessibility_palette: self.ui_state.accessibility_palette,
             theme_accent_preference: self.ui_state.theme_accent_preference,
+            community_theme_id: self.ui_state.community_theme_id,
             reduce_motion: self.ui_state.reduce_motion,
             language: self.ui_state.language,
             keymap_preset: self.ui_state.keymap_preset,
@@ -1590,9 +1597,32 @@ impl App {
 
     /// Set a specific theme
     pub fn set_theme(&mut self, theme_id: ThemeId) {
+        self.ui_state.community_theme_id = None;
         self.apply_theme(theme_id);
         self.ui_state.theme_mode_preference = theme_id.mode_preference();
         self.ui_state.accessibility_palette = theme_id.accessibility_palette();
+    }
+
+    pub fn set_community_theme(&mut self, theme_id: CommunityThemeId) {
+        let manifest = theme_id.manifest();
+        self.ui_state.community_theme_id = Some(theme_id);
+        self.ui_state.theme_mode_preference = manifest.preferred_mode;
+        self.ui_state.accessibility_palette = manifest.accessibility;
+        self.apply_community_theme(theme_id);
+    }
+
+    pub fn set_community_theme_from_json(&mut self, json: &str) -> Result<(), String> {
+        let bundle = CommunityThemeBundle::from_json(json)
+            .map_err(|error| format!("failed to parse community theme JSON: {error}"))?;
+        let theme = Theme::from_community_bundle(&bundle)?
+            .with_accent_preference(self.ui_state.theme_accent_preference);
+
+        self.ui_state.community_theme_id = CommunityThemeId::from_id(&bundle.manifest.id);
+        self.ui_state.theme_id = ThemeId::for_appearance(theme.appearance());
+        self.ui_state.theme = theme;
+        self.ui_state.theme_mode_preference = bundle.manifest.preferred_mode;
+        self.ui_state.accessibility_palette = bundle.manifest.accessibility;
+        Ok(())
     }
 
     /// Set the light/dark mode policy and apply its current effective theme.
@@ -1621,6 +1651,7 @@ impl App {
     ) {
         let appearance = preference.resolve(system_appearance, minutes_after_midnight);
         self.ui_state.theme_mode_preference = preference;
+        self.ui_state.community_theme_id = None;
         self.apply_theme(ThemeId::for_accessibility_palette(
             self.ui_state.accessibility_palette,
             appearance,
@@ -1675,9 +1706,10 @@ impl App {
         let theme_id =
             ThemeId::for_accessibility_palette(self.ui_state.accessibility_palette, appearance);
 
-        if self.ui_state.theme_id == theme_id {
+        if self.ui_state.community_theme_id.is_none() && self.ui_state.theme_id == theme_id {
             false
         } else {
+            self.ui_state.community_theme_id = None;
             self.apply_theme(theme_id);
             true
         }
@@ -1696,6 +1728,7 @@ impl App {
     ) {
         let appearance = self.resolved_theme_appearance_with_system(system_appearance);
         self.ui_state.accessibility_palette = palette;
+        self.ui_state.community_theme_id = None;
         self.apply_theme(ThemeId::for_accessibility_palette(palette, appearance));
     }
 
@@ -1705,7 +1738,7 @@ impl App {
 
     pub fn set_theme_accent_preference(&mut self, preference: ThemeAccentPreference) {
         self.ui_state.theme_accent_preference = preference;
-        self.apply_theme(self.ui_state.theme_id);
+        self.apply_selected_theme();
     }
 
     pub fn resolved_theme_appearance(&self) -> ThemeAppearance {
@@ -1729,6 +1762,22 @@ impl App {
         self.ui_state.theme_id = theme_id;
         self.ui_state.theme =
             Theme::from_id(theme_id).with_accent_preference(self.ui_state.theme_accent_preference);
+    }
+
+    fn apply_community_theme(&mut self, theme_id: CommunityThemeId) {
+        let theme = theme_id
+            .theme()
+            .with_accent_preference(self.ui_state.theme_accent_preference);
+        self.ui_state.theme_id = ThemeId::for_appearance(theme.appearance());
+        self.ui_state.theme = theme;
+    }
+
+    fn apply_selected_theme(&mut self) {
+        if let Some(theme_id) = self.ui_state.community_theme_id {
+            self.apply_community_theme(theme_id);
+        } else {
+            self.apply_theme(self.ui_state.theme_id);
+        }
     }
 
     /// Set a specific language

@@ -6,7 +6,7 @@ use crate::app::types::{PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSi
 use crate::components::plugins::theme::RackThemeState;
 use crate::i18n::Language;
 use crate::keybindings::KeymapPreset;
-use crate::theme::{ThemeAccentPreference, ThemeId};
+use crate::theme::{CommunityThemeId, ThemeAccentPreference, ThemeId};
 use gpui_themes::{AccessibilityPalette, ThemeModePreference};
 
 pub(crate) fn default_recording_paths() -> (Option<String>, Option<String>) {
@@ -261,6 +261,9 @@ pub struct Config {
     /// Accent override applied to the selected app theme
     #[serde(default)]
     pub theme_accent_preference: ThemeAccentPreference,
+    /// Selected curated community theme, when the gallery is active
+    #[serde(default)]
+    pub community_theme_id: Option<CommunityThemeId>,
     /// Disable theme and UI transition motion
     #[serde(default)]
     pub reduce_motion: bool,
@@ -339,6 +342,7 @@ impl Config {
                 theme_mode_preference: ThemeModePreference::default(),
                 accessibility_palette: AccessibilityPalette::default(),
                 theme_accent_preference: ThemeAccentPreference::default(),
+                community_theme_id: None,
                 reduce_motion: false,
                 language: Language::default(),
                 keymap_preset: KeymapPreset::default(),

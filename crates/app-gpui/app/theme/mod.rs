@@ -8,7 +8,8 @@
 use gpui::{App, Rgba, SharedString};
 use gpui_design::DesignExt;
 use gpui_themes::{
-    AccentPalette, AccentSource, AccessibilityPalette, Color as ThemeColor, ThemeAppearance,
+    AccentPalette, AccentSource, AccessibilityPalette, BuiltInThemePreset, Color as ThemeColor,
+    CommunityThemeBundle, CommunityThemeManifest, EditorTheme, ThemeAppearance,
     ThemeModePreference,
 };
 use gpui_ui_kit::theme::{Theme as UiKitTheme, ThemeVariant as UiKitThemeVariant};
@@ -131,6 +132,93 @@ impl From<ThemeId> for UiKitThemeVariant {
                 UiKitThemeVariant::Dark
             }
         }
+    }
+}
+
+/// Curated community themes exposed by the app gallery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommunityThemeId {
+    Nord,
+    Dracula,
+}
+
+impl CommunityThemeId {
+    pub fn all() -> &'static [CommunityThemeId] {
+        &[CommunityThemeId::Nord, CommunityThemeId::Dracula]
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            CommunityThemeId::Nord => "Nord",
+            CommunityThemeId::Dracula => "Dracula",
+        }
+    }
+
+    pub fn value(self) -> &'static str {
+        match self {
+            CommunityThemeId::Nord => "nord",
+            CommunityThemeId::Dracula => "dracula",
+        }
+    }
+
+    pub fn author(self) -> &'static str {
+        match self {
+            CommunityThemeId::Nord => "SOTF Community",
+            CommunityThemeId::Dracula => "SOTF Community",
+        }
+    }
+
+    pub fn tags(self) -> &'static [&'static str] {
+        match self {
+            CommunityThemeId::Nord => &["community", "dark", "terminal"],
+            CommunityThemeId::Dracula => &["community", "dark", "base16"],
+        }
+    }
+
+    pub fn from_value(value: &SharedString) -> Option<Self> {
+        Self::from_id(value.as_ref())
+    }
+
+    pub fn from_id(value: &str) -> Option<Self> {
+        match value {
+            "nord" => Some(Self::Nord),
+            "dracula" => Some(Self::Dracula),
+            _ => None,
+        }
+    }
+
+    pub fn built_in_preset(self) -> BuiltInThemePreset {
+        match self {
+            CommunityThemeId::Nord => BuiltInThemePreset::Nord,
+            CommunityThemeId::Dracula => BuiltInThemePreset::Dracula,
+        }
+    }
+
+    pub fn editor_theme(self) -> EditorTheme {
+        EditorTheme::preset(self.built_in_preset())
+    }
+
+    pub fn manifest(self) -> CommunityThemeManifest {
+        let editor_theme = self.editor_theme();
+        let mut manifest = CommunityThemeManifest::for_theme(&editor_theme);
+        manifest.author = self.author().to_string();
+        manifest.license = "MIT".to_string();
+        manifest.tags = self.tags().iter().map(|tag| (*tag).to_string()).collect();
+        manifest.preferred_mode = ThemeModePreference::Dark;
+        manifest
+    }
+
+    pub fn bundle(self) -> CommunityThemeBundle {
+        CommunityThemeBundle::new(self.manifest(), self.editor_theme())
+    }
+
+    pub fn theme(self) -> Theme {
+        Theme::from_editor_theme(&self.editor_theme())
+    }
+
+    pub fn to_community_json(self) -> Result<String, serde_json::Error> {
+        self.bundle().to_json()
     }
 }
 
@@ -457,6 +545,134 @@ impl Theme {
             ThemeId::Deuteranopia => Self::deuteranopia(),
             ThemeId::Tritanopia => Self::tritanopia(),
         }
+    }
+
+    pub fn from_community_bundle(bundle: &CommunityThemeBundle) -> Result<Self, String> {
+        bundle.validate()?;
+        Ok(Self::from_editor_theme(&bundle.theme))
+    }
+
+    pub fn from_editor_theme(editor_theme: &EditorTheme) -> Self {
+        let mut theme = match editor_theme.appearance() {
+            ThemeAppearance::Light => Self::light(),
+            ThemeAppearance::Dark => Self::dark(),
+        };
+
+        theme.background = editor_theme.background.to_rgba();
+        theme.background_secondary = editor_theme.background_secondary.to_rgba();
+        theme.background_tertiary = editor_theme.background_tertiary.to_rgba();
+        theme.surface = editor_theme.surface.to_rgba();
+        theme.surface_hover = editor_theme.surface_hover.to_rgba();
+        theme.surface_selected = editor_theme.surface_selected.to_rgba();
+
+        theme.text_primary = editor_theme.text_primary.to_rgba();
+        theme.text_secondary = editor_theme.text_secondary.to_rgba();
+        theme.text_muted = editor_theme.text_muted.to_rgba();
+        theme.text_disabled = editor_theme.text_disabled.to_rgba();
+
+        theme.border = editor_theme.border.to_rgba();
+        theme.border_focused = editor_theme.border_focused.to_rgba();
+
+        theme.accent = editor_theme.accent.to_rgba();
+        theme.accent_hover = editor_theme.accent_hover.to_rgba();
+        theme.accent_muted = editor_theme.accent_muted.to_rgba();
+        theme.text_on_accent = editor_theme.text_on_accent.to_rgba();
+        theme.text_on_accent_muted = editor_theme.text_on_accent_muted.to_rgba();
+        theme.icon_on_accent = theme.text_on_accent;
+
+        theme.success = editor_theme.success.to_rgba();
+        theme.warning = editor_theme.warning.to_rgba();
+        theme.error = editor_theme.error.to_rgba();
+        theme.info = editor_theme.info.to_rgba();
+
+        theme.meter_normal = editor_theme.meter_normal.to_rgba();
+        theme.meter_warning = editor_theme.meter_warning.to_rgba();
+        theme.meter_clip = editor_theme.meter_clip.to_rgba();
+
+        theme.button_mute_active = editor_theme.button_mute_active.to_rgba();
+        theme.button_solo_active = editor_theme.button_solo_active.to_rgba();
+        theme.button_dim_active = editor_theme.button_dim_active.to_rgba();
+
+        theme.progress_bar_bg = editor_theme.progress_bar_bg.to_rgba();
+        theme.progress_bar_fill = editor_theme.progress_bar_fill.to_rgba();
+
+        theme.toast_success_bg = editor_theme.toast_success_bg.to_rgba();
+        theme.toast_error_bg = editor_theme.toast_error_bg.to_rgba();
+        theme.toast_info_bg = editor_theme.toast_info_bg.to_rgba();
+        theme.toast_warning_bg = editor_theme.toast_warning_bg.to_rgba();
+
+        theme.plugin_colors = PluginColorMap {
+            eq: editor_theme.plugin_colors.eq.to_rgba(),
+            gain: editor_theme.plugin_colors.gain.to_rgba(),
+            upmixer: editor_theme.plugin_colors.upmixer.to_rgba(),
+            compressor: editor_theme.plugin_colors.compressor.to_rgba(),
+            limiter: editor_theme.plugin_colors.limiter.to_rgba(),
+            gate: editor_theme.plugin_colors.gate.to_rgba(),
+            loudness: editor_theme.plugin_colors.loudness.to_rgba(),
+            binaural: editor_theme.plugin_colors.binaural.to_rgba(),
+            convolution: editor_theme.plugin_colors.convolution.to_rgba(),
+            monitor: editor_theme.plugin_colors.monitor.to_rgba(),
+            spectrum: editor_theme.plugin_colors.spectrum.to_rgba(),
+            mute_solo: editor_theme.plugin_colors.mute_solo.to_rgba(),
+        };
+        theme.graph_colors = GraphLineColors {
+            input: editor_theme.graph_colors.input.to_rgba(),
+            target: editor_theme.graph_colors.target.to_rgba(),
+            filter_response: editor_theme.graph_colors.filter_response.to_rgba(),
+            corrected: editor_theme.graph_colors.corrected.to_rgba(),
+            error: editor_theme.graph_colors.error.to_rgba(),
+            deviation: editor_theme.graph_colors.deviation.to_rgba(),
+            grid: editor_theme.graph_colors.grid.to_rgba(),
+            secondary_line: editor_theme.graph_colors.secondary_line.to_rgba(),
+            directivity_er: editor_theme.graph_colors.directivity_er.to_rgba(),
+            directivity_sp: editor_theme.graph_colors.directivity_sp.to_rgba(),
+        };
+        theme.band_colors = editor_theme
+            .band_colors
+            .iter()
+            .map(|color| color.to_rgba())
+            .collect();
+        theme.channel_colors = theme.band_colors.clone();
+        theme.eq_curve_colors = EQCurveColors {
+            background: editor_theme.eq_curve_colors.background.to_rgba(),
+            grid: editor_theme.eq_curve_colors.grid.to_rgba(),
+            curve_boost: editor_theme.eq_curve_colors.curve_boost.to_rgba(),
+            curve_cut: editor_theme.eq_curve_colors.curve_cut.to_rgba(),
+            fill_boost: editor_theme.eq_curve_colors.fill_boost.to_rgba(),
+            fill_cut: editor_theme.eq_curve_colors.fill_cut.to_rgba(),
+            zero_line: editor_theme.eq_curve_colors.zero_line.to_rgba(),
+        };
+        theme.spectrum_colors = SpectrumColors {
+            background: editor_theme.spectrum_colors.background.to_rgba(),
+            bass: editor_theme.spectrum_colors.bass.to_rgba(),
+            mids: editor_theme.spectrum_colors.mids.to_rgba(),
+            treble: editor_theme.spectrum_colors.treble.to_rgba(),
+        };
+        theme.meter_colors = MeterColors {
+            background: editor_theme.meter_colors.background.to_rgba(),
+            normal: editor_theme.meter_colors.normal.to_rgba(),
+            warning: editor_theme.meter_colors.warning.to_rgba(),
+            clip: editor_theme.meter_colors.clip.to_rgba(),
+            peak: editor_theme.meter_colors.peak.to_rgba(),
+            text: editor_theme.meter_colors.text.to_rgba(),
+        };
+
+        theme.peak_indicator = editor_theme.peak_indicator.to_rgba();
+        theme.drag_over_highlight = editor_theme.drag_over_highlight.to_rgba();
+        theme.drag_over_border = editor_theme.drag_over_border.to_rgba();
+        theme.neutral_indicator = editor_theme.neutral_indicator.to_rgba();
+        theme.warning_background = editor_theme.warning_background.to_rgba();
+        theme.knob_color = editor_theme.knob_color.to_rgba();
+        theme.optimization_color = editor_theme.optimization_color.to_rgba();
+        theme.grid_color = editor_theme.grid_color.to_rgba();
+        theme.separator_size = editor_theme.separator_size;
+        theme.font_family = if editor_theme.font_family.trim().is_empty() {
+            None
+        } else {
+            Some(SharedString::from(editor_theme.font_family.clone()))
+        };
+
+        theme
     }
 
     pub fn with_accent_preference(self, preference: ThemeAccentPreference) -> Self {
