@@ -49,12 +49,18 @@
 //! ```
 
 pub mod compat;
+pub mod inspector;
 pub mod plugin_chassis;
 pub mod solved;
 pub mod solver;
 pub mod types;
 
 // Re-exports for convenience
+pub use inspector::{
+    ContainerInspection, DisplayTierInspection, LayoutInspection, LayoutInspectionKind,
+    LayoutInspectionNode, SizingInspection, SlotInspection, SolvedInspection, SolvedInspectionNode,
+    inspect_layout, inspect_solved,
+};
 pub use solved::SolvedNode;
 pub use solver::solve;
 pub use types::{

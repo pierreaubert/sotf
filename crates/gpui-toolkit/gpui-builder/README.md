@@ -54,6 +54,26 @@ let sidebar = solved.find("sidebar").unwrap();
 println!("sidebar: {}x{} visible={}", sidebar.width, sidebar.height, sidebar.visible);
 ```
 
+## Layout Inspection
+
+Export declared and solved trees as owned, stable records for debug overlays,
+showcase tooling, and snapshot tests:
+
+```rust
+use gpui_builder::{inspect_layout, inspect_solved};
+
+let declared = inspect_layout(&root);
+println!("{declared}");
+
+let solved = solve(&root, 1200.0, 800.0, &LayoutPreferences::default());
+let solved_export = inspect_solved(&solved);
+println!("{solved_export}");
+```
+
+The inspection output includes stable node paths, sizing summaries,
+container metadata, slot collapse metadata, display tiers, resolved sizes,
+visibility, active tiers, and resolved axes.
+
 ## Sizing Modes
 
 | Mode | Constructor | Behavior |
