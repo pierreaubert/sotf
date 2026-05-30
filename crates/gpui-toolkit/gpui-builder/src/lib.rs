@@ -50,11 +50,13 @@
 
 pub mod compat;
 pub mod plugin_chassis;
+pub mod snapshots;
 pub mod solved;
 pub mod solver;
 pub mod types;
 
 // Re-exports for convenience
+pub use snapshots::{LayoutSnapshot, LayoutSnapshotMatrix, LayoutViewport, solve_snapshot_matrix};
 pub use solved::SolvedNode;
 pub use solver::solve;
 pub use types::{

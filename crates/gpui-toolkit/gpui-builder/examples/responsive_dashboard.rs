@@ -4,12 +4,13 @@
 //! - Deeply nested layout (3 levels)
 //! - Multiple flex children with different weights
 //! - Display tiers for adaptive content
-//! - Simulating a window resize sequence
+//! - Snapshot matrix output across a resize sequence
 //!
 //! Run: cargo run -p gpui-builder --example responsive_dashboard
 
 use gpui_builder::{
-    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode, solve,
+    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, LayoutViewport, Sizing,
+    SlotNode, solve, solve_snapshot_matrix,
 };
 
 static CHART_TIERS: &[DisplayTier<'_>] = &[
@@ -124,26 +125,17 @@ fn main() {
     });
 
     // Simulate a window resize sequence
-    let sizes = [
-        (1920.0, 1080.0, "Full HD desktop"),
-        (1280.0, 720.0, "Laptop"),
-        (800.0, 600.0, "Small window"),
-        (500.0, 800.0, "Tall/narrow (portrait)"),
-        (400.0, 300.0, "Very small"),
+    let viewports = [
+        LayoutViewport::new("Full HD desktop", 1920.0, 1080.0),
+        LayoutViewport::new("Laptop", 1280.0, 720.0),
+        LayoutViewport::new("Small window", 800.0, 600.0),
+        LayoutViewport::new("Tall/narrow (portrait)", 500.0, 800.0),
+        LayoutViewport::new("Very small", 400.0, 300.0),
     ];
 
-    for (w, h, label) in sizes {
-        println!("=== {label} ({w:.0}x{h:.0}) ===");
-        let solved = solve(&root, w, h, &LayoutPreferences::default());
-        print_tree(&solved, 0);
-
-        let tabs = solved.collapsed_tabs();
-        if !tabs.is_empty() {
-            let labels: Vec<&str> = tabs.iter().map(|(_, l)| *l).collect();
-            println!("  Collapsed → tabs: {labels:?}");
-        }
-        println!();
-    }
+    let matrix = solve_snapshot_matrix(&root, &viewports, &LayoutPreferences::default());
+    println!("{}", matrix.to_text());
+    println!("{}", matrix.to_markdown_table());
 
     // Show flex weight effect: chart gets 2x the space of table
     println!("=== Flex weight demo (1200x800) ===");
@@ -156,29 +148,4 @@ fn main() {
         table.height,
         chart.height / table.height,
     );
-}
-
-fn print_tree(node: &gpui_builder::SolvedNode, indent: usize) {
-    let pad = " ".repeat(indent);
-    if !node.visible {
-        println!("{pad}{} (collapsed)", node.id);
-        return;
-    }
-    let axis = match node.resolved_axis {
-        Some(Axis::Horizontal) => " [row]",
-        Some(Axis::Vertical) => " [col]",
-        None => "",
-    };
-    let tier = node
-        .active_tier
-        .as_deref()
-        .map(|t| format!(" tier={t}"))
-        .unwrap_or_default();
-    println!(
-        "{pad}{}{axis}  {:.0}x{:.0}{tier}",
-        node.id, node.width, node.height,
-    );
-    for child in &node.children {
-        print_tree(child, indent + 2);
-    }
 }
