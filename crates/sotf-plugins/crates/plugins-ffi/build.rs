@@ -1,69 +1,112 @@
-// Build script to generate C header files (macOS only)
+use std::path::{Path, PathBuf};
+
+// Build script to generate C header files.
 //
-// Generates two headers:
+// Generates/copies:
 //   1. sotf_audio_plugin_ffi.h — via cbindgen from this crate's Rust API
-//   2. gpui_au_ffi.h — GPUI AU rendering + param cache FFI for Swift bridging
+//   2. plugins-au/Shared/sotf_audio_plugin_ffi.h — for the Xcode AU bridge
+//   3. SwiftPackage/.../sotf_audio_plugin_ffi.h — for SwiftPM consumers
+//   4. gpui_au_ffi.h — GPUI AU rendering + param cache FFI for Swift bridging
 //      (hand-written template because cbindgen can't handle the void*/size_t
 //       overrides needed for Swift UnsafeMutableRawPointer/Int compatibility)
 
 fn main() {
-    #[cfg(target_os = "macos")]
-    {
-        use std::env;
-        use std::path::PathBuf;
+    use std::env;
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let crate_path = PathBuf::from(&crate_dir);
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
-        let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-        let crate_path = PathBuf::from(&crate_dir);
+    println!("cargo:rerun-if-changed=src/lib.rs");
+    println!("cargo:rerun-if-changed=src/plugin_factory.rs");
+    println!("cargo:rerun-if-changed=src/parameter_map.rs");
+    println!("cargo:rerun-if-changed=src/param_cache.rs");
+    println!("cargo:rerun-if-changed=src/au_host.rs");
+    println!("cargo:rerun-if-changed=cbindgen.toml");
+    println!("cargo:rerun-if-env-changed=SOTF_FFI_HEADER_DIR");
+    println!("cargo:rerun-if-env-changed=SOTF_FFI_SKIP_HEADER_SYNC");
 
-        // 1. Generate sotf_audio_plugin_ffi.h via cbindgen
-        let output_file = crate_path.join("sotf_audio_plugin_ffi.h");
-        cbindgen::Builder::new()
-            .with_crate(&crate_dir)
-            .with_config(cbindgen::Config::from_file("cbindgen.toml").unwrap())
-            .generate()
-            .expect("Unable to generate bindings")
-            .write_to_file(&output_file);
+    if env::var("SOTF_FFI_SKIP_HEADER_SYNC").as_deref() == Ok("1") {
+        return;
+    }
 
-        // 2. Generate gpui_au_ffi.h for the AU Swift bridging header.
-        //
-        //    Uses void* (Swift UnsafeMutableRawPointer) instead of typed opaque
-        //    pointers (Swift OpaquePointer) and size_t (Swift Int) instead of
-        //    uintptr_t (Swift UInt) to match the existing Swift code.
-        //
-        //    Source Rust files:
-        //      gpui-au/src/ffi.rs          — gpui_au_* lifecycle/input
-        //      plugins-ffi/src/lib.rs      — gpui_au_create_with_plugin
-        //      plugins-ffi/src/param_cache — au_param_cache_*
-        //      plugins-ffi/src/au_host     — callback types
+    let header_dir = env::var_os("SOTF_FFI_HEADER_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| crate_path.clone());
+    std::fs::create_dir_all(&header_dir).expect("Unable to create SOTF_FFI_HEADER_DIR");
+
+    // 1. Generate sotf_audio_plugin_ffi.h via cbindgen.
+    let output_file = header_dir.join("sotf_audio_plugin_ffi.h");
+    cbindgen::Builder::new()
+        .with_crate(&crate_dir)
+        .with_config(cbindgen::Config::from_file(crate_path.join("cbindgen.toml")).unwrap())
+        .generate()
+        .expect("Unable to generate bindings")
+        .write_to_file(&output_file);
+
+    // 2. Copy the generated C header to Apple/Xcode and SwiftPM consumers so
+    //    those bridges cannot silently drift from the Rust FFI surface.
+    copy_if_parent_exists(
+        &output_file,
+        &crate_path
+            .join("..")
+            .join("plugins-au")
+            .join("Shared")
+            .join("sotf_audio_plugin_ffi.h"),
+    );
+    copy_if_parent_exists(
+        &output_file,
+        &crate_path
+            .join("SwiftPackage")
+            .join("Sources")
+            .join("SOTFPluginFFI")
+            .join("include")
+            .join("sotf_audio_plugin_ffi.h"),
+    );
+
+    // 3. Generate gpui_au_ffi.h for the AU Swift bridging header on macOS.
+    //
+    //    Uses void* (Swift UnsafeMutableRawPointer) instead of typed opaque
+    //    pointers (Swift OpaquePointer) and size_t (Swift Int) instead of
+    //    uintptr_t (Swift UInt) to match the existing Swift code.
+    if target_os == "macos" {
         let gpui_au_header = crate_path
             .join("..")
             .join("plugins-au")
             .join("Shared")
             .join("gpui_au_ffi.h");
-        std::fs::write(&gpui_au_header, GPUI_AU_FFI_HEADER).expect("Unable to write gpui_au_ffi.h");
-
-        println!("cargo:rerun-if-changed=src/lib.rs");
-        println!("cargo:rerun-if-changed=src/plugin_factory.rs");
-        println!("cargo:rerun-if-changed=src/parameter_map.rs");
-        println!("cargo:rerun-if-changed=src/param_cache.rs");
-        println!("cargo:rerun-if-changed=src/au_host.rs");
-        println!("cargo:rerun-if-changed=cbindgen.toml");
+        copy_text_if_parent_exists(&gpui_au_header, GPUI_AU_FFI_HEADER);
     }
 }
 
-#[cfg(target_os = "macos")]
+fn copy_if_parent_exists(src: &Path, dst: &Path) {
+    if dst.parent().is_some_and(Path::exists) {
+        std::fs::copy(src, dst).unwrap_or_else(|err| {
+            panic!(
+                "Unable to copy generated header from {} to {}: {err}",
+                src.display(),
+                dst.display()
+            )
+        });
+    }
+}
+
+fn copy_text_if_parent_exists(dst: &Path, text: &str) {
+    if dst.parent().is_some_and(Path::exists) {
+        std::fs::write(dst, text)
+            .unwrap_or_else(|err| panic!("Unable to write {}: {err}", dst.display()));
+    }
+}
+
 const GPUI_AU_FFI_HEADER: &str = r#"// GPUI Audio Unit FFI — auto-generated by plugins-ffi/build.rs
 // DO NOT EDIT — regenerate with: cargo build -p plugins-ffi
 //
 // Source Rust files:
 //   crates/gpui-toolkit/gpui-au/src/ffi.rs            (gpui_au_* lifecycle/input)
-//   crates/sotf-plugins/crates/plugins-ffi/src/lib.rs  (gpui_au_create_with_plugin)
-//   crates/sotf-plugins/crates/plugins-ffi/src/param_cache.rs (au_param_cache_*)
-//   crates/sotf-plugins/crates/plugins-ffi/src/au_host.rs     (callback types)
+//   crates/sotf-plugins/crates/plugins-ffi/sotf_audio_plugin_ffi.h
+//     owns plugin, parameter-cache, callback, and gpui_au_create_with_plugin declarations.
 //
-// NOTE: Opaque handles are declared as void* (not typed structs) so Swift
-// imports them as UnsafeMutableRawPointer — matching the existing Swift code.
-// Index/size parameters use size_t (Swift Int) rather than uintptr_t (Swift UInt).
+// NOTE: Opaque handles are declared as void* so Swift imports them as
+// UnsafeMutableRawPointer — matching the existing Swift code.
 
 #ifndef GPUI_AU_FFI_H
 #define GPUI_AU_FFI_H
@@ -76,18 +119,6 @@ extern "C" {
 #endif
 
 // ============================================================================
-// Callback Types (GPUI UI -> AU parameter tree)
-// ============================================================================
-
-/// Called by GPUI when the user changes a parameter via the UI.
-/// Arguments: userdata, param_index, denormalized_value
-typedef void (*SetParamCallback)(void*, size_t, double);
-
-/// Called by GPUI when the user resets a parameter to its default.
-/// Arguments: userdata, param_index
-typedef void (*ResetParamCallback)(void*, size_t);
-
-// ============================================================================
 // GPUI AU Lifecycle  (gpui-au/src/ffi.rs)
 // ============================================================================
 
@@ -97,17 +128,6 @@ void *gpui_au_create(void *ns_view,
                      float height,
                      float scale,
                      const char *plugin_type);
-
-/// Create a GPUI context with a real plugin UI and parameter bridge.
-void *gpui_au_create_with_plugin(void *ns_view,
-                                 float width,
-                                 float height,
-                                 float scale,
-                                 const char *plugin_type,
-                                 void *param_cache,
-                                 SetParamCallback set_param_cb,
-                                 ResetParamCallback reset_param_cb,
-                                 void *cb_userdata);
 
 /// Destroy a GPUI AU context.
 void gpui_au_destroy(void *context);
@@ -136,31 +156,6 @@ void gpui_au_mouse_moved(void *context, float x, float y);
 void gpui_au_mouse_dragged(void *context, float x, float y, int32_t button);
 
 void gpui_au_scroll_wheel(void *context, float x, float y, float dx, float dy);
-
-// ============================================================================
-// Atomic Parameter Cache  (plugins-ffi/src/param_cache.rs)
-// ============================================================================
-
-/// Create a new atomic parameter cache with `count` slots.
-void *au_param_cache_create(size_t count);
-
-/// Write a denormalized parameter value into the cache (thread-safe).
-void au_param_cache_write(void *cache, size_t index, double value);
-
-/// Read a denormalized parameter value from the cache (thread-safe).
-double au_param_cache_read(const void *cache, size_t index);
-
-/// Set metadata (name, unit, range) for a parameter slot.
-void au_param_cache_set_meta(void *cache,
-                             size_t index,
-                             const char *name,
-                             const char *unit,
-                             double min_value,
-                             double max_value,
-                             double default_value);
-
-/// Destroy a parameter cache.
-void au_param_cache_destroy(void *cache);
 
 #ifdef __cplusplus
 }

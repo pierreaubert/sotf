@@ -6,6 +6,7 @@
 import AVFoundation
 import AudioToolbox
 import CoreAudioKit
+import UniformTypeIdentifiers
 
 // MARK: - Render State (shared between main thread and render thread via pointer)
 
@@ -390,6 +391,16 @@ open class GenericRustAudioUnit: AUAudioUnit {
 
     // MARK: - State Management
 
+    public static var sotfPresetTypeIdentifier: String {
+        let info = plugin_preset_document_info()
+        return info.ut_type.map { String(cString: $0) } ?? "org.spinorama.sotf.plugin-preset"
+    }
+
+    @available(macOS 11.0, iOS 14.0, *)
+    public static var sotfPresetType: UTType {
+        UTType(exportedAs: sotfPresetTypeIdentifier)
+    }
+
     public override var fullState: [String: Any]? {
         get {
             guard let handle = renderStatePtr.pointee.handle else { return nil }
@@ -438,6 +449,40 @@ open class GenericRustAudioUnit: AUAudioUnit {
             }
         }
     }
+
+    public override var fullStateForDocument: [String: Any]? {
+        get {
+            guard var state = fullState else { return nil }
+            let documentInfo = plugin_preset_document_info()
+            state["sotf_preset_schema_version"] = NSNumber(value: documentInfo.schema_version)
+            if let utType = documentInfo.ut_type {
+                state["sotf_preset_ut_type"] = String(cString: utType)
+            }
+            if let fileExtension = documentInfo.file_extension {
+                state["sotf_preset_file_extension"] = String(cString: fileExtension)
+            }
+            state["sotf_plugin_type"] = type(of: self).pluginType
+            return state
+        }
+        set {
+            fullState = newValue
+        }
+    }
+
+    #if os(macOS)
+    public func makePresetBookmark(for url: URL) throws -> Data {
+        try url.bookmarkData(options: [.withSecurityScope],
+                             includingResourceValuesForKeys: nil,
+                             relativeTo: nil)
+    }
+
+    public func resolvePresetBookmark(_ data: Data, stale: inout Bool) throws -> URL {
+        try URL(resolvingBookmarkData: data,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &stale)
+    }
+    #endif
 }
 
 // MARK: - Helper Functions

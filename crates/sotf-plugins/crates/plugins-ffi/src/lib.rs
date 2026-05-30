@@ -3,7 +3,7 @@
 // ============================================================================
 //
 // This crate provides C-compatible FFI bindings for SOTF audio plugins,
-// enabling integration with macOS Audio Units (AUv3).
+// enabling integration with Audio Unit (AUv3) and portable native hosts.
 //
 // Architecture:
 // - Opaque handles for plugin instances
@@ -11,26 +11,29 @@
 // - JSON-based configuration
 // - Parameter management system
 
-#![cfg(target_os = "macos")]
 // FFI functions necessarily dereference raw pointers from C callers
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 // Re-export gpui-au FFI symbols so they're included in this staticlib.
 // Without this, the linker would strip gpui-au's #[no_mangle] functions
 // since nothing in plugins-ffi directly references them.
+#[cfg(target_os = "macos")]
 pub use gpui_au::ffi as gpui_au_ffi;
 
 use std::ffi::{CStr, CString};
+#[cfg(target_os = "macos")]
 use std::rc::Rc;
 
+#[cfg(target_os = "macos")]
 use gpui::AppContext as _;
 use std::os::raw::{c_char, c_double, c_int};
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::slice;
 
-use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::plugin::{MidiEvent, MidiMessage, Plugin, ProcessContext};
 
+#[cfg(target_os = "macos")]
 mod au_host;
 pub mod param_cache;
 mod parameter_map;
@@ -55,6 +58,86 @@ pub struct PluginHandle {
     output_channels: usize,
 }
 
+const SOTF_PLUGIN_FFI_ABI_VERSION: u32 = 2;
+const MAX_FFI_MIDI_EVENTS_PER_BLOCK: usize = 256;
+
+const PRESET_UT_TYPE: &[u8] = b"org.spinorama.sotf.plugin-preset\0";
+const PRESET_FILE_EXTENSION: &[u8] = b"sotfpreset\0";
+const PRESET_MIME_TYPE: &[u8] = b"application/vnd.spinorama.sotf.plugin-preset+json\0";
+
+/// Host/packaging family that can consume this C ABI.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginFfiHostKind {
+    Unknown = 0,
+    AudioUnitV3 = 1,
+    Vst3 = 2,
+    SwiftPackage = 3,
+}
+
+/// Runtime-advertised FFI capabilities.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PluginFfiCapabilities {
+    pub abi_version: u32,
+    pub host_kind: PluginFfiHostKind,
+    pub supports_audio: bool,
+    pub supports_parameters: bool,
+    pub supports_state: bool,
+    pub supports_midi_input: bool,
+    pub supports_midi_output: bool,
+    pub supports_note_expression: bool,
+    pub supports_apple_au_v3: bool,
+    pub supports_ios_au_v3: bool,
+    pub supports_windows_vst3: bool,
+    pub supports_swift_package: bool,
+}
+
+/// Preset/document metadata shared by AUv3 and SwiftPM hosts.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PluginPresetDocumentInfo {
+    pub schema_version: u32,
+    pub ut_type: *const c_char,
+    pub file_extension: *const c_char,
+    pub mime_type: *const c_char,
+    pub supports_full_state_for_document: bool,
+    pub supports_security_scoped_bookmarks: bool,
+}
+
+/// Raw MIDI event scheduled within a processing block.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PluginMidiEvent {
+    pub sample_offset: usize,
+    pub data: [u8; 3],
+    pub len: u8,
+}
+
+/// ABI-visible note expression kinds for future AUv3/VST3 bridging.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginNoteExpressionKind {
+    PitchBend = 1,
+    Pressure = 2,
+    Timbre = 3,
+    Brightness = 4,
+    Volume = 5,
+    Pan = 6,
+}
+
+/// Per-note expression event scheduled within a processing block.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PluginNoteExpressionEvent {
+    pub sample_offset: usize,
+    pub note_id: i32,
+    pub channel: u8,
+    pub note: u8,
+    pub expression: PluginNoteExpressionKind,
+    pub value: f64,
+}
+
 // ============================================================================
 // Error Handling
 // ============================================================================
@@ -72,6 +155,8 @@ pub enum PluginError {
     ProcessingFailed = -6,
     InitializationFailed = -7,
     InvalidConfig = -8,
+    UnsupportedFeature = -9,
+    BufferTooSmall = -10,
     UnknownError = -99,
 }
 
@@ -101,6 +186,97 @@ pub extern "C" fn plugin_get_last_error() -> *const c_char {
             .map(|s| s.as_ptr())
             .unwrap_or(ptr::null())
     })
+}
+
+// ============================================================================
+// ABI / Platform Capability Introspection
+// ============================================================================
+
+/// Get the stable ABI version for this FFI surface.
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_ffi_abi_version() -> u32 {
+    SOTF_PLUGIN_FFI_ABI_VERSION
+}
+
+/// Get runtime capabilities for the current target.
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_ffi_capabilities() -> PluginFfiCapabilities {
+    PluginFfiCapabilities {
+        abi_version: SOTF_PLUGIN_FFI_ABI_VERSION,
+        host_kind: current_host_kind(),
+        supports_audio: true,
+        supports_parameters: true,
+        supports_state: true,
+        supports_midi_input: true,
+        // ABI slots exist now, but no core plugin trait produces outgoing MIDI yet.
+        supports_midi_output: false,
+        supports_note_expression: false,
+        supports_apple_au_v3: cfg!(any(target_os = "macos", target_os = "ios")),
+        supports_ios_au_v3: cfg!(target_os = "ios"),
+        supports_windows_vst3: cfg!(target_os = "windows"),
+        supports_swift_package: cfg!(any(target_os = "macos", target_os = "ios")),
+    }
+}
+
+/// Get machine-readable platform and capability metadata as JSON.
+///
+/// Caller must free the returned string with plugin_free_string().
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_ffi_platform_info_json() -> *mut c_char {
+    let caps = plugin_ffi_capabilities();
+    let json = serde_json::json!({
+        "abi_version": caps.abi_version,
+        "target_os": std::env::consts::OS,
+        "target_arch": std::env::consts::ARCH,
+        "host_kind": host_kind_name(caps.host_kind),
+        "supports_audio": caps.supports_audio,
+        "supports_parameters": caps.supports_parameters,
+        "supports_state": caps.supports_state,
+        "supports_midi_input": caps.supports_midi_input,
+        "supports_midi_output": caps.supports_midi_output,
+        "supports_note_expression": caps.supports_note_expression,
+        "supports_apple_au_v3": caps.supports_apple_au_v3,
+        "supports_ios_au_v3": caps.supports_ios_au_v3,
+        "supports_windows_vst3": caps.supports_windows_vst3,
+        "supports_swift_package": caps.supports_swift_package,
+    });
+
+    match CString::new(json.to_string()) {
+        Ok(s) => s.into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Get preset document metadata for host file dialogs and AUv3 document state.
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_preset_document_info() -> PluginPresetDocumentInfo {
+    PluginPresetDocumentInfo {
+        schema_version: 1,
+        ut_type: PRESET_UT_TYPE.as_ptr().cast(),
+        file_extension: PRESET_FILE_EXTENSION.as_ptr().cast(),
+        mime_type: PRESET_MIME_TYPE.as_ptr().cast(),
+        supports_full_state_for_document: cfg!(any(target_os = "macos", target_os = "ios")),
+        supports_security_scoped_bookmarks: cfg!(any(target_os = "macos", target_os = "ios")),
+    }
+}
+
+fn current_host_kind() -> PluginFfiHostKind {
+    if cfg!(target_os = "windows") {
+        PluginFfiHostKind::Vst3
+    } else if cfg!(any(target_os = "macos", target_os = "ios")) {
+        PluginFfiHostKind::AudioUnitV3
+    } else {
+        PluginFfiHostKind::Unknown
+    }
+}
+
+fn host_kind_name(kind: PluginFfiHostKind) -> &'static str {
+    match kind {
+        PluginFfiHostKind::Unknown => "unknown",
+        PluginFfiHostKind::AudioUnitV3 => "au_v3",
+        PluginFfiHostKind::Vst3 => "vst3",
+        PluginFfiHostKind::SwiftPackage => "swift_package",
+    }
 }
 
 // ============================================================================
@@ -276,12 +452,15 @@ pub extern "C" fn plugin_process(
     // Real-time processing: avoid panic catching overhead in release builds
     #[cfg(debug_assertions)]
     let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
-        process_impl(handle, input, output, num_frames)
+        let context = ProcessContext::new((*handle).sample_rate, num_frames);
+        process_impl(handle, input, output, num_frames, &context)
     }));
 
     #[cfg(not(debug_assertions))]
-    let result: Result<PluginError, ()> =
-        Ok(unsafe { process_impl(handle, input, output, num_frames) });
+    let result: Result<PluginError, ()> = Ok(unsafe {
+        let context = ProcessContext::new((*handle).sample_rate, num_frames);
+        process_impl(handle, input, output, num_frames, &context)
+    });
 
     result
         .unwrap_or_else(|_| {
@@ -291,12 +470,119 @@ pub extern "C" fn plugin_process(
         .into()
 }
 
+/// Process audio samples with incoming MIDI events.
+///
+/// MIDI events are copied into a fixed stack buffer, then borrowed by
+/// ProcessContext. No heap allocation occurs on the render path.
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_process_with_midi(
+    handle: *mut PluginHandle,
+    input: *const f32,
+    output: *mut f32,
+    num_frames: usize,
+    midi_events: *const PluginMidiEvent,
+    midi_event_count: usize,
+) -> c_int {
+    if handle.is_null()
+        || input.is_null()
+        || output.is_null()
+        || (midi_events.is_null() && midi_event_count > 0)
+    {
+        return PluginError::NullPointer.into();
+    }
+
+    #[cfg(debug_assertions)]
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        process_with_ffi_events_impl(
+            handle,
+            input,
+            output,
+            num_frames,
+            midi_events,
+            midi_event_count,
+        )
+    }));
+
+    #[cfg(not(debug_assertions))]
+    let result: Result<PluginError, ()> = Ok(unsafe {
+        process_with_ffi_events_impl(
+            handle,
+            input,
+            output,
+            num_frames,
+            midi_events,
+            midi_event_count,
+        )
+    });
+
+    result
+        .unwrap_or_else(|_| {
+            set_last_error("Panic in plugin_process_with_midi");
+            PluginError::ProcessingFailed
+        })
+        .into()
+}
+
+/// Process audio with MIDI/note-expression input and output ABI slots.
+///
+/// Incoming MIDI is bridged into ProcessContext. MIDI output and note
+/// expression are explicit ABI slots so AUv3/VST3 hosts can feature-detect
+/// support, but the current core plugin trait does not yet produce outgoing
+/// events; output counts are therefore set to zero.
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_process_with_events(
+    handle: *mut PluginHandle,
+    input: *const f32,
+    output: *mut f32,
+    num_frames: usize,
+    midi_input: *const PluginMidiEvent,
+    midi_input_count: usize,
+    note_expression_input: *const PluginNoteExpressionEvent,
+    note_expression_input_count: usize,
+    _midi_output: *mut PluginMidiEvent,
+    _midi_output_capacity: usize,
+    midi_output_count: *mut usize,
+    _note_expression_output: *mut PluginNoteExpressionEvent,
+    _note_expression_output_capacity: usize,
+    note_expression_output_count: *mut usize,
+) -> c_int {
+    if !midi_output_count.is_null() {
+        unsafe {
+            *midi_output_count = 0;
+        }
+    }
+    if !note_expression_output_count.is_null() {
+        unsafe {
+            *note_expression_output_count = 0;
+        }
+    }
+
+    if note_expression_input.is_null() && note_expression_input_count > 0 {
+        return PluginError::NullPointer.into();
+    }
+
+    if note_expression_input_count > 0 {
+        set_last_error("Note Expression input is not implemented by the core plugin trait");
+        return PluginError::UnsupportedFeature.into();
+    }
+
+    plugin_process_with_midi(
+        handle,
+        input,
+        output,
+        num_frames,
+        midi_input,
+        midi_input_count,
+    )
+}
+
 #[inline]
 unsafe fn process_impl(
     handle: *mut PluginHandle,
     input: *const f32,
     output: *mut f32,
     num_frames: usize,
+    context: &ProcessContext<'_>,
 ) -> PluginError {
     // SAFETY: Caller must ensure handle is valid and non-null
     let handle_ref = unsafe { &mut *handle };
@@ -308,15 +594,48 @@ unsafe fn process_impl(
     let input_slice = unsafe { slice::from_raw_parts(input, input_samples) };
     let output_slice = unsafe { slice::from_raw_parts_mut(output, output_samples) };
 
-    let context = ProcessContext::new(handle_ref.sample_rate, num_frames);
-
     match handle_ref
         .plugin
-        .process(input_slice, output_slice, &context)
+        .process(input_slice, output_slice, context)
     {
         Ok(_) => PluginError::Success,
         Err(_) => PluginError::ProcessingFailed,
     }
+}
+
+#[inline]
+unsafe fn process_with_ffi_events_impl(
+    handle: *mut PluginHandle,
+    input: *const f32,
+    output: *mut f32,
+    num_frames: usize,
+    midi_events: *const PluginMidiEvent,
+    midi_event_count: usize,
+) -> PluginError {
+    if midi_event_count > MAX_FFI_MIDI_EVENTS_PER_BLOCK {
+        set_last_error("Too many MIDI events for one FFI processing block");
+        return PluginError::BufferTooSmall;
+    }
+
+    let mut storage =
+        [MidiEvent::new(0, MidiMessage::new([0; 3], 0)); MAX_FFI_MIDI_EVENTS_PER_BLOCK];
+    let midi_slice = if midi_event_count == 0 {
+        &storage[..0]
+    } else {
+        let ffi_events = unsafe { slice::from_raw_parts(midi_events, midi_event_count) };
+        for (dst, src) in storage.iter_mut().zip(ffi_events.iter()) {
+            if src.len > 3 {
+                set_last_error("Invalid MIDI event length");
+                return PluginError::InvalidConfig;
+            }
+            *dst = MidiEvent::new(src.sample_offset, MidiMessage::new(src.data, src.len));
+        }
+        &storage[..midi_event_count]
+    };
+
+    let sample_rate = unsafe { (*handle).sample_rate };
+    let context = ProcessContext::new(sample_rate, num_frames).with_midi_events(midi_slice);
+    unsafe { process_impl(handle, input, output, num_frames, &context) }
 }
 
 // ============================================================================
@@ -622,6 +941,7 @@ fn libc_free(ptr: *mut u8, len: usize) {
 /// - `set_param_cb` / `reset_param_cb` must be valid function pointers
 /// - `cb_userdata` must remain valid for the lifetime of the returned context
 #[unsafe(no_mangle)]
+#[cfg(target_os = "macos")]
 pub extern "C" fn gpui_au_create_with_plugin(
     ns_view: *mut std::ffi::c_void,
     width: f32,
@@ -632,7 +952,7 @@ pub extern "C" fn gpui_au_create_with_plugin(
     set_param_cb: au_host::SetParamCallback,
     reset_param_cb: au_host::ResetParamCallback,
     cb_userdata: *mut std::ffi::c_void,
-) -> *mut gpui_au::ffi::AuContext {
+) -> *mut std::ffi::c_void {
     if ns_view.is_null() || plugin_type.is_null() || param_cache.is_null() {
         return std::ptr::null_mut();
     }
@@ -712,7 +1032,7 @@ pub extern "C" fn gpui_au_create_with_plugin(
     });
 
     let context = Box::new(gpui_au::ffi::AuContext::new(plugin_type_str, app_cell));
-    Box::into_raw(context)
+    Box::into_raw(context).cast()
 }
 
 // ============================================================================
@@ -740,5 +1060,32 @@ mod tests {
     fn test_null_safety() {
         let handle = plugin_create(ptr::null(), ptr::null(), 48000, 2, 2);
         assert!(handle.is_null());
+    }
+
+    #[test]
+    fn test_capabilities_and_preset_metadata() {
+        let caps = plugin_ffi_capabilities();
+        assert_eq!(caps.abi_version, SOTF_PLUGIN_FFI_ABI_VERSION);
+        assert!(caps.supports_audio);
+        assert!(caps.supports_midi_input);
+
+        let preset = plugin_preset_document_info();
+        assert_eq!(preset.schema_version, 1);
+        assert!(!preset.ut_type.is_null());
+        let ut_type = unsafe { CStr::from_ptr(preset.ut_type) }.to_str().unwrap();
+        assert_eq!(ut_type, "org.spinorama.sotf.plugin-preset");
+    }
+
+    #[test]
+    fn test_process_with_midi_null_safety() {
+        let err = plugin_process_with_midi(
+            ptr::null_mut(),
+            ptr::null(),
+            ptr::null_mut(),
+            0,
+            ptr::null(),
+            0,
+        );
+        assert_eq!(err, PluginError::NullPointer as c_int);
     }
 }
