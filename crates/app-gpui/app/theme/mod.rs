@@ -7,7 +7,10 @@
 
 use gpui::{App, Rgba, SharedString};
 use gpui_design::DesignExt;
-use gpui_themes::{AccessibilityPalette, ThemeAppearance, ThemeModePreference};
+use gpui_themes::{
+    AccentPalette, AccentSource, AccessibilityPalette, Color as ThemeColor, ThemeAppearance,
+    ThemeModePreference,
+};
 use gpui_ui_kit::theme::{Theme as UiKitTheme, ThemeVariant as UiKitThemeVariant};
 use serde::{Deserialize, Serialize};
 
@@ -128,6 +131,102 @@ impl From<ThemeId> for UiKitThemeVariant {
                 UiKitThemeVariant::Dark
             }
         }
+    }
+}
+
+/// App-level accent override applied on top of the selected base theme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeAccentPreference {
+    #[default]
+    Theme,
+    System,
+    Ocean,
+    Mint,
+    Amber,
+    Rose,
+    Violet,
+}
+
+impl ThemeAccentPreference {
+    pub fn all() -> &'static [ThemeAccentPreference] {
+        &[
+            ThemeAccentPreference::Theme,
+            ThemeAccentPreference::System,
+            ThemeAccentPreference::Ocean,
+            ThemeAccentPreference::Mint,
+            ThemeAccentPreference::Amber,
+            ThemeAccentPreference::Rose,
+            ThemeAccentPreference::Violet,
+        ]
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ThemeAccentPreference::Theme => "Default",
+            ThemeAccentPreference::System => "System",
+            ThemeAccentPreference::Ocean => "Ocean",
+            ThemeAccentPreference::Mint => "Mint",
+            ThemeAccentPreference::Amber => "Amber",
+            ThemeAccentPreference::Rose => "Rose",
+            ThemeAccentPreference::Violet => "Violet",
+        }
+    }
+
+    pub fn value(self) -> &'static str {
+        match self {
+            ThemeAccentPreference::Theme => "theme",
+            ThemeAccentPreference::System => "system",
+            ThemeAccentPreference::Ocean => "ocean",
+            ThemeAccentPreference::Mint => "mint",
+            ThemeAccentPreference::Amber => "amber",
+            ThemeAccentPreference::Rose => "rose",
+            ThemeAccentPreference::Violet => "violet",
+        }
+    }
+
+    pub fn from_value(value: &SharedString) -> Option<Self> {
+        match value.as_ref() {
+            "theme" => Some(Self::Theme),
+            "system" => Some(Self::System),
+            "ocean" => Some(Self::Ocean),
+            "mint" => Some(Self::Mint),
+            "amber" => Some(Self::Amber),
+            "rose" => Some(Self::Rose),
+            "violet" => Some(Self::Violet),
+            _ => None,
+        }
+    }
+
+    pub fn seed_and_source(self) -> Option<(ThemeColor, AccentSource)> {
+        match self {
+            ThemeAccentPreference::Theme => None,
+            // Fallback seed for platforms where GPUI does not expose native accent color yet.
+            ThemeAccentPreference::System => {
+                Some((ThemeColor::from_hex(0x0a84ff), AccentSource::System))
+            }
+            ThemeAccentPreference::Ocean => {
+                Some((ThemeColor::from_hex(0x0072b2), AccentSource::User))
+            }
+            ThemeAccentPreference::Mint => {
+                Some((ThemeColor::from_hex(0x009e73), AccentSource::User))
+            }
+            ThemeAccentPreference::Amber => {
+                Some((ThemeColor::from_hex(0xe69f00), AccentSource::User))
+            }
+            ThemeAccentPreference::Rose => {
+                Some((ThemeColor::from_hex(0xcc79a7), AccentSource::User))
+            }
+            ThemeAccentPreference::Violet => {
+                Some((ThemeColor::from_hex(0x7e57c2), AccentSource::User))
+            }
+        }
+    }
+
+    pub fn preview_color(self, fallback: Rgba) -> Rgba {
+        self.seed_and_source()
+            .map(|(seed, _)| seed.to_rgba())
+            .unwrap_or(fallback)
     }
 }
 
@@ -357,6 +456,48 @@ impl Theme {
             ThemeId::Protanopia => Self::protanopia(),
             ThemeId::Deuteranopia => Self::deuteranopia(),
             ThemeId::Tritanopia => Self::tritanopia(),
+        }
+    }
+
+    pub fn with_accent_preference(self, preference: ThemeAccentPreference) -> Self {
+        let Some((seed, source)) = preference.seed_and_source() else {
+            return self;
+        };
+        self.with_accent_seed(seed, source)
+    }
+
+    pub fn with_accent_seed(self, seed: ThemeColor, source: AccentSource) -> Self {
+        let palette = AccentPalette::from_seed(seed, source, self.appearance());
+        self.with_accent_palette(palette)
+    }
+
+    pub fn with_accent_palette(mut self, palette: AccentPalette) -> Self {
+        self.surface_selected = palette.accent_muted.to_rgba();
+        self.border_focused = palette.accent.to_rgba();
+        self.accent = palette.accent.to_rgba();
+        self.accent_hover = palette.accent_hover.to_rgba();
+        self.accent_muted = palette.accent_muted.to_rgba();
+        self.text_on_accent = palette.text_on_accent.to_rgba();
+        self.text_on_accent_muted = Self::with_opacity(self.text_on_accent, 0.8);
+        self.icon_on_accent = self.text_on_accent;
+        self.progress_bar_fill = self.accent;
+        self.drag_over_highlight = Self::with_opacity(self.accent, 0.25);
+        self.drag_over_border = self.accent;
+        self.neutral_indicator = self.accent;
+        self.optimization_color = self.accent_hover;
+        self.plugin_colors.eq = self.accent;
+        self.plugin_colors.convolution = self.accent;
+        self.graph_colors.corrected = self.accent;
+        self
+    }
+
+    pub fn appearance(&self) -> ThemeAppearance {
+        let luminance =
+            0.2126 * self.background.r + 0.7152 * self.background.g + 0.0722 * self.background.b;
+        if luminance >= 0.5 {
+            ThemeAppearance::Light
+        } else {
+            ThemeAppearance::Dark
         }
     }
 }

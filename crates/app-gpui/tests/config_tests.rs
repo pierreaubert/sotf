@@ -165,7 +165,7 @@ fn test_config_serialization() {
     use sotf_audio_player::ReleaseChannel;
     use sotf_audio_player_gpui::i18n::Language;
     use sotf_audio_player_gpui::keybindings::KeymapPreset;
-    use sotf_audio_player_gpui::theme::ThemeId;
+    use sotf_audio_player_gpui::theme::{ThemeAccentPreference, ThemeId};
 
     let schedule = ThemeSchedule::new(TimeOfDay::new(6, 30), TimeOfDay::new(21, 15));
     let config = Config {
@@ -174,6 +174,7 @@ fn test_config_serialization() {
         theme: ThemeId::default(),
         theme_mode_preference: ThemeModePreference::Scheduled { schedule },
         accessibility_palette: AccessibilityPalette::default(),
+        theme_accent_preference: ThemeAccentPreference::System,
         reduce_motion: false,
         language: Language::default(),
         keymap_preset: KeymapPreset::default(),
@@ -209,6 +210,10 @@ fn test_config_serialization() {
     assert_eq!(
         deserialized.accessibility_palette,
         AccessibilityPalette::Standard
+    );
+    assert_eq!(
+        deserialized.theme_accent_preference,
+        ThemeAccentPreference::System
     );
     assert!(!deserialized.reduce_motion);
 }
@@ -248,6 +253,7 @@ fn test_theme_accessibility_palette_mapping() {
 fn test_theme_mode_and_motion_state_defaults() {
     use gpui_themes::{AccessibilityPalette, ThemeModePreference};
     use sotf_audio_player_gpui::app::state::UIState;
+    use sotf_audio_player_gpui::theme::ThemeAccentPreference;
 
     let state = UIState::default();
     assert_eq!(
@@ -255,21 +261,33 @@ fn test_theme_mode_and_motion_state_defaults() {
         ThemeModePreference::FollowSystem
     );
     assert_eq!(state.accessibility_palette, AccessibilityPalette::Standard);
+    assert_eq!(state.theme_accent_preference, ThemeAccentPreference::Theme);
     assert!(!state.reduce_motion);
 }
 
 #[test]
 fn test_app_theme_policy_updates_theme_state() {
     use gpui_themes::{AccessibilityPalette, ThemeAppearance, ThemeModePreference};
-    use sotf_audio_player_gpui::{App, theme::ThemeId};
+    use sotf_audio_player_gpui::{
+        App,
+        theme::{ThemeAccentPreference, ThemeId},
+    };
 
     let mut app = App::new();
+    app.set_theme_accent_preference(ThemeAccentPreference::Rose);
+    let accent = ThemeAccentPreference::Rose
+        .seed_and_source()
+        .unwrap()
+        .0
+        .to_rgba();
+    assert_eq!(app.ui_state.theme.accent, accent);
 
     app.set_theme_mode_preference_with_system(
         ThemeModePreference::FollowSystem,
         ThemeAppearance::Light,
     );
     assert_eq!(app.ui_state.theme_id, ThemeId::Light);
+    assert_eq!(app.ui_state.theme.accent, accent);
     assert_eq!(
         app.ui_state.accessibility_palette,
         AccessibilityPalette::Standard
@@ -280,6 +298,7 @@ fn test_app_theme_policy_updates_theme_state() {
         ThemeAppearance::Light,
     );
     assert_eq!(app.ui_state.theme_id, ThemeId::Protanopia);
+    assert_eq!(app.ui_state.theme.accent, accent);
     assert_eq!(
         app.ui_state.accessibility_palette,
         AccessibilityPalette::Protanopia

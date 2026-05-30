@@ -15,7 +15,7 @@ use sotf_audio_player::{Player, QueueController, QueuePlaybackEffect};
 
 use crate::i18n::{Language, Translations};
 use crate::keybindings::KeymapPreset;
-use crate::theme::{Theme, ThemeId};
+use crate::theme::{Theme, ThemeAccentPreference, ThemeId};
 
 use crate::app::debug::StateHistory;
 use crate::app::types::{
@@ -1281,9 +1281,10 @@ impl App {
 
         // Restore theme
         self.ui_state.theme_id = config.theme;
-        self.ui_state.theme = Theme::from_id(config.theme);
         self.ui_state.theme_mode_preference = config.theme_mode_preference;
         self.ui_state.accessibility_palette = config.accessibility_palette;
+        self.ui_state.theme_accent_preference = config.theme_accent_preference;
+        self.apply_theme(config.theme);
         self.ui_state.reduce_motion = config.reduce_motion;
 
         // Restore language
@@ -1478,6 +1479,7 @@ impl App {
             theme: self.ui_state.theme_id,
             theme_mode_preference: self.ui_state.theme_mode_preference.clone(),
             accessibility_palette: self.ui_state.accessibility_palette,
+            theme_accent_preference: self.ui_state.theme_accent_preference,
             reduce_motion: self.ui_state.reduce_motion,
             language: self.ui_state.language,
             keymap_preset: self.ui_state.keymap_preset,
@@ -1701,6 +1703,11 @@ impl App {
         self.ui_state.reduce_motion = reduce_motion;
     }
 
+    pub fn set_theme_accent_preference(&mut self, preference: ThemeAccentPreference) {
+        self.ui_state.theme_accent_preference = preference;
+        self.apply_theme(self.ui_state.theme_id);
+    }
+
     pub fn resolved_theme_appearance(&self) -> ThemeAppearance {
         self.resolved_theme_appearance_with_system(ThemeAppearance::Dark)
     }
@@ -1720,7 +1727,8 @@ impl App {
 
     fn apply_theme(&mut self, theme_id: ThemeId) {
         self.ui_state.theme_id = theme_id;
-        self.ui_state.theme = Theme::from_id(theme_id);
+        self.ui_state.theme =
+            Theme::from_id(theme_id).with_accent_preference(self.ui_state.theme_accent_preference);
     }
 
     /// Set a specific language

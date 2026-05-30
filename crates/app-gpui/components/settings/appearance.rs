@@ -2,7 +2,7 @@
 
 use crate::components::design::Ds;
 use crate::i18n::Language;
-use crate::theme::ThemeId;
+use crate::theme::{ThemeAccentPreference, ThemeId};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -173,6 +173,60 @@ fn render_schedule_time_row(
         })
 }
 
+fn render_accent_swatch(
+    d: Ds,
+    theme: crate::theme::Theme,
+    state_entity: Entity<crate::app::AppState>,
+    preference: ThemeAccentPreference,
+    selected: bool,
+    fallback_accent: Rgba,
+) -> impl IntoElement {
+    let preview_color = preference.preview_color(fallback_accent);
+    div()
+        .id(SharedString::from(format!(
+            "theme-accent-{}",
+            preference.value()
+        )))
+        .flex()
+        .items_center()
+        .gap(d.gap)
+        .px(d.pad_x)
+        .py(d.pad_y_half)
+        .rounded(d.r_sm)
+        .border_1()
+        .border_color(if selected { theme.accent } else { theme.border })
+        .bg(if selected {
+            theme.surface_selected
+        } else {
+            theme.surface
+        })
+        .cursor_pointer()
+        .child(
+            div()
+                .w(rems(1.0))
+                .h(rems(1.0))
+                .rounded_full()
+                .border_1()
+                .border_color(theme.border)
+                .bg(preview_color),
+        )
+        .child(
+            div()
+                .text_size(d.text_sm)
+                .text_color(if selected {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                })
+                .child(preference.name()),
+        )
+        .on_click(move |_, _, cx| {
+            state_entity.update(cx, |state, _cx| {
+                state.app.set_theme_accent_preference(preference);
+            });
+        })
+}
+
 impl PlayerView {
     /// Render theme settings content
     pub(crate) fn render_theme_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -186,8 +240,10 @@ impl PlayerView {
             ThemeModePreference::Scheduled { .. }
         );
         let accessibility_palette = state.app.ui_state.accessibility_palette;
+        let theme_accent_preference = state.app.ui_state.theme_accent_preference;
         let reduce_motion = state.app.ui_state.reduce_motion;
         let theme = state.app.ui_state.theme.clone();
+        let base_theme = crate::theme::Theme::from_id(theme_id);
         let translations = state.app.ui_state.translations.clone();
 
         div()
@@ -258,6 +314,33 @@ impl PlayerView {
                                     schedule.dark_start,
                                 )),
                         )
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .child(
+                        div()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
+                            .child("Accent"),
+                    )
+                    .child({
+                        let mut swatches = div().flex().flex_wrap().gap(d.gap);
+                        for preference in ThemeAccentPreference::all() {
+                            swatches = swatches.child(render_accent_swatch(
+                                d,
+                                theme.clone(),
+                                self.state.clone(),
+                                *preference,
+                                theme_accent_preference == *preference,
+                                base_theme.accent,
+                            ));
+                        }
+                        swatches
                     }),
             )
             .child(
