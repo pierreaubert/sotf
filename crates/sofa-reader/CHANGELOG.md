@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-05-30
+
+### Fixed
+- Materialize declared HDF5 fill values for unallocated contiguous/chunked datasets instead of forcing zero-filled output.
+- Return a clear unsupported error for compound dataset types in numeric read paths.
+- Validate numeric dataset byte counts against declared shape and element size, trimming only explicit trailing bytes.
+- Use dataset element size as shuffle fallback when filter pipeline metadata omits/zeros the shuffle element size.
+- Preserve radius differences in nearest-neighbor HRTF lookup and replace full-sort nearest-3 selection with a single-pass tracker.
+
+### Changed
+- Prefer `CLASS=DIMENSION_SCALE` when detecting dimensions, with SOFA-name fallback for legacy files.
+- `write_simple_free_field_hrtf` now writes `EmitterPosition` as `[C, I]` instead of `[E, C, I]` for single-emitter files.
+
 ## [0.1.4] - 2025-05-17
 
 ### Changed

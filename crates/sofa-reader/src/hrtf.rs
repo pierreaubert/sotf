@@ -148,7 +148,6 @@ pub fn write_simple_free_field_hrtf<P: AsRef<Path>>(
 
     writer.add_dimension("M", h.measurements);
     writer.add_dimension("R", h.receivers);
-    writer.add_dimension("E", 1);
     writer.add_dimension("N", n);
     writer.add_dimension("C", 3);
     writer.add_dimension("I", 1);
@@ -175,7 +174,7 @@ pub fn write_simple_free_field_hrtf<P: AsRef<Path>>(
     writer.write_f64("ListenerPosition", &listener_position)?;
     add_coordinate_attributes(&mut writer, "ListenerPosition", CoordinateSystem::Cartesian);
 
-    writer.add_variable_f64("EmitterPosition", &["E", "C", "I"]);
+    writer.add_variable_f64("EmitterPosition", &["C", "I"]);
     writer.write_f64("EmitterPosition", &[0.0, 0.0, 0.0])?;
     add_coordinate_attributes(&mut writer, "EmitterPosition", CoordinateSystem::Cartesian);
 
@@ -261,13 +260,8 @@ fn coordinate_units(coords: CoordinateSystem) -> &'static str {
 }
 
 fn receiver_position_sofa_layout(receiver_position: &[f64], receivers: usize) -> Vec<f64> {
-    let mut out = vec![0.0; receivers * 3];
-    for receiver in 0..receivers {
-        for coord in 0..3 {
-            out[(receiver * 3) + coord] = receiver_position[(receiver * 3) + coord];
-        }
-    }
-    out
+    debug_assert_eq!(receiver_position.len(), receivers * 3);
+    receiver_position.to_vec()
 }
 
 /// SOFA/HRTF file data loaded into memory.
@@ -550,11 +544,14 @@ impl SofaFile {
 
     /// Find the nearest HRTF measurement for a source position.
     pub fn find_nearest(&self, target: &SourcePosition) -> (usize, f32) {
+        if self.positions.is_empty() {
+            return (0, f32::INFINITY);
+        }
         let mut min_dist = f32::MAX;
         let mut min_idx = 0;
 
         for (i, pos) in self.positions.iter().enumerate() {
-            let dist = pos.angular_distance(target);
+            let dist = Self::lookup_distance(pos, target);
             if dist < min_dist {
                 min_dist = dist;
                 min_idx = i;
@@ -566,20 +563,44 @@ impl SofaFile {
 
     /// Find the three nearest HRTF measurements for a source position.
     pub fn find_three_nearest(&self, target: &SourcePosition) -> [(usize, f32); 3] {
-        let mut candidates: Vec<(usize, f32)> = self
-            .positions
-            .iter()
-            .enumerate()
-            .map(|(i, pos)| (i, pos.angular_distance(target)))
-            .collect();
+        if self.positions.is_empty() {
+            return [(0, f32::INFINITY); 3];
+        }
+        let mut best = [(0usize, f32::INFINITY); 3];
+        for (i, pos) in self.positions.iter().enumerate() {
+            let dist = Self::lookup_distance(pos, target);
+            if dist < best[0].1 {
+                best[2] = best[1];
+                best[1] = best[0];
+                best[0] = (i, dist);
+            } else if dist < best[1].1 {
+                best[2] = best[1];
+                best[1] = (i, dist);
+            } else if dist < best[2].1 {
+                best[2] = (i, dist);
+            }
+        }
+        if self.positions.len() == 1 {
+            best[1] = best[0];
+            best[2] = best[0];
+        } else if self.positions.len() == 2 {
+            best[2] = best[1];
+        }
+        best
+    }
 
-        candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        [
-            candidates[0],
-            candidates.get(1).cloned().unwrap_or(candidates[0]),
-            candidates.get(2).cloned().unwrap_or(candidates[0]),
-        ]
+    fn lookup_distance(a: &SourcePosition, b: &SourcePosition) -> f32 {
+        let angular_deg = a.angular_distance(b);
+        if !angular_deg.is_finite() {
+            return f32::INFINITY;
+        }
+        let radial = (a.distance - b.distance).abs();
+        if !radial.is_finite() {
+            return f32::INFINITY;
+        }
+        let mean_r = ((a.distance.abs() + b.distance.abs()) * 0.5).max(1e-3);
+        let tangential = mean_r * angular_deg.to_radians();
+        (tangential * tangential + radial * radial).sqrt()
     }
 
     /// Get HRTF data for the nearest available measurement to a position.
@@ -593,8 +614,8 @@ impl SofaFile {
     }
 
     /// Get an HRTF interpolated across the three nearest measurements using
-    /// inverse-angular-distance weights, eliminating the audible "snap" of
-    /// nearest-neighbor lookup when sources move continuously.
+    /// inverse-distance weights, eliminating the audible "snap" of nearest-
+    /// neighbor lookup when sources move continuously.
     ///
     /// Falls back to the nearest measurement if any of the three lookups
     /// collapse onto the same index. Returns `None` if the database is empty.
@@ -767,5 +788,46 @@ mod tests {
         let (idx, dist) = sf.find_nearest(&SourcePosition::new(45.0, 30.0, 1.0));
         assert_eq!(idx, 0);
         assert!(dist.is_finite(), "find_nearest should never return NaN");
+    }
+
+    #[test]
+    fn test_find_nearest_considers_radius_when_direction_matches() {
+        let sf = SofaFile {
+            sample_rate: 48000.0,
+            num_measurements: 2,
+            ir_length: 1,
+            positions: vec![
+                SourcePosition::new(30.0, 15.0, 0.25),
+                SourcePosition::new(30.0, 15.0, 1.5),
+            ],
+            impulse_responses: vec![0.0, 0.0, 1.0, 1.0],
+            convention: "test".to_string(),
+            data_sample_rate: Some(48000.0),
+        };
+        let (idx, dist) = sf.find_nearest(&SourcePosition::new(30.0, 15.0, 1.45));
+        assert_eq!(idx, 1, "Nearest match should favor radius proximity");
+        assert!(dist.is_finite());
+    }
+
+    #[test]
+    fn test_find_three_nearest_returns_sorted_neighbors() {
+        let sf = SofaFile {
+            sample_rate: 48000.0,
+            num_measurements: 4,
+            ir_length: 1,
+            positions: vec![
+                SourcePosition::new(0.0, 0.0, 1.0),
+                SourcePosition::new(20.0, 0.0, 1.0),
+                SourcePosition::new(40.0, 0.0, 1.0),
+                SourcePosition::new(60.0, 0.0, 1.0),
+            ],
+            impulse_responses: vec![0.0; 8],
+            convention: "test".to_string(),
+            data_sample_rate: Some(48000.0),
+        };
+        let nearest = sf.find_three_nearest(&SourcePosition::new(18.0, 0.0, 1.0));
+        assert_eq!(nearest[0].0, 1);
+        assert!(nearest[0].1 <= nearest[1].1);
+        assert!(nearest[1].1 <= nearest[2].1);
     }
 }
