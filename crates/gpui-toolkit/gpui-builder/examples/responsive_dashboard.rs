@@ -135,9 +135,17 @@ fn main() {
         LayoutViewport::new("Very small", 400.0, 300.0),
     ];
 
-    for (w, h, label) in sizes {
-        println!("=== {label} ({w:.0}x{h:.0}) ===");
-        let solved = solve(&root, w, h, &LayoutPreferences::default());
+    for viewport in viewports {
+        println!(
+            "=== {} ({:.0}x{:.0}) ===",
+            viewport.label, viewport.width, viewport.height
+        );
+        let solved = solve(
+            &root,
+            viewport.width,
+            viewport.height,
+            &LayoutPreferences::default(),
+        );
         print!("{}", solved.debug_report_with_source(&root));
 
         let tabs = solved.collapsed_tabs();
