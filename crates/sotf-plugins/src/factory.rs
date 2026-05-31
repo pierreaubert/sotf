@@ -29,9 +29,12 @@ use crate::{ExternalPlugin, PluginDescriptor, PluginFormat, PluginScanStatus};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::{
     ExternalPluginSandboxPolicy, ExternalPluginSandboxTiming, ExternalPluginTrust,
-    ExternalPluginWorkerCommand, IsolatedExternalPlugin, IsolatedExternalPluginConfig,
+    IsolatedExternalPlugin, IsolatedExternalPluginConfig,
 };
 use std::path::{Path, PathBuf};
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+const MAX_EXTERNAL_PLUGIN_DEADLINE_MICROS: u64 = 10_000;
 
 /// Plugin type strings accepted by [`create_plugin`].
 pub const SUPPORTED_PLUGIN_TYPES: &[&str] = &[
@@ -100,6 +103,17 @@ pub const SUPPORTED_PLUGIN_TYPES: &[&str] = &[
 pub fn is_supported_plugin_type(plugin_type: &str) -> bool {
     let lower = plugin_type.to_lowercase();
     SUPPORTED_PLUGIN_TYPES.contains(&lower.as_str())
+}
+
+pub fn validate_plugin_security_config(
+    plugin_type: &str,
+    parameters: &serde_json::Value,
+) -> Result<(), String> {
+    let lower = plugin_type.to_ascii_lowercase();
+    match lower.as_str() {
+        "external" | "external_plugin" => validate_external_plugin_security_config(parameters),
+        _ => Ok(()),
+    }
 }
 
 /// Create a plugin instance from its type string and JSON parameters.
@@ -483,6 +497,7 @@ pub fn create_plugin(
         }
 
         "external" | "external_plugin" => {
+            validate_external_plugin_security_config(parameters)?;
             let descriptor = parse_external_plugin_descriptor(parameters)
                 .map_err(|e| format!("Failed to parse external plugin descriptor: {e}"))?;
             if descriptor.audio_inputs != 0 && descriptor.audio_inputs != channels {
@@ -495,7 +510,7 @@ pub fn create_plugin(
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             {
                 let plugin_trust = external_plugin_trust(parameters)?;
-                if external_plugin_isolation_requested(parameters, plugin_trust) {
+                if external_plugin_isolation_requested(parameters, plugin_trust)? {
                     let plugin = IsolatedExternalPlugin::new(
                         descriptor,
                         sample_rate,
@@ -534,15 +549,40 @@ pub fn create_plugin(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn validate_external_plugin_security_config(parameters: &serde_json::Value) -> Result<(), String> {
+    let trust = external_plugin_trust(parameters)?;
+    reject_worker_overrides(parameters)?;
+    let isolated = external_plugin_isolation_requested(parameters, trust)?;
+    if is_untrusted_external_plugin(trust) && !isolated {
+        return Err("untrusted external plugins must run in isolated worker processes".to_string());
+    }
+
+    if isolated {
+        let config = parse_isolated_external_plugin_config(parameters, trust)?;
+        validate_untrusted_external_plugin_policy(&config, trust)?;
+    }
+
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn validate_external_plugin_security_config(_parameters: &serde_json::Value) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn external_plugin_isolation_requested(
     parameters: &serde_json::Value,
     trust: ExternalPluginTrust,
-) -> bool {
+) -> Result<bool, String> {
     if let Some(isolated) = parameters
         .get("isolated")
         .and_then(serde_json::Value::as_bool)
     {
-        return isolated;
+        if is_untrusted_external_plugin(trust) && !isolated {
+            return Err("untrusted external plugins cannot disable process isolation".to_string());
+        }
+        return Ok(isolated);
     }
 
     if let Some(isolation) = parameters
@@ -551,21 +591,25 @@ fn external_plugin_isolation_requested(
     {
         let isolation = isolation.to_ascii_lowercase();
         if isolation == "disabled" || isolation == "off" || isolation == "false" {
-            return false;
+            if is_untrusted_external_plugin(trust) {
+                return Err(
+                    "untrusted external plugins cannot disable process isolation".to_string(),
+                );
+            }
+            return Ok(false);
         }
         if matches!(
             isolation.as_str(),
             "process" | "subprocess" | "out_of_process" | "isolated" | "always"
         ) {
-            return true;
+            return Ok(true);
         }
     }
 
     // Default to isolated execution for external plugins so unknown code runs in a
-    // dedicated worker process unless explicitly disabled. Signed plugins still
-    // inherit a relaxed sandbox profile via `plugin_trust`.
+    // dedicated worker process unless a host-owned trust decision opts out.
     let _ = trust;
-    true
+    Ok(true)
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -577,7 +621,14 @@ fn external_plugin_trust(parameters: &serde_json::Value) -> Result<ExternalPlugi
         let trust = trust
             .as_str()
             .ok_or_else(|| "`plugin_trust` must be a string".to_string())?;
-        trust.parse::<ExternalPluginTrust>()
+        let trust = trust.parse::<ExternalPluginTrust>()?;
+        if matches!(trust, ExternalPluginTrust::Signed) {
+            return Err(
+                "`plugin_trust` cannot mark external plugins as signed/trusted from plugin config"
+                    .to_string(),
+            );
+        }
+        Ok(trust)
     } else {
         Ok(ExternalPluginTrust::Unknown)
     }
@@ -588,6 +639,7 @@ fn parse_isolated_external_plugin_config(
     parameters: &serde_json::Value,
     trust: ExternalPluginTrust,
 ) -> Result<IsolatedExternalPluginConfig, String> {
+    reject_worker_overrides(parameters)?;
     let mut config = IsolatedExternalPluginConfig {
         sandbox_policy: ExternalPluginSandboxPolicy::for_trust(trust),
         ..IsolatedExternalPluginConfig::default()
@@ -605,6 +657,11 @@ fn parse_isolated_external_plugin_config(
         let deadline_micros = deadline_micros
             .as_u64()
             .ok_or_else(|| "`deadline_micros` must be an integer".to_string())?;
+        if deadline_micros > MAX_EXTERNAL_PLUGIN_DEADLINE_MICROS {
+            return Err(format!(
+                "`deadline_micros` must be <= {MAX_EXTERNAL_PLUGIN_DEADLINE_MICROS}"
+            ));
+        }
         config.deadline = std::time::Duration::from_micros(deadline_micros);
     }
 
@@ -612,45 +669,6 @@ fn parse_isolated_external_plugin_config(
         config.start_worker = start_worker
             .as_bool()
             .ok_or_else(|| "`start_worker` must be a boolean".to_string())?;
-    }
-
-    if let Some(worker_path) = parameters
-        .get("worker_path")
-        .or_else(|| parameters.get("worker_binary"))
-    {
-        let worker_path = worker_path
-            .as_str()
-            .ok_or_else(|| "`worker_path` must be a string".to_string())?;
-        if worker_path.is_empty() {
-            return Err("`worker_path` must not be empty".to_string());
-        }
-        config.worker_command = ExternalPluginWorkerCommand::new(worker_path);
-    }
-
-    if let Some(worker_args) = parameters.get("worker_args") {
-        let worker_args = worker_args
-            .as_array()
-            .ok_or_else(|| "`worker_args` must be an array".to_string())?;
-        let mut args = Vec::with_capacity(worker_args.len());
-        for arg in worker_args {
-            let arg = arg
-                .as_str()
-                .ok_or_else(|| "`worker_args` entries must be strings".to_string())?;
-            args.push(arg.to_string());
-        }
-        config.worker_command = config.worker_command.clone().args(args);
-    }
-
-    if let Some(worker_env) = parameters.get("worker_env") {
-        let worker_env = worker_env
-            .as_object()
-            .ok_or_else(|| "`worker_env` must be an object".to_string())?;
-        for (key, value) in worker_env {
-            let value = value
-                .as_str()
-                .ok_or_else(|| "`worker_env` values must be strings".to_string())?;
-            config.worker_command = config.worker_command.clone().env(key, value);
-        }
     }
 
     if let Some(sandbox_timing) = parameters.get("sandbox_timing") {
@@ -689,7 +707,63 @@ fn parse_isolated_external_plugin_config(
         &mut config.sandbox_policy.extra_write_paths,
     )?;
 
+    validate_untrusted_external_plugin_policy(&config, trust)?;
+
     Ok(config)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn reject_worker_overrides(parameters: &serde_json::Value) -> Result<(), String> {
+    for key in ["worker_path", "worker_binary", "worker_args", "worker_env"] {
+        if parameters.get(key).is_some() {
+            return Err(format!(
+                "`{key}` is not accepted in external plugin config; SOTF uses its bundled worker"
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn validate_untrusted_external_plugin_policy(
+    config: &IsolatedExternalPluginConfig,
+    trust: ExternalPluginTrust,
+) -> Result<(), String> {
+    if !is_untrusted_external_plugin(trust) {
+        return Ok(());
+    }
+
+    if config.sandbox_policy.timing != ExternalPluginSandboxTiming::BeforePluginLoad {
+        return Err(
+            "untrusted external plugins must enter the sandbox before plugin load".to_string(),
+        );
+    }
+    if !config.sandbox_policy.require_platform_sandbox {
+        return Err("untrusted external plugins require platform sandbox enforcement".to_string());
+    }
+    if config.sandbox_policy.allow_network {
+        return Err("untrusted external plugins cannot allow network access".to_string());
+    }
+    if config.sandbox_policy.allow_child_processes {
+        return Err("untrusted external plugins cannot allow child processes".to_string());
+    }
+    if !config.sandbox_policy.extra_read_paths.is_empty()
+        || !config.sandbox_policy.extra_write_paths.is_empty()
+    {
+        return Err(
+            "untrusted external plugin configs cannot expand sandbox filesystem access".to_string(),
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn is_untrusted_external_plugin(trust: ExternalPluginTrust) -> bool {
+    matches!(
+        trust,
+        ExternalPluginTrust::Unknown | ExternalPluginTrust::Untrusted
+    )
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -950,7 +1024,6 @@ mod tests {
             "audio_outputs": 2,
             "name": "External Test",
             "format": "clap",
-            "plugin_trust": "signed",
         });
 
         let plugin = create_plugin("external", &params, 2, 48_000).unwrap();
@@ -971,7 +1044,6 @@ mod tests {
                 "audio_outputs": 2,
                 "name": "External Test",
                 "format": "clap",
-                "plugin_trust": "signed",
             }),
             2,
             48_000,
@@ -1002,7 +1074,7 @@ mod tests {
 
         let plugin = create_plugin(
             "external_plugin",
-            &serde_json::json!({"descriptor": descriptor, "plugin_trust": "signed"}),
+            &serde_json::json!({"descriptor": descriptor}),
             2,
             48_000,
         )
@@ -1046,39 +1118,35 @@ mod tests {
 
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     #[test]
-    fn create_external_plugin_can_opt_into_process_isolation() {
-        let config = parse_isolated_external_plugin_config(
+    fn create_external_plugin_rejects_worker_overrides_from_config() {
+        let err = parse_isolated_external_plugin_config(
             &serde_json::json!({
                 "worker_path": "/usr/bin/sotf-test-worker",
-                "worker_args": ["--once", "--idle-sleep-micros", "250"],
-                "worker_env": {
-                    "SOTF_TEST_WORKER": "1"
-                },
                 "start_worker": false,
-                "plugin_trust": "signed",
+            }),
+            ExternalPluginTrust::Unknown,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("worker_path"));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn isolated_external_plugin_config_uses_bundled_worker() {
+        let config = parse_isolated_external_plugin_config(
+            &serde_json::json!({
+                "start_worker": false,
                 "deadline_micros": 250,
                 "max_block_frames": 1024,
             }),
-            ExternalPluginTrust::Signed,
+            ExternalPluginTrust::Unknown,
         )
         .unwrap();
 
-        assert_eq!(
-            config.worker_command.program(),
-            Path::new("/usr/bin/sotf-test-worker")
-        );
-        assert_eq!(
-            config.worker_command.command_args(),
-            &[
-                "--once".to_string(),
-                "--idle-sleep-micros".to_string(),
-                "250".to_string()
-            ]
-        );
-        assert_eq!(
-            config.worker_command.command_env(),
-            &[("SOTF_TEST_WORKER".to_string(), "1".to_string())]
-        );
+        assert!(config.worker_command.program().is_absolute());
+        assert!(config.worker_command.command_args().is_empty());
+        assert!(config.worker_command.command_env().is_empty());
         assert!(!config.start_worker);
         assert_eq!(config.deadline, std::time::Duration::from_micros(250));
         assert_eq!(config.max_block_frames, 1024);
@@ -1089,7 +1157,6 @@ mod tests {
     fn isolated_external_plugin_config_maps_trust_to_sandbox_timing() {
         let signed = parse_isolated_external_plugin_config(
             &serde_json::json!({
-                "plugin_trust": "signed",
                 "sandbox_read_paths": ["/Library/Audio/Plug-Ins"],
                 "sandbox_write_paths": ["/tmp/sotf-plugin-cache"],
             }),
@@ -1119,8 +1186,58 @@ mod tests {
         );
         assert_eq!(
             untrusted.sandbox_policy.require_platform_sandbox,
-            cfg!(target_os = "linux")
+            cfg!(any(
+                target_os = "linux",
+                target_os = "macos",
+                target_os = "windows"
+            ))
         );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn external_plugin_security_rejects_self_declared_signed_trust() {
+        let err = validate_plugin_security_config(
+            "external",
+            &serde_json::json!({
+                "path": "/tmp/fake.clap",
+                "plugin_trust": "signed"
+            }),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("cannot mark external plugins as signed"));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn external_plugin_security_rejects_untrusted_in_process() {
+        let err = validate_plugin_security_config(
+            "external",
+            &serde_json::json!({
+                "path": "/tmp/fake.clap",
+                "isolated": false
+            }),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("cannot disable process isolation"));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn external_plugin_security_rejects_relaxed_untrusted_sandbox() {
+        let err = validate_plugin_security_config(
+            "external",
+            &serde_json::json!({
+                "path": "/tmp/fake.clap",
+                "sandbox_timing": "disabled",
+                "start_worker": false
+            }),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("before plugin load"));
     }
 
     #[test]

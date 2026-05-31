@@ -1496,10 +1496,9 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
 
     for (i, config) in configs.iter().enumerate() {
         log::debug!(
-            "[Manager Thread] Validating plugin {}: type='{}', params={}",
+            "[Manager Thread] Validating plugin {}: type='{}'",
             i,
-            config.plugin_type,
-            config.parameters
+            config.plugin_type
         );
 
         let plugin_type_lower = config.plugin_type.to_lowercase();
@@ -1523,6 +1522,20 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             return Err(ConfigError::ValidationError {
                 plugin_index: i,
                 reason: format!("Plugin '{}' missing parameters", config.plugin_type),
+            });
+        }
+
+        if let Err(reason) =
+            sotf_plugins::validate_plugin_security_config(&plugin_type_lower, &config.parameters)
+        {
+            log::error!(
+                "[Manager Thread] Security validation failed for plugin '{}': {}",
+                config.plugin_type,
+                reason
+            );
+            return Err(ConfigError::ValidationError {
+                plugin_index: i,
+                reason,
             });
         }
 
@@ -2297,6 +2310,28 @@ mod tests {
         }];
 
         assert!(validate_plugin_configs(&configs).is_ok());
+    }
+
+    #[test]
+    fn test_validate_plugin_configs_rejects_insecure_external_plugin_config() {
+        let configs = vec![super::super::PluginConfig {
+            plugin_type: "external".to_string(),
+            parameters: serde_json::json!({
+                "path": "/tmp/fake.clap",
+                "isolated": false,
+            }),
+        }];
+
+        let result = validate_plugin_configs(&configs);
+        assert!(result.is_err());
+        if let Err(ConfigError::ValidationError {
+            plugin_index,
+            reason,
+        }) = result
+        {
+            assert_eq!(plugin_index, 0);
+            assert!(reason.contains("cannot disable process isolation"));
+        }
     }
 
     #[test]
