@@ -1,5 +1,5 @@
 use crossterm::event::{
-    KeyEvent, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -1086,7 +1086,7 @@ fn update_media_controls(
     }
 
     let position_secs = player.get_position();
-    let progress = Some(MediaPosition(Duration::from_secs_f64(position_secs)));
+    let progress = Some(MediaPosition::from_secs_f64(position_secs));
 
     let playback = if app.is_playing {
         MediaPlayback::Playing { progress }

@@ -244,7 +244,7 @@ async fn build_player(
     {
         let h = handler.clone();
         player.connect_set_position(move |_, _track: &TrackId, time: Time| {
-            let micros = time.as_micros().max(0) as u64;
+            let micros = nonnegative_time_micros(time);
             dispatch_ev(
                 &h,
                 MediaControlEvent::SetPosition(MediaPosition(Duration::from_micros(micros))),
@@ -292,11 +292,7 @@ async fn apply_metadata(player: &Player, m: OwnedMetadata) {
         md.set_album(Some(al));
     }
     if let Some(dur) = m.duration {
-        // Guard against overflow: `Duration::as_micros` returns u128. Clamp
-        // to `i64::MAX` (≈292 000 years) so we never wrap into a negative
-        // `Time` — same guard `apply_playback` uses below.
-        let micros = dur.as_micros().min(i64::MAX as u128) as i64;
-        md.set_length(Some(Time::from_micros(micros)));
+        md.set_length(Some(duration_to_time(dur)));
     }
     if let Some(url) = m.cover_url {
         md.set_art_url(Some(url));
@@ -316,7 +312,40 @@ async fn apply_playback(player: &Player, pb: MediaPlayback) {
         log::warn!("mpris set_playback_status: {e}");
     }
     if let Some(MediaPosition(d)) = progress {
-        let micros = d.as_micros().min(i64::MAX as u128) as i64;
-        player.set_position(Time::from_micros(micros));
+        player.set_position(duration_to_time(d));
+    }
+}
+
+fn duration_to_time(duration: Duration) -> Time {
+    // Guard against overflow: `Duration::as_micros` returns u128. Clamp
+    // to `i64::MAX` (≈292 000 years) so we never wrap into a negative
+    // MPRIS `Time`.
+    let micros = duration.as_micros().min(i64::MAX as u128) as i64;
+    Time::from_micros(micros)
+}
+
+fn nonnegative_time_micros(time: Time) -> u64 {
+    u64::try_from(time.as_micros().max(0)).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duration_to_time_clamps_overflow() {
+        let time = duration_to_time(Duration::from_secs(u64::MAX));
+
+        assert_eq!(time.as_micros(), i64::MAX);
+    }
+
+    #[test]
+    fn nonnegative_time_micros_clamps_negative_offsets() {
+        assert_eq!(nonnegative_time_micros(Time::from_micros(-42)), 0);
+    }
+
+    #[test]
+    fn nonnegative_time_micros_preserves_positive_offsets() {
+        assert_eq!(nonnegative_time_micros(Time::from_micros(42)), 42);
     }
 }

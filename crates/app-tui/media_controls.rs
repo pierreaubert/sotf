@@ -1,5 +1,5 @@
 use sotf_media_controls::{
-    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig,
+    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig, WindowHandle,
 };
 use std::sync::mpsc;
 use std::time::Duration;
@@ -135,15 +135,26 @@ pub fn pump_macos_event_loop() {
 
 /// On Windows, sotf_media_controls requires a valid HWND. Use the console window handle.
 #[cfg(target_os = "windows")]
-fn get_hwnd() -> Option<*mut core::ffi::c_void> {
+fn get_hwnd() -> Option<WindowHandle<'static>> {
+    use core::ptr::NonNull;
+
     unsafe extern "system" {
         fn GetConsoleWindow() -> *mut core::ffi::c_void;
     }
+
+    // SAFETY: `GetConsoleWindow` is a Win32 API with no Rust-side
+    // preconditions.
     let h = unsafe { GetConsoleWindow() };
-    if h.is_null() { None } else { Some(h) }
+    NonNull::new(h).map(|raw| {
+        // SAFETY: the returned HWND belongs to this process' console window.
+        // The Windows backend is currently a stub; when SMTC support lands,
+        // this construction point documents the lifetime/threading contract
+        // that must be revalidated.
+        unsafe { WindowHandle::from_raw(raw) }
+    })
 }
 
 #[cfg(not(target_os = "windows"))]
-fn get_hwnd() -> Option<*mut core::ffi::c_void> {
+fn get_hwnd() -> Option<WindowHandle<'static>> {
     None
 }

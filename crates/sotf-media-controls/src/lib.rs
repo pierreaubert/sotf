@@ -7,11 +7,6 @@
 //! - **Linux / FreeBSD**: MPRIS via `mpris-server` (zbus-based, modern).
 //! - **Windows / iOS / tvOS / other**: graceful no-op `MediaControls::new`
 //!   returns `Err(Error::Unsupported)` so callers fall back without panics.
-//!
-//! The public surface mirrors the slice of `souvlaki` we actually used, so
-//! migration is mostly mechanical (`use souvlaki::X` → `use sotf_media_controls::X`).
-//!
-//! [`souvlaki`]: https://crates.io/crates/souvlaki
 
 // FFI wrapper crate: every "unsafe" is a thin pass-through to the Apple
 // MediaPlayer / mpris-server APIs whose preconditions are documented at the
@@ -71,6 +66,10 @@ impl MediaControls {
     /// On unsupported platforms (Windows, iOS, tvOS, ...) this returns
     /// [`Error::Unsupported`]; callers should treat that as "no OS media
     /// controls available" rather than a hard failure.
+    ///
+    /// On macOS, construction wires `MPRemoteCommandCenter` targets and must
+    /// happen on the main thread. Later [`Self::set_metadata`] and
+    /// [`Self::set_playback`] calls may come from any thread.
     pub fn new(config: PlatformConfig<'_>) -> Result<Self, Error> {
         Ok(Self {
             inner: backend::Backend::new(config)?,

@@ -1,12 +1,13 @@
 use core::marker::PhantomData;
+use core::ptr::NonNull;
 use std::time::Duration;
 
 /// Opaque, lifetime-bound window handle.
 ///
-/// SAFETY: On Windows this is a raw `HWND` (an `*mut c_void`). Raw pointers
-/// are `!Send + !Sync` by default. We wrap them in this newtype with an
-/// explicit `Send` impl so the value can be moved into the backend
-/// constructor — but only `unsafe` callers can construct one, because:
+/// SAFETY: On Windows this is a raw `HWND`. It is non-null by construction
+/// and wrapped with an explicit `Send` impl so the value can be moved into
+/// the backend constructor — but only `unsafe` callers can construct one,
+/// because:
 ///
 /// 1. The pointer must remain valid for the lifetime of the `MediaControls`
 ///    handle (tracked at compile time via the `'a` phantom lifetime).
@@ -16,12 +17,12 @@ use std::time::Duration;
 /// On macOS / Linux the contained pointer is never dereferenced.
 #[derive(Debug, Clone, Copy)]
 pub struct WindowHandle<'a> {
-    raw: *mut core::ffi::c_void,
+    raw: NonNull<core::ffi::c_void>,
     _lifetime: PhantomData<&'a ()>,
 }
 
 impl WindowHandle<'_> {
-    /// Construct a `WindowHandle` from a raw HWND.
+    /// Construct a `WindowHandle` from a non-null raw HWND.
     ///
     /// # Safety
     ///
@@ -29,7 +30,7 @@ impl WindowHandle<'_> {
     /// `'a`, and that it is safe to access from the thread on which the
     /// platform backend (SMTC on Windows) operates.
     #[must_use]
-    pub unsafe fn from_raw(raw: *mut core::ffi::c_void) -> Self {
+    pub unsafe fn from_raw(raw: NonNull<core::ffi::c_void>) -> Self {
         Self {
             raw,
             _lifetime: PhantomData,
@@ -39,7 +40,7 @@ impl WindowHandle<'_> {
     /// Returns the underlying raw pointer.
     #[must_use]
     pub fn as_raw(self) -> *mut core::ffi::c_void {
-        self.raw
+        self.raw.as_ptr()
     }
 }
 
@@ -50,8 +51,6 @@ unsafe impl Send for WindowHandle<'_> {}
 unsafe impl Sync for WindowHandle<'_> {}
 
 /// Platform-specific construction config.
-///
-/// Field-compatible with `souvlaki::PlatformConfig` for migration.
 #[derive(Debug, Clone, Default)]
 pub struct PlatformConfig<'a> {
     /// D-Bus name suffix on Linux. Ignored on other platforms.
@@ -61,13 +60,10 @@ pub struct PlatformConfig<'a> {
     /// Windows HWND. Ignored on macOS / Linux; currently unused because the
     /// Windows backend is a no-op.
     ///
-    /// SAFETY contract for the caller (when SMTC ships): the pointer must
-    /// remain valid for the lifetime of the resulting `MediaControls`, and
-    /// it must be safe to access from the thread on which the backend
-    /// operates the SMTC singleton. Prefer
-    /// [`PlatformConfig::with_window_handle`] (which captures the lifetime
-    /// via [`WindowHandle`]'s phantom) over a raw-pointer literal.
-    pub hwnd: Option<*mut core::ffi::c_void>,
+    /// This is a typed, non-null, lifetime-bound handle so callers must make
+    /// the threading and lifetime contract explicit at the construction site
+    /// with [`WindowHandle::from_raw`].
+    pub hwnd: Option<WindowHandle<'a>>,
 }
 
 impl<'a> PlatformConfig<'a> {
@@ -79,7 +75,7 @@ impl<'a> PlatformConfig<'a> {
     /// from.
     #[must_use]
     pub fn with_window_handle(mut self, handle: WindowHandle<'a>) -> Self {
-        self.hwnd = Some(handle.as_raw());
+        self.hwnd = Some(handle);
         self
     }
 }
@@ -130,10 +126,38 @@ pub enum MediaControlEvent {
     Seek(SeekDirection),
     /// Explicit duration-offset seek.
     SeekBy(SeekDirection, Duration),
-    /// MPRIS-only: foreground / "raise window" request.
+    /// MPRIS-only: foreground / "raise window" request. Linux consumers
+    /// should handle this if the app has a visible window; otherwise desktop
+    /// clients will treat the request as a no-op.
     Raise,
-    /// MPRIS-only: app quit request.
+    /// MPRIS-only: app quit request. Linux consumers should map this to
+    /// their normal graceful shutdown path if they advertise remote control.
     Quit,
-    /// MPRIS-only: open URI request.
+    /// MPRIS-only: open URI request. Linux consumers that ignore this event
+    /// will leave MPRIS clients with no visible feedback for `OpenUri` actions.
     OpenUri(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    #[test]
+    fn platform_config_is_send_sync_with_wrapped_handle() {
+        assert_send_sync::<PlatformConfig<'static>>();
+    }
+
+    #[test]
+    fn window_handle_round_trips_non_null_hwnd() {
+        let mut byte = 0_u8;
+        let raw = NonNull::from(&mut byte).cast::<core::ffi::c_void>();
+
+        // SAFETY: `raw` is a non-null pointer to stack storage that remains
+        // valid for the duration of this test, and we only round-trip it.
+        let handle = unsafe { WindowHandle::from_raw(raw) };
+
+        assert_eq!(handle.as_raw(), raw.as_ptr());
+    }
 }

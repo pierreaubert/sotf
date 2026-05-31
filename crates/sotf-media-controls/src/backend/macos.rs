@@ -6,12 +6,9 @@
 //!
 //! Thread affinity. `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`
 //! mutating APIs require execution on the main thread (or at least a thread
-//! with a running `CFRunLoop`). `MediaControls` is constructed from
-//! arbitrary threads in the host apps, so all writes are marshalled onto
-//! `dispatch_get_main_queue` via `dispatch2::DispatchQueue::main().exec_async`.
-//! Construction-time reads of the singletons (`sharedCommandCenter`,
-//! `defaultCenter`) are safe from any thread; only mutation requires the
-//! main queue.
+//! with a running `CFRunLoop`). Command wiring in `MediaControls::new` is
+//! therefore rejected off-main. Later metadata/playback writes are marshalled
+//! onto `dispatch_get_main_queue` via `dispatch2::DispatchQueue::main().exec_async`.
 
 #![allow(
     unsafe_code,
@@ -24,9 +21,9 @@ use std::time::Duration;
 
 use block2::RcBlock;
 use dispatch2::DispatchQueue;
-use objc2::Message;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
+use objc2::{MainThreadMarker, Message};
 use objc2_foundation::{NSMutableDictionary, NSNumber, NSString};
 use objc2_media_player::{
     MPChangePlaybackPositionCommandEvent, MPMediaItemPropertyAlbumTitle, MPMediaItemPropertyArtist,
@@ -111,11 +108,14 @@ pub(crate) struct MacosBackend {
 
 impl MacosBackend {
     pub(crate) fn new(_config: &PlatformConfig<'_>) -> Result<Self, Error> {
+        let Some(_mtm) = MainThreadMarker::new() else {
+            return Err(Error::Init(
+                "macOS media controls must be constructed on the main thread".to_string(),
+            ));
+        };
         let handler: SharedHandler = Arc::new(Mutex::new(None));
-        // SAFETY: `wire_commands` only touches `MPRemoteCommandCenter`,
-        // whose `sharedCommandCenter` / `addTargetWithHandler:` are safe
-        // from any thread (the registered blocks fire on the main run
-        // loop regardless).
+        // SAFETY: we just proved we are on the main thread, and `handler`
+        // is owned by the returned backend until `Drop` removes the targets.
         let wired = unsafe { wire_commands(&handler) };
         Ok(Self { handler, wired })
     }
@@ -204,14 +204,14 @@ impl Drop for MacosBackend {
 ///
 /// # Safety
 ///
-/// Caller must guarantee that the `SharedHandler` outlives the registered
-/// blocks. The current design ties that lifetime to the `MacosBackend`,
-/// whose `Drop` impl detaches the blocks before the `Arc` ref-count can
-/// drop to zero on the data the blocks captured.
+/// Caller must run this on the main thread and guarantee that the
+/// `SharedHandler` outlives the registered blocks. The current design ties
+/// that lifetime to the `MacosBackend`, whose `Drop` impl detaches the
+/// blocks before the `Arc` ref-count can drop to zero on the data the blocks
+/// captured.
 unsafe fn wire_commands(handler: &SharedHandler) -> Vec<WiredCommand> {
     let mut wired: Vec<WiredCommand> = Vec::with_capacity(8);
-    // SAFETY: `sharedCommandCenter` returns a process-wide singleton and
-    // is safe to call from any thread.
+    // SAFETY: this function is only called on the main thread.
     let center = unsafe { MPRemoteCommandCenter::sharedCommandCenter() };
 
     type CmdAccessor = fn(&MPRemoteCommandCenter) -> Retained<MPRemoteCommand>;
@@ -388,22 +388,22 @@ unsafe fn update_elapsed_playback_time(progress: Duration) {
 mod tests {
     use super::*;
 
-    /// Compile + smoke test: `MacosBackend::new` can be invoked from a
-    /// non-main thread without panicking — it should marshal every later
-    /// write onto the main queue internally. CI environments usually have
-    /// no running `CFRunLoop`, but construction itself must succeed.
     #[test]
-    fn backend_constructs_off_main_thread() {
+    fn backend_refuses_off_main_thread() {
         let handle = std::thread::spawn(|| {
             let cfg = PlatformConfig {
                 dbus_name: "test",
                 display_name: "Test",
                 hwnd: None,
             };
-            MacosBackend::new(&cfg).is_ok()
+            MacosBackend::new(&cfg)
         });
-        let ok = handle.join().expect("spawned thread panicked");
-        assert!(ok, "MacosBackend::new returned Err");
+        let result = handle.join().expect("spawned thread panicked");
+        match result {
+            Err(Error::Init(msg)) => assert!(msg.contains("main thread")),
+            Ok(_) => panic!("MacosBackend::new unexpectedly succeeded off-main"),
+            Err(err) => panic!("unexpected error: {err:?}"),
+        }
     }
 
     /// Regression guard: the `MPChangePlaybackPosition` block routes the

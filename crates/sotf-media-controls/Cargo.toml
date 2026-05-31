@@ -1,9 +1,9 @@
 [package]
 name = "sotf-media-controls"
-version = "0.1.0"
+version = "0.1.1"
 authors.workspace = true
 edition.workspace = true
-description = "Cross-platform OS media controls (NowPlaying / MPRIS / SMTC) for SOTF apps."
+description = "Cross-platform OS media controls (NowPlaying / MPRIS) for SOTF apps."
 license.workspace = true
 repository.workspace = true
 keywords = ["audio", "media", "controls"]

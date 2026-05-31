@@ -4,6 +4,7 @@
 
 use sotf_media_controls::{
     MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
+    WindowHandle,
 };
 use std::sync::mpsc;
 use std::time::Duration;
@@ -115,7 +116,7 @@ pub fn update_media_controls(
     mc.set_metadata(title, artist, album_title, duration, cover_url);
 
     // Playback state
-    let progress = Some(MediaPosition(Duration::from_secs_f64(position_secs)));
+    let progress = Some(MediaPosition::from_secs_f64(position_secs));
     let playback = if app.playback.is_playing {
         MediaPlayback::Playing { progress }
     } else if app.playback.current_queue_index.is_some() {
@@ -128,14 +129,13 @@ pub fn update_media_controls(
 
 /// On Windows, sotf_media_controls requires a valid HWND.
 #[cfg(target_os = "windows")]
-fn get_hwnd() -> Option<*mut core::ffi::c_void> {
-    // sotf_media_controls on Windows panics if hwnd is None (requires a message window).
-    // We don't have easy access to the GPUI HWND here, so we return None
-    // and let the caller catch the panic via catch_unwind.
+fn get_hwnd() -> Option<WindowHandle<'static>> {
+    // Windows currently uses the graceful unsupported stub. When SMTC support
+    // lands, this should plumb the GPUI HWND through `WindowHandle::from_raw`.
     None
 }
 
 #[cfg(not(target_os = "windows"))]
-fn get_hwnd() -> Option<*mut core::ffi::c_void> {
+fn get_hwnd() -> Option<WindowHandle<'static>> {
     None
 }
