@@ -46,7 +46,7 @@ pub fn load_csv(
     use crate::fetch::parse_csv;
     use std::collections::{BTreeMap, BTreeSet};
 
-    let rows = parse_csv(csv_str);
+    let rows = parse_csv(csv_str).expect("valid stacked area CSV");
 
     let mut categories_set = BTreeSet::new();
     let mut date_map: BTreeMap<i64, BTreeMap<String, f64>> = BTreeMap::new();

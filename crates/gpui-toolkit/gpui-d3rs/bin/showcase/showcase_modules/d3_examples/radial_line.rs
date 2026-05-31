@@ -16,7 +16,7 @@ const SFO_CSV: &str = include_str!("../../data/sfo-temperature.csv");
 
 pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     // Parse CSV with d3rs
-    let rows = d3rs::fetch::parse_csv(SFO_CSV);
+    let rows = d3rs::fetch::parse_csv(SFO_CSV).expect("valid SFO temperature CSV");
 
     struct DayData {
         _day_of_year: usize,
