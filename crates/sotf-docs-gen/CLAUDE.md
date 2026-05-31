@@ -1,6 +1,6 @@
 # sotf-docs-gen
 
-Generate documentation markdown from plugin ParamSpec definitions, keybindings, and screen guides.
+Generate documentation markdown from plugin ParamSpec definitions.
 
 ## Architecture
 
@@ -9,12 +9,12 @@ Binary-only crate (no lib.rs). Single file: `src/main.rs`.
 ```
 main.rs
   PluginEntry        -- Registry entry: slug, name, description, params, global_params, band_template
-  plugin_registry()  -- Returns Vec<PluginEntry> with all 36 plugins and their ParamSpec arrays
+  plugin_registry()  -- Returns Vec<PluginEntry> with all registered plugins and their ParamSpec arrays
   generate_plugin_page()   -- Renders one plugin's markdown page with frontmatter + parameter tables
   generate_plugin_index()  -- Renders the plugin index page linking to all individual pages
   generate_params_table()  -- Formats ParamSpec array as markdown table (grouped by group name)
   write_if_changed()       -- Only writes files that actually changed (idempotent)
-  find_project_root()      -- Walks up to find directory with both Cargo.toml and site/
+  find_project_root()      -- Finds the SOTF workspace root from cwd, CARGO_MANIFEST_DIR, or --root
 ```
 
 Output goes to `site/src/content/docs/reference/plugins/` (Astro/Starlight docs site).
@@ -25,15 +25,17 @@ Binary only -- no library API. Run with:
 
 ```bash
 cargo run -p sotf-docs-gen
+cargo run -p sotf-docs-gen -- --check
 ```
 
 ## Testing
 
 ```bash
 cargo check -p sotf-docs-gen
+cargo test -p sotf-docs-gen
 ```
 
-No tests (binary-only crate). Verify by running the binary and checking generated markdown.
+Unit tests cover escaping, duplicate registry slugs, idempotent writes, and edge-case parameter formatting.
 
 ## Important Notes
 

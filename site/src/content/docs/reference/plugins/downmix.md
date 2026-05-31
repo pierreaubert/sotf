@@ -30,4 +30,3 @@ Surround to stereo downmixing with configurable channel contributions.
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | ITU-R BS.775 Mode | Bool | On / Off | Off | - | Use ITU standard downmix coeffs |
-

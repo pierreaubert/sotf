@@ -7,6 +7,9 @@ FFT-based spectrum analysis with configurable bin count, frequency range, smooth
 
 ## Parameters
 
+
+### General
+
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Num Bins | Int | 8 .. 120 | 30 | - | Number of frequency bands |
@@ -17,5 +20,5 @@ FFT-based spectrum analysis with configurable bin count, frequency range, smooth
 | Tilt Reference | Choice (Standard, 1kHz, 2kHz, Min Freq) | 4 options | Standard | - | Reference frequency for tilt |
 
 :::note
-**Structural parameters** (Num Bins) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+**Structural parameters** (Num Bins, Tilt Correction, Tilt Reference) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 :::

@@ -3,9 +3,9 @@ title: Plugin Reference
 description: Complete reference for all SotF audio plugins.
 ---
 
-SotF includes 41 audio processing plugins. Click any plugin for its full parameter reference.
+SotF includes 40 audio processing plugins. Click any plugin for its full parameter reference.
 
-## Processing Plugins
+## All Plugins
 
 | Plugin | Description |
 |--------|-------------|
@@ -49,5 +49,3 @@ SotF includes 41 audio processing plugins. Click any plugin for its full paramet
 | [Declick](/reference/plugins/declick/) | Removes clicks, pops, and short transient defects from audio (vinyl restoration, recording artifacts). |
 | [Hiss Reducer](/reference/plugins/hiss-reducer/) | Reduces high-frequency hiss and tape noise while preserving program content. |
 | [Speech Denoiser](/reference/plugins/speech-denoiser/) | Neural speech-focused denoiser (RNNoise-derived) optimized for voice and dialogue cleanup. |
-| [Dither](/reference/plugins/dither/) | Adds dither noise for bit-depth reduction, minimizing quantization distortion. |
-

@@ -562,6 +562,7 @@ impl PlayerView {
 
         let is_empty = plugins_data.is_empty();
         let d = Ds::from_cx(cx);
+        let show_add_plugin_menu = self.state.read(cx).app.show_add_plugin_menu;
 
         // Split: main plugins, then "+", then Matrix + output monitor
         // The "+" always appears just before the Matrix plugin.
@@ -577,6 +578,7 @@ impl PlayerView {
         };
 
         div()
+            .relative()
             .flex()
             .flex_col()
             .bg(theme.background_secondary)
@@ -732,6 +734,7 @@ impl PlayerView {
             .child(
                 div()
                     .id("plugin-rack")
+                    .relative()
                     .flex()
                     .items_center()
                     .gap(d.section)
@@ -1567,23 +1570,33 @@ impl PlayerView {
                                 .text_color(theme.text_muted)
                                 .child("Click + to add plugins"),
                         )
+                    })
+                    // Add plugin menu (shown when "+" is clicked). Deferred
+                    // overlay keeps it above the rack/detail pane divider
+                    // instead of clipping inside the fixed-height rack strip.
+                    .when(show_add_plugin_menu, |rack| {
+                        let menu = div()
+                            .id("add-plugin-menu")
+                            .absolute()
+                            .top_full()
+                            .left_0()
+                            .right_0()
+                            .mt(d.grid)
+                            .px(d.card)
+                            .py(d.card)
+                            .max_h(px(400.0))
+                            .overflow_y_scroll()
+                            .bg(theme.surface)
+                            .border_1()
+                            .border_color(theme.border)
+                            .rounded(d.r_md)
+                            .shadow_lg()
+                            .occlude()
+                            .child(self.render_add_plugin_buttons(cx));
+
+                        rack.child(deferred(menu).with_priority(10))
                     }),
             )
-            // Add plugin menu (shown when "+" is clicked)
-            .when(self.state.read(cx).app.show_add_plugin_menu, |el| {
-                el.child(
-                    div()
-                        .id("add-plugin-menu")
-                        .px(d.card)
-                        .py(d.card)
-                        .max_h(px(400.0))
-                        .overflow_y_scroll()
-                        .bg(theme.surface)
-                        .border_t_1()
-                        .border_color(theme.border)
-                        .child(self.render_add_plugin_buttons(cx)),
-                )
-            })
     }
 
     /// Render a side level meter group for the detail panel
@@ -2210,6 +2223,7 @@ impl PlayerView {
                     // Create state clones for divider callbacks
                     let state_for_output_toggle = self.state.clone();
                     let state_for_output_drag = self.state.clone();
+                    let output_meter_drag_start_width = output_meter_width;
 
                     div()
                         .flex_1()
@@ -2390,7 +2404,7 @@ impl PlayerView {
                                         s.app.dragging_divider = Some(DividerDragState {
                                             divider_type: DividerType::OutputMeter,
                                             start_x: pos,
-                                            start_width: s.app.output_meter_width,
+                                            start_width: output_meter_drag_start_width,
                                         });
                                     });
                                 }),

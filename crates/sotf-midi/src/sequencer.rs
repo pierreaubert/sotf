@@ -72,16 +72,28 @@ impl MidiClip {
     }
 
     /// Sort events by time (must be called before playback).
+    ///
+    /// `sort_by_key` is stable, so insertion order is preserved for events that
+    /// share the same sample position.
     pub fn sort(&mut self) {
         self.events.sort_by_key(|e| e.time_samples);
     }
 
-    /// Get events in the time range [start, start+length) relative to clip start.
-    pub fn events_in_range(&self, start_samples: u64, length_samples: u64) -> Vec<&MidiEvent> {
-        let end = start_samples + length_samples;
+    /// Iterate over events in the time range [start, start+length) relative to clip start.
+    pub fn iter_events_in_range(
+        &self,
+        start_samples: u64,
+        length_samples: u64,
+    ) -> impl Iterator<Item = &MidiEvent> {
+        let end = start_samples.saturating_add(length_samples);
         self.events
             .iter()
-            .filter(|e| e.time_samples >= start_samples && e.time_samples < end)
+            .filter(move |e| e.time_samples >= start_samples && e.time_samples < end)
+    }
+
+    /// Get events in the time range [start, start+length) relative to clip start.
+    pub fn events_in_range(&self, start_samples: u64, length_samples: u64) -> Vec<&MidiEvent> {
+        self.iter_events_in_range(start_samples, length_samples)
             .collect()
     }
 }
@@ -105,13 +117,14 @@ impl MidiRegion {
 
     /// End position on the timeline in samples.
     pub fn end_samples(&self) -> u64 {
-        self.position_samples + self.clip.duration_samples
+        self.position_samples
+            .saturating_add(self.clip.duration_samples)
     }
 
     /// Check if this region overlaps with a given time range.
     pub fn overlaps(&self, start: u64, length: u64) -> bool {
         let region_end = self.end_samples();
-        let range_end = start + length;
+        let range_end = start.saturating_add(length);
         self.position_samples < range_end && region_end > start
     }
 
@@ -122,19 +135,30 @@ impl MidiRegion {
         timeline_start: u64,
         length: u64,
     ) -> Vec<(u64, &MidiMessage)> {
+        self.iter_events_in_timeline_range(timeline_start, length)
+            .collect()
+    }
+
+    /// Iterate over events from this region without allocating.
+    pub fn iter_events_in_timeline_range(
+        &self,
+        timeline_start: u64,
+        length: u64,
+    ) -> impl Iterator<Item = (u64, &MidiMessage)> {
         let clip_start = timeline_start.saturating_sub(self.position_samples);
-        let clip_end = (timeline_start + length).saturating_sub(self.position_samples);
-        let clip_length = clip_end - clip_start;
+        let clip_end = timeline_start
+            .saturating_add(length)
+            .saturating_sub(self.position_samples);
+        let clip_length = clip_end.saturating_sub(clip_start);
+        let position_samples = self.position_samples;
 
         self.clip
-            .events_in_range(clip_start, clip_length)
-            .into_iter()
-            .map(|e| {
-                let timeline_time = self.position_samples + e.time_samples;
+            .iter_events_in_range(clip_start, clip_length)
+            .map(move |e| {
+                let timeline_time = position_samples.saturating_add(e.time_samples);
                 let relative_time = timeline_time.saturating_sub(timeline_start);
                 (relative_time, &e.message)
             })
-            .collect()
     }
 
     /// Iterate over events in the timeline range without allocating.
@@ -142,21 +166,8 @@ impl MidiRegion {
     where
         F: FnMut(u64, &MidiMessage),
     {
-        let clip_start = timeline_start.saturating_sub(self.position_samples);
-        let clip_end = (timeline_start + length).saturating_sub(self.position_samples);
-        if clip_end <= clip_start {
-            return;
-        }
-        for e in &self.clip.events {
-            if e.time_samples < clip_start {
-                continue;
-            }
-            if e.time_samples >= clip_end {
-                break;
-            }
-            let timeline_time = self.position_samples + e.time_samples;
-            let relative_time = timeline_time.saturating_sub(timeline_start);
-            f(relative_time, &e.message);
+        for (relative_time, message) in self.iter_events_in_timeline_range(timeline_start, length) {
+            f(relative_time, message);
         }
     }
 }
@@ -196,6 +207,38 @@ mod tests {
         let events = region.events_in_timeline_range(96000, 24000);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].0, 0); // note_on at relative time 0
+    }
+
+    #[test]
+    fn test_midi_region_timeline_iterator_matches_vec_api() {
+        let mut clip = MidiClip::new(48000);
+        clip.add_event(MidiEvent::note_on(0, 0, 60, 100));
+        clip.add_event(MidiEvent::note_off(24000, 0, 60));
+        clip.sort();
+
+        let region = MidiRegion::new(clip, 96000);
+        let collected: Vec<_> = region.iter_events_in_timeline_range(96000, 48000).collect();
+        let vec_api = region.events_in_timeline_range(96000, 48000);
+
+        assert_eq!(collected, vec_api);
+    }
+
+    #[test]
+    fn test_sort_preserves_insertion_order_for_ties() {
+        let mut clip = MidiClip::new(100);
+        clip.add_event(MidiEvent::note_on(10, 0, 60, 100));
+        clip.add_event(MidiEvent::note_on(10, 0, 62, 100));
+
+        clip.sort();
+
+        assert!(matches!(
+            clip.events[0].message,
+            MidiMessage::NoteOn { note: 60, .. }
+        ));
+        assert!(matches!(
+            clip.events[1].message,
+            MidiMessage::NoteOn { note: 62, .. }
+        ));
     }
 
     #[test]

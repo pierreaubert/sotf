@@ -4,6 +4,8 @@
 //! into `site/src/content/docs/reference/plugins/`.
 
 use sotf_host::param_specs::{ParamSpec, ParamType, UpdateMode};
+use std::collections::HashSet;
+use std::ffi::OsString;
 use std::fmt::Write as FmtWrite;
 use std::path::{Path, PathBuf};
 
@@ -20,6 +22,12 @@ struct PluginEntry {
     global_params: Option<&'static [ParamSpec]>,
     /// Per-band/filter template params (EQ, multiband compressor/expander).
     band_template: Option<&'static [ParamSpec]>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Args {
+    root: Option<PathBuf>,
+    check: bool,
 }
 
 fn plugin_registry() -> Vec<PluginEntry> {
@@ -394,6 +402,16 @@ fn yaml_double_quoted(s: &str) -> String {
     out
 }
 
+fn finish_markdown(mut md: String) -> String {
+    while md.ends_with("\n\n") {
+        md.pop();
+    }
+    if !md.ends_with('\n') {
+        md.push('\n');
+    }
+    md
+}
+
 // ---------------------------------------------------------------------------
 // Markdown generation
 // ---------------------------------------------------------------------------
@@ -410,9 +428,29 @@ fn format_param_type(param: &ParamSpec) -> String {
     }
 }
 
+fn format_float(value: f64) -> String {
+    if !value.is_finite() {
+        panic!("non-finite float in docs generator: {value}");
+    }
+    let mut formatted = format!("{value:.6}");
+    while formatted.contains('.') && formatted.ends_with('0') {
+        formatted.pop();
+    }
+    if formatted.ends_with('.') {
+        formatted.pop();
+    }
+    if formatted == "-0" {
+        "0".to_string()
+    } else {
+        formatted
+    }
+}
+
 fn format_range(param: &ParamSpec) -> String {
     match &param.param_type {
-        ParamType::Float { min, max, .. } => format!("{min} .. {max}"),
+        ParamType::Float { min, max, .. } => {
+            format!("{} .. {}", format_float(*min), format_float(*max))
+        }
         ParamType::Int { min, max, .. } => format!("{min} .. {max}"),
         ParamType::Bool { .. } => "On / Off".to_string(),
         ParamType::Choice { labels, .. } => format!("{} options", labels.len()),
@@ -422,13 +460,7 @@ fn format_range(param: &ParamSpec) -> String {
 
 fn format_default(param: &ParamSpec) -> String {
     match &param.param_type {
-        ParamType::Float { default, .. } => {
-            if *default == default.round() {
-                format!("{default:.0}")
-            } else {
-                format!("{default}")
-            }
-        }
+        ParamType::Float { default, .. } => format_float(*default),
         ParamType::Int { default, .. } => format!("{default}"),
         ParamType::Bool {
             default,
@@ -465,7 +497,6 @@ fn generate_params_table(params: &[ParamSpec]) -> String {
 
     let mut md = String::new();
 
-    // Group by group name
     let mut groups: Vec<(&str, Vec<&ParamSpec>)> = Vec::new();
     for p in params {
         if let Some(g) = groups.iter_mut().find(|(name, _)| *name == p.group) {
@@ -476,7 +507,7 @@ fn generate_params_table(params: &[ParamSpec]) -> String {
     }
 
     for (group_name, group_params) in &groups {
-        if groups.len() > 1 && !group_name.is_empty() {
+        if !group_name.is_empty() {
             writeln!(md, "\n### {group_name}\n").unwrap();
         }
 
@@ -534,11 +565,14 @@ fn generate_plugin_page(entry: &PluginEntry) -> String {
     writeln!(md, "## Parameters").unwrap();
     writeln!(md).unwrap();
 
+    let mut wrote_params = false;
+
     if let Some(global) = entry.global_params {
         writeln!(md, "### Global Parameters").unwrap();
         writeln!(md).unwrap();
         md.push_str(&generate_params_table(global));
         writeln!(md).unwrap();
+        wrote_params = true;
     }
 
     if let Some(band) = entry.band_template {
@@ -548,6 +582,7 @@ fn generate_plugin_page(entry: &PluginEntry) -> String {
         writeln!(md).unwrap();
         md.push_str(&generate_params_table(band));
         writeln!(md).unwrap();
+        wrote_params = true;
     }
 
     if !entry.params.is_empty() {
@@ -555,6 +590,12 @@ fn generate_plugin_page(entry: &PluginEntry) -> String {
             writeln!(md, "### Single-Band Parameters").unwrap();
             writeln!(md).unwrap();
         }
+        md.push_str(&generate_params_table(entry.params));
+        writeln!(md).unwrap();
+        wrote_params = true;
+    }
+
+    if !wrote_params {
         md.push_str(&generate_params_table(entry.params));
         writeln!(md).unwrap();
     }
@@ -585,7 +626,7 @@ fn generate_plugin_page(entry: &PluginEntry) -> String {
         writeln!(md, ":::").unwrap();
     }
 
-    md
+    finish_markdown(md)
 }
 
 fn generate_plugin_index(entries: &[PluginEntry]) -> String {
@@ -608,8 +649,7 @@ fn generate_plugin_index(entries: &[PluginEntry]) -> String {
     .unwrap();
     writeln!(md).unwrap();
 
-    // Group into categories
-    writeln!(md, "## Processing Plugins").unwrap();
+    writeln!(md, "## All Plugins").unwrap();
     writeln!(md).unwrap();
     writeln!(md, "| Plugin | Description |").unwrap();
     writeln!(md, "|--------|-------------|").unwrap();
@@ -627,28 +667,114 @@ fn generate_plugin_index(entries: &[PluginEntry]) -> String {
 
     writeln!(md).unwrap();
 
-    md
+    finish_markdown(md)
 }
 
 // ---------------------------------------------------------------------------
 // File I/O
 // ---------------------------------------------------------------------------
 
-fn find_project_root() -> PathBuf {
-    let mut dir = std::env::current_dir().expect("current_dir");
-    loop {
-        if dir.join("Cargo.toml").exists() && dir.join("site").exists() {
-            return dir;
+fn parse_args() -> Args {
+    match parse_args_from(std::env::args_os()) {
+        Ok(args) => args,
+        Err(err) if err == "help" => {
+            print_usage();
+            std::process::exit(0);
         }
-        if !dir.pop() {
-            panic!("Could not find project root (directory with Cargo.toml + site/)");
+        Err(err) => {
+            eprintln!("error: {err}");
+            print_usage();
+            std::process::exit(2);
         }
     }
 }
 
-fn write_if_changed(path: &Path, content: &str) {
+fn parse_args_from<I>(args: I) -> std::result::Result<Args, String>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut parsed = Args::default();
+    let mut args = args.into_iter();
+    let _program = args.next();
+
+    while let Some(arg) = args.next() {
+        if arg == "--check" {
+            parsed.check = true;
+        } else if arg == "--root" {
+            let Some(root) = args.next() else {
+                return Err("--root requires a path".to_string());
+            };
+            parsed.root = Some(PathBuf::from(root));
+        } else if let Some(raw) = arg.to_str().and_then(|s| s.strip_prefix("--root=")) {
+            parsed.root = Some(PathBuf::from(raw));
+        } else if arg == "--help" || arg == "-h" {
+            return Err("help".to_string());
+        } else {
+            return Err(format!("unknown argument `{}`", arg.to_string_lossy()));
+        }
+    }
+
+    Ok(parsed)
+}
+
+fn print_usage() {
+    eprintln!("Usage: sotf-docs-gen [--root <workspace-root>] [--check]");
+}
+
+fn find_project_root(root_override: Option<PathBuf>) -> PathBuf {
+    if let Some(root) = root_override {
+        if is_project_root(&root) {
+            return root;
+        }
+        panic!(
+            "--root must point at the SOTF workspace root (Cargo.toml with [workspace] and site/src/content/docs), got {}",
+            root.display()
+        );
+    }
+
+    if let Ok(current) = std::env::current_dir()
+        && let Some(root) = find_project_root_from(&current)
+    {
+        return root;
+    }
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    if let Some(root) = find_project_root_from(&manifest_dir) {
+        return root;
+    }
+
+    panic!(
+        "Could not find SOTF workspace root. Run from the workspace root or pass --root <path>."
+    );
+}
+
+fn find_project_root_from(start: &Path) -> Option<PathBuf> {
+    let mut dir = start.to_path_buf();
+    loop {
+        if is_project_root(&dir) {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+fn is_project_root(dir: &Path) -> bool {
+    let cargo_toml = dir.join("Cargo.toml");
+    let Ok(cargo) = std::fs::read_to_string(cargo_toml) else {
+        return false;
+    };
+    cargo.contains("[workspace]") && dir.join("site/src/content/docs").is_dir()
+}
+
+fn write_if_changed(path: &Path, content: &str, check_only: bool) -> bool {
     if std::fs::read_to_string(path).is_ok_and(|existing| existing == content) {
-        return;
+        return false;
+    }
+    if check_only {
+        println!("  would update {}", path.display());
+        return true;
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).expect("create_dir_all");
@@ -656,6 +782,7 @@ fn write_if_changed(path: &Path, content: &str) {
     std::fs::write(path, content)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
     println!("  wrote {}", path.display());
+    true
 }
 
 // ---------------------------------------------------------------------------
@@ -663,28 +790,56 @@ fn write_if_changed(path: &Path, content: &str) {
 // ---------------------------------------------------------------------------
 
 fn main() {
-    let root = find_project_root();
+    let args = parse_args();
+    let root = find_project_root(args.root);
     let docs_dir = root.join("site/src/content/docs");
 
-    println!("Generating plugin reference pages...");
+    if args.check {
+        println!("Checking generated plugin reference pages...");
+    } else {
+        println!("Generating plugin reference pages...");
+    }
 
     let registry = plugin_registry();
+    validate_registry(&registry);
+    let mut changed = 0usize;
 
     // Plugin index page
     let index_md = generate_plugin_index(&registry);
-    write_if_changed(&docs_dir.join("reference/plugins/index.md"), &index_md);
+    changed += usize::from(write_if_changed(
+        &docs_dir.join("reference/plugins/index.md"),
+        &index_md,
+        args.check,
+    ));
 
     // Individual plugin pages
     for entry in &registry {
         let page_md = generate_plugin_page(entry);
         let filename = format!("{}.md", entry.slug);
-        write_if_changed(
+        changed += usize::from(write_if_changed(
             &docs_dir.join("reference/plugins").join(&filename),
             &page_md,
-        );
+            args.check,
+        ));
+    }
+
+    if args.check && changed > 0 {
+        eprintln!("{changed} generated docs files are out of date.");
+        std::process::exit(1);
     }
 
     println!("Done. Generated {} plugin reference pages.", registry.len());
+}
+
+fn validate_registry(registry: &[PluginEntry]) {
+    let mut seen = HashSet::new();
+    for entry in registry {
+        assert!(
+            seen.insert(entry.slug),
+            "duplicate slug in plugin registry: {}",
+            entry.slug
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -712,6 +867,25 @@ mod tests {
             display_scale: 1.0,
             category: ParamCategory::Primary,
             doc,
+        }
+    }
+
+    fn make_grouped_float_spec(group: &'static str) -> ParamSpec {
+        ParamSpec {
+            name: "Grouped",
+            engine_key: "grouped",
+            param_type: ParamType::Float {
+                default: 0.30000001,
+                min: -1.0,
+                max: 1.0,
+                step: 0.01,
+            },
+            unit: "dB",
+            group,
+            update_mode: UpdateMode::Realtime,
+            display_scale: 1.0,
+            category: ParamCategory::Primary,
+            doc: "Grouped parameter",
         }
     }
 
@@ -793,6 +967,50 @@ mod tests {
     }
 
     #[test]
+    fn single_named_group_keeps_heading() {
+        let spec = make_grouped_float_spec("Filter");
+        let table = generate_params_table(std::slice::from_ref(&spec));
+        assert!(
+            table.contains("### Filter"),
+            "single named group heading was dropped: {table}"
+        );
+    }
+
+    #[test]
+    fn empty_plugin_page_reports_no_configurable_parameters() {
+        let entry = PluginEntry {
+            slug: "meter",
+            name: "Meter",
+            description: "Read-only analysis plugin.",
+            params: &[],
+            global_params: None,
+            band_template: None,
+        };
+
+        let page = generate_plugin_page(&entry);
+        assert!(
+            page.contains("*No configurable parameters.*"),
+            "empty plugin page has no fallback parameter text: {page}"
+        );
+    }
+
+    #[test]
+    fn float_formatting_is_finite_and_trimmed() {
+        assert_eq!(format_float(1.0), "1");
+        assert_eq!(format_float(0.30000001), "0.3");
+        assert_eq!(format_float(-0.0), "0");
+        let spec = make_grouped_float_spec("");
+        assert!(format_range(&spec).contains("-1 .. 1"));
+        assert_eq!(format_default(&spec), "0.3");
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite float")]
+    fn float_formatting_rejects_nan() {
+        let _ = format_float(f64::NAN);
+    }
+
+    #[test]
     fn plugin_page_yaml_frontmatter_is_valid_for_quotes_and_newlines() {
         let entry = PluginEntry {
             slug: "evil",
@@ -871,15 +1089,43 @@ mod tests {
 
     #[test]
     fn registry_has_no_duplicate_slugs() {
-        use std::collections::HashSet;
         let reg = plugin_registry();
-        let mut seen: HashSet<&str> = HashSet::new();
-        for e in &reg {
-            assert!(
-                seen.insert(e.slug),
-                "duplicate slug in plugin registry: {}",
-                e.slug
-            );
-        }
+        validate_registry(&reg);
+    }
+
+    #[test]
+    fn parse_args_supports_root_and_check() {
+        let args = parse_args_from([
+            OsString::from("sotf-docs-gen"),
+            OsString::from("--check"),
+            OsString::from("--root"),
+            OsString::from("/tmp/sotf"),
+        ])
+        .unwrap();
+        assert_eq!(
+            args,
+            Args {
+                root: Some(PathBuf::from("/tmp/sotf")),
+                check: true
+            }
+        );
+    }
+
+    #[test]
+    fn write_if_changed_reports_idempotence_and_check_only_drift() {
+        let path = unique_temp_file("sotf-docs-gen-idempotence.md");
+        assert!(write_if_changed(&path, "one\n", false));
+        assert!(!write_if_changed(&path, "one\n", false));
+        assert!(write_if_changed(&path, "two\n", true));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "one\n");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    fn unique_temp_file(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("{name}-{}-{nanos}", std::process::id()))
     }
 }

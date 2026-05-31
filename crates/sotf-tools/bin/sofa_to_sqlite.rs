@@ -10,23 +10,41 @@
 //
 // ============================================================================
 
+use anyhow::{Context, Result};
+use clap::Parser;
 use rusqlite::Connection;
 use sotf_plugins::SofaFile;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+#[derive(Parser)]
+#[command(name = "sofa-to-sqlite")]
+#[command(about = "Convert a SOFA HRTF file to a SQLite .hrtfdb database")]
+struct Cli {
+    /// Input SOFA file
+    input: PathBuf,
+
+    /// Output SQLite database path
+    output: PathBuf,
+}
 
 // Helper to convert Vec<f32> to bytes
 fn f32_vec_to_bytes(vec: &[f32]) -> Vec<u8> {
-    vec.iter().flat_map(|&f| f.to_le_bytes().to_vec()).collect()
+    let mut bytes = Vec::with_capacity(vec.len() * std::mem::size_of::<f32>());
+    for &sample in vec {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    bytes
 }
 
-fn convert_sofa_to_sqlite(sofa_path: &Path, db_path: &Path) -> Result<(), anyhow::Error> {
+fn convert_sofa_to_sqlite(sofa_path: &Path, db_path: &Path) -> Result<()> {
     // Load SOFA file
     log::info!("Loading SOFA file: {:?}", sofa_path);
     let sofa = SofaFile::load(sofa_path).map_err(|e| anyhow::anyhow!(e))?;
     log::info!("SOFA file loaded successfully.");
 
     // Create/connect to SQLite database
-    let mut conn = Connection::open(db_path)?;
+    let mut conn =
+        Connection::open(db_path).with_context(|| format!("open {}", db_path.display()))?;
     log::info!("Opened database: {:?}", db_path);
 
     // Create schema
@@ -92,20 +110,33 @@ fn convert_sofa_to_sqlite(sofa_path: &Path, db_path: &Path) -> Result<(), anyhow
     Ok(())
 }
 
-fn main() {
+fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 {
-        log::error!("Usage: {} <input.sofa> <output.hrtfdb>", args[0]);
-        std::process::exit(1);
-    }
+    let cli = Cli::parse();
+    convert_sofa_to_sqlite(&cli.input, &cli.output).with_context(|| {
+        format!(
+            "convert {} to {}",
+            cli.input.display(),
+            cli.output.display()
+        )
+    })
+}
 
-    let sofa_path = std::path::Path::new(&args[1]);
-    let db_path = std::path::Path::new(&args[2]);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    if let Err(e) = convert_sofa_to_sqlite(sofa_path, db_path) {
-        log::error!("Failed to convert file: {}", e);
-        std::process::exit(1);
+    #[test]
+    fn f32_vec_to_bytes_writes_little_endian_samples_without_padding() {
+        let samples = [1.0_f32, -2.5, 0.0];
+        let bytes = f32_vec_to_bytes(&samples);
+        let expected: Vec<u8> = samples
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect();
+
+        assert_eq!(bytes, expected);
+        assert_eq!(bytes.len(), samples.len() * 4);
     }
 }

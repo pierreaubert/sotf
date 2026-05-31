@@ -4,7 +4,7 @@ Utility binaries for test data generation and file conversion. No library.
 
 ## Binaries
 
-- `generate-audio-tests` - Generate test audio signals (sine, sweep, noise) for testing
+- `generate-audio-tests` - Generate deterministic test audio signals (sine, sweep, noise, IMD) for validation
 - `generate-upmixer-golden` - Generate upmixer golden reference files (depends on `sotf-plugins` internals)
 - `export-design-tokens` - Export GPUI themes to `design-tokens/tokens.json` (Tokens Studio format)
 - `import-design-tokens` - Import `design-tokens/tokens.json` back into Rust theme files in `app-gpui`
@@ -30,3 +30,5 @@ cargo run --bin sofa-to-sqlite --release
 
 - Reverse-depends on `sotf-gpui` (`../app-gpui`) for the design-token round-trip, which
   means editing this crate forces an `app-gpui` rebuild.
+- `generate-upmixer-golden` and noise-based audio fixtures use fixed seeds so regenerated
+  golden files are byte-stable.

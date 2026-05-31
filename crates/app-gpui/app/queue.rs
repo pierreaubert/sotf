@@ -103,16 +103,24 @@ impl App {
         }
     }
 
-    pub fn remove_from_queue(&mut self, index: usize) {
+    pub fn remove_from_queue(&mut self, index: usize) -> QueuePlaybackEffect {
         if index >= self.queue_state.len() {
-            return;
+            return QueuePlaybackEffect::None;
         }
 
+        let was_playing = self.playback.is_playing;
         let (effect, was_current) = self.queue_state.remove(index);
         self.sync_queue_index();
 
-        if was_current && matches!(effect, QueuePlaybackEffect::Stop) {
-            self.playback.is_playing = false;
+        match effect {
+            QueuePlaybackEffect::Stop if was_current => {
+                self.playback.is_playing = false;
+                QueuePlaybackEffect::Stop
+            }
+            QueuePlaybackEffect::Reload(source) if was_current && was_playing => {
+                QueuePlaybackEffect::Reload(source)
+            }
+            _ => QueuePlaybackEffect::None,
         }
     }
 

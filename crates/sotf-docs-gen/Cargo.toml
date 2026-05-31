@@ -1,6 +1,6 @@
 [package]
 name = "sotf-docs-gen"
-description = "Generate documentation markdown from plugin PARAMS, keybindings, and screen guides"
+description = "Generate documentation markdown from plugin PARAMS"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,6 +8,7 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
+publish = false
 
 [[bin]]
 name = "sotf-docs-gen"

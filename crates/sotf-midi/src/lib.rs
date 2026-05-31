@@ -91,7 +91,7 @@ pub use device::{
 };
 pub use error::{MidiError, Result};
 pub use layout::{ControllerLayout, MidiControlId, PhysicalControl, PhysicalControlKind};
-pub use manager::MidiManager;
+pub use manager::{MidiManager, enumerate_input_devices, enumerate_output_devices};
 pub use mapping::{ControlBinding, MidiMapping, MidiOverlay, ValueScaling};
 pub use mapping_engine::{MappingAction, MidiMappingEngine};
 pub use message::MidiMessage;

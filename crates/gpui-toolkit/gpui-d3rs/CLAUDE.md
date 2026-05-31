@@ -1,4 +1,4 @@
-# gpui-d3rs (lib: `d3rs`, version: 0.6.0)
+# gpui-d3rs (lib: `d3rs`, version: 0.7.0)
 
 D3.js-inspired GPU-accelerated plotting library for GPUI.
 

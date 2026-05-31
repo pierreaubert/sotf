@@ -9,6 +9,8 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::{parse_dev_response, parse_duration};
+
 #[derive(Debug, Deserialize)]
 struct SuiteFile {
     #[serde(default)]
@@ -353,16 +355,7 @@ fn post_json(
         .post(format!("{base_url}{path}"))
         .json(&body)
         .send()?;
-    let status = resp.status();
-    let json: Value = resp.json().unwrap_or(Value::Null);
-    if !status.is_success() || json.get("ok").and_then(Value::as_bool) != Some(true) {
-        let err = json
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown error");
-        bail!("{path} failed ({status}): {err}");
-    }
-    Ok(json)
+    parse_dev_response(resp, path)
 }
 
 fn wait_or_kill(child: &mut Child, timeout: Duration) -> Result<()> {
@@ -464,21 +457,6 @@ fn safe_name(name: &str) -> String {
             }
         })
         .collect()
-}
-
-fn parse_duration(s: &str) -> Result<Duration> {
-    let s = s.trim();
-    if let Some(num) = s.strip_suffix("ms") {
-        return Ok(Duration::from_millis(num.parse()?));
-    }
-    if let Some(num) = s.strip_suffix("s") {
-        return Ok(Duration::from_secs_f64(num.parse()?));
-    }
-    if let Some(num) = s.strip_suffix("m") {
-        let mins: f64 = num.parse()?;
-        return Ok(Duration::from_secs_f64(mins * 60.0));
-    }
-    Ok(Duration::from_secs_f64(s.parse()?))
 }
 
 #[cfg(test)]

@@ -27,12 +27,15 @@ Biquad-based parametric equalizer with peak, shelf, and pass filters. Supports m
 
 These parameters are repeated for each filter band.
 
+
+### Filter
+
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Frequency | Float | 20 .. 20000 | 1000 | Hz | Filter center/corner frequency |
 | Q | Float | 0.1 .. 10 | 1 | - | Filter bandwidth (quality factor) |
 | Gain | Float | -24 .. 24 | 0 | dB | Boost or cut amount |
-| Type | Choice (Peak, Lowshelf, Highshelf, Lowpass, Highpass, Bandpass, Notch) | 7 options | Peak | - | Biquad filter shape |
+| Type | Choice (Peak, Lowshelf, Highshelf, Lowpass, Highpass, Bandpass, Notch, AllPass) | 8 options | Peak | - | Biquad filter shape |
 
 :::note
 **Structural parameters** (Max Filters, Topology) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.

@@ -47,4 +47,3 @@ Dynamic range expansion with configurable threshold, ratio, attack, release, and
 |-----------|------|-------|---------|------|-------------|
 | Sidechain HPF | Float | 0 .. 500 | 80 | Hz | High-pass on detector input |
 | Detection Mode | Choice (Peak, RMS) | 2 options | Peak | - | Peak or RMS level detection |
-

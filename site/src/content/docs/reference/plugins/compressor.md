@@ -48,4 +48,3 @@ Dynamic range compression with configurable threshold, ratio, attack, release, a
 | Sidechain HPF Order | Choice (2nd, 4th) | 2 options | 2nd | - | Butterworth HPF slope |
 | Detection Mode | Choice (Peak, RMS) | 2 options | Peak | - | Peak or RMS level detection |
 | External Sidechain | Bool | On / Off | Off | - | Use external signal for detection |
-

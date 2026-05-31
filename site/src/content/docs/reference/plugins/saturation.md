@@ -44,4 +44,3 @@ Harmonic saturation and soft clipping for adding warmth and character.
 | Dynamic | Float | 0 .. 1 | 0 | % | Envelope-followed drive modulation depth |
 | Dyn Attack | Float | 0.1 .. 100 | 5 | ms | Dynamic saturation envelope attack time |
 | Dyn Release | Float | 1 .. 500 | 50 | ms | Dynamic saturation envelope release time |
-

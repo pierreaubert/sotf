@@ -83,7 +83,10 @@ impl PlaybackController {
     // =========================================================================
 
     /// Get the replay gain adjustment in dB for a track.
-    /// Returns `None` if replay gain is disabled or the track has no RG data.
+    /// Returns `None` if replay gain is disabled or the selected mode has no
+    /// matching gain data. Album mode intentionally does not fall back to track
+    /// gain: the user chose album-level consistency, so unity is less surprising
+    /// than per-track loudness jumps when album gain has not been scanned yet.
     pub fn get_replay_gain_adjustment(&self, track: &Track) -> Option<f64> {
         if !self.replay_gain_enabled {
             return None;
@@ -91,7 +94,7 @@ impl PlaybackController {
 
         let gain = match self.replay_gain_mode {
             ReplayGainMode::Track => track.replay_gain?,
-            ReplayGainMode::Album => track.album_gain.unwrap_or(track.replay_gain?),
+            ReplayGainMode::Album => track.album_gain?,
         };
 
         Some(gain + self.replay_gain_preamp as f64)
@@ -135,5 +138,37 @@ impl PlaybackController {
     pub fn update_position(&mut self, position_secs: f64, duration_secs: f64) {
         self.position_secs = position_secs;
         self.duration_secs = duration_secs;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn album_replay_gain_mode_requires_album_gain() {
+        let mut controller = PlaybackController::new();
+        controller.replay_gain_mode = ReplayGainMode::Album;
+        let track = Track {
+            replay_gain: Some(-6.0),
+            album_gain: None,
+            ..Default::default()
+        };
+
+        assert_eq!(controller.get_replay_gain_adjustment(&track), None);
+    }
+
+    #[test]
+    fn album_replay_gain_mode_uses_album_gain_with_preamp() {
+        let mut controller = PlaybackController::new();
+        controller.replay_gain_mode = ReplayGainMode::Album;
+        controller.replay_gain_preamp = 1.5;
+        let track = Track {
+            replay_gain: Some(-9.0),
+            album_gain: Some(-4.0),
+            ..Default::default()
+        };
+
+        assert_eq!(controller.get_replay_gain_adjustment(&track), Some(-2.5));
     }
 }

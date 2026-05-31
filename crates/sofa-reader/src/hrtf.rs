@@ -286,84 +286,95 @@ pub struct SofaFile {
 impl SofaFile {
     /// Load HRTF data from a SOFA file or `.hrtfdb` SQLite cache.
     pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
+        Self::try_load(path).map_err(|e| e.to_string())
+    }
+
+    /// Load HRTF data from a SOFA file or `.hrtfdb` SQLite cache using `SofaError`.
+    pub fn try_load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path_ref = path.as_ref();
         let ext = path_ref.extension().and_then(|e| e.to_str()).unwrap_or("");
         match ext {
-            "hrtfdb" | "sqlite" | "db" => Self::load_sqlite(path_ref),
-            _ => Self::load_sofa(path_ref),
+            "hrtfdb" | "sqlite" | "db" => Self::try_load_sqlite(path_ref),
+            _ => Self::load_sofa(path_ref, false),
         }
+    }
+
+    /// Strictly load a SOFA file, validating required global SOFA attributes.
+    pub fn strict_load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::load_sofa(path.as_ref(), true)
     }
 
     /// Load HRTF data from a `.hrtfdb` SQLite cache.
     pub fn load_sqlite<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
-        let path_ref = path.as_ref();
-        let conn = rusqlite::Connection::open(path_ref).map_err(|e| {
-            format!(
-                "Failed to open SQLite HRTF database '{}': {}",
-                path_ref.display(),
-                e
-            )
-        })?;
+        Self::try_load_sqlite(path).map_err(|e| e.to_string())
+    }
 
-        let mut stmt = conn
-            .prepare("SELECT key, value FROM metadata")
-            .map_err(|e| e.to_string())?;
-        let metadata_iter = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(|e| e.to_string())?;
+    /// Load HRTF data from a `.hrtfdb` SQLite cache using `SofaError`.
+    pub fn try_load_sqlite<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path_ref = path.as_ref();
+        let conn = rusqlite::Connection::open(path_ref)?;
+
+        let mut stmt = conn.prepare("SELECT key, value FROM metadata")?;
+        let metadata_iter = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
 
         let mut metadata = std::collections::HashMap::new();
         for item in metadata_iter {
-            let (key, value) = item.map_err(|e| e.to_string())?;
+            let (key, value) = item?;
             metadata.insert(key, value);
         }
 
         let convention = metadata
             .get("convention")
-            .ok_or("Missing 'convention' in metadata")?
+            .ok_or_else(|| {
+                SofaError::InvalidStructure("Missing 'convention' in SQLite metadata".to_string())
+            })?
             .clone();
         let sample_rate = metadata
             .get("sample_rate")
-            .ok_or("Missing 'sample_rate'")?
+            .ok_or_else(|| {
+                SofaError::InvalidStructure("Missing 'sample_rate' in SQLite metadata".to_string())
+            })?
             .parse::<f32>()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| SofaError::InvalidStructure(format!("Invalid sample_rate: {e}")))?;
         let ir_length = metadata
             .get("ir_length")
-            .ok_or("Missing 'ir_length'")?
+            .ok_or_else(|| {
+                SofaError::InvalidStructure("Missing 'ir_length' in SQLite metadata".to_string())
+            })?
             .parse::<usize>()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| SofaError::InvalidStructure(format!("Invalid ir_length: {e}")))?;
         let num_measurements = metadata
             .get("num_measurements")
-            .ok_or("Missing 'num_measurements'")?
+            .ok_or_else(|| {
+                SofaError::InvalidStructure(
+                    "Missing 'num_measurements' in SQLite metadata".to_string(),
+                )
+            })?
             .parse::<usize>()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| SofaError::InvalidStructure(format!("Invalid num_measurements: {e}")))?;
         let data_sample_rate = metadata
             .get("data_sample_rate")
             .and_then(|s| s.parse::<f32>().ok());
 
         let positions: Vec<SourcePosition> = {
-            let blob: Vec<u8> = conn
-                .query_row(
-                    "SELECT value FROM data WHERE key = 'positions'",
-                    [],
-                    |row| row.get(0),
-                )
-                .map_err(|e| e.to_string())?;
+            let blob: Vec<u8> = conn.query_row(
+                "SELECT value FROM data WHERE key = 'positions'",
+                [],
+                |row| row.get(0),
+            )?;
             bincode::serde::decode_from_slice(&blob, bincode::config::standard())
                 .map(|(value, _)| value)
-                .map_err(|e| format!("Failed to deserialize positions: {}", e))?
+                .map_err(SofaError::from)?
         };
 
         let impulse_responses: Vec<f32> = {
-            let blob: Vec<u8> = conn
-                .query_row(
-                    "SELECT value FROM data WHERE key = 'impulse_responses'",
-                    [],
-                    |row| row.get(0),
-                )
-                .map_err(|e| e.to_string())?;
+            let blob: Vec<u8> = conn.query_row(
+                "SELECT value FROM data WHERE key = 'impulse_responses'",
+                [],
+                |row| row.get(0),
+            )?;
             blob.chunks_exact(4)
                 .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
                 .collect()
@@ -380,24 +391,36 @@ impl SofaFile {
         })
     }
 
-    fn load_sofa(path: &Path) -> std::result::Result<Self, String> {
+    fn load_sofa(path: &Path, strict: bool) -> Result<Self> {
         let reader = crate::SofaReader::open(path)
-            .map_err(|e| format!("Failed to open SOFA file '{}': {}", path.display(), e))?;
+            .map_err(|e| SofaError::InvalidStructure(format!("{}: {}", path.display(), e)))?;
+
+        if strict {
+            Self::validate_required_global_attributes(&reader)?;
+        } else if !matches!(
+            reader.attribute("Conventions"),
+            Some(crate::AttrValue::String(s)) if s == "SOFA"
+        ) {
+            log::warn!(
+                "[SOFA] Missing or non-SOFA Conventions global attribute in '{}'",
+                path.display()
+            );
+        }
 
         let convention = reader
             .attribute_string("SOFAConventions")
-            .map_err(|e| format!("Missing attribute 'SOFAConventions': {}", e))?;
+            .map_err(|_| SofaError::MissingAttribute("SOFAConventions".to_string()))?;
         log::debug!("[SOFA] Convention: {}", convention);
 
         let num_measurements = reader
             .dimension("M")
-            .map_err(|_| "Missing dimension 'M' (measurements)".to_string())?;
+            .map_err(|_| SofaError::MissingDimension("M".to_string()))?;
         let ir_length = reader
             .dimension("N")
-            .map_err(|_| "Missing dimension 'N' (samples)".to_string())?;
+            .map_err(|_| SofaError::MissingDimension("N".to_string()))?;
         let num_receivers = reader
             .dimension("R")
-            .map_err(|_| "Missing dimension 'R' (receivers)".to_string())?;
+            .map_err(|_| SofaError::MissingDimension("R".to_string()))?;
 
         log::info!(
             "[SOFA] Dimensions: M={}, R={}, N={}",
@@ -407,28 +430,30 @@ impl SofaFile {
         );
 
         if num_receivers != 2 {
-            return Err(format!(
+            return Err(SofaError::InvalidStructure(format!(
                 "Expected 2 receivers (left/right ears), got {}",
                 num_receivers
-            ));
+            )));
         }
 
         let sample_rate = reader
             .read_scalar_f32("Data.SamplingRate")
             .or_else(|_| reader.attribute_f64("Data.SamplingRate").map(|v| v as f32))
-            .map_err(|e| format!("Failed to read Data.SamplingRate: {}", e))?;
+            .map_err(|e| {
+                SofaError::InvalidStructure(format!("Failed to read Data.SamplingRate: {e}"))
+            })?;
         log::debug!("[SOFA] Sample rate: {} Hz", sample_rate);
 
-        let pos_data = reader
-            .read_f32("SourcePosition")
-            .map_err(|e| format!("Failed to read SourcePosition: {}", e))?;
+        let pos_data = reader.read_f32("SourcePosition").map_err(|e| {
+            SofaError::InvalidStructure(format!("Failed to read SourcePosition: {e}"))
+        })?;
 
         if pos_data.len() != num_measurements * 3 {
-            return Err(format!(
+            return Err(SofaError::InvalidStructure(format!(
                 "SourcePosition data size mismatch: expected {}, got {}",
                 num_measurements * 3,
                 pos_data.len()
-            ));
+            )));
         }
 
         let coord_system = match reader.attribute("SourcePosition:Type") {
@@ -457,23 +482,23 @@ impl SofaFile {
 
         let ir_data = reader
             .read_f32("Data.IR")
-            .map_err(|e| format!("Failed to read IR data: {}", e))?;
+            .map_err(|e| SofaError::InvalidStructure(format!("Failed to read IR data: {e}")))?;
 
         let expected_ir_len = num_measurements
             .checked_mul(num_receivers)
             .and_then(|v| v.checked_mul(ir_length))
             .ok_or_else(|| {
-                format!(
+                SofaError::InvalidStructure(format!(
                     "SOFA dimensions overflow: M={}, R={}, N={}",
                     num_measurements, num_receivers, ir_length
-                )
+                ))
             })?;
         if ir_data.len() != expected_ir_len {
-            return Err(format!(
+            return Err(SofaError::InvalidStructure(format!(
                 "Data.IR size mismatch: expected M*R*N = {}, got {}",
                 expected_ir_len,
                 ir_data.len()
-            ));
+            )));
         }
 
         log::info!(
@@ -493,6 +518,27 @@ impl SofaFile {
             convention,
             data_sample_rate: Some(sample_rate),
         })
+    }
+
+    fn validate_required_global_attributes(reader: &crate::SofaReader) -> Result<()> {
+        let conventions = reader.attribute_string("Conventions")?;
+        if conventions != "SOFA" {
+            return Err(SofaError::InvalidStructure(format!(
+                "Conventions must be 'SOFA', got '{}'",
+                conventions
+            )));
+        }
+
+        for name in [
+            "Version",
+            "SOFAConventions",
+            "SOFAConventionsVersion",
+            "DataType",
+        ] {
+            reader.attribute_string(name)?;
+        }
+
+        Ok(())
     }
 
     /// Get HRTF data for a measurement index.

@@ -289,18 +289,20 @@ impl BlissScanner {
                     }
                 };
 
-                loop {
+                'worker_loop: loop {
                     if stop_rx.try_recv().is_ok() {
                         log::info!("[Bliss Worker {}] Stopping", worker_id);
                         break;
                     }
 
                     while pause_flag.load(Ordering::Relaxed) {
-                        if stop_rx.try_recv().is_ok() {
-                            log::info!("[Bliss Worker {}] Stopping while paused", worker_id);
-                            return;
+                        channel::select! {
+                            recv(stop_rx) -> _ => {
+                                log::info!("[Bliss Worker {}] Stopping while paused", worker_id);
+                                break 'worker_loop;
+                            }
+                            recv(channel::after(std::time::Duration::from_millis(50))) -> _ => {}
                         }
-                        std::thread::sleep(std::time::Duration::from_millis(200));
                     }
 
                     // Block on (task, stop) concurrently — N workers wait

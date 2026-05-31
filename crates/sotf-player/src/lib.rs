@@ -56,7 +56,7 @@ pub use database::MusicDatabase;
 pub use level_meter::{ChannelGroup, ChannelInfo, build_level_meter_groups};
 pub use library::{
     Album, AlbumChannelType, ChannelFilter, DirectoryInfo, LibrarySortOrder, MusicLibrary,
-    Playlist, PlaylistEntry, Track, group_and_merge_albums,
+    Playlist, PlaylistEntry, TRACK_WAVEFORM_SAMPLES, Track, TrackWaveform, group_and_merge_albums,
 };
 pub use library_scanner::{LibraryScanMessage, LibraryScanner};
 pub use library_stats::{LibraryStats, format_channel_count};

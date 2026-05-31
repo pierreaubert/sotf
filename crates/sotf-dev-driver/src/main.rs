@@ -14,10 +14,11 @@
 //!   key <keystroke>                       (e.g. `cmd-shift-p`, `enter`, `a`)
 //!   click <selector>                      (selector must have been registered via dev_track(...))
 //!   export_room_eq_json [path]             Export completed RoomEQ DSP JSON
-//!   elements                              (list every tracked selector — debugging aid)
+//!   elements                              (print every tracked selector; debugging aid)
 //!
 //! `<duration>` accepts `Ns`, `Nms`, `Nm`. Bare numbers default to seconds.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 use std::thread::sleep;
@@ -29,6 +30,8 @@ use serde_json::Value;
 
 mod suite;
 
+const DEFAULT_DEV_API_URL: &str = "http://127.0.0.1:7777";
+
 #[derive(Parser, Debug)]
 #[command(name = "sotf-dev-driver", version)]
 struct Args {
@@ -37,8 +40,8 @@ struct Args {
     /// Path to a .scn scenario file (legacy single-scenario mode).
     script: Option<PathBuf>,
     /// Base URL of the running SotF dev API.
-    #[arg(long, default_value = "http://127.0.0.1:7777")]
-    url: String,
+    #[arg(long)]
+    url: Option<String>,
     /// Print every verb + result.
     #[arg(short, long)]
     verbose: bool,
@@ -73,9 +76,28 @@ fn run(args: &Args) -> Result<()> {
                 .script
                 .as_ref()
                 .ok_or_else(|| anyhow!("missing scenario path or subcommand"))?;
-            run_script(script, &args.url, args.verbose)
+            let env_port = match std::env::var("SOTF_DEV_API_PORT") {
+                Ok(port) => Some(port),
+                Err(std::env::VarError::NotPresent) => None,
+                Err(e) => bail!("reading SOTF_DEV_API_PORT: {e}"),
+            };
+            let url = resolve_base_url(args.url.as_deref(), env_port.as_deref())?;
+            run_script(script, &url, args.verbose)
         }
     }
+}
+
+fn resolve_base_url(cli_url: Option<&str>, env_port: Option<&str>) -> Result<String> {
+    if let Some(url) = cli_url {
+        return Ok(url.to_string());
+    }
+    let Some(port) = env_port.map(str::trim).filter(|port| !port.is_empty()) else {
+        return Ok(DEFAULT_DEV_API_URL.to_string());
+    };
+    let port: u16 = port
+        .parse()
+        .with_context(|| format!("SOTF_DEV_API_PORT must be a TCP port, got `{port}`"))?;
+    Ok(format!("http://127.0.0.1:{port}"))
 }
 
 pub(crate) fn run_script(script: &PathBuf, url: &str, verbose: bool) -> Result<()> {
@@ -110,10 +132,21 @@ struct Ctx {
 }
 
 fn strip_comment(line: &str) -> &str {
-    match line.find('#') {
-        Some(i) => &line[..i],
-        None => line,
+    let mut in_quote = false;
+    let mut escaped = false;
+    for (idx, ch) in line.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_quote => escaped = true,
+            '"' => in_quote = !in_quote,
+            '#' if !in_quote => return &line[..idx],
+            _ => {}
+        }
     }
+    line
 }
 
 fn execute(line: &str, ctx: &Ctx) -> Result<()> {
@@ -163,20 +196,7 @@ fn verb_action(rest: &str, ctx: &Ctx) -> Result<()> {
         Some(serde_json::from_str(payload_raw.trim()).context("payload is not valid JSON")?)
     };
     let body = serde_json::json!({ "name": name, "payload": payload });
-    let resp = ctx
-        .client
-        .post(format!("{}/action", ctx.base))
-        .json(&body)
-        .send()?;
-    let status = resp.status();
-    let json: Value = resp.json().unwrap_or(Value::Null);
-    if !status.is_success() || !json.get("ok").and_then(Value::as_bool).unwrap_or(false) {
-        let err = json
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown error");
-        bail!("action `{name}` failed ({status}): {err}");
-    }
+    post_dev_json(ctx, "/action", &body, &format!("action `{name}`"))?;
     Ok(())
 }
 
@@ -187,14 +207,7 @@ fn verb_query(rest: &str, ctx: &Ctx) -> Result<Value> {
     }
     let url = format!("{}/query?path={}", ctx.base, urlencode(path));
     let resp = ctx.client.get(url).send()?;
-    let json: Value = resp.json()?;
-    if !json.get("ok").and_then(Value::as_bool).unwrap_or(false) {
-        let err = json
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown error");
-        bail!("query `{path}` failed: {err}");
-    }
+    let json = parse_dev_response(resp, &format!("query `{path}`"))?;
     json.get("value")
         .cloned()
         .ok_or_else(|| anyhow!("server returned no `value`"))
@@ -254,20 +267,7 @@ fn verb_key(rest: &str, ctx: &Ctx) -> Result<()> {
         bail!("key verb needs a keystroke");
     }
     let body = serde_json::json!({ "keystroke": keystroke });
-    let resp = ctx
-        .client
-        .post(format!("{}/key", ctx.base))
-        .json(&body)
-        .send()?;
-    let status = resp.status();
-    let json: Value = resp.json().unwrap_or(Value::Null);
-    if !status.is_success() || !json.get("ok").and_then(Value::as_bool).unwrap_or(false) {
-        let err = json
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown error");
-        bail!("key `{keystroke}` failed ({status}): {err}");
-    }
+    post_dev_json(ctx, "/key", &body, &format!("key `{keystroke}`"))?;
     Ok(())
 }
 
@@ -277,26 +277,13 @@ fn verb_click(rest: &str, ctx: &Ctx) -> Result<()> {
         bail!("click verb needs a selector");
     }
     let body = serde_json::json!({ "selector": selector });
-    let resp = ctx
-        .client
-        .post(format!("{}/click", ctx.base))
-        .json(&body)
-        .send()?;
-    let status = resp.status();
-    let json: Value = resp.json().unwrap_or(Value::Null);
-    if !status.is_success() || !json.get("ok").and_then(Value::as_bool).unwrap_or(false) {
-        let err = json
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown error");
-        bail!("click `{selector}` failed ({status}): {err}");
-    }
+    post_dev_json(ctx, "/click", &body, &format!("click `{selector}`"))?;
     Ok(())
 }
 
 fn verb_elements(ctx: &Ctx) -> Result<()> {
     let resp = ctx.client.get(format!("{}/elements", ctx.base)).send()?;
-    let json: Value = resp.json()?;
+    let json = parse_dev_response(resp, "elements")?;
     let list = json
         .get("elements")
         .and_then(Value::as_array)
@@ -322,20 +309,7 @@ fn verb_export_room_eq_json(rest: &str, ctx: &Ctx) -> Result<()> {
     } else {
         serde_json::json!({ "path": path })
     };
-    let resp = ctx
-        .client
-        .post(format!("{}/qa/room-eq/export-json", ctx.base))
-        .json(&body)
-        .send()?;
-    let status = resp.status();
-    let json: Value = resp.json().unwrap_or(Value::Null);
-    if !status.is_success() || !json.get("ok").and_then(Value::as_bool).unwrap_or(false) {
-        let err = json
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown error");
-        bail!("RoomEQ JSON export failed ({status}): {err}");
-    }
+    let json = post_dev_json(ctx, "/qa/room-eq/export-json", &body, "RoomEQ JSON export")?;
     if ctx.verbose {
         let value = json.get("value").cloned().unwrap_or(Value::Null);
         println!("    -> {value}");
@@ -348,7 +322,24 @@ fn verb_focus(rest: &str, ctx: &Ctx) -> Result<()> {
     if target.is_empty() {
         bail!("focus verb needs a screen name");
     }
-    // Sugar: `focus library` → action SwitchToLibrary.
+    let action_name = focus_action_name(target)?;
+    verb_action(&action_name, ctx)
+}
+
+fn focus_action_name(target: &str) -> Result<String> {
+    if !target
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_alphabetic())
+    {
+        bail!("focus screen name must start with an ASCII letter");
+    }
+    if !target
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        bail!("focus screen name may only contain ASCII letters, digits, `_`, or `-`");
+    }
     let mut cap = String::new();
     let mut next_upper = true;
     for c in target.chars() {
@@ -357,14 +348,71 @@ fn verb_focus(rest: &str, ctx: &Ctx) -> Result<()> {
             continue;
         }
         if next_upper {
-            cap.extend(c.to_uppercase());
+            cap.push(c.to_ascii_uppercase());
             next_upper = false;
         } else {
             cap.push(c);
         }
     }
-    let action_name = format!("SwitchTo{cap}");
-    verb_action(&action_name, ctx)
+    Ok(format!("SwitchTo{cap}"))
+}
+
+fn post_dev_json(ctx: &Ctx, endpoint: &str, body: &Value, label: &str) -> Result<Value> {
+    let resp = ctx
+        .client
+        .post(format!("{}{}", ctx.base, endpoint))
+        .json(body)
+        .send()?;
+    parse_dev_response(resp, label)
+}
+
+pub(crate) fn parse_dev_response(resp: reqwest::blocking::Response, label: &str) -> Result<Value> {
+    let status = resp.status();
+    let body = resp
+        .text()
+        .with_context(|| format!("reading {label} response body"))?;
+    let json = serde_json::from_str::<Value>(&body);
+    if !status.is_success() {
+        let err = json
+            .as_ref()
+            .ok()
+            .and_then(|json| json.get("error"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| response_excerpt(&body));
+        bail!("{label} failed ({status}): {err}");
+    }
+    let json = json.with_context(|| {
+        format!(
+            "{label} returned non-JSON response ({status}): {}",
+            response_excerpt(&body)
+        )
+    })?;
+    if json.get("ok").and_then(Value::as_bool) != Some(true) {
+        let err = json
+            .get("error")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| response_excerpt(&body));
+        bail!("{label} failed ({status}): {err}");
+    }
+    Ok(json)
+}
+
+fn response_excerpt(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return "empty response body".to_string();
+    }
+    let mut out = String::new();
+    for (idx, ch) in trimmed.chars().enumerate() {
+        if idx == 512 {
+            out.push_str("...");
+            break;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -432,11 +480,11 @@ impl Compare {
         match self.op {
             ComparisonOp::Eq => match self.tolerance {
                 Some(t) => (actual - expected).abs() <= t,
-                None => (actual - expected).abs() < f64::EPSILON,
+                None => nearly_equal(actual, expected),
             },
             ComparisonOp::Ne => match self.tolerance {
                 Some(t) => (actual - expected).abs() > t,
-                None => (actual - expected).abs() >= f64::EPSILON,
+                None => !nearly_equal(actual, expected),
             },
             ComparisonOp::Gt => actual > expected,
             ComparisonOp::Ge => actual >= expected,
@@ -444,6 +492,10 @@ impl Compare {
             ComparisonOp::Le => actual <= expected,
         }
     }
+}
+
+fn nearly_equal(actual: f64, expected: f64) -> bool {
+    (actual - expected).abs() <= f64::EPSILON * actual.abs().max(expected.abs()).max(1.0)
 }
 
 fn parse_compare(rest: &str) -> Result<Compare> {
@@ -455,7 +507,11 @@ fn parse_compare(rest: &str) -> Result<Compare> {
         let trimmed = core.trim_end();
         if let Some((head, tail)) = trimmed.rsplit_once(char::is_whitespace) {
             if let Some(v) = tail.strip_prefix("tolerance=") {
-                tolerance = Some(v.parse::<f64>().context("invalid tolerance value")?);
+                let parsed = v.parse::<f64>().context("invalid tolerance value")?;
+                if !parsed.is_finite() || parsed < 0.0 {
+                    bail!("tolerance must be finite and non-negative");
+                }
+                tolerance = Some(parsed);
                 core = head.to_string();
                 continue;
             }
@@ -515,11 +571,19 @@ fn parse_literal(s: &str) -> Result<ExpectedValue> {
         return Ok(ExpectedValue::Bool(false));
     }
     if let Ok(n) = s.parse::<f64>() {
+        if !n.is_finite() {
+            bail!("numeric literal must be finite");
+        }
         return Ok(ExpectedValue::Number(n));
     }
-    // Treat as string. Strip surrounding quotes if present.
-    let trimmed = s.trim_matches('"');
-    Ok(ExpectedValue::String(trimmed.to_string()))
+    if s.starts_with('"') || s.ends_with('"') {
+        let quoted = s
+            .strip_prefix('"')
+            .and_then(|inner| inner.strip_suffix('"'))
+            .ok_or_else(|| anyhow!("string literal quotes must be balanced"))?;
+        return Ok(ExpectedValue::String(quoted.to_string()));
+    }
+    Ok(ExpectedValue::String(s.to_string()))
 }
 
 fn urlencode(s: &str) -> String {
@@ -529,30 +593,38 @@ fn urlencode(s: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(b as char);
             }
-            _ => out.push_str(&format!("%{b:02X}")),
+            _ => write!(&mut out, "%{b:02X}").expect("writing to String cannot fail"),
         }
     }
     out
 }
 
-fn parse_duration(s: &str) -> Result<Duration> {
+pub(crate) fn parse_duration(s: &str) -> Result<Duration> {
     let s = s.trim();
-    if let Some(num) = s.strip_suffix("ms") {
-        return Ok(Duration::from_millis(num.parse()?));
+    let (num, multiplier) = match s.strip_suffix("ms") {
+        Some(num) => (num, 0.001),
+        None => match s.chars().last() {
+            Some('s') => (&s[..s.len() - 1], 1.0),
+            Some('m') => (&s[..s.len() - 1], 60.0),
+            _ => (s, 1.0),
+        },
+    };
+    let value: f64 = num
+        .parse()
+        .with_context(|| format!("invalid duration `{s}`"))?;
+    if !value.is_finite() || value < 0.0 {
+        bail!("duration must be finite and non-negative");
     }
-    if let Some(num) = s.strip_suffix("s") {
-        return Ok(Duration::from_secs_f64(num.parse()?));
-    }
-    if let Some(num) = s.strip_suffix("m") {
-        let mins: f64 = num.parse()?;
-        return Ok(Duration::from_secs_f64(mins * 60.0));
-    }
-    Ok(Duration::from_secs_f64(s.parse()?))
+    Ok(Duration::from_secs_f64(value * multiplier))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
     use serde_json::json;
 
     #[test]
@@ -560,6 +632,10 @@ mod tests {
         assert_eq!(strip_comment("foo  # bar").trim(), "foo");
         assert_eq!(strip_comment("# only").trim(), "");
         assert_eq!(strip_comment("plain").trim(), "plain");
+        assert_eq!(
+            strip_comment(r#"assert title == "issue #42" # trailing"#).trim(),
+            r#"assert title == "issue #42""#
+        );
     }
 
     #[test]
@@ -569,6 +645,10 @@ mod tests {
         assert_eq!(parse_duration("0.5s").unwrap(), Duration::from_millis(500));
         assert_eq!(parse_duration("1m").unwrap(), Duration::from_secs(60));
         assert_eq!(parse_duration("3").unwrap(), Duration::from_secs(3));
+        assert_eq!(
+            parse_duration("1.5ms").unwrap(),
+            Duration::from_micros(1500)
+        );
     }
 
     #[test]
@@ -585,6 +665,12 @@ mod tests {
         assert!(cmp.matches(&json!(0.851)));
         assert!(cmp.matches(&json!(0.845)));
         assert!(!cmp.matches(&json!(0.9)));
+    }
+
+    #[test]
+    fn compare_number_relative_epsilon_without_tolerance() {
+        let cmp = parse_compare("playback.volume == 0.3").unwrap();
+        assert!(cmp.matches(&json!(0.1f64 + 0.2f64)));
     }
 
     #[test]
@@ -653,9 +739,101 @@ mod tests {
     }
 
     #[test]
+    fn compare_keeps_clause_like_text_inside_string_literal() {
+        let cmp = parse_compare(r#"screen.focused == "tolerance=high" timeout=500ms"#).unwrap();
+        assert_eq!(cmp.expected_text, r#""tolerance=high""#);
+        assert_eq!(cmp.timeout, Some(Duration::from_millis(500)));
+        assert!(cmp.matches(&json!("tolerance=high")));
+    }
+
+    #[test]
+    fn compare_rejects_unbalanced_string_quotes() {
+        assert!(parse_compare(r#"screen.focused == "Library"#).is_err());
+        assert!(parse_compare(r#"screen.focused == Library""#).is_err());
+    }
+
+    #[test]
+    fn focus_action_name_validates_names() {
+        assert_eq!(focus_action_name("room_eq").unwrap(), "SwitchToRoomEq");
+        assert_eq!(
+            focus_action_name("headphone-eq").unwrap(),
+            "SwitchToHeadphoneEq"
+        );
+        assert!(focus_action_name("2nd_screen").is_err());
+        assert!(focus_action_name("room/eq").is_err());
+    }
+
+    #[test]
+    fn base_url_prefers_cli_then_env_port_then_default() {
+        assert_eq!(
+            resolve_base_url(Some("http://127.0.0.1:9999"), Some("8888")).unwrap(),
+            "http://127.0.0.1:9999"
+        );
+        assert_eq!(
+            resolve_base_url(None, Some("8888")).unwrap(),
+            "http://127.0.0.1:8888"
+        );
+        assert_eq!(resolve_base_url(None, None).unwrap(), DEFAULT_DEV_API_URL);
+        assert!(resolve_base_url(None, Some("nope")).is_err());
+    }
+
+    #[test]
+    fn query_error_includes_plain_text_response_body() {
+        let ctx = test_ctx(&serve_once(
+            "500 Internal Server Error",
+            "text/plain",
+            "plain panic details",
+        ));
+        let err = verb_query("playback.volume", &ctx).unwrap_err().to_string();
+        assert!(err.contains("query `playback.volume` failed"));
+        assert!(err.contains("500 Internal Server Error"));
+        assert!(err.contains("plain panic details"));
+    }
+
+    #[test]
+    fn action_error_includes_json_error_message() {
+        let ctx = test_ctx(&serve_once(
+            "400 Bad Request",
+            "application/json",
+            r#"{"ok":false,"error":"unknown action"}"#,
+        ));
+        let err = verb_action("Nope", &ctx).unwrap_err().to_string();
+        assert!(err.contains("action `Nope` failed"));
+        assert!(err.contains("400 Bad Request"));
+        assert!(err.contains("unknown action"));
+    }
+
+    #[test]
     fn urlencode_safe_chars() {
         assert_eq!(urlencode("playback.volume"), "playback.volume");
         assert_eq!(urlencode("a b"), "a%20b");
         assert_eq!(urlencode("a&b"), "a%26b");
+    }
+
+    fn test_ctx(base: &str) -> Ctx {
+        Ctx {
+            client: reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+                .unwrap(),
+            base: base.to_string(),
+            verbose: false,
+        }
+    }
+
+    fn serve_once(status: &'static str, content_type: &'static str, body: &'static str) -> String {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        format!("http://{addr}")
     }
 }

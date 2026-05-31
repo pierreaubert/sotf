@@ -117,6 +117,52 @@ impl Default for EngineConfig {
 }
 
 impl EngineConfig {
+    /// Validate values that must hold before the config reaches the engine.
+    pub fn validate(&self) -> Result<(), String> {
+        const LATEST_VERSION: u32 = default_engine_config_version();
+
+        if self.version > LATEST_VERSION {
+            return Err(format!(
+                "Unknown EngineConfig version {} (this build supports up to {})",
+                self.version, LATEST_VERSION
+            ));
+        }
+        if self.frame_size == 0 {
+            return Err("EngineConfig frame_size must be greater than 0".to_string());
+        }
+        if self.buffer_ms == 0 {
+            return Err("EngineConfig buffer_ms must be greater than 0".to_string());
+        }
+        if self.output_sample_rate == 0 {
+            return Err("EngineConfig output_sample_rate must be greater than 0".to_string());
+        }
+        if self.input_channels == 0 {
+            return Err("EngineConfig input_channels must be greater than 0".to_string());
+        }
+        if self.output_channels == 0 {
+            return Err("EngineConfig output_channels must be greater than 0".to_string());
+        }
+        if !self.volume.is_finite() || !(0.0..=1.0).contains(&self.volume) {
+            return Err(
+                "EngineConfig volume must be finite and in the range 0.0..=1.0".to_string(),
+            );
+        }
+
+        for (index, plugin) in self.plugins.iter().enumerate() {
+            plugin
+                .validate()
+                .map_err(|message| format!("EngineConfig plugins[{index}]: {message}"))?;
+        }
+
+        Ok(())
+    }
+
+    /// Validate and return this config, for callers that build structs directly.
+    pub fn try_new(config: Self) -> Result<Self, String> {
+        config.validate()?;
+        Ok(config)
+    }
+
     /// Sanitize values that could cause panics or undefined behaviour.
     /// Called after deserialization to guard against corrupt config files.
     pub fn sanitize(&mut self) {
@@ -133,13 +179,12 @@ impl EngineConfig {
     /// Calculate queue capacity in frames
     pub fn queue_capacity_frames(&self) -> usize {
         let fs = self.frame_size.max(1);
-        let total_frames = (self.output_sample_rate as u64 * self.buffer_ms as u64) / 1000;
-        (total_frames as usize).div_ceil(fs)
+        self.total_buffer_frames().div_ceil(fs)
     }
 
     /// Calculate total buffer size in frames
     pub fn total_buffer_frames(&self) -> usize {
-        (self.output_sample_rate as u64 * self.buffer_ms as u64 / 1000) as usize
+        (self.output_sample_rate as u64 * self.buffer_ms as u64).div_ceil(1000) as usize
     }
 
     /// Load configuration from a JSON file, applying migrations if needed
@@ -151,6 +196,8 @@ impl EngineConfig {
         // Check if migration is needed
         const LATEST_VERSION: u32 = default_engine_config_version();
         let original_version = config.version;
+
+        config.validate()?;
 
         if config.version < LATEST_VERSION {
             log::info!(
@@ -172,11 +219,14 @@ impl EngineConfig {
             );
         }
 
+        config.validate()?;
+
         Ok(config)
     }
 
     /// Save configuration to a JSON file
     pub fn save_to_file(&self, path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+        self.validate()?;
         let json = serde_json::to_string_pretty(self)?;
         std::fs::write(path, json)?;
         Ok(())
@@ -185,9 +235,9 @@ impl EngineConfig {
     /// Apply all necessary migrations to bring EngineConfig to the latest version.
     ///
     /// Versions newer than `LATEST_VERSION` are unknown and rejected. Older
-    /// versions are migrated forward. Currently only v1 exists, so older
-    /// configs (v0, default-initialized) are silently upgraded by stamping
-    /// the latest version onto them.
+    /// versions are migrated forward. Currently v2 only adds serde-defaulted
+    /// policy fields, so older configs are upgraded by stamping the latest
+    /// version onto them after deserialization.
     fn migrate(mut config: EngineConfig) -> Result<EngineConfig, Box<dyn std::error::Error>> {
         const LATEST_VERSION: u32 = default_engine_config_version();
 
@@ -210,6 +260,17 @@ impl EngineConfig {
 mod tests {
     use super::*;
 
+    fn temp_config_path(test_name: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "sotf-types-{test_name}-{}-{unique}.json",
+            std::process::id()
+        ))
+    }
+
     #[test]
     fn test_queue_capacity_calculation() {
         let config = EngineConfig {
@@ -226,6 +287,21 @@ mod tests {
 
         let total_frames = config.total_buffer_frames();
         assert_eq!(total_frames, 9600);
+    }
+
+    #[test]
+    fn buffer_frame_calculations_round_up_fractional_milliseconds() {
+        let config = EngineConfig {
+            frame_size: 661,
+            buffer_ms: 15,
+            output_sample_rate: 44100,
+            ..Default::default()
+        };
+
+        // 15ms at 44.1kHz = 661.5 frames, so both total frames and queue
+        // capacity must reserve the fractional frame.
+        assert_eq!(config.total_buffer_frames(), 662);
+        assert_eq!(config.queue_capacity_frames(), 2);
     }
 
     #[test]
@@ -269,6 +345,74 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_invalid_engine_invariants() {
+        let mut config = EngineConfig {
+            buffer_ms: 0,
+            ..Default::default()
+        };
+        assert!(config.validate().unwrap_err().contains("buffer_ms"));
+
+        config = EngineConfig {
+            input_channels: 0,
+            ..Default::default()
+        };
+        assert!(config.validate().unwrap_err().contains("input_channels"));
+
+        config = EngineConfig {
+            output_channels: 0,
+            ..Default::default()
+        };
+        assert!(config.validate().unwrap_err().contains("output_channels"));
+
+        config = EngineConfig {
+            volume: 1.5,
+            ..Default::default()
+        };
+        assert!(config.validate().unwrap_err().contains("volume"));
+
+        config = EngineConfig {
+            volume: f32::NAN,
+            ..Default::default()
+        };
+        assert!(config.validate().unwrap_err().contains("volume"));
+
+        config = EngineConfig {
+            plugins: vec![PluginConfig::new("", serde_json::json!({}))],
+            ..Default::default()
+        };
+        assert!(config.validate().unwrap_err().contains("plugins[0]"));
+    }
+
+    #[test]
+    fn load_from_file_rejects_invalid_values_after_deserialize() {
+        let path = temp_config_path("invalid-values");
+        let config = EngineConfig {
+            volume: 2.0,
+            ..Default::default()
+        };
+        std::fs::write(&path, serde_json::to_string(&config).unwrap()).unwrap();
+
+        let error = EngineConfig::load_from_file(&path).unwrap_err();
+        std::fs::remove_file(&path).unwrap();
+
+        assert!(error.to_string().contains("volume"));
+    }
+
+    #[test]
+    fn save_to_file_rejects_invalid_values() {
+        let path = temp_config_path("invalid-save");
+        let config = EngineConfig {
+            output_channels: 0,
+            ..Default::default()
+        };
+
+        let error = config.save_to_file(&path).unwrap_err();
+
+        assert!(error.to_string().contains("output_channels"));
+        assert!(!path.exists());
+    }
+
+    #[test]
     fn default_config_exposes_product_review_feature_policies() {
         let config = EngineConfig::default();
         assert_eq!(
@@ -282,6 +426,52 @@ mod tests {
             EngineOversamplingPolicy::PluginPreferred
         );
         assert_eq!(config.network_endpoint, NetworkEndpointConfig::default());
+    }
+
+    #[test]
+    fn migrate_accepts_legacy_versions() {
+        for version in [0, 1] {
+            let config = EngineConfig {
+                version,
+                ..Default::default()
+            };
+
+            let migrated = EngineConfig::migrate(config).unwrap();
+            assert_eq!(migrated.version, default_engine_config_version());
+        }
+    }
+
+    #[test]
+    fn load_from_file_migrates_legacy_config() {
+        let path = temp_config_path("legacy");
+        let config = EngineConfig {
+            version: 0,
+            ..Default::default()
+        };
+        std::fs::write(&path, serde_json::to_string(&config).unwrap()).unwrap();
+
+        let loaded = EngineConfig::load_from_file(&path).unwrap();
+        let persisted_json = std::fs::read_to_string(&path).unwrap();
+        let persisted: EngineConfig = serde_json::from_str(&persisted_json).unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        assert_eq!(loaded.version, default_engine_config_version());
+        assert_eq!(persisted.version, default_engine_config_version());
+    }
+
+    #[test]
+    fn load_from_file_rejects_future_versions() {
+        let path = temp_config_path("future");
+        let config = EngineConfig {
+            version: default_engine_config_version() + 1,
+            ..Default::default()
+        };
+        std::fs::write(&path, serde_json::to_string(&config).unwrap()).unwrap();
+
+        let error = EngineConfig::load_from_file(&path).unwrap_err();
+        std::fs::remove_file(&path).unwrap();
+
+        assert!(error.to_string().contains("Unknown EngineConfig version"));
     }
 
     #[test]

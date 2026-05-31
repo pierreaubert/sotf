@@ -1,6 +1,6 @@
 [package]
 name = "sotf-tools"
-version = "0.5.6"
+version = "0.5.7"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -35,51 +35,16 @@ sotf-engine = { workspace = true }
 sotf-gpui = { path = "../app-gpui" }
 gpui = { workspace = true }
 
-# math
-ndarray = { workspace = true }
-num-complex = { workspace = true }
-
-# common stuff
 anyhow = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
-directories = { workspace = true }
-chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
-walkdir = { workspace = true }
 # Vendor SQLite into shipping binaries (deterministic builds, no system dep).
 rusqlite = { workspace = true, features = ["bundled"] }
-tokio = { workspace = true }
-parking_lot = { workspace = true }
-uuid = { workspace = true }
-
-# Image processing for album art thumbnails
-image = { workspace = true }
-
-# Unicode normalization for removing diacritics
-unicode-normalization = { workspace = true }
-
-# audio
-hound = { workspace = true }
 bincode = { workspace = true }
-symphonia = { workspace = true }
-symphonia-core = { workspace = true }
-symphonia-metadata = { workspace = true }
-symphonia-bundle-flac = { workspace = true }
-symphonia-bundle-mp3 = { workspace = true }
-symphonia-codec-aac = { workspace = true }
-symphonia-format-riff = { workspace = true }
-symphonia-format-ogg = { workspace = true }
-symphonia-format-isomp4 = { workspace = true }
-
-rubato = { workspace = true }
-num_cpus = { workspace = true }
-
-# CLI for bliss scanner
+hound = { workspace = true }
 clap = { workspace = true }
 
 [dev-dependencies]
-sotf-player = { workspace = true, features = ["testing"] }
 tempfile = { workspace = true }

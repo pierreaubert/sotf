@@ -1009,7 +1009,7 @@ impl App {
 
                     // Update in-memory play_count so UI reflects immediately
                     let path = path.clone();
-                    for item in self.queue_state.items_mut() {
+                    for item in self.queue_state.iter_mut() {
                         for track in &mut item.album.tracks {
                             if track.path == path {
                                 track.play_count += 1;
@@ -1054,7 +1054,7 @@ impl App {
         };
 
         // Update in queue
-        for item in self.queue_state.items_mut() {
+        for item in self.queue_state.iter_mut() {
             for track in &mut item.album.tracks {
                 if track.path == track_path {
                     track.is_favorite = new_state;
@@ -1087,7 +1087,7 @@ impl App {
         };
 
         // Update in queue
-        for item in self.queue_state.items_mut() {
+        for item in self.queue_state.iter_mut() {
             if item.album.id == Some(album_id) {
                 item.album.is_favorite = new_state;
             }

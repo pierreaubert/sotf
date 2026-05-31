@@ -4,69 +4,99 @@ use sotf_audio_player_gpui::theme::ThemeId;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
+fn hex_nibble(ch: char, component: &str, display: &str) -> Result<u8> {
+    ch.to_digit(16)
+        .map(|n| n as u8)
+        .ok_or_else(|| anyhow!("invalid hex ({component}) in {display}: '{ch}'"))
+}
+
+fn expand_hex_nibble(ch: char, component: &str, display: &str) -> Result<u8> {
+    let n = hex_nibble(ch, component, display)?;
+    Ok((n << 4) | n)
+}
+
+fn hex_byte(chars: &[char], index: usize, component: &str, display: &str) -> Result<u8> {
+    let hi = hex_nibble(chars[index], component, display)?;
+    let lo = hex_nibble(chars[index + 1], component, display)?;
+    Ok((hi << 4) | lo)
+}
+
+/// Parse a hex color string into RGBA bytes.
+/// Supports CSS hex forms: `#rgb`, `#rgba`, `#rrggbb`, and `#rrggbbaa`
+/// with or without the leading `#`.
+fn parse_hex_bytes(hex: &str) -> Result<(u8, u8, u8, u8)> {
+    let raw = hex.trim().trim_start_matches('#');
+    if raw.is_empty() {
+        bail!("empty hex color string");
+    }
+    let display = format!("#{raw}");
+    let chars: Vec<char> = raw.chars().collect();
+    match chars.len() {
+        3 => Ok((
+            expand_hex_nibble(chars[0], "r", &display)?,
+            expand_hex_nibble(chars[1], "g", &display)?,
+            expand_hex_nibble(chars[2], "b", &display)?,
+            255,
+        )),
+        4 => Ok((
+            expand_hex_nibble(chars[0], "r", &display)?,
+            expand_hex_nibble(chars[1], "g", &display)?,
+            expand_hex_nibble(chars[2], "b", &display)?,
+            expand_hex_nibble(chars[3], "a", &display)?,
+        )),
+        6 => {
+            let r = hex_byte(&chars, 0, "r", &display)?;
+            let g = hex_byte(&chars, 2, "g", &display)?;
+            let b = hex_byte(&chars, 4, "b", &display)?;
+            Ok((r, g, b, 255))
+        }
+        8 => {
+            let r = hex_byte(&chars, 0, "r", &display)?;
+            let g = hex_byte(&chars, 2, "g", &display)?;
+            let b = hex_byte(&chars, 4, "b", &display)?;
+            let a = hex_byte(&chars, 6, "a", &display)?;
+            Ok((r, g, b, a))
+        }
+        n => bail!("unsupported hex length {n} in {display} (expected 3, 4, 6, or 8)"),
+    }
+}
+
 /// Parse a hex color string into (r, g, b, a) as f32 components.
-/// Supports: `#rrggbb` and `#rrggbbaa` (with or without the leading `#`).
 ///
 /// Returns a structured error rather than panicking so a malformed
 /// `tokens.json` produces an actionable build-time message.
 fn parse_hex(hex: &str) -> Result<(f32, f32, f32, f32)> {
-    let trimmed = hex.trim_start_matches('#');
-    if trimmed.is_empty() {
-        bail!("empty hex color string");
-    }
-    match trimmed.len() {
-        6 => {
-            let r = u8::from_str_radix(&trimmed[0..2], 16)
-                .with_context(|| format!("invalid hex (r) in #{trimmed}"))?;
-            let g = u8::from_str_radix(&trimmed[2..4], 16)
-                .with_context(|| format!("invalid hex (g) in #{trimmed}"))?;
-            let b = u8::from_str_radix(&trimmed[4..6], 16)
-                .with_context(|| format!("invalid hex (b) in #{trimmed}"))?;
-            Ok((
-                f32::from(r) / 255.0,
-                f32::from(g) / 255.0,
-                f32::from(b) / 255.0,
-                1.0,
-            ))
-        }
-        8 => {
-            let r = u8::from_str_radix(&trimmed[0..2], 16)
-                .with_context(|| format!("invalid hex (r) in #{trimmed}"))?;
-            let g = u8::from_str_radix(&trimmed[2..4], 16)
-                .with_context(|| format!("invalid hex (g) in #{trimmed}"))?;
-            let b = u8::from_str_radix(&trimmed[4..6], 16)
-                .with_context(|| format!("invalid hex (b) in #{trimmed}"))?;
-            let a = u8::from_str_radix(&trimmed[6..8], 16)
-                .with_context(|| format!("invalid hex (a) in #{trimmed}"))?;
-            Ok((
-                f32::from(r) / 255.0,
-                f32::from(g) / 255.0,
-                f32::from(b) / 255.0,
-                f32::from(a) / 255.0,
-            ))
-        }
-        n => bail!("unsupported hex length {n} in #{trimmed} (expected 6 or 8)"),
-    }
+    let (r, g, b, a) = parse_hex_bytes(hex)?;
+    Ok((
+        f32::from(r) / 255.0,
+        f32::from(g) / 255.0,
+        f32::from(b) / 255.0,
+        f32::from(a) / 255.0,
+    ))
 }
 
 /// Read a color token value from a JSON path like `color.base.background`
 fn get_color(theme_obj: &Value, path: &str) -> Result<String> {
-    let parts: Vec<&str> = path.split('.').collect();
     let mut current = theme_obj;
-    for part in &parts {
-        current = &current[*part];
+    for part in path.split('.') {
+        current = current
+            .get(part)
+            .ok_or_else(|| anyhow!("missing token path {path} at component '{part}'"))?;
     }
     let hex = current["$value"]
         .as_str()
         .ok_or_else(|| anyhow!("missing $value at {path}"))?;
     let (r, g, b, a) = parse_hex(hex).with_context(|| format!("parsing color at {path}"))?;
+    let (r8, g8, b8, a8) = (
+        (r * 255.0).round() as u8,
+        (g * 255.0).round() as u8,
+        (b * 255.0).round() as u8,
+        (a * 255.0).round() as u8,
+    );
 
-    let hex_trim = hex.trim_start_matches('#');
-    // If fully opaque and the hex is 6 chars, use rgb() macro
-    if a == 1.0 && hex_trim.len() == 6 {
-        Ok(format!("rgb(0x{hex_trim})"))
+    if a8 == 255 {
+        Ok(format!("rgb(0x{r8:02x}{g8:02x}{b8:02x})"))
     } else {
-        // Use explicit Rgba struct for precision
         Ok(format!(
             "Rgba {{ r: {r:.3}, g: {g:.3}, b: {b:.3}, a: {a:.3} }}"
         ))
@@ -497,8 +527,9 @@ fn generated_theme_methods(generated: &str) -> Result<&str> {
 fn needs_rgba_import(theme_obj: &Value) -> bool {
     fn check_value(v: &Value) -> bool {
         if let Some(hex) = v.get("$value").and_then(Value::as_str) {
-            let hex = hex.trim_start_matches('#');
-            return hex.len() == 8;
+            return parse_hex_bytes(hex)
+                .map(|(_, _, _, a)| a != 255)
+                .unwrap_or(false);
         }
         if let Some(obj) = v.as_object() {
             return obj.values().any(check_value);
@@ -582,6 +613,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_hex_rgb_shorthand() {
+        let (r, g, b, a) = parse_hex("#f80").unwrap();
+        assert!((r - 1.0).abs() < 1e-6);
+        assert!((g - 0x88 as f32 / 255.0).abs() < 1e-6);
+        assert!((b - 0.0).abs() < 1e-6);
+        assert!((a - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn parse_hex_rgba_shorthand() {
+        let (r, g, b, a) = parse_hex("#1234").unwrap();
+        assert!((r - 0x11 as f32 / 255.0).abs() < 1e-6);
+        assert!((g - 0x22 as f32 / 255.0).abs() < 1e-6);
+        assert!((b - 0x33 as f32 / 255.0).abs() < 1e-6);
+        assert!((a - 0x44 as f32 / 255.0).abs() < 1e-6);
+    }
+
+    #[test]
     fn parse_hex_no_leading_hash() {
         // No leading '#': should still parse successfully.
         let (r, _g, _b, a) = parse_hex("ff0000").unwrap();
@@ -591,8 +640,7 @@ mod tests {
 
     #[test]
     fn parse_hex_too_short() {
-        // 3 chars is not yet supported and must error (not panic).
-        let err = parse_hex("#abc").unwrap_err();
+        let err = parse_hex("#ab").unwrap_err();
         let msg = format!("{err:#}");
         assert!(
             msg.contains("unsupported hex length"),
@@ -612,6 +660,33 @@ mod tests {
     fn parse_hex_empty() {
         assert!(parse_hex("").is_err());
         assert!(parse_hex("#").is_err());
+    }
+
+    #[test]
+    fn get_color_expands_opaque_shorthand_to_rgb_macro() {
+        let tokens = json!({
+            "color": {
+                "base": {
+                    "background": { "$type": "color", "$value": "#f80" }
+                }
+            }
+        });
+
+        assert_eq!(
+            get_color(&tokens, "color.base.background").unwrap(),
+            "rgb(0xff8800)"
+        );
+    }
+
+    #[test]
+    fn get_color_reports_missing_path_component() {
+        let tokens = json!({ "color": { "base": {} } });
+        let err = get_color(&tokens, "color.base.background").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("missing token path color.base.background at component 'background'"),
+            "unexpected error: {msg}"
+        );
     }
 
     /// Onyx round-trip regression: every theme exposed by `ThemeId::all()`

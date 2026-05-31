@@ -25,3 +25,32 @@ impl StubBackend {
         Err(Error::Unsupported)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MediaControlEvent;
+
+    #[test]
+    fn new_reports_unsupported() {
+        assert!(matches!(StubBackend::new(), Err(Error::Unsupported)));
+    }
+
+    #[test]
+    fn methods_report_unsupported() {
+        let mut backend = StubBackend { _private: () };
+
+        assert!(matches!(
+            backend.attach(Box::new(|_: MediaControlEvent| {})),
+            Err(Error::Unsupported)
+        ));
+        assert!(matches!(
+            backend.set_metadata(MediaMetadata::default()),
+            Err(Error::Unsupported)
+        ));
+        assert!(matches!(
+            backend.set_playback(MediaPlayback::Stopped),
+            Err(Error::Unsupported)
+        ));
+    }
+}

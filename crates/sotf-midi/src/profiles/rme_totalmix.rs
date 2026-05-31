@@ -107,6 +107,7 @@ impl RMETotalMixProfile {
     /// * `row` - The TotalMix row (Input/Playback/Output)
     /// * `bank` - Bank number (0-3, each bank has 16 faders)
     pub fn channel_for_bank(row: TotalMixRow, bank: u8) -> u8 {
+        debug_assert!(bank <= 3, "TotalMix bank must be 0-3, got {bank}");
         row.base_channel() + bank.min(3)
     }
 
@@ -115,6 +116,10 @@ impl RMETotalMixProfile {
     /// # Arguments
     /// * `fader_index` - Fader index within the bank (0-15)
     pub fn cc_for_fader(fader_index: u8) -> u8 {
+        debug_assert!(
+            fader_index < Self::FADERS_PER_BANK,
+            "TotalMix fader index within bank must be 0-15, got {fader_index}"
+        );
         Self::FADER_CC_START + fader_index.min(15)
     }
 
@@ -129,6 +134,22 @@ impl RMETotalMixProfile {
         let bank = global_index / Self::FADERS_PER_BANK;
         let fader = global_index % Self::FADERS_PER_BANK;
         (bank, fader)
+    }
+
+    /// Build a Mackie Control momentary button press (NoteOn then NoteOff).
+    pub fn mackie_button_press(channel: u8, note: u8) -> [MidiMessage; 2] {
+        [
+            MidiMessage::NoteOn {
+                channel,
+                note,
+                velocity: 127,
+            },
+            MidiMessage::NoteOff {
+                channel,
+                note,
+                velocity: 0,
+            },
+        ]
     }
 }
 
@@ -151,12 +172,7 @@ impl<'a> TotalMixControl<'a> {
     /// * `fader` - Fader index within bank (0-15)
     /// * `value` - Fader value (0-127)
     pub fn set_fader(&self, row: TotalMixRow, bank: u8, fader: u8, value: u8) -> Result<()> {
-        if bank > 3 {
-            return Err(MidiError::InvalidMessage(format!(
-                "Bank must be 0-3, got {}",
-                bank
-            )));
-        }
+        validate_bank(bank)?;
         if fader > 15 {
             return Err(MidiError::InvalidMessage(format!(
                 "Fader must be 0-15, got {}",
@@ -211,78 +227,42 @@ impl<'a> TotalMixControl<'a> {
     /// * `bank` - Bank number (0-3)
     /// * `channel` - Channel within bank (0-7 for Mackie)
     pub fn mute_channel(&self, row: TotalMixRow, bank: u8, channel: u8) -> Result<()> {
-        if channel > 7 {
-            return Err(MidiError::InvalidMessage(format!(
-                "Mackie channel must be 0-7, got {}",
-                channel
-            )));
-        }
-
-        let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
-        let note = RMETotalMixProfile::MACKIE_MUTE_NOTE_START + channel;
-
-        self.manager.send_message(&MidiMessage::NoteOn {
-            channel: midi_channel,
-            note,
-            velocity: 127,
-        })
+        self.send_mackie_button_press(
+            row,
+            bank,
+            channel,
+            RMETotalMixProfile::MACKIE_MUTE_NOTE_START,
+        )
     }
 
     /// Unmute a channel
     pub fn unmute_channel(&self, row: TotalMixRow, bank: u8, channel: u8) -> Result<()> {
-        if channel > 7 {
-            return Err(MidiError::InvalidMessage(format!(
-                "Mackie channel must be 0-7, got {}",
-                channel
-            )));
-        }
-
-        let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
-        let note = RMETotalMixProfile::MACKIE_MUTE_NOTE_START + channel;
-
-        self.manager.send_message(&MidiMessage::NoteOff {
-            channel: midi_channel,
-            note,
-            velocity: 0,
-        })
+        self.send_mackie_button_press(
+            row,
+            bank,
+            channel,
+            RMETotalMixProfile::MACKIE_MUTE_NOTE_START,
+        )
     }
 
     /// Solo a channel (Mackie Control protocol)
     pub fn solo_channel(&self, row: TotalMixRow, bank: u8, channel: u8) -> Result<()> {
-        if channel > 7 {
-            return Err(MidiError::InvalidMessage(format!(
-                "Mackie channel must be 0-7, got {}",
-                channel
-            )));
-        }
-
-        let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
-        let note = RMETotalMixProfile::MACKIE_SOLO_NOTE_START + channel;
-
-        self.manager.send_message(&MidiMessage::NoteOn {
-            channel: midi_channel,
-            note,
-            velocity: 127,
-        })
+        self.send_mackie_button_press(
+            row,
+            bank,
+            channel,
+            RMETotalMixProfile::MACKIE_SOLO_NOTE_START,
+        )
     }
 
     /// Unsolo a channel
     pub fn unsolo_channel(&self, row: TotalMixRow, bank: u8, channel: u8) -> Result<()> {
-        if channel > 7 {
-            return Err(MidiError::InvalidMessage(format!(
-                "Mackie channel must be 0-7, got {}",
-                channel
-            )));
-        }
-
-        let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
-        let note = RMETotalMixProfile::MACKIE_SOLO_NOTE_START + channel;
-
-        self.manager.send_message(&MidiMessage::NoteOff {
-            channel: midi_channel,
-            note,
-            velocity: 0,
-        })
+        self.send_mackie_button_press(
+            row,
+            bank,
+            channel,
+            RMETotalMixProfile::MACKIE_SOLO_NOTE_START,
+        )
     }
 
     /// Set pan for a channel (Mackie Control protocol)
@@ -293,12 +273,8 @@ impl<'a> TotalMixControl<'a> {
     /// * `channel` - Channel within bank (0-7)
     /// * `value` - Pan value (0=left, 64=center, 127=right)
     pub fn set_pan(&self, row: TotalMixRow, bank: u8, channel: u8, value: u8) -> Result<()> {
-        if channel > 7 {
-            return Err(MidiError::InvalidMessage(format!(
-                "Mackie channel must be 0-7, got {}",
-                channel
-            )));
-        }
+        validate_bank(bank)?;
+        validate_mackie_channel(channel)?;
 
         let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
         let cc = RMETotalMixProfile::MACKIE_PAN_CC_START + channel;
@@ -320,6 +296,44 @@ impl<'a> TotalMixControl<'a> {
             program: snapshot,
         })
     }
+
+    fn send_mackie_button_press(
+        &self,
+        row: TotalMixRow,
+        bank: u8,
+        channel: u8,
+        note_start: u8,
+    ) -> Result<()> {
+        validate_bank(bank)?;
+        validate_mackie_channel(channel)?;
+
+        let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
+        let note = note_start + channel;
+        for message in RMETotalMixProfile::mackie_button_press(midi_channel, note) {
+            self.manager.send_message(&message)?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_bank(bank: u8) -> Result<()> {
+    if bank > 3 {
+        return Err(MidiError::InvalidMessage(format!(
+            "Bank must be 0-3, got {}",
+            bank
+        )));
+    }
+    Ok(())
+}
+
+fn validate_mackie_channel(channel: u8) -> Result<()> {
+    if channel > 7 {
+        return Err(MidiError::InvalidMessage(format!(
+            "Mackie channel must be 0-7, got {}",
+            channel
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -359,11 +373,38 @@ mod tests {
         assert_eq!(RMETotalMixProfile::cc_for_fader(15), 117);
     }
 
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "TotalMix bank must be 0-3")]
+    fn channel_for_bank_debug_asserts_invalid_bank() {
+        let _ = RMETotalMixProfile::channel_for_bank(TotalMixRow::Input, 4);
+    }
+
     #[test]
     fn test_fader_to_bank() {
         assert_eq!(RMETotalMixProfile::fader_to_bank(0), (0, 0));
         assert_eq!(RMETotalMixProfile::fader_to_bank(15), (0, 15));
         assert_eq!(RMETotalMixProfile::fader_to_bank(16), (1, 0));
         assert_eq!(RMETotalMixProfile::fader_to_bank(63), (3, 15));
+    }
+
+    #[test]
+    fn test_mackie_button_press_sends_press_and_release() {
+        let messages = RMETotalMixProfile::mackie_button_press(0, 16);
+        assert_eq!(
+            messages,
+            [
+                MidiMessage::NoteOn {
+                    channel: 0,
+                    note: 16,
+                    velocity: 127
+                },
+                MidiMessage::NoteOff {
+                    channel: 0,
+                    note: 16,
+                    velocity: 0
+                }
+            ]
+        );
     }
 }

@@ -859,7 +859,11 @@ impl PlayerView {
             .items_center()
             .gap(d.gap_md)
             .p(d.pad_y)
-            .bg(theme.background)
+            .bg(if is_selected {
+                theme.surface_selected
+            } else {
+                theme.background
+            })
             .rounded(d.r_sm)
             .border_1()
             .border_color(if is_selected {
@@ -892,7 +896,7 @@ impl PlayerView {
                                         .rounded(d.r_sm)
                                         .bg(theme.accent)
                                         .text_size(d.text_xs)
-                                        .text_color(theme.background)
+                                        .text_color(theme.text_on_accent)
                                         .child("Selected"),
                                 )
                             }),

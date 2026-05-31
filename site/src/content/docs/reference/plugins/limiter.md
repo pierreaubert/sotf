@@ -37,4 +37,3 @@ Peak limiter to prevent clipping. Ensures output never exceeds the ceiling level
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Mix | Float | 0 .. 1 | 1 | % | Dry/wet blend |
-

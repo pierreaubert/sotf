@@ -79,4 +79,3 @@ Crosstalk cancellation for speaker playback. Creates a wider stereo image by can
 | Auto Gain | Bool | On / Off | On | - | Auto-normalize output level |
 | AG Max | Float | 0 .. 24 | 12 | dB | Maximum auto gain correction |
 | AG Smoothing | Float | 10 .. 500 | 100 | ms | Auto gain transition time |
-

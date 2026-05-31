@@ -7,7 +7,9 @@ Neural speech-focused denoiser (RNNoise-derived) optimized for voice and dialogu
 
 ## Parameters
 
+
+### General
+
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Enabled | Bool | On / Off | On | - | Enable RNNoise speech denoising |
-

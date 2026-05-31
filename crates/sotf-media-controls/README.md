@@ -1,6 +1,6 @@
 # sotf-media-controls
 
-Cross-platform OS media controls (NowPlaying / MPRIS / SMTC) for SOTF apps.
+Cross-platform OS media controls (NowPlaying / MPRIS) for SOTF apps.
 
 In-house replacement for `souvlaki` with a tighter, dependency-light API:
 
@@ -8,4 +8,5 @@ In-house replacement for `souvlaki` with a tighter, dependency-light API:
 - **Linux / FreeBSD**: MPRIS via `mpris-server`.
 - **Windows / iOS / tvOS / other**: graceful no-op (`Error::Unsupported`).
 
-The public surface mirrors the `souvlaki` slice we used, so migration is mostly mechanical.
+TODO(smtc): add a Windows System Media Transport Controls backend once SOTF has
+a stable HWND/message-window ownership path.

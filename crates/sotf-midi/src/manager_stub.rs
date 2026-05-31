@@ -117,3 +117,11 @@ impl MidiManager {
         Ok(())
     }
 }
+
+pub fn enumerate_input_devices() -> Result<Vec<MidiDeviceInfo>> {
+    Ok(Vec::new())
+}
+
+pub fn enumerate_output_devices() -> Result<Vec<MidiDeviceInfo>> {
+    Ok(Vec::new())
+}

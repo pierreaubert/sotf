@@ -5,7 +5,7 @@
 //! - id: per-channel identification tones (unique frequency per channel)
 //! - thd1k: single-tone 1 kHz @ -3 dBFS (for THD)
 //! - thd100: single-tone 100 Hz @ -3 dBFS (low-frequency THD)
-//! - imd_smpte: SMPTE two-tone 60 Hz + 7 kHz (4:1 amplitude ratio)
+//! - imd_smpte: SMPTE two-tone 60 Hz + 7 kHz (4:1 power ratio, 2:1 amplitude ratio)
 //! - imd_ccif: CCIF two-tone 19 kHz + 20 kHz (equal amplitudes)
 //! - sweep: logarithmic frequency sweep from 20 Hz to 20 kHz (10s fixed duration)
 //! - white_noise: white noise (flat spectrum)
@@ -20,8 +20,9 @@ use std::path::{Path, PathBuf};
 
 // Constants
 const AMP_STD: f32 = 0.707; // ~-3 dBFS
-const SMPTE_AMP1: f32 = 0.8; // 60 Hz amplitude
-const SMPTE_AMP2: f32 = 0.2; // 7 kHz amplitude
+const SMPTE_LOW_AMP: f32 = 0.8; // 60 Hz amplitude
+const SMPTE_HIGH_AMP: f32 = 0.4; // 7 kHz amplitude, 2:1 amp = 4:1 power
+const SMPTE_POWER_RATIO: u8 = 4;
 const CCIF_AMP: f32 = 0.5; // 19/20 kHz equal amplitudes
 const ID_BASE_FREQ: f32 = 300.0;
 const ID_STEP_FREQ: f32 = 300.0;
@@ -125,7 +126,7 @@ enum SignalMetadata {
     },
     ImdSmpte {
         freqs: [f32; 2],
-        ratio: u8,
+        power_ratio: u8,
     },
     ImdCcif {
         freqs: [f32; 2],
@@ -164,6 +165,50 @@ impl GenerationStats {
     }
 }
 
+fn id_frequency(channel: u16) -> f32 {
+    (ID_BASE_FREQ + ID_STEP_FREQ * channel as f32).min(ID_MAX_FREQ)
+}
+
+fn ensure_below_nyquist(freq: f32, sr: u32, label: &str) -> Result<(), String> {
+    let nyquist = sr as f32 / 2.0;
+    if freq >= nyquist {
+        Err(format!(
+            "Nyquist violation: {label} {freq} Hz >= {nyquist} Hz (skipped)"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn gen_tone_checked(freq: f32, amp: f32, sr: u32, duration: f32) -> Result<Vec<f32>, String> {
+    ensure_below_nyquist(freq, sr, "tone")?;
+    Ok(gen_tone(freq, amp, sr, duration))
+}
+
+fn gen_two_tone_checked(
+    f1: f32,
+    a1: f32,
+    f2: f32,
+    a2: f32,
+    sr: u32,
+    duration: f32,
+) -> Result<Vec<f32>, String> {
+    ensure_below_nyquist(f1, sr, "first tone")?;
+    ensure_below_nyquist(f2, sr, "second tone")?;
+    Ok(gen_two_tone(f1, a1, f2, a2, sr, duration))
+}
+
+fn gen_log_sweep_checked(
+    f_start: f32,
+    f_end: f32,
+    amp: f32,
+    sr: u32,
+    duration: f32,
+) -> Result<Vec<f32>, String> {
+    ensure_below_nyquist(f_end, sr, "sweep end")?;
+    Ok(gen_log_sweep(f_start, f_end, amp, sr, duration))
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -192,7 +237,7 @@ fn main() {
     let mut manifest_files = Vec::new();
 
     // Generate all combinations
-    for signal in &signals {
+    for &signal in &signals {
         for &channels in &cli.channels {
             if !(1..=16).contains(&channels) {
                 eprintln!(
@@ -205,13 +250,13 @@ fn main() {
 
             for &sr in &cli.sample_rates {
                 for &bits in &cli.bits {
-                    let duration = if *signal == SignalKind::Sweep {
+                    let duration = if signal == SignalKind::Sweep {
                         SWEEP_DURATION
                     } else {
                         cli.duration
                     };
 
-                    match generate_one(&cli.out_dir, *signal, channels, sr, bits, duration) {
+                    match generate_one(&cli.out_dir, signal, channels, sr, bits, duration) {
                         Ok(path) => {
                             manifest_files.push(path.to_string_lossy().to_string());
                             stats.generated += 1;
@@ -301,8 +346,7 @@ fn generate_one(
             ));
         }
         SignalKind::Id => {
-            let max_id_freq =
-                (ID_BASE_FREQ + ID_STEP_FREQ * (channels as f32 - 1.0)).min(ID_MAX_FREQ);
+            let max_id_freq = id_frequency(channels - 1);
             if max_id_freq >= nyquist {
                 return Err(format!(
                     "Nyquist violation: max ID freq {} Hz >= {} Hz (skipped)",
@@ -319,36 +363,37 @@ fn generate_one(
             let mut freqs = Vec::new();
             let mut per_channel = Vec::new();
             for ch in 0..channels {
-                let freq = (ID_BASE_FREQ * (ch as f32 + 1.0)).min(ID_MAX_FREQ);
+                let freq = id_frequency(ch);
                 freqs.push(freq);
-                per_channel.push(gen_tone(freq, AMP_STD, sr, duration));
+                per_channel.push(gen_tone_checked(freq, AMP_STD, sr, duration)?);
             }
             let data = interleave_per_channel(&per_channel);
             (data, SignalMetadata::Id { freqs })
         }
         SignalKind::Thd1k => {
-            let mono = gen_tone(1000.0, AMP_STD, sr, duration);
+            let mono = gen_tone_checked(1000.0, AMP_STD, sr, duration)?;
             let data = replicate_mono(&mono, channels);
             (data, SignalMetadata::Thd1k { freq: 1000.0 })
         }
         SignalKind::Thd100 => {
-            let mono = gen_tone(100.0, AMP_STD, sr, duration);
+            let mono = gen_tone_checked(100.0, AMP_STD, sr, duration)?;
             let data = replicate_mono(&mono, channels);
             (data, SignalMetadata::Thd100 { freq: 100.0 })
         }
         SignalKind::ImdSmpte => {
-            let mono = gen_two_tone(60.0, SMPTE_AMP1, 7000.0, SMPTE_AMP2, sr, duration);
+            let mono =
+                gen_two_tone_checked(60.0, SMPTE_LOW_AMP, 7000.0, SMPTE_HIGH_AMP, sr, duration)?;
             let data = replicate_mono(&mono, channels);
             (
                 data,
                 SignalMetadata::ImdSmpte {
                     freqs: [60.0, 7000.0],
-                    ratio: 4,
+                    power_ratio: SMPTE_POWER_RATIO,
                 },
             )
         }
         SignalKind::ImdCcif => {
-            let mono = gen_two_tone(19000.0, CCIF_AMP, 20000.0, CCIF_AMP, sr, duration);
+            let mono = gen_two_tone_checked(19000.0, CCIF_AMP, 20000.0, CCIF_AMP, sr, duration)?;
             let data = replicate_mono(&mono, channels);
             (
                 data,
@@ -358,7 +403,7 @@ fn generate_one(
             )
         }
         SignalKind::Sweep => {
-            let mono = gen_log_sweep(20.0, 20000.0, AMP_STD, sr, duration);
+            let mono = gen_log_sweep_checked(20.0, 20000.0, AMP_STD, sr, duration)?;
             let data = replicate_mono(&mono, channels);
             (
                 data,
@@ -476,31 +521,20 @@ fn write_wav(
     bits: u16,
     tags: &[(&[u8; 4], &str)],
 ) -> Result<(), String> {
-    use std::io::Write;
+    use std::io::{BufWriter, Write};
+
+    if !matches!(bits, 16 | 24) {
+        return Err(format!("Unsupported bit depth: {}", bits));
+    }
 
     let bytes_per_sample = (bits / 8) as u32;
     let block_align = channels as u32 * bytes_per_sample;
     let byte_rate = sr * block_align;
-    let num_samples = interleaved.len();
-    let data_size = num_samples as u32 * bytes_per_sample;
-
-    // Build audio data bytes
-    let mut pcm_data = Vec::with_capacity(data_size as usize);
-    match bits {
-        16 => {
-            for &sample in interleaved {
-                let pcm = (clip(sample) * 32767.0).round() as i16;
-                pcm_data.extend_from_slice(&pcm.to_le_bytes());
-            }
-        }
-        24 => {
-            for &sample in interleaved {
-                let pcm = (clip(sample) * 8388607.0).round() as i32;
-                let bytes = pcm.to_le_bytes();
-                pcm_data.extend_from_slice(&bytes[..3]); // 24-bit = 3 bytes LE
-            }
-        }
-        _ => return Err(format!("Unsupported bit depth: {}", bits)),
+    let data_size = (interleaved.len() as u64)
+        .checked_mul(u64::from(bytes_per_sample))
+        .ok_or_else(|| "WAV data size overflow".to_string())?;
+    if data_size > u64::from(u32::MAX) {
+        return Err(format!("WAV data too large: {data_size} bytes"));
     }
 
     // Build fmt chunk (16 bytes payload for PCM)
@@ -524,13 +558,21 @@ fn write_wav(
     // Build data chunk header
     let mut data_header = Vec::with_capacity(8);
     data_header.extend_from_slice(b"data");
-    data_header.extend_from_slice(&(pcm_data.len() as u32).to_le_bytes());
+    data_header.extend_from_slice(&(data_size as u32).to_le_bytes());
 
-    // RIFF header: total size = 4 ("WAVE") + fmt + info + data_header + pcm_data
-    let riff_size = 4 + fmt_chunk.len() + info_chunk.len() + data_header.len() + pcm_data.len();
+    // RIFF header: total size = 4 ("WAVE") + fmt + info + data_header + data bytes
+    let riff_size = 4_u64
+        + fmt_chunk.len() as u64
+        + info_chunk.len() as u64
+        + data_header.len() as u64
+        + data_size;
+    if riff_size > u64::from(u32::MAX) {
+        return Err(format!("RIFF size too large: {riff_size} bytes"));
+    }
 
-    let mut file =
+    let file =
         std::fs::File::create(path).map_err(|e| format!("Failed to create WAV file: {}", e))?;
+    let mut file = BufWriter::new(file);
 
     file.write_all(b"RIFF")
         .map_err(|e| format!("Write failed: {}", e))?;
@@ -544,8 +586,25 @@ fn write_wav(
         .map_err(|e| format!("Write failed: {}", e))?;
     file.write_all(&data_header)
         .map_err(|e| format!("Write failed: {}", e))?;
-    file.write_all(&pcm_data)
-        .map_err(|e| format!("Write failed: {}", e))?;
+
+    match bits {
+        16 => {
+            for &sample in interleaved {
+                let pcm = (clip(sample) * 32767.0).round() as i16;
+                file.write_all(&pcm.to_le_bytes())
+                    .map_err(|e| format!("Write failed: {}", e))?;
+            }
+        }
+        24 => {
+            for &sample in interleaved {
+                let pcm = (clip(sample) * 8388607.0).round() as i32;
+                let bytes = pcm.to_le_bytes();
+                file.write_all(&bytes[..3])
+                    .map_err(|e| format!("Write failed: {}", e))?;
+            }
+        }
+        _ => return Err(format!("Unsupported bit depth: {}", bits)),
+    }
 
     Ok(())
 }
@@ -565,4 +624,55 @@ fn write_manifest(path: &Path, files: &[String]) -> Result<(), String> {
         .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
     fs::write(path, json).map_err(|e| format!("Failed to write manifest: {}", e))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    #[test]
+    fn id_frequency_uses_shared_step_formula() {
+        assert_eq!(id_frequency(0), ID_BASE_FREQ);
+        assert_eq!(id_frequency(1), ID_BASE_FREQ + ID_STEP_FREQ);
+        assert_eq!(id_frequency(32), ID_MAX_FREQ);
+    }
+
+    #[test]
+    fn checked_tone_rejects_nyquist_frequency() {
+        let err = gen_tone_checked(24_000.0, AMP_STD, 48_000, 0.01).unwrap_err();
+        assert!(err.contains("Nyquist violation"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn smpte_metadata_uses_power_ratio() {
+        let dir = tempfile::tempdir().unwrap();
+        let wav = generate_one(dir.path(), SignalKind::ImdSmpte, 1, 48_000, 16, 0.01).unwrap();
+        let sidecar = fs::read_to_string(wav.with_extension("wav.json")).unwrap();
+        let sidecar: Value = serde_json::from_str(&sidecar).unwrap();
+
+        assert_eq!(sidecar["signal"]["type"], "imd_smpte");
+        assert_eq!(sidecar["signal"]["power_ratio"], SMPTE_POWER_RATIO);
+        assert!(sidecar["signal"].get("ratio").is_none());
+    }
+
+    #[test]
+    fn write_wav_rejects_unsupported_bit_depth_before_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.wav");
+        let err = write_wav(&path, &[0.0], 48_000, 1, 12, &[]).unwrap_err();
+        assert!(
+            err.contains("Unsupported bit depth"),
+            "unexpected error: {err}"
+        );
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn info_chunk_is_word_aligned() {
+        let chunk = build_info_chunk(&[(b"IART", "SotF"), (b"IPRD", "Odd")]);
+        assert_eq!(chunk.len() % 2, 0);
+        assert!(chunk.starts_with(b"LIST"));
+        assert_eq!(&chunk[8..12], b"INFO");
+    }
 }

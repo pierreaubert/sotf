@@ -6026,6 +6026,7 @@ mod tests {
             pre_ir: None,
             post_ir: None,
             fir_temporal_masking: None,
+            direct_early_late_correction: None,
         }
     }
 
@@ -6299,6 +6300,9 @@ mod tests {
             }),
             timing_diagnostics: None,
             ctc: None,
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         });
         output
     }
@@ -6764,7 +6768,11 @@ mod tests {
                     "center".to_string(),
                 ],
                 delivered_response: None,
+                binaural_diagnostics: None,
             }),
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         });
 
         let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
@@ -6906,7 +6914,11 @@ mod tests {
                     "center".to_string(),
                 ],
                 delivered_response: None,
+                binaural_diagnostics: None,
             }),
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         });
 
         let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
@@ -7328,6 +7340,9 @@ mod tests {
             }),
             timing_diagnostics: None,
             ctc: None,
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         });
 
         let config = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
@@ -7537,6 +7552,9 @@ mod tests {
             }),
             timing_diagnostics: None,
             ctc: None,
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         });
 
         let config = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();

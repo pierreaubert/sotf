@@ -16,7 +16,7 @@ Signals:
 - `id` — per-channel identification tones (unique frequency per channel)
 - `thd1k` — single-tone 1 kHz @ -3 dBFS (for THD)
 - `thd100` — single-tone 100 Hz @ -3 dBFS (low-frequency THD)
-- `imd_smpte` — SMPTE two-tone 60 Hz + 7 kHz (4:1 amplitude ratio)
+- `imd_smpte` — SMPTE two-tone 60 Hz + 7 kHz (4:1 power ratio, 2:1 amplitude ratio)
 - `imd_ccif` — CCIF two-tone 19 kHz + 20 kHz (equal amplitudes)
 - `sweep` — logarithmic frequency sweep from 20 Hz to 20 kHz
 - `white_noise` — white noise (flat spectrum)
@@ -62,12 +62,11 @@ cargo run --bin import-design-tokens
 ## Dependencies
 
 - `sotf-engine` / `sotf-plugins` — Audio engine and plugins
-- `sotf-gpui` — GPUI toolkit
+- `sotf-gpui` — GPUI theme definitions for design-token import/export
 - `gpui` — UI framework
-- `symphonia` — Audio decoding
 - `hound` — WAV I/O
-- `image` — Image processing for album art thumbnails
 - `clap` — CLI parsing
+- `rusqlite` / `bincode` — SOFA-to-SQLite conversion
 
 ## Testing
 

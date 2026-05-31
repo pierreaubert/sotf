@@ -8,6 +8,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::theme::ThemeState as UiKitThemeState;
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
+use sotf_audio_player::QueuePlaybackEffect;
 use std::time::Duration;
 
 #[cfg(target_os = "ios")]
@@ -471,7 +472,6 @@ impl PlayerView {
         Some(focused)
     }
 
-
     #[cfg(target_os = "ios")]
     fn drain_ios_remote_commands(state: &mut AppState) {
         for _ in 0..32 {
@@ -884,9 +884,20 @@ impl PlayerView {
                 return;
             }
             if state.app.ui_state.current_screen == Screen::Queue {
-                state
+                let effect = state
                     .app
                     .remove_from_queue(state.app.queue_state.selected_index);
+                match effect {
+                    QueuePlaybackEffect::Reload(source) | QueuePlaybackEffect::Play(source) => {
+                        Self::play_track(state, source);
+                    }
+                    QueuePlaybackEffect::Stop => {
+                        if let Err(e) = state.player.lock().stop() {
+                            log::warn!("[UI] Failed to stop player after queue removal: {}", e);
+                        }
+                    }
+                    QueuePlaybackEffect::None => {}
+                }
             }
         });
         cx.notify();

@@ -9,6 +9,9 @@ Per-band dynamic range compression with 2-5 frequency bands and independent comp
 
 ### Global Parameters
 
+
+### Global
+
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Bands | Int | 2 .. 5 | 3 | - | Number of frequency bands |

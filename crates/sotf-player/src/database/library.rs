@@ -8,7 +8,7 @@ use super::{
     MusicDatabase, current_timestamp, get_file_mtime, split_and_normalize_genres,
     split_metadata_value,
 };
-use crate::library::{Album, Track};
+use crate::library::{Album, Track, normalize_waveform_samples};
 
 impl MusicDatabase {
     /// Get the file modification time for a track by path
@@ -98,6 +98,9 @@ impl MusicDatabase {
                     let path_str = row.get::<_, String>(0)?;
                     let is_fav = row.get::<_, i64>(21)? != 0;
                     let play_count = track_play_counts.get(&path_str).copied().unwrap_or(0);
+                    let waveform = row
+                        .get::<_, Option<Vec<u8>>>(12)?
+                        .and_then(|bytes| normalize_waveform_samples(&bytes));
                     Ok(Track {
                         path: PathBuf::from(path_str),
                         title: row.get::<_, Option<String>>(1)?,
@@ -111,7 +114,7 @@ impl MusicDatabase {
                         replay_peak: row.get::<_, Option<f64>>(9)?,
                         album_gain: row.get::<_, Option<f64>>(10)?,
                         album_peak: row.get::<_, Option<f64>>(11)?,
-                        waveform: row.get::<_, Option<Vec<u8>>>(12)?,
+                        waveform,
                         genre: row.get::<_, Option<String>>(13)?,
                         composer: row.get::<_, Option<String>>(14)?,
                         disc_number: row.get::<_, Option<i64>>(15)?.map(|n| n as u32),
@@ -223,6 +226,7 @@ impl MusicDatabase {
             for track in &album.tracks {
                 let file_mtime = get_file_mtime(&track.path).unwrap_or(0);
                 let path_str = track.path.to_string_lossy().to_string();
+                let waveform = track.waveform.as_deref().map(|samples| &samples[..]);
 
                 tx.execute(
                     "INSERT INTO tracks (album_id, path, title, artist, track_number, duration_secs, channels,
@@ -266,7 +270,7 @@ impl MusicDatabase {
                         now,
                         now,
                         now,
-                        track.waveform.as_ref(),
+                        waveform,
                         track.genre,
                         track.composer,
                         track.disc_number.map(|n| n as i64),

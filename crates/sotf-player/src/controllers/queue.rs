@@ -3,10 +3,9 @@
 //! Mutations return `QueuePlaybackEffect` so the UI knows what to do with the
 //! Player without the controller owning it.
 
+use sotf_audio::decoder::AudioSource;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
-
-use sotf_audio::decoder::AudioSource;
 
 use crate::{Album, Queue, QueueItem, Track};
 
@@ -73,6 +72,7 @@ impl QueueController {
     ///
     /// Returns an error if none of the album's tracks exist on disk.
     pub fn add_album(&mut self, album: Album) -> Result<usize, String> {
+        validate_album_has_tracks(&album)?;
         #[cfg(not(feature = "testing"))]
         validate_album_has_files(&album)?;
         Ok(self.queue.add(album))
@@ -82,6 +82,7 @@ impl QueueController {
     ///
     /// Returns an error if none of the album's tracks exist on disk.
     pub fn play_album_now(&mut self, album: Album) -> Result<QueuePlaybackEffect, String> {
+        validate_album_has_tracks(&album)?;
         #[cfg(not(feature = "testing"))]
         validate_album_has_files(&album)?;
         let new_index = self.queue.add(album);
@@ -175,49 +176,17 @@ impl QueueController {
         self.selected_index = 0;
     }
 
-    /// Get the path of the currently playing track.
-    pub fn current_track_path(&self) -> Option<PathBuf> {
-        self.queue.current_track_path()
-    }
-
-    /// Get a reference to the currently playing track.
-    pub fn current_track(&self) -> Option<&Track> {
-        self.queue.current_track()
-    }
-
-    /// Get the duration of the current track in seconds.
-    pub fn current_track_duration(&self) -> f64 {
-        self.queue.current_track_duration()
-    }
-
-    /// Get the current album index.
-    pub fn current_index(&self) -> Option<usize> {
-        self.queue.current_index
-    }
-
     /// Set the current index directly (for sync with external state).
     pub fn set_current_index(&mut self, index: Option<usize>) {
         self.queue.current_index = index;
     }
 
-    /// Get the queue items.
-    pub fn items(&self) -> &[QueueItem] {
-        &self.queue.items
-    }
-
-    /// Get a mutable reference to the queue items.
-    pub fn items_mut(&mut self) -> &mut Vec<QueueItem> {
-        &mut self.queue.items
-    }
-
-    /// Get the number of items in the queue.
-    pub fn len(&self) -> usize {
-        self.queue.len()
-    }
-
-    /// Check if the queue is empty.
-    pub fn is_empty(&self) -> bool {
-        self.queue.is_empty()
+    /// Get the current album index.
+    ///
+    /// Kept as a small semantic accessor because several app call sites use it
+    /// to sync playback state; other queue accessors are available via `Deref`.
+    pub fn current_index(&self) -> Option<usize> {
+        self.queue.current_index
     }
 
     /// Fill queue with "magic" recommendations (~1h of music).
@@ -295,12 +264,16 @@ impl QueueController {
     }
 }
 
-/// Check that at least one track in the album has a file that exists on disk.
-#[cfg(not(feature = "testing"))]
-fn validate_album_has_files(album: &Album) -> Result<(), String> {
+fn validate_album_has_tracks(album: &Album) -> Result<(), String> {
     if album.tracks.is_empty() {
         return Err("Album has no tracks".to_string());
     }
+    Ok(())
+}
+
+/// Check that at least one track in the album has a file that exists on disk.
+#[cfg(not(feature = "testing"))]
+fn validate_album_has_files(album: &Album) -> Result<(), String> {
     if album.tracks.iter().any(|t| t.path.exists()) {
         return Ok(());
     }
@@ -369,6 +342,15 @@ mod tests {
         let source = ctrl.queue.current_track_source();
         assert!(source.is_some());
         assert_eq!(ctrl.current_index(), Some(1));
+    }
+
+    #[test]
+    fn test_play_album_now_rejects_empty_album() {
+        let mut ctrl = QueueController::new();
+        let result = ctrl.play_album_now(make_album("Empty", 0));
+        assert_eq!(result, Err("Album has no tracks".to_string()));
+        assert!(ctrl.is_empty());
+        assert_eq!(ctrl.current_index, None);
     }
 
     #[test]

@@ -66,20 +66,22 @@ impl WaveformScanner {
                     }
                 };
 
-                loop {
+                'worker_loop: loop {
                     // Check if we should stop
                     if stop_rx.try_recv().is_ok() {
                         log::info!("[Waveform Worker {}] Stopping", worker_id);
                         break;
                     }
 
-                    // Wait while paused (check every 200ms, also check for stop)
+                    // Wait while paused, waking quickly for either resume or stop.
                     while pause_flag.load(Ordering::Relaxed) {
-                        if stop_rx.try_recv().is_ok() {
-                            log::info!("[Waveform Worker {}] Stopping while paused", worker_id);
-                            return;
+                        channel::select! {
+                            recv(stop_rx) -> _ => {
+                                log::info!("[Waveform Worker {}] Stopping while paused", worker_id);
+                                break 'worker_loop;
+                            }
+                            recv(channel::after(std::time::Duration::from_millis(50))) -> _ => {}
                         }
-                        std::thread::sleep(std::time::Duration::from_millis(200));
                     }
 
                     // Block on (task, stop) concurrently — N workers wait at

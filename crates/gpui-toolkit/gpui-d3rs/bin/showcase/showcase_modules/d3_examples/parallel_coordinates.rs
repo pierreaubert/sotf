@@ -22,7 +22,7 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let plot_h = height - margin_top - margin_bottom;
 
     // Parse CSV with d3rs
-    let rows = d3rs::fetch::parse_csv(CARS_CSV);
+    let rows = d3rs::fetch::parse_csv(CARS_CSV).expect("valid cars CSV");
 
     // Axes: column names (skip "name" and "year")
     let axis_keys = [

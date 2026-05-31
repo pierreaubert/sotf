@@ -162,7 +162,7 @@ involvement, prefer a unit test in the implicated crate over a `.scn`.
 | `key`        | Synthetic keystroke (`gpui::Keystroke::parse` syntax).        |
 | `click`      | Click a `dev_track`-registered element by selector.           |
 | `export_room_eq_json` | Export completed RoomEQ DSP JSON to the QA artifact. |
-| `elements`   | List every currently tracked selector (debugging aid).        |
+| `elements`   | Print every tracked selector to stdout (debugging aid).       |
 
 Comparison clauses support `==`, `!=`, `>`, `>=`, `<`, and `<=`. They
 accept trailing `tolerance=<f>` for numeric equality and `timeout=<dur>`

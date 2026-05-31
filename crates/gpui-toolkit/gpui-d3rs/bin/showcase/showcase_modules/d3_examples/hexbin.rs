@@ -14,7 +14,7 @@ const DIAMONDS_CSV: &str = include_str!("../../data/diamonds.csv");
 
 pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     // Load real diamonds dataset (53,940 rows) via d3rs CSV parser
-    let rows = d3rs::fetch::parse_csv(DIAMONDS_CSV);
+    let rows = d3rs::fetch::parse_csv(DIAMONDS_CSV).expect("valid diamonds CSV");
     let data: Vec<[f64; 2]> = rows
         .iter()
         .filter_map(|row| {

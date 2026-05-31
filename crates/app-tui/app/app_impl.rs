@@ -474,7 +474,7 @@ impl App {
         let track = self.current_track()?;
         let gain = match self.replay_gain_mode {
             ReplayGainMode::Track => track.replay_gain,
-            ReplayGainMode::Album => track.album_gain.or(track.replay_gain),
+            ReplayGainMode::Album => track.album_gain,
         };
         gain.map(|g| g + self.replay_gain_preamp as f64)
     }

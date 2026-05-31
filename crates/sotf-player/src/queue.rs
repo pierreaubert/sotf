@@ -135,7 +135,8 @@ impl Queue {
             if self.items.is_empty() {
                 self.current_index = None;
             } else if index < self.items.len() {
-                // Stay at same index (next album shifted down)
+                // [A, B, C], current=B, remove(1) -> [A, C];
+                // C is now at index 1, so keep the same current_index.
                 self.current_index = Some(index);
                 // Reset to first track of the new album at this position
                 self.items[index].current_track_index = 0;

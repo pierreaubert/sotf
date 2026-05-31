@@ -1,3 +1,27 @@
+# 0.7.0
+
+## Breaking Changes
+
+- `d3rs::fetch` parsing is now `Result`-first: `parse_csv`, `parse_tsv`,
+  `parse_dsv`, `DsvParser::parse`, and `DsvParser::parse_rows` return
+  structured `DsvParseError` values instead of silently returning empty data on
+  malformed input.
+
+## Features
+
+- Added explicit lossy helpers (`parse_csv_lossy`, `parse_tsv_lossy`,
+  `parse_dsv_lossy`, `DsvParser::parse_lossy`, and
+  `DsvParser::parse_rows_lossy`) for D3-compatible demo paths.
+- Added `ColumnPolicy::Strict` for header/row width validation plus empty and
+  duplicate header rejection.
+- DSV parsing now handles quoted newlines and CRLF input while reporting line,
+  column, byte offset, and structured error kinds.
+
+## Fixes
+
+- `CsvOptions::default()` now matches `CsvOptions::new()` instead of disabling
+  empty-line skipping and value trimming.
+
 # 0.6.9
 
 ## Features

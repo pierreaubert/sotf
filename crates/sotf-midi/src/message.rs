@@ -34,6 +34,13 @@ pub enum MidiMessage {
     /// System Exclusive message
     SystemExclusive { data: Vec<u8> },
 
+    /// Fixed-size System Common / Real-Time / EOX message.
+    ///
+    /// `len` is the number of valid bytes in `data` (0-2). Keeping these
+    /// messages stack-sized avoids heap allocation for MIDI Clock, Active
+    /// Sensing, MTC quarter-frame, Song Select, and Song Position Pointer.
+    System { status: u8, data: [u8; 2], len: u8 },
+
     /// Raw MIDI bytes (for unsupported messages)
     Raw { data: Vec<u8> },
 }
@@ -63,95 +70,74 @@ impl MidiMessage {
         match message_type {
             0x80 => {
                 // Note Off
-                if bytes.len() < 3 {
-                    return Err(MidiError::InvalidMessage("Note Off too short".to_string()));
-                }
+                let data = required_data_bytes(bytes, 2, "Note Off")?;
                 Ok(MidiMessage::NoteOff {
                     channel,
-                    note: bytes[1] & 0x7F,
-                    velocity: bytes[2] & 0x7F,
+                    note: data[0],
+                    velocity: data[1],
                 })
             }
             0x90 => {
                 // Note On
-                if bytes.len() < 3 {
-                    return Err(MidiError::InvalidMessage("Note On too short".to_string()));
-                }
-                let velocity = bytes[2] & 0x7F;
-                // Note: velocity 0 is often used as Note Off
+                let data = required_data_bytes(bytes, 2, "Note On")?;
+                let velocity = data[1];
+                // Per MIDI convention, Note On with velocity 0 is equivalent
+                // to Note Off. A real 0x80 Note Off can still carry release
+                // velocity; this 0x90 form cannot, so the normalized release
+                // velocity is necessarily 0.
                 if velocity == 0 {
                     Ok(MidiMessage::NoteOff {
                         channel,
-                        note: bytes[1] & 0x7F,
+                        note: data[0],
                         velocity: 0,
                     })
                 } else {
                     Ok(MidiMessage::NoteOn {
                         channel,
-                        note: bytes[1] & 0x7F,
+                        note: data[0],
                         velocity,
                     })
                 }
             }
             0xA0 => {
                 // Polyphonic Aftertouch
-                if bytes.len() < 3 {
-                    return Err(MidiError::InvalidMessage(
-                        "Polyphonic Aftertouch too short".to_string(),
-                    ));
-                }
+                let data = required_data_bytes(bytes, 2, "Polyphonic Aftertouch")?;
                 Ok(MidiMessage::PolyphonicAftertouch {
                     channel,
-                    note: bytes[1] & 0x7F,
-                    pressure: bytes[2] & 0x7F,
+                    note: data[0],
+                    pressure: data[1],
                 })
             }
             0xB0 => {
                 // Control Change
-                if bytes.len() < 3 {
-                    return Err(MidiError::InvalidMessage(
-                        "Control Change too short".to_string(),
-                    ));
-                }
+                let data = required_data_bytes(bytes, 2, "Control Change")?;
                 Ok(MidiMessage::ControlChange {
                     channel,
-                    controller: bytes[1] & 0x7F,
-                    value: bytes[2] & 0x7F,
+                    controller: data[0],
+                    value: data[1],
                 })
             }
             0xC0 => {
                 // Program Change
-                if bytes.len() < 2 {
-                    return Err(MidiError::InvalidMessage(
-                        "Program Change too short".to_string(),
-                    ));
-                }
+                let data = required_data_bytes(bytes, 1, "Program Change")?;
                 Ok(MidiMessage::ProgramChange {
                     channel,
-                    program: bytes[1] & 0x7F,
+                    program: data[0],
                 })
             }
             0xD0 => {
                 // Channel Aftertouch
-                if bytes.len() < 2 {
-                    return Err(MidiError::InvalidMessage(
-                        "Channel Aftertouch too short".to_string(),
-                    ));
-                }
+                let data = required_data_bytes(bytes, 1, "Channel Aftertouch")?;
                 Ok(MidiMessage::ChannelAftertouch {
                     channel,
-                    pressure: bytes[1] & 0x7F,
+                    pressure: data[0],
                 })
             }
             0xE0 => {
                 // Pitch Bend
-                if bytes.len() < 3 {
-                    return Err(MidiError::InvalidMessage(
-                        "Pitch Bend too short".to_string(),
-                    ));
-                }
-                let lsb = bytes[1] & 0x7F;
-                let msb = bytes[2] & 0x7F;
+                let data = required_data_bytes(bytes, 2, "Pitch Bend")?;
+                let lsb = data[0];
+                let msb = data[1];
                 let value = ((msb as u16) << 7) | (lsb as u16);
                 Ok(MidiMessage::PitchBend { channel, value })
             }
@@ -163,10 +149,7 @@ impl MidiMessage {
                         data: bytes.to_vec(),
                     })
                 } else {
-                    // Other system messages - store as raw
-                    Ok(MidiMessage::Raw {
-                        data: bytes.to_vec(),
-                    })
+                    parse_system_message(bytes)
                 }
             }
             _ => {
@@ -196,11 +179,24 @@ impl MidiMessage {
                 status
             )));
         }
-        let mut buf = [0u8; 4];
+        let data_len = channel_voice_data_len(status).ok_or_else(|| {
+            MidiError::InvalidMessage(format!(
+                "running_status 0x{:02X} is not a channel-voice status",
+                status
+            ))
+        })?;
+        if bytes.len() < data_len {
+            return Err(MidiError::InvalidMessage(format!(
+                "Running-status message 0x{:02X} too short: need {} data bytes, got {}",
+                status,
+                data_len,
+                bytes.len()
+            )));
+        }
+        let mut buf = [0u8; 3];
         buf[0] = status;
-        let len = (bytes.len() + 1).min(4);
-        buf[1..len].copy_from_slice(&bytes[..len - 1]);
-        Self::from_bytes(&buf[..len])
+        buf[1..1 + data_len].copy_from_slice(&bytes[..data_len]);
+        Self::from_bytes(&buf[..1 + data_len])
     }
 
     /// Write the MIDI message bytes into `out`, returning the number of bytes written.
@@ -279,6 +275,15 @@ impl MidiMessage {
                 }
                 3
             }
+            MidiMessage::System { status, data, len } => {
+                let len = (*len as usize).min(data.len());
+                let required = 1 + len;
+                if out.len() >= required {
+                    out[0] = *status;
+                    out[1..required].copy_from_slice(&data[..len]);
+                }
+                required
+            }
             MidiMessage::SystemExclusive { data } | MidiMessage::Raw { data } => {
                 if out.len() >= data.len() {
                     out[..data.len()].copy_from_slice(data);
@@ -329,6 +334,13 @@ impl MidiMessage {
                 let lsb = (value & 0x7F) as u8;
                 let msb = ((value >> 7) & 0x7F) as u8;
                 vec![0xE0 | (channel & 0x0F), lsb, msb]
+            }
+            MidiMessage::System { status, data, len } => {
+                let len = (*len as usize).min(data.len());
+                let mut bytes = Vec::with_capacity(1 + len);
+                bytes.push(*status);
+                bytes.extend_from_slice(&data[..len]);
+                bytes
             }
             MidiMessage::SystemExclusive { data } => data.clone(),
             MidiMessage::Raw { data } => data.clone(),
@@ -384,11 +396,79 @@ impl MidiMessage {
             MidiMessage::SystemExclusive { data } => {
                 format!("SysEx: {} bytes", data.len())
             }
+            MidiMessage::System { status, len, .. } => {
+                format!("System: status=0x{:02X}, data_len={}", status, len)
+            }
             MidiMessage::Raw { data } => {
                 format!("Raw: {} bytes", data.len())
             }
         }
     }
+}
+
+fn required_data_bytes<'a>(bytes: &'a [u8], data_len: usize, name: &str) -> Result<&'a [u8]> {
+    if bytes.len() < 1 + data_len {
+        return Err(MidiError::InvalidMessage(format!("{name} too short")));
+    }
+    let data = &bytes[1..1 + data_len];
+    validate_data_bytes(data, name)?;
+    Ok(data)
+}
+
+fn validate_data_bytes(bytes: &[u8], name: &str) -> Result<()> {
+    if let Some((index, byte)) = bytes
+        .iter()
+        .copied()
+        .enumerate()
+        .find(|(_, b)| b & 0x80 != 0)
+    {
+        return Err(MidiError::InvalidMessage(format!(
+            "{name} data byte {} has high bit set: 0x{:02X}",
+            index + 1,
+            byte
+        )));
+    }
+    Ok(())
+}
+
+fn channel_voice_data_len(status: u8) -> Option<usize> {
+    match status & 0xF0 {
+        0x80 | 0x90 | 0xA0 | 0xB0 | 0xE0 => Some(2),
+        0xC0 | 0xD0 => Some(1),
+        _ => None,
+    }
+}
+
+fn system_data_len(status: u8) -> Option<usize> {
+    match status {
+        0xF1 | 0xF3 => Some(1),
+        0xF2 => Some(2),
+        0xF6 | 0xF7 | 0xF8 | 0xF9 | 0xFA | 0xFB | 0xFC | 0xFE | 0xFF => Some(0),
+        _ => None,
+    }
+}
+
+fn parse_system_message(bytes: &[u8]) -> Result<MidiMessage> {
+    let status = bytes[0];
+    let Some(data_len) = system_data_len(status) else {
+        return Ok(MidiMessage::Raw {
+            data: bytes.to_vec(),
+        });
+    };
+    if bytes.len() < 1 + data_len {
+        return Err(MidiError::InvalidMessage(format!(
+            "System message 0x{:02X} too short",
+            status
+        )));
+    }
+    let mut data = [0u8; 2];
+    data[..data_len].copy_from_slice(&bytes[1..1 + data_len]);
+    validate_data_bytes(&data[..data_len], "System message")?;
+    Ok(MidiMessage::System {
+        status,
+        data,
+        len: data_len as u8,
+    })
 }
 
 #[cfg(test)]
@@ -483,6 +563,54 @@ mod tests {
     #[test]
     fn test_from_bytes_with_status_no_running_errors() {
         let result = MidiMessage::from_bytes_with_status(&[7, 100], None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_bytes_rejects_status_byte_in_channel_data() {
+        let result = MidiMessage::from_bytes(&[0x90, 0x90, 60]);
+        assert!(
+            result.is_err(),
+            "status byte in channel data must not be masked into note 16"
+        );
+    }
+
+    #[test]
+    fn test_from_bytes_with_status_rejects_status_byte_in_data() {
+        let result = MidiMessage::from_bytes_with_status(&[0xB0, 100], Some(0x90));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_system_realtime_is_stack_sized_message() {
+        let msg = MidiMessage::from_bytes(&[0xF8]).unwrap();
+        assert_eq!(
+            msg,
+            MidiMessage::System {
+                status: 0xF8,
+                data: [0, 0],
+                len: 0
+            }
+        );
+        let mut out = [0u8; 3];
+        let n = msg.write_to(&mut out);
+        assert_eq!(n, 1);
+        assert_eq!(&out[..n], &[0xF8]);
+    }
+
+    #[test]
+    fn test_system_common_validates_data_bytes() {
+        let msg = MidiMessage::from_bytes(&[0xF1, 0x7F]).unwrap();
+        assert_eq!(
+            msg,
+            MidiMessage::System {
+                status: 0xF1,
+                data: [0x7F, 0],
+                len: 1
+            }
+        );
+
+        let result = MidiMessage::from_bytes(&[0xF1, 0x80]);
         assert!(result.is_err());
     }
 
