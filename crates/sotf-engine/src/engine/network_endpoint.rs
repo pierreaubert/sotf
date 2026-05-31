@@ -63,15 +63,29 @@ pub fn plan_network_endpoint(config: &NetworkEndpointConfig) -> NetworkEndpointP
                 )
             }
         }
-        NetworkEndpointMode::HttpEndpoint => NetworkEndpointPlan::new(
-            config,
-            NetworkEndpointBackend::HttpEndpoint,
-            NetworkEndpointStatus::EndpointUnavailable,
-            Some(format!(
-                "HTTP endpoint will bind during engine startup at {}:{}",
-                config.bind_addr, config.port
-            )),
-        ),
+        NetworkEndpointMode::HttpEndpoint => {
+            #[cfg(feature = "streaming")]
+            {
+                NetworkEndpointPlan::new(
+                    config,
+                    NetworkEndpointBackend::HttpEndpoint,
+                    NetworkEndpointStatus::EndpointUnavailable,
+                    Some(format!(
+                        "HTTP endpoint will bind during engine startup at {}:{}",
+                        config.bind_addr, config.port
+                    )),
+                )
+            }
+            #[cfg(not(feature = "streaming"))]
+            {
+                NetworkEndpointPlan::new(
+                    config,
+                    NetworkEndpointBackend::HttpEndpoint,
+                    NetworkEndpointStatus::EndpointUnavailable,
+                    Some("HTTP endpoint support requires the 'streaming' feature".to_string()),
+                )
+            }
+        }
     }
 }
 
@@ -115,11 +129,19 @@ mod tests {
 
         assert_eq!(plan.backend, NetworkEndpointBackend::HttpEndpoint);
         assert_eq!(plan.status, NetworkEndpointStatus::EndpointUnavailable);
+        #[cfg(feature = "streaming")]
         assert!(
             plan.reason
                 .as_deref()
                 .unwrap()
                 .contains("bind during engine startup")
+        );
+        #[cfg(not(feature = "streaming"))]
+        assert!(
+            plan.reason
+                .as_deref()
+                .unwrap()
+                .contains("requires the 'streaming' feature")
         );
     }
 }

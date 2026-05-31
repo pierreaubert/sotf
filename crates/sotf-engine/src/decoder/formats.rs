@@ -842,6 +842,8 @@ pub enum DsdDecodeCapability {
     NotDsd,
     /// The engine can decode the DSD container to PCM with `DsdOutputMode::PcmDecode`.
     PcmDecodeAvailable,
+    /// The engine can decode this DSD container to PCM only for uncompressed streams.
+    PcmDecodeAvailableUncompressedOnly,
     /// The container is recognized but this build cannot decode it.
     UnsupportedContainer,
 }
@@ -851,6 +853,9 @@ impl DsdDecodeCapability {
         match self {
             DsdDecodeCapability::NotDsd => "not a DSD/SACD container",
             DsdDecodeCapability::PcmDecodeAvailable => "PCM decode available",
+            DsdDecodeCapability::PcmDecodeAvailableUncompressedOnly => {
+                "PCM decode available for uncompressed DSD; compressed DST is unsupported"
+            }
             DsdDecodeCapability::UnsupportedContainer => "recognized but unsupported",
         }
     }
@@ -953,7 +958,8 @@ impl AudioFormat {
     /// Report DSD/SACD decode support without attempting to open the file.
     pub fn dsd_decode_capability(&self) -> DsdDecodeCapability {
         match self {
-            AudioFormat::DsdDsf | AudioFormat::DsdDff => DsdDecodeCapability::PcmDecodeAvailable,
+            AudioFormat::DsdDsf => DsdDecodeCapability::PcmDecodeAvailable,
+            AudioFormat::DsdDff => DsdDecodeCapability::PcmDecodeAvailableUncompressedOnly,
             AudioFormat::SacdIso => DsdDecodeCapability::UnsupportedContainer,
             _ => DsdDecodeCapability::NotDsd,
         }
@@ -1206,7 +1212,7 @@ mod tests {
         );
         assert_eq!(
             AudioFormat::DsdDff.dsd_decode_capability(),
-            DsdDecodeCapability::PcmDecodeAvailable
+            DsdDecodeCapability::PcmDecodeAvailableUncompressedOnly
         );
         assert_eq!(
             AudioFormat::SacdIso.dsd_decode_capability(),
@@ -1219,7 +1225,9 @@ mod tests {
 
         let summary = AudioFormat::dsd_capabilities_string();
         assert!(summary.contains("DSD DSF: PCM decode available"));
-        assert!(summary.contains("DSD DFF: PCM decode available"));
+        assert!(summary.contains(
+            "DSD DFF: PCM decode available for uncompressed DSD; compressed DST is unsupported"
+        ));
         assert!(summary.contains("SACD ISO: recognized but unsupported"));
     }
 }

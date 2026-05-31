@@ -15,10 +15,9 @@ use crate::engine::processing_thread::{
 use arc_swap::ArcSwap;
 #[cfg(feature = "streaming")]
 use sotf_streaming::{PcmStreamHandle, PcmStreamServer, PcmStreamServerConfig};
-use sotf_types::{
-    DsdOutputStatus, EngineOversamplingPolicy, NetworkEndpointMode, NetworkEndpointStatus,
-    OutputAccessStatus,
-};
+use sotf_types::{DsdOutputStatus, EngineOversamplingPolicy, OutputAccessStatus};
+#[cfg(feature = "streaming")]
+use sotf_types::{NetworkEndpointMode, NetworkEndpointStatus};
 use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};

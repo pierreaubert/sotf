@@ -608,6 +608,7 @@ pub struct ExternalPlugin {
     _sample_rate: u32,
     parameters: Vec<Parameter>,
     hosting_backend: ExternalHostingBackend,
+    restore_error: Option<String>,
     /// Format-specific plugin instance (opaque)
     _instance: Option<Box<dyn Any + Send>>,
 }
@@ -638,6 +639,7 @@ impl ExternalPlugin {
             _sample_rate: sample_rate,
             parameters: Vec::new(),
             hosting_backend: hosting_plan.backend,
+            restore_error: None,
             _instance: instance,
         })
     }
@@ -655,6 +657,10 @@ impl ExternalPlugin {
         plan_external_plugin_hosting(&self.descriptor)
     }
 
+    pub fn restore_error(&self) -> Option<&str> {
+        self.restore_error.as_deref()
+    }
+
     /// Serialize descriptor and placeholder state for project/preset storage.
     pub fn placeholder_state(&self) -> ExternalPluginState {
         ExternalPluginState::new(
@@ -669,8 +675,35 @@ impl ExternalPlugin {
         state: &ExternalPluginState,
         sample_rate: u32,
     ) -> Result<Self, String> {
+        if sample_rate == 0 {
+            return Err("sample rate must be positive".into());
+        }
         state.validate_descriptor_consistency()?;
-        Self::new(&state.descriptor, sample_rate)
+        match Self::new(&state.descriptor, sample_rate) {
+            Ok(plugin) => Ok(plugin),
+            Err(err) => Ok(Self::unavailable_placeholder(
+                state.descriptor.clone(),
+                sample_rate,
+                err,
+            )),
+        }
+    }
+
+    fn unavailable_placeholder(
+        descriptor: PluginDescriptor,
+        sample_rate: u32,
+        restore_error: String,
+    ) -> Self {
+        Self {
+            input_channels: descriptor.audio_inputs,
+            output_channels: descriptor.audio_outputs.max(1),
+            descriptor,
+            _sample_rate: sample_rate,
+            parameters: Vec::new(),
+            hosting_backend: ExternalHostingBackend::Passthrough,
+            restore_error: Some(restore_error),
+            _instance: None,
+        }
     }
 
     pub fn to_placeholder_preset(
@@ -1406,6 +1439,57 @@ mod tests {
 
         fs::remove_file(plugin_path).unwrap();
         fs::remove_dir_all(tmp_path).unwrap();
+    }
+
+    #[test]
+    fn test_external_plugin_placeholder_state_restores_missing_plugin_as_unavailable() {
+        let missing_path = env::temp_dir().join(format!(
+            "sotf-external-plugin-missing-{}.clap",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let desc = PluginDescriptor {
+            id: "test.missing".into(),
+            name: "Missing Test".into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: missing_path,
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec!["state".into()],
+            scan_status: PluginScanStatus::Discovered,
+        };
+        let state = ExternalPluginState::new(
+            desc.clone(),
+            ExternalPluginSandboxMode::InProcess,
+            vec![1, 2, 3],
+        );
+
+        let mut restored = ExternalPlugin::from_placeholder_state(&state, 48_000).unwrap();
+
+        assert_eq!(restored.descriptor(), &desc);
+        assert_eq!(
+            restored.hosting_backend(),
+            ExternalHostingBackend::Passthrough
+        );
+        assert!(
+            restored
+                .restore_error()
+                .unwrap()
+                .contains("plugin path does not exist")
+        );
+
+        let input = vec![0.25, -0.5, 1.0, -1.0];
+        let mut output = vec![0.0; input.len()];
+        let frames = restored
+            .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+            .unwrap();
+        assert_eq!(frames, 2);
+        assert_eq!(output, input);
     }
 
     #[test]
