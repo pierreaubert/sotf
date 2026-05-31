@@ -86,7 +86,6 @@ pub use stories::{
 pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
 };
-
 pub use validation::{
     LayoutIssue, LayoutIssueKind, LayoutIssueSeverity, LayoutValidationReport, validate_layout,
 };

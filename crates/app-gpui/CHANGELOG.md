@@ -1,5 +1,16 @@
 # 0.6.6 (unreleased)
 
+## SOTF API pairing and trust controls
+
+- The Servers settings pairing toggle now calls the running authenticated SOTF
+  API server to enable or disable pairing, so QR codes use the server's actual
+  one-time nonce instead of local UI-only state.
+- Pairing QR payloads now include a reachable LAN host instead of `127.0.0.1`,
+  and trusted-client revocation goes through the server endpoint so the live
+  mTLS verifier is updated immediately.
+- Remote SSE handling now accepts both incremental server events and full
+  `state` refresh frames from lag recovery or initial snapshots.
+
 ## Spatial spider visualizer
 
 - New `components/plugins/spatial_spider/` module with `SpiderDisc2D` (2D horizontal disc) and `SpiderView3D` (two intersecting reference planes) elements. Both consume the polygon geometry built by `spatial_spider::data` and are themed via `SpiderColors::from_theme(&Theme)`.

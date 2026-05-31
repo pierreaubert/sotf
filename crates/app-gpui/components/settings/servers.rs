@@ -5,8 +5,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Divider, HStack, Input, InputSize, StackSpacing, Text,
-    TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Divider, HStack, Input, InputSize, QrCode, StackSpacing,
+    Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -42,6 +42,8 @@ impl PlayerView {
             .child(self.render_mpd_section(&server_config, &theme, &translations, &d, cx))
             // DLNA Server section
             .child(self.render_dlna_section(&server_config, &theme, &translations, &d, cx))
+            // Pairing & mTLS trust section
+            .child(self.render_pairing_section(&theme, &d, cx))
             // Native SOTF remote control targets
             .child(self.render_remote_sotf_section(&theme, &d, cx))
     }
@@ -417,6 +419,220 @@ impl PlayerView {
                     )
                     .build(),
             )
+    }
+
+    fn render_pairing_section(
+        &self,
+        theme: &crate::app::theme::Theme,
+        d: &Ds,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let pairing_enabled = state.app.federation.pairing_enabled;
+        let pairing_nonce = state.app.federation.pairing_nonce.clone();
+        let server_fingerprint = state.app.federation.server_fingerprint.clone();
+        let trusted_clients = state.app.federation.trusted_clients.clone();
+        let qr_data = state.app.pairing_qr_data();
+
+        let mut section = div()
+            .flex()
+            .flex_col()
+            .gap(d.gap_md)
+            .p(d.card)
+            .bg(theme.background_secondary)
+            .rounded(d.r_md)
+            .border_1()
+            .border_color(if pairing_enabled {
+                theme.accent
+            } else {
+                theme.border
+            })
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .child(
+                        Text::new("Pairing & Trust")
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        Button::new("toggle-pairing", if pairing_enabled { "On" } else { "Off" })
+                            .variant(if pairing_enabled {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Secondary
+                            })
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(
+                                move |view, _: &ClickEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.toggle_pairing_mode();
+                                    });
+                                    cx.notify();
+                                },
+                            )),
+                    ),
+            )
+            .child(Divider::new().color(theme.border));
+
+        // Server fingerprint (always visible)
+        if let Some(fp) = &server_fingerprint {
+            let fp_short = if fp.len() > 23 {
+                format!("{}...{}", &fp[..11], &fp[fp.len() - 11..])
+            } else {
+                fp.clone()
+            };
+            section = section.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(d.gap)
+                    .child(
+                        div()
+                            .w(rems(7.5))
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_secondary)
+                            .child("Fingerprint"),
+                    )
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_muted)
+                            .child(fp_short),
+                    ),
+            );
+        }
+
+        if pairing_enabled {
+            if let Some(nonce) = &pairing_nonce {
+                section = section.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(d.gap)
+                        .child(
+                            div()
+                                .w(rems(7.5))
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_secondary)
+                                .child("Code"),
+                        )
+                        .child(
+                            div()
+                                .text_size(d.text_xs)
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(theme.accent)
+                                .child(nonce.clone()),
+                        ),
+                );
+            }
+
+            if let Some(data) = &qr_data {
+                section = section.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(d.gap_md)
+                        .py(d.pad_y)
+                        .child(QrCode::new(data.clone()).size(px(160.0)))
+                        .child(
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_muted)
+                                .child("Scan with a mobile SOTF client"),
+                        ),
+                );
+            }
+        } else {
+            section = section.child(
+                div()
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_muted)
+                    .child("Enable pairing to let mobile clients connect via mTLS."),
+            );
+        }
+
+        // Trusted clients list
+        if !trusted_clients.is_empty() {
+            section = section.child(Divider::new().color(theme.border));
+            section = section.child(
+                div()
+                    .text_size(d.text_xs)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_secondary)
+                    .child(format!("Trusted Clients ({})", trusted_clients.len())),
+            );
+            for client in trusted_clients {
+                let fp_for_revoke = client.fingerprint.clone();
+                let fp_short = if client.fingerprint.len() > 23 {
+                    format!(
+                        "{}...{}",
+                        &client.fingerprint[..11],
+                        &client.fingerprint[client.fingerprint.len() - 11..]
+                    )
+                } else {
+                    client.fingerprint.clone()
+                };
+                section = section.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(d.gap_md)
+                        .p(d.pad_y)
+                        .bg(theme.background)
+                        .rounded(d.r_sm)
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(d.grid)
+                                .flex_1()
+                                .child(
+                                    div()
+                                        .text_size(d.text_xs)
+                                        .text_color(theme.text_primary)
+                                        .child(client.name.clone()),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(d.text_xs)
+                                        .text_color(theme.text_muted)
+                                        .child(fp_short),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(d.text_xs)
+                                        .text_color(theme.text_secondary)
+                                        .child(format!("Paired: {}", client.paired_at)),
+                                ),
+                        )
+                        .child(
+                            Button::new(
+                                SharedString::from(format!("revoke-client-{}", client.fingerprint)),
+                                "Revoke",
+                            )
+                            .variant(ButtonVariant::Ghost)
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(
+                                move |view, _: &ClickEvent, _window, cx| {
+                                    let fp = fp_for_revoke.clone();
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.revoke_trusted_client(&fp);
+                                    });
+                                    cx.notify();
+                                },
+                            )),
+                        ),
+                );
+            }
+        }
+
+        section
     }
 
     fn render_remote_sotf_section(

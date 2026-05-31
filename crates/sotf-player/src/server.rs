@@ -3,6 +3,7 @@
 //! When launched with `--server`, the app skips UI and runs MPD/DLNA servers
 //! directly, allowing remote clients to browse the library and control playback.
 
+use std::collections::HashSet;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 
@@ -22,6 +23,7 @@ use crate::lan_discovery::run_sotf_lan_discovery;
 use crate::library::MusicLibrary;
 use crate::player::Player;
 use crate::queue::Queue;
+use crate::sotf_server_event::{EventBroadcaster, SotfServerEvent};
 
 const API_MAX_REQUEST_BYTES: usize = 64 * 1024;
 const API_MAX_BODY_BYTES: usize = 32 * 1024;
@@ -33,6 +35,38 @@ struct ServerState {
     queue: Mutex<Queue>,
     /// Playlist version counter — incremented on every queue mutation.
     playlist_version: std::sync::atomic::AtomicU32,
+    /// Broadcast channel for server-sent events.
+    events: EventBroadcaster,
+    /// Whether pairing mode is currently open.
+    pairing_mode: std::sync::atomic::AtomicBool,
+    /// Pairing nonce/short code — valid only while pairing_mode is true.
+    pairing_nonce: parking_lot::Mutex<String>,
+    /// Trusted client certificate store for mTLS.
+    trusted_clients: parking_lot::Mutex<sotf_tls::TrustedClientStore>,
+    /// Live trusted fingerprints used by the MPD mTLS verifier.
+    trusted_client_fingerprints: Arc<std::sync::Mutex<HashSet<String>>>,
+    /// Server TLS certificate fingerprint (for QR code / manual verification).
+    server_fingerprint: String,
+}
+
+impl ServerState {
+    /// Broadcast a server event to all connected clients.
+    /// Silently ignored if there are no active subscribers.
+    fn broadcast(&self, event: SotfServerEvent) {
+        let _ = self.events.send(event);
+    }
+
+    /// Generate a fresh pairing nonce.
+    fn refresh_pairing_nonce(&self) -> String {
+        let nonce = generate_pairing_nonce();
+        *self.pairing_nonce.lock() = nonce.clone();
+        nonce
+    }
+}
+
+fn generate_pairing_nonce() -> String {
+    let bytes: [u8; 16] = rand::random();
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Adapter bridging MPD protocol commands to the SOTF player.
@@ -49,37 +83,59 @@ impl PlayerAdapter for MpdPlayerAdapter {
             queue.jump_to(pos as usize)
         } else if queue.current_index.is_some() {
             // Resume current
-            return player.resume().map_err(|e| e.to_string());
+            let result = player.resume().map_err(|e| e.to_string());
+            drop(player);
+            drop(queue);
+            if result.is_ok() {
+                self.state.broadcast(SotfServerEvent::PlaybackChanged);
+            }
+            return result;
         } else {
             queue.start()
         };
 
-        match source {
+        let result = match source {
             Some(source) => player
                 .load_and_play_source(source, vec![], 2, None)
                 .map_err(|e| e.to_string()),
             None => Err("No track to play".to_string()),
+        };
+        drop(player);
+        drop(queue);
+        if result.is_ok() {
+            self.state.broadcast(SotfServerEvent::PlaybackChanged);
         }
+        result
     }
 
     fn pause(&self, state: Option<bool>) -> Result<(), String> {
         let player = self.state.player.lock();
-        match state {
+        let result = match state {
             Some(true) | None => player.pause().map_err(|e| e.to_string()),
             Some(false) => player.resume().map_err(|e| e.to_string()),
+        };
+        drop(player);
+        if result.is_ok() {
+            self.state.broadcast(SotfServerEvent::PlaybackChanged);
         }
+        result
     }
 
     fn stop(&self) -> Result<(), String> {
         let mut player = self.state.player.lock();
-        player.stop().map_err(|e| e.to_string())
+        let result = player.stop().map_err(|e| e.to_string());
+        drop(player);
+        if result.is_ok() {
+            self.state.broadcast(SotfServerEvent::PlaybackChanged);
+        }
+        result
     }
 
     fn next(&self) -> Result<(), String> {
         let mut queue = self.state.queue.lock();
         let mut player = self.state.player.lock();
 
-        match queue.next_track() {
+        let result = match queue.next_track() {
             Some(source) => player
                 .load_and_play_source(source, vec![], 2, None)
                 .map_err(|e| e.to_string()),
@@ -87,45 +143,79 @@ impl PlayerAdapter for MpdPlayerAdapter {
                 player.stop().map_err(|e| e.to_string())?;
                 Ok(())
             }
+        };
+        drop(player);
+        drop(queue);
+        if result.is_ok() {
+            self.state.broadcast(SotfServerEvent::PlaybackChanged);
         }
+        result
     }
 
     fn previous(&self) -> Result<(), String> {
         let mut queue = self.state.queue.lock();
         let mut player = self.state.player.lock();
 
-        match queue.previous_track() {
+        let result = match queue.previous_track() {
             Some(source) => player
                 .load_and_play_source(source, vec![], 2, None)
                 .map_err(|e| e.to_string()),
             None => Err("No previous track".to_string()),
+        };
+        drop(player);
+        drop(queue);
+        if result.is_ok() {
+            self.state.broadcast(SotfServerEvent::PlaybackChanged);
         }
+        result
     }
 
     fn seek_pos(&self, _song_pos: u32, time: f64) -> Result<(), String> {
         let player = self.state.player.lock();
-        player.seek(time).map_err(|e| e.to_string())
+        let result = player.seek(time).map_err(|e| e.to_string());
+        drop(player);
+        if result.is_ok() {
+            self.state.broadcast(SotfServerEvent::PlaybackChanged);
+        }
+        result
     }
 
     fn seek_cur(&self, time: f64) -> Result<(), String> {
         let player = self.state.player.lock();
         let current = player.get_position();
-        player.seek(current + time).map_err(|e| e.to_string())
+        let result = player.seek(current + time).map_err(|e| e.to_string());
+        drop(player);
+        if result.is_ok() {
+            self.state.broadcast(SotfServerEvent::PlaybackChanged);
+        }
+        result
     }
 
     fn set_volume(&self, volume: u8) -> Result<(), String> {
         let player = self.state.player.lock();
         let vol_f32 = f32::from(volume) / 100.0;
-        player.set_volume(vol_f32).map_err(|e| e.to_string())
+        let result = player.set_volume(vol_f32).map_err(|e| e.to_string());
+        drop(player);
+        if result.is_ok() {
+            self.state
+                .broadcast(SotfServerEvent::VolumeChanged { volume });
+        }
+        result
     }
 
     fn volume_change(&self, delta: i8) -> Result<(), String> {
         let player = self.state.player.lock();
         let current = (player.get_volume() * 100.0) as i16;
         let new = (current + i16::from(delta)).clamp(0, 100);
-        player
+        let result = player
             .set_volume(new as f32 / 100.0)
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string());
+        drop(player);
+        if result.is_ok() {
+            self.state
+                .broadcast(SotfServerEvent::VolumeChanged { volume: new as u8 });
+        }
+        result
     }
 
     fn status(&self) -> MpdStatus {
@@ -210,9 +300,16 @@ impl PlayerAdapter for MpdPlayerAdapter {
         if let Some(album) = library.albums.iter().find(|a| a.title == uri) {
             let mut queue = self.state.queue.lock();
             queue.add(album.clone());
-            self.state
+            let version = self
+                .state
                 .playlist_version
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1;
+            drop(queue);
+            drop(library);
+            self.state.broadcast(SotfServerEvent::QueueChanged {
+                playlist_version: version,
+            });
             Ok(())
         } else {
             Err(format!("Not found: {}", uri))
@@ -228,9 +325,15 @@ impl PlayerAdapter for MpdPlayerAdapter {
     fn delete(&self, pos: u32) -> Result<(), String> {
         let mut queue = self.state.queue.lock();
         if queue.remove(pos as usize) {
-            self.state
+            let version = self
+                .state
                 .playlist_version
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1;
+            drop(queue);
+            self.state.broadcast(SotfServerEvent::QueueChanged {
+                playlist_version: version,
+            });
             Ok(())
         } else {
             Err(format!("Invalid position: {}", pos))
@@ -240,9 +343,15 @@ impl PlayerAdapter for MpdPlayerAdapter {
     fn clear(&self) -> Result<(), String> {
         let mut queue = self.state.queue.lock();
         queue.clear();
-        self.state
+        let version = self
+            .state
             .playlist_version
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        drop(queue);
+        self.state.broadcast(SotfServerEvent::QueueChanged {
+            playlist_version: version,
+        });
         Ok(())
     }
 
@@ -572,6 +681,18 @@ async fn write_sotf_api_response(
         return stream_api_media(stream, &request.method, route, range, state).await;
     }
 
+    // Long-lived SSE stream for /api/v1/events
+    if route == "/api/v1/events" && request.method == "GET" {
+        if !api_auth_valid(&request.headers, auth_token) {
+            let response = api_error_response(401, "missing or invalid bearer token");
+            return stream
+                .write_all(&response)
+                .await
+                .map_err(|err| err.to_string());
+        }
+        return stream_api_events(stream, state).await;
+    }
+
     let response = handle_sotf_api_request(request, state, settings, auth_token);
     stream
         .write_all(&response)
@@ -702,6 +823,25 @@ fn handle_sotf_api_request(
         ("GET", "/api/v1/capabilities") => {
             return api_json_response(200, api_capabilities_json());
         }
+        ("GET", "/api/v1/pairing/status") => {
+            let pairing_enabled = state
+                .pairing_mode
+                .load(std::sync::atomic::Ordering::Relaxed);
+            return api_json_response(
+                200,
+                json!({
+                    "pairing_enabled": pairing_enabled,
+                    "nonce": None::<String>,
+                    "server_fingerprint": state.server_fingerprint.clone(),
+                }),
+            );
+        }
+        ("POST", "/api/v1/pairing/complete") => {
+            return match api_pairing_complete(state, &request) {
+                Ok(body) => api_json_response(200, body),
+                Err(err) => api_error_response(400, &err),
+            };
+        }
         _ => {}
     }
 
@@ -714,8 +854,60 @@ fn handle_sotf_api_request(
     };
 
     match (request.method.as_str(), route) {
+        ("POST", "/api/v1/pairing/enable") => {
+            state
+                .pairing_mode
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            let nonce = state.refresh_pairing_nonce();
+            api_json_response(
+                200,
+                json!({ "ok": true, "pairing_enabled": true, "nonce": nonce }),
+            )
+        }
+        ("POST", "/api/v1/pairing/disable") => {
+            state
+                .pairing_mode
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            *state.pairing_nonce.lock() = String::new();
+            api_json_response(
+                200,
+                json!({ "ok": true, "pairing_enabled": false, "nonce": null }),
+            )
+        }
+        ("GET", "/api/v1/pairing/clients") => {
+            let clients: Vec<_> = state
+                .trusted_clients
+                .lock()
+                .list()
+                .into_iter()
+                .map(|c| {
+                    json!({
+                        "fingerprint": c.fingerprint,
+                        "name": c.name,
+                        "paired_at": c.paired_at,
+                    })
+                })
+                .collect();
+            api_json_response(200, json!({ "clients": clients }))
+        }
+        ("DELETE", _) if route.starts_with("/api/v1/pairing/clients/") => {
+            let fp = route.strip_prefix("/api/v1/pairing/clients/").unwrap_or("");
+            if fp.is_empty() {
+                return api_error_response(400, "fingerprint required");
+            }
+            let Ok(fingerprint) = normalize_certificate_fingerprint(fp) else {
+                return api_error_response(400, "invalid fingerprint format");
+            };
+            match state.trusted_clients.lock().remove(&fingerprint) {
+                Ok(true) => match remove_live_trusted_client(state, &fingerprint) {
+                    Ok(()) => api_json_response(200, json!({ "ok": true })),
+                    Err(err) => api_error_response(500, &err),
+                },
+                Ok(false) => api_error_response(404, "client not found"),
+                Err(err) => api_error_response(500, &err),
+            }
+        }
         ("GET", "/api/v1/state") => api_json_response(200, api_state_json(state, &adapter)),
-        ("GET", "/api/v1/events") => api_sse_snapshot_response(api_state_json(state, &adapter)),
         ("GET", "/api/v1/queue") => api_json_response(200, api_queue_json(&adapter)),
         ("GET", "/api/v1/library/albums") => api_json_response(200, api_library_albums_json(state)),
         ("POST", "/api/v1/play") => api_command_response("play", adapter.play(None)),
@@ -751,7 +943,10 @@ fn handle_sotf_api_request(
             let player = state.player.lock();
             player.seek(position).map_err(|e| e.to_string())
         }) {
-            Ok(()) => api_json_response(200, json!({ "ok": true, "command": "seek" })),
+            Ok(()) => {
+                state.broadcast(SotfServerEvent::PlaybackChanged);
+                api_json_response(200, json!({ "ok": true, "command": "seek" }))
+            }
             Err(err) => api_error_response(400, &err),
         },
         ("POST", "/api/v1/volume") => match api_json_body(&request).and_then(|body| {
@@ -917,6 +1112,85 @@ async fn stream_api_media_file(
         remaining -= n as u64;
     }
     Ok(())
+}
+
+/// Stream server-sent events (SSE) for live playback and queue updates.
+///
+/// Sends an initial state snapshot, then subscribes to the broadcast channel
+/// and forwards each event as an SSE frame until the client disconnects.
+async fn stream_api_events(stream: &mut TcpStream, state: &Arc<ServerState>) -> Result<(), String> {
+    let adapter = MpdPlayerAdapter {
+        state: Arc::clone(state),
+    };
+
+    // Subscribe to events BEFORE sending the snapshot so we don't miss
+    // any events that fire while the snapshot is being serialized.
+    let mut rx = state.events.subscribe();
+
+    let snapshot = api_state_json(state, &adapter);
+    let snapshot_body = format!("event: state\ndata: {}\n\n", snapshot);
+    let headers = format!(
+        "HTTP/1.1 200 OK\r\n\
+         Content-Type: text/event-stream\r\n\
+         Cache-Control: no-cache\r\n\
+         Connection: keep-alive\r\n\
+         \r\n{}",
+        snapshot_body
+    );
+    stream
+        .write_all(headers.as_bytes())
+        .await
+        .map_err(|err| err.to_string())?;
+
+    // Keep-alive ping interval
+    let mut ping_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+
+    loop {
+        tokio::select! {
+            _ = ping_interval.tick() => {
+                if stream.write_all(b"event: ping\ndata: {}\n\n").await.is_err() {
+                    break;
+                }
+            }
+            result = rx.recv() => {
+                match result {
+                    Ok(event) => {
+                        let payload = event.to_json();
+                        let frame = format!("event: {}\ndata: {}\n\n",
+                            sse_event_name(&event), payload);
+                        if stream.write_all(frame.as_bytes()).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        // Client fell behind; send a full state refresh so they
+                        // can catch up without missing critical mutations.
+                        let refresh = api_state_json(state, &adapter);
+                        let frame = format!("event: state\ndata: {}\n\n", refresh);
+                        if stream.write_all(frame.as_bytes()).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn sse_event_name(event: &SotfServerEvent) -> &'static str {
+    match event {
+        SotfServerEvent::PlaybackChanged => "playback_changed",
+        SotfServerEvent::QueueChanged { .. } => "queue_changed",
+        SotfServerEvent::VolumeChanged { .. } => "volume_changed",
+        SotfServerEvent::StreamMetadataChanged { .. } => "stream_metadata_changed",
+        SotfServerEvent::ScannerProgress { .. } => "scanner_progress",
+        SotfServerEvent::Error { .. } => "error",
+    }
 }
 
 fn api_media_source(state: &Arc<ServerState>, track_id: &str) -> Option<ApiMediaSource> {
@@ -1102,9 +1376,10 @@ fn api_add_album_to_queue(state: &Arc<ServerState>, request: &ApiRequest) -> Res
     let mut queue = state.queue.lock();
     let index = queue.add(album);
     let source = if play_now { queue.jump_to(index) } else { None };
-    state
+    let version = state
         .playlist_version
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
     drop(queue);
 
     if let Some(source) = source {
@@ -1112,29 +1387,41 @@ fn api_add_album_to_queue(state: &Arc<ServerState>, request: &ApiRequest) -> Res
         player
             .load_and_play_source(source, vec![], 2, None)
             .map_err(|e| e.to_string())?;
+        drop(player);
+        state.broadcast(SotfServerEvent::PlaybackChanged);
     }
+
+    state.broadcast(SotfServerEvent::QueueChanged {
+        playlist_version: version,
+    });
 
     Ok(json!({
         "ok": true,
         "command": "queue.add-album",
         "index": index,
-        "playlist_version": state.playlist_version.load(std::sync::atomic::Ordering::Relaxed),
+        "playlist_version": version,
     }))
 }
 
 fn api_clear_queue(state: &Arc<ServerState>) -> Result<Value, String> {
     let mut queue = state.queue.lock();
     queue.clear();
-    state
+    let version = state
         .playlist_version
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
     drop(queue);
     let mut player = state.player.lock();
     player.stop().map_err(|e| e.to_string())?;
+    drop(player);
+    state.broadcast(SotfServerEvent::PlaybackChanged);
+    state.broadcast(SotfServerEvent::QueueChanged {
+        playlist_version: version,
+    });
     Ok(json!({
         "ok": true,
         "command": "queue.clear",
-        "playlist_version": state.playlist_version.load(std::sync::atomic::Ordering::Relaxed),
+        "playlist_version": version,
     }))
 }
 
@@ -1151,9 +1438,10 @@ fn api_delete_queue_album(state: &Arc<ServerState>, request: &ApiRequest) -> Res
         None
     };
     let is_empty = queue.items.is_empty();
-    state
+    let version = state
         .playlist_version
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
     drop(queue);
 
     if was_current {
@@ -1165,14 +1453,20 @@ fn api_delete_queue_album(state: &Arc<ServerState>, request: &ApiRequest) -> Res
         } else if is_empty {
             player.stop().map_err(|e| e.to_string())?;
         }
+        drop(player);
+        state.broadcast(SotfServerEvent::PlaybackChanged);
     }
+
+    state.broadcast(SotfServerEvent::QueueChanged {
+        playlist_version: version,
+    });
 
     Ok(json!({
         "ok": true,
         "command": "queue.delete",
         "index": index,
         "was_current": was_current,
-        "playlist_version": state.playlist_version.load(std::sync::atomic::Ordering::Relaxed),
+        "playlist_version": version,
     }))
 }
 
@@ -1187,6 +1481,8 @@ fn api_jump_queue_album(state: &Arc<ServerState>, request: &ApiRequest) -> Resul
     player
         .load_and_play_source(source, vec![], 2, None)
         .map_err(|e| e.to_string())?;
+    drop(player);
+    state.broadcast(SotfServerEvent::PlaybackChanged);
     Ok(json!({
         "ok": true,
         "command": "queue.jump",
@@ -1215,6 +1511,107 @@ fn api_json_body(request: &ApiRequest) -> Result<Value, String> {
         return Err("JSON body is required".to_string());
     }
     serde_json::from_slice(&request.body).map_err(|e| format!("invalid JSON body: {e}"))
+}
+
+/// Handle a client completing the pairing ceremony.
+/// Validates the nonce and adds the client's fingerprint to the trusted store.
+fn api_pairing_complete(state: &Arc<ServerState>, request: &ApiRequest) -> Result<Value, String> {
+    if !state
+        .pairing_mode
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return Err("pairing is not enabled".to_string());
+    }
+
+    let body = api_json_body(request)?;
+    let nonce = body
+        .get("nonce")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "nonce is required".to_string())?;
+    let fingerprint = body
+        .get("fingerprint")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "fingerprint is required".to_string())?;
+    let name = body
+        .get("name")
+        .and_then(Value::as_str)
+        .map(sanitize_pairing_client_name)
+        .unwrap_or_else(|| "Unnamed Device".to_string());
+
+    let mut expected_nonce = state.pairing_nonce.lock();
+    if *expected_nonce != nonce {
+        return Err("invalid nonce".to_string());
+    }
+    let fingerprint = normalize_certificate_fingerprint(fingerprint)?;
+
+    state
+        .trusted_clients
+        .lock()
+        .add(&fingerprint, &name)
+        .map_err(|e| format!("failed to save trusted client: {e}"))?;
+    insert_live_trusted_client(state, &fingerprint)?;
+
+    state
+        .pairing_mode
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    *expected_nonce = String::new();
+
+    log::info!(
+        "[pairing] Client '{}' added with fingerprint {}",
+        name,
+        fingerprint
+    );
+    Ok(json!({ "ok": true, "command": "pairing.complete" }))
+}
+
+fn normalize_certificate_fingerprint(fingerprint: &str) -> Result<String, String> {
+    let fingerprint = fingerprint.trim();
+    if fingerprint.len() != 95 || fingerprint.matches(':').count() != 31 {
+        return Err("invalid fingerprint format".to_string());
+    }
+
+    for (index, byte) in fingerprint.bytes().enumerate() {
+        if (index + 1) % 3 == 0 {
+            if byte != b':' {
+                return Err("invalid fingerprint format".to_string());
+            }
+        } else if !byte.is_ascii_hexdigit() {
+            return Err("invalid fingerprint format".to_string());
+        }
+    }
+
+    Ok(fingerprint.to_ascii_uppercase())
+}
+
+fn sanitize_pairing_client_name(name: &str) -> String {
+    let name = name
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect::<String>();
+    let name = name.trim();
+    if name.is_empty() {
+        "Unnamed Device".to_string()
+    } else {
+        name.chars().take(64).collect()
+    }
+}
+
+fn insert_live_trusted_client(state: &ServerState, fingerprint: &str) -> Result<(), String> {
+    let mut trusted = state
+        .trusted_client_fingerprints
+        .lock()
+        .map_err(|e| format!("trusted fingerprint lock poisoned: {e}"))?;
+    trusted.insert(fingerprint.to_string());
+    Ok(())
+}
+
+fn remove_live_trusted_client(state: &ServerState, fingerprint: &str) -> Result<(), String> {
+    let mut trusted = state
+        .trusted_client_fingerprints
+        .lock()
+        .map_err(|e| format!("trusted fingerprint lock poisoned: {e}"))?;
+    trusted.remove(fingerprint);
+    Ok(())
 }
 
 fn mpd_song_json(song: &MpdSongInfo) -> Value {
@@ -1330,17 +1727,6 @@ fn api_json_response(status: u16, body: Value) -> Vec<u8> {
     );
     let mut response = headers.into_bytes();
     response.extend_from_slice(&body);
-    response
-}
-
-fn api_sse_snapshot_response(body: Value) -> Vec<u8> {
-    let body = format!("event: state\ndata: {}\n\n", body);
-    let headers = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-        body.len()
-    );
-    let mut response = headers.into_bytes();
-    response.extend_from_slice(body.as_bytes());
     response
 }
 
@@ -1579,16 +1965,37 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("Library loaded: {} albums", album_count);
 
     let player = Player::new();
+    let event_broadcaster = crate::sotf_server_event::new_event_broadcaster(64);
+
+    let config_dir =
+        crate::config::get_app_config_dir().ok_or("Could not determine config directory")?;
+
+    // Load or generate server certificate
+    let cert_store = sotf_tls::CertStore::load_or_generate(&config_dir)?;
+    let server_fingerprint = cert_store.server_fingerprint();
+
+    // Load trusted client store
+    let trusted_clients = sotf_tls::TrustedClientStore::load(&config_dir)?;
+    log::info!("[server] Trusted clients loaded: {}", trusted_clients.len());
+    let trusted_client_fingerprints = Arc::new(std::sync::Mutex::new(
+        initial_trusted_client_fingerprints(&config, &trusted_clients),
+    ));
 
     let state = Arc::new(ServerState {
         player: Mutex::new(player),
         library: Mutex::new(library),
         queue: Mutex::new(Queue::new()),
         playlist_version: std::sync::atomic::AtomicU32::new(1),
+        events: event_broadcaster,
+        pairing_mode: std::sync::atomic::AtomicBool::new(false),
+        pairing_nonce: parking_lot::Mutex::new(String::new()),
+        trusted_clients: parking_lot::Mutex::new(trusted_clients),
+        trusted_client_fingerprints,
+        server_fingerprint: server_fingerprint.clone(),
     });
 
     let mpd_tls_acceptor = if config.mpd.enabled && config.mpd.tls_enabled {
-        Some(build_mpd_tls_acceptor(&config)?)
+        Some(build_mpd_tls_acceptor(&config, &cert_store, &state)?)
     } else {
         None
     };
@@ -1619,7 +2026,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
 
         // Start MPD server
         if config.mpd.enabled {
-            let mpd_config = mpd_settings_to_config(&config);
+            let mpd_config = mpd_settings_to_config(&config, &state);
             let adapter: Arc<dyn PlayerAdapter> = Arc::new(MpdPlayerAdapter {
                 state: Arc::clone(&state),
             });
@@ -1707,14 +2114,21 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
 
                 let discovery_config = config.api.clone();
                 let discovery_ip = get_local_ipv4();
+                let pairing_enabled = state
+                    .pairing_mode
+                    .load(std::sync::atomic::Ordering::Relaxed);
                 eprintln!(
                     "SOTF API discovery advertising _sotf._tcp for {}:{}",
                     discovery_ip, discovery_config.port
                 );
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) =
-                        run_sotf_lan_discovery(discovery_config, discovery_ip, api_discovery_rx)
-                            .await
+                    if let Err(e) = run_sotf_lan_discovery(
+                        discovery_config,
+                        discovery_ip,
+                        pairing_enabled,
+                        api_discovery_rx,
+                    )
+                    .await
                     {
                         log::warn!("[server] SOTF API discovery error: {}", e);
                         eprintln!("SOTF API discovery warning: {}", e);
@@ -1735,15 +2149,8 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Convert the persisted `MpdSettings` into the `MpdServerConfig` used by the server.
-fn mpd_settings_to_config(config: &ServerConfig) -> MpdServerConfig {
+fn mpd_settings_to_config(config: &ServerConfig, state: &Arc<ServerState>) -> MpdServerConfig {
     let settings = &config.mpd;
-    let trusted_client_fingerprints = std::sync::Arc::new(std::sync::Mutex::new(
-        settings
-            .trusted_client_fingerprints
-            .iter()
-            .cloned()
-            .collect(),
-    ));
     MpdServerConfig {
         bind_address: settings.bind_address.clone(),
         port: settings.port,
@@ -1753,33 +2160,46 @@ fn mpd_settings_to_config(config: &ServerConfig) -> MpdServerConfig {
             federation_config::MpdAuthMode::Password => MpdAuthMode::Password,
         },
         password: settings.password.clone(),
-        trusted_client_fingerprints,
+        trusted_client_fingerprints: Arc::clone(&state.trusted_client_fingerprints),
     }
+}
+
+fn initial_trusted_client_fingerprints(
+    config: &ServerConfig,
+    trusted_clients: &sotf_tls::TrustedClientStore,
+) -> HashSet<String> {
+    let mut fingerprints: HashSet<String> = config
+        .mpd
+        .trusted_client_fingerprints
+        .iter()
+        .filter_map(|fp| normalize_certificate_fingerprint(fp).ok())
+        .collect();
+    for client in trusted_clients.list() {
+        if let Ok(fp) = normalize_certificate_fingerprint(&client.fingerprint) {
+            fingerprints.insert(fp);
+        }
+    }
+    fingerprints
 }
 
 fn build_mpd_tls_acceptor(
     config: &ServerConfig,
+    cert_store: &sotf_tls::CertStore,
+    state: &Arc<ServerState>,
 ) -> Result<tokio_rustls::TlsAcceptor, Box<dyn std::error::Error>> {
-    let cert_store = sotf_tls::CertStore::load_or_generate(
-        &crate::config::get_app_config_dir().ok_or("Could not determine config directory")?,
-    )?;
-
     let tls_config = match config.mpd.auth_mode {
         federation_config::MpdAuthMode::Certificate => {
-            if config.mpd.trusted_client_fingerprints.is_empty() {
+            let trusted = Arc::clone(&state.trusted_client_fingerprints);
+            if trusted
+                .lock()
+                .map_err(|e| format!("trusted fingerprint lock poisoned: {e}"))?
+                .is_empty()
+            {
                 return Err(
                     "MPD certificate authentication requires at least one trusted client fingerprint"
                         .into(),
                 );
             }
-            let trusted = std::sync::Arc::new(std::sync::Mutex::new(
-                config
-                    .mpd
-                    .trusted_client_fingerprints
-                    .iter()
-                    .cloned()
-                    .collect(),
-            ));
             sotf_tls::build_server_tls_config_mtls(
                 cert_store.cert_clone(),
                 cert_store.key_clone(),
@@ -1866,6 +2286,14 @@ mod tests {
             library: Mutex::new(MusicLibrary::default()),
             queue: Mutex::new(Queue::new()),
             playlist_version: std::sync::atomic::AtomicU32::new(1),
+            events: crate::sotf_server_event::new_event_broadcaster(64),
+            pairing_mode: std::sync::atomic::AtomicBool::new(false),
+            pairing_nonce: parking_lot::Mutex::new(String::new()),
+            trusted_clients: parking_lot::Mutex::new(
+                sotf_tls::TrustedClientStore::load(std::env::temp_dir().as_path()).unwrap(),
+            ),
+            trusted_client_fingerprints: Arc::new(std::sync::Mutex::new(HashSet::new())),
+            server_fingerprint: "AA:BB:CC".to_string(),
         });
         let response =
             handle_sotf_api_request(request, &state, &api_settings(Some("secret")), "secret");
@@ -1894,5 +2322,303 @@ mod tests {
         assert!(api_parse_range_header(Some("bytes=10-12"), 10).is_err());
         assert!(api_parse_range_header(Some("bytes=1-0"), 10).is_err());
         assert!(api_parse_range_header(Some("bytes=0-1,3-4"), 10).is_err());
+    }
+
+    #[test]
+    fn broadcast_events_on_volume_change() {
+        let state = Arc::new(ServerState {
+            player: Mutex::new(Player::new()),
+            library: Mutex::new(MusicLibrary::default()),
+            queue: Mutex::new(Queue::new()),
+            playlist_version: std::sync::atomic::AtomicU32::new(1),
+            events: crate::sotf_server_event::new_event_broadcaster(64),
+            pairing_mode: std::sync::atomic::AtomicBool::new(false),
+            pairing_nonce: parking_lot::Mutex::new(String::new()),
+            trusted_clients: parking_lot::Mutex::new(
+                sotf_tls::TrustedClientStore::load(std::env::temp_dir().as_path()).unwrap(),
+            ),
+            trusted_client_fingerprints: Arc::new(std::sync::Mutex::new(HashSet::new())),
+            server_fingerprint: "AA:BB:CC".to_string(),
+        });
+        let mut rx = state.events.subscribe();
+        let adapter = MpdPlayerAdapter {
+            state: Arc::clone(&state),
+        };
+
+        // Set volume to 50 first, then change by +10
+        adapter.set_volume(50).unwrap();
+        let _ = rx.try_recv(); // consume VolumeChanged from set_volume
+        adapter.volume_change(10).unwrap();
+        let event = rx.try_recv().expect("expected an event");
+        assert_eq!(event, SotfServerEvent::VolumeChanged { volume: 60 });
+    }
+
+    #[test]
+    fn broadcast_events_on_queue_clear() {
+        let state = Arc::new(ServerState {
+            player: Mutex::new(Player::new()),
+            library: Mutex::new(MusicLibrary::default()),
+            queue: Mutex::new(Queue::new()),
+            playlist_version: std::sync::atomic::AtomicU32::new(1),
+            events: crate::sotf_server_event::new_event_broadcaster(64),
+            pairing_mode: std::sync::atomic::AtomicBool::new(false),
+            pairing_nonce: parking_lot::Mutex::new(String::new()),
+            trusted_clients: parking_lot::Mutex::new(
+                sotf_tls::TrustedClientStore::load(std::env::temp_dir().as_path()).unwrap(),
+            ),
+            trusted_client_fingerprints: Arc::new(std::sync::Mutex::new(HashSet::new())),
+            server_fingerprint: "AA:BB:CC".to_string(),
+        });
+        let mut rx = state.events.subscribe();
+
+        api_clear_queue(&state).unwrap();
+        // api_clear_queue broadcasts PlaybackChanged then QueueChanged
+        let event1 = rx.try_recv().expect("expected first event after clear");
+        assert!(matches!(event1, SotfServerEvent::PlaybackChanged));
+        let event2 = rx.try_recv().expect("expected second event after clear");
+        assert!(matches!(event2, SotfServerEvent::QueueChanged { .. }));
+    }
+
+    fn test_state() -> Arc<ServerState> {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let tmp = std::env::temp_dir().join(format!("sotf_test_tls_{n}"));
+        std::fs::create_dir_all(&tmp).ok();
+        Arc::new(ServerState {
+            player: Mutex::new(Player::new()),
+            library: Mutex::new(MusicLibrary::default()),
+            queue: Mutex::new(Queue::new()),
+            playlist_version: std::sync::atomic::AtomicU32::new(1),
+            events: crate::sotf_server_event::new_event_broadcaster(64),
+            pairing_mode: std::sync::atomic::AtomicBool::new(false),
+            pairing_nonce: parking_lot::Mutex::new(String::new()),
+            trusted_clients: parking_lot::Mutex::new(
+                sotf_tls::TrustedClientStore::load(&tmp).unwrap()
+            ),
+            trusted_client_fingerprints: Arc::new(std::sync::Mutex::new(HashSet::new())),
+            server_fingerprint: "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99".to_string(),
+        })
+    }
+
+    fn auth_header() -> Vec<(String, String)> {
+        vec![("authorization".to_string(), "Bearer secret".to_string())]
+    }
+
+    #[test]
+    fn pairing_status_is_public_and_reflects_mode() {
+        let state = test_state();
+
+        // Pairing disabled
+        let req = ApiRequest {
+            method: "GET".to_string(),
+            path: "/api/v1/pairing/status".to_string(),
+            headers: Vec::new(),
+            body: Vec::new(),
+        };
+        let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+        let resp_str = String::from_utf8(resp).unwrap();
+        assert!(resp_str.starts_with("HTTP/1.1 200 OK"));
+        assert!(resp_str.contains("\"pairing_enabled\":false"));
+        assert!(resp_str.contains("\"server_fingerprint\""));
+
+        // Enable pairing
+        state
+            .pairing_mode
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        *state.pairing_nonce.lock() = "ABC123".to_string();
+
+        let req = ApiRequest {
+            method: "GET".to_string(),
+            path: "/api/v1/pairing/status".to_string(),
+            headers: Vec::new(),
+            body: Vec::new(),
+        };
+        let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+        let resp_str = String::from_utf8(resp).unwrap();
+        assert!(resp_str.starts_with("HTTP/1.1 200 OK"));
+        assert!(resp_str.contains("\"pairing_enabled\":true"));
+        assert!(resp_str.contains("\"nonce\":null"));
+    }
+
+    #[test]
+    fn pairing_complete_requires_enabled_mode() {
+        let state = test_state();
+
+        let req = ApiRequest {
+            method: "POST".to_string(),
+            path: "/api/v1/pairing/complete".to_string(),
+            headers: Vec::new(),
+            body: br#"{"nonce":"abc","fingerprint":"AA:BB:CC","name":"Test"}"#.to_vec(),
+        };
+        let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+        let resp_str = String::from_utf8(resp).unwrap();
+        assert!(resp_str.starts_with("HTTP/1.1 400"));
+        assert!(resp_str.contains("pairing is not enabled"));
+    }
+
+    #[test]
+    fn pairing_complete_validates_nonce() {
+        let state = test_state();
+        state
+            .pairing_mode
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        *state.pairing_nonce.lock() = "GOOD01".to_string();
+
+        let req = ApiRequest {
+            method: "POST".to_string(),
+            path: "/api/v1/pairing/complete".to_string(),
+            headers: Vec::new(),
+            body: br#"{"nonce":"BAD001","fingerprint":"AA:BB:CC","name":"Test"}"#.to_vec(),
+        };
+        let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+        let resp_str = String::from_utf8(resp).unwrap();
+        assert!(resp_str.starts_with("HTTP/1.1 400"));
+        assert!(resp_str.contains("invalid nonce"));
+    }
+
+    #[test]
+    fn pairing_complete_rejects_malformed_fingerprint() {
+        let state = test_state();
+        state
+            .pairing_mode
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        *state.pairing_nonce.lock() = "PAIR01".to_string();
+
+        let body = r#"{"nonce":"PAIR01","fingerprint":"ZZ:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99","name":"Bad"}"#;
+        let req = ApiRequest {
+            method: "POST".to_string(),
+            path: "/api/v1/pairing/complete".to_string(),
+            headers: Vec::new(),
+            body: body.as_bytes().to_vec(),
+        };
+        let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+        let resp_str = String::from_utf8(resp).unwrap();
+        assert!(resp_str.starts_with("HTTP/1.1 400"));
+        assert!(resp_str.contains("invalid fingerprint format"));
+    }
+
+    #[test]
+    fn pairing_complete_adds_trusted_client() {
+        let state = test_state();
+        state
+            .pairing_mode
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        *state.pairing_nonce.lock() = "PAIR01".to_string();
+
+        let valid_fp = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99";
+        let body = format!(
+            "{{\"nonce\":\"PAIR01\",\"fingerprint\":\"{}\",\"name\":\"iPhone\"}}",
+            valid_fp
+        );
+        let req = ApiRequest {
+            method: "POST".to_string(),
+            path: "/api/v1/pairing/complete".to_string(),
+            headers: Vec::new(),
+            body: body.into_bytes(),
+        };
+        let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+        let resp_str = String::from_utf8(resp).unwrap();
+        assert!(resp_str.starts_with("HTTP/1.1 200 OK"));
+        assert!(resp_str.contains("\"command\":\"pairing.complete\""));
+
+        assert!(state.trusted_clients.lock().contains(valid_fp));
+        assert!(
+            state
+                .trusted_client_fingerprints
+                .lock()
+                .unwrap()
+                .contains(valid_fp)
+        );
+        assert!(
+            !state
+                .pairing_mode
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
+        assert!(state.pairing_nonce.lock().is_empty());
+    }
+
+    #[test]
+    fn pairing_admin_requires_auth() {
+        let state = test_state();
+
+        let req = ApiRequest {
+            method: "POST".to_string(),
+            path: "/api/v1/pairing/enable".to_string(),
+            headers: Vec::new(),
+            body: Vec::new(),
+        };
+        let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "wrong");
+        let resp_str = String::from_utf8(resp).unwrap();
+        assert!(resp_str.starts_with("HTTP/1.1 401"));
+    }
+
+    #[test]
+    fn pairing_enable_disable_cycle() {
+        let state = test_state();
+
+        // Enable
+        let req = ApiRequest {
+            method: "POST".to_string(),
+            path: "/api/v1/pairing/enable".to_string(),
+            headers: auth_header(),
+            body: Vec::new(),
+        };
+        let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+        let resp_str = String::from_utf8(resp).unwrap();
+        assert!(resp_str.starts_with("HTTP/1.1 200 OK"));
+        assert!(resp_str.contains("\"pairing_enabled\":true"));
+        assert!(
+            state
+                .pairing_mode
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
+
+        // Disable
+        let req = ApiRequest {
+            method: "POST".to_string(),
+            path: "/api/v1/pairing/disable".to_string(),
+            headers: auth_header(),
+            body: Vec::new(),
+        };
+        let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+        let resp_str = String::from_utf8(resp).unwrap();
+        assert!(resp_str.starts_with("HTTP/1.1 200 OK"));
+        assert!(resp_str.contains("\"pairing_enabled\":false"));
+        assert!(
+            !state
+                .pairing_mode
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
+    }
+
+    #[test]
+    fn pairing_revoke_client() {
+        let state = test_state();
+        let fp = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99";
+        state.trusted_clients.lock().add(fp, "Test").unwrap();
+        state
+            .trusted_client_fingerprints
+            .lock()
+            .unwrap()
+            .insert(fp.to_string());
+        assert!(state.trusted_clients.lock().contains(fp));
+
+        let req = ApiRequest {
+            method: "DELETE".to_string(),
+            path: format!("/api/v1/pairing/clients/{}", fp),
+            headers: auth_header(),
+            body: Vec::new(),
+        };
+        let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+        let resp_str = String::from_utf8(resp).unwrap();
+        assert!(resp_str.starts_with("HTTP/1.1 200 OK"));
+        assert!(!state.trusted_clients.lock().contains(fp));
+        assert!(
+            !state
+                .trusted_client_fingerprints
+                .lock()
+                .unwrap()
+                .contains(fp)
+        );
     }
 }

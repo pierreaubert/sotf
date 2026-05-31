@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added client-certificate generation/load helpers for mobile and desktop
+  pairing flows.
+- Added a persistent trusted-client certificate store for server-side mTLS
+  pairing and revocation.
+
 ## [0.6.1] - 2025-05-13
 
 ### Added

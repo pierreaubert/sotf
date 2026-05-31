@@ -1,10 +1,12 @@
 //! Federation sources and server configuration business logic.
 
+use std::net::IpAddr;
+
 use crate::app::App;
 use crate::app::state::app::{FederationScanMessage, FederationScanProgress, FederationScanResult};
 use crate::app::types::ToastMessage;
 use sotf_audio_player::federation_config::{
-    ConnectionStatus, FederationSourceEntry, SourceConnectionConfig,
+    ConnectionStatus, FederationSourceEntry, SotfApiSettings, SourceConnectionConfig,
 };
 
 impl App {
@@ -205,6 +207,144 @@ impl App {
         {
             log::warn!("Failed to save server config: {e}");
         }
+    }
+
+    fn local_sotf_api_client(
+        &self,
+    ) -> Result<sotf_audio_player::sotf_api_client::SotfApiClient, String> {
+        let api = &self.federation.server_config.api;
+        if !api.enabled {
+            return Err("SOTF API server is disabled".to_string());
+        }
+        let token = api
+            .auth_token
+            .as_deref()
+            .filter(|token| !token.trim().is_empty())
+            .ok_or_else(|| "SOTF API auth token is not configured".to_string())?;
+        let base_url = local_sotf_api_base_url(api);
+        sotf_audio_player::sotf_api_client::SotfApiClient::new(base_url, token)
+            .map_err(|err| err.to_string())
+    }
+
+    fn set_pairing_error(&mut self, message: String) {
+        self.federation.pairing_error = Some(message.clone());
+        self.ui_state.toast_message = Some(ToastMessage::error(message));
+    }
+
+    // -------------------------------------------------------------------------
+    // Pairing & mTLS trust management
+    // -------------------------------------------------------------------------
+
+    /// Load the server TLS fingerprint and trusted clients from local cert store.
+    pub fn refresh_pairing_state(&mut self) {
+        let config_dir = match sotf_audio_player::config::get_app_config_dir() {
+            Some(dir) => dir,
+            None => {
+                self.federation.pairing_error =
+                    Some("Could not determine config directory".to_string());
+                return;
+            }
+        };
+
+        // Load server fingerprint
+        match sotf_tls::CertStore::load_or_generate(&config_dir) {
+            Ok(store) => {
+                self.federation.server_fingerprint = Some(store.server_fingerprint());
+            }
+            Err(err) => {
+                log::warn!("Failed to load server cert store: {err}");
+                self.federation.pairing_error = Some(format!("Failed to load certificate: {err}"));
+            }
+        }
+
+        // Load trusted clients
+        match sotf_tls::TrustedClientStore::load(&config_dir) {
+            Ok(store) => {
+                self.federation.trusted_clients = store
+                    .list()
+                    .into_iter()
+                    .map(|c| crate::app::state::app::TrustedClientInfo {
+                        fingerprint: c.fingerprint.clone(),
+                        name: c.name.clone(),
+                        paired_at: c.paired_at.clone(),
+                    })
+                    .collect();
+            }
+            Err(err) => {
+                log::warn!("Failed to load trusted clients: {err}");
+                self.federation.pairing_error =
+                    Some(format!("Failed to load trusted clients: {err}"));
+            }
+        }
+    }
+
+    /// Toggle pairing mode on/off.
+    /// When enabled, generates a new nonce and loads the server fingerprint.
+    pub fn toggle_pairing_mode(&mut self) {
+        let client = match self.local_sotf_api_client() {
+            Ok(client) => client,
+            Err(err) => {
+                self.set_pairing_error(err);
+                return;
+            }
+        };
+
+        let result = if self.federation.pairing_enabled {
+            run_sotf_api_request(client.disable_pairing())
+        } else {
+            run_sotf_api_request(client.enable_pairing())
+        };
+
+        match result {
+            Ok(response) => {
+                self.federation.pairing_enabled = response.pairing_enabled;
+                self.federation.pairing_nonce = response.nonce;
+                self.federation.pairing_error = None;
+                self.refresh_pairing_state();
+                log::info!(
+                    "[pairing] Pairing mode {}",
+                    if self.federation.pairing_enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                );
+            }
+            Err(err) => self.set_pairing_error(format!("Failed to update pairing mode: {err}")),
+        }
+    }
+
+    /// Revoke a trusted client by fingerprint.
+    pub fn revoke_trusted_client(&mut self, fingerprint: &str) {
+        let client = match self.local_sotf_api_client() {
+            Ok(client) => client,
+            Err(err) => {
+                self.set_pairing_error(err);
+                return;
+            }
+        };
+
+        match run_sotf_api_request(client.revoke_trusted_client(fingerprint)) {
+            Ok(_) => {
+                log::info!("[pairing] Revoked client with fingerprint {fingerprint}");
+                self.federation.pairing_error = None;
+                self.refresh_pairing_state();
+            }
+            Err(err) => self.set_pairing_error(format!("Failed to revoke client: {err}")),
+        }
+    }
+
+    /// Build the QR code data string for pairing.
+    /// Format: `sotf://pair?host=<ip>&port=<port>&fingerprint=<fp>&nonce=<nonce>`
+    #[must_use]
+    pub fn pairing_qr_data(&self) -> Option<String> {
+        let nonce = self.federation.pairing_nonce.as_ref()?;
+        let fingerprint = self.federation.server_fingerprint.as_ref()?;
+        let port = self.federation.server_config.api.port;
+        let host = pairing_qr_host(&self.federation.server_config.api.bind_address)?;
+        Some(format!(
+            "sotf://pair?host={host}&port={port}&fingerprint={fingerprint}&nonce={nonce}"
+        ))
     }
 
     /// Test connection to a federation source by index.
@@ -450,4 +590,68 @@ async fn scan_federation_source_async(
         federation_scan::merge_albums_to_db(&source_id, &albums, cancel, Some(&progress_cb));
 
     let _ = tx.send(FederationScanMessage::Done(result));
+}
+
+fn run_sotf_api_request<T, F>(future: F) -> Result<T, String>
+where
+    F: std::future::Future<Output = sotf_audio_player::sotf_api_client::SotfApiResult<T>>,
+{
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| format!("failed to start SOTF API runtime: {err}"))?;
+    rt.block_on(future).map_err(|err| err.to_string())
+}
+
+fn local_sotf_api_base_url(settings: &SotfApiSettings) -> String {
+    format!(
+        "http://{}:{}",
+        local_api_connect_host(&settings.bind_address),
+        settings.port
+    )
+}
+
+fn local_api_connect_host(bind_address: &str) -> String {
+    match bind_address.parse::<IpAddr>() {
+        Ok(IpAddr::V4(addr)) if addr.is_unspecified() => "127.0.0.1".to_string(),
+        Ok(IpAddr::V4(addr)) => addr.to_string(),
+        Ok(IpAddr::V6(addr)) if addr.is_unspecified() => "[::1]".to_string(),
+        Ok(IpAddr::V6(addr)) => format!("[{addr}]"),
+        Err(_) => bind_address.to_string(),
+    }
+}
+
+fn pairing_qr_host(bind_address: &str) -> Option<String> {
+    if let Ok(IpAddr::V4(addr)) = bind_address.parse::<IpAddr>()
+        && !addr.is_unspecified()
+        && !addr.is_loopback()
+    {
+        return Some(addr.to_string());
+    }
+
+    sotf_tls::cert_gen::local_ip_addresses()
+        .into_iter()
+        .find_map(|addr| match addr {
+            IpAddr::V4(v4) if !v4.is_loopback() => Some(v4.to_string()),
+            _ => None,
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pairing_qr_host_uses_configured_lan_address() {
+        assert_eq!(
+            pairing_qr_host("192.168.1.42").as_deref(),
+            Some("192.168.1.42")
+        );
+    }
+
+    #[test]
+    fn local_api_connect_host_maps_wildcard_to_loopback() {
+        assert_eq!(local_api_connect_host("0.0.0.0"), "127.0.0.1");
+        assert_eq!(local_api_connect_host("192.168.1.42"), "192.168.1.42");
+    }
 }

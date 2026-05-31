@@ -43,23 +43,27 @@ struct SotfServiceDescriptor {
 }
 
 impl SotfServiceDescriptor {
-    fn new(settings: &SotfApiSettings, address: Ipv4Addr) -> Self {
+    fn with_pairing(settings: &SotfApiSettings, address: Ipv4Addr, pairing_enabled: bool) -> Self {
         let friendly_name = settings.friendly_name.trim();
         let instance = dns_label(friendly_name, "SOTF Player");
         let host = format!("{}.local", dns_label(friendly_name, "sotf-player-host"));
+        let mut txt_records = vec![
+            "api=1".to_string(),
+            "path=/api/v1".to_string(),
+            "auth=bearer".to_string(),
+            "proto=http".to_string(),
+            format!("name={}", txt_value(friendly_name, "SOTF Player")),
+        ];
+        if pairing_enabled {
+            txt_records.push("pairing=1".to_string());
+        }
         Self {
             instance_name: format!("{instance}.{SOTF_API_SERVICE_TYPE}"),
             service_type: SOTF_API_SERVICE_TYPE.to_string(),
             host_name: host,
             port: settings.port,
             address,
-            txt_records: vec![
-                "api=1".to_string(),
-                "path=/api/v1".to_string(),
-                "auth=bearer".to_string(),
-                "proto=http".to_string(),
-                format!("name={}", txt_value(friendly_name, "SOTF Player")),
-            ],
+            txt_records,
         }
     }
 }
@@ -110,9 +114,10 @@ pub async fn discover_sotf_api_servers(
 pub async fn run_sotf_lan_discovery(
     settings: SotfApiSettings,
     local_ip: Ipv4Addr,
+    pairing_enabled: bool,
     cancel: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
-    let descriptor = SotfServiceDescriptor::new(&settings, local_ip);
+    let descriptor = SotfServiceDescriptor::with_pairing(&settings, local_ip, pairing_enabled);
 
     #[cfg(target_os = "macos")]
     {
@@ -684,13 +689,38 @@ mod tests {
 
     #[test]
     fn service_descriptor_uses_ios_bonjour_type() {
-        let descriptor =
-            SotfServiceDescriptor::new(&test_settings("Living Room SOTF"), Ipv4Addr::LOCALHOST);
+        let descriptor = SotfServiceDescriptor::with_pairing(
+            &test_settings("Living Room SOTF"),
+            Ipv4Addr::LOCALHOST,
+            false,
+        );
         assert_eq!(descriptor.service_type, "_sotf._tcp.local");
         assert_eq!(descriptor.port, 8732);
         assert!(descriptor.instance_name.starts_with("Living-Room-SOTF."));
         assert!(descriptor.txt_records.iter().any(|r| r == "path=/api/v1"));
         assert!(descriptor.txt_records.iter().any(|r| r == "auth=bearer"));
+        assert!(
+            !descriptor
+                .txt_records
+                .iter()
+                .any(|r| r.starts_with("pairing="))
+        );
+    }
+
+    #[test]
+    fn service_descriptor_advertises_pairing_without_nonce() {
+        let descriptor = SotfServiceDescriptor::with_pairing(
+            &test_settings("Living Room SOTF"),
+            Ipv4Addr::LOCALHOST,
+            true,
+        );
+        assert!(descriptor.txt_records.iter().any(|r| r == "pairing=1"));
+        assert!(
+            !descriptor
+                .txt_records
+                .iter()
+                .any(|r| r.starts_with("nonce="))
+        );
     }
 
     #[test]
@@ -704,9 +734,10 @@ mod tests {
 
     #[test]
     fn mdns_response_contains_srv_port_and_address() {
-        let descriptor = SotfServiceDescriptor::new(
+        let descriptor = SotfServiceDescriptor::with_pairing(
             &test_settings("Kitchen SOTF"),
             Ipv4Addr::new(192, 168, 1, 42),
+            false,
         );
         let packet = build_mdns_response(&descriptor);
         assert!(packet.windows(2).any(|w| w == 8732u16.to_be_bytes()));
@@ -724,9 +755,10 @@ mod tests {
 
     #[test]
     fn parses_advertised_sotf_api_server() {
-        let descriptor = SotfServiceDescriptor::new(
+        let descriptor = SotfServiceDescriptor::with_pairing(
             &test_settings("Kitchen SOTF"),
             Ipv4Addr::new(192, 168, 1, 42),
+            false,
         );
         let packet = build_mdns_response(&descriptor);
         let from = "192.168.1.42:5353".parse().unwrap();
