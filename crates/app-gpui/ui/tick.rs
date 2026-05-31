@@ -313,6 +313,7 @@ impl PlayerView {
         state.app.update_cast_discovery();
         state.app.update_remote_server_discovery();
         state.app.update_remote_server_probe();
+        state.app.update_remote_event_stream();
         state.app.update_toast();
 
         state.app.library_state.ensure_cache_valid();

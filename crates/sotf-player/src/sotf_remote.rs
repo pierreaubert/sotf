@@ -183,6 +183,20 @@ impl SotfRemoteServer {
             self.id.strip_prefix("sotf:").unwrap_or(&self.id)
         )
     }
+
+    /// Build a `sotf://pair` URL for QR-code pairing.
+    #[must_use]
+    pub fn pairing_url(&self, server_fingerprint: &str, nonce: &str) -> String {
+        let host = self
+            .host_name
+            .as_deref()
+            .or(self.address.as_deref())
+            .unwrap_or("localhost");
+        format!(
+            "sotf://pair?host={host}&port={}&fingerprint={server_fingerprint}&nonce={nonce}",
+            self.port
+        )
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -467,5 +481,25 @@ mod tests {
         assert!(debug.contains("SotfApiClient"));
         assert!(debug.contains("<redacted>"));
         assert!(!debug.contains("very-secret-token"));
+    }
+
+    #[test]
+    fn pairing_url_uses_host_name_and_port() {
+        let server = SotfRemoteServer::from_discovered(&discovered_server()).unwrap();
+        let url = server.pairing_url("FP:00", "NONCE1");
+        assert!(url.starts_with("sotf://pair?"));
+        assert!(url.contains("host=listening-room.local"));
+        assert!(url.contains("port=8732"));
+        assert!(url.contains("fingerprint=FP:00"));
+        assert!(url.contains("nonce=NONCE1"));
+    }
+
+    #[test]
+    fn pairing_url_falls_back_to_address() {
+        let mut server = SotfRemoteServer::manual("Desk", "http://desk.local:8732").unwrap();
+        server.host_name = None;
+        server.address = Some("192.168.1.5".to_string());
+        let url = server.pairing_url("FP:00", "NONCE1");
+        assert!(url.contains("host=192.168.1.5"));
     }
 }

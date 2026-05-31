@@ -41,6 +41,7 @@ sotf-engine = { workspace = true }
 sotf-midi = { workspace = true }
 sotf-cast = { workspace = true }
 sotf-federation = { workspace = true }
+sotf-tls = { workspace = true }
 sotf-services = { workspace = true, optional = true }
 # math libraries
 math-iir-fir = { workspace = true }
@@ -62,6 +63,7 @@ thiserror = { workspace = true }
 walkdir = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
+rand = { workspace = true }
 
 # Fuzzy string matching
 strsim = { workspace = true }

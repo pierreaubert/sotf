@@ -1,5 +1,19 @@
 # 0.5.123 (unreleased)
 
+## Native SOTF remote pairing and SSE hardening
+
+- SOTF API pairing now returns the command response shape expected by
+  `SotfApiClient::complete_pairing`, consumes the pairing nonce after a
+  successful registration, and updates the live MPD mTLS verifier trust set
+  immediately when clients pair or are revoked.
+- Pairing nonces are now 128-bit random values and are no longer exposed via
+  public pairing status or LAN discovery TXT records. Discovery only advertises
+  that pairing is available; the nonce stays in the authenticated enable
+  response and QR flow.
+- The API client now uses a no-timeout HTTP client for long-lived SSE streams
+  and surfaces `event: state` frames as state snapshots instead of silently
+  dropping them.
+
 ## Room EQ: surface uncertainty-aware and continuous-listening-area strategies
 
 - `MultiMeasurementUiConfig` now carries an optional

@@ -386,6 +386,14 @@ pub struct TrackTrackingState {
     pub already_recorded: bool,
 }
 
+/// Trusted client info for display in the pairing UI.
+#[derive(Debug, Clone)]
+pub struct TrustedClientInfo {
+    pub fingerprint: String,
+    pub name: String,
+    pub paired_at: String,
+}
+
 /// Federation & server configuration and background scan state
 #[derive(Debug)]
 pub struct FederationState {
@@ -397,6 +405,16 @@ pub struct FederationState {
     pub scan_progress: Option<FederationScanProgress>,
     pub cast_discovery_receiver:
         Option<std::sync::mpsc::Receiver<Vec<crate::app::state::audio_device::CastDeviceInfo>>>,
+    /// Whether the local SOTF API server is in pairing mode.
+    pub pairing_enabled: bool,
+    /// Current pairing nonce (valid only when pairing_enabled is true).
+    pub pairing_nonce: Option<String>,
+    /// Server TLS fingerprint for QR code display.
+    pub server_fingerprint: Option<String>,
+    /// List of trusted clients paired with this server.
+    pub trusted_clients: Vec<TrustedClientInfo>,
+    /// Last pairing operation error message.
+    pub pairing_error: Option<String>,
 }
 
 impl Default for FederationState {
@@ -409,6 +427,11 @@ impl Default for FederationState {
             scan_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             scan_progress: None,
             cast_discovery_receiver: None,
+            pairing_enabled: false,
+            pairing_nonce: None,
+            server_fingerprint: None,
+            trusted_clients: Vec::new(),
+            pairing_error: None,
         }
     }
 }
@@ -454,6 +477,15 @@ pub struct RemoteState {
             Result<Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>, String>,
         >,
     >,
+    /// Receiver for live SSE events from the selected remote server.
+    pub event_stream_receiver: Option<
+        std::sync::mpsc::Receiver<
+            Result<sotf_audio_player::sotf_api_client::SotfApiStreamEvent, String>,
+        >,
+    >,
+    /// In-memory bearer token cache keyed by server ID.
+    /// Tokens are never persisted to disk; secure storage is planned for Phase 2.
+    pub server_tokens: HashMap<String, String>,
 }
 
 impl Default for RemoteState {
@@ -468,6 +500,8 @@ impl Default for RemoteState {
             manual_api_base_url: String::new(),
             server_probe_receiver: None,
             discovery_receiver: None,
+            event_stream_receiver: None,
+            server_tokens: HashMap::new(),
         }
     }
 }

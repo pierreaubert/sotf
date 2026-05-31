@@ -189,6 +189,9 @@ impl App {
         if !self.remote.server_store.select(server_id) {
             return false;
         }
+        // Drop any existing event stream and start a new one for the selected server
+        self.remote.event_stream_receiver = None;
+        self.start_remote_event_stream();
         self.save_remote_server_store("save selected SOTF server")
     }
 
@@ -198,7 +201,159 @@ impl App {
             return false;
         }
         self.remote.server_probe_statuses.remove(server_id);
+        self.remote.server_tokens.remove(server_id);
+        self.remote.event_stream_receiver = None;
         self.save_remote_server_store("remove SOTF server")
+    }
+
+    /// Cache a bearer token for a remote server (in-memory only).
+    pub fn set_remote_server_token(
+        &mut self,
+        server_id: impl Into<String>,
+        token: impl Into<String>,
+    ) {
+        self.remote
+            .server_tokens
+            .insert(server_id.into(), token.into());
+    }
+
+    /// Retrieve the cached bearer token for a remote server, if any.
+    #[must_use]
+    pub fn get_remote_server_token(&self, server_id: &str) -> Option<&str> {
+        self.remote.server_tokens.get(server_id).map(String::as_str)
+    }
+
+    /// Remove the cached bearer token for a remote server.
+    pub fn clear_remote_server_token(&mut self, server_id: &str) {
+        self.remote.server_tokens.remove(server_id);
+    }
+
+    /// Start consuming the live SSE event stream from the selected remote server.
+    pub fn start_remote_event_stream(&mut self) {
+        let Some(server) = self.remote.server_store.selected_server().cloned() else {
+            return;
+        };
+        let token = match self.remote.server_tokens.get(&server.id) {
+            Some(token) => token.clone(),
+            None => {
+                log::warn!(
+                    "No bearer token cached for remote server {}; event stream not started",
+                    server.id
+                );
+                return;
+            }
+        };
+        let api_base_url = server.api_base_url.clone();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.remote.event_stream_receiver = Some(rx);
+
+        std::thread::Builder::new()
+            .name("sotf-remote-events".into())
+            .spawn(move || {
+                let rt = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(err) => {
+                        let _ =
+                            tx.send(Err(format!("Failed to start event stream runtime: {err}")));
+                        return;
+                    }
+                };
+                rt.block_on(async {
+                    let client = match sotf_audio_player::sotf_api_client::SotfApiClient::new(
+                        &api_base_url,
+                        &token,
+                    ) {
+                        Ok(client) => client,
+                        Err(err) => {
+                            let _ = tx.send(Err(format!("Event stream client error: {err}")));
+                            return;
+                        }
+                    };
+                    let mut stream = match client.events_stream().await {
+                        Ok(stream) => stream,
+                        Err(err) => {
+                            let _ = tx.send(Err(format!("Event stream open error: {err}")));
+                            return;
+                        }
+                    };
+                    while let Some(result) = stream.recv().await {
+                        let mapped = match result {
+                            Ok(event) => Ok(event),
+                            Err(err) => Err(format!("Event stream error: {err}")),
+                        };
+                        if tx.send(mapped).is_err() {
+                            break;
+                        }
+                    }
+                });
+            })
+            .expect("spawn SOTF remote event stream thread");
+    }
+
+    /// Poll the remote event stream for new server events and dispatch them into app state.
+    pub fn update_remote_event_stream(&mut self) {
+        let result = match self.remote.event_stream_receiver.as_ref() {
+            Some(rx) => match rx.try_recv() {
+                Ok(result) => result,
+                Err(std::sync::mpsc::TryRecvError::Empty) => return,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.remote.event_stream_receiver = None;
+                    return;
+                }
+            },
+            None => return,
+        };
+
+        match result {
+            Ok(stream_event) => {
+                log::debug!("[remote] SSE event received: {stream_event:?}");
+                match stream_event {
+                    sotf_audio_player::sotf_api_client::SotfApiStreamEvent::State(state) => {
+                        log::debug!(
+                            "[remote] State refresh: playback={} volume={} albums={}",
+                            state.playback.state,
+                            state.playback.volume,
+                            state.library.albums
+                        );
+                    }
+                    sotf_audio_player::sotf_api_client::SotfApiStreamEvent::Server(event) => {
+                        match event {
+                            sotf_audio_player::sotf_server_event::SotfServerEvent::PlaybackChanged
+                            | sotf_audio_player::sotf_server_event::SotfServerEvent::QueueChanged { .. }
+                            | sotf_audio_player::sotf_server_event::SotfServerEvent::VolumeChanged { .. } => {
+                                // TODO: trigger remote state refresh or incremental UI update
+                            }
+                            sotf_audio_player::sotf_server_event::SotfServerEvent::StreamMetadataChanged {
+                                title,
+                                artist,
+                            } => {
+                                log::info!(
+                                    "[remote] Stream metadata changed: artist={artist:?} title={title:?}"
+                                );
+                            }
+                            sotf_audio_player::sotf_server_event::SotfServerEvent::ScannerProgress {
+                                done,
+                                total,
+                            } => {
+                                log::info!("[remote] Scanner progress: {done}/{total}");
+                            }
+                            sotf_audio_player::sotf_server_event::SotfServerEvent::Error { message } => {
+                                log::warn!("[remote] Server error: {message}");
+                                self.ui_state.toast_message =
+                                    Some(ToastMessage::warning(format!("Remote server: {message}")));
+                            }
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                log::warn!("[remote] Event stream error: {err}");
+                self.ui_state.toast_message =
+                    Some(ToastMessage::warning(format!("Remote events: {err}")));
+                self.remote.event_stream_receiver = None;
+            }
+        }
     }
 
     fn save_remote_server_store(&mut self, action: &str) -> bool {

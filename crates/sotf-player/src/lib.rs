@@ -44,6 +44,7 @@ pub mod security;
 pub mod server;
 pub mod sotf_api_client;
 pub mod sotf_remote;
+pub mod sotf_server_event;
 pub mod ui_params;
 pub mod waveform_scanner;
 

@@ -5,10 +5,12 @@ use std::fmt;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::lan_discovery::DiscoveredSotfApiServer;
+use crate::sotf_server_event::SotfServerEvent;
 
 #[derive(Clone)]
 pub struct SotfApiClient {
     client: reqwest::Client,
+    event_client: reqwest::Client,
     base_url: String,
     auth_token: String,
 }
@@ -90,10 +92,48 @@ pub struct SotfApiEndpoints {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiPairingStatus {
+    pub pairing_enabled: bool,
+    pub nonce: Option<String>,
+    pub server_fingerprint: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiTrustedClient {
+    pub fingerprint: String,
+    pub name: String,
+    pub paired_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiTrustedClientList {
+    pub clients: Vec<SotfApiTrustedClient>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiPairingModeResponse {
+    pub ok: bool,
+    pub pairing_enabled: bool,
+    #[serde(default)]
+    pub nonce: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct SotfApiOkResponse {
+    pub ok: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct SotfApiState {
     pub playback: SotfApiPlayback,
     pub current_song: Option<SotfApiSong>,
     pub library: SotfApiLibrarySummary,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SotfApiStreamEvent {
+    State(SotfApiState),
+    Server(SotfServerEvent),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -219,6 +259,13 @@ struct VolumeRequest {
     volume: u8,
 }
 
+#[derive(Serialize)]
+struct CompletePairingRequest {
+    nonce: String,
+    fingerprint: String,
+    name: String,
+}
+
 impl SotfApiClient {
     pub fn new(base_url: impl Into<String>, auth_token: impl Into<String>) -> SotfApiResult<Self> {
         let base_url = normalize_base_url(base_url.into())?;
@@ -231,8 +278,10 @@ impl SotfApiClient {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(8))
             .build()?;
+        let event_client = reqwest::Client::builder().build()?;
         Ok(Self {
             client,
+            event_client,
             base_url,
             auth_token: auth_token.trim().to_string(),
         })
@@ -361,6 +410,138 @@ impl SotfApiClient {
         self.endpoint_url("events")
     }
 
+    /// Query the server's pairing status.
+    ///
+    /// This is a public endpoint — no auth token required.
+    pub async fn pairing_status(&self) -> SotfApiResult<SotfApiPairingStatus> {
+        self.get_public("pairing/status").await
+    }
+
+    /// Enable pairing mode on the server and receive the one-time nonce.
+    pub async fn enable_pairing(&self) -> SotfApiResult<SotfApiPairingModeResponse> {
+        self.post_empty("pairing/enable").await
+    }
+
+    /// Disable pairing mode on the server.
+    pub async fn disable_pairing(&self) -> SotfApiResult<SotfApiPairingModeResponse> {
+        self.post_empty("pairing/disable").await
+    }
+
+    /// List trusted client certificates registered with the server.
+    pub async fn trusted_clients(&self) -> SotfApiResult<SotfApiTrustedClientList> {
+        self.get_auth("pairing/clients").await
+    }
+
+    /// Revoke a trusted client certificate fingerprint.
+    pub async fn revoke_trusted_client(
+        &self,
+        fingerprint: &str,
+    ) -> SotfApiResult<SotfApiOkResponse> {
+        let response = self
+            .client
+            .delete(self.endpoint_url(&format!("pairing/clients/{fingerprint}")))
+            .bearer_auth(&self.auth_token)
+            .send()
+            .await?;
+        decode_response(response).await
+    }
+
+    /// Complete the pairing ceremony by submitting this client's fingerprint.
+    ///
+    /// This is a public endpoint — no auth token required.
+    pub async fn complete_pairing(
+        &self,
+        nonce: &str,
+        fingerprint: &str,
+        name: &str,
+    ) -> SotfApiResult<SotfApiCommandResponse> {
+        self.post_public_json(
+            "pairing/complete",
+            &CompletePairingRequest {
+                nonce: nonce.to_string(),
+                fingerprint: fingerprint.to_string(),
+                name: name.to_string(),
+            },
+        )
+        .await
+    }
+
+    /// Open a long-lived SSE event stream from the server.
+    ///
+    /// Returns a receiver that yields parsed stream frames. The background task
+    /// automatically reconnects with exponential backoff on disconnect.
+    pub async fn events_stream(
+        &self,
+    ) -> SotfApiResult<tokio::sync::mpsc::Receiver<SotfApiResult<SotfApiStreamEvent>>> {
+        let (tx, rx) = tokio::sync::mpsc::channel::<SotfApiResult<SotfApiStreamEvent>>(64);
+        let url = self.events_url();
+        let token = self.auth_token.clone();
+        let client = self.event_client.clone();
+
+        tokio::spawn(async move {
+            let mut backoff = std::time::Duration::from_secs(1);
+            const MAX_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
+
+            loop {
+                match client
+                    .get(&url)
+                    .bearer_auth(&token)
+                    .header("Accept", "text/event-stream")
+                    .send()
+                    .await
+                {
+                    Ok(mut response) => {
+                        if !response.status().is_success() {
+                            let status = response.status();
+                            let _ = tx
+                                .send(Err(SotfApiClientError::Api {
+                                    status: status.as_u16(),
+                                    message: "event stream request failed".to_string(),
+                                }))
+                                .await;
+                            tokio::time::sleep(backoff).await;
+                            backoff = (backoff * 2).min(MAX_BACKOFF);
+                            continue;
+                        }
+
+                        backoff = std::time::Duration::from_secs(1);
+                        let mut buf = String::new();
+
+                        loop {
+                            match response.chunk().await {
+                                Ok(Some(bytes)) => {
+                                    buf.push_str(&String::from_utf8_lossy(&bytes));
+                                    while let Some(pos) = buf.find("\n\n") {
+                                        let frame = buf[..pos].to_string();
+                                        buf = buf[pos + 2..].to_string();
+                                        if let Some(event) = parse_sse_frame(&frame) {
+                                            if tx.send(Ok(event)).await.is_err() {
+                                                return;
+                                            }
+                                        }
+                                    }
+                                }
+                                Ok(None) => break,
+                                Err(err) => {
+                                    let _ = tx.send(Err(SotfApiClientError::Request(err))).await;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        let _ = tx.send(Err(SotfApiClientError::Request(err))).await;
+                    }
+                }
+
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(MAX_BACKOFF);
+            }
+        });
+
+        Ok(rx)
+    }
+
     async fn get_public<T: DeserializeOwned>(&self, path: &str) -> SotfApiResult<T> {
         let response = self.client.get(self.endpoint_url(path)).send().await?;
         decode_response(response).await
@@ -400,10 +581,50 @@ impl SotfApiClient {
             .await?;
         decode_response(response).await
     }
+
+    async fn post_public_json<T: DeserializeOwned, B: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> SotfApiResult<T> {
+        let response = self
+            .client
+            .post(self.endpoint_url(path))
+            .json(body)
+            .send()
+            .await?;
+        decode_response(response).await
+    }
 }
 
 pub fn normalized_api_base_url(base_url: impl Into<String>) -> SotfApiResult<String> {
     normalize_base_url(base_url.into())
+}
+
+/// Parse a single SSE frame (lines separated by `\n`, not `\n\n`).
+/// Looks for `event:` and `data:` lines and returns the parsed frame.
+fn parse_sse_frame(frame: &str) -> Option<SotfApiStreamEvent> {
+    let mut event_type: Option<String> = None;
+    let mut data: Option<String> = None;
+
+    for line in frame.lines() {
+        if let Some(val) = line.strip_prefix("event:") {
+            event_type = Some(val.trim().to_string());
+        } else if let Some(val) = line.strip_prefix("data:") {
+            data = Some(val.trim().to_string());
+        }
+    }
+
+    let data = data?;
+    match event_type.as_deref() {
+        Some("ping") => None,
+        Some("state") => serde_json::from_str(&data)
+            .ok()
+            .map(SotfApiStreamEvent::State),
+        _ => serde_json::from_str(&data)
+            .ok()
+            .map(SotfApiStreamEvent::Server),
+    }
 }
 
 async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> SotfApiResult<T> {
@@ -687,5 +908,86 @@ mod tests {
         assert_eq!(response.index, Some(1));
         assert_eq!(response.was_current, Some(false));
         assert_eq!(response.playlist_version, Some(8));
+    }
+
+    #[test]
+    fn parse_sse_frame_extracts_event_and_data() {
+        let frame = "event: volume_changed\ndata: {\"event\":\"volume_changed\",\"volume\":42}";
+        let event = parse_sse_frame(frame).expect("should parse");
+        assert_eq!(
+            event,
+            SotfApiStreamEvent::Server(SotfServerEvent::VolumeChanged { volume: 42 })
+        );
+    }
+
+    #[test]
+    fn parse_sse_frame_surfaces_state_snapshot() {
+        let frame = r#"event: state
+data: {"playback":{"state":"play","position_secs":1.0,"duration_secs":2.0,"volume":42,"current_index":0,"playlist_length":1,"playlist_version":7,"audio":null},"current_song":null,"library":{"albums":10,"tracks":100}}"#;
+        let event = parse_sse_frame(frame).expect("should parse");
+        let SotfApiStreamEvent::State(state) = event else {
+            panic!("expected state frame");
+        };
+        assert_eq!(state.playback.volume, 42);
+        assert_eq!(state.library.tracks, 100);
+    }
+
+    #[test]
+    fn parse_sse_frame_ignores_ping() {
+        let frame = "event: ping\ndata: {}";
+        assert!(parse_sse_frame(frame).is_none());
+    }
+
+    #[test]
+    fn parse_sse_frame_returns_none_for_missing_data() {
+        let frame = "event: playback_changed";
+        assert!(parse_sse_frame(frame).is_none());
+    }
+
+    #[test]
+    fn parses_pairing_status_response() {
+        let status: SotfApiPairingStatus = serde_json::from_str(
+            r#"{
+                "pairing_enabled": true,
+                "nonce": null,
+                "server_fingerprint": "AA:BB:CC"
+            }"#,
+        )
+        .unwrap();
+        assert!(status.pairing_enabled);
+        assert_eq!(status.nonce, None);
+        assert_eq!(status.server_fingerprint, "AA:BB:CC");
+    }
+
+    #[test]
+    fn parses_pairing_status_when_disabled() {
+        let status: SotfApiPairingStatus = serde_json::from_str(
+            r#"{
+                "pairing_enabled": false,
+                "nonce": null,
+                "server_fingerprint": "DD:EE:FF"
+            }"#,
+        )
+        .unwrap();
+        assert!(!status.pairing_enabled);
+        assert_eq!(status.nonce, None);
+    }
+
+    #[test]
+    fn parses_trusted_client_list() {
+        let list: SotfApiTrustedClientList = serde_json::from_str(
+            r#"{
+                "clients": [
+                    {
+                        "fingerprint": "AA:BB",
+                        "name": "iPhone",
+                        "paired_at": "2026-05-30"
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(list.clients.len(), 1);
+        assert_eq!(list.clients[0].name, "iPhone");
     }
 }

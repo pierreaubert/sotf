@@ -57,6 +57,7 @@ reqwest = { workspace = true }
 parking_lot = { workspace = true }
 uuid = { workspace = true }
 crossbeam = { workspace = true }
+rand = { workspace = true }
 socket2 = "0.6"
 
 # Image processing for album art thumbnails
