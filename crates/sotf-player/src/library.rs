@@ -238,12 +238,33 @@ pub struct DirectoryInfo {
     pub children_loaded: bool,
 }
 
+/// Waveform samples stored on a track. The scanner/database contract uses a
+/// fixed 128-bin waveform, so keep the in-memory shape thin and explicit.
+pub const TRACK_WAVEFORM_SAMPLES: usize = 128;
+pub type TrackWaveform = Box<[u8; TRACK_WAVEFORM_SAMPLES]>;
+
+pub fn normalize_waveform_samples(samples: &[u8]) -> Option<TrackWaveform> {
+    if samples.is_empty() {
+        return None;
+    }
+
+    let mut normalized = [0_u8; TRACK_WAVEFORM_SAMPLES];
+    if samples.len() == TRACK_WAVEFORM_SAMPLES {
+        normalized.copy_from_slice(samples);
+    } else {
+        for (idx, sample) in normalized.iter_mut().enumerate() {
+            let src_idx = (idx * samples.len()) / TRACK_WAVEFORM_SAMPLES;
+            *sample = samples[src_idx];
+        }
+    }
+    Some(Box::new(normalized))
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Track {
     pub path: PathBuf,
     /// Explicit audio source override. When set, this is used instead of `path`.
     /// `None` means the source is `AudioSource::File(path)`.
-    #[allow(dead_code)]
     pub source: Option<sotf_audio::decoder::AudioSource>,
     pub title: Option<String>,
     pub artist: Option<String>, // Track artist (may differ from album artist for compilations)
@@ -256,7 +277,7 @@ pub struct Track {
     pub replay_peak: Option<f64>, // Track peak (0.0 - 1.0)
     pub album_gain: Option<f64>,  // Album gain in dB
     pub album_peak: Option<f64>,  // Album peak (0.0 - 1.0)
-    pub waveform: Option<Vec<u8>>, // 128 amplitude samples (0-255) for waveform visualization
+    pub waveform: Option<TrackWaveform>, // 128 amplitude samples (0-255)
     // Extended metadata fields (from audio file tags)
     pub genre: Option<String>,
     pub composer: Option<String>,
@@ -1013,7 +1034,6 @@ impl MusicLibrary {
         let mut total_tracks = 0;
         let mut scanned_tracks = 0;
         let scan_time = SystemTime::now();
-        let mut last_progress_report = SystemTime::now();
 
         // Create a map of directory path to (file count, album count)
         let mut dir_stats: HashMap<PathBuf, (usize, std::collections::HashSet<String>)> =
@@ -1062,17 +1082,7 @@ impl MusicLibrary {
             total_tracks += tracks;
             scanned_tracks += scanned;
 
-            // Report progress after each directory and every 5 seconds
-            let now = SystemTime::now();
-            if now
-                .duration_since(last_progress_report)
-                .unwrap_or_default()
-                .as_secs()
-                >= 5
-            {
-                progress_callback(total_tracks, album_map.len());
-                last_progress_report = now;
-            }
+            progress_callback(total_tracks, album_map.len());
         }
 
         // Final progress report

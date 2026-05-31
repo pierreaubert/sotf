@@ -27,8 +27,14 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             None
         }
         KeyCode::Char('d') | KeyCode::Delete => {
-            app.remove_from_queue(app.selected_queue_index);
-            None
+            match app.remove_from_queue(app.selected_queue_index) {
+                sotf_audio_player::QueuePlaybackEffect::Reload(path)
+                | sotf_audio_player::QueuePlaybackEffect::Play(path) => {
+                    Some(PlayerCommand::Play(path))
+                }
+                sotf_audio_player::QueuePlaybackEffect::Stop => Some(PlayerCommand::Stop),
+                sotf_audio_player::QueuePlaybackEffect::None => None,
+            }
         }
         KeyCode::Char('c') => {
             app.clear_queue();

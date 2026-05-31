@@ -18,13 +18,14 @@ use std::rc::Rc;
 use crate::components::themed_tooltip as footer_tooltip;
 
 const WAVEFORM_NUM_BARS: usize = 128;
+const DEFAULT_WAVEFORM: [u8; WAVEFORM_NUM_BARS] = [64; WAVEFORM_NUM_BARS];
 const WAVEFORM_MAX_HEIGHT_PX: f32 = 12.0;
 const WAVEFORM_MIN_HEIGHT_PX: f32 = 0.0;
 const WAVEFORM_BAR_GAP_PX: f32 = 1.0;
 
 /// Custom element to capture waveform bounds and render bars
 struct WaveformElement {
-    waveform: Option<Vec<u8>>,
+    waveform: Option<sotf_audio_player::TrackWaveform>,
     progress: f32,
     played_color: gpui::Rgba,
     unplayed_color: gpui::Rgba,
@@ -33,7 +34,7 @@ struct WaveformElement {
 
 impl WaveformElement {
     fn new(
-        waveform: Option<Vec<u8>>,
+        waveform: Option<sotf_audio_player::TrackWaveform>,
         progress: f32,
         played_color: gpui::Rgba,
         unplayed_color: gpui::Rgba,
@@ -115,21 +116,11 @@ impl Element for WaveformElement {
         *self.bounds_ref.borrow_mut() = Some(bounds);
 
         // Render logic from render_waveform_bars
-        let default_waveform: Vec<u8> = vec![64; WAVEFORM_NUM_BARS];
-        let samples = self.waveform.as_ref().unwrap_or(&default_waveform);
-
-        let bar_samples: Vec<u8> = if samples.len() == WAVEFORM_NUM_BARS {
-            samples.clone()
-        } else if samples.is_empty() {
-            vec![64; WAVEFORM_NUM_BARS]
-        } else {
-            (0..WAVEFORM_NUM_BARS)
-                .map(|i| {
-                    let src_idx = (i * samples.len()) / WAVEFORM_NUM_BARS;
-                    samples.get(src_idx).copied().unwrap_or(64)
-                })
-                .collect()
-        };
+        let samples = self
+            .waveform
+            .as_deref()
+            .map(|samples| &samples[..])
+            .unwrap_or(&DEFAULT_WAVEFORM);
 
         let progress_bar_idx = (self.progress * WAVEFORM_NUM_BARS as f32) as usize;
 
@@ -138,7 +129,7 @@ impl Element for WaveformElement {
         // used by WAVEFORM_MAX_HEIGHT_PX above).
         let center_y = bounds.origin.y + bounds.size.height / 2.0 + px(6.0);
 
-        for (idx, amplitude) in bar_samples.iter().enumerate() {
+        for (idx, amplitude) in samples.iter().enumerate() {
             let height_ratio = *amplitude as f32 / 255.0;
             let bar_height = WAVEFORM_MIN_HEIGHT_PX
                 + (WAVEFORM_MAX_HEIGHT_PX - WAVEFORM_MIN_HEIGHT_PX) * height_ratio;

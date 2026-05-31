@@ -73,20 +73,22 @@ impl ReplayGainScanner {
                     }
                 };
 
-                loop {
+                'worker_loop: loop {
                     // Check if we should stop
                     if stop_rx.try_recv().is_ok() {
                         log::info!("[ReplayGain Worker {}] Stopping", worker_id);
                         break;
                     }
 
-                    // Wait while paused (check every 200ms, also check for stop)
+                    // Wait while paused, waking quickly for either resume or stop.
                     while pause_flag.load(Ordering::Relaxed) {
-                        if stop_rx.try_recv().is_ok() {
-                            log::info!("[ReplayGain Worker {}] Stopping while paused", worker_id);
-                            return;
+                        channel::select! {
+                            recv(stop_rx) -> _ => {
+                                log::info!("[ReplayGain Worker {}] Stopping while paused", worker_id);
+                                break 'worker_loop;
+                            }
+                            recv(channel::after(std::time::Duration::from_millis(50))) -> _ => {}
                         }
-                        std::thread::sleep(std::time::Duration::from_millis(200));
                     }
 
                     // Block on (task, stop) concurrently — N workers wait at
@@ -256,6 +258,7 @@ pub struct ReplayGainScanManager {
 
     // Album gain scanning (second pass)
     album_gain_rx: Option<Receiver<AlbumGainMessage>>,
+    album_gain_cancel: Option<Arc<AtomicBool>>,
     pub album_gain_phase: AlbumGainPhase,
     pub album_gain_done: usize,
     pub album_gain_total: usize,
@@ -287,6 +290,7 @@ impl ReplayGainScanManager {
             succeeded: 0,
             failed: 0,
             album_gain_rx: None,
+            album_gain_cancel: None,
             album_gain_phase: AlbumGainPhase::Idle,
             album_gain_done: 0,
             album_gain_total: 0,
@@ -383,6 +387,7 @@ impl ReplayGainScanManager {
     /// Start the album gain computation pass.
     /// This analyzes all tracks in each album that's missing album_gain and computes
     /// the combined album-level ReplayGain using EBU R128 gating block accumulation.
+    /// `start_scan` runs this pass automatically after the track ReplayGain pass.
     fn start_album_gain_scan(&mut self) {
         if self.album_gain_phase == AlbumGainPhase::Scanning {
             return;
@@ -412,6 +417,7 @@ impl ReplayGainScanManager {
         if albums.is_empty() {
             log::info!("[AlbumGain] All albums already have album gain data");
             self.album_gain_phase = AlbumGainPhase::Done;
+            self.album_gain_cancel = None;
             return;
         }
 
@@ -422,7 +428,9 @@ impl ReplayGainScanManager {
         );
 
         let (tx, rx) = channel::unbounded();
+        let cancel = Arc::new(AtomicBool::new(false));
         self.album_gain_rx = Some(rx);
+        self.album_gain_cancel = Some(Arc::clone(&cancel));
         self.album_gain_phase = AlbumGainPhase::Scanning;
         self.album_gain_done = 0;
         self.album_gain_total = album_count;
@@ -445,11 +453,20 @@ impl ReplayGainScanManager {
             let mut failed = 0;
 
             for (idx, (_album_id, track_paths)) in albums.iter().enumerate() {
+                if cancel.load(Ordering::Relaxed) {
+                    log::info!("[AlbumGain] Cancelled before album {}", idx + 1);
+                    return;
+                }
+
                 // Analyze each track in the album using the extended function
                 let mut track_data: Vec<(f64, u64, f64)> = Vec::new();
                 let mut album_failed = false;
 
                 for path in track_paths {
+                    if cancel.load(Ordering::Relaxed) {
+                        log::info!("[AlbumGain] Cancelled while analyzing {}", path.display());
+                        return;
+                    }
                     match replaygain::analyze_file_extended(path) {
                         Ok(data) => {
                             track_data.push((data.peak, data.gating_block_count, data.energy));
@@ -584,6 +601,7 @@ impl ReplayGainScanManager {
             }
             if completed {
                 self.album_gain_rx = None;
+                self.album_gain_cancel = None;
             }
         }
 
@@ -595,10 +613,14 @@ impl ReplayGainScanManager {
         if let Some(scanner) = &self.scanner {
             scanner.stop();
         }
+        if let Some(cancel) = &self.album_gain_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
         self.in_progress = false;
         self.scanner = None;
         self.album_gain_phase = AlbumGainPhase::Idle;
         self.album_gain_rx = None;
+        self.album_gain_cancel = None;
     }
 
     /// Get progress as a percentage

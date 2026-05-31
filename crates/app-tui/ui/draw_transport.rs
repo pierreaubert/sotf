@@ -17,11 +17,8 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
     let (waveform, duration, position) = if let Some(idx) = app.current_queue_index {
         if let Some(entry) = app.queue.get(idx) {
             if let Some(track) = entry.item.current_track() {
-                (
-                    track.waveform.as_deref(),
-                    track.duration_secs,
-                    app.position_secs,
-                )
+                let waveform = track.waveform.as_deref().map(|samples| &samples[..]);
+                (waveform, track.duration_secs, app.position_secs)
             } else {
                 (None, None, 0.0)
             }

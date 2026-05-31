@@ -148,7 +148,24 @@ impl Player {
         if let Some(config) = &self.saved_config
             && (config.output_channels != output_channels || config.output_device != output_device)
         {
-            return Err("Smooth source switch requires the same output configuration".into());
+            let mut mismatches = Vec::new();
+            if config.output_channels != output_channels {
+                mismatches.push(format!(
+                    "output_channels: saved={} requested={}",
+                    config.output_channels, output_channels
+                ));
+            }
+            if config.output_device != output_device {
+                mismatches.push(format!(
+                    "output_device: saved={:?} requested={:?}",
+                    config.output_device, output_device
+                ));
+            }
+            return Err(format!(
+                "Smooth source switch requires the same output configuration ({})",
+                mismatches.join(", ")
+            )
+            .into());
         }
 
         self.saved_config = Some(SavedPlaybackConfig {

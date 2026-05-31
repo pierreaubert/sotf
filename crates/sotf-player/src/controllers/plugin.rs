@@ -80,12 +80,21 @@ impl PluginController {
     /// Add a plugin to the chain. Returns `Structural` effect.
     pub fn add_plugin(&mut self, plugin_type: &PluginType) -> PluginUpdateEffect {
         let insert_idx = self.graph.user_plugin_insert_index();
-        if self.graph.insert_plugin(insert_idx, plugin_type).is_ok() {
-            self.selected_plugin_index = insert_idx;
-            self.graph.update_channel_dependent_plugins();
-            PluginUpdateEffect::Structural
-        } else {
-            PluginUpdateEffect::None
+        match self.graph.insert_plugin(insert_idx, plugin_type) {
+            Ok(_) => {
+                self.selected_plugin_index = insert_idx;
+                self.graph.update_channel_dependent_plugins();
+                PluginUpdateEffect::Structural
+            }
+            Err(err) => {
+                log::warn!(
+                    "[PluginController] Failed to insert {:?} at {}: {}",
+                    plugin_type,
+                    insert_idx,
+                    err
+                );
+                PluginUpdateEffect::None
+            }
         }
     }
 

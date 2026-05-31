@@ -14,6 +14,7 @@ use gpui_ui_kit::{
     Badge, BadgeVariant, Dialog, DialogSize, HStack, Heading, Spinner, SpinnerSize, StackAlign,
     StackJustify, StackSize, StackSpacing, Text, TextSize, TextWeight, ToastVariant, VStack,
 };
+use sotf_audio_player::QueuePlaybackEffect;
 
 impl PlayerView {
     pub(crate) fn render_help_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -651,7 +652,22 @@ impl PlayerView {
                                         crate::app::ContextMenuType::QueueItem,
                                         "remove-from-queue",
                                     ) => {
-                                        state.app.remove_from_queue(item_idx);
+                                        let effect = state.app.remove_from_queue(item_idx);
+                                        match effect {
+                                            QueuePlaybackEffect::Reload(source)
+                                            | QueuePlaybackEffect::Play(source) => {
+                                                Self::play_track(state, source);
+                                            }
+                                            QueuePlaybackEffect::Stop => {
+                                                if let Err(e) = state.player.lock().stop() {
+                                                    log::warn!(
+                                                        "[ContextMenu] Failed to stop player after queue removal: {}",
+                                                        e
+                                                    );
+                                                }
+                                            }
+                                            QueuePlaybackEffect::None => {}
+                                        }
                                     }
                                     (crate::app::ContextMenuType::QueueItem, "play-from-here") => {
                                         state.app.playback.current_queue_index = Some(item_idx);

@@ -168,8 +168,8 @@ impl LibraryController {
     ///
     /// Returns the cached result of search + channel filter + merge + sort.
     /// Callers should call `ensure_cache_valid()` before this if they have `&mut self`.
-    pub fn filtered_albums(&self) -> Vec<&Album> {
-        self.cached_albums.iter().collect()
+    pub fn filtered_albums(&self) -> &[Album] {
+        &self.cached_albums
     }
 
     /// Single combined predicate for the sidebar selection filters.
@@ -449,27 +449,32 @@ impl LibraryController {
         self.search_query = query.clone();
         let query_lower = query.to_lowercase();
 
-        // Smart view switching logic
         let mut best_order = None;
-        let mut is_exact = false;
 
-        // First pass: look for exact matches (highest priority)
-        for album in &self.library.albums {
-            if album.title.to_lowercase() == query_lower {
-                best_order = Some(LibrarySortOrder::Album);
-                is_exact = true;
-                break;
-            }
-            if album.artist().to_lowercase() == query_lower {
-                best_order = Some(LibrarySortOrder::Artist);
-                is_exact = true;
-            }
-            if best_order != Some(LibrarySortOrder::Artist)
-                && best_order != Some(LibrarySortOrder::Album)
-            {
-                for track in &album.tracks {
-                    if let Some(composer) = &track.composer {
-                        if composer.to_lowercase() == query_lower {
+        // Smart view switching is useful once the query has enough signal.
+        // For one- and two-character edits, avoid walking every track on every
+        // UI keystroke; the normal search cache still updates below.
+        if query_lower.chars().count() >= 3 {
+            let mut is_exact = false;
+
+            // First pass: look for exact matches (highest priority)
+            for album in &self.library.albums {
+                if album.title.eq_ignore_ascii_case(&query) {
+                    best_order = Some(LibrarySortOrder::Album);
+                    is_exact = true;
+                    break;
+                }
+                if album.artist().eq_ignore_ascii_case(&query) {
+                    best_order = Some(LibrarySortOrder::Artist);
+                    is_exact = true;
+                }
+                if best_order != Some(LibrarySortOrder::Artist)
+                    && best_order != Some(LibrarySortOrder::Album)
+                {
+                    for track in &album.tracks {
+                        if let Some(composer) = &track.composer
+                            && composer.eq_ignore_ascii_case(&query)
+                        {
                             best_order = Some(LibrarySortOrder::Composer);
                             is_exact = true;
                             break;
@@ -477,24 +482,24 @@ impl LibraryController {
                     }
                 }
             }
-        }
 
-        // Second pass: if no exact match, look for partial matches
-        if !is_exact {
-            for album in &self.library.albums {
-                if album.title.to_lowercase().contains(&query_lower) {
-                    best_order = Some(LibrarySortOrder::Album);
-                    break;
-                }
-                if album.artist().to_lowercase().contains(&query_lower) {
-                    best_order = Some(LibrarySortOrder::Artist);
-                }
-                if best_order != Some(LibrarySortOrder::Artist)
-                    && best_order != Some(LibrarySortOrder::Album)
-                {
-                    for track in &album.tracks {
-                        if let Some(composer) = &track.composer {
-                            if composer.to_lowercase().contains(&query_lower) {
+            // Second pass: if no exact match, look for partial matches
+            if !is_exact {
+                for album in &self.library.albums {
+                    if album.title.to_lowercase().contains(&query_lower) {
+                        best_order = Some(LibrarySortOrder::Album);
+                        break;
+                    }
+                    if album.artist().to_lowercase().contains(&query_lower) {
+                        best_order = Some(LibrarySortOrder::Artist);
+                    }
+                    if best_order != Some(LibrarySortOrder::Artist)
+                        && best_order != Some(LibrarySortOrder::Album)
+                    {
+                        for track in &album.tracks {
+                            if let Some(composer) = &track.composer
+                                && composer.to_lowercase().contains(&query_lower)
+                            {
                                 best_order = Some(LibrarySortOrder::Composer);
                                 break;
                             }
@@ -566,7 +571,7 @@ impl LibraryController {
         if start >= all_albums.len() {
             return Vec::new();
         }
-        all_albums[start..end].to_vec()
+        all_albums[start..end].iter().collect()
     }
 
     /// Get total pages.
@@ -686,8 +691,7 @@ impl LibraryController {
 
     /// Get currently selected album (from cache, without selection filters).
     pub fn selected_album(&self) -> Option<&Album> {
-        let albums = self.filtered_albums();
-        albums.get(self.selected_index).copied()
+        self.cached_albums.get(self.selected_index)
     }
 
     // =========================================================================
@@ -728,26 +732,19 @@ impl LibraryController {
 
     /// Scan library synchronously with progress callback.
     pub fn scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        use parking_lot::Mutex;
-        use std::sync::Arc;
-
         self.scan_in_progress = true;
         self.scan_progress_tracks = 0;
         self.scan_progress_albums = 0;
 
-        let progress_tracks = Arc::new(Mutex::new(0usize));
-        let progress_albums = Arc::new(Mutex::new(0usize));
-
-        let pt = Arc::clone(&progress_tracks);
-        let pa = Arc::clone(&progress_albums);
-
-        let result = self.library.scan_with_progress(move |tracks, albums| {
-            *pt.lock() = tracks;
-            *pa.lock() = albums;
+        let mut progress_tracks = 0usize;
+        let mut progress_albums = 0usize;
+        let result = self.library.scan_with_progress(|tracks, albums| {
+            progress_tracks = tracks;
+            progress_albums = albums;
         });
 
-        self.scan_progress_tracks = *progress_tracks.lock();
-        self.scan_progress_albums = *progress_albums.lock();
+        self.scan_progress_tracks = progress_tracks;
+        self.scan_progress_albums = progress_albums;
         self.scan_in_progress = false;
 
         self.selected_index = 0;
