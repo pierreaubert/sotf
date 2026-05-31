@@ -55,6 +55,33 @@ impl MappingTemplate {
             manual_overrides: HashMap::new(),
         }
     }
+
+    /// Validate this template against the currently focused plugin's parameter count.
+    pub fn validate_for_param_count(&self, param_count: usize) -> Result<(), String> {
+        for binding in &self.bindings {
+            if binding.param_index >= param_count {
+                return Err(format!(
+                    "template {} / {} binding for control '{}' references param_index {}, but plugin exposes {} params",
+                    self.controller_name,
+                    self.plugin_type,
+                    binding.control_id,
+                    binding.param_index,
+                    param_count
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Convert this template after checking all parameter indices are in bounds.
+    pub fn to_mapping_checked(
+        &self,
+        plugin_index: usize,
+        param_count: usize,
+    ) -> Result<MidiMapping, String> {
+        self.validate_for_param_count(param_count)?;
+        Ok(self.to_mapping(plugin_index))
+    }
 }
 
 /// Registry of mapping templates, loaded from disk or built-in defaults
@@ -179,6 +206,23 @@ mod tests {
         assert_eq!(mapping.total_pages, 2);
         assert_eq!(mapping.bindings.len(), 3);
         assert!(mapping.bindings.iter().all(|b| b.plugin_index == 2));
+    }
+
+    #[test]
+    fn test_template_rejects_stale_param_indices() {
+        let template = MappingTemplate {
+            controller_name: "Test Controller".to_string(),
+            plugin_type: "Compressor".to_string(),
+            bindings: vec![TemplateBinding {
+                control_id: "pot_1".to_string(),
+                param_index: 99,
+                page: 0,
+                scaling: ValueScaling::Linear,
+            }],
+        };
+
+        let err = template.to_mapping_checked(0, 4).unwrap_err();
+        assert!(err.contains("param_index 99"), "{err}");
     }
 
     #[test]

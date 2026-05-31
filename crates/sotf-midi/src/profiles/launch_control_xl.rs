@@ -215,7 +215,13 @@ impl LaunchControlXLProfile {
                     }
                 }
 
-                None
+                match *controller {
+                    Self::UP_CC => Some("Up".to_string()),
+                    Self::DOWN_CC => Some("Down".to_string()),
+                    Self::LEFT_CC => Some("Left".to_string()),
+                    Self::RIGHT_CC => Some("Right".to_string()),
+                    _ => None,
+                }
             }
             MidiMessage::NoteOn { note, channel, .. }
             | MidiMessage::NoteOff { note, channel, .. } => {
@@ -310,6 +316,22 @@ mod tests {
         };
         let result2 = LaunchControlXLProfile::identify_control(&msg2, &template);
         assert_eq!(result2, Some("Fader 1".to_string()));
+    }
+
+    #[test]
+    fn test_identify_arrow_buttons_as_ccs() {
+        let template = LCXLTemplate::factory_1();
+
+        let msg = MidiMessage::ControlChange {
+            channel: 0,
+            controller: LaunchControlXLProfile::DOWN_CC,
+            value: 127,
+        };
+
+        assert_eq!(
+            LaunchControlXLProfile::identify_control(&msg, &template),
+            Some("Down".to_string())
+        );
     }
 
     #[test]

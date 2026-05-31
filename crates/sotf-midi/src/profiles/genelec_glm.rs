@@ -300,13 +300,17 @@ impl<'a> GLMControl<'a> {
         })
     }
 
-    /// Solo a specific monitor by MIDI ID (GLM 5.0+)
+    /// Send GLM's Solo/Mute Device command for a monitor MIDI ID (GLM 5.0+).
+    ///
+    /// GLM exposes this as one contextual MIDI assignment, not separate wire
+    /// commands for solo and mute. The active GLM UI/context determines which
+    /// action is applied.
     ///
     /// The MIDI ID can be found in the monitor info popup in GLM.
     ///
     /// # Arguments
     /// * `midi_id` - MIDI ID of the monitor (0-127)
-    pub fn solo_monitor(&self, midi_id: u8) -> Result<()> {
+    pub fn solo_mute_monitor(&self, midi_id: u8) -> Result<()> {
         self.manager.send_message(&MidiMessage::ControlChange {
             channel: self.channel,
             controller: self.solo_mute_dev_cc,
@@ -314,17 +318,23 @@ impl<'a> GLMControl<'a> {
         })
     }
 
+    /// Alias for GLM's contextual Solo/Mute Device command.
+    ///
+    /// GLM does not expose distinct MIDI bytes for solo vs mute here; this sends
+    /// the shared Solo/Mute Device CC.
+    pub fn solo_monitor(&self, midi_id: u8) -> Result<()> {
+        self.solo_mute_monitor(midi_id)
+    }
+
     /// Mute a specific monitor by MIDI ID (GLM 5.0+)
+    ///
+    /// Alias for the same contextual Solo/Mute Device command used by
+    /// `solo_monitor`.
     ///
     /// # Arguments
     /// * `midi_id` - MIDI ID of the monitor (0-127)
     pub fn mute_monitor(&self, midi_id: u8) -> Result<()> {
-        // Uses the same CC but different context
-        self.manager.send_message(&MidiMessage::ControlChange {
-            channel: self.channel,
-            controller: self.solo_mute_dev_cc,
-            value: midi_id,
-        })
+        self.solo_mute_monitor(midi_id)
     }
 }
 

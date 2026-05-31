@@ -237,6 +237,7 @@ manager.connect_input(0, move |msg| {
 - **Track Focus**: Notes 41–44, 57–60
 - **Track Control**: Notes 73–76, 89–92
 - **Function Buttons**: Notes 105–108
+- **Arrow Buttons**: CC 104–107
 
 **LED Control:**
 Use SysEx messages for RGB LED feedback:
@@ -287,6 +288,7 @@ The `MidiManager` uses thread-safe primitives:
 - Input callbacks run on dedicated MIDI thread
 - Output connections protected by `Mutex`
 - Configuration safely accessed from multiple threads
+- Split SysEx packets are reassembled before callback dispatch
 
 ## Dependencies
 
@@ -306,7 +308,14 @@ Supports all standard MIDI message types:
 - **Pitch Bend**: `PitchBend`
 - **Aftertouch**: `PolyphonicAftertouch`, `ChannelAftertouch`
 - **System Exclusive**: `SystemExclusive`
+- **System Common / Real-Time**: `System` for MTC quarter-frame, Song Position,
+  MIDI Clock, Start/Continue/Stop, Active Sensing, and Reset
 - **Raw Messages**: `Raw` for unsupported or custom messages
+
+## Limitations
+
+- Incoming MIDI Clock and MTC messages are parsed, but this crate does not yet
+  provide a transport-sync engine that slaves the sequencer to external clock.
 
 ## License
 

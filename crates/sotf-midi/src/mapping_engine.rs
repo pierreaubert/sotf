@@ -109,7 +109,18 @@ impl MidiMappingEngine {
 
         // Try template first
         let mut mapping = if let Some(template) = self.templates.find(&layout.name, plugin_type) {
-            template.to_mapping(plugin_index)
+            match template.to_mapping_checked(plugin_index, params.len()) {
+                Ok(mapping) => mapping,
+                Err(err) => {
+                    log::warn!(
+                        "Ignoring stale MIDI template for {} / {}: {}",
+                        layout.name,
+                        plugin_type,
+                        err
+                    );
+                    auto_map::auto_map(layout, params, plugin_index, plugin_type)
+                }
+            }
         } else {
             auto_map::auto_map(layout, params, plugin_index, plugin_type)
         };
@@ -120,8 +131,14 @@ impl MidiMappingEngine {
                 mapping
                     .manual_overrides
                     .insert(param_idx, control_id.clone());
-                // Replace the auto-mapped binding for this param with the override
-                mapping.bindings.retain(|b| b.param_index != param_idx);
+                // Replace the auto/template binding for this param, and any
+                // page-0 binding already using the same physical control, so a
+                // manual override never causes one control to fire two params.
+                mapping.bindings.retain(|b| {
+                    b.plugin_index != plugin_index
+                        || (b.param_index != param_idx
+                            && !(b.page == 0 && b.control_id == *control_id))
+                });
                 if let Some(spec) = params.get(param_idx) {
                     mapping.bindings.push(ControlBinding {
                         control_id: control_id.clone(),
@@ -184,10 +201,14 @@ impl MidiMappingEngine {
         if let Some(learn) = self.learn_state.take()
             && let Some(ref mut mapping) = self.mapping
         {
-            // Remove any existing binding for this param
-            mapping
-                .bindings
-                .retain(|b| b.param_index != learn.param_index);
+            // Remove any existing binding for this param, plus any binding on
+            // the current page that already uses the learned physical control.
+            let learned_page = mapping.current_page;
+            mapping.bindings.retain(|b| {
+                b.plugin_index != learn.plugin_index
+                    || (b.param_index != learn.param_index
+                        && !(b.page == learned_page && b.control_id == control.id))
+            });
 
             let scaling = params
                 .get(learn.param_index)
@@ -355,6 +376,7 @@ fn param_range(spec: &ParamSpec) -> (f64, f64) {
 mod tests {
     use super::*;
     use crate::layout::{ControllerLayout, PhysicalControl, PhysicalControlKind};
+    use crate::templates::{MappingTemplate, TemplateBinding};
     use sotf_plugin_multiband_compressor::params as compressor;
 
     fn tiny_layout() -> ControllerLayout {
@@ -457,6 +479,67 @@ mod tests {
         // Verify the override persists
         let mapping = engine.mapping().unwrap();
         assert!(mapping.manual_overrides.contains_key(&5));
+        let learned_bindings: Vec<_> = mapping
+            .bindings
+            .iter()
+            .filter(|b| b.page == 0 && b.control_id == "pot_1")
+            .collect();
+        assert_eq!(learned_bindings.len(), 1);
+        assert_eq!(learned_bindings[0].param_index, 5);
+    }
+
+    #[test]
+    fn manual_override_removes_existing_control_binding() {
+        let mut engine = MidiMappingEngine::new();
+        engine.set_layout(tiny_layout());
+
+        let params = compressor::PARAMS;
+        engine.on_plugin_focus("Compressor", params, 0);
+        engine
+            .mapping_mut()
+            .unwrap()
+            .manual_overrides
+            .insert(5, "pot_1".to_string());
+
+        engine.on_plugin_focus("Compressor", params, 0);
+
+        let mapping = engine.mapping().unwrap();
+        let pot_bindings: Vec<_> = mapping
+            .bindings
+            .iter()
+            .filter(|b| b.page == 0 && b.control_id == "pot_1")
+            .collect();
+        assert_eq!(pot_bindings.len(), 1);
+        assert_eq!(pot_bindings[0].param_index, 5);
+    }
+
+    #[test]
+    fn stale_template_falls_back_to_auto_map() {
+        let mut engine = MidiMappingEngine::new();
+        engine.set_layout(tiny_layout());
+
+        let mut templates = TemplateRegistry::new();
+        templates.add(MappingTemplate {
+            controller_name: "Tiny".to_string(),
+            plugin_type: "Compressor".to_string(),
+            bindings: vec![TemplateBinding {
+                control_id: "pot_1".to_string(),
+                param_index: 999,
+                page: 0,
+                scaling: ValueScaling::Linear,
+            }],
+        });
+        engine.set_templates(templates);
+
+        let params = compressor::PARAMS;
+        engine.on_plugin_focus("Compressor", params, 0);
+
+        let mapping = engine.mapping().unwrap();
+        assert_eq!(
+            mapping.binding_for_control("pot_1").map(|b| b.param_index),
+            Some(0),
+            "invalid template should not survive into active mapping"
+        );
     }
 
     #[test]

@@ -439,7 +439,20 @@ fn read_channel_data<'a>(
     message_name: &str,
 ) -> Result<&'a [u8], String> {
     ensure_available(start, len, track_end, message_name)?;
-    Ok(&data[start..start + len])
+    let bytes = &data[start..start + len];
+    if let Some((index, byte)) = bytes
+        .iter()
+        .copied()
+        .enumerate()
+        .find(|(_, b)| b & 0x80 != 0)
+    {
+        return Err(format!(
+            "{message_name} data byte {} has high bit set: 0x{:02X}",
+            index + 1,
+            byte
+        ));
+    }
+    Ok(bytes)
 }
 
 fn read_tempo_us_per_beat(data: &[u8], pos: usize) -> Result<u32, String> {
@@ -683,6 +696,24 @@ mod tests {
 
         let err = parse_smf(&data, 48_000).unwrap_err();
         assert!(err.contains("Truncated Note On"), "{err}");
+    }
+
+    #[test]
+    fn test_parse_smf_rejects_status_byte_in_channel_data() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+
+        let track_data = vec![0x00, 0x90, 0x90, 60];
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(track_data.len() as u32).to_be_bytes());
+        data.extend_from_slice(&track_data);
+
+        let err = parse_smf(&data, 48_000).unwrap_err();
+        assert!(err.contains("high bit set"), "{err}");
     }
 
     #[test]

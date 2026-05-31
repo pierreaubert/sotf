@@ -57,7 +57,8 @@ pub fn scaling_for_param(spec: &ParamSpec) -> ValueScaling {
     match spec.param_type {
         ParamType::Float { min, max, .. } => {
             // Use log scaling for Hz params with wide range, or ratio params with wide range
-            let is_freq = spec.unit == "Hz" || spec.unit == "kHz";
+            let is_freq =
+                spec.unit.eq_ignore_ascii_case("Hz") || spec.unit.eq_ignore_ascii_case("kHz");
             let is_wide_ratio = spec.unit == ":1" && max / min.max(0.01) > 10.0;
             if (is_freq && max / min.max(0.01) > 50.0) || is_wide_ratio {
                 ValueScaling::Logarithmic
@@ -146,7 +147,11 @@ pub fn auto_map(
             slot += 1;
         }
     }
-    let continuous_pages = page + 1;
+    let continuous_pages = if controls_per_page > 0 && !continuous_params.is_empty() {
+        page + 1
+    } else {
+        0
+    };
 
     // Assign discrete params to buttons (share pages with continuous)
     let mut btn_slot = 0;
@@ -168,13 +173,13 @@ pub fn auto_map(
             btn_slot += 1;
         }
     }
-    let button_pages = if buttons_per_page > 0 {
+    let button_pages = if buttons_per_page > 0 && !discrete_params.is_empty() {
         btn_page + 1
     } else {
-        1
+        0
     };
 
-    mapping.total_pages = continuous_pages.max(button_pages);
+    mapping.total_pages = continuous_pages.max(button_pages).max(1);
     mapping
 }
 
@@ -396,6 +401,12 @@ mod tests {
     }
 
     #[test]
+    fn test_scaling_for_hz_param_is_case_insensitive() {
+        let spec = ParamSpec::float("Freq", "freq", 1000.0, 20.0, 20000.0, 1.0, "hz", "Test");
+        assert_eq!(scaling_for_param(&spec), ValueScaling::Logarithmic);
+    }
+
+    #[test]
     fn test_scaling_for_db_param() {
         let spec = ParamSpec::float(
             "Threshold",
@@ -420,5 +431,35 @@ mod tests {
     fn test_filepath_unmappable() {
         let affinity = control_affinity(&ParamSpec::file_path("IR File", "ir_file", "Test"));
         assert!(affinity.is_empty());
+    }
+
+    #[test]
+    fn test_auto_map_with_only_buttons_keeps_single_page() {
+        use crate::layout::MidiControlId;
+
+        let layout = ControllerLayout {
+            name: "Buttons".to_string(),
+            controls: vec![PhysicalControl {
+                id: "btn_1".to_string(),
+                kind: PhysicalControlKind::Button,
+                column: 0,
+                row: 0,
+                group: "buttons".to_string(),
+                label: "B1".to_string(),
+                midi_id: MidiControlId::Note(0, 1),
+                secondary_midi_id: None,
+            }],
+            grid_columns: 1,
+            grid_rows: 1,
+            reserved_control_ids: vec![],
+            page_prev_id: None,
+            page_next_id: None,
+        };
+        let params = [ParamSpec::bool_param("Bypass", "bypass", false, "Test")];
+
+        let mapping = auto_map(&layout, &params, 0, "Test");
+
+        assert_eq!(mapping.total_pages, 1);
+        assert_eq!(mapping.bindings.len(), 1);
     }
 }

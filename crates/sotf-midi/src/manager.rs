@@ -21,6 +21,8 @@ struct InputBuffer {
     inline: [u8; 3],
     /// Heap fallback for SysEx and other multi-byte system messages.
     heap: Vec<u8>,
+    /// In-progress multi-packet SysEx payload.
+    sysex: Vec<u8>,
 }
 
 impl InputBuffer {
@@ -28,8 +30,48 @@ impl InputBuffer {
         Self {
             inline: [0; 3],
             heap: Vec::with_capacity(64),
+            sysex: Vec::with_capacity(256),
         }
     }
+
+    fn parse_message(&mut self, message: &[u8]) -> Option<Result<MidiMessage>> {
+        if message.is_empty() {
+            return Some(MidiMessage::from_bytes(message));
+        }
+
+        if !self.sysex.is_empty() {
+            if message.len() == 1 && is_realtime_status(message[0]) {
+                return Some(MidiMessage::from_bytes(message));
+            }
+            if message[0] == 0xF0 {
+                self.sysex.clear();
+            }
+            self.sysex.extend_from_slice(message);
+            if message.last() == Some(&0xF7) {
+                let data = std::mem::take(&mut self.sysex);
+                return Some(Ok(MidiMessage::SystemExclusive { data }));
+            }
+            return None;
+        }
+
+        if message[0] == 0xF0 && message.last() != Some(&0xF7) {
+            self.sysex.extend_from_slice(message);
+            return None;
+        }
+
+        if message.len() <= self.inline.len() {
+            self.inline[..message.len()].copy_from_slice(message);
+            Some(MidiMessage::from_bytes(&self.inline[..message.len()]))
+        } else {
+            self.heap.clear();
+            self.heap.extend_from_slice(message);
+            Some(MidiMessage::from_bytes(&self.heap))
+        }
+    }
+}
+
+fn is_realtime_status(status: u8) -> bool {
+    matches!(status, 0xF8..=0xFF) && status != 0xF7
 }
 
 /// Main MIDI manager for handling all MIDI operations
@@ -75,60 +117,12 @@ impl MidiManager {
 
     /// List all available MIDI input devices
     pub fn list_input_devices(&mut self) -> Result<Vec<MidiDeviceInfo>> {
-        let midi_in = MidiInput::new("SOTF MIDI Input")?;
-        let ports = midi_in.ports();
-
-        let devices = ports
-            .iter()
-            .enumerate()
-            .map(|(index, port)| {
-                let name = midi_in
-                    .port_name(port)
-                    .unwrap_or_else(|_| format!("Unknown Input {}", index));
-
-                MidiDeviceInfo {
-                    index,
-                    name,
-                    device_type: MidiDeviceType::Input,
-                    manufacturer: None,
-                    is_connected: false,
-                }
-            })
-            .collect();
-
-        // Keep the input client for later use
-        self.midi_input = Some(midi_in);
-
-        Ok(devices)
+        enumerate_input_devices()
     }
 
     /// List all available MIDI output devices
     pub fn list_output_devices(&mut self) -> Result<Vec<MidiDeviceInfo>> {
-        let midi_out = MidiOutput::new("SOTF MIDI Output")?;
-        let ports = midi_out.ports();
-
-        let devices = ports
-            .iter()
-            .enumerate()
-            .map(|(index, port)| {
-                let name = midi_out
-                    .port_name(port)
-                    .unwrap_or_else(|_| format!("Unknown Output {}", index));
-
-                MidiDeviceInfo {
-                    index,
-                    name,
-                    device_type: MidiDeviceType::Output,
-                    manufacturer: None,
-                    is_connected: false,
-                }
-            })
-            .collect();
-
-        // Keep the output client for later use
-        self.midi_output = Some(midi_out);
-
-        Ok(devices)
+        enumerate_output_devices()
     }
 
     /// Poll MIDI ports without touching active input/output connections.
@@ -188,16 +182,11 @@ impl MidiManager {
             port,
             &format!("SOTF Input {}", port_name),
             move |_timestamp, message, buf: &mut InputBuffer| {
-                // Use the pre-allocated buffers to avoid per-message heap allocation
-                // on the hot path. Channel-voice messages fit in the 3-byte inline
-                // buffer; longer messages spill to the heap fallback.
-                let parsed = if message.len() <= buf.inline.len() {
-                    buf.inline[..message.len()].copy_from_slice(message);
-                    MidiMessage::from_bytes(&buf.inline[..message.len()])
-                } else {
-                    buf.heap.clear();
-                    buf.heap.extend_from_slice(message);
-                    MidiMessage::from_bytes(&buf.heap)
+                // Use pre-allocated callback-local buffers to avoid hot-path
+                // allocation for channel/system messages. Split SysEx packets
+                // are accumulated until the terminating 0xF7 arrives.
+                let Some(parsed) = buf.parse_message(message) else {
+                    return;
                 };
                 let Ok(midi_msg) = parsed else {
                     return;
@@ -235,7 +224,8 @@ impl MidiManager {
     /// Disconnect from MIDI input
     pub fn disconnect_input(&mut self) {
         if let Some(connection) = self.input_connection.take() {
-            connection.close();
+            let (midi_input, _buffer) = connection.close();
+            self.midi_input = Some(midi_input);
             log::info!("Disconnected MIDI input");
         }
     }
@@ -285,7 +275,7 @@ impl MidiManager {
     pub fn disconnect_output(&mut self) {
         let mut conn = self.output_connection.lock();
         if let Some(connection) = conn.take() {
-            connection.close();
+            self.midi_output = Some(connection.close());
             log::info!("Disconnected MIDI output");
         }
     }
@@ -391,11 +381,14 @@ fn channel_of(msg: &MidiMessage) -> Option<u8> {
         | MidiMessage::ProgramChange { channel, .. }
         | MidiMessage::ChannelAftertouch { channel, .. }
         | MidiMessage::PitchBend { channel, .. } => Some(*channel),
-        MidiMessage::SystemExclusive { .. } | MidiMessage::Raw { .. } => None,
+        MidiMessage::SystemExclusive { .. }
+        | MidiMessage::System { .. }
+        | MidiMessage::Raw { .. } => None,
     }
 }
 
-fn enumerate_input_devices() -> Result<Vec<MidiDeviceInfo>> {
+/// Enumerate MIDI input devices without mutating a `MidiManager`.
+pub fn enumerate_input_devices() -> Result<Vec<MidiDeviceInfo>> {
     let midi_in = MidiInput::new("SOTF MIDI Hotplug Input")?;
     Ok(midi_in
         .ports()
@@ -413,7 +406,8 @@ fn enumerate_input_devices() -> Result<Vec<MidiDeviceInfo>> {
         .collect())
 }
 
-fn enumerate_output_devices() -> Result<Vec<MidiDeviceInfo>> {
+/// Enumerate MIDI output devices without mutating a `MidiManager`.
+pub fn enumerate_output_devices() -> Result<Vec<MidiDeviceInfo>> {
     let midi_out = MidiOutput::new("SOTF MIDI Hotplug Output")?;
     Ok(midi_out
         .ports()
@@ -458,5 +452,53 @@ mod tests {
 
         let outputs = manager.list_output_devices();
         assert!(outputs.is_ok());
+    }
+
+    #[test]
+    fn input_buffer_reassembles_split_sysex() {
+        let mut buffer = InputBuffer::new();
+
+        assert!(buffer.parse_message(&[0xF0, 0x7D, 0x01]).is_none());
+        let msg = buffer.parse_message(&[0x02, 0x03, 0xF7]).unwrap().unwrap();
+
+        assert_eq!(
+            msg,
+            MidiMessage::SystemExclusive {
+                data: vec![0xF0, 0x7D, 0x01, 0x02, 0x03, 0xF7]
+            }
+        );
+    }
+
+    #[test]
+    fn input_buffer_passes_stack_sized_system_messages() {
+        let mut buffer = InputBuffer::new();
+
+        let msg = buffer.parse_message(&[0xF8]).unwrap().unwrap();
+
+        assert_eq!(
+            msg,
+            MidiMessage::System {
+                status: 0xF8,
+                data: [0, 0],
+                len: 0
+            }
+        );
+    }
+
+    #[test]
+    fn input_buffer_preserves_sysex_when_realtime_arrives_mid_packet() {
+        let mut buffer = InputBuffer::new();
+
+        assert!(buffer.parse_message(&[0xF0, 0x7D, 0x01]).is_none());
+        let clock = buffer.parse_message(&[0xF8]).unwrap().unwrap();
+        assert!(matches!(clock, MidiMessage::System { status: 0xF8, .. }));
+
+        let sysex = buffer.parse_message(&[0x02, 0xF7]).unwrap().unwrap();
+        assert_eq!(
+            sysex,
+            MidiMessage::SystemExclusive {
+                data: vec![0xF0, 0x7D, 0x01, 0x02, 0xF7]
+            }
+        );
     }
 }
