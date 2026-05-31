@@ -130,6 +130,10 @@ pub struct SotfApiState {
     pub library: SotfApiLibrarySummary,
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "stream events mirror API payloads directly; boxing would churn public callers"
+)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum SotfApiStreamEvent {
     State(SotfApiState),

@@ -57,24 +57,24 @@ generate-audio-tests:
 
 [group('test')]
 check:
-	RUST_MIN_STACK=16777216 cargo check --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d"
+	RUST_MIN_STACK=16777216 cargo check --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 
 [group('test')]
 test:
-	RUST_MIN_STACK=16777216 cargo test --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d"
+	RUST_MIN_STACK=16777216 cargo test --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 
 [group('test')]
 test-negative:
-	cargo test -p sotf-gpui --test negative --release
+	cargo test -p sotf-gpui --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 
 [group('test')]
 test-proptest:
-	PROPTEST_CASES=10000 cargo test -p sotf-gpui --test proptest_tests  --release
+	PROPTEST_CASES=10000 cargo test -p sotf-gpui --test proptest_tests  --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest: test-negative test-proptest
-	AEQ_E2E_DEVICE='BlackHole 64ch' RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
+	AEQ_E2E_DEVICE='BlackHole 64ch' RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 
 # ----------------------------------------------------------------------
 # LINT
@@ -82,7 +82,7 @@ ntest: test-negative test-proptest
 
 [group('lint')]
 lint:
-	cargo clippy --all -- -D warnings
+	cargo clippy --all --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api" -- -D warnings
 
 # ----------------------------------------------------------------------
 # DOC
@@ -125,14 +125,14 @@ run-gpui:
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-release:
-	cargo build --release --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf"
+	cargo build --release --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/sotf-desktop
 	./target/release/sotf-desktop
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf"
+	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/sotf-desktop
 	./target/release/sotf-desktop
 
@@ -140,7 +140,7 @@ run-gpui-leaks:
 [group('run')]
 [macos]
 run-tui:
-	cargo run --release --bin sotf-tui --features onnx,hal
+	cargo run --release --bin sotf-tui --features "onnx, hal"
 
 [group('run')]
 [linux]
@@ -156,7 +156,7 @@ run-tui:
 [group('run')]
 [macos]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features onnx,hal
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features "onnx, hal"
 
 [group('run')]
 [linux]
@@ -167,26 +167,6 @@ run-tui-leaks:
 [windows]
 run-tui-leaks:
 	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features onnx
-
-# Run an isolated systemwide daemon with deterministic fake capture.
-# Override SOTF_SYSTEMWIDE_RUNTIME_DIR to choose the socket/shared-memory dir.
-[group('run')]
-systemwide-lab:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	runtime_dir="${SOTF_SYSTEMWIDE_RUNTIME_DIR:-/tmp/sotf-systemwide-lab-${USER:-user}}"
-	driver="${SOTF_SYSTEMWIDE_DRIVER:-lab}"
-	mkdir -p "$runtime_dir"
-	chmod 700 "$runtime_dir"
-	rm -f "$runtime_dir/daemon.sock" "$runtime_dir/audio.shm" "$runtime_dir/session.key"
-	echo "Starting systemwide lab daemon"
-	echo "  runtime: $runtime_dir"
-	echo "  driver:  $driver"
-	echo "  socket:  $runtime_dir/daemon.sock"
-	SOTF_SYSTEMWIDE_RUNTIME_DIR="$runtime_dir" \
-	SOTF_SYSTEMWIDE_DRIVER="$driver" \
-	RUST_LOG="${RUST_LOG:-info}" \
-	cargo run -p sotf-daemon --bin sotf-daemon
 
 # ----------------------------------------------------------------------
 # FORMAT
@@ -281,7 +261,7 @@ dist-workspace: dist-plot-bins
 [group('build')]
 [macos]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx, hal, iamf"
+	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx, hal, iamf, dev-api"
 
 [group('build')]
 [linux]
@@ -297,7 +277,7 @@ alias terminal := gpui
 
 [group('build')]
 gpui:
-	cargo run --release --bin sotf-desktop -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d,iamf"
+	cargo run --release --bin sotf-desktop -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d,iamf,dev-api"
 
 alias desktop := gpui
 alias native := gpui

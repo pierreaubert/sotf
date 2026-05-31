@@ -1688,7 +1688,7 @@ impl AudioDaemon {
     }
 
     async fn reload_plugins_with_user_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
-        let plan = match {
+        let prepared_plan = {
             let pipeline = self.system_state.lock();
             pipeline.prepare_plan(
                 plugins,
@@ -1696,7 +1696,8 @@ impl AudioDaemon {
                 pipeline.output_channels(),
                 pipeline.input_channels(),
             )
-        } {
+        };
+        let plan = match prepared_plan {
             Ok(plan) => plan,
             Err(e) => return Response::err(e),
         };

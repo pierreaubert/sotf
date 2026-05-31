@@ -402,10 +402,10 @@ impl ManagerThread {
         if let Err(e) = self.send_command(ManagerCommand::Shutdown) {
             log::trace!("[Manager Thread] Shutdown command receiver dropped: {}", e);
         }
-        if let Some(handle) = self.thread_handle.take() {
-            if let Err(e) = handle.join() {
-                log::warn!("[Manager Thread] Thread panicked during shutdown: {:?}", e);
-            }
+        if let Some(handle) = self.thread_handle.take()
+            && let Err(e) = handle.join()
+        {
+            log::warn!("[Manager Thread] Thread panicked during shutdown: {:?}", e);
         }
     }
 }

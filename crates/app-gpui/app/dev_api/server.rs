@@ -416,8 +416,10 @@ fn load_room_eq_recording_fixture(fixture_dir: &Path) -> Result<RecordingState> 
         return Err(anyhow!("recordings.json contains no speakers"));
     }
 
-    let mut recording = RecordingState::default();
-    recording.recording_directory = Some(fixture_dir.to_string_lossy().into_owned());
+    let mut recording = RecordingState {
+        recording_directory: Some(fixture_dir.to_string_lossy().into_owned()),
+        ..RecordingState::default()
+    };
     recording.playback_config.num_channels = names.len();
     recording.playback_config.channel_mappings = names
         .iter()

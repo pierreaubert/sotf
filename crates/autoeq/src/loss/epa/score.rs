@@ -86,22 +86,17 @@ fn default_ir_audibility_threshold_db() -> f64 {
 }
 
 /// Program-material bias for temporal masking.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TemporalMaskingProfile {
     /// Percussive material: modal ringing is least masked and should be cut
     /// more decisively.
     Transient,
     /// General music / film content.
+    #[default]
     Mixed,
     /// Sustained material: late modal decay is partly masked by ongoing tone.
     Sustained,
-}
-
-impl Default for TemporalMaskingProfile {
-    fn default() -> Self {
-        Self::Mixed
-    }
 }
 
 /// Temporal masking penalty configuration for EPA optimization.

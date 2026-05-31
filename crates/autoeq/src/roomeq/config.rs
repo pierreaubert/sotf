@@ -261,15 +261,14 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         ));
     }
 
-    if let Some(excursion) = &opt.excursion_protection {
-        if excursion.f3_reference_min_hz <= 0.0
-            || excursion.f3_reference_max_hz <= excursion.f3_reference_min_hz
-        {
-            result.add_error(format!(
-                "excursion_protection F3 reference band must satisfy 0 < min < max (got {:.1}..{:.1})",
-                excursion.f3_reference_min_hz, excursion.f3_reference_max_hz
-            ));
-        }
+    if let Some(excursion) = &opt.excursion_protection
+        && (excursion.f3_reference_min_hz <= 0.0
+            || excursion.f3_reference_max_hz <= excursion.f3_reference_min_hz)
+    {
+        result.add_error(format!(
+            "excursion_protection F3 reference band must satisfy 0 < min < max (got {:.1}..{:.1})",
+            excursion.f3_reference_min_hz, excursion.f3_reference_max_hz
+        ));
     }
 
     if let Some(auto) = &opt.auto_optimizer

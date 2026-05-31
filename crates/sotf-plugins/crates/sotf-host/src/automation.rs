@@ -344,7 +344,7 @@ impl ParameterSmoother {
         if (next - self.target).abs() < 1e-6 {
             self.critical_initial_error = 0.0;
             self.critical_elapsed_samples = 0;
-            return self.target;
+            self.target
         } else {
             self.current
         }

@@ -546,9 +546,8 @@ impl InPlacePlugin for DeEsserPlugin {
                 // block-constant mix that would cause zipper noise during automation.
                 let mix = self.mix_smoother.advance();
                 let dry_mix = 1.0 - mix;
-                for ch in 0..self.channels {
+                for (ch, &sidechain) in frame_samples.iter().enumerate().take(self.channels) {
                     // Sidechain: HP then LP to form bandpass
-                    let sidechain = frame_samples[ch];
                     // Level detection
                     let level = self.cores[ch].detect_level(0, sidechain);
                     let level_db = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));

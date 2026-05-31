@@ -462,7 +462,7 @@ pub enum FederationScanMessage {
 pub use sotf_audio_player::federation_scan::FederationScanResult;
 
 /// Native SOTF remote-control server picker and discovery state.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RemoteState {
     pub server_store: sotf_audio_player::SotfRemoteServerStore,
     pub discovered_servers: Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>,
@@ -486,24 +486,6 @@ pub struct RemoteState {
     /// In-memory bearer token cache keyed by server ID.
     /// Tokens are never persisted to disk; secure storage is planned for Phase 2.
     pub server_tokens: HashMap<String, String>,
-}
-
-impl Default for RemoteState {
-    fn default() -> Self {
-        Self {
-            server_store: sotf_audio_player::SotfRemoteServerStore::default(),
-            discovered_servers: Vec::new(),
-            server_probe_statuses: HashMap::new(),
-            discovery_running: false,
-            discovery_error: None,
-            manual_server_name: String::new(),
-            manual_api_base_url: String::new(),
-            server_probe_receiver: None,
-            discovery_receiver: None,
-            event_stream_receiver: None,
-            server_tokens: HashMap::new(),
-        }
-    }
 }
 
 impl RemoteState {

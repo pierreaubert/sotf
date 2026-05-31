@@ -29,7 +29,7 @@ struct Cli {
 
 // Helper to convert Vec<f32> to bytes
 fn f32_vec_to_bytes(vec: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(vec.len() * std::mem::size_of::<f32>());
+    let mut bytes = Vec::with_capacity(std::mem::size_of_val(vec));
     for &sample in vec {
         bytes.extend_from_slice(&sample.to_le_bytes());
     }

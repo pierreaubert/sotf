@@ -174,12 +174,8 @@ impl PlayerView {
             return None;
         }
 
-        let Some(input) = state.app.playback.input_loudness_info.as_ref() else {
-            return None;
-        };
-        let Some(output) = state.app.playback.loudness_info.as_ref() else {
-            return None;
-        };
+        let input = state.app.playback.input_loudness_info.as_ref()?;
+        let output = state.app.playback.loudness_info.as_ref()?;
 
         let input_lufs = input.momentary_lufs;
         let output_lufs = output.momentary_lufs;

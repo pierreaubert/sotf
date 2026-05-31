@@ -3,6 +3,10 @@
 // ============================================================================
 
 mod bridge;
+#[allow(
+    clippy::module_inception,
+    reason = "project::project is the existing persisted-project implementation module"
+)]
 mod project;
 
 pub use project::{

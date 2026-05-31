@@ -140,10 +140,10 @@ impl PlaybackThread {
         if let Err(e) = self.send_command(PlaybackCommand::Shutdown) {
             log::trace!("[Playback Thread] Shutdown command receiver dropped: {}", e);
         }
-        if let Some(handle) = self.thread_handle.take() {
-            if let Err(e) = handle.join() {
-                log::warn!("[Playback Thread] Thread panicked during shutdown: {:?}", e);
-            }
+        if let Some(handle) = self.thread_handle.take()
+            && let Err(e) = handle.join()
+        {
+            log::warn!("[Playback Thread] Thread panicked during shutdown: {:?}", e);
         }
     }
 }

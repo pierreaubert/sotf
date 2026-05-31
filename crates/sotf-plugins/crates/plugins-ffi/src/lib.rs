@@ -1483,10 +1483,7 @@ fn sanitize_filename_component(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut last_was_separator = false;
     for ch in input.chars() {
-        let next = if ch.is_ascii_alphanumeric() {
-            last_was_separator = false;
-            Some(ch)
-        } else if ch == '-' || ch == '_' {
+        let next = if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
             last_was_separator = false;
             Some(ch)
         } else if !last_was_separator {

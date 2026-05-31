@@ -234,13 +234,13 @@ impl AudioStream {
 
     /// Stop the audio stream
     pub fn stop(&mut self) -> AudioDecoderResult<()> {
-        if let Some(ref cmd_tx) = self.command_tx {
-            if let Err(e) = cmd_tx.send(StreamCommand::Stop) {
-                log::trace!(
-                    "[AudioStream] Decoder command receiver dropped during stop: {}",
-                    e
-                );
-            }
+        if let Some(ref cmd_tx) = self.command_tx
+            && let Err(e) = cmd_tx.send(StreamCommand::Stop)
+        {
+            log::trace!(
+                "[AudioStream] Decoder command receiver dropped during stop: {}",
+                e
+            );
         }
 
         if let Some(handle) = self.decoder_thread.take() {

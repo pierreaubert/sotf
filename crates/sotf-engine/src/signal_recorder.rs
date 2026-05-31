@@ -76,10 +76,8 @@ fn write_selected_channel_to_ring(
     };
 
     let (first, second) = chunk.as_mut_slices();
-    let mut frame_idx = 0;
-    for slot in first.iter_mut().chain(second.iter_mut()) {
+    for (frame_idx, slot) in first.iter_mut().chain(second.iter_mut()).enumerate() {
         slot.write(data[frame_idx * channels + channel_idx]);
-        frame_idx += 1;
     }
     unsafe { chunk.commit(writable) };
     writable
@@ -114,15 +112,13 @@ where
     };
 
     let (first, second) = chunk.as_mut_slices();
-    let mut frame_idx = 0;
-    for slot in first.iter_mut().chain(second.iter_mut()) {
+    for (frame_idx, slot) in first.iter_mut().chain(second.iter_mut()).enumerate() {
         let base = frame_idx * channels;
         let mic_sample = f32::from_sample(data[base + input_idx]);
         let loopback_sample = loopback_idx
             .map(|idx| f32::from_sample(data[base + idx]))
             .unwrap_or(0.0);
         slot.write((mic_sample, loopback_sample));
-        frame_idx += 1;
     }
     unsafe { chunk.commit(writable) };
     writable

@@ -7,6 +7,10 @@ pub mod clip;
 pub mod midi_track;
 pub mod processor;
 pub mod recording;
+#[allow(
+    clippy::module_inception,
+    reason = "timeline::timeline is the existing core timeline implementation module"
+)]
 pub mod timeline;
 pub mod track;
 pub mod transport;

@@ -101,10 +101,10 @@ impl Project {
         for track in &mut self.tracks {
             for region in &mut track.regions {
                 let abs = Path::new(&region.source_path);
-                if abs.is_absolute() {
-                    if let Ok(rel) = abs.strip_prefix(base_dir) {
-                        region.source_path = rel.to_string_lossy().into();
-                    }
+                if abs.is_absolute()
+                    && let Ok(rel) = abs.strip_prefix(base_dir)
+                {
+                    region.source_path = rel.to_string_lossy().into();
                 }
             }
         }

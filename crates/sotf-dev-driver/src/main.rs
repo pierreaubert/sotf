@@ -375,7 +375,7 @@ pub(crate) fn parse_dev_response(resp: reqwest::blocking::Response, label: &str)
 }
 
 fn parse_dev_response_body(status: reqwest::StatusCode, body: &str, label: &str) -> Result<Value> {
-    let json = serde_json::from_str::<Value>(&body);
+    let json = serde_json::from_str::<Value>(body);
     if !status.is_success() {
         let err = json
             .as_ref()
@@ -383,13 +383,13 @@ fn parse_dev_response_body(status: reqwest::StatusCode, body: &str, label: &str)
             .and_then(|json| json.get("error"))
             .and_then(Value::as_str)
             .map(str::to_string)
-            .unwrap_or_else(|| response_excerpt(&body));
+            .unwrap_or_else(|| response_excerpt(body));
         bail!("{label} failed ({status}): {err}");
     }
     let json = json.with_context(|| {
         format!(
             "{label} returned non-JSON response ({status}): {}",
-            response_excerpt(&body)
+            response_excerpt(body)
         )
     })?;
     if json.get("ok").and_then(Value::as_bool) != Some(true) {
@@ -397,7 +397,7 @@ fn parse_dev_response_body(status: reqwest::StatusCode, body: &str, label: &str)
             .get("error")
             .and_then(Value::as_str)
             .map(str::to_string)
-            .unwrap_or_else(|| response_excerpt(&body));
+            .unwrap_or_else(|| response_excerpt(body));
         bail!("{label} failed ({status}): {err}");
     }
     Ok(json)

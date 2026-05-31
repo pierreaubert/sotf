@@ -104,13 +104,11 @@ impl ExternalPluginHostProxy {
                     self.shared.clear_block();
                     return Ok((frames, ExternalPluginHostBlockStatus::WrongSequence));
                 }
-                PluginIpcState::WorkerFailed => {
-                    if self.shared.worker_sequence() == sequence {
-                        self.worker_failure_count = self.worker_failure_count.saturating_add(1);
-                        let frames = self.write_fallback(input, output, frames);
-                        self.shared.clear_block();
-                        return Ok((frames, ExternalPluginHostBlockStatus::WorkerFailed));
-                    }
+                PluginIpcState::WorkerFailed if self.shared.worker_sequence() == sequence => {
+                    self.worker_failure_count = self.worker_failure_count.saturating_add(1);
+                    let frames = self.write_fallback(input, output, frames);
+                    self.shared.clear_block();
+                    return Ok((frames, ExternalPluginHostBlockStatus::WorkerFailed));
                 }
                 _ => {}
             }

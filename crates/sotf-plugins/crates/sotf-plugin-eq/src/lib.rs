@@ -553,7 +553,7 @@ impl EqPlugin {
         let config_to_stages = |f: &BiquadFilterConfig| -> Result<(Vec<Biquad>, usize), String> {
             let filter_type = parse_filter_type(&f.filter_type)?;
             let order = f.order.clamp(2, 8);
-            if order % 2 != 0 {
+            if !order.is_multiple_of(2) {
                 return Err(format!(
                     "Filter order must be even (2, 4, 6, 8); got {order}"
                 ));
@@ -885,7 +885,7 @@ impl InPlacePlugin for EqPlugin {
                 if field == "order" {
                     // Change filter order: rebuild all stages for this band
                     let new_order = value.as_int().unwrap_or(2).clamp(2, 8) as usize;
-                    if new_order % 2 != 0 {
+                    if !new_order.is_multiple_of(2) {
                         return Err(format!(
                             "Filter order must be even (2, 4, 6, 8); got {new_order}"
                         ));

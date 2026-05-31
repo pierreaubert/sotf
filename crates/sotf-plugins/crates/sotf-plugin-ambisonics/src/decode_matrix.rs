@@ -128,7 +128,7 @@ impl DecodeMatrix {
         debug_assert!(output.len() >= self.speaker_count);
 
         let input = &input[..self.ambi_channels];
-        for s in 0..self.speaker_count {
+        for (s, out_sample) in output.iter_mut().enumerate().take(self.speaker_count) {
             let row_offset = s * self.ambi_channels;
             let mut sum = 0.0_f32;
             let row = &self.matrix[row_offset..row_offset + self.ambi_channels];
@@ -136,7 +136,7 @@ impl DecodeMatrix {
             for (coef, &in_sample) in row.iter().zip(input.iter()) {
                 sum = coef.mul_add(in_sample, sum);
             }
-            output[s] = sum;
+            *out_sample = sum;
         }
     }
 }

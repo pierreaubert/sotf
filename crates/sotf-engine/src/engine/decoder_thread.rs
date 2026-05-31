@@ -493,17 +493,14 @@ impl DecoderState {
         use std::sync::mpsc::TryRecvError;
 
         let mut changed = false;
-        loop {
-            let event = match self.stream_metadata_rx.as_ref() {
-                Some(rx) => match rx.try_recv() {
-                    Ok(event) => event,
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => {
-                        self.stream_metadata_rx = None;
-                        break;
-                    }
-                },
-                None => break,
+        while let Some(rx) = self.stream_metadata_rx.as_ref() {
+            let event = match rx.try_recv() {
+                Ok(event) => event,
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.stream_metadata_rx = None;
+                    break;
+                }
             };
 
             let mut next = self.stream_metadata.clone().unwrap_or_default();

@@ -89,18 +89,19 @@ impl RecordingSession {
         num_frames: usize,
     ) -> Result<(), String> {
         // Check punch-in
-        if let Some(punch_in) = self.punch_in {
-            if !self.active && position + num_frames as u64 > punch_in {
-                self.active = true;
-            }
+        if let Some(punch_in) = self.punch_in
+            && !self.active
+            && position + num_frames as u64 > punch_in
+        {
+            self.active = true;
         }
 
         // Check punch-out
-        if let Some(punch_out) = self.punch_out {
-            if position >= punch_out {
-                self.active = false;
-                return Ok(());
-            }
+        if let Some(punch_out) = self.punch_out
+            && position >= punch_out
+        {
+            self.active = false;
+            return Ok(());
         }
 
         if !self.active {

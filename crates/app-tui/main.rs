@@ -352,7 +352,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dev_api_rx = std::env::var("SOTF_DEV_API_PORT")
         .ok()
         .and_then(|s| s.parse::<u16>().ok())
-        .map(|port| sotf_audio_player_tui::dev_api::start(port));
+        .map(sotf_audio_player_tui::dev_api::start);
 
     #[cfg(not(feature = "dev-api"))]
     let dev_api_rx: Option<DevApiRx> = None;
@@ -1143,7 +1143,7 @@ fn process_dev_command(
                     }
                     Ok(())
                 })
-                .unwrap_or_else(|e| Err(e));
+                .unwrap_or_else(Err);
             let dev_reply = match result {
                 Ok(()) => DevReply::ok(),
                 Err(e) => DevReply::err(format!("{e:#}")),
@@ -1217,7 +1217,7 @@ fn dispatch_tui_action(app: &mut App, name: &str) -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "dev-api")]
-fn parse_keystroke(s: &str) -> anyhow::Result<KeyEvent> {
+fn parse_keystroke(s: &str) -> anyhow::Result<crossterm::event::KeyEvent> {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     let mut modifiers = KeyModifiers::empty();

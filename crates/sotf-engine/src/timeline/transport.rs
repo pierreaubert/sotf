@@ -44,12 +44,13 @@ impl Transport {
         }
         self.position_samples += num_frames as u64;
 
-        if let Some((loop_start, loop_end)) = self.loop_range {
-            if loop_end > loop_start && self.position_samples >= loop_end {
-                let overshoot = self.position_samples - loop_end;
-                let loop_len = loop_end - loop_start;
-                self.position_samples = loop_start + (overshoot % loop_len);
-            }
+        if let Some((loop_start, loop_end)) = self.loop_range
+            && loop_end > loop_start
+            && self.position_samples >= loop_end
+        {
+            let overshoot = self.position_samples - loop_end;
+            let loop_len = loop_end - loop_start;
+            self.position_samples = loop_start + (overshoot % loop_len);
         }
     }
 

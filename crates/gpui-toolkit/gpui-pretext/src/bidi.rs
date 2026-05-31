@@ -76,9 +76,7 @@ static ARABIC_TYPES: [BidiType; 256] = [
 fn classify_char(code: u32) -> BidiType {
     if code <= 0x00FF {
         BASE_TYPES[code as usize]
-    } else if (0x0590..=0x05F4).contains(&code) {
-        R
-    } else if (0xFB1D..=0xFB4F).contains(&code) {
+    } else if (0x0590..=0x05F4).contains(&code) || (0xFB1D..=0xFB4F).contains(&code) {
         R
     } else if (0x0600..=0x06FF).contains(&code) {
         ARABIC_TYPES[(code & 0xFF) as usize]

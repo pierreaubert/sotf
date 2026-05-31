@@ -346,9 +346,7 @@ fn build_target_tilt_curve(
     curve: &Curve,
     cea2034_active: bool,
 ) -> Option<Curve> {
-    let Some(ref target_resp) = room_config.optimizer.target_response else {
-        return None;
-    };
+    let target_resp = room_config.optimizer.target_response.as_ref()?;
 
     // When 3-pass is active, strip preferences from the target
     // (they become Pass 3 output filters instead)

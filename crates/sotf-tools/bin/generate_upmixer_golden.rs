@@ -341,7 +341,7 @@ fn process_upmixer(
         anyhow::bail!("fft_size must be > 0");
     }
     let block_samples = fft_size * 2;
-    if input.len() % block_samples != 0 {
+    if !input.len().is_multiple_of(block_samples) {
         anyhow::bail!(
             "input has {} samples, which is not a multiple of stereo block size {} (fft_size {} * 2); refusing to drop the tail",
             input.len(),

@@ -75,16 +75,16 @@ fn smooth_spectral_envelope(envelope: &mut [f32], alpha: f32) {
     let one_minus_alpha = 1.0 - alpha;
     // Forward pass
     let mut prev = envelope[0];
-    for k in 0..envelope.len() {
-        let smoothed = alpha * prev + one_minus_alpha * envelope[k];
-        envelope[k] = smoothed;
+    for sample in envelope.iter_mut() {
+        let smoothed = alpha * prev + one_minus_alpha * *sample;
+        *sample = smoothed;
         prev = smoothed;
     }
     // Backward pass for symmetric smoothing
     prev = envelope[envelope.len() - 1];
-    for k in (0..envelope.len()).rev() {
-        let smoothed = alpha * prev + one_minus_alpha * envelope[k];
-        envelope[k] = smoothed;
+    for sample in envelope.iter_mut().rev() {
+        let smoothed = alpha * prev + one_minus_alpha * *sample;
+        *sample = smoothed;
         prev = smoothed;
     }
 }

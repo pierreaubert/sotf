@@ -878,7 +878,7 @@ impl ArtifactTracker {
                         self.observe_boundary_step(step, absolute_frame, ch, block_index);
                     }
                     if self.hop_size.is_some_and(|hop_size| {
-                        absolute_frame > 0 && absolute_frame % hop_size == 0
+                        absolute_frame > 0 && absolute_frame.is_multiple_of(hop_size)
                     }) {
                         self.observe_hop_step(step, absolute_frame, ch, block_index);
                     }

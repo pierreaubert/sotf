@@ -1043,8 +1043,7 @@ fn signed_rms(_sum: f32, energy: f32, count: usize, _polarity_hint: f32) -> f32 
         return 0.0;
     }
 
-    let rms = (energy / count as f32).sqrt();
-    rms
+    (energy / count as f32).sqrt()
 }
 
 #[cfg(test)]

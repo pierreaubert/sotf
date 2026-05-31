@@ -178,10 +178,9 @@ impl PcmStreamHandle {
                 self.stats
                     .published_frames
                     .fetch_add(num_frames as u64, Ordering::Relaxed);
-                self.stats.published_bytes.fetch_add(
-                    (samples.len() * std::mem::size_of::<f32>()) as u64,
-                    Ordering::Relaxed,
-                );
+                self.stats
+                    .published_bytes
+                    .fetch_add(std::mem::size_of_val(samples) as u64, Ordering::Relaxed);
                 true
             }
             Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {
@@ -256,13 +255,13 @@ impl PcmStreamServer {
 
     pub fn shutdown(&mut self) {
         let _ = self.shutdown_tx.send(());
-        if let Some(handle) = self.join_handle.take() {
-            if let Err(e) = handle.join() {
-                log::warn!(
-                    "[PCM Stream] Server thread panicked during shutdown: {:?}",
-                    e
-                );
-            }
+        if let Some(handle) = self.join_handle.take()
+            && let Err(e) = handle.join()
+        {
+            log::warn!(
+                "[PCM Stream] Server thread panicked during shutdown: {:?}",
+                e
+            );
         }
     }
 }
@@ -581,7 +580,7 @@ fn write_http_chunk(stream: &mut TcpStream, data: &[u8]) -> io::Result<()> {
 }
 
 fn write_f32_chunk(stream: &mut TcpStream, samples: &[f32]) -> io::Result<()> {
-    let mut bytes = Vec::with_capacity(samples.len() * std::mem::size_of::<f32>());
+    let mut bytes = Vec::with_capacity(std::mem::size_of_val(samples));
     for sample in samples {
         bytes.extend_from_slice(&sample.to_le_bytes());
     }

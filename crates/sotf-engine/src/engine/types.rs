@@ -223,6 +223,10 @@ pub enum ManagerCommand {
 }
 
 /// Response from manager thread
+#[allow(
+    clippy::large_enum_variant,
+    reason = "boxing the state response would change the manager API and allocation behavior"
+)]
 #[derive(Clone)]
 pub enum ManagerResponse {
     Ok,

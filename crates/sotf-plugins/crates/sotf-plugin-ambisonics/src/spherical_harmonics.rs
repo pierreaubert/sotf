@@ -64,9 +64,9 @@ pub fn spherical_harmonic(l: i32, m: i32, azimuth: f64, elevation: f64) -> f64 {
 pub fn spherical_harmonics_vector(order: usize, azimuth: f64, elevation: f64, out: &mut [f64]) {
     let n = channel_count(order);
     debug_assert_eq!(out.len(), n);
-    for acn in 0..n {
+    for (acn, out_sample) in out.iter_mut().enumerate().take(n) {
         let (l, m) = acn_to_degree_index(acn);
-        out[acn] = spherical_harmonic(l, m, azimuth, elevation);
+        *out_sample = spherical_harmonic(l, m, azimuth, elevation);
     }
 }
 

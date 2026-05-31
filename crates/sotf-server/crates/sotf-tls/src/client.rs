@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 ///   IPv6 is bracketed.
 /// - Port is always appended so that pinning `host:6600` does NOT authorize
 ///   `host:22`.
+#[must_use]
 pub fn canonical_host_port(server_name: &ServerName<'_>, port: u16) -> String {
     match server_name {
         ServerName::DnsName(dns) => format!("{}:{port}", dns.as_ref().to_ascii_lowercase()),

@@ -236,6 +236,12 @@ pub struct PluginScanner {
     scan_status_mode: PluginScanStatusMode,
 }
 
+impl Default for PluginScanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PluginScanner {
     pub fn new() -> Self {
         Self {
@@ -513,7 +519,7 @@ fn plugin_format_capability(format: PluginFormat) -> PluginFormatCapability {
 
 impl PluginDescriptor {
     fn validate(&self) -> Result<(), String> {
-        if self.path.exists() == false {
+        if !self.path.exists() {
             return Err(format!(
                 "plugin path does not exist: {}",
                 self.path.display()
@@ -745,9 +751,8 @@ impl ExternalPlugin {
         for frame in 0..ctx.num_frames {
             let src_base = frame.saturating_mul(self.input_channels);
             let dst_base = frame.saturating_mul(self.output_channels);
-            for channel in 0..copy_channels {
-                output[dst_base + channel] = input[src_base + channel];
-            }
+            output[dst_base..dst_base + copy_channels]
+                .copy_from_slice(&input[src_base..src_base + copy_channels]);
         }
         ctx.num_frames
     }
