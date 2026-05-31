@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    format_key_label, registry::KeybindingRegistry, DocumentedKeybinding, KeybindingCategory,
-    KeymapPreset,
+    DocumentedKeybinding, KeybindingCategory, KeymapPreset, format_key_label,
+    registry::KeybindingRegistry,
 };
 
 /// A searchable command-palette row derived from documented keybindings.

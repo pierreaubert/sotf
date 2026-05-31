@@ -8,7 +8,7 @@
 //! This module contains only data types — no rendering code, no framework deps.
 //! Platform renderers consume it alongside Theme colors.
 
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 // ============================================================================
 // Enums
@@ -1486,12 +1486,16 @@ mod tests {
         let tokens = ds.style_dictionary_tokens();
 
         assert!(tokens.iter().any(|token| token.name() == "design.language"));
-        assert!(tokens
-            .iter()
-            .any(|token| token.name() == "motion.duration_ms"));
-        assert!(tokens
-            .iter()
-            .any(|token| token.name() == "interaction.min_touch_target"));
+        assert!(
+            tokens
+                .iter()
+                .any(|token| token.name() == "motion.duration_ms")
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|token| token.name() == "interaction.min_touch_target")
+        );
     }
 
     #[test]
@@ -1509,13 +1513,17 @@ mod tests {
 
         assert_eq!(matrix.cases.len(), 8);
         assert!(matrix.passed(), "{}", matrix.to_markdown_table());
-        assert!(matrix
-            .cases
-            .iter()
-            .any(|case| case.preset_id == "apple_hig" && case.reduced_motion));
-        assert!(matrix
-            .to_markdown_table()
-            .contains("| apple_hig | reduced |"));
+        assert!(
+            matrix
+                .cases
+                .iter()
+                .any(|case| case.preset_id == "apple_hig" && case.reduced_motion)
+        );
+        assert!(
+            matrix
+                .to_markdown_table()
+                .contains("| apple_hig | reduced |")
+        );
     }
 
     #[test]

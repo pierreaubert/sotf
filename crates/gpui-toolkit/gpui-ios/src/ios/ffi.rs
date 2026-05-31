@@ -6,8 +6,8 @@ use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 use std::rc::Rc;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Once, OnceLock,
+    atomic::{AtomicBool, Ordering},
 };
 
 static IOS_APP_STATE: OnceLock<IosAppState> = OnceLock::new();

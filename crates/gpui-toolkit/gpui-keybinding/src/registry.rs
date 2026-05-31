@@ -3,8 +3,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::{
-    command_palette_entries, detect_conflicts, CommandPaletteEntry, DocumentedKeybinding,
-    KeyConflict, KeybindingProvider, KeymapPreset,
+    CommandPaletteEntry, DocumentedKeybinding, KeyConflict, KeybindingProvider, KeymapPreset,
+    command_palette_entries, detect_conflicts,
 };
 
 /// Collects keybindings from multiple providers and aggregates them.

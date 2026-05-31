@@ -32,8 +32,7 @@ pub type GraphChangeCallback = Box<dyn Fn(&mut App) + 'static>;
 pub type NodeMenuSelectCallback =
     Box<dyn Fn(&SharedString, NodeId, &mut Window, &mut App) + 'static>;
 
-type SharedNodeMenuSelectCallback =
-    Rc<NodeMenuSelectCallback>;
+type SharedNodeMenuSelectCallback = Rc<NodeMenuSelectCallback>;
 
 /// Callback that returns the menu items for a given node, or None to fall
 /// through to the canvas-level menu. Lets the parent show different menus

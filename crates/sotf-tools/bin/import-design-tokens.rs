@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 use sotf_audio_player_gpui::theme::ThemeId;
 use std::collections::{BTreeMap, HashMap};

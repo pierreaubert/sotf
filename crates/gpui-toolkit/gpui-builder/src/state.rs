@@ -166,8 +166,7 @@ impl LayoutState {
 
     /// Remove any explicit collapsed state for the slot.
     pub fn clear_collapsed(&mut self, slot_id: &str) {
-        self.collapsed
-            .retain(|entry| entry.slot_id != slot_id);
+        self.collapsed.retain(|entry| entry.slot_id != slot_id);
     }
 
     /// Clear ratio/collapse state.
@@ -243,7 +242,7 @@ impl<'a> LayoutPreferenceSnapshot<'a> {
 mod tests {
     use super::*;
     use crate::solver::solve;
-    use crate::types::{ContainerNode, DisplayTier, Sizing, SlotNode, LayoutNode};
+    use crate::types::{ContainerNode, DisplayTier, LayoutNode, Sizing, SlotNode};
 
     fn simple_slot<'a>(
         id: &'a str,
@@ -358,21 +357,11 @@ mod tests {
         let mut state = LayoutState::new();
         state.set_ratio("left", Axis::Horizontal, 0.5);
 
-        let solved = solve(
-            &root,
-            1000.0,
-            600.0,
-            &state.preferences().as_preferences(),
-        );
+        let solved = solve(&root, 1000.0, 600.0, &state.preferences().as_preferences());
         assert_eq!(solved.find("left").unwrap().width, 500.0);
 
         state.set_collapsed("left", true);
-        let solved = solve(
-            &root,
-            1000.0,
-            600.0,
-            &state.preferences().as_preferences(),
-        );
+        let solved = solve(&root, 1000.0, 600.0, &state.preferences().as_preferences());
         let left = solved.find("left").unwrap();
         assert!(!left.visible);
         assert_eq!(left.width, 0.0);

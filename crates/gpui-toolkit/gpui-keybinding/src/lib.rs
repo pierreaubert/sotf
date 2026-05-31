@@ -21,13 +21,13 @@ mod registry;
 
 pub mod presets;
 
-pub use conflict::{detect_conflicts, KeyConflict};
+pub use conflict::{KeyConflict, detect_conflicts};
 pub use discovery::{
-    command_palette_entries, keybinding_hints, search_command_palette, CommandPaletteEntry,
-    KeybindingHint,
+    CommandPaletteEntry, KeybindingHint, command_palette_entries, keybinding_hints,
+    search_command_palette,
 };
 pub use platform::{format_key_label, platform_modifier, platform_modifier_symbol};
 pub use preset::KeymapPreset;
-pub use presets::{navigation_key, navigation_mappings, NavigationAction, NavigationMapping};
+pub use presets::{NavigationAction, NavigationMapping, navigation_key, navigation_mappings};
 pub use provider::{DocumentedKeybinding, KeybindingCategory, KeybindingProvider};
 pub use registry::KeybindingRegistry;

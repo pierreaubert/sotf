@@ -4,7 +4,7 @@
 //! stable manifest that screenshot runners can consume.
 
 use crate::{LayoutStoryCatalog, SolvedLayoutScenario};
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde::{Serialize, Serializer, ser::SerializeStruct};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// Color scheme requested by a visual regression capture.
@@ -285,10 +285,12 @@ mod tests {
 
         assert!(!report.passed());
         assert_eq!(report.findings.len(), 2);
-        assert!(report
-            .findings
-            .iter()
-            .any(|finding| finding.message.contains("light")));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.message.contains("light"))
+        );
     }
 
     #[test]

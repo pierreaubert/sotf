@@ -82,23 +82,21 @@ pub fn accessibility_tree_from_solved(
     }
 }
 
-fn build_node(node: &SolvedNode, metadata: &HashMap<&str, AccessibilityMetadata<'_>>) -> AccessibilityNode {
+fn build_node(
+    node: &SolvedNode,
+    metadata: &HashMap<&str, AccessibilityMetadata<'_>>,
+) -> AccessibilityNode {
     let meta = metadata.get(node.id.as_str()).copied().unwrap_or_default();
 
-    let role = meta
-        .role
-        .unwrap_or_else(|| default_role(node));
+    let role = meta.role.unwrap_or_else(|| default_role(node));
 
-    let label = meta
-        .label
-        .map(str::to_string)
-        .or_else(|| {
-            if !node.visible {
-                node.collapse_label.clone()
-            } else {
-                None
-            }
-        });
+    let label = meta.label.map(str::to_string).or_else(|| {
+        if !node.visible {
+            node.collapse_label.clone()
+        } else {
+            None
+        }
+    });
 
     let description = meta.description.map(str::to_string);
 
@@ -177,7 +175,10 @@ mod tests {
         let tree = accessibility_tree_from_solved(&solved, &[]);
 
         assert_eq!(tree.root.role, AccessibilityRole::Group);
-        assert_eq!(tree.find("library").unwrap().role, AccessibilityRole::Region);
+        assert_eq!(
+            tree.find("library").unwrap().role,
+            AccessibilityRole::Region
+        );
 
         let rack = tree.find("rack").unwrap();
         assert_eq!(rack.role, AccessibilityRole::Tab);
@@ -190,22 +191,23 @@ mod tests {
         let solved = solved_tree();
         let tree = accessibility_tree_from_solved(
             &solved,
-            &[
-                (
-                    "library",
-                    AccessibilityMetadata {
-                        role: Some(AccessibilityRole::Tab),
-                        label: Some("Media Library"),
-                        description: Some("Primary browser panel"),
-                    },
-                ),
-            ],
+            &[(
+                "library",
+                AccessibilityMetadata {
+                    role: Some(AccessibilityRole::Tab),
+                    label: Some("Media Library"),
+                    description: Some("Primary browser panel"),
+                },
+            )],
         );
 
         let library = tree.find("library").unwrap();
         assert_eq!(library.role, AccessibilityRole::Tab);
         assert_eq!(library.label.as_deref(), Some("Media Library"));
-        assert_eq!(library.description.as_deref(), Some("Primary browser panel"));
+        assert_eq!(
+            library.description.as_deref(),
+            Some("Primary browser panel")
+        );
     }
 
     #[test]
