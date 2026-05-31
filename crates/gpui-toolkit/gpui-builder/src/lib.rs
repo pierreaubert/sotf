@@ -55,22 +55,30 @@ mod macros;
 pub mod inspector;
 pub mod plugin_chassis;
 pub mod snapshots;
-pub mod state;
 pub mod solved;
 pub mod solver;
+pub mod state;
 pub mod stories;
 pub mod types;
 pub mod validation;
+pub mod visual_regression;
 
 // Re-exports for convenience
+pub use accessibility::{
+    AccessibilityMetadata, AccessibilityNode, AccessibilityRole, AccessibilityTree,
+    accessibility_tree_from_solved,
+};
 pub use inspector::{
     ContainerInspection, DisplayTierInspection, LayoutInspection, LayoutInspectionKind,
     LayoutInspectionNode, SizingInspection, SlotInspection, SolvedInspection, SolvedInspectionNode,
     inspect_layout, inspect_solved,
 };
-pub use solved::{LayoutDebugReport, LayoutDebugWarning, LayoutDebugWarningKind, SolvedNode};
 pub use snapshots::{LayoutSnapshot, LayoutSnapshotMatrix, LayoutViewport, solve_snapshot_matrix};
+pub use solved::{LayoutDebugReport, LayoutDebugWarning, LayoutDebugWarningKind, SolvedNode};
 pub use solver::solve;
+pub use state::{
+    LayoutAction, LayoutCollapsedState, LayoutPreferenceSnapshot, LayoutRatioOverride, LayoutState,
+};
 pub use stories::{
     LayoutScenario, LayoutStory, LayoutStoryCatalog, SolvedLayoutScenario, StoryCollapsedState,
     StoryRatioOverride,
@@ -78,17 +86,11 @@ pub use stories::{
 pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
 };
-pub use accessibility::{
-    AccessibilityMetadata, AccessibilityNode, AccessibilityRole, AccessibilityTree,
-    accessibility_tree_from_solved,
-};
-pub use state::{
-    LayoutAction, LayoutCollapsedState, LayoutPreferenceSnapshot, LayoutRatioOverride,
-    LayoutState,
-};
+
 pub use validation::{
     LayoutIssue, LayoutIssueKind, LayoutIssueSeverity, LayoutValidationReport, validate_layout,
 };
+pub use visual_regression::{VisualColorScheme, VisualRegressionCase, VisualRegressionManifest};
 
 // gpui-pretext re-exports for text-measured sizing
 pub use gpui_pretext::{

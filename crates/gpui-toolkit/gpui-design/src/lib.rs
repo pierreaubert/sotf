@@ -779,6 +779,154 @@ impl DesignLanguage {
 }
 
 // ============================================================================
+// Design conformance and token export
+// ============================================================================
+
+/// A style token in a shape compatible with Style Dictionary export.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DesignToken {
+    pub path: Vec<String>,
+    pub value: String,
+    pub token_type: &'static str,
+}
+
+impl DesignToken {
+    pub fn name(&self) -> String {
+        self.path.join(".")
+    }
+}
+
+/// Accessibility and platform-conformance finding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConformanceFinding {
+    pub id: &'static str,
+    pub message: String,
+}
+
+/// Summary used by CI and component docs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DesignConformanceReport {
+    pub findings: Vec<ConformanceFinding>,
+}
+
+impl DesignConformanceReport {
+    pub fn passed(&self) -> bool {
+        self.findings.is_empty()
+    }
+}
+
+/// Motion settings after reduced-motion policy is applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct MotionSpec {
+    pub duration_ms: u32,
+    pub fast_ms: u32,
+    pub slow_ms: u32,
+    pub prefer_spring: bool,
+    pub reduced_motion: bool,
+}
+
+impl DesignSystem {
+    /// Export stable platform/design tokens for Style Dictionary pipelines.
+    pub fn style_dictionary_tokens(&self) -> Vec<DesignToken> {
+        vec![
+            token("design.language", self.language.as_str(), "string"),
+            token("radius.sm", self.corners.sm, "dimension"),
+            token("radius.md", self.corners.md, "dimension"),
+            token("radius.lg", self.corners.lg, "dimension"),
+            token("spacing.grid_unit", self.spacing.grid_unit, "dimension"),
+            token(
+                "spacing.control_padding_x",
+                self.spacing.control_padding_x,
+                "dimension",
+            ),
+            token(
+                "spacing.control_padding_y",
+                self.spacing.control_padding_y,
+                "dimension",
+            ),
+            token(
+                "interaction.min_touch_target",
+                self.interaction.min_touch_target,
+                "dimension",
+            ),
+            token(
+                "typography.font_family",
+                &self.typography.font_family,
+                "font",
+            ),
+            token(
+                "typography.base_size",
+                self.typography.base_size,
+                "dimension",
+            ),
+            token(
+                "typography.dynamic_sizing",
+                self.typography.dynamic_sizing,
+                "boolean",
+            ),
+            token("motion.duration_ms", self.animation.duration_ms, "duration"),
+            token("motion.fast_ms", self.animation.fast_ms, "duration"),
+            token("motion.slow_ms", self.animation.slow_ms, "duration"),
+        ]
+    }
+
+    /// Produce a lightweight conformance report for CI and docs.
+    pub fn conformance_report(&self, reduced_motion_required: bool) -> DesignConformanceReport {
+        let mut findings = Vec::new();
+
+        if self.language == DesignLanguage::AppleHig && self.interaction.min_touch_target < 44.0 {
+            findings.push(ConformanceFinding {
+                id: "apple.touch_target",
+                message: "Apple HIG touch targets should be at least 44px".to_string(),
+            });
+        }
+        if self.typography.dynamic_sizing && self.typography.large_size < self.typography.base_size
+        {
+            findings.push(ConformanceFinding {
+                id: "typography.scale",
+                message: "dynamic typography large_size must be >= base_size".to_string(),
+            });
+        }
+        if reduced_motion_required && self.animation.fast_ms > 1 {
+            findings.push(ConformanceFinding {
+                id: "motion.reduced",
+                message: "reduced-motion mode should collapse fast transitions".to_string(),
+            });
+        }
+
+        DesignConformanceReport { findings }
+    }
+
+    pub fn motion_spec(&self, reduced_motion: bool) -> MotionSpec {
+        if reduced_motion {
+            MotionSpec {
+                duration_ms: 0,
+                fast_ms: 0,
+                slow_ms: 0,
+                prefer_spring: false,
+                reduced_motion: true,
+            }
+        } else {
+            MotionSpec {
+                duration_ms: self.animation.duration_ms,
+                fast_ms: self.animation.fast_ms,
+                slow_ms: self.animation.slow_ms,
+                prefer_spring: self.animation.prefer_spring,
+                reduced_motion: false,
+            }
+        }
+    }
+}
+
+fn token(path: &str, value: impl ToString, token_type: &'static str) -> DesignToken {
+    DesignToken {
+        path: path.split('.').map(str::to_string).collect(),
+        value: value.to_string(),
+        token_type,
+    }
+}
+
+// ============================================================================
 // GPUI Global integration (behind `gpui` feature)
 // ============================================================================
 
@@ -924,6 +1072,33 @@ mod tests {
         assert_eq!(DesignLanguage::Material3.as_str(), "material3");
         assert_eq!(DesignLanguage::Fluent.as_str(), "fluent");
         assert_eq!(DesignLanguage::Neutral.as_str(), "neutral");
+    }
+
+    #[test]
+    fn style_dictionary_tokens_include_platform_and_motion() {
+        let ds = DesignSystem::apple_hig();
+        let tokens = ds.style_dictionary_tokens();
+
+        assert!(tokens.iter().any(|token| token.name() == "design.language"));
+        assert!(
+            tokens
+                .iter()
+                .any(|token| token.name() == "motion.duration_ms")
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|token| token.name() == "interaction.min_touch_target")
+        );
+    }
+
+    #[test]
+    fn conformance_and_motion_reports_are_stable() {
+        let ds = DesignSystem::apple_hig();
+
+        assert!(ds.conformance_report(false).passed());
+        assert_eq!(ds.motion_spec(true).duration_ms, 0);
+        assert_eq!(ds.motion_spec(false).duration_ms, ds.animation.duration_ms);
     }
 
     #[test]

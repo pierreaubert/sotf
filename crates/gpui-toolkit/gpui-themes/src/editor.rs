@@ -22,6 +22,10 @@ const TRANSPARENT: Rgba = Rgba {
     a: 0.0,
 };
 
+fn editor_header_presets() -> &'static [BuiltInThemePreset] {
+    BuiltInThemePreset::all()
+}
+
 /// Currently selected color field
 #[derive(Debug, Clone)]
 pub struct ColorField {
@@ -1114,51 +1118,18 @@ impl ThemeEditor {
                                     .size(TextSize::Sm)
                                     .color(theme.text_secondary.to_rgba()),
                             )
-                            .child(
-                                Button::new("preset-dark", "Dark")
+                            .children(editor_header_presets().iter().map(|preset| {
+                                let preset = *preset;
+                                Button::new(format!("preset-{}", preset.id()), preset.name())
                                     .variant(ButtonVariant::Ghost)
                                     .size(ButtonSize::Sm)
                                     .build()
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                        this.load_preset("dark", cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("preset-light", "Light")
-                                    .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::Sm)
-                                    .build()
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                        this.load_preset("light", cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("preset-high-contrast", "High Contrast")
-                                    .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::Sm)
-                                    .build()
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                        this.load_preset("high_contrast", cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("preset-nord", "Nord")
-                                    .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::Sm)
-                                    .build()
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                        this.load_preset("nord", cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("preset-dracula", "Dracula")
-                                    .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::Sm)
-                                    .build()
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                        this.load_preset("dracula", cx);
-                                    })),
-                            )
+                                    .on_click(cx.listener(
+                                        move |this, _: &ClickEvent, _window, cx| {
+                                            this.load_preset(preset.id(), cx);
+                                        },
+                                    ))
+                            }))
                             .build(),
                     ),
             )

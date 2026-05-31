@@ -1694,13 +1694,8 @@ impl PlatformWindow for IosWindow {
             // Create UIAlertController
             let alert_style: i64 = 1; // UIAlertControllerStyleAlert
 
-            let title = std::ffi::CString::new(msg).ok()?;
-            let message = std::ffi::CString::new(detail.unwrap_or("")).ok()?;
-
-            let title_str: *mut Object =
-                msg_send![class!(NSString), stringWithUTF8String: title.as_ptr()];
-            let message_str: *mut Object =
-                msg_send![class!(NSString), stringWithUTF8String: message.as_ptr()];
+            let title_str = super::ns_string_from_str(msg);
+            let message_str = super::ns_string_from_str(detail.unwrap_or(""));
 
             let alert: *mut Object = msg_send![
                 class!(UIAlertController),
@@ -1711,11 +1706,7 @@ impl PlatformWindow for IosWindow {
 
             // Add buttons
             for (index, button) in answers.iter().enumerate() {
-                let label = std::ffi::CString::new(button.label().to_string()).ok()?;
-                let button_title: *mut Object = msg_send![
-                    class!(NSString),
-                    stringWithUTF8String: label.as_ptr()
-                ];
+                let button_title = super::ns_string_from_str(button.label());
 
                 let action_style: i64 = if button.is_cancel() { 1 } else { 0 }; // UIAlertActionStyleCancel or Default
 

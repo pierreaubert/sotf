@@ -266,8 +266,11 @@ pub fn interpolate_basis_closed(values: &[f64]) -> impl Fn(f64) -> f64 + '_ {
 /// ```
 pub fn interpolate_exp(a: f64, b: f64) -> impl Fn(f64) -> f64 {
     let use_linear = a <= 0.0 || b <= 0.0 || !a.is_finite() || !b.is_finite();
-    let log_a = a.ln();
-    let log_b = b.ln();
+    let (log_a, log_b) = if use_linear {
+        (0.0, 0.0)
+    } else {
+        (a.ln(), b.ln())
+    };
     move |t: f64| {
         if use_linear {
             // Fall back to linear interpolation for non-positive or non-finite inputs

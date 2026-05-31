@@ -1,7 +1,7 @@
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use serde_json::Value;
 use sotf_audio_player_gpui::theme::ThemeId;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 /// Parse a hex color string into (r, g, b, a) as f32 components.
@@ -91,6 +91,7 @@ fn get_band_colors(theme_obj: &Value) -> Result<Vec<String>> {
     Ok(entries.into_iter().map(|(_, expr)| expr).collect())
 }
 
+#[derive(Clone, Copy)]
 struct ThemeConfig {
     set_name: &'static str,
     fn_name: &'static str,
@@ -140,6 +141,24 @@ fn theme_config_for(id: ThemeId) -> ThemeConfig {
             fn_name: "onyx",
             file_name: "onyx.rs",
             doc_comment: "Onyx theme",
+        },
+        ThemeId::Protanopia => ThemeConfig {
+            set_name: "theme/protanopia",
+            fn_name: "protanopia",
+            file_name: "accessible.rs",
+            doc_comment: "Protanopia-safe dark theme",
+        },
+        ThemeId::Deuteranopia => ThemeConfig {
+            set_name: "theme/deuteranopia",
+            fn_name: "deuteranopia",
+            file_name: "accessible.rs",
+            doc_comment: "Deuteranopia-safe dark theme",
+        },
+        ThemeId::Tritanopia => ThemeConfig {
+            set_name: "theme/tritanopia",
+            fn_name: "tritanopia",
+            file_name: "accessible.rs",
+            doc_comment: "Tritanopia-safe dark theme",
         },
     }
 }
@@ -416,6 +435,64 @@ impl Theme {{
     ))
 }
 
+fn generate_theme_file_group(tokens: &Value, configs: &[ThemeConfig]) -> Result<String> {
+    if let [config] = configs {
+        return generate_theme_file(tokens, config);
+    }
+
+    let has_rgba = configs.iter().try_fold(false, |has_rgba, config| {
+        let t = &tokens[config.set_name];
+        if t.is_null() {
+            bail!(
+                "theme set '{}' not found in tokens.json (export must include it)",
+                config.set_name
+            );
+        }
+        Ok::<_, anyhow::Error>(has_rgba || needs_rgba_import(t))
+    })?;
+
+    let rgba_use = if has_rgba { "\nuse gpui::Rgba;\n" } else { "" };
+    let rgba_import = if has_rgba { ", rgba" } else { "" };
+    let mut methods = String::new();
+
+    for config in configs {
+        let generated = generate_theme_file(tokens, config)
+            .with_context(|| format!("generating {}", config.fn_name))?;
+        methods.push_str(
+            generated_theme_methods(&generated)
+                .with_context(|| format!("extracting {}", config.fn_name))?,
+        );
+        if !methods.ends_with('\n') {
+            methods.push('\n');
+        }
+    }
+
+    Ok(format!(
+        r#"use super::{{
+    EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme, rgb{rgba_import}
+}};{rgba_use}
+
+impl Theme {{
+{methods}}}
+"#,
+        rgba_import = rgba_import,
+        rgba_use = rgba_use,
+        methods = methods,
+    ))
+}
+
+fn generated_theme_methods(generated: &str) -> Result<&str> {
+    let marker = "impl Theme {\n";
+    let start = generated
+        .find(marker)
+        .ok_or_else(|| anyhow!("generated theme file missing impl block"))?
+        + marker.len();
+    let end = generated
+        .rfind("\n}\n")
+        .ok_or_else(|| anyhow!("generated theme file missing impl terminator"))?;
+    Ok(&generated[start..end])
+}
+
 /// Check if a theme set has any colors with alpha != 1.0 (needs Rgba import)
 fn needs_rgba_import(theme_obj: &Value) -> bool {
     fn check_value(v: &Value) -> bool {
@@ -453,12 +530,20 @@ fn main() -> Result<()> {
         .join("theme");
 
     let mut generated = HashMap::new();
+    let mut configs_by_file: BTreeMap<&'static str, Vec<ThemeConfig>> = BTreeMap::new();
 
     for config in theme_configs() {
-        let content = generate_theme_file(&tokens, &config)
-            .with_context(|| format!("generating {}", config.file_name))?;
-        let out_path = theme_dir.join(config.file_name);
-        generated.insert(config.file_name, out_path.clone());
+        configs_by_file
+            .entry(config.file_name)
+            .or_default()
+            .push(config);
+    }
+
+    for (file_name, configs) in configs_by_file {
+        let content = generate_theme_file_group(&tokens, &configs)
+            .with_context(|| format!("generating {file_name}"))?;
+        let out_path = theme_dir.join(file_name);
+        generated.insert(file_name, out_path.clone());
         std::fs::write(&out_path, content.as_bytes())
             .with_context(|| format!("write {}", out_path.display()))?;
         println!("Wrote {}", out_path.display());
@@ -553,6 +638,9 @@ mod tests {
                 ThemeId::Forest => "theme/forest",
                 ThemeId::BlackAndWhite => "theme/black-and-white",
                 ThemeId::Onyx => "theme/onyx",
+                ThemeId::Protanopia => "theme/protanopia",
+                ThemeId::Deuteranopia => "theme/deuteranopia",
+                ThemeId::Tritanopia => "theme/tritanopia",
             })
             .collect();
         let got: Vec<&'static str> = configs.iter().map(|c| c.set_name).collect();
@@ -737,5 +825,30 @@ mod tests {
             generated.contains("band_colors: vec!["),
             "generated Onyx file must contain band_colors vec"
         );
+    }
+
+    #[test]
+    fn accessible_themes_generate_one_shared_file() {
+        let ids = [
+            ThemeId::Protanopia,
+            ThemeId::Deuteranopia,
+            ThemeId::Tritanopia,
+        ];
+        let configs: Vec<ThemeConfig> = ids.iter().copied().map(theme_config_for).collect();
+        let mut token_sets = serde_json::Map::new();
+
+        for id in ids {
+            let config = theme_config_for(id);
+            let theme_json = export_theme_minimal_to_json(&Theme::from_id(id));
+            token_sets.insert(config.set_name.to_string(), theme_json);
+        }
+
+        let generated = generate_theme_file_group(&Value::Object(token_sets), &configs)
+            .expect("accessibility themes must generate into one shared file");
+
+        assert_eq!(generated.matches("impl Theme {").count(), 1);
+        assert!(generated.contains("pub fn protanopia() -> Self"));
+        assert!(generated.contains("pub fn deuteranopia() -> Self"));
+        assert!(generated.contains("pub fn tritanopia() -> Self"));
     }
 }

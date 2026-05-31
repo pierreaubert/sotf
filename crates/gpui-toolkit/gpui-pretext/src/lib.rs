@@ -40,6 +40,7 @@ pub mod layout;
 #[allow(unused_assignments, unused_variables, unused_mut)]
 pub mod line_break;
 pub mod measurement;
+pub mod rich_text;
 
 // Re-export the main public API at the crate root
 pub use analysis::{SegmentBreakKind, WhiteSpaceMode};
@@ -52,3 +53,7 @@ pub use layout::{
 };
 pub use line_break::{KnuthPlassParams, LineBreakStrategy};
 pub use measurement::{EngineProfile, TextMeasure};
+pub use rich_text::{
+    AccessibleTextRole, AccessibleTextRun, FontVariationSettings, RichTextSpan, RichTextStyle,
+    TextBenchmarkCase, VariableFontAxis, accessibility_runs_for_spans, parse_inline_markdown,
+};

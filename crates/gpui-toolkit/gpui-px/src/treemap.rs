@@ -641,13 +641,15 @@ fn tile_squarify(
     sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut rects = Vec::new();
-    let mut remaining: Vec<_> = sorted.iter().collect();
+    let mut remaining_start = 0;
     let mut x = x0;
     let mut y = y0;
     let mut w = width;
     let mut h = height;
 
-    while !remaining.is_empty() {
+    while remaining_start < sorted.len() {
+        let remaining = &sorted[remaining_start..];
+
         // Try to find best row
         let mut best_row_len = 1;
         let mut best_worst_ratio = f64::INFINITY;
@@ -707,7 +709,7 @@ fn tile_squarify(
             w -= row_width;
         }
 
-        remaining = remaining[best_row_len..].to_vec();
+        remaining_start += best_row_len;
     }
 
     rects

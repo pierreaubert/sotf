@@ -206,7 +206,7 @@ pub fn handle_scroll(
         }
         DragOrientation::Horizontal => {
             if delta_x.abs() > 0.0001 {
-                delta_x // Positive x = right = decrease (consistent with vertical)
+                delta_x
             } else if delta_y.abs() > 0.0001 {
                 delta_y
             } else {
@@ -215,8 +215,16 @@ pub fn handle_scroll(
         }
     };
 
-    // Scroll up/left = negative delta = increase value
-    let direction = if scroll_delta < 0.0 { 1.0 } else { -1.0 };
+    let direction = match config.orientation {
+        DragOrientation::Horizontal => {
+            // Horizontal controls follow fader convention: right increases.
+            if scroll_delta > 0.0 { 1.0 } else { -1.0 }
+        }
+        DragOrientation::Vertical | DragOrientation::Rotational => {
+            // Scroll up/left = negative delta = increase value.
+            if scroll_delta < 0.0 { 1.0 } else { -1.0 }
+        }
+    };
     let step_size = if modifiers.shift { 0.005 } else { 0.05 };
 
     Some(
@@ -274,14 +282,13 @@ mod tests {
 
     #[test]
     fn test_horizontal_scroll_direction_consistent() {
-        // Horizontal scroll should behave consistently with vertical:
-        // positive delta (right/down) decreases value.
+        // Horizontal scroll follows fader convention: positive x/right increases.
         let config = InteractionConfig::horizontal(0.0, 100.0, Scale::Linear, 200.0);
         let delta = ScrollDelta::Pixels(point(px(10.0), px(0.0)));
         let result = handle_scroll(&delta, &Modifiers::default(), 50.0, &config);
         assert!(
-            result.unwrap() < 50.0,
-            "positive horizontal scroll should decrease value"
+            result.unwrap() > 50.0,
+            "positive horizontal scroll should increase value"
         );
     }
 }

@@ -25,6 +25,16 @@ pub(crate) use text_system::IosTextSystem;
 pub use window::set_status_bar_style;
 pub(crate) use window::*;
 
+pub(crate) unsafe fn ns_string_from_str(text: &str) -> *mut objc::runtime::Object {
+    use objc::{class, msg_send, sel, sel_impl};
+    msg_send![
+        class!(NSString),
+        stringWithBytes: text.as_ptr() as *const std::ffi::c_void
+        length: text.len()
+        encoding: 4u64
+    ]
+}
+
 /// Returns the platform implementation for iOS.
 pub fn current_platform(_headless: bool) -> std::rc::Rc<dyn gpui::Platform> {
     std::rc::Rc::new(IosPlatform::new())

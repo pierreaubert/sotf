@@ -1,4 +1,4 @@
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use sotf_audio_player_gpui::theme::{Theme, ThemeId};
 
 fn rgba_to_hex(r: f32, g: f32, b: f32, a: f32) -> String {
@@ -29,6 +29,9 @@ fn theme_set_name(id: ThemeId) -> &'static str {
         ThemeId::Forest => "theme/forest",
         ThemeId::BlackAndWhite => "theme/black-and-white",
         ThemeId::Onyx => "theme/onyx",
+        ThemeId::Protanopia => "theme/protanopia",
+        ThemeId::Deuteranopia => "theme/deuteranopia",
+        ThemeId::Tritanopia => "theme/tritanopia",
     }
 }
 

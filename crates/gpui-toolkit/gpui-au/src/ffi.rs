@@ -89,6 +89,22 @@ impl AuContext {
     }
 }
 
+fn clone_application_cell(app: &gpui::Application) -> Rc<AppCell> {
+    // GPUI does not expose the AppCell handle, but AU embeddings need to keep
+    // it alive after Application::run returns because AuPlatform::run invokes
+    // the launch callback synchronously. Clone the inner Rc; never copy it
+    // bitwise, or the refcount is not incremented.
+    debug_assert_eq!(
+        std::mem::size_of::<gpui::Application>(),
+        std::mem::size_of::<Rc<AppCell>>(),
+        "Application layout changed -- AU AppCell clone assumption broken"
+    );
+    unsafe {
+        let rc: &Rc<AppCell> = std::mem::transmute(app);
+        Rc::clone(rc)
+    }
+}
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 /// Create a GPUI context embedded in an NSView.
@@ -142,14 +158,7 @@ pub extern "C" fn gpui_au_create(
     let platform = Rc::new(crate::AuPlatform::new());
     let app = gpui::Application::with_platform(platform);
 
-    // SAFETY: Application is `pub struct Application(Rc<AppCell>)` — a single-field newtype.
-    // AppCell is pub (doc(hidden)). We clone the Rc to keep AppCell alive after run() consumes
-    // Application. Without this, AppCell is deallocated when run() returns because AuPlatform::run()
-    // calls the callback immediately (unlike macOS which blocks on [NSApp run]).
-    //
-    // transmute_copy is used instead of transmuting references because transmuting
-    // references violates Rust's aliasing rules and is unsound.
-    let app_cell: Rc<AppCell> = unsafe { std::mem::transmute_copy(&app) };
+    let app_cell = clone_application_cell(&app);
     nslog(b"SOTF gpui_au_create: Rc<AppCell> cloned for lifetime management");
 
     let window_opened = std::rc::Rc::new(std::cell::Cell::new(false));
