@@ -64,8 +64,19 @@ struct Cli {
     sample_rate: u32,
 
     /// FFT size for processing
-    #[arg(long, default_value_t = 2048)]
+    #[arg(long, default_value_t = 2048, value_parser = parse_nonzero_usize)]
     fft_size: usize,
+}
+
+fn parse_nonzero_usize(value: &str) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|e| format!("invalid integer '{value}': {e}"))?;
+    if parsed == 0 {
+        Err("value must be greater than zero".to_string())
+    } else {
+        Ok(parsed)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -224,7 +235,9 @@ fn generate_signal(
     // `fft_size` MUST come from the CLI flag (see Cli::fft_size) — a previous
     // version hard-coded 2048 here, which silently desynced the buffer length
     // from `process_upmixer` whenever the user passed `--fft-size`.
-    assert!(fft_size > 0, "fft_size must be > 0");
+    if fft_size == 0 {
+        anyhow::bail!("fft_size must be > 0");
+    }
     let num_blocks = num_frames.div_ceil(fft_size);
     let actual_frames = num_blocks * fft_size;
     let mut data = vec![0.0_f32; actual_frames * 2]; // Stereo
@@ -287,6 +300,8 @@ fn generate_signal(
             let mut b5 = 0.0_f32;
             let mut b6 = 0.0_f32;
 
+            // Fixed seed: these files are golden references and must be
+            // byte-stable across regenerations.
             let mut seed = 12345u32;
             let mut rand_f32 = || {
                 seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
@@ -322,8 +337,21 @@ fn process_upmixer(
     fft_size: usize,
     num_output_channels: usize,
 ) -> anyhow::Result<Vec<f32>> {
+    if fft_size == 0 {
+        anyhow::bail!("fft_size must be > 0");
+    }
+    let block_samples = fft_size * 2;
+    if input.len() % block_samples != 0 {
+        anyhow::bail!(
+            "input has {} samples, which is not a multiple of stereo block size {} (fft_size {} * 2); refusing to drop the tail",
+            input.len(),
+            block_samples,
+            fft_size
+        );
+    }
+
     // Process block by block - each call processes exactly fft_size frames
-    let num_blocks = input.len() / (fft_size * 2);
+    let num_blocks = input.len() / block_samples;
     let num_frames = num_blocks * fft_size;
     let mut output = vec![0.0_f32; num_frames * num_output_channels];
 
@@ -370,4 +398,40 @@ fn write_wav(
     writer.finalize()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_upmixer(fft_size: usize) -> UpmixerPlugin {
+        UpmixerPlugin::new(
+            fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 0.5, 1.0, false, 0.5,
+        )
+    }
+
+    #[test]
+    fn generate_signal_rounds_to_requested_fft_size() {
+        let signal = generate_signal("dialogue", 48_000, 4097, 1024).unwrap();
+        assert_eq!(signal.len(), 5120 * 2);
+    }
+
+    #[test]
+    fn pink_noise_is_deterministic() {
+        let a = generate_signal("pink_noise", 48_000, 2048, 2048).unwrap();
+        let b = generate_signal("pink_noise", 48_000, 2048, 2048).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn process_upmixer_rejects_partial_tail() {
+        let mut plugin = test_upmixer(2048);
+        let input = vec![0.0; 4097];
+        let err = process_upmixer(&mut plugin, &input, 48_000, 2048, 6).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not a multiple of stereo block size"),
+            "unexpected error: {msg}"
+        );
+    }
 }
