@@ -186,9 +186,6 @@ impl Hdf5Writer {
         // Phase 1: Collect all objects and compute addresses
         // We'll do two passes: first compute sizes, then write
 
-        // For now, use a simpler approach: write to a buffer, fix up addresses later
-        // Actually, let's pre-compute everything
-
         // Root group object header starts right after superblock
         // Superblock v2 size: 8(sig) + 1(ver) + 1(off) + 1(len) + 1(flags) + 4*8(addrs) + 4(checksum) = 48
         let sb_size = 8 + 1 + 1 + 1 + 1 + 4 * OFF_SIZE as usize + 4;
@@ -274,7 +271,6 @@ impl Hdf5Writer {
         out.extend_from_slice(&UNDEF_ADDR.to_le_bytes()); // sb extension
         out.extend_from_slice(&(eof as u64).to_le_bytes()); // eof
         out.extend_from_slice(&root_oh_addr.to_le_bytes()); // root OH addr
-        // Checksum (simple sum for now - HDF5 uses lookup3)
         let cksum = self.checksum(&out[..out.len()]);
         out.extend_from_slice(&cksum.to_le_bytes());
 
@@ -337,11 +333,7 @@ impl Hdf5Writer {
             }
         }
 
-        // Go back and fix up data addresses in child OHs
-        // This is ugly but necessary for contiguous layout
-        // Each child OH has a contiguous layout message with the data address
-        // We need to find and patch it
-        // Alternative: rebuild child OHs with correct addresses
+        // Rebuild child object headers once real contiguous data addresses are known.
         let mut new_buf = Vec::with_capacity(buf.len());
         new_buf.resize(root_oh_placeholder_size, 0);
 
@@ -455,8 +447,8 @@ impl Hdf5Writer {
         let dt_msg = self.build_datatype_msg(child.dtype_class, child.dtype_size);
         msgs.push((0x03u8, dt_msg));
 
-        // Fill value message (v3, default fill)
-        let fv_msg = vec![3, 2, 0, 0, 0]; // version=3, space_alloc_time=2, fill_write_time=0, fill_defined=0, size=0
+        // Fill value message (v3) with an explicit NaN fill for float datasets.
+        let fv_msg = self.build_fill_value_msg(child);
         msgs.push((0x05u8, fv_msg));
 
         // Layout message (contiguous, v3)
@@ -578,6 +570,21 @@ impl Hdf5Writer {
         msg
     }
 
+    fn build_fill_value_msg(&self, child: &ChildObject) -> Vec<u8> {
+        let fill = match (child.dtype_class, child.dtype_size) {
+            (1, 4) => f32::NAN.to_le_bytes().to_vec(),
+            (1, 8) => f64::NAN.to_le_bytes().to_vec(),
+            (_, size) => vec![0; size as usize],
+        };
+
+        let mut msg = Vec::with_capacity(2 + 4 + fill.len());
+        msg.push(3); // version
+        msg.push(0x20); // fill value is defined
+        msg.extend_from_slice(&(fill.len() as u32).to_le_bytes());
+        msg.extend_from_slice(&fill);
+        msg
+    }
+
     fn build_attribute_msg(&self, name: &str, value: &AttrData) -> Vec<u8> {
         let mut msg = Vec::new();
         let name_bytes = name.as_bytes();
@@ -637,8 +644,8 @@ impl Hdf5Writer {
     }
 
     fn checksum(&self, data: &[u8]) -> u32 {
-        // Jenkins lookup3 hashlittle2 - simplified version
-        // HDF5 uses this for checksums
+        // Jenkins lookup3 `hashlittle` with initval 0; HDF5 uses this for
+        // superblock and object-header metadata checksums.
         let mut a: u32 = 0xdeadbeef_u32.wrapping_add(data.len() as u32);
         let mut b = a;
         let mut c = a;
@@ -735,4 +742,39 @@ struct ChildObject {
     dtype_size: u32,
     is_dim_scale: bool,
     attributes: Vec<(String, AttrData)>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn child(dtype_size: u32) -> ChildObject {
+        ChildObject {
+            name: "Data.IR".to_string(),
+            dims: vec![1],
+            data: Vec::new(),
+            dtype_class: 1,
+            dtype_size,
+            is_dim_scale: false,
+            attributes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn fill_value_message_uses_defined_nan_for_f32() {
+        let writer = Hdf5Writer::new();
+        let msg = writer.build_fill_value_msg(&child(4));
+
+        assert_eq!(msg[0], 3);
+        assert_eq!(msg[1] & 0x20, 0x20);
+        assert_eq!(u32::from_le_bytes(msg[2..6].try_into().unwrap()), 4);
+        assert!(f32::from_le_bytes(msg[6..10].try_into().unwrap()).is_nan());
+    }
+
+    #[test]
+    fn checksum_matches_lookup3_empty_input() {
+        let writer = Hdf5Writer::new();
+
+        assert_eq!(writer.checksum(&[]), 0xdead_beef);
+    }
 }

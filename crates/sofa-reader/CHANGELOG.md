@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-05-31
+
+### Added
+- Add typed `SofaFile::try_load`, `try_load_sqlite`, and `strict_load` APIs.
+
+### Fixed
+- Follow the HDF5 v1 B-tree right-edge key layout for group and chunk indexes.
+- Fall back to creation-order dense link/attribute indexes when name indexes are absent.
+- Borrow contiguous and unfiltered chunk data instead of cloning it unnecessarily.
+- Copy chunk payloads row-wise instead of per element.
+- Write explicit NaN fill-value messages for float datasets.
+- Warn when dataset storage contains bytes beyond the declared shape.
+
 ## [0.1.5] - 2026-05-30
 
 ### Fixed

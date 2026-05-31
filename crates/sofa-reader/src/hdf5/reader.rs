@@ -1,4 +1,5 @@
 use crate::error::{Result, SofaError};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -457,13 +458,10 @@ impl Hdf5File {
         for (name, obj_addr) in &group.children {
             match self.parse_dataset(*obj_addr) {
                 Ok(ds) => {
-                    // Check if this is a dimension scale (NetCDF dimension)
-                    // Dimension scales have a CLASS=DIMENSION_SCALE attribute
-                    // But the dimension size is just the first extent of the dataspace
+                    // TODO: Dimension scales have a CLASS=DIMENSION_SCALE attribute,
+                    // and the dimension size is the first extent of the dataspace.
                     if !ds.dims.is_empty() {
-                        // For datasets with a single dimension and the same name as common dims
-                        // they're likely dimension references
-                        // We'll also store them as datasets for variable access
+                        // TODO: Keep dimension-scale datasets available for variable access.
                     }
                     for (attr_name, attr_value) in &ds.attributes {
                         self.attributes
@@ -475,9 +473,7 @@ impl Hdf5File {
             }
         }
 
-        // Now detect dimensions from dimension scale datasets
-        // In NetCDF4, dimensions are stored as datasets with CLASS=DIMENSION_SCALE attribute
-        // But we can also just look at the dataset shapes and known dimension names
+        // Now detect dimensions from dimension scale datasets.
         self.detect_dimensions()?;
 
         Ok(())
@@ -703,11 +699,10 @@ impl Hdf5File {
                 let child_addr = c.offset()?;
                 self.parse_btree_v1(child_addr, heap_data, group)?;
             }
-            // One more child pointer after last key
-            // Actually for B-tree v1, there are entries_used keys and entries_used+1 children
-            // But the format stores key,child pairs. Need to handle the extra child.
-            // For group B-trees, the children are SNODs, and entries_used gives the count.
         }
+        // HDF5 v1 B-trees store one more key than child pointer: key/child
+        // pairs for `entries_used` children, followed by a right-edge key.
+        let _right_edge_key = c.length()?;
 
         Ok(())
     }
@@ -913,17 +908,25 @@ impl Hdf5File {
         let fh_addr = c.offset()?;
         let name_btree_addr = c.offset()?;
 
-        if flags & 0x01 != 0 {
-            let _creation_order_btree_addr = c.offset()?;
-        }
+        let creation_order_btree_addr = if flags & 0x01 != 0 {
+            Some(c.offset()?)
+        } else {
+            None
+        };
 
-        if fh_addr == UNDEF_ADDR || name_btree_addr == UNDEF_ADDR {
+        let btree_addr = if name_btree_addr != UNDEF_ADDR {
+            name_btree_addr
+        } else {
+            creation_order_btree_addr.unwrap_or(UNDEF_ADDR)
+        };
+
+        if fh_addr == UNDEF_ADDR || btree_addr == UNDEF_ADDR {
             return Ok(()); // Empty group
         }
 
         // Parse fractal heap + B-tree v2 for links
         let fh = self.parse_fractal_heap_header(fh_addr)?;
-        let records = self.parse_btree_v2(name_btree_addr, &fh)?;
+        let records = self.parse_btree_v2(btree_addr, &fh)?;
 
         for record in &records {
             if let Some((name, addr)) = self.read_link_from_heap(&fh, record)? {
@@ -952,16 +955,24 @@ impl Hdf5File {
         let fh_addr = c.offset()?;
         let name_btree_addr = c.offset()?;
 
-        if flags & 0x01 != 0 {
-            let _creation_order_btree = c.offset()?;
-        }
+        let creation_order_btree_addr = if flags & 0x01 != 0 {
+            Some(c.offset()?)
+        } else {
+            None
+        };
 
-        if fh_addr == UNDEF_ADDR || name_btree_addr == UNDEF_ADDR {
+        let btree_addr = if name_btree_addr != UNDEF_ADDR {
+            name_btree_addr
+        } else {
+            creation_order_btree_addr.unwrap_or(UNDEF_ADDR)
+        };
+
+        if fh_addr == UNDEF_ADDR || btree_addr == UNDEF_ADDR {
             return Ok(());
         }
 
         let fh = self.parse_fractal_heap_header(fh_addr)?;
-        let records = self.parse_btree_v2(name_btree_addr, &fh)?;
+        let records = self.parse_btree_v2(btree_addr, &fh)?;
 
         for record in &records {
             if let Some(attr_data) = self.read_managed_object(&fh, record)? {
@@ -1741,7 +1752,8 @@ impl Hdf5File {
                 if data.len() >= self.off_size as usize + 4 {
                     let mut c = Cursor::new(data, 0, self.off_size, self.len_size);
                     // The vlen data is: length(4) + global_heap_addr(off_size) + global_heap_index(4)
-                    // Or it might be a direct pointer. Let me handle the global heap case.
+                    // TODO: Some HDF5 files use direct vlen pointers; handle the
+                    // global-heap case first because SOFA strings commonly use it.
                     let len = if let Ok(l) = c.u32() { l } else { return None };
                     let gh_addr = if let Ok(a) = c.offset() {
                         a
@@ -2510,6 +2522,14 @@ impl Hdf5File {
                 expected
             )));
         }
+        if raw.len() > expected {
+            log::warn!(
+                "Dataset '{}' has {} bytes but declared shape requires {}; ignoring trailing bytes",
+                name,
+                raw.len(),
+                expected
+            );
+        }
         Ok(&raw[..expected])
     }
 
@@ -2595,14 +2615,14 @@ impl Hdf5File {
         Err(SofaError::MissingVariable(name.into()))
     }
 
-    fn read_dataset_raw(&self, ds: &DatasetInfo) -> Result<Vec<u8>> {
+    fn read_dataset_raw<'a>(&'a self, ds: &'a DatasetInfo) -> Result<Cow<'a, [u8]>> {
         match &ds.layout {
-            Layout::Compact { data } => Ok(data.clone()),
+            Layout::Compact { data } => Ok(Cow::Borrowed(data)),
             Layout::Contiguous { address, size } => {
                 if *address == UNDEF_ADDR {
                     // Empty/fill-value dataset.
                     let total = self.expected_dataset_bytes(ds, ds.dtype.element_size())?;
-                    return self.fill_buffer(ds, total);
+                    return self.fill_buffer(ds, total).map(Cow::Owned);
                 }
                 let off = self.abs_offset(*address);
                 let end = off + *size as usize;
@@ -2613,13 +2633,15 @@ impl Hdf5File {
                         have: (self.data.len() - off) as u64,
                     });
                 }
-                Ok(self.data[off..end].to_vec())
+                Ok(Cow::Borrowed(&self.data[off..end]))
             }
             Layout::Chunked {
                 address,
                 chunk_dims,
                 filters,
-            } => self.read_chunked_data(ds, *address, chunk_dims, filters),
+            } => self
+                .read_chunked_data(ds, *address, chunk_dims, filters)
+                .map(Cow::Owned),
         }
     }
 
@@ -2708,9 +2730,9 @@ impl Hdf5File {
                 if child_addr != UNDEF_ADDR {
                     let raw_chunk = self.read_raw_bytes(child_addr, chunk_size as usize)?;
                     let decompressed =
-                        self.decompress_chunk(&raw_chunk, filters, filter_mask, elem_size)?;
+                        self.decompress_chunk(raw_chunk, filters, filter_mask, elem_size)?;
                     self.copy_chunk_to_output(
-                        &decompressed,
+                        decompressed.as_ref(),
                         &chunk_offset[..ndims],
                         ds_dims,
                         chunk_dims,
@@ -2735,11 +2757,17 @@ impl Hdf5File {
                 }
             }
         }
+        // Right-edge key: v1 B-trees have one more key than child pointer.
+        let _chunk_size = c.u32()?;
+        let _filter_mask = c.u32()?;
+        for _ in 0..=ndims {
+            let _offset = c.u64()?;
+        }
 
         Ok(())
     }
 
-    fn read_raw_bytes(&self, addr: u64, size: usize) -> Result<Vec<u8>> {
+    fn read_raw_bytes(&self, addr: u64, size: usize) -> Result<&[u8]> {
         let off = self.abs_offset(addr);
         if off + size > self.data.len() {
             return Err(SofaError::Truncated {
@@ -2748,17 +2776,17 @@ impl Hdf5File {
                 have: (self.data.len() - off) as u64,
             });
         }
-        Ok(self.data[off..off + size].to_vec())
+        Ok(&self.data[off..off + size])
     }
 
-    fn decompress_chunk(
+    fn decompress_chunk<'a>(
         &self,
-        data: &[u8],
+        data: &'a [u8],
         filters: &[Filter],
         filter_mask: u32,
         dtype_elem_size: usize,
-    ) -> Result<Vec<u8>> {
-        let mut buf = data.to_vec();
+    ) -> Result<Cow<'a, [u8]>> {
+        let mut buf = Cow::Borrowed(data);
 
         // Apply filters in reverse order
         for (i, filter) in filters.iter().enumerate().rev() {
@@ -2772,12 +2800,12 @@ impl Hdf5File {
                     {
                         use flate2::read::ZlibDecoder;
                         use std::io::Read;
-                        let mut decoder = ZlibDecoder::new(&buf[..]);
+                        let mut decoder = ZlibDecoder::new(buf.as_ref());
                         let mut decompressed = Vec::new();
                         decoder.read_to_end(&mut decompressed).map_err(|e| {
                             SofaError::InvalidStructure(format!("Deflate error: {}", e))
                         })?;
-                        buf = decompressed;
+                        buf = Cow::Owned(decompressed);
                     }
                     #[cfg(not(feature = "deflate"))]
                     {
@@ -2796,20 +2824,28 @@ impl Hdf5File {
                         .filter(|&v| v > 0)
                         .unwrap_or(dtype_elem_size);
                     if elem_size > 1 {
-                        let n = buf.len() / elem_size;
-                        let mut unshuffled = vec![0u8; buf.len()];
+                        let bytes = buf.as_ref();
+                        let n = bytes.len() / elem_size;
+                        let mut unshuffled = vec![0u8; bytes.len()];
                         for i in 0..n {
                             for j in 0..elem_size {
-                                unshuffled[i * elem_size + j] = buf[j * n + i];
+                                unshuffled[i * elem_size + j] = bytes[j * n + i];
                             }
                         }
-                        buf = unshuffled;
+                        buf = Cow::Owned(unshuffled);
                     }
                 }
                 3 => {
                     // Fletcher32 checksum - just strip last 4 bytes
                     if buf.len() >= 4 {
-                        buf.truncate(buf.len() - 4);
+                        let new_len = buf.len() - 4;
+                        buf = match buf {
+                            Cow::Borrowed(bytes) => Cow::Borrowed(&bytes[..new_len]),
+                            Cow::Owned(mut bytes) => {
+                                bytes.truncate(new_len);
+                                Cow::Owned(bytes)
+                            }
+                        };
                     }
                 }
                 _ => {
@@ -2839,30 +2875,43 @@ impl Hdf5File {
             return;
         }
 
-        // For multi-dimensional: compute strides and copy
-        // Output strides (row-major)
+        // For multi-dimensional data, copy contiguous rows along the innermost
+        // dimension instead of decoding every element's coordinates.
         let mut out_strides = vec![1usize; ndims];
         for i in (0..ndims - 1).rev() {
             out_strides[i] = out_strides[i + 1] * ds_dims[i + 1] as usize;
         }
 
-        // Chunk strides
         let mut chunk_strides = vec![1usize; ndims];
         for i in (0..ndims - 1).rev() {
             chunk_strides[i] = chunk_strides[i + 1] * chunk_dims[i + 1] as usize;
         }
 
-        // Iterate over chunk elements
-        let chunk_total: usize = chunk_dims.iter().map(|&d| d as usize).product();
-        for flat_idx in 0..chunk_total {
-            // Convert flat index to multi-dim index within chunk
-            let mut remaining = flat_idx;
-            let mut in_bounds = true;
+        let last_dim = ndims - 1;
+        let mut prefix_strides = vec![1usize; last_dim];
+        if last_dim > 0 {
+            for i in (0..last_dim - 1).rev() {
+                prefix_strides[i] = prefix_strides[i + 1] * chunk_dims[i + 1] as usize;
+            }
+        }
+        let row_elems = chunk_dims[last_dim] as usize;
+        let global_last_start = chunk_offset[last_dim] as usize;
+        if row_elems == 0 || global_last_start >= ds_dims[last_dim] as usize {
+            return;
+        }
+        let copy_elems = row_elems.min(ds_dims[last_dim] as usize - global_last_start);
+        let copy_bytes = copy_elems * elem_size;
+        let prefix_total: usize = chunk_dims[..last_dim].iter().map(|&d| d as usize).product();
 
+        for prefix_flat in 0..prefix_total {
+            let mut remaining = prefix_flat;
+            let mut in_bounds = true;
             let mut out_flat = 0usize;
-            for d in 0..ndims {
-                let local_idx = remaining / chunk_strides[d];
-                remaining %= chunk_strides[d];
+            let mut chunk_flat = 0usize;
+
+            for d in 0..last_dim {
+                let local_idx = remaining / prefix_strides[d];
+                remaining %= prefix_strides[d];
 
                 let global_idx = chunk_offset[d] as usize + local_idx;
                 if global_idx >= ds_dims[d] as usize {
@@ -2870,16 +2919,17 @@ impl Hdf5File {
                     break;
                 }
                 out_flat += global_idx * out_strides[d];
+                chunk_flat += local_idx * chunk_strides[d];
             }
 
             if in_bounds {
-                let src_start = flat_idx * elem_size;
-                let dst_start = out_flat * elem_size;
-                if src_start + elem_size <= chunk_data.len()
-                    && dst_start + elem_size <= output.len()
+                let src_start = chunk_flat * elem_size;
+                let dst_start = (out_flat + global_last_start) * elem_size;
+                if src_start + copy_bytes <= chunk_data.len()
+                    && dst_start + copy_bytes <= output.len()
                 {
-                    output[dst_start..dst_start + elem_size]
-                        .copy_from_slice(&chunk_data[src_start..src_start + elem_size]);
+                    output[dst_start..dst_start + copy_bytes]
+                        .copy_from_slice(&chunk_data[src_start..src_start + copy_bytes]);
                 }
             }
         }
@@ -2986,8 +3036,7 @@ mod tests {
 
     #[test]
     fn test_fill_value_zero_default_is_not_flagged() {
-        // The writer emits `[3, 2, 0, 0, 0]` (version=3, flags=0, size=0) for
-        // "no fill value" — parser should return None.
+        // version=3, flags without the "defined" bit means no fill value.
         let msg = [3u8, 2, 0, 0, 0];
         assert!(parse_fill_value_bytes(&msg, MSG_FILL_VALUE).is_none());
     }
@@ -3013,5 +3062,63 @@ mod tests {
         assert_eq!(BtreeV2Params::bytes_for(65535), 2);
         assert_eq!(BtreeV2Params::bytes_for(65536), 3);
         assert_eq!(BtreeV2Params::bytes_for(u32::MAX as u64), 4);
+    }
+
+    #[test]
+    fn test_contiguous_dataset_raw_borrows_file_bytes() {
+        let h = Hdf5File {
+            data: vec![1, 2, 3, 4, 5, 6],
+            off_size: 8,
+            len_size: 8,
+            base_addr: 0,
+            datasets: HashMap::new(),
+            attributes: HashMap::new(),
+            dimensions: HashMap::new(),
+        };
+        let ds = DatasetInfo {
+            dims: vec![4],
+            dtype: DType::Uint8,
+            layout: Layout::Contiguous {
+                address: 1,
+                size: 4,
+            },
+            attributes: HashMap::new(),
+            byte_order: ByteOrder::Little,
+            is_null_dataspace: false,
+            fill_value: None,
+        };
+
+        let raw = h.read_dataset_raw(&ds).unwrap();
+        assert!(matches!(raw, Cow::Borrowed(_)));
+        assert_eq!(&*raw, &[2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_copy_chunk_to_output_copies_rows() {
+        let h = stub();
+        let chunk = [1u8, 2, 3, 4, 5, 6];
+        let mut output = [0u8; 12];
+
+        h.copy_chunk_to_output(&chunk, &[1, 1], &[3, 4], &[2, 3], 1, &mut output);
+
+        assert_eq!(
+            output,
+            [
+                0, 0, 0, 0, //
+                0, 1, 2, 3, //
+                0, 4, 5, 6,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_unfiltered_chunk_decode_borrows_input() {
+        let h = stub();
+        let chunk = [1u8, 2, 3, 4];
+
+        let decoded = h.decompress_chunk(&chunk, &[], 0, 1).unwrap();
+
+        assert!(matches!(decoded, Cow::Borrowed(_)));
+        assert_eq!(decoded.as_ref(), &chunk);
     }
 }

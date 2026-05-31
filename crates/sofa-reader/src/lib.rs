@@ -144,7 +144,10 @@ mod tests {
 
         // Write
         let mut w = SofaWriter::new();
+        w.add_attribute_str("Conventions", "SOFA");
+        w.add_attribute_str("Version", "2.1");
         w.add_attribute_str("SOFAConventions", "SimpleFreeFieldHRIR");
+        w.add_attribute_str("SOFAConventionsVersion", "1.0");
         w.add_attribute_str("DataType", "FIR");
         w.add_dimension("M", 3);
         w.add_dimension("R", 2);
@@ -188,6 +191,39 @@ mod tests {
         let ir = r.read_f32("Data.IR").unwrap();
         assert_eq!(ir.len(), 24);
         assert!((ir[0] - 0.1).abs() < 0.001);
+
+        let sofa = SofaFile::strict_load(&path).unwrap();
+        assert_eq!(sofa.num_measurements, 3);
+        assert_eq!(sofa.ir_length, 4);
+    }
+
+    #[test]
+    fn test_strict_load_rejects_missing_conventions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing-conventions.sofa");
+
+        let mut w = SofaWriter::new();
+        w.add_attribute_str("SOFAConventions", "SimpleFreeFieldHRIR");
+        w.add_attribute_str("SOFAConventionsVersion", "1.0");
+        w.add_attribute_str("Version", "2.1");
+        w.add_attribute_str("DataType", "FIR");
+        w.add_dimension("M", 1);
+        w.add_dimension("R", 2);
+        w.add_dimension("N", 2);
+        w.add_dimension("C", 3);
+        w.add_variable_f32("Data.SamplingRate", &[]);
+        w.write_scalar_f32("Data.SamplingRate", 48000.0).unwrap();
+        w.add_variable_f32("SourcePosition", &["M", "C"]);
+        w.write_f32("SourcePosition", &[0.0, 0.0, 1.0]).unwrap();
+        w.add_variable_f32("Data.IR", &["M", "R", "N"]);
+        w.write_f32("Data.IR", &[0.0; 4]).unwrap();
+        w.finish(&path).unwrap();
+
+        let error = match SofaFile::strict_load(&path) {
+            Ok(_) => panic!("strict_load should reject missing Conventions"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("Conventions"));
     }
 
     #[test]

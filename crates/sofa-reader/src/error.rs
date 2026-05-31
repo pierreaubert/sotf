@@ -5,6 +5,12 @@ pub enum SofaError {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
 
+    #[error("SQLite error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+
+    #[error("Bincode decode error: {0}")]
+    BincodeDecode(#[from] bincode::error::DecodeError),
+
     #[error("Not a valid HDF5 file (bad magic signature)")]
     NotHdf5,
 
