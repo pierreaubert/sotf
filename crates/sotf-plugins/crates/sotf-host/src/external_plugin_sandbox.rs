@@ -139,7 +139,13 @@ impl ExternalPluginSandboxPolicy {
 const fn should_require_platform_sandbox(trust: ExternalPluginTrust) -> bool {
     match trust {
         ExternalPluginTrust::Signed => false,
-        ExternalPluginTrust::Unknown | ExternalPluginTrust::Untrusted => cfg!(target_os = "linux"),
+        ExternalPluginTrust::Unknown | ExternalPluginTrust::Untrusted => {
+            cfg!(any(
+                target_os = "linux",
+                target_os = "macos",
+                target_os = "windows"
+            ))
+        }
     }
 }
 
@@ -252,6 +258,16 @@ mod platform {
         } else {
             0
         };
+        let mut unsupported_reasons = Vec::new();
+        if abi < 4 && !policy.allow_network {
+            unsupported_reasons.push("network denial requires Landlock ABI 4 or newer".to_string());
+        }
+        if !policy.allow_child_processes {
+            unsupported_reasons.push(
+                "child-process denial requires a seccomp/job-control backend not present in this build"
+                    .to_string(),
+            );
+        }
         let ruleset_attr = LandlockRulesetAttr {
             handled_access_fs,
             handled_access_net,
@@ -285,6 +301,13 @@ mod platform {
             libc::close(ruleset_fd);
         }
         result?;
+
+        if !unsupported_reasons.is_empty() {
+            return Ok(ExternalPluginSandboxStatus::Unsupported {
+                backend: "linux-landlock",
+                reason: unsupported_reasons.join("; "),
+            });
+        }
 
         Ok(ExternalPluginSandboxStatus::Enforced {
             backend: "linux-landlock",
@@ -523,12 +546,20 @@ mod tests {
         assert_eq!(
             ExternalPluginSandboxPolicy::for_trust(ExternalPluginTrust::Untrusted)
                 .require_platform_sandbox,
-            cfg!(target_os = "linux")
+            cfg!(any(
+                target_os = "linux",
+                target_os = "macos",
+                target_os = "windows"
+            ))
         );
         assert!(
             ExternalPluginSandboxPolicy::for_trust(ExternalPluginTrust::Unknown)
                 .require_platform_sandbox
-                == cfg!(target_os = "linux")
+                == cfg!(any(
+                    target_os = "linux",
+                    target_os = "macos",
+                    target_os = "windows"
+                ))
         );
         assert!(
             !ExternalPluginSandboxPolicy::for_trust(ExternalPluginTrust::Signed)
@@ -550,7 +581,7 @@ mod tests {
 
     #[cfg(not(target_os = "linux"))]
     #[test]
-    fn non_linux_unknown_trust_returns_unsupported_status() {
+    fn non_linux_unknown_trust_fails_closed() {
         let temp = tempfile::tempdir().unwrap();
         let plugin_path = temp.path().join("sandbox-test.clap");
         std::fs::write(&plugin_path, b"stub").unwrap();
@@ -572,11 +603,8 @@ mod tests {
                 .unwrap();
         let policy = ExternalPluginSandboxPolicy::for_trust(ExternalPluginTrust::Unknown);
 
-        let status = enter_external_plugin_sandbox(&policy, &descriptor, shared.path()).unwrap();
-        assert!(matches!(
-            status,
-            ExternalPluginSandboxStatus::Unsupported { .. }
-        ));
+        let err = enter_external_plugin_sandbox(&policy, &descriptor, shared.path()).unwrap_err();
+        assert!(err.contains("required"));
     }
 
     #[cfg(not(target_os = "linux"))]

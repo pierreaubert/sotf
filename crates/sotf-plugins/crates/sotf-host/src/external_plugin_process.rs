@@ -19,7 +19,14 @@ impl ExternalPluginWorkerCommand {
     pub const DEFAULT_WORKER_BINARY: &'static str = "sotf-external-plugin-worker";
 
     pub fn default_worker_binary() -> Self {
-        Self::new(Self::DEFAULT_WORKER_BINARY)
+        let program = std::env::current_exe()
+            .ok()
+            .and_then(|exe| {
+                exe.parent()
+                    .map(|parent| parent.join(Self::DEFAULT_WORKER_BINARY))
+            })
+            .unwrap_or_else(|| PathBuf::from(Self::DEFAULT_WORKER_BINARY));
+        Self::new(program)
     }
 
     pub fn new(program: impl Into<PathBuf>) -> Self {
@@ -60,6 +67,8 @@ impl ExternalPluginWorkerCommand {
     fn to_command(&self, shared_memory_path: &Path) -> Command {
         let mut command = Command::new(&self.program);
         command
+            .env_clear()
+            .env("SOTF_PLUGIN_WORKER", "1")
             .args(&self.args)
             .arg("--shared-memory")
             .arg(shared_memory_path)
@@ -106,10 +115,10 @@ impl ExternalPluginProcessSupervisor {
     }
 
     pub fn ensure_running(&mut self) -> Result<ExternalPluginProcessEvent, String> {
-        if let Some(event) = self.poll()? {
-            if matches!(event, ExternalPluginProcessEvent::Exited { .. }) {
-                return self.start();
-            }
+        if let Some(event) = self.poll()?
+            && matches!(event, ExternalPluginProcessEvent::Exited { .. })
+        {
+            return self.start();
         }
 
         if self.child.is_some() {
@@ -180,6 +189,14 @@ impl ExternalPluginProcessSupervisor {
     }
 
     fn start(&mut self) -> Result<ExternalPluginProcessEvent, String> {
+        if !self.command.program().is_absolute() {
+            self.launch_failure_count = self.launch_failure_count.saturating_add(1);
+            return Err(format!(
+                "external plugin worker path must be absolute: '{}'",
+                self.command.program().display()
+            ));
+        }
+
         let mut command = self.command.to_command(&self.shared_memory_path);
         match command.spawn() {
             Ok(child) => {
@@ -273,6 +290,17 @@ mod tests {
     }
 
     #[test]
+    fn test_supervisor_rejects_relative_worker_path() {
+        let command = ExternalPluginWorkerCommand::new("sotf-external-plugin-worker");
+        let mut supervisor =
+            ExternalPluginProcessSupervisor::new(command, "/tmp/sotf-plugin-test.shm");
+
+        let err = supervisor.ensure_running().unwrap_err();
+        assert!(err.contains("must be absolute"));
+        assert_eq!(supervisor.launch_failure_count(), 1);
+    }
+
+    #[test]
     fn test_worker_command_exposes_custom_program_args_and_env() {
         let command = ExternalPluginWorkerCommand::new("/usr/bin/true")
             .arg("--once")
@@ -303,5 +331,15 @@ mod tests {
                 .get_envs()
                 .all(|(key, _)| key != "SOTF_PLUGIN_SHARED_MEMORY")
         );
+    }
+
+    #[test]
+    fn test_worker_command_clears_inherited_environment() {
+        let command = ExternalPluginWorkerCommand::new("/usr/bin/true");
+        let process_command = command.to_command(Path::new("/tmp/sotf-plugin-test.shm"));
+
+        assert!(process_command.get_envs().any(|(key, value)| {
+            key == "SOTF_PLUGIN_WORKER" && value == Some(std::ffi::OsStr::new("1"))
+        }));
     }
 }

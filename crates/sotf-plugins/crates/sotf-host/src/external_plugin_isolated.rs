@@ -22,6 +22,7 @@ use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 
 const DEFAULT_MAX_BLOCK_FRAMES: u32 = 8192;
 const DEFAULT_DEADLINE_MICROS: u64 = 2_000;
+const DEFAULT_MAX_CONSECUTIVE_BLOCK_FAILURES: u32 = 8;
 
 #[derive(Debug, Clone)]
 pub struct IsolatedExternalPluginConfig {
@@ -30,6 +31,7 @@ pub struct IsolatedExternalPluginConfig {
     pub worker_command: ExternalPluginWorkerCommand,
     pub sandbox_policy: ExternalPluginSandboxPolicy,
     pub start_worker: bool,
+    pub max_consecutive_block_failures: u32,
 }
 
 impl Default for IsolatedExternalPluginConfig {
@@ -40,6 +42,7 @@ impl Default for IsolatedExternalPluginConfig {
             worker_command: ExternalPluginWorkerCommand::default_worker_binary(),
             sandbox_policy: ExternalPluginSandboxPolicy::default(),
             start_worker: true,
+            max_consecutive_block_failures: DEFAULT_MAX_CONSECUTIVE_BLOCK_FAILURES,
         }
     }
 }
@@ -51,6 +54,9 @@ pub struct IsolatedExternalPlugin {
     input_channels: usize,
     output_channels: usize,
     launch_error: Option<String>,
+    consecutive_block_failures: u32,
+    max_consecutive_block_failures: u32,
+    quarantined: bool,
 }
 
 impl IsolatedExternalPlugin {
@@ -96,6 +102,9 @@ impl IsolatedExternalPlugin {
             input_channels,
             output_channels,
             launch_error,
+            consecutive_block_failures: 0,
+            max_consecutive_block_failures: config.max_consecutive_block_failures,
+            quarantined: false,
         })
     }
 
@@ -139,12 +148,19 @@ impl IsolatedExternalPlugin {
     }
 
     pub fn ensure_worker_running_event(&mut self) -> Result<ExternalPluginProcessEvent, String> {
+        if self.quarantined {
+            return Err(self.launch_error.clone().unwrap_or_else(|| {
+                format!(
+                    "isolated external plugin '{}' worker is quarantined",
+                    self.descriptor.name
+                )
+            }));
+        }
         let Some(supervisor) = self.supervisor.as_mut() else {
             return Ok(ExternalPluginProcessEvent::NotRunning);
         };
-        supervisor.ensure_running().map_err(|err| {
+        supervisor.ensure_running().inspect_err(|err| {
             self.launch_error = Some(err.clone());
-            err
         })
     }
 
@@ -217,6 +233,63 @@ impl IsolatedExternalPlugin {
         }
         Ok(())
     }
+
+    fn write_fallback(&self, input: &[f32], output: &mut [f32], frames: usize) -> usize {
+        let output_len = frames
+            .saturating_mul(self.output_channels)
+            .min(output.len());
+        output[..output_len].fill(0.0);
+
+        if self.input_channels == 0 || self.output_channels == 0 {
+            return frames;
+        }
+
+        let copy_channels = self.input_channels.min(self.output_channels);
+        for frame in 0..frames {
+            let src_base = frame.saturating_mul(self.input_channels);
+            let dst_base = frame.saturating_mul(self.output_channels);
+            if src_base >= input.len() || dst_base >= output_len {
+                break;
+            }
+
+            let src_end = (src_base + copy_channels).min(input.len());
+            let dst_end = (dst_base + copy_channels).min(output_len);
+            let copied = (src_end - src_base).min(dst_end - dst_base);
+            output[dst_base..dst_base + copied]
+                .copy_from_slice(&input[src_base..src_base + copied]);
+        }
+
+        frames
+    }
+
+    fn record_block_status(&mut self, status: ExternalPluginHostBlockStatus) {
+        if matches!(status, ExternalPluginHostBlockStatus::Processed) {
+            self.consecutive_block_failures = 0;
+            return;
+        }
+
+        self.consecutive_block_failures = self.consecutive_block_failures.saturating_add(1);
+        if self.max_consecutive_block_failures > 0
+            && self.consecutive_block_failures >= self.max_consecutive_block_failures
+        {
+            self.quarantine_worker(format!(
+                "isolated external plugin '{}' worker quarantined after {} consecutive block failures",
+                self.descriptor.name, self.consecutive_block_failures
+            ));
+        }
+    }
+
+    fn quarantine_worker(&mut self, reason: String) {
+        if self.quarantined {
+            return;
+        }
+        if let Some(supervisor) = self.supervisor.as_mut() {
+            let _ = supervisor.terminate();
+        }
+        self.launch_error = Some(reason.clone());
+        self.quarantined = true;
+        crate::rate_limited_log!(warn, 1, "{reason}");
+    }
 }
 
 impl Plugin for IsolatedExternalPlugin {
@@ -266,10 +339,15 @@ impl Plugin for IsolatedExternalPlugin {
         context: &ProcessContext,
     ) -> PluginResult<usize> {
         self.validate_process_buffers(input, output, context.num_frames)?;
+        if self.quarantined {
+            return Ok(self.write_fallback(input, output, context.num_frames));
+        }
+
         let (frames, status) = self
             .proxy
             .process_block(input, output, context.num_frames)
             .map_err(|err| format!("isolated external plugin processing failed: {err}"))?;
+        self.record_block_status(status);
 
         match status {
             ExternalPluginHostBlockStatus::Processed => {}
@@ -407,6 +485,38 @@ mod tests {
         assert_eq!(plugin.block_timeout_count(), 1);
         assert_eq!(plugin.block_worker_failure_count(), 0);
         assert_eq!(plugin.block_wrong_sequence_count(), 0);
+    }
+
+    #[test]
+    fn isolated_external_plugin_quarantines_after_repeated_block_failures() {
+        let mut plugin = IsolatedExternalPlugin::new(
+            descriptor(),
+            48_000,
+            IsolatedExternalPluginConfig {
+                deadline: Duration::ZERO,
+                start_worker: false,
+                max_consecutive_block_failures: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let input = vec![0.25, -0.5, 1.0, -1.0];
+        let mut output = vec![0.0; input.len()];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+            .unwrap();
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+            .unwrap();
+
+        assert!(plugin.launch_error().is_some());
+        assert!(plugin.ensure_worker_running_event().is_err());
+        output.fill(0.0);
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+            .unwrap();
+        assert_eq!(output, input);
     }
 
     #[test]
