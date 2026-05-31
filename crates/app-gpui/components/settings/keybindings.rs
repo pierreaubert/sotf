@@ -36,6 +36,7 @@ impl PlayerView {
             .flex_col()
             .gap(d.section_lg)
             .size_full()
+            .min_h(px(0.0))
             // Preset selection
             .child(
                 div()
@@ -84,6 +85,8 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_col()
+                    .flex_1()
+                    .min_h(px(0.0))
                     .gap(d.gap_md)
                     .child(
                         div()
@@ -97,8 +100,9 @@ impl PlayerView {
                             .id("keybindings-table")
                             .flex()
                             .flex_col()
+                            .flex_1()
+                            .min_h(px(0.0))
                             .overflow_y_scroll()
-                            .max_h(rems(31.25))
                             .border_1()
                             .border_color(theme.border)
                             .rounded(d.r_md)

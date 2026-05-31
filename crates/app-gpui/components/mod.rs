@@ -123,6 +123,7 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .bg(theme.background)
+            .text_color(theme.text_primary)
             .child(
                 // Tab Header with Home button on left, tabs centered
                 div()

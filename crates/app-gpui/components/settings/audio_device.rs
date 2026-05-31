@@ -8,9 +8,9 @@ use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Badge, BadgeVariant, HStack, StackAlign, StackSpacing, Text, VStack};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use gpui_ui_kit::{ButtonSet, ButtonSetOption, Select, SelectOption};
+use gpui_ui_kit::{HStack, StackAlign, StackSpacing, Text, VStack};
 
 impl PlayerView {
     pub(crate) fn render_audio_device_settings_content(
@@ -109,6 +109,7 @@ impl PlayerView {
                                     .options(sample_rate_options)
                                     .selected(hal_config.sample_rate.to_string())
                                     .is_open(hal_dropdowns.sample_rate_open)
+                                    .theme(theme.to_select_theme())
                                     .on_change(move |value: &SharedString, _window, cx| {
                                         if let Ok(rate) = value.parse::<u32>() {
                                             Self::update_hal_sample_rate(
@@ -149,6 +150,7 @@ impl PlayerView {
                                     .options(channel_options)
                                     .selected(hal_config.channel_count.to_string())
                                     .is_open(hal_dropdowns.channel_count_open)
+                                    .theme(theme.to_select_theme())
                                     .on_change(move |value: &SharedString, _window, cx| {
                                         if let Ok(channels) = value.parse::<u32>() {
                                             Self::update_hal_channel_count(
@@ -189,6 +191,7 @@ impl PlayerView {
                                     .options(buffer_options)
                                     .selected(hal_config.buffer_frames.to_string())
                                     .is_open(hal_dropdowns.buffer_size_open)
+                                    .theme(theme.to_select_theme())
                                     .on_change(move |value: &SharedString, _window, cx| {
                                         if let Ok(size) = value.parse::<u32>() {
                                             Self::update_hal_buffer_size(
@@ -263,7 +266,7 @@ impl PlayerView {
                             .cursor_pointer()
                             .border_1()
                             .when(is_selected, |el| {
-                                el.bg(theme.accent).border_color(theme.accent)
+                                el.bg(theme.surface_selected).border_color(theme.accent)
                             })
                             .when(!is_selected, |el| {
                                 el.bg(theme.surface)
@@ -293,35 +296,36 @@ impl PlayerView {
                                     .child(
                                         VStack::new()
                                             .spacing(StackSpacing::Xs)
-                                            .child(Text::label(device_name).color(if is_selected {
-                                                theme.text_on_accent
-                                            } else {
-                                                theme.text_primary
-                                            }))
+                                            .child(
+                                                Text::label(device_name).color(theme.text_primary),
+                                            )
                                             .child(
                                                 HStack::new()
                                                     .spacing(StackSpacing::Sm)
-                                                    .child(
-                                                        Badge::new(format!("{} ch", channels))
-                                                            .variant(BadgeVariant::Info),
-                                                    )
-                                                    .child(
-                                                        Badge::new(if sample_rate >= 1000 {
+                                                    .child(device_info_pill(
+                                                        format!("{} ch", channels),
+                                                        &theme,
+                                                        d,
+                                                    ))
+                                                    .child(device_info_pill(
+                                                        if sample_rate >= 1000 {
                                                             format!("{} kHz", sample_rate / 1000)
                                                         } else {
                                                             format!("{} Hz", sample_rate)
-                                                        })
-                                                        .variant(BadgeVariant::Info),
-                                                    ),
+                                                        },
+                                                        &theme,
+                                                        d,
+                                                    )),
                                             )
                                             .when(is_default, |stack| {
-                                                stack.child(
-                                                    Badge::new(format!(
+                                                stack.child(device_success_pill(
+                                                    format!(
                                                         "✓ {}",
                                                         translations.settings_default_badge
-                                                    ))
-                                                    .variant(BadgeVariant::Success),
-                                                )
+                                                    ),
+                                                    &theme,
+                                                    d,
+                                                ))
                                             }),
                                     ),
                             )
@@ -536,6 +540,51 @@ impl PlayerView {
             log::warn!("Could not connect to HAL driver to apply configuration");
         }
     }
+}
+
+fn device_info_pill(
+    label: impl Into<SharedString>,
+    theme: &crate::theme::Theme,
+    d: Ds,
+) -> impl IntoElement {
+    device_pill(
+        label,
+        crate::theme::Theme::with_opacity(theme.info, 0.16),
+        theme.info,
+        d,
+    )
+}
+
+fn device_success_pill(
+    label: impl Into<SharedString>,
+    theme: &crate::theme::Theme,
+    d: Ds,
+) -> impl IntoElement {
+    device_pill(
+        label,
+        crate::theme::Theme::with_opacity(theme.success, 0.16),
+        theme.success,
+        d,
+    )
+}
+
+fn device_pill(
+    label: impl Into<SharedString>,
+    bg: Rgba,
+    text_color: Rgba,
+    d: Ds,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .px(d.pad_y)
+        .py(px(3.0))
+        .rounded(d.r_sm)
+        .bg(bg)
+        .text_size(d.text_xs)
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(text_color)
+        .child(label.into())
 }
 
 /// Helper to get brand image path from device name
