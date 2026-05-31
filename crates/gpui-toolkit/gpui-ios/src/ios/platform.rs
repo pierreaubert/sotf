@@ -232,7 +232,7 @@ impl Platform for IosPlatform {
         unsafe {
             let pasteboard: *mut Object = msg_send![class!(UIPasteboard), generalPasteboard];
             if let Some(text) = item.text() {
-                let ns_string = super::ns_string_from_str(text);
+                let ns_string = super::ns_string_from_str(&text);
                 let _: () = msg_send![pasteboard, setString: ns_string];
             }
         }
