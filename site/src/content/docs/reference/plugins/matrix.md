@@ -7,7 +7,9 @@ Channel matrix mixing with per-routing gain control. Route any input channel to 
 
 ## Parameters
 
+
+### Matrix
+
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Gain | Float | 0 .. 1 | 0 | - | Matrix routing coefficient |
-

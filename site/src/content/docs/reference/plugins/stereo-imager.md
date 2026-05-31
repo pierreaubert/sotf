@@ -40,4 +40,3 @@ Controls stereo width from mono to extra-wide, using mid/side processing.
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Mix | Float | 0 .. 1 | 1 | - | Dry/wet mix |
-

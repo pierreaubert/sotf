@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.8] - 2026-05-31
+
+### Added
+- Added `--check` and `--root` support for generated plugin docs.
+- Added regression tests for markdown/YAML escaping, duplicate registry slugs, choice defaults, float formatting, idempotent writes, and CLI parsing.
+
+### Changed
+- Hardened plugin reference generation with escaped table/frontmatter values, finite float formatting, runtime registry validation, single-group headings, and no-parameter fallback text.
+- Regenerated plugin reference pages from the updated generator.
+- Marked `sotf-docs-gen` as unpublished and aligned package docs with its plugin-reference-only scope.
+
 ## [0.6.1] - 2025-05-13
 
 ### Added

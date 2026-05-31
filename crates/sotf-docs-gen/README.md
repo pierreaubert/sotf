@@ -1,6 +1,6 @@
 # sotf-docs-gen
 
-Generate documentation markdown from plugin `ParamSpec` definitions, keybindings, and screen guides.
+Generate documentation markdown from plugin `ParamSpec` definitions.
 
 ## Overview
 
@@ -20,6 +20,9 @@ Reads the static `ParamSpec` arrays compiled into every SOTF plugin and generate
 ```bash
 # From the project root (directory with Cargo.toml + site/)
 cargo run -p sotf-docs-gen
+
+# CI/idempotence check: fail if generated files would change.
+cargo run -p sotf-docs-gen -- --check
 ```
 
 Output goes to `site/src/content/docs/reference/plugins/`:
@@ -39,6 +42,7 @@ Single-file binary crate (`src/main.rs`). No library component.
 
 ```bash
 cargo check -p sotf-docs-gen
+cargo test -p sotf-docs-gen
 ```
 
 ## License

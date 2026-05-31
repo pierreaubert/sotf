@@ -7,6 +7,9 @@ Ambisonics encoding and decoding for immersive spatial audio.
 
 ## Parameters
 
+
+### Ambisonics
+
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Order | Int | 1 .. 3 | 1 | - | Ambisonics order (1-3) |

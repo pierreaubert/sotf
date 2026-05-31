@@ -27,4 +27,3 @@ Shapes attack and sustain characteristics of audio transients.
 |-----------|------|-------|---------|------|-------------|
 | Output | Float | -12 .. 12 | 0 | dB | Output gain compensation |
 | Mix | Float | 0 .. 1 | 1 | % | Dry/wet mix |
-

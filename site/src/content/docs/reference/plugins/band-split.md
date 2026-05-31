@@ -7,6 +7,9 @@ Splits the audio signal into separate frequency bands for independent processing
 
 ## Parameters
 
+
+### General
+
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Frequency | Float | 20 .. 20000 | 300 | Hz | Crossover split frequency |

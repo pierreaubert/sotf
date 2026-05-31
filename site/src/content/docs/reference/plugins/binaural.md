@@ -14,7 +14,6 @@ HRTF-based 3D spatial audio rendering. Converts multichannel audio to binaural h
 |-----------|------|-------|---------|------|-------------|
 | SOFA File | File Path | - | - | - | HRTF data file (SOFA format) |
 | Input Channels | Int | 2 .. 16 | 2 | ch | Number of surround input channels |
-| Optimization | Bool | On / Off | On | - | Enable HRIR filter optimization |
 | Externalization | Float | 0 .. 1 | 0 | - | Out-of-head perception strength |
 | Near-field | Float | 0 .. 1 | 0 | - | Near-field compensation amount |
 
@@ -33,12 +32,6 @@ HRTF-based 3D spatial audio rendering. Converts multichannel audio to binaural h
 | Reverb Time | Float | 0.1 .. 5 | 1 | s | RT60 decay time for late reverb |
 | Reverb Damping | Float | 0 .. 1 | 0.3 | - | High-frequency damping (0=bright, 1=dark) |
 
-### Headphone
-
-| Parameter | Type | Range | Default | Unit | Description |
-|-----------|------|-------|---------|------|-------------|
-| Headphone EQ | Bool | On / Off | Off | - | Apply headphone compensation EQ |
-
 :::note
-**Structural parameters** (SOFA File, Input Channels, Optimization, Near-field) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+**Structural parameters** (SOFA File, Input Channels, Near-field) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 :::

@@ -35,4 +35,3 @@ Sibilance reduction targeting harsh high-frequency content (s, t, sh sounds).
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Mix | Float | 0 .. 1 | 1 | % | Dry/wet mix |
-

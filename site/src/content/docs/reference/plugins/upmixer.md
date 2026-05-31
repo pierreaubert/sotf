@@ -14,7 +14,6 @@ Stereo to surround upmixing (2ch to 5.0/5.1/7.1) using FFT-based spatial decompo
 |-----------|------|-------|---------|------|-------------|
 | Speaker Config | Choice (2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6) | 10 options | 5.1 | - | Target surround speaker layout |
 | Safety Cap | Float | 0 .. 3 | 3 | dB | Max output headroom limit |
-| Binaural Preview | Bool | On / Off | Off | - | Preview surround output binaurally (headphone monitoring, changes output to 2ch) |
 
 ### Gains
 
@@ -106,6 +105,20 @@ Stereo to surround upmixing (2ch to 5.0/5.1/7.1) using FFT-based spatial decompo
 | Bypass Transients | Bool | On / Off | Off | - | Skip transient detection |
 | Bypass All | Bool | On / Off | Off | - | Pass audio through unprocessed |
 | ML Detection | Bool | On / Off | Off | - | Use ML model for source detect |
+
+### Config
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| Binaural Preview | Bool | On / Off | Off | - | Preview surround output binaurally (headphone monitoring, changes output to 2ch) |
+
+### Auto Gain
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| Auto Gain | Bool | On / Off | Off | - | Match rendered output loudness to the stereo input |
+| AG Max | Float | 0 .. 24 | 12 | dB | Maximum auto gain correction |
+| AG Smoothing | Float | 10 .. 500 | 100 | ms | Auto gain transition time |
 
 :::note
 **Structural parameters** (Speaker Config, Decor Mode, Velvet Duration, Velvet Density, Low Latency, Freq Resolution, Bypass Decor, Binaural Preview) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.

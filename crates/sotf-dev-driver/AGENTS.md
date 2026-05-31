@@ -18,7 +18,7 @@ Scenario driver for the SotF GPUI dev API. Reads line-based `.scn` scripts and t
 | `focus`      | Sugar: `focus library` → `action SwitchToLibrary`.           |
 | `key`        | Synthetic keystroke (`gpui::Keystroke::parse` syntax).       |
 | `click`      | Click a `dev_track`-registered element by selector.          |
-| `elements`   | List every currently tracked selector (debugging aid).       |
+| `elements`   | Print every tracked selector to stdout (debugging aid).      |
 
 ## Testing
 

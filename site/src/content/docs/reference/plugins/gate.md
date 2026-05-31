@@ -47,4 +47,3 @@ Noise gate that silences audio below a configurable threshold.
 | HPF Order | Choice (2nd, 4th) | 2 options | 2nd | - | Sidechain HPF filter order |
 | Detection | Choice (Peak, RMS) | 2 options | Peak | - | Level detection mode |
 | Ext Sidechain | Bool | On / Off | Off | - | Use external sidechain input |
-
