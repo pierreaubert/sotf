@@ -6,6 +6,7 @@
 //! Also provides [`NullDriver`] as a fallback when no platform driver is available.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Status information from the audio driver.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,7 +31,7 @@ pub struct DriverStatus {
 }
 
 /// Configuration request for the audio driver.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DriverConfig {
     /// Requested sample rate in Hz.
     ///
@@ -46,8 +47,188 @@ pub struct DriverConfig {
     pub channel_count: u32,
 }
 
+impl DriverConfig {
+    /// A request that leaves every driver setting unchanged.
+    pub const fn keep_current() -> Self {
+        Self {
+            sample_rate: 0,
+            buffer_frames: 0,
+            channel_count: 0,
+        }
+    }
+
+    /// Create a complete configuration request.
+    pub const fn new(sample_rate: u32, buffer_frames: u32, channel_count: u32) -> Self {
+        Self {
+            sample_rate,
+            buffer_frames,
+            channel_count,
+        }
+    }
+
+    /// Request a specific sample rate while preserving all other settings.
+    pub const fn with_sample_rate(sample_rate: u32) -> Self {
+        Self {
+            sample_rate,
+            ..Self::keep_current()
+        }
+    }
+
+    /// Request a specific buffer size while preserving all other settings.
+    pub const fn with_buffer_frames(buffer_frames: u32) -> Self {
+        Self {
+            buffer_frames,
+            ..Self::keep_current()
+        }
+    }
+
+    /// Request a specific channel count while preserving all other settings.
+    pub const fn with_channel_count(channel_count: u32) -> Self {
+        Self {
+            channel_count,
+            ..Self::keep_current()
+        }
+    }
+
+    /// Resolve the sample-rate request against the current value.
+    pub const fn sample_rate_or(self, current: u32) -> u32 {
+        if self.sample_rate == 0 {
+            current
+        } else {
+            self.sample_rate
+        }
+    }
+
+    /// Resolve the buffer-size request against the current value.
+    pub const fn buffer_frames_or(self, current: u32) -> u32 {
+        if self.buffer_frames == 0 {
+            current
+        } else {
+            self.buffer_frames
+        }
+    }
+
+    /// Resolve the channel-count request against the current value.
+    pub const fn channel_count_or(self, current: u32) -> u32 {
+        if self.channel_count == 0 {
+            current
+        } else {
+            self.channel_count
+        }
+    }
+}
+
+impl Default for DriverConfig {
+    fn default() -> Self {
+        Self::keep_current()
+    }
+}
+
+/// Structured driver error.
+///
+/// This intentionally stores displayable details instead of platform-native
+/// error values so it can cross the daemon IPC boundary without string
+/// matching at call sites.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum DriverError {
+    /// No driver implementation or shared transport is available.
+    NotAvailable { message: String },
+    /// The platform driver is not installed.
+    NotInstalled { message: String },
+    /// The current process lacks permission to use the driver.
+    PermissionDenied { message: String },
+    /// A requested driver setting is invalid.
+    InvalidConfig { field: String, message: String },
+    /// The requested operation timed out.
+    Timeout { message: String },
+    /// Filesystem or device I/O failed.
+    Io { message: String },
+    /// Fallback for errors that do not have a stable category yet.
+    Other { message: String },
+}
+
+impl DriverError {
+    pub fn not_available(message: impl Into<String>) -> Self {
+        Self::NotAvailable {
+            message: message.into(),
+        }
+    }
+
+    pub fn not_installed(message: impl Into<String>) -> Self {
+        Self::NotInstalled {
+            message: message.into(),
+        }
+    }
+
+    pub fn permission_denied(message: impl Into<String>) -> Self {
+        Self::PermissionDenied {
+            message: message.into(),
+        }
+    }
+
+    pub fn invalid_config(field: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InvalidConfig {
+            field: field.into(),
+            message: message.into(),
+        }
+    }
+
+    pub fn timeout(message: impl Into<String>) -> Self {
+        Self::Timeout {
+            message: message.into(),
+        }
+    }
+
+    pub fn io(message: impl Into<String>) -> Self {
+        Self::Io {
+            message: message.into(),
+        }
+    }
+
+    pub fn other(message: impl Into<String>) -> Self {
+        Self::Other {
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for DriverError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotAvailable { message }
+            | Self::NotInstalled { message }
+            | Self::PermissionDenied { message }
+            | Self::Timeout { message }
+            | Self::Io { message }
+            | Self::Other { message } => f.write_str(message),
+            Self::InvalidConfig { field, message } => write!(f, "{}: {}", field, message),
+        }
+    }
+}
+
+impl std::error::Error for DriverError {}
+
+impl From<String> for DriverError {
+    fn from(message: String) -> Self {
+        Self::other(message)
+    }
+}
+
+impl From<&str> for DriverError {
+    fn from(message: &str) -> Self {
+        Self::other(message)
+    }
+}
+
+impl From<std::io::Error> for DriverError {
+    fn from(error: std::io::Error) -> Self {
+        Self::io(error.to_string())
+    }
+}
+
 /// Result of a configuration request.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConfigResult {
     /// The exact requested configuration was accepted.
     Accepted,
@@ -55,9 +236,24 @@ pub enum ConfigResult {
     Negotiated {
         actual_rate: u32,
         actual_frames: u32,
+        actual_channels: u32,
     },
     /// The configuration request failed.
-    Error(String),
+    Error(DriverError),
+}
+
+impl ConfigResult {
+    pub const fn negotiated(actual_rate: u32, actual_frames: u32, actual_channels: u32) -> Self {
+        Self::Negotiated {
+            actual_rate,
+            actual_frames,
+            actual_channels,
+        }
+    }
+
+    pub fn error(error: impl Into<DriverError>) -> Self {
+        Self::Error(error.into())
+    }
 }
 
 /// Platform audio capture abstraction.
@@ -67,17 +263,23 @@ pub enum ConfigResult {
 /// - **Linux**: PipeWire filter node with ring buffer (`driver-linux`, future)
 /// - **Windows**: APO + shared memory (`driver-windows`, future)
 ///
-/// The daemon holds a `Box<dyn AudioDriver>` and uses it uniformly
-/// regardless of platform.
+/// The daemon holds a single-owner `Box<dyn AudioDriver>` and uses it
+/// uniformly regardless of platform. The trait is `Send` so ownership can move
+/// to the daemon thread; it is not `Sync` because drivers own realtime handles
+/// and shared-memory cursors that should not be called concurrently.
 pub trait AudioDriver: Send + 'static {
     /// Initialize the driver and connect to the audio source.
     ///
     /// Returns `Ok(())` if the driver is ready, or `Err` with a description.
     /// Non-fatal issues (e.g. driver not installed) should still return `Ok(())`
     /// with `status().driver_installed == false`.
-    fn initialize(&mut self) -> Result<(), String>;
+    fn initialize(&mut self) -> Result<(), DriverError>;
 
     /// Shut down the driver and release resources.
+    ///
+    /// Implementors should also release kernel/shared-memory resources from
+    /// `Drop` when possible; the daemon calls this explicitly during normal
+    /// shutdown, but `Drop` is the backstop for abrupt owner teardown.
     fn shutdown(&mut self);
 
     /// Get current driver status.
@@ -87,7 +289,24 @@ pub trait AudioDriver: Send + 'static {
     ///
     /// Returns the number of *samples* (not frames) actually read.
     /// The caller provides a buffer of `frame_count * channel_count` floats.
+    /// Implementors should return a multiple of `channel_count()` when
+    /// `channel_count() > 0`.
     fn read_audio(&mut self, buffer: &mut [f32]) -> usize;
+
+    /// Read interleaved audio and return complete frames.
+    ///
+    /// This preserves the legacy `read_audio` sample-count contract while
+    /// giving new callers a frame-count API that matches `available_frames`.
+    fn read_frames(&mut self, buffer: &mut [f32]) -> usize {
+        let samples = self.read_audio(buffer);
+        let channels = self.channel_count().max(1) as usize;
+        debug_assert_eq!(
+            samples % channels,
+            0,
+            "AudioDriver::read_audio must return complete frames"
+        );
+        samples / channels
+    }
 
     /// Number of complete frames available for reading without blocking.
     fn available_frames(&self) -> usize;
@@ -135,7 +354,7 @@ impl Default for NullDriver {
 }
 
 impl AudioDriver for NullDriver {
-    fn initialize(&mut self) -> Result<(), String> {
+    fn initialize(&mut self) -> Result<(), DriverError> {
         log::info!("[NullDriver] No platform audio driver available");
         Ok(())
     }
@@ -172,7 +391,7 @@ impl AudioDriver for NullDriver {
     }
 
     fn request_config(&mut self, _config: DriverConfig) -> ConfigResult {
-        ConfigResult::Error("No driver available".to_string())
+        ConfigResult::error(DriverError::not_available("No driver available"))
     }
 
     fn poll_config_change(&mut self) -> Option<DriverConfig> {
@@ -210,6 +429,7 @@ mod tests {
         let mut buf = vec![1.0f32; 1024];
         let read = driver.read_audio(&mut buf);
         assert_eq!(read, 0);
+        assert_eq!(driver.read_frames(&mut buf), 0);
     }
 
     #[test]
@@ -221,11 +441,7 @@ mod tests {
     #[test]
     fn test_null_driver_request_config_fails() {
         let mut driver = NullDriver::new();
-        let result = driver.request_config(DriverConfig {
-            sample_rate: 48000,
-            buffer_frames: 1024,
-            channel_count: 0,
-        });
+        let result = driver.request_config(DriverConfig::new(48000, 1024, 0));
         assert!(matches!(result, ConfigResult::Error(_)));
     }
 
@@ -247,5 +463,34 @@ mod tests {
         let driver: Box<dyn AudioDriver> = Box::new(NullDriver::new());
         let status = driver.status();
         assert!(!status.platform_supported);
+    }
+
+    #[test]
+    fn test_driver_config_keep_current_helpers() {
+        let keep = DriverConfig::default();
+        assert_eq!(keep, DriverConfig::keep_current());
+        assert_eq!(keep.sample_rate_or(48_000), 48_000);
+        assert_eq!(keep.buffer_frames_or(512), 512);
+        assert_eq!(keep.channel_count_or(2), 2);
+
+        let channels = DriverConfig::with_channel_count(8);
+        assert_eq!(channels.sample_rate_or(44_100), 44_100);
+        assert_eq!(channels.buffer_frames_or(256), 256);
+        assert_eq!(channels.channel_count_or(2), 8);
+    }
+
+    #[test]
+    fn test_config_result_serializes_negotiated_channels() {
+        let result = ConfigResult::negotiated(48_000, 512, 8);
+        let json = serde_json::to_value(&result).expect("ConfigResult should serialize");
+        assert_eq!(json["Negotiated"]["actual_rate"], 48_000);
+        assert_eq!(json["Negotiated"]["actual_frames"], 512);
+        assert_eq!(json["Negotiated"]["actual_channels"], 8);
+    }
+
+    #[test]
+    fn test_driver_error_display_for_invalid_config() {
+        let error = DriverError::invalid_config("channel_count", "must be 1..=32");
+        assert_eq!(error.to_string(), "channel_count: must be 1..=32");
     }
 }

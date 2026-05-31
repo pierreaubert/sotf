@@ -4,7 +4,7 @@
 //! On macOS, uses the CoreAudio HAL driver. On Linux (future), PipeWire.
 //! On Windows (future), APO. Falls back to NullDriver when no driver is available.
 
-use driver_common::{AudioDriver, ConfigResult, DriverConfig, DriverStatus};
+use driver_common::{AudioDriver, ConfigResult, DriverConfig, DriverError, DriverStatus};
 
 const DRIVER_OVERRIDE_ENV: &str = "SOTF_SYSTEMWIDE_DRIVER";
 
@@ -27,7 +27,7 @@ impl DriverManager {
     }
 
     /// Initialize the driver and verify connectivity.
-    pub fn initialize(&mut self) -> Result<(), String> {
+    pub fn initialize(&mut self) -> Result<(), DriverError> {
         self.driver.initialize()
     }
 
@@ -150,7 +150,7 @@ impl LabDriver {
 }
 
 impl AudioDriver for LabDriver {
-    fn initialize(&mut self) -> Result<(), String> {
+    fn initialize(&mut self) -> Result<(), DriverError> {
         self.status.capture_active = true;
         Ok(())
     }
