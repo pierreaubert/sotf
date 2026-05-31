@@ -572,8 +572,15 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         bo_acquisition: None,
         bo_ehvi: None,
         psychoacoustic: true,
+        psychoacoustic_smoothing: None,
         smooth_n: 2,
         asymmetric_loss: true,
+        asymmetric_loss_config: None,
+        perceptual_policy: None,
+        audibility_deadband: None,
+        high_frequency_correction: None,
+        early_late_correction: None,
+        validation_bundle: None,
         tolerance: 1e-5,
         atolerance: 1e-5,
         allow_delay: None,
@@ -891,6 +898,7 @@ fn chain(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
     }
 }
 

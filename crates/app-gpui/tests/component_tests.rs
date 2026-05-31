@@ -360,7 +360,7 @@ fn test_all_themes_have_names() {
 
 #[test]
 fn test_theme_count() {
-    assert_eq!(ThemeId::all().len(), 6);
+    assert_eq!(ThemeId::all().len(), 9);
 }
 
 #[test]

@@ -17,6 +17,20 @@ pub fn set_config_dir_override(path: PathBuf) {
         .expect("Config dir override already set");
 }
 
+#[cfg(test)]
+pub(crate) fn test_config_dir() -> PathBuf {
+    if let Some(dir) = CONFIG_DIR_OVERRIDE.get() {
+        return dir.clone();
+    }
+
+    let dir = std::env::temp_dir()
+        .join("sotf-player-test-config")
+        .join(std::process::id().to_string());
+    std::fs::create_dir_all(&dir).expect("Failed to create test config dir");
+    let _ = CONFIG_DIR_OVERRIDE.set(dir.clone());
+    CONFIG_DIR_OVERRIDE.get().cloned().unwrap_or(dir)
+}
+
 /// Application state that persists between sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {

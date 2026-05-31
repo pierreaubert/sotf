@@ -687,14 +687,6 @@ impl IosWindow {
                 preferred_present_mode: None,
             };
 
-            let metal_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                backends: wgpu::Backends::METAL,
-                flags: wgpu::InstanceFlags::default(),
-                backend_options: wgpu::BackendOptions::default(),
-                memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-                display: None,
-            });
-
             // Build raw-window-handle wrapper for the renderer. We can't
             // pass `&IosWindow` directly because WgpuRenderer::new requires
             // `Debug + Clone + Send + Sync + 'static`.
@@ -709,8 +701,18 @@ impl IosWindow {
                 display: display_handle.as_raw(),
             };
 
+            let metal_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                backends: wgpu::Backends::METAL,
+                flags: wgpu::InstanceFlags::default(),
+                backend_options: wgpu::BackendOptions::default(),
+                memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+                display: Some(Box::new(raw_handles.clone())),
+            });
+
             let target = wgpu::SurfaceTargetUnsafe::RawHandle {
-                raw_display_handle: Some(raw_handles.display),
+                // The display is attached to the instance. WgpuRenderer::new
+                // uses the same convention when it recreates this surface.
+                raw_display_handle: None,
                 raw_window_handle: raw_handles.window,
             };
 
@@ -718,7 +720,7 @@ impl IosWindow {
             // GpuContext (Rc<RefCell<Option<WgpuContext>>>), then call
             // WgpuRenderer::new which will reuse our context instead of
             // falling back to the Vulkan+GL default.
-            let surface_result = unsafe { metal_instance.create_surface_unsafe(target) };
+            let surface_result = metal_instance.create_surface_unsafe(target);
             match surface_result {
                 Ok(surface) => match WgpuContext::new(metal_instance, &surface, None) {
                     Ok(context) => {

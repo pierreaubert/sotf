@@ -425,19 +425,16 @@ fn get_file_mtime(path: &Path) -> Option<u64> {
 mod tests {
     use super::*;
 
+    fn fresh_config_test_dir(name: &str) -> std::path::PathBuf {
+        let test_dir = crate::config::test_config_dir().join(name);
+        std::fs::remove_dir_all(&test_dir).ok();
+        std::fs::create_dir_all(&test_dir).unwrap();
+        test_dir
+    }
+
     #[test]
     fn test_backup_existing_database_creates_backup_file() {
-        // Use the real config directory for testing to satisfy security validation
-        let config_dir = match crate::config::get_app_config_dir() {
-            Some(dir) => dir,
-            None => {
-                eprintln!("Skipping test: could not get config directory");
-                return;
-            }
-        };
-
-        let test_dir = config_dir.join("test_backup");
-        std::fs::create_dir_all(&test_dir).unwrap();
+        let test_dir = fresh_config_test_dir("test_backup");
 
         let db_path = test_dir.join("music.db");
         std::fs::write(&db_path, b"test").unwrap();
@@ -461,17 +458,7 @@ mod tests {
 
     #[test]
     fn test_prune_old_backups_limits_to_three_per_day() {
-        // Use the real config directory for testing to satisfy security validation
-        let config_dir = match crate::config::get_app_config_dir() {
-            Some(dir) => dir,
-            None => {
-                eprintln!("Skipping test: could not get config directory");
-                return;
-            }
-        };
-
-        let test_dir = config_dir.join("test_prune");
-        std::fs::create_dir_all(&test_dir).unwrap();
+        let test_dir = fresh_config_test_dir("test_prune");
 
         // Create 5 backups for the same day
         let ts = [
@@ -529,18 +516,7 @@ mod tests {
 
     #[test]
     fn test_backup_skips_duplicate() {
-        let config_dir = match crate::config::get_app_config_dir() {
-            Some(dir) => dir,
-            None => {
-                eprintln!("Skipping test: could not get config directory");
-                return;
-            }
-        };
-
-        let test_dir = config_dir.join("test_backup_dedup");
-        // Clean up from any previous failed run
-        std::fs::remove_dir_all(&test_dir).ok();
-        std::fs::create_dir_all(&test_dir).unwrap();
+        let test_dir = fresh_config_test_dir("test_backup_dedup");
 
         let db_path = test_dir.join("music.db");
         std::fs::write(&db_path, b"unchanged content").unwrap();

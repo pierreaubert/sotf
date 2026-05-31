@@ -109,8 +109,10 @@ fn main() {
     let cli_size_override: Option<(f32, f32)> = args.size;
 
     // Apply QA directory override before any config dir access.
-    let qa_mode = args.qa.is_some();
-    if let Some(qa_dir) = args.qa {
+    let qa_dir = args.qa;
+    #[cfg(feature = "dev-api")]
+    let qa_mode = qa_dir.is_some();
+    if let Some(qa_dir) = qa_dir {
         sotf_audio_player::config::set_config_dir_override(qa_dir);
     }
 

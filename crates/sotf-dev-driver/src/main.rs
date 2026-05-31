@@ -371,6 +371,10 @@ pub(crate) fn parse_dev_response(resp: reqwest::blocking::Response, label: &str)
     let body = resp
         .text()
         .with_context(|| format!("reading {label} response body"))?;
+    parse_dev_response_body(status, &body, label)
+}
+
+fn parse_dev_response_body(status: reqwest::StatusCode, body: &str, label: &str) -> Result<Value> {
     let json = serde_json::from_str::<Value>(&body);
     if !status.is_success() {
         let err = json
@@ -621,9 +625,6 @@ pub(crate) fn parse_duration(s: &str) -> Result<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
-    use std::thread;
 
     use serde_json::json;
 
@@ -779,12 +780,13 @@ mod tests {
 
     #[test]
     fn query_error_includes_plain_text_response_body() {
-        let ctx = test_ctx(&serve_once(
-            "500 Internal Server Error",
-            "text/plain",
+        let err = parse_dev_response_body(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
             "plain panic details",
-        ));
-        let err = verb_query("playback.volume", &ctx).unwrap_err().to_string();
+            "query `playback.volume`",
+        )
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("query `playback.volume` failed"));
         assert!(err.contains("500 Internal Server Error"));
         assert!(err.contains("plain panic details"));
@@ -792,12 +794,13 @@ mod tests {
 
     #[test]
     fn action_error_includes_json_error_message() {
-        let ctx = test_ctx(&serve_once(
-            "400 Bad Request",
-            "application/json",
+        let err = parse_dev_response_body(
+            reqwest::StatusCode::BAD_REQUEST,
             r#"{"ok":false,"error":"unknown action"}"#,
-        ));
-        let err = verb_action("Nope", &ctx).unwrap_err().to_string();
+            "action `Nope`",
+        )
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("action `Nope` failed"));
         assert!(err.contains("400 Bad Request"));
         assert!(err.contains("unknown action"));
@@ -808,32 +811,5 @@ mod tests {
         assert_eq!(urlencode("playback.volume"), "playback.volume");
         assert_eq!(urlencode("a b"), "a%20b");
         assert_eq!(urlencode("a&b"), "a%26b");
-    }
-
-    fn test_ctx(base: &str) -> Ctx {
-        Ctx {
-            client: reqwest::blocking::Client::builder()
-                .timeout(Duration::from_secs(2))
-                .build()
-                .unwrap(),
-            base: base.to_string(),
-            verbose: false,
-        }
-    }
-
-    fn serve_once(status: &'static str, content_type: &'static str, body: &'static str) -> String {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let addr = listener.local_addr().unwrap();
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 4096];
-            let _ = stream.read(&mut request);
-            let response = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            stream.write_all(response.as_bytes()).unwrap();
-        });
-        format!("http://{addr}")
     }
 }
