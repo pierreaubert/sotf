@@ -26,6 +26,22 @@ use std::path::{Path, PathBuf};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
 const CTC_ARTIFACT_VERSION: &str = "ctc-recommended-v1";
+const CTC_CONDITION_WARNING_THRESHOLD: f64 = 1.0e6;
+
+fn invalid_ctc_configuration(message: impl Into<String>) -> AutoeqError {
+    let message = message.into();
+    log::error!("  CTC configuration invalid: {}", message);
+    AutoeqError::InvalidConfiguration { message }
+}
+
+fn ctc_condition_warning(max_condition: f64) -> Option<String> {
+    (max_condition.is_finite() && max_condition > CTC_CONDITION_WARNING_THRESHOLD).then(|| {
+        format!(
+            "CTC transfer matrix is ill-conditioned: max condition number {:.3e} exceeds {:.3e}; filters may amplify measurement noise or need stronger regularization",
+            max_condition, CTC_CONDITION_WARNING_THRESHOLD
+        )
+    })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CtcReport {
@@ -49,6 +65,8 @@ pub struct CtcReport {
     pub room_eq_correction_channels: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivered_response: Option<CtcDeliveredResponseMetrics>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binaural_diagnostics: Option<CtcBinauralDiagnostics>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -58,6 +76,25 @@ pub struct CtcDeliveredResponseMetrics {
     pub mean_crosstalk_db: f64,
     pub worst_crosstalk_db: f64,
     pub mean_channel_balance_db: f64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct CtcBinauralDiagnostics {
+    pub ild_error_db: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub itd_error_proxy_us: Option<f64>,
+    pub cue_deviation_score: f64,
+    pub externalization_risk: String,
+    pub imaging_risk: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hrtf_candidate_comparison: Option<CtcHrtfCandidateComparison>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct CtcHrtfCandidateComparison {
+    pub candidate_count: usize,
+    pub selected_source: String,
+    pub advisory: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +118,8 @@ struct CtcArtifact {
     room_eq_correction_channels: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     delivered_response: Option<CtcDeliveredResponseMetrics>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    binaural_diagnostics: Option<CtcBinauralDiagnostics>,
     filters: Vec<CtcFirFilterArtifact>,
 }
 
@@ -111,69 +150,52 @@ pub fn maybe_generate_recommended_xtc(
         return Ok(None);
     }
     if config.fir_taps < 16 || !config.fir_taps.is_power_of_two() {
-        return Err(AutoeqError::InvalidConfiguration {
-            message: "ctc.fir_taps must be a power of two >= 16".to_string(),
-        });
+        return Err(invalid_ctc_configuration(
+            "ctc.fir_taps must be a power of two >= 16",
+        ));
     }
 
     let sample_rate_u32 = checked_sample_rate(sample_rate)?;
     let fft_size = config.fir_taps;
     let mut spectrum = match config.matrix_source.as_str() {
         "measured" => {
-            let measurements =
-                config
-                    .measurements
-                    .as_ref()
-                    .ok_or(AutoeqError::InvalidConfiguration {
-                        message: "ctc.matrix_source='measured' requires ctc.measurements"
-                            .to_string(),
-                    })?;
+            let measurements = config.measurements.as_ref().ok_or_else(|| {
+                invalid_ctc_configuration("ctc.matrix_source='measured' requires ctc.measurements")
+            })?;
             load_measured_spectrum(measurements, &config.window, sample_rate_u32, fft_size)?
         }
         "raw_sweep" => {
-            let measurements =
-                config
-                    .measurements
-                    .as_ref()
-                    .ok_or(AutoeqError::InvalidConfiguration {
-                        message: "ctc.matrix_source='raw_sweep' requires ctc.measurements"
-                            .to_string(),
-                    })?;
+            let measurements = config.measurements.as_ref().ok_or_else(|| {
+                invalid_ctc_configuration("ctc.matrix_source='raw_sweep' requires ctc.measurements")
+            })?;
             load_raw_sweep_spectrum(measurements, config, sample_rate_u32, fft_size)?
         }
         "hrtf_database" | "hrtf" => {
-            let hrtf = config
-                .hrtf
-                .as_ref()
-                .ok_or(AutoeqError::InvalidConfiguration {
-                    message: "ctc.matrix_source='hrtf_database' requires ctc.hrtf".to_string(),
-                })?;
+            let hrtf = config.hrtf.as_ref().ok_or_else(|| {
+                invalid_ctc_configuration("ctc.matrix_source='hrtf_database' requires ctc.hrtf")
+            })?;
             load_hrtf_spectrum(hrtf, sample_rate_u32, fft_size)?
         }
         other => {
-            return Err(AutoeqError::InvalidConfiguration {
-                message: format!(
-                    "unsupported ctc.matrix_source '{}'; expected 'measured', 'raw_sweep', or 'hrtf_database'",
-                    other
-                ),
-            });
+            return Err(invalid_ctc_configuration(format!(
+                "unsupported ctc.matrix_source '{}'; expected 'measured', 'raw_sweep', or 'hrtf_database'",
+                other
+            )));
         }
     };
 
     for speaker in &spectrum.speakers {
         if !sys.speakers.contains_key(speaker) {
-            return Err(AutoeqError::InvalidConfiguration {
-                message: format!(
-                    "ctc speaker '{}' is not present in system.speakers",
-                    speaker
-                ),
-            });
+            return Err(invalid_ctc_configuration(format!(
+                "ctc speaker '{}' is not present in system.speakers",
+                speaker
+            )));
         }
     }
     if spectrum.speakers.len() < 2 {
-        return Err(AutoeqError::InvalidConfiguration {
-            message: "ctc requires at least two speaker roles".to_string(),
-        });
+        return Err(invalid_ctc_configuration(
+            "ctc requires at least two speaker roles",
+        ));
     }
     let room_eq_correction_channels = if config.include_room_eq_dsp {
         if let Some(channels) = channels {
@@ -252,6 +274,9 @@ pub fn maybe_generate_recommended_xtc(
         worst_position_error = worst_position_error.max(errors.iter().copied().fold(0.0, f64::max));
         solved_bins.push(values);
     }
+    if let Some(message) = ctc_condition_warning(max_condition) {
+        log::warn!("  {}", message);
+    }
 
     let latency_samples = config.fir_taps / 2;
     let latency_ms = latency_samples as f64 * 1000.0 / sample_rate;
@@ -310,6 +335,12 @@ pub fn maybe_generate_recommended_xtc(
         || max_electrical_sum_gain_db >= config.regularization.max_gain_db - 0.25;
     let delivered_response =
         compute_delivered_response_metrics(&spectrum, &filters, config.fir_taps, latency_samples)?;
+    let binaural_diagnostics = compute_binaural_diagnostics(
+        &spectrum,
+        &delivered_response,
+        max_condition_json,
+        driver_headroom_limited,
+    );
 
     std::fs::create_dir_all(output_dir)?;
     let artifact_path = output_dir.join("recommended_xtc_matrix.json");
@@ -332,6 +363,7 @@ pub fn maybe_generate_recommended_xtc(
         room_eq_correction_applied,
         room_eq_correction_channels: room_eq_correction_channels.clone(),
         delivered_response: Some(delivered_response.clone()),
+        binaural_diagnostics: Some(binaural_diagnostics.clone()),
         filters,
     };
     let json = serde_json::to_vec_pretty(&artifact)?;
@@ -357,7 +389,54 @@ pub fn maybe_generate_recommended_xtc(
         room_eq_correction_applied,
         room_eq_correction_channels,
         delivered_response: Some(delivered_response),
+        binaural_diagnostics: Some(binaural_diagnostics),
     }))
+}
+
+fn compute_binaural_diagnostics(
+    spectrum: &MatrixSpectrum,
+    delivered: &CtcDeliveredResponseMetrics,
+    max_condition_number: f64,
+    driver_headroom_limited: bool,
+) -> CtcBinauralDiagnostics {
+    let crosstalk_risk = delivered.worst_crosstalk_db > -12.0;
+    let target_risk = delivered.worst_target_error > 1.0;
+    let condition_risk = max_condition_number > CTC_CONDITION_WARNING_THRESHOLD;
+    let externalization_risk = if driver_headroom_limited || condition_risk || target_risk {
+        "high".to_string()
+    } else if delivered.worst_crosstalk_db > -20.0 || delivered.mean_channel_balance_db > 2.0 {
+        "moderate".to_string()
+    } else {
+        "low".to_string()
+    };
+    let imaging_risk = if crosstalk_risk || delivered.mean_channel_balance_db > 3.0 {
+        "high".to_string()
+    } else if delivered.mean_channel_balance_db > 1.5 {
+        "moderate".to_string()
+    } else {
+        "low".to_string()
+    };
+
+    CtcBinauralDiagnostics {
+        ild_error_db: delivered.mean_channel_balance_db,
+        itd_error_proxy_us: None,
+        cue_deviation_score: delivered.mean_target_error
+            + 10.0_f64.powf(delivered.mean_crosstalk_db / 20.0)
+            + delivered.mean_channel_balance_db / 20.0,
+        externalization_risk,
+        imaging_risk,
+        hrtf_candidate_comparison: spectrum.source.contains("hrtf").then(|| {
+            CtcHrtfCandidateComparison {
+                candidate_count: spectrum.positions.len().max(1),
+                selected_source: spectrum.source.clone(),
+                advisory: if spectrum.positions.len() > 1 {
+                    "robust_head_position_average".to_string()
+                } else {
+                    "single_hrtf_candidate".to_string()
+                },
+            }
+        }),
+    }
 }
 
 fn compute_delivered_response_metrics(
@@ -1404,6 +1483,24 @@ mod tests {
     }
 
     #[test]
+    fn ctc_condition_warning_flags_excessive_condition_number() {
+        assert!(ctc_condition_warning(CTC_CONDITION_WARNING_THRESHOLD * 10.0).is_some());
+        assert!(ctc_condition_warning(CTC_CONDITION_WARNING_THRESHOLD * 0.5).is_none());
+        assert!(ctc_condition_warning(f64::INFINITY).is_none());
+    }
+
+    #[test]
+    fn invalid_ctc_configuration_preserves_error_message() {
+        let err = invalid_ctc_configuration("unsupported ctc.matrix_source 'bad'");
+        match err {
+            AutoeqError::InvalidConfiguration { message } => {
+                assert!(message.contains("unsupported ctc.matrix_source"));
+            }
+            other => panic!("expected InvalidConfiguration, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn electrical_sum_headroom_scales_complete_speaker_rows() {
         let mut values = vec![
             Complex64::new(1.0, 0.0),
@@ -2066,6 +2163,7 @@ mod tests {
             pre_ir: None,
             post_ir: None,
             fir_temporal_masking: None,
+            direct_early_late_correction: None,
             target_curve: None,
         }
     }

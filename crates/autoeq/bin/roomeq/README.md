@@ -153,6 +153,11 @@ freq,spl
 
 - `flat`: Optimize for flat frequency response
 - `score`: Optimize for Harman/Olive score (bass boost + flat PIR)
+- `epa`: Psychoacoustic EPA loss with configurable penalty weights
+
+When `psychoacoustic` is enabled, `psychoacoustic_smoothing` can override the default variable smoothing curve (`1/48` octave below 100 Hz through `1/6` octave above 1 kHz). When `asymmetric_loss` is enabled, `asymmetric_loss_config` can override peak/dip and bass peak/dip weights without changing the default behavior for existing configs.
+
+`perceptual_policy` can fill coherent defaults for `reference`, `music`, `cinema`, `night`, and `speech` use cases. The policy layer maps existing knobs rather than replacing them: target response, EPA/asymmetric weighting, psychoacoustic smoothing, spatial/bootstrap robustness, audibility deadband, high-frequency guardrails, FIR direct/early/late advisories, and validation bundle descriptors remain individually configurable.
 
 ### Crossover Types
 
@@ -241,6 +246,8 @@ Excursion protection automatically detects the F3 rolloff and generates a highpa
     "excursion_protection": {
       "enabled": true,
       "auto_detect_f3": true,
+      "f3_reference_min_hz": 100.0,
+      "f3_reference_max_hz": 200.0,
       "filter_order": 4,
       "filter_type": "linkwitzriley",
       "margin_octaves": 0.25

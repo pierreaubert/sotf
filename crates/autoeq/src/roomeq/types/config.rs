@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::MeasurementSource;
+use crate::loss::AsymmetricLossConfig;
 use crate::optim::SmoothnessPenaltyConfig;
+use crate::read::PsychoacousticSmoothingConfig;
 
 /// Configuration version (semantic versioning)
 pub fn default_config_version() -> String {
@@ -1150,6 +1152,12 @@ pub struct ExcursionProtectionConfig {
     /// Manual F3 override in Hz (used if auto_detect_f3 is false)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manual_f3_hz: Option<f64>,
+    /// Lower bound of the reference band used for F3 auto-detection.
+    #[serde(default = "default_f3_reference_min_hz")]
+    pub f3_reference_min_hz: f64,
+    /// Upper bound of the reference band used for F3 auto-detection.
+    #[serde(default = "default_f3_reference_max_hz")]
+    pub f3_reference_max_hz: f64,
     /// Filter order (2 = 12dB/oct, 4 = 24dB/oct)
     #[serde(default = "default_filter_order")]
     pub filter_order: usize,
@@ -1164,6 +1172,12 @@ pub struct ExcursionProtectionConfig {
 fn default_true() -> bool {
     true
 }
+fn default_f3_reference_min_hz() -> f64 {
+    100.0
+}
+fn default_f3_reference_max_hz() -> f64 {
+    200.0
+}
 fn default_filter_order() -> usize {
     4
 }
@@ -1177,6 +1191,8 @@ impl Default for ExcursionProtectionConfig {
             enabled: false,
             auto_detect_f3: true,
             manual_f3_hz: None,
+            f3_reference_min_hz: default_f3_reference_min_hz(),
+            f3_reference_max_hz: default_f3_reference_max_hz(),
             filter_order: default_filter_order(),
             filter_type: HighpassType::LinkwitzRiley,
             margin_octaves: default_margin_octaves(),
@@ -2188,6 +2204,247 @@ impl Default for AutoOptimizerConfig {
 }
 
 // ============================================================================
+// Perceptual Policy Presets
+// ============================================================================
+
+/// Product-level perceptual policy preset.
+///
+/// Policies fill in coherent defaults for the lower-level RoomEQ knobs. Omitted
+/// policies preserve the historical optimizer defaults.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PerceptualPolicyPreset {
+    /// Conservative reference correction with strong early-cue preservation.
+    #[default]
+    Reference,
+    /// Music listening target with broad in-room tilt and robust LF correction.
+    Music,
+    /// Home-cinema target policy with role-aware dialog and X-curve shaping.
+    Cinema,
+    /// Quiet-listening policy with headroom/bass restraint and dialog emphasis.
+    Night,
+    /// Speech-intelligibility policy with stronger dialog-band correction.
+    Speech,
+}
+
+/// Perceptual policy selector layered above the detailed optimizer settings.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct PerceptualPolicyConfig {
+    /// Preset to apply.
+    #[serde(default)]
+    pub preset: PerceptualPolicyPreset,
+    /// Fill policy-derived defaults into lower-level settings.
+    #[serde(default = "default_true")]
+    pub apply_defaults: bool,
+    /// Override explicit lower-level settings instead of only filling missing
+    /// optional fields and primitive values that are still at their defaults.
+    #[serde(default)]
+    pub override_existing: bool,
+}
+
+impl Default for PerceptualPolicyConfig {
+    fn default() -> Self {
+        Self {
+            preset: PerceptualPolicyPreset::Reference,
+            apply_defaults: true,
+            override_existing: false,
+        }
+    }
+}
+
+/// Audibility/JND deadband applied to spectral objective residuals after
+/// perceptual or octave smoothing.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct AudibilityDeadbandConfig {
+    /// Enable the deadband.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Bass threshold in dB.
+    #[serde(default = "default_deadband_bass_db")]
+    pub bass_db: f64,
+    /// Midrange threshold in dB.
+    #[serde(default = "default_deadband_mid_db")]
+    pub mid_db: f64,
+    /// Treble threshold in dB.
+    #[serde(default = "default_deadband_treble_db")]
+    pub treble_db: f64,
+    /// Bass/mid transition frequency.
+    #[serde(default = "default_deadband_bass_mid_hz")]
+    pub bass_mid_hz: f64,
+    /// Mid/treble transition frequency.
+    #[serde(default = "default_deadband_mid_treble_hz")]
+    pub mid_treble_hz: f64,
+    /// Do not apply the deadband below the resolved Schroeder/modal region.
+    #[serde(default = "default_true")]
+    pub disable_below_schroeder: bool,
+    /// Schroeder fallback used when no measured value is available.
+    #[serde(default = "default_decomposed_schroeder")]
+    pub schroeder_hz: f64,
+}
+
+fn default_deadband_bass_db() -> f64 {
+    0.25
+}
+fn default_deadband_mid_db() -> f64 {
+    0.75
+}
+fn default_deadband_treble_db() -> f64 {
+    1.0
+}
+fn default_deadband_bass_mid_hz() -> f64 {
+    250.0
+}
+fn default_deadband_mid_treble_hz() -> f64 {
+    2_000.0
+}
+
+impl Default for AudibilityDeadbandConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            bass_db: default_deadband_bass_db(),
+            mid_db: default_deadband_mid_db(),
+            treble_db: default_deadband_treble_db(),
+            bass_mid_hz: default_deadband_bass_mid_hz(),
+            mid_treble_hz: default_deadband_mid_treble_hz(),
+            disable_below_schroeder: true,
+            schroeder_hz: default_decomposed_schroeder(),
+        }
+    }
+}
+
+/// Safer high-frequency correction behavior when users opt above the
+/// conservative RoomEQ correction ceiling.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct HighFrequencyCorrectionConfig {
+    /// Enable the high-frequency safeguard.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Frequency above which the safeguard is considered active.
+    #[serde(default = "default_high_freq_guard_start_hz")]
+    pub start_hz: f64,
+    /// Minimum extra deadband added above `start_hz`.
+    #[serde(default = "default_high_freq_extra_deadband_db")]
+    pub extra_deadband_db: f64,
+    /// Stronger psychoacoustic smoothing resolution above the guard start,
+    /// expressed as 1/N octave. Lower N means broader smoothing.
+    #[serde(default = "default_high_freq_smoothing_n")]
+    pub smoothing_n: usize,
+    /// If the global Q bound is still at/above this value, cap it when the
+    /// policy is applied. Frequency-selective Q caps are not available in the
+    /// current PEQ parameterization, so this is intentionally conservative.
+    #[serde(default = "default_high_freq_guard_max_q")]
+    pub max_q: f64,
+}
+
+fn default_high_freq_guard_start_hz() -> f64 {
+    1_600.0
+}
+fn default_high_freq_extra_deadband_db() -> f64 {
+    0.75
+}
+fn default_high_freq_smoothing_n() -> usize {
+    3
+}
+fn default_high_freq_guard_max_q() -> f64 {
+    2.0
+}
+
+impl Default for HighFrequencyCorrectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            start_hz: default_high_freq_guard_start_hz(),
+            extra_deadband_db: default_high_freq_extra_deadband_db(),
+            smoothing_n: default_high_freq_smoothing_n(),
+            max_q: default_high_freq_guard_max_q(),
+        }
+    }
+}
+
+/// Direct/early/late impulse-response reporting windows for FIR and
+/// mixed-phase modes.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct EarlyLateCorrectionConfig {
+    /// Enable direct/early/late correction-energy reporting.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// End of the direct-sound window in milliseconds.
+    #[serde(default = "default_direct_window_ms")]
+    pub direct_window_ms: f64,
+    /// End of the direct-plus-early window in milliseconds.
+    #[serde(default = "default_early_window_ms")]
+    pub early_window_ms: f64,
+    /// End of the late-reflection summary window in milliseconds.
+    #[serde(default = "default_late_window_ms")]
+    pub late_window_ms: f64,
+    /// Advisory threshold for direct/early correction energy.
+    #[serde(default = "default_early_cue_risk_db")]
+    pub early_cue_risk_db: f64,
+}
+
+fn default_direct_window_ms() -> f64 {
+    5.0
+}
+fn default_early_window_ms() -> f64 {
+    30.0
+}
+fn default_late_window_ms() -> f64 {
+    120.0
+}
+fn default_early_cue_risk_db() -> f64 {
+    -18.0
+}
+
+impl Default for EarlyLateCorrectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            direct_window_ms: default_direct_window_ms(),
+            early_window_ms: default_early_window_ms(),
+            late_window_ms: default_late_window_ms(),
+            early_cue_risk_db: default_early_cue_risk_db(),
+        }
+    }
+}
+
+/// Validation/listening-test descriptor generation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct ValidationBundleConfig {
+    /// Generate a JSON validation bundle descriptor alongside RoomEQ output.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Include ABX descriptors for before/after listening checks.
+    #[serde(default = "default_true")]
+    pub abx: bool,
+    /// Include MUSHRA descriptors for multi-condition preference tests.
+    #[serde(default = "default_true")]
+    pub mushra: bool,
+    /// Include perceptual regression summaries and advisories.
+    #[serde(default = "default_true")]
+    pub perceptual_regression_summary: bool,
+    /// Loudness target for matched program-material assets.
+    #[serde(default = "default_validation_lufs")]
+    pub target_lufs: f64,
+}
+
+fn default_validation_lufs() -> f64 {
+    -23.0
+}
+
+impl Default for ValidationBundleConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            abx: true,
+            mushra: true,
+            perceptual_regression_summary: true,
+            target_lufs: default_validation_lufs(),
+        }
+    }
+}
+
+// ============================================================================
 // Configuration for Voice of God
 // ============================================================================
 
@@ -2309,12 +2566,34 @@ pub struct OptimizerConfig {
     /// Enable psychoacoustic preprocessing
     #[serde(default = "default_psychoacoustic")]
     pub psychoacoustic: bool,
+    /// Psychoacoustic variable-smoothing settings. `None` preserves the built-in default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub psychoacoustic_smoothing: Option<PsychoacousticSmoothingConfig>,
     /// Loss function smoothing resolution as 1/N octave
     #[serde(default = "default_smooth_n")]
     pub smooth_n: usize,
     /// Enable asymmetric loss (peaks penalized 2x more than dips)
     #[serde(default = "default_asymmetric_loss")]
     pub asymmetric_loss: bool,
+    /// Asymmetric loss weights. `None` preserves the built-in default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asymmetric_loss_config: Option<AsymmetricLossConfig>,
+    /// Product-level perceptual policy preset. When omitted, legacy optimizer
+    /// defaults are preserved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perceptual_policy: Option<PerceptualPolicyConfig>,
+    /// Audibility/JND deadband for spectral residual objectives.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audibility_deadband: Option<AudibilityDeadbandConfig>,
+    /// Safeguards for high-frequency correction above the conservative range.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub high_frequency_correction: Option<HighFrequencyCorrectionConfig>,
+    /// Direct/early/late correction-energy report settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub early_late_correction: Option<EarlyLateCorrectionConfig>,
+    /// Validation/listening-test descriptor generation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_bundle: Option<ValidationBundleConfig>,
     /// Optimization convergence tolerance (relative)
     #[serde(default = "default_tolerance")]
     pub tolerance: f64,
@@ -2493,8 +2772,15 @@ impl Default for OptimizerConfig {
             bo_acquisition: None,
             bo_ehvi: None,
             psychoacoustic: default_psychoacoustic(),
+            psychoacoustic_smoothing: None,
             smooth_n: default_smooth_n(),
             asymmetric_loss: default_asymmetric_loss(),
+            asymmetric_loss_config: None,
+            perceptual_policy: None,
+            audibility_deadband: None,
+            high_frequency_correction: None,
+            early_late_correction: None,
+            validation_bundle: None,
             tolerance: default_tolerance(),
             atolerance: default_atolerance(),
             allow_delay: None,
@@ -2525,6 +2811,150 @@ impl Default for OptimizerConfig {
 }
 
 impl OptimizerConfig {
+    /// Resolve psychoacoustic smoothing settings, falling back to the historical
+    /// 1/48 octave below 100 Hz through 1/6 octave above 1 kHz curve.
+    pub fn psychoacoustic_smoothing_config(&self) -> PsychoacousticSmoothingConfig {
+        self.psychoacoustic_smoothing.unwrap_or_default()
+    }
+
+    /// Resolve asymmetric loss weights, falling back to the historical peak/dip
+    /// weighting.
+    pub fn asymmetric_loss_config(&self) -> AsymmetricLossConfig {
+        self.asymmetric_loss_config.unwrap_or_default()
+    }
+
+    /// Resolve the active audibility deadband, including the extra treble
+    /// threshold requested by the high-frequency guard when correction extends
+    /// above its start frequency.
+    pub fn audibility_deadband_config(&self) -> Option<AudibilityDeadbandConfig> {
+        let mut cfg = self.audibility_deadband?;
+        if let Some(hf) = self.high_frequency_correction
+            && hf.enabled
+            && self.max_freq > hf.start_hz
+        {
+            cfg.treble_db = cfg.treble_db.max(cfg.mid_db + hf.extra_deadband_db);
+        }
+        cfg.enabled.then_some(cfg)
+    }
+
+    /// Resolve direct/early/late correction-report settings. Policies enable
+    /// this by default; absent config keeps legacy output compact.
+    pub fn early_late_correction_config(&self) -> Option<EarlyLateCorrectionConfig> {
+        self.early_late_correction.filter(|cfg| cfg.enabled)
+    }
+
+    /// Resolve validation bundle generation settings.
+    pub fn validation_bundle_config(&self) -> Option<ValidationBundleConfig> {
+        self.validation_bundle.filter(|cfg| cfg.enabled)
+    }
+
+    /// Apply product-level perceptual policy defaults to this optimizer config.
+    ///
+    /// The overlay fills optional lower-level knobs and primitive values that
+    /// are still at historical defaults. Explicit user overrides are preserved
+    /// unless `perceptual_policy.override_existing` is true.
+    pub fn apply_perceptual_policy_defaults(&mut self) {
+        let Some(policy) = self.perceptual_policy else {
+            return;
+        };
+        if !policy.apply_defaults {
+            return;
+        }
+
+        let preset = policy.preset;
+        let override_existing = policy.override_existing;
+        let smoothing_was_missing = self.psychoacoustic_smoothing.is_none();
+
+        if override_existing || self.loss_type == default_loss_type() {
+            self.loss_type = match preset {
+                PerceptualPolicyPreset::Reference => "flat",
+                PerceptualPolicyPreset::Music
+                | PerceptualPolicyPreset::Cinema
+                | PerceptualPolicyPreset::Night
+                | PerceptualPolicyPreset::Speech => "epa",
+            }
+            .to_string();
+        }
+
+        if override_existing || self.target_response.is_none() {
+            self.target_response = Some(policy_target_response(preset));
+        }
+        if override_existing || self.multi_measurement.is_none() {
+            self.multi_measurement = Some(policy_multi_measurement(preset));
+        }
+        if override_existing
+            || self
+                .decomposed_correction
+                .as_ref()
+                .map(decomposed_correction_is_default)
+                .unwrap_or(true)
+        {
+            self.decomposed_correction = Some(policy_decomposed_correction(preset));
+        }
+        if override_existing || self.psychoacoustic_smoothing.is_none() {
+            self.psychoacoustic_smoothing = Some(policy_psychoacoustic_smoothing(preset));
+        }
+        if override_existing || self.asymmetric_loss_config.is_none() {
+            self.asymmetric_loss_config = Some(policy_asymmetric_loss(preset));
+        }
+        if override_existing || self.smoothness_penalty.is_none() {
+            self.smoothness_penalty = Some(policy_smoothness_penalty(preset));
+        }
+        if override_existing || self.audibility_deadband.is_none() {
+            self.audibility_deadband = Some(policy_audibility_deadband(preset));
+        }
+        if override_existing || self.high_frequency_correction.is_none() {
+            self.high_frequency_correction = Some(policy_high_frequency_guard(preset));
+        }
+        if override_existing || self.early_late_correction.is_none() {
+            self.early_late_correction = Some(policy_early_late_correction(preset));
+        }
+        if override_existing || self.validation_bundle.is_none() {
+            self.validation_bundle = Some(ValidationBundleConfig::default());
+        }
+
+        if smoothing_was_missing {
+            self.apply_high_frequency_smoothing_guard();
+        }
+        self.apply_high_frequency_correction_defaults(override_existing);
+    }
+
+    /// Apply high-frequency guard defaults when correction extends above the
+    /// conservative RoomEQ range. Explicit Q/smoothing overrides are preserved
+    /// unless requested by the policy layer.
+    pub fn apply_high_frequency_correction_defaults(&mut self, override_existing: bool) {
+        let Some(hf) = self.high_frequency_correction else {
+            return;
+        };
+        if !hf.enabled || self.max_freq <= hf.start_hz {
+            return;
+        }
+
+        if (override_existing || (self.max_q - default_max_q()).abs() < 1e-9)
+            && self.max_q > hf.max_q
+        {
+            self.max_q = hf.max_q.max(self.min_q);
+        }
+
+        if override_existing || self.psychoacoustic_smoothing.is_none() {
+            self.apply_high_frequency_smoothing_guard();
+        }
+    }
+
+    fn apply_high_frequency_smoothing_guard(&mut self) {
+        let Some(hf) = self.high_frequency_correction else {
+            return;
+        };
+        if !hf.enabled || self.max_freq <= hf.start_hz {
+            return;
+        }
+
+        let mut smoothing = self.psychoacoustic_smoothing_config();
+        smoothing.high_freq_n = smoothing.high_freq_n.min(hf.smoothing_n.max(1));
+        smoothing.high_freq = smoothing.high_freq.min(hf.start_hz);
+        self.psychoacoustic_smoothing = Some(smoothing);
+    }
+
     /// Resolve the effective `allow_delay` value.
     ///
     /// Defaults to `true` whenever `processing_mode` introduces any non-zero
@@ -2563,6 +2993,282 @@ impl OptimizerConfig {
 
         self.max_db
     }
+}
+
+fn policy_target_response(preset: PerceptualPolicyPreset) -> TargetResponseConfig {
+    match preset {
+        PerceptualPolicyPreset::Reference => TargetResponseConfig {
+            shape: TargetShape::Flat,
+            broadband_precorrection: true,
+            role_targets: Some(RoleTargetConfig::default()),
+            ..Default::default()
+        },
+        PerceptualPolicyPreset::Music => TargetResponseConfig {
+            shape: TargetShape::Harman,
+            slope_db_per_octave: -0.8,
+            broadband_precorrection: true,
+            preference: UserPreference {
+                bass_shelf_db: 1.0,
+                treble_shelf_db: -0.5,
+                ..Default::default()
+            },
+            role_targets: Some(RoleTargetConfig::default()),
+            ..Default::default()
+        },
+        PerceptualPolicyPreset::Cinema => TargetResponseConfig {
+            shape: TargetShape::Custom,
+            slope_db_per_octave: -0.8,
+            broadband_precorrection: true,
+            preference: UserPreference {
+                bass_shelf_db: 0.5,
+                treble_shelf_db: -0.5,
+                ..Default::default()
+            },
+            role_targets: Some(RoleTargetConfig {
+                center_dialog_boost_db: 1.5,
+                cinema_x_curve_enabled: true,
+                cinema_x_curve_db_per_octave: -1.0,
+                distance_treble_rolloff_db_per_doubling: -0.7,
+                surround_treble_shelf_db: -0.75,
+                height_treble_shelf_db: -1.0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        PerceptualPolicyPreset::Night => TargetResponseConfig {
+            shape: TargetShape::Custom,
+            slope_db_per_octave: -0.5,
+            broadband_precorrection: true,
+            preference: UserPreference {
+                bass_shelf_db: -1.5,
+                treble_shelf_db: -0.75,
+                ..Default::default()
+            },
+            role_targets: Some(RoleTargetConfig {
+                center_dialog_boost_db: 2.0,
+                subwoofer_bass_shelf_db: -2.0,
+                lfe_bass_shelf_db: -2.0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        PerceptualPolicyPreset::Speech => TargetResponseConfig {
+            shape: TargetShape::Custom,
+            slope_db_per_octave: -0.3,
+            broadband_precorrection: true,
+            preference: UserPreference {
+                bass_shelf_db: -2.0,
+                treble_shelf_db: 0.5,
+                ..Default::default()
+            },
+            role_targets: Some(RoleTargetConfig {
+                center_dialog_boost_db: 3.0,
+                center_dialog_low_hz: 250.0,
+                center_dialog_high_hz: 5_000.0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    }
+}
+
+fn policy_multi_measurement(preset: PerceptualPolicyPreset) -> MultiMeasurementConfig {
+    MultiMeasurementConfig {
+        strategy: match preset {
+            PerceptualPolicyPreset::Reference | PerceptualPolicyPreset::Cinema => {
+                MultiMeasurementStrategy::MinimaxUncertainty
+            }
+            _ => MultiMeasurementStrategy::SpatialRobustness,
+        },
+        spatial_robustness: Some(SpatialRobustnessSerdeConfig {
+            variance_threshold_db: match preset {
+                PerceptualPolicyPreset::Speech => 4.0,
+                PerceptualPolicyPreset::Night => 2.5,
+                _ => 3.0,
+            },
+            transition_width_db: 2.0,
+            min_correction_depth: match preset {
+                PerceptualPolicyPreset::Reference | PerceptualPolicyPreset::Cinema => 0.0,
+                PerceptualPolicyPreset::Speech => 0.25,
+                _ => 0.1,
+            },
+            mask_smoothing_octaves: 1.0 / 6.0,
+        }),
+        bootstrap_uncertainty: Some(BootstrapUncertaintyConfig {
+            scalarisation: match preset {
+                PerceptualPolicyPreset::Music | PerceptualPolicyPreset::Speech => {
+                    BootstrapScalarisation::Cvar
+                }
+                _ => BootstrapScalarisation::WorstCase,
+            },
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+fn policy_decomposed_correction(preset: PerceptualPolicyPreset) -> DecomposedCorrectionSerdeConfig {
+    DecomposedCorrectionSerdeConfig {
+        early_reflection_weight: match preset {
+            PerceptualPolicyPreset::Reference => 0.1,
+            PerceptualPolicyPreset::Music | PerceptualPolicyPreset::Cinema => 0.2,
+            PerceptualPolicyPreset::Night => 0.15,
+            PerceptualPolicyPreset::Speech => 0.6,
+        },
+        steady_state_weight: match preset {
+            PerceptualPolicyPreset::Reference => 0.3,
+            PerceptualPolicyPreset::Speech => 0.55,
+            _ => 0.4,
+        },
+        mode_correction_weight: match preset {
+            PerceptualPolicyPreset::Night => 0.85,
+            _ => 1.0,
+        },
+        ..Default::default()
+    }
+}
+
+fn policy_psychoacoustic_smoothing(
+    preset: PerceptualPolicyPreset,
+) -> PsychoacousticSmoothingConfig {
+    match preset {
+        PerceptualPolicyPreset::Reference => PsychoacousticSmoothingConfig::default(),
+        PerceptualPolicyPreset::Music => PsychoacousticSmoothingConfig {
+            high_freq_n: 5,
+            ..Default::default()
+        },
+        PerceptualPolicyPreset::Cinema | PerceptualPolicyPreset::Night => {
+            PsychoacousticSmoothingConfig {
+                high_freq_n: 4,
+                high_freq: 900.0,
+                ..Default::default()
+            }
+        }
+        PerceptualPolicyPreset::Speech => PsychoacousticSmoothingConfig {
+            low_freq_n: 24,
+            high_freq_n: 6,
+            low_freq: 150.0,
+            high_freq: 1_200.0,
+        },
+    }
+}
+
+fn policy_asymmetric_loss(preset: PerceptualPolicyPreset) -> AsymmetricLossConfig {
+    match preset {
+        PerceptualPolicyPreset::Reference => AsymmetricLossConfig::default(),
+        PerceptualPolicyPreset::Music | PerceptualPolicyPreset::Cinema => AsymmetricLossConfig {
+            bass_peak_weight: 5.0,
+            bass_dip_weight: 0.2,
+            peak_weight: 2.0,
+            dip_weight: 0.5,
+            transition_freq: 200.0,
+        },
+        PerceptualPolicyPreset::Night => AsymmetricLossConfig {
+            bass_peak_weight: 6.0,
+            bass_dip_weight: 0.1,
+            peak_weight: 2.5,
+            dip_weight: 0.4,
+            transition_freq: 220.0,
+        },
+        PerceptualPolicyPreset::Speech => AsymmetricLossConfig {
+            bass_peak_weight: 3.0,
+            bass_dip_weight: 0.2,
+            peak_weight: 2.5,
+            dip_weight: 0.75,
+            transition_freq: 180.0,
+        },
+    }
+}
+
+fn policy_smoothness_penalty(preset: PerceptualPolicyPreset) -> SmoothnessPenaltyConfigSerde {
+    SmoothnessPenaltyConfigSerde {
+        tv2_weight: match preset {
+            PerceptualPolicyPreset::Reference => 0.001,
+            PerceptualPolicyPreset::Music => 0.0015,
+            PerceptualPolicyPreset::Cinema => 0.002,
+            PerceptualPolicyPreset::Night => 0.003,
+            PerceptualPolicyPreset::Speech => 0.001,
+        },
+        schroeder_hz: Some(default_decomposed_schroeder()),
+        modal_weight_scale: 0.1,
+        exponent: 1.0,
+    }
+}
+
+fn policy_audibility_deadband(preset: PerceptualPolicyPreset) -> AudibilityDeadbandConfig {
+    let mut cfg = AudibilityDeadbandConfig::default();
+    match preset {
+        PerceptualPolicyPreset::Reference => {}
+        PerceptualPolicyPreset::Music => {
+            cfg.mid_db = 0.65;
+            cfg.treble_db = 0.9;
+        }
+        PerceptualPolicyPreset::Cinema => {
+            cfg.mid_db = 0.75;
+            cfg.treble_db = 1.1;
+        }
+        PerceptualPolicyPreset::Night => {
+            cfg.bass_db = 0.5;
+            cfg.mid_db = 0.9;
+            cfg.treble_db = 1.25;
+        }
+        PerceptualPolicyPreset::Speech => {
+            cfg.bass_db = 0.75;
+            cfg.mid_db = 0.5;
+            cfg.treble_db = 0.75;
+            cfg.disable_below_schroeder = false;
+        }
+    }
+    cfg
+}
+
+fn policy_high_frequency_guard(preset: PerceptualPolicyPreset) -> HighFrequencyCorrectionConfig {
+    HighFrequencyCorrectionConfig {
+        extra_deadband_db: match preset {
+            PerceptualPolicyPreset::Reference => 0.75,
+            PerceptualPolicyPreset::Music => 0.6,
+            PerceptualPolicyPreset::Cinema | PerceptualPolicyPreset::Night => 0.9,
+            PerceptualPolicyPreset::Speech => 0.4,
+        },
+        smoothing_n: match preset {
+            PerceptualPolicyPreset::Speech => 5,
+            PerceptualPolicyPreset::Music => 4,
+            _ => 3,
+        },
+        max_q: match preset {
+            PerceptualPolicyPreset::Speech => 2.5,
+            _ => 2.0,
+        },
+        ..Default::default()
+    }
+}
+
+fn policy_early_late_correction(preset: PerceptualPolicyPreset) -> EarlyLateCorrectionConfig {
+    EarlyLateCorrectionConfig {
+        early_cue_risk_db: match preset {
+            PerceptualPolicyPreset::Reference => -22.0,
+            PerceptualPolicyPreset::Music | PerceptualPolicyPreset::Cinema => -18.0,
+            PerceptualPolicyPreset::Night => -20.0,
+            PerceptualPolicyPreset::Speech => -14.0,
+        },
+        ..Default::default()
+    }
+}
+
+fn decomposed_correction_is_default(config: &DecomposedCorrectionSerdeConfig) -> bool {
+    config.enabled
+        && (config.schroeder_freq - default_decomposed_schroeder()).abs() < 1e-9
+        && config.room_dimensions.is_none()
+        && (config.min_mode_q - default_decomposed_min_q()).abs() < 1e-9
+        && (config.min_mode_prominence_db - default_decomposed_prominence()).abs() < 1e-9
+        && (config.mode_correction_weight - default_decomposed_mode_weight()).abs() < 1e-9
+        && (config.early_reflection_weight - default_decomposed_reflection_weight()).abs() < 1e-9
+        && (config.steady_state_weight - default_decomposed_steady_weight()).abs() < 1e-9
+        && config.fdw_enabled
+        && (config.fdw_cycles - default_fdw_cycles()).abs() < 1e-9
+        && (config.fdw_min_window_ms - default_fdw_min_window_ms()).abs() < 1e-9
+        && (config.fdw_max_window_ms - default_fdw_max_window_ms()).abs() < 1e-9
+        && (config.fdw_smoothing_octaves - default_fdw_smoothing_octaves()).abs() < 1e-12
 }
 
 // ============================================================================
@@ -3074,6 +3780,129 @@ mod tests {
     fn test_optimizer_config_default_algorithm_is_cmaes() {
         let config = OptimizerConfig::default();
         assert_eq!(config.algorithm, "autoeq:cmaes");
+    }
+
+    #[test]
+    fn test_optimizer_config_resolves_new_acoustic_defaults() {
+        let config = OptimizerConfig::default();
+        assert_eq!(
+            config.psychoacoustic_smoothing_config(),
+            PsychoacousticSmoothingConfig::default()
+        );
+        assert_eq!(
+            config.asymmetric_loss_config(),
+            AsymmetricLossConfig::default()
+        );
+
+        let custom_smoothing = PsychoacousticSmoothingConfig {
+            low_freq_n: 24,
+            high_freq_n: 3,
+            low_freq: 80.0,
+            high_freq: 800.0,
+        };
+        let custom_asym = AsymmetricLossConfig {
+            peak_weight: 3.0,
+            dip_weight: 0.5,
+            bass_peak_weight: 6.0,
+            bass_dip_weight: 0.25,
+            transition_freq: 180.0,
+        };
+        let config = OptimizerConfig {
+            psychoacoustic_smoothing: Some(custom_smoothing),
+            asymmetric_loss_config: Some(custom_asym),
+            ..Default::default()
+        };
+        assert_eq!(config.psychoacoustic_smoothing_config(), custom_smoothing);
+        assert_eq!(config.asymmetric_loss_config(), custom_asym);
+    }
+
+    #[test]
+    fn perceptual_policy_preserves_legacy_defaults_when_absent() {
+        let mut config = OptimizerConfig::default();
+        config.apply_perceptual_policy_defaults();
+
+        assert!(config.perceptual_policy.is_none());
+        assert!(config.audibility_deadband.is_none());
+        assert!(config.high_frequency_correction.is_none());
+        assert!(config.early_late_correction.is_none());
+        assert!(config.validation_bundle.is_none());
+        assert_eq!(config.loss_type, "flat");
+        assert_eq!(config.max_freq, default_max_freq());
+    }
+
+    #[test]
+    fn music_policy_fills_perceptual_defaults() {
+        let mut config = OptimizerConfig {
+            perceptual_policy: Some(PerceptualPolicyConfig {
+                preset: PerceptualPolicyPreset::Music,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        config.apply_perceptual_policy_defaults();
+
+        assert_eq!(config.loss_type, "epa");
+        assert_eq!(
+            config.target_response.as_ref().unwrap().shape,
+            TargetShape::Harman
+        );
+        assert!(config.audibility_deadband_config().is_some());
+        assert!(config.high_frequency_correction.is_some());
+        assert!(config.early_late_correction_config().is_some());
+        assert!(config.validation_bundle_config().is_some());
+        assert_eq!(
+            config.multi_measurement.as_ref().unwrap().strategy,
+            MultiMeasurementStrategy::SpatialRobustness
+        );
+    }
+
+    #[test]
+    fn high_frequency_guard_caps_default_q_but_preserves_explicit_q() {
+        let mut default_q = OptimizerConfig {
+            max_freq: 8_000.0,
+            high_frequency_correction: Some(HighFrequencyCorrectionConfig::default()),
+            ..Default::default()
+        };
+        default_q.apply_high_frequency_correction_defaults(false);
+        assert_eq!(default_q.max_q, default_high_freq_guard_max_q());
+        assert_eq!(
+            default_q.psychoacoustic_smoothing.unwrap().high_freq_n,
+            default_high_freq_smoothing_n()
+        );
+
+        let mut explicit_q = OptimizerConfig {
+            max_freq: 8_000.0,
+            max_q: 4.5,
+            high_frequency_correction: Some(HighFrequencyCorrectionConfig::default()),
+            ..Default::default()
+        };
+        explicit_q.apply_high_frequency_correction_defaults(false);
+        assert_eq!(explicit_q.max_q, 4.5);
+
+        explicit_q.apply_high_frequency_correction_defaults(true);
+        assert_eq!(explicit_q.max_q, default_high_freq_guard_max_q());
+    }
+
+    #[test]
+    fn perceptual_policy_tightens_generated_high_frequency_smoothing() {
+        let mut config = OptimizerConfig {
+            max_freq: 8_000.0,
+            perceptual_policy: Some(PerceptualPolicyConfig {
+                preset: PerceptualPolicyPreset::Music,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        config.apply_perceptual_policy_defaults();
+
+        let smoothing = config.psychoacoustic_smoothing.unwrap();
+        assert_eq!(
+            smoothing.high_freq_n,
+            policy_high_frequency_guard(PerceptualPolicyPreset::Music).smoothing_n
+        );
+        assert!(smoothing.high_freq <= default_high_freq_guard_start_hz());
     }
 
     #[test]

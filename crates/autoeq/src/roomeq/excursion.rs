@@ -35,7 +35,7 @@ pub struct ExcursionProtectionResult {
     pub auto_detected: bool,
 }
 
-/// Detect F3 (-3dB point) from a frequency response curve
+/// Detect F3 (-3dB point) from a frequency response curve.
 ///
 /// # Algorithm
 /// 1. Smooth the measurement curve (1/3 octave)
@@ -49,16 +49,34 @@ pub struct ExcursionProtectionResult {
 /// # Returns
 /// * F3 detection result with frequency and method
 pub fn detect_f3(curve: &Curve, smoothing_octaves: Option<f64>) -> Result<F3DetectionResult> {
+    detect_f3_with_reference_band(curve, smoothing_octaves, 100.0, 200.0)
+}
+
+/// Detect F3 (-3dB point) using a configurable reference band.
+pub fn detect_f3_with_reference_band(
+    curve: &Curve,
+    smoothing_octaves: Option<f64>,
+    reference_min_hz: f64,
+    reference_max_hz: f64,
+) -> Result<F3DetectionResult> {
+    if reference_min_hz <= 0.0 || reference_max_hz <= reference_min_hz {
+        return Err(AutoeqError::InvalidConfiguration {
+            message: format!(
+                "Invalid F3 reference band: min={reference_min_hz:.1} Hz, max={reference_max_hz:.1} Hz"
+            ),
+        });
+    }
+
     let _smoothing = smoothing_octaves.unwrap_or(1.0 / 3.0);
 
     // Apply simple smoothing via moving average in log-frequency space
     let smoothed = smooth_curve_simple(curve, 5);
 
-    // Find reference level in 100-200 Hz range
+    // Find reference level in the configured band
     let mut ref_sum = 0.0;
     let mut ref_count = 0;
     for i in 0..smoothed.freq.len() {
-        if smoothed.freq[i] >= 100.0 && smoothed.freq[i] <= 200.0 {
+        if smoothed.freq[i] >= reference_min_hz && smoothed.freq[i] <= reference_max_hz {
             ref_sum += smoothed.spl[i];
             ref_count += 1;
         }
@@ -66,21 +84,24 @@ pub fn detect_f3(curve: &Curve, smoothing_octaves: Option<f64>) -> Result<F3Dete
 
     if ref_count == 0 {
         return Err(AutoeqError::InvalidMeasurement {
-            message: "No data points in 100-200 Hz range for F3 detection".to_string(),
+            message: format!(
+                "No data points in {:.1}-{:.1} Hz range for F3 detection",
+                reference_min_hz, reference_max_hz
+            ),
         });
     }
 
     let reference_level = ref_sum / ref_count as f64;
     let target_level = reference_level - 3.0;
 
-    // Search downward from 100 Hz for the -3dB point
+    // Search downward from the reference band for the -3dB point
     let mut f3_hz = 20.0; // Default to 20 Hz if not found
 
-    // Find the highest frequency below 100 Hz where level drops below target
+    // Find the highest frequency below the reference band where level drops below target
     for i in (0..smoothed.freq.len()).rev() {
         let f = smoothed.freq[i];
-        if f >= 100.0 {
-            continue; // Start search below 100 Hz
+        if f >= reference_min_hz {
+            continue;
         }
 
         if smoothed.spl[i] < target_level {
@@ -105,8 +126,29 @@ pub fn detect_f3(curve: &Curve, smoothing_octaves: Option<f64>) -> Result<F3Dete
     Ok(F3DetectionResult {
         f3_hz,
         reference_level_db: reference_level,
-        method: "smoothed_threshold".to_string(),
+        method: format!(
+            "smoothed_threshold_{:.0}_{:.0}hz",
+            reference_min_hz, reference_max_hz
+        ),
     })
+}
+
+/// Detect F3 using the reference band from excursion-protection config when present.
+pub fn detect_f3_with_config(
+    curve: &Curve,
+    smoothing_octaves: Option<f64>,
+    config: Option<&ExcursionProtectionConfig>,
+) -> Result<F3DetectionResult> {
+    if let Some(config) = config {
+        detect_f3_with_reference_band(
+            curve,
+            smoothing_octaves,
+            config.f3_reference_min_hz,
+            config.f3_reference_max_hz,
+        )
+    } else {
+        detect_f3(curve, smoothing_octaves)
+    }
 }
 
 /// Simple smoothing via moving average
@@ -149,10 +191,18 @@ pub fn generate_excursion_protection(
 ) -> Result<ExcursionProtectionResult> {
     // Determine F3
     let (f3_hz, auto_detected) = if config.auto_detect_f3 {
-        let detection = detect_f3(curve, None)?;
+        let detection = detect_f3_with_reference_band(
+            curve,
+            None,
+            config.f3_reference_min_hz,
+            config.f3_reference_max_hz,
+        )?;
         info!(
-            "  Auto-detected F3: {:.1} Hz (ref level: {:.1} dB)",
-            detection.f3_hz, detection.reference_level_db
+            "  Auto-detected F3: {:.1} Hz (ref {:.0}-{:.0} Hz level: {:.1} dB)",
+            detection.f3_hz,
+            config.f3_reference_min_hz,
+            config.f3_reference_max_hz,
+            detection.reference_level_db
         );
         (detection.f3_hz, true)
     } else {
@@ -295,6 +345,31 @@ mod tests {
     }
 
     #[test]
+    fn test_f3_detection_custom_reference_band() {
+        let freqs = vec![20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0];
+        let spl = vec![71.0, 76.5, 79.0, 80.0, 80.0, 80.0, 80.0, 80.0];
+        let curve = Curve {
+            freq: Array1::from(freqs),
+            spl: Array1::from(spl),
+            phase: None,
+            ..Default::default()
+        };
+
+        assert!(
+            detect_f3(&curve, None).is_err(),
+            "legacy 100-200 Hz reference should fail without data"
+        );
+
+        let result = detect_f3_with_reference_band(&curve, None, 40.0, 80.0)
+            .expect("custom lower reference band should detect F3");
+        assert!(
+            result.f3_hz > 20.0 && result.f3_hz < 35.0,
+            "expected lower-band F3 around 25-30 Hz, got {:.1} Hz",
+            result.f3_hz
+        );
+    }
+
+    #[test]
     fn test_excursion_protection_auto() {
         let curve = create_test_curve_with_rolloff();
         let config = ExcursionProtectionConfig {
@@ -304,6 +379,7 @@ mod tests {
             filter_order: 4,
             filter_type: HighpassType::LinkwitzRiley,
             margin_octaves: 0.25,
+            ..ExcursionProtectionConfig::default()
         };
 
         let result = generate_excursion_protection(&curve, &config, 48000.0)
@@ -318,6 +394,34 @@ mod tests {
     }
 
     #[test]
+    fn test_excursion_protection_custom_reference_band() {
+        let freqs = vec![20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0];
+        let spl = vec![71.0, 76.5, 79.0, 80.0, 80.0, 80.0, 80.0, 80.0];
+        let curve = Curve {
+            freq: Array1::from(freqs),
+            spl: Array1::from(spl),
+            phase: None,
+            ..Default::default()
+        };
+        let config = ExcursionProtectionConfig {
+            enabled: true,
+            f3_reference_min_hz: 40.0,
+            f3_reference_max_hz: 80.0,
+            ..ExcursionProtectionConfig::default()
+        };
+
+        let result = generate_excursion_protection(&curve, &config, 48000.0)
+            .expect("custom reference-band excursion protection should succeed");
+
+        assert!(result.auto_detected);
+        assert!(
+            result.f3_hz > 20.0 && result.f3_hz < 35.0,
+            "custom reference band should detect lower F3, got {:.1}",
+            result.f3_hz
+        );
+    }
+
+    #[test]
     fn test_excursion_protection_manual() {
         let curve = create_test_curve_with_rolloff();
         let config = ExcursionProtectionConfig {
@@ -327,6 +431,7 @@ mod tests {
             filter_order: 4,
             filter_type: HighpassType::LinkwitzRiley,
             margin_octaves: 0.25,
+            ..ExcursionProtectionConfig::default()
         };
 
         let result = generate_excursion_protection(&curve, &config, 48000.0)

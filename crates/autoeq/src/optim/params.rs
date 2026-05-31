@@ -36,6 +36,7 @@ pub struct OptimParams {
     pub min_spacing_oct: f64,
     pub spacing_weight: f64,
     pub smoothness_penalty: Option<SmoothnessPenaltyConfig>,
+    pub audibility_deadband: Option<crate::roomeq::AudibilityDeadbandConfig>,
 
     // -- Algorithm --
     pub algo: String,
@@ -120,6 +121,7 @@ impl From<&Args> for OptimParams {
             } else {
                 None
             },
+            audibility_deadband: None,
             algo: args.algo.clone(),
             population: args.population,
             maxeval: args.maxeval,
@@ -185,6 +187,7 @@ impl From<&crate::roomeq::OptimizerConfig> for OptimParams {
             min_spacing_oct: 0.2,
             spacing_weight: 20.0,
             smoothness_penalty: resolve_smoothness_penalty_config(config),
+            audibility_deadband: config.audibility_deadband_config(),
             algo: config.algorithm.clone(),
             population: config.population,
             maxeval: config.max_iter,

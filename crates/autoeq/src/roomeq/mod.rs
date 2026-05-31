@@ -175,7 +175,8 @@ pub mod target_tilt;
 pub use listening_area::{ListeningArea, ListeningAreaInterpolatorConfig};
 
 pub use excursion::{
-    ExcursionProtectionResult, F3DetectionResult, detect_f3, generate_excursion_protection,
+    ExcursionProtectionResult, F3DetectionResult, detect_f3, detect_f3_with_config,
+    detect_f3_with_reference_band, generate_excursion_protection,
 };
 pub use home_cinema::{
     BassBusHeadroomSimulationReport, BassBusOutputHeadroomReport, BassManagementGroupReport,

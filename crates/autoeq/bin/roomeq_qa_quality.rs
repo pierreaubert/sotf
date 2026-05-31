@@ -950,6 +950,8 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
                 enabled: true,
                 auto_detect_f3: true,
                 manual_f3_hz: None,
+                f3_reference_min_hz: 100.0,
+                f3_reference_max_hz: 200.0,
                 filter_order: 4,
                 filter_type: Default::default(),
                 margin_octaves: 0.25,
@@ -4097,6 +4099,7 @@ mod tests {
             pre_ir: None,
             post_ir: None,
             fir_temporal_masking: None,
+            direct_early_late_correction: None,
         }
     }
 
@@ -4146,6 +4149,9 @@ mod tests {
                 bass_management: None,
                 timing_diagnostics: None,
                 ctc: None,
+                perceptual_policy: None,
+                bootstrap_uncertainty: None,
+                validation_bundle: None,
             },
         }
     }

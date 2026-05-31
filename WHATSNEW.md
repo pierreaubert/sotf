@@ -32,6 +32,10 @@ Windows App Store
   surfaced in the Step-3 configuration screen
 - Linear-phase crossover taps now editable per channel (inline FIR-taps +
   latency readout under the crossover dropdown)
+- Added RoomEQ perceptual policy presets for reference, music, cinema, night,
+  and speech use cases, including JND deadbands, high-frequency guardrails,
+  early-cue/FIR advisories, bootstrap uncertainty masks, CTC cue diagnostics,
+  and validation bundle descriptors.
 
 ### Audio Plugins
 
@@ -82,4 +86,3 @@ Windows App Store
 # 0.6.0
 
 Features freeze
-

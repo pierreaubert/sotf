@@ -2,6 +2,16 @@
 
 ## New features
 
+- Added RoomEQ perceptual policy presets (`reference`, `music`, `cinema`,
+  `night`, `speech`) that fill coherent defaults across target response,
+  psychoacoustic smoothing, EPA/asymmetric loss, spatial/bootstrap robustness,
+  early-cue reporting, and validation bundle descriptors while preserving
+  legacy behavior when no policy is selected.
+- Added audibility/JND residual deadbands, safer high-frequency correction
+  guardrails, direct/early/late FIR correction-energy advisories, bootstrap
+  uncertainty depth-mask integration, CTC binaural cue diagnostics, and
+  `roomeq_validation_bundle.json` descriptor generation for ABX/MUSHRA and
+  perceptual regression checks.
 - RoomEQ crossovers now accept `LinearPhase`/`FIR`/`LPFIR` crossover types.
   Bass-management prediction, route summing, headroom checks, multi-driver
   combined-response modeling, and exported DSP chains now use complementary

@@ -20,6 +20,8 @@
 
 use super::enhanced_weights::{FrequencyBandWeights, combined_weighted_loss};
 use ndarray::Array1;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// ERB share of the asymmetric loss blend, matching `flat_loss`.
 const ASYMMETRIC_ERB_WEIGHT: f64 = 0.7;
@@ -34,7 +36,7 @@ const ASYMMETRIC_BAND_WEIGHT: f64 = 0.3;
 /// weighting is smooth. Narrow-null suppression is a separate mask passed
 /// to the loss function at call time (see
 /// [`crate::roomeq::impulse_analysis::build_null_suppression_mask`]).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct AsymmetricLossConfig {
     /// Weight for positive errors (peaks above `transition_freq`). Default: 2.0
     pub peak_weight: f64,
@@ -262,6 +264,33 @@ mod tests {
         assert!(
             loss_peak > loss_dip,
             "bass peak must be penalized more than bass dip (peak={loss_peak}, dip={loss_dip})"
+        );
+    }
+
+    #[test]
+    fn custom_asymmetric_weights_override_defaults() {
+        let freqs = Array1::from_vec(vec![80.0, 1000.0]);
+        let error = Array1::from_vec(vec![4.0, -4.0]);
+        let default_loss = weighted_mse_asymmetric(
+            &freqs,
+            &error,
+            20.0,
+            20000.0,
+            &AsymmetricLossConfig::default(),
+            None,
+        );
+        let custom = AsymmetricLossConfig {
+            peak_weight: 8.0,
+            dip_weight: 0.25,
+            bass_peak_weight: 8.0,
+            bass_dip_weight: 0.25,
+            transition_freq: 300.0,
+        };
+        let custom_loss = weighted_mse_asymmetric(&freqs, &error, 20.0, 20000.0, &custom, None);
+
+        assert!(
+            custom_loss > default_loss,
+            "larger custom peak weights should affect loss ({custom_loss} vs {default_loss})"
         );
     }
 

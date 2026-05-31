@@ -783,6 +783,11 @@ fn optimizer_progress_iterations(config: &RoomConfig) -> usize {
 fn prepare_room_config(config: &RoomConfig) -> RoomConfig {
     let mut config = config.clone();
 
+    config.optimizer.apply_perceptual_policy_defaults();
+    config
+        .optimizer
+        .apply_high_frequency_correction_defaults(false);
+
     // Resolve `TargetShape::FromMeasurement` slope once, system-wide,
     // from a full-range reference channel — see
     // `resolve_from_measurement_slope` for the picking rules. Lifting
@@ -2145,7 +2150,11 @@ fn optimize_room_impl(
                         .with_overall_progress(0.99),
                 )?;
                 if workflow_refresh_needed {
+                    log::debug!("Refreshing reports after workflow DSP mutations");
                     refresh_final_reports(&mut result, config, sample_rate);
+                } else {
+                    refresh_direct_early_late_reports(&mut result, config);
+                    refresh_perceptual_policy_reports(&mut result, config);
                 }
                 update_perceptual_metrics(
                     &mut result.metadata,
@@ -2153,6 +2162,7 @@ fn optimize_room_impl(
                     Some(config),
                 );
                 apply_ctc_if_enabled(&mut result, config, sample_rate, output_dir)?;
+                generate_validation_bundle_report(&mut result, config, output_dir)?;
                 emit_pipeline_event(
                     &observer_shared,
                     PipelineEvent::completed(PipelineStepId::MetadataRefresh, "Reports refreshed")
@@ -2965,6 +2975,9 @@ fn optimize_room_impl(
         bass_management: None,
         timing_diagnostics: build_timing_diagnostics(config, &channel_arrivals, &channel_chains),
         ctc: None,
+        perceptual_policy: None,
+        bootstrap_uncertainty: None,
+        validation_bundle: None,
     };
 
     let mut result = RoomOptimizationResult {
@@ -3016,6 +3029,7 @@ fn optimize_room_impl(
     )?;
     refresh_final_reports(&mut result, config, sample_rate);
     apply_ctc_if_enabled(&mut result, config, sample_rate, output_dir)?;
+    generate_validation_bundle_report(&mut result, config, output_dir)?;
     emit_pipeline_event(
         &observer_shared,
         PipelineEvent::completed(PipelineStepId::MetadataRefresh, "Reports refreshed"),

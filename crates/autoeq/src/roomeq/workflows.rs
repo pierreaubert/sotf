@@ -346,6 +346,7 @@ fn run_channel_via_generic_path(
         pre_ir: raw_chain.pre_ir,
         post_ir: raw_chain.post_ir,
         fir_temporal_masking: raw_chain.fir_temporal_masking,
+        direct_early_late_correction: raw_chain.direct_early_late_correction,
         target_curve: raw_chain.target_curve,
     };
 
@@ -776,6 +777,9 @@ pub(super) fn optimize_stereo_2_0_with_progress(
             bass_management: None,
             timing_diagnostics: None,
             ctc: None,
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         },
     })
 }
@@ -1456,6 +1460,7 @@ pub(super) fn optimize_stereo_2_1_with_progress(
             pre_ir: None,
             post_ir: None,
             fir_temporal_masking: None,
+            direct_early_late_correction: None,
             target_curve: None,
         };
         channel_chains.insert(role.to_string(), chain);
@@ -1551,6 +1556,7 @@ pub(super) fn optimize_stereo_2_1_with_progress(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
         target_curve: None,
     };
     channel_chains.insert(sub_role.clone(), sub_chain);
@@ -1664,6 +1670,9 @@ pub(super) fn optimize_stereo_2_1_with_progress(
                 ),
             timing_diagnostics: None,
             ctc: None,
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         },
     })
 }
@@ -1916,6 +1925,9 @@ fn optimize_home_cinema_no_sub(
             bass_management: None,
             timing_diagnostics: None,
             ctc: None,
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         },
     })
 }
@@ -2737,6 +2749,7 @@ fn optimize_home_cinema_with_sub(
             pre_ir: None,
             post_ir: None,
             fir_temporal_masking: None,
+            direct_early_late_correction: None,
             target_curve: None,
         };
         channel_chains.insert(role.clone(), chain);
@@ -2871,6 +2884,7 @@ fn optimize_home_cinema_with_sub(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
         target_curve: None,
     };
     channel_chains.insert(sub_role.clone(), sub_chain);
@@ -2995,6 +3009,9 @@ fn optimize_home_cinema_with_sub(
                 ),
             timing_diagnostics: None,
             ctc: None,
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         },
     })
 }

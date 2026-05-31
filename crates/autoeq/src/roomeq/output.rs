@@ -424,6 +424,7 @@ pub fn build_channel_dsp_chain_with_curves(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
         target_curve: None,
     }
 }
@@ -613,6 +614,7 @@ pub fn build_multidriver_dsp_chain_with_curves(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
         target_curve: None,
     }
 }
@@ -809,6 +811,7 @@ pub fn build_multisub_dsp_chain_advanced(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
         target_curve: None,
     }
 }
@@ -892,6 +895,7 @@ pub fn build_dba_dsp_chain_with_curves(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
         target_curve: None,
     }
 }
@@ -966,6 +970,7 @@ pub fn build_cardioid_dsp_chain_with_curves(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
         target_curve: None,
     }
 }
@@ -1168,6 +1173,7 @@ pub fn build_mixed_mode_crossover_chain(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
         target_curve: None,
     }
 }
@@ -1504,6 +1510,7 @@ mod tests {
             pre_ir: None,
             post_ir: None,
             fir_temporal_masking: None,
+            direct_early_late_correction: None,
             target_curve: None,
         };
 
@@ -1541,6 +1548,9 @@ mod tests {
             bass_management: None,
             timing_diagnostics: None,
             ctc: None,
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         };
 
         let output = create_dsp_chain_output(channels, Some(metadata));
@@ -1604,7 +1614,11 @@ mod tests {
                     worst_crosstalk_db: -18.0,
                     mean_channel_balance_db: 0.5,
                 }),
+                binaural_diagnostics: None,
             }),
+            perceptual_policy: None,
+            bootstrap_uncertainty: None,
+            validation_bundle: None,
         };
 
         let output = create_dsp_chain_output(channels, Some(metadata));

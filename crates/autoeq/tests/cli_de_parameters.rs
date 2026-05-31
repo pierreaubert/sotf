@@ -51,7 +51,9 @@ fn create_test_objective_data() -> autoeq::optim::ObjectiveData {
         temporal_masking_modes: Vec::new(),
         detected_problems: Vec::new(),
         null_suppression: None,
+        asymmetric_loss_config: autoeq::loss::AsymmetricLossConfig::default(),
         smoothness_penalty: None,
+        audibility_deadband: None,
     }
 }
 

@@ -235,13 +235,21 @@ pub fn optimize_multisub_with_allpass(
 
     x = opt_result.x;
     let post_obj = opt_result.fun;
+    let converged = multisub_allpass_converged(opt_result.success);
 
     info!(
-        "Multi-sub all-pass optimization: pre={:.4}, post={:.4}, improvement={:.2} dB",
+        "Multi-sub all-pass optimization: pre={:.4}, post={:.4}, improvement={:.2} dB, converged={}",
         pre_obj,
         post_obj,
-        pre_obj - post_obj
+        pre_obj - post_obj,
+        converged
     );
+    if !converged {
+        warn!(
+            "Multi-sub all-pass optimizer did not report convergence ({}): {}",
+            opt_result.algorithm, opt_result.message
+        );
+    }
 
     // Extract results
     let gains = x[0..n_drivers].to_vec();
@@ -280,11 +288,15 @@ pub fn optimize_multisub_with_allpass(
             crossover_freqs: vec![],
             pre_objective: pre_obj,
             post_objective: post_obj,
-            converged: true,
+            converged,
         },
         allpass_filters,
         combined_curve,
     })
+}
+
+fn multisub_allpass_converged(scalar_success: bool) -> bool {
+    scalar_success
 }
 
 fn allpass_frequency_bounds(config: &OptimizerConfig) -> Result<(f64, f64), Box<dyn Error>> {
@@ -485,6 +497,15 @@ mod tests {
         assert!(
             err.to_string().contains("non-zero"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_multisub_allpass_convergence_tracks_scalar_result() {
+        assert!(multisub_allpass_converged(true));
+        assert!(
+            !multisub_allpass_converged(false),
+            "all-pass convergence must not be hard-coded true"
         );
     }
 

@@ -68,7 +68,9 @@ mod tests {
             temporal_masking_modes: Vec::new(),
             detected_problems: Vec::new(),
             null_suppression: None,
+            asymmetric_loss_config: autoeq::loss::AsymmetricLossConfig::default(),
             smoothness_penalty: None,
+            audibility_deadband: None,
         };
 
         let opt_params = vec![500.0, 2.0, -2.0]; // Example PEQ params
