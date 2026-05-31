@@ -1,11 +1,18 @@
 //! FFI module for iOS — C-compatible functions called from Objective-C app delegate.
 
-use gpui::{App, AppContext, RequestFrameOptions, WindowOptions};
+use gpui::{App, AppCell, AppContext, RequestFrameOptions, WindowOptions};
+use std::backtrace::Backtrace;
 use std::ffi::c_void;
+use std::panic::{self, AssertUnwindSafe};
 use std::rc::Rc;
-use std::sync::OnceLock;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Once, OnceLock,
+};
 
 static IOS_APP_STATE: OnceLock<IosAppState> = OnceLock::new();
+static REQUEST_FRAME_DISABLED: AtomicBool = AtomicBool::new(false);
+static IOS_PANIC_HOOK: Once = Once::new();
 
 struct IosAppState {
     finish_launching: std::cell::UnsafeCell<Option<Box<dyn FnOnce()>>>,
@@ -24,6 +31,7 @@ pub(crate) static IOS_WINDOW_LIST: OnceLock<WindowListWrapper> = OnceLock::new()
 
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_initialize() -> *mut c_void {
+    install_ios_panic_hook();
     log::info!("GPUI iOS: Initializing");
     let state = IosAppState {
         finish_launching: std::cell::UnsafeCell::new(None),
@@ -169,21 +177,57 @@ pub extern "C" fn gpui_ios_handle_touch(
     );
 }
 
+#[inline(never)]
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_request_frame(window_ptr: *mut c_void) {
-    if window_ptr.is_null() {
+    if window_ptr.is_null() || REQUEST_FRAME_DISABLED.load(Ordering::Relaxed) {
         return;
     }
     let window = unsafe { &*(window_ptr as *const super::window::IosWindow) };
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        request_frame_for_window(window);
+    }));
+
+    if let Err(payload) = result {
+        REQUEST_FRAME_DISABLED.store(true, Ordering::Relaxed);
+        log::error!(
+            "GPUI iOS: request frame panicked; disabling display-link frame requests: {}",
+            panic_payload_message(payload.as_ref())
+        );
+    }
+}
+
+#[inline(never)]
+fn request_frame_for_window(window: &super::window::IosWindow) {
     window.pump_momentum();
-    let text_dirty = crate::TEXT_INPUT_DIRTY.swap(false, std::sync::atomic::Ordering::AcqRel);
+    let text_dirty = crate::TEXT_INPUT_DIRTY.swap(false, Ordering::AcqRel);
     let callback = window.request_frame_callback.borrow_mut().take();
     if let Some(mut cb) = callback {
-        cb(RequestFrameOptions {
-            force_render: text_dirty,
-            ..Default::default()
-        });
-        window.request_frame_callback.borrow_mut().replace(cb);
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            cb(RequestFrameOptions {
+                force_render: text_dirty,
+                ..Default::default()
+            });
+        }));
+        let mut slot = window.request_frame_callback.borrow_mut();
+        if slot.is_none() {
+            *slot = Some(cb);
+        }
+        drop(slot);
+        if let Err(payload) = result {
+            panic::resume_unwind(payload);
+        }
+    }
+}
+
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        message
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.as_str()
+    } else {
+        "<non-string panic payload>"
     }
 }
 
@@ -274,7 +318,41 @@ pub extern "C" fn gpui_ios_run_demo() {
     run_app();
 }
 
+fn retain_application_for_process_lifetime(app: &gpui::Application) {
+    // SAFETY: `gpui::Application` is a private single-field tuple struct
+    // containing `Rc<AppCell>` in the pinned GPUI revision. iOS does not let
+    // `Platform::run` block forever like desktop platforms do, so `run_app`
+    // would otherwise drop the application after the launch callback returns.
+    // Clone the hidden Rc and intentionally leak it so GPUI's AppCell, windows,
+    // and frame callbacks live for the process lifetime.
+    debug_assert_eq!(
+        std::mem::size_of::<gpui::Application>(),
+        std::mem::size_of::<Rc<AppCell>>(),
+        "Application layout changed -- iOS AppCell clone assumption broken"
+    );
+    let retained: Rc<AppCell> = unsafe {
+        let app_cell: &Rc<AppCell> = std::mem::transmute(app);
+        Rc::clone(app_cell)
+    };
+    std::mem::forget(retained);
+    log::info!("GPUI iOS: Retained application for process lifetime");
+}
+
+fn install_ios_panic_hook() {
+    IOS_PANIC_HOOK.call_once(|| {
+        let previous_hook = panic::take_hook();
+        panic::set_hook(Box::new(move |info| {
+            log::error!(
+                "GPUI iOS: Rust panic: {info}\n{}",
+                Backtrace::force_capture()
+            );
+            previous_hook(info);
+        }));
+    });
+}
+
 pub fn run_app() {
+    install_ios_panic_hook();
     log::info!("GPUI iOS: Starting application");
     if IOS_APP_STATE.get().is_none() {
         let state = IosAppState {
@@ -291,6 +369,7 @@ pub fn run_app() {
     } else {
         app
     };
+    retain_application_for_process_lifetime(&app);
     app.run(|cx: &mut App| {
         if let Some(cb) = take_app_callback() {
             cb(cx);
@@ -324,7 +403,7 @@ mod tests {
     fn test_register_and_unregister_window() {
         let _ = IOS_WINDOW_LIST.set(WindowListWrapper(std::cell::UnsafeCell::new(Vec::new())));
 
-        let dummy: *const super::window::IosWindow = 0x1234 as *const _;
+        let dummy: *const crate::ios::window::IosWindow = 0x1234 as *const _;
         register_window(dummy);
         assert_eq!(unsafe { &*IOS_WINDOW_LIST.get().unwrap().0.get() }.len(), 1);
 

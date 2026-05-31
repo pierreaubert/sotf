@@ -9,8 +9,8 @@
 
 set -euo pipefail
 
-# Navigate to the workspace root (4 levels up from ios/)
-WORKSPACE_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
+# Navigate to the workspace root (3 levels up from ios/)
+WORKSPACE_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 IOS_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== Building SotF iOS static library ==="
