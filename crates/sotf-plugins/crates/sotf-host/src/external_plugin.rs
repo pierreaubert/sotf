@@ -13,12 +13,14 @@
 // The actual format-specific hosting (CLAP via clack-host, VST3 via vst3-sys,
 // AU via coreaudio-rs) is behind feature flags and can be implemented incrementally.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::error::PluginError;
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use crate::serialization::{PluginPreset, SerializablePlugin};
 
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -64,10 +66,81 @@ impl PluginFormat {
             PluginFormat::AudioUnit => "component",
         }
     }
+
+    /// Scanner status implied by the current build's native hosting features.
+    pub fn build_scan_status(self) -> PluginScanStatus {
+        match self {
+            PluginFormat::Clap if cfg!(feature = "external-plugin-clap") => {
+                PluginScanStatus::Loadable
+            }
+            PluginFormat::Vst3 if cfg!(feature = "external-plugin-vst3") => {
+                PluginScanStatus::Loadable
+            }
+            PluginFormat::AudioUnit if cfg!(feature = "external-plugin-au") => {
+                PluginScanStatus::Loadable
+            }
+            _ => PluginScanStatus::UnsupportedByBuild,
+        }
+    }
+}
+
+/// Scanner status for a discovered external plugin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum PluginScanStatus {
+    /// The plugin was found on disk, but loadability has not been evaluated.
+    #[default]
+    Discovered,
+    /// The plugin format has a native backend in this build.
+    Loadable,
+    /// The plugin format is recognized, but this build lacks the native loader feature.
+    UnsupportedByBuild,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginScanSummary {
+    pub total: usize,
+    pub discovered: usize,
+    pub loadable: usize,
+    pub unsupported_by_build: usize,
+}
+
+impl PluginScanSummary {
+    pub fn record(&mut self, status: PluginScanStatus) {
+        self.total += 1;
+        match status {
+            PluginScanStatus::Discovered => self.discovered += 1,
+            PluginScanStatus::Loadable => self.loadable += 1,
+            PluginScanStatus::UnsupportedByBuild => self.unsupported_by_build += 1,
+        }
+    }
+}
+
+pub const EXTERNAL_PLUGIN_PRESET_ID: &str = "external-plugin";
+
+/// Build-time hosting capability for one external plugin format.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginFormatCapability {
+    pub format: PluginFormat,
+    pub feature: String,
+    pub scan_status: PluginScanStatus,
+    pub backend: ExternalHostingBackend,
+    pub native_backend_available: bool,
+    pub reason: Option<String>,
+}
+
+/// How the scanner should annotate discovered plugins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PluginScanStatusMode {
+    /// Preserve raw discovery status; callers can probe/build-annotate later.
+    DiscoveryOnly,
+    /// Mark each result according to this build's native hosting capability.
+    #[default]
+    BuildCapability,
 }
 
 /// Metadata about a discovered external plugin.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginDescriptor {
     /// Unique plugin identifier (format-specific)
     pub id: String,
@@ -89,6 +162,70 @@ pub struct PluginDescriptor {
     pub is_instrument: bool,
     /// Plugin categories/tags
     pub categories: Vec<String>,
+    /// Discovery/loadability status from the scanner or descriptor source.
+    #[serde(default)]
+    pub scan_status: PluginScanStatus,
+}
+
+/// Stable placeholder schema for saving/restoring external plugin state.
+///
+/// Native CLAP/VST3/AU loaders can later fill `opaque_state` with the format's
+/// binary state blob. Until then, descriptor and sandbox metadata still round-trip
+/// through presets/projects without pretending the native state was loaded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalPluginState {
+    pub schema_version: u32,
+    pub descriptor: PluginDescriptor,
+    pub format: PluginFormat,
+    pub plugin_id: String,
+    pub plugin_path: PathBuf,
+    pub sandbox_mode: ExternalPluginSandboxMode,
+    pub opaque_state: Vec<u8>,
+}
+
+impl ExternalPluginState {
+    pub const SCHEMA_VERSION: u32 = 1;
+
+    pub fn new(
+        descriptor: PluginDescriptor,
+        sandbox_mode: ExternalPluginSandboxMode,
+        opaque_state: Vec<u8>,
+    ) -> Self {
+        Self {
+            schema_version: Self::SCHEMA_VERSION,
+            format: descriptor.format,
+            plugin_id: descriptor.id.clone(),
+            plugin_path: descriptor.path.clone(),
+            descriptor,
+            sandbox_mode,
+            opaque_state,
+        }
+    }
+
+    pub fn validate_descriptor_consistency(&self) -> Result<(), String> {
+        if self.schema_version != Self::SCHEMA_VERSION {
+            return Err(format!(
+                "Unsupported external plugin state schema version {}",
+                self.schema_version
+            ));
+        }
+        if self.format != self.descriptor.format
+            || self.plugin_id != self.descriptor.id
+            || self.plugin_path != self.descriptor.path
+        {
+            return Err("External plugin state descriptor fields are inconsistent".to_string());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalPluginSandboxMode {
+    #[default]
+    InProcess,
+    Isolated,
+    Disabled,
 }
 
 /// Discovers installed plugins on the system.
@@ -96,6 +233,7 @@ pub struct PluginScanner {
     /// Discovered plugins
     pub plugins: Vec<PluginDescriptor>,
     seen_paths: HashSet<PathBuf>,
+    scan_status_mode: PluginScanStatusMode,
 }
 
 impl PluginScanner {
@@ -103,7 +241,24 @@ impl PluginScanner {
         Self {
             plugins: Vec::new(),
             seen_paths: HashSet::new(),
+            scan_status_mode: PluginScanStatusMode::default(),
         }
+    }
+
+    pub fn with_scan_status_mode(scan_status_mode: PluginScanStatusMode) -> Self {
+        Self {
+            plugins: Vec::new(),
+            seen_paths: HashSet::new(),
+            scan_status_mode,
+        }
+    }
+
+    pub fn set_scan_status_mode(&mut self, scan_status_mode: PluginScanStatusMode) {
+        self.scan_status_mode = scan_status_mode;
+    }
+
+    pub fn scan_status_mode(&self) -> PluginScanStatusMode {
+        self.scan_status_mode
     }
 
     /// Scan standard plugin directories for all supported formats.
@@ -277,7 +432,15 @@ impl PluginScanner {
             audio_outputs: 2,
             is_instrument: false,
             categories: Vec::new(),
+            scan_status: self.scan_status_for_format(format),
         });
+    }
+
+    fn scan_status_for_format(&self, format: PluginFormat) -> PluginScanStatus {
+        match self.scan_status_mode {
+            PluginScanStatusMode::DiscoveryOnly => PluginScanStatus::Discovered,
+            PluginScanStatusMode::BuildCapability => format.build_scan_status(),
+        }
     }
 
     fn detect_format(&self, path: &Path) -> PluginFormat {
@@ -300,6 +463,51 @@ impl PluginScanner {
     /// List all discovered plugins.
     pub fn list(&self) -> &[PluginDescriptor] {
         &self.plugins
+    }
+
+    pub fn summary(&self) -> PluginScanSummary {
+        let mut summary = PluginScanSummary::default();
+        for plugin in &self.plugins {
+            summary.record(plugin.scan_status);
+        }
+        summary
+    }
+}
+
+/// Build-time format hosting capability matrix.
+pub fn plugin_format_capabilities() -> Vec<PluginFormatCapability> {
+    [
+        PluginFormat::Clap,
+        PluginFormat::Vst3,
+        PluginFormat::AudioUnit,
+    ]
+    .into_iter()
+    .map(plugin_format_capability)
+    .collect()
+}
+
+fn plugin_format_capability(format: PluginFormat) -> PluginFormatCapability {
+    let feature = format_feature(format).to_string();
+    let scan_status = format.build_scan_status();
+    let backend = select_hosting_backend(format);
+    let native_backend_available = backend != ExternalHostingBackend::Passthrough;
+    let reason = if native_backend_available {
+        None
+    } else {
+        Some(format!(
+            "{} native hosting feature '{}' is disabled; discovered plugins will be reported as unsupported-by-build",
+            format_label(format),
+            feature
+        ))
+    };
+
+    PluginFormatCapability {
+        format,
+        feature,
+        scan_status,
+        backend,
+        native_backend_available,
+        reason,
     }
 }
 
@@ -347,12 +555,50 @@ impl PluginDescriptor {
 ///
 /// Until a native backend is enabled, the plugin runs in deterministic
 /// passthrough mode so graph behavior remains stable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ExternalHostingBackend {
     Passthrough,
     Clap,
     Vst3,
     AudioUnit,
+}
+
+/// Host-side plan for loading an external plugin descriptor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalPluginHostingPlan {
+    pub format: PluginFormat,
+    pub feature: String,
+    pub scan_status: PluginScanStatus,
+    pub backend: ExternalHostingBackend,
+    pub native_backend_available: bool,
+    pub reason: Option<String>,
+}
+
+pub fn plan_external_plugin_hosting(descriptor: &PluginDescriptor) -> ExternalPluginHostingPlan {
+    let backend = select_hosting_backend(descriptor.format);
+    let feature = format_feature(descriptor.format).to_string();
+    let native_backend_available = backend != ExternalHostingBackend::Passthrough;
+    let scan_status = descriptor.format.build_scan_status();
+    let reason = if native_backend_available {
+        None
+    } else {
+        Some(format!(
+            "{} native hosting feature '{}' is disabled; '{}' will run as deterministic passthrough",
+            format_label(descriptor.format),
+            feature,
+            descriptor.name
+        ))
+    };
+
+    ExternalPluginHostingPlan {
+        format: descriptor.format,
+        feature,
+        scan_status,
+        backend,
+        native_backend_available,
+        reason,
+    }
 }
 
 pub struct ExternalPlugin {
@@ -362,6 +608,7 @@ pub struct ExternalPlugin {
     _sample_rate: u32,
     parameters: Vec<Parameter>,
     hosting_backend: ExternalHostingBackend,
+    restore_error: Option<String>,
     /// Format-specific plugin instance (opaque)
     _instance: Option<Box<dyn Any + Send>>,
 }
@@ -382,8 +629,8 @@ impl ExternalPlugin {
         }
 
         descriptor.validate()?;
-        let hosting_backend = select_hosting_backend(descriptor.format);
-        let instance = try_load_dynamic_backend(descriptor, hosting_backend)?;
+        let hosting_plan = plan_external_plugin_hosting(descriptor);
+        let instance = try_load_dynamic_backend(descriptor, hosting_plan.backend)?;
 
         Ok(Self {
             descriptor: descriptor.clone(),
@@ -391,7 +638,8 @@ impl ExternalPlugin {
             output_channels: descriptor.audio_outputs.max(1),
             _sample_rate: sample_rate,
             parameters: Vec::new(),
-            hosting_backend,
+            hosting_backend: hosting_plan.backend,
+            restore_error: None,
             _instance: instance,
         })
     }
@@ -403,6 +651,72 @@ impl ExternalPlugin {
 
     pub fn hosting_backend(&self) -> ExternalHostingBackend {
         self.hosting_backend
+    }
+
+    pub fn hosting_plan(&self) -> ExternalPluginHostingPlan {
+        plan_external_plugin_hosting(&self.descriptor)
+    }
+
+    pub fn restore_error(&self) -> Option<&str> {
+        self.restore_error.as_deref()
+    }
+
+    /// Serialize descriptor and placeholder state for project/preset storage.
+    pub fn placeholder_state(&self) -> ExternalPluginState {
+        ExternalPluginState::new(
+            self.descriptor.clone(),
+            ExternalPluginSandboxMode::InProcess,
+            Vec::new(),
+        )
+    }
+
+    /// Recreate an external plugin wrapper from a serialized placeholder state.
+    pub fn from_placeholder_state(
+        state: &ExternalPluginState,
+        sample_rate: u32,
+    ) -> Result<Self, String> {
+        if sample_rate == 0 {
+            return Err("sample rate must be positive".into());
+        }
+        state.validate_descriptor_consistency()?;
+        match Self::new(&state.descriptor, sample_rate) {
+            Ok(plugin) => Ok(plugin),
+            Err(err) => Ok(Self::unavailable_placeholder(
+                state.descriptor.clone(),
+                sample_rate,
+                err,
+            )),
+        }
+    }
+
+    fn unavailable_placeholder(
+        descriptor: PluginDescriptor,
+        sample_rate: u32,
+        restore_error: String,
+    ) -> Self {
+        Self {
+            input_channels: descriptor.audio_inputs,
+            output_channels: descriptor.audio_outputs.max(1),
+            descriptor,
+            _sample_rate: sample_rate,
+            parameters: Vec::new(),
+            hosting_backend: ExternalHostingBackend::Passthrough,
+            restore_error: Some(restore_error),
+            _instance: None,
+        }
+    }
+
+    pub fn to_placeholder_preset(
+        &self,
+        name: impl Into<String>,
+    ) -> Result<PluginPreset, PluginError> {
+        let mut preset = PluginPreset::new(
+            name.into(),
+            EXTERNAL_PLUGIN_PRESET_ID.to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        );
+        preset.set_external_plugin_state(&self.placeholder_state())?;
+        Ok(preset)
     }
 
     fn expected_input_len(&self, ctx: &ProcessContext) -> usize {
@@ -524,6 +838,60 @@ impl Plugin for ExternalPlugin {
     }
 }
 
+impl SerializablePlugin for ExternalPlugin {
+    fn serialize(&self) -> Result<PluginPreset, PluginError> {
+        self.to_placeholder_preset(self.descriptor.name.clone())
+    }
+
+    fn deserialize(&mut self, preset: &PluginPreset) -> Result<(), PluginError> {
+        if !preset.is_compatible(EXTERNAL_PLUGIN_PRESET_ID) {
+            return Err(PluginError::InvalidConfiguration(format!(
+                "external plugin preset expected plugin_id '{}', got '{}'",
+                EXTERNAL_PLUGIN_PRESET_ID, preset.plugin_id
+            )));
+        }
+
+        self.parameters_from_map(&preset.parameters)?;
+
+        let state = preset.external_plugin_state()?.ok_or_else(|| {
+            PluginError::InvalidConfiguration(
+                "external plugin preset is missing external plugin state".to_string(),
+            )
+        })?;
+        if state.format != self.descriptor.format
+            || state.plugin_id != self.descriptor.id
+            || state.plugin_path != self.descriptor.path
+        {
+            return Err(PluginError::InvalidConfiguration(format!(
+                "external plugin preset targets '{}' at {}, not '{}' at {}",
+                state.plugin_id,
+                state.plugin_path.display(),
+                self.descriptor.id,
+                self.descriptor.path.display()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn parameters_to_map(&self) -> HashMap<String, ParameterValue> {
+        HashMap::new()
+    }
+
+    fn parameters_from_map(
+        &mut self,
+        params: &HashMap<String, ParameterValue>,
+    ) -> Result<(), PluginError> {
+        if params.is_empty() {
+            Ok(())
+        } else {
+            Err(PluginError::InvalidConfiguration(
+                "external plugin placeholder presets do not store host-side parameters".to_string(),
+            ))
+        }
+    }
+}
+
 fn select_hosting_backend(format: PluginFormat) -> ExternalHostingBackend {
     match format {
         PluginFormat::Clap => {
@@ -547,6 +915,22 @@ fn select_hosting_backend(format: PluginFormat) -> ExternalHostingBackend {
                 ExternalHostingBackend::Passthrough
             }
         }
+    }
+}
+
+fn format_feature(format: PluginFormat) -> &'static str {
+    match format {
+        PluginFormat::Clap => "external-plugin-clap",
+        PluginFormat::Vst3 => "external-plugin-vst3",
+        PluginFormat::AudioUnit => "external-plugin-au",
+    }
+}
+
+fn format_label(format: PluginFormat) -> &'static str {
+    match format {
+        PluginFormat::Clap => "CLAP",
+        PluginFormat::Vst3 => "VST3",
+        PluginFormat::AudioUnit => "AudioUnit",
     }
 }
 
@@ -801,6 +1185,7 @@ mod tests {
             audio_outputs: 2,
             is_instrument: false,
             categories: vec![],
+            scan_status: PluginScanStatus::Discovered,
         };
 
         let mut plugin = ExternalPlugin::new(&desc, 48000).unwrap();
@@ -838,12 +1223,144 @@ mod tests {
         scanner.scan_directory(&root, PluginFormat::Clap);
         assert_eq!(scanner.plugins.len(), 1);
         assert_eq!(scanner.plugins[0].name, "my-plugin");
+        assert_eq!(
+            scanner.plugins[0].scan_status,
+            PluginFormat::Clap.build_scan_status()
+        );
         scanner.scan_directory(&root, PluginFormat::Clap);
         assert_eq!(scanner.plugins.len(), 1);
 
         fs::remove_file(&plugin_file).unwrap();
         fs::remove_dir_all(&nested).unwrap();
         fs::remove_dir_all(&root).unwrap_or_else(|_| ());
+    }
+
+    #[test]
+    fn test_external_plugin_scanner_can_preserve_discovered_status() {
+        let root = env::temp_dir().join(format!(
+            "sotf-external-plugin-discovered-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let plugin_file = root.join("raw-discovery.clap");
+
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&plugin_file, b"stub").unwrap();
+
+        let mut scanner = PluginScanner::with_scan_status_mode(PluginScanStatusMode::DiscoveryOnly);
+        scanner.scan_directory(&root, PluginFormat::Clap);
+
+        assert_eq!(scanner.plugins.len(), 1);
+        assert_eq!(scanner.plugins[0].scan_status, PluginScanStatus::Discovered);
+
+        fs::remove_file(&plugin_file).unwrap();
+        fs::remove_dir_all(&root).unwrap_or_else(|_| ());
+    }
+
+    #[test]
+    fn test_external_plugin_scan_summary_counts_statuses() {
+        let descriptor = |id: &str, status: PluginScanStatus| PluginDescriptor {
+            id: id.into(),
+            name: id.into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: PathBuf::from(format!("/tmp/{id}.clap")),
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec![],
+            scan_status: status,
+        };
+        let mut scanner = PluginScanner::new();
+        scanner.plugins.push(descriptor(
+            "discovered.plugin",
+            PluginScanStatus::Discovered,
+        ));
+        scanner
+            .plugins
+            .push(descriptor("loadable.plugin", PluginScanStatus::Loadable));
+        scanner.plugins.push(descriptor(
+            "unsupported.plugin",
+            PluginScanStatus::UnsupportedByBuild,
+        ));
+
+        let summary = scanner.summary();
+
+        assert_eq!(
+            summary,
+            PluginScanSummary {
+                total: 3,
+                discovered: 1,
+                loadable: 1,
+                unsupported_by_build: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn test_external_plugin_capability_matrix_reports_build_support() {
+        let matrix = plugin_format_capabilities();
+        assert_eq!(matrix.len(), 3);
+        let clap = matrix
+            .iter()
+            .find(|capability| capability.format == PluginFormat::Clap)
+            .unwrap();
+        assert_eq!(clap.feature, "external-plugin-clap");
+        assert_eq!(clap.scan_status, PluginFormat::Clap.build_scan_status());
+        assert_eq!(clap.backend, select_hosting_backend(PluginFormat::Clap));
+        assert_eq!(
+            clap.native_backend_available,
+            clap.backend != ExternalHostingBackend::Passthrough
+        );
+        if clap.native_backend_available {
+            assert_eq!(clap.reason, None);
+        } else {
+            assert!(
+                clap.reason
+                    .as_deref()
+                    .unwrap()
+                    .contains("unsupported-by-build")
+            );
+        }
+    }
+
+    #[test]
+    fn test_external_plugin_hosting_plan_reports_feature_gate() {
+        let desc = PluginDescriptor {
+            id: "planned.plugin".into(),
+            name: "Planned Plugin".into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: PathBuf::from("/tmp/planned-plugin.clap"),
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec![],
+            scan_status: PluginScanStatus::Discovered,
+        };
+
+        let plan = plan_external_plugin_hosting(&desc);
+
+        assert_eq!(plan.format, PluginFormat::Clap);
+        assert_eq!(plan.feature, "external-plugin-clap");
+        assert_eq!(plan.scan_status, PluginFormat::Clap.build_scan_status());
+        assert_eq!(plan.backend, select_hosting_backend(PluginFormat::Clap));
+        if plan.backend == ExternalHostingBackend::Passthrough {
+            assert!(!plan.native_backend_available);
+            assert!(
+                plan.reason
+                    .as_deref()
+                    .unwrap()
+                    .contains("deterministic passthrough")
+            );
+        } else {
+            assert!(plan.native_backend_available);
+            assert_eq!(plan.reason, None);
+        }
     }
 
     #[test]
@@ -870,11 +1387,195 @@ mod tests {
             audio_outputs: 2,
             is_instrument: false,
             categories: vec![],
+            scan_status: PluginScanStatus::Discovered,
         };
 
         let mut plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
         let result = plugin.set_parameter(ParameterId::from("unknown"), ParameterValue::Float(1.0));
         assert!(result.is_err());
+
+        fs::remove_file(plugin_path).unwrap();
+        fs::remove_dir_all(tmp_path).unwrap();
+    }
+
+    #[test]
+    fn test_external_plugin_placeholder_state_round_trips() {
+        let tmp_path = env::temp_dir().join(format!(
+            "sotf-external-plugin-state-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp_path).unwrap();
+        let plugin_path = tmp_path.join("state-test.clap");
+        fs::write(&plugin_path, b"stub plugin").unwrap();
+        let desc = PluginDescriptor {
+            id: "test.state".into(),
+            name: "State Test".into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: plugin_path.clone(),
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec!["state".into()],
+            scan_status: PluginScanStatus::Discovered,
+        };
+        let plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
+        let mut state = plugin.placeholder_state();
+        state.sandbox_mode = ExternalPluginSandboxMode::Isolated;
+        state.opaque_state = vec![1, 2, 3, 4];
+
+        let json = serde_json::to_string(&state).unwrap();
+        let decoded: ExternalPluginState = serde_json::from_str(&json).unwrap();
+        let restored = ExternalPlugin::from_placeholder_state(&decoded, 48_000).unwrap();
+
+        assert_eq!(decoded, state);
+        assert_eq!(restored.descriptor(), &desc);
+        assert_eq!(decoded.sandbox_mode, ExternalPluginSandboxMode::Isolated);
+        assert_eq!(decoded.opaque_state, vec![1, 2, 3, 4]);
+
+        fs::remove_file(plugin_path).unwrap();
+        fs::remove_dir_all(tmp_path).unwrap();
+    }
+
+    #[test]
+    fn test_external_plugin_placeholder_state_restores_missing_plugin_as_unavailable() {
+        let missing_path = env::temp_dir().join(format!(
+            "sotf-external-plugin-missing-{}.clap",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let desc = PluginDescriptor {
+            id: "test.missing".into(),
+            name: "Missing Test".into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: missing_path,
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec!["state".into()],
+            scan_status: PluginScanStatus::Discovered,
+        };
+        let state = ExternalPluginState::new(
+            desc.clone(),
+            ExternalPluginSandboxMode::InProcess,
+            vec![1, 2, 3],
+        );
+
+        let mut restored = ExternalPlugin::from_placeholder_state(&state, 48_000).unwrap();
+
+        assert_eq!(restored.descriptor(), &desc);
+        assert_eq!(
+            restored.hosting_backend(),
+            ExternalHostingBackend::Passthrough
+        );
+        assert!(
+            restored
+                .restore_error()
+                .unwrap()
+                .contains("plugin path does not exist")
+        );
+
+        let input = vec![0.25, -0.5, 1.0, -1.0];
+        let mut output = vec![0.0; input.len()];
+        let frames = restored
+            .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+            .unwrap();
+        assert_eq!(frames, 2);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn test_external_plugin_serializable_preset_round_trips_placeholder_state() {
+        let tmp_path = env::temp_dir().join(format!(
+            "sotf-external-plugin-serializable-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp_path).unwrap();
+        let plugin_path = tmp_path.join("serializable.clap");
+        fs::write(&plugin_path, b"stub plugin").unwrap();
+        let desc = PluginDescriptor {
+            id: "test.serializable".into(),
+            name: "Serializable Test".into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: plugin_path.clone(),
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec!["state".into()],
+            scan_status: PluginScanStatus::Discovered,
+        };
+        let mut plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
+
+        let preset = SerializablePlugin::serialize(&plugin).unwrap();
+        let restored_state = preset.external_plugin_state().unwrap().unwrap();
+
+        assert_eq!(preset.plugin_id, EXTERNAL_PLUGIN_PRESET_ID);
+        assert_eq!(restored_state.descriptor, desc);
+        assert_eq!(
+            restored_state.sandbox_mode,
+            ExternalPluginSandboxMode::InProcess
+        );
+        assert!(restored_state.opaque_state.is_empty());
+        SerializablePlugin::deserialize(&mut plugin, &preset).unwrap();
+
+        fs::remove_file(plugin_path).unwrap();
+        fs::remove_dir_all(tmp_path).unwrap();
+    }
+
+    #[test]
+    fn test_external_plugin_deserialize_rejects_different_descriptor() {
+        let tmp_path = env::temp_dir().join(format!(
+            "sotf-external-plugin-mismatch-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp_path).unwrap();
+        let plugin_path = tmp_path.join("mismatch.clap");
+        fs::write(&plugin_path, b"stub plugin").unwrap();
+        let desc = PluginDescriptor {
+            id: "test.mismatch".into(),
+            name: "Mismatch Test".into(),
+            vendor: "Test".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path: plugin_path.clone(),
+            audio_inputs: 2,
+            audio_outputs: 2,
+            is_instrument: false,
+            categories: vec![],
+            scan_status: PluginScanStatus::Discovered,
+        };
+        let mut plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
+        let mut state = plugin.placeholder_state();
+        state.plugin_id = "other.plugin".into();
+        state.descriptor.id = "other.plugin".into();
+
+        let mut preset = PluginPreset::new(
+            "Other".into(),
+            EXTERNAL_PLUGIN_PRESET_ID.into(),
+            env!("CARGO_PKG_VERSION").into(),
+        );
+        preset.set_external_plugin_state(&state).unwrap();
+
+        assert!(matches!(
+            SerializablePlugin::deserialize(&mut plugin, &preset),
+            Err(PluginError::InvalidConfiguration(_))
+        ));
 
         fs::remove_file(plugin_path).unwrap();
         fs::remove_dir_all(tmp_path).unwrap();

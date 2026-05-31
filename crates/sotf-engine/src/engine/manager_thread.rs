@@ -7,7 +7,7 @@
 use super::{
     AudioEngineState, ConfigEvent, ConfigWatcher, DecoderCommand, DecoderThread, EngineConfig,
     GcThread, ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
-    PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent,
+    PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent, plan_engine_features,
 };
 use crate::engine::processing_thread::{
     build_plugin_graph_host_with_policy, build_plugin_host_with_policy,
@@ -15,10 +15,9 @@ use crate::engine::processing_thread::{
 use arc_swap::ArcSwap;
 #[cfg(feature = "streaming")]
 use sotf_streaming::{PcmStreamHandle, PcmStreamServer, PcmStreamServerConfig};
-use sotf_types::{
-    DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy, NetworkEndpointMode,
-    NetworkEndpointStatus, OutputAccessMode, OutputAccessStatus,
-};
+use sotf_types::{DsdOutputStatus, EngineOversamplingPolicy, OutputAccessStatus};
+#[cfg(feature = "streaming")]
+use sotf_types::{NetworkEndpointMode, NetworkEndpointStatus};
 use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
@@ -417,62 +416,6 @@ impl Drop for ManagerThread {
     }
 }
 
-#[cfg(not(target_os = "ios"))]
-fn output_device_uses_exclusive_backend(output_device: Option<&str>) -> bool {
-    output_device.is_some_and(crate::devices::is_asio_device)
-}
-
-#[cfg(target_os = "ios")]
-fn output_device_uses_exclusive_backend(output_device: Option<&str>) -> bool {
-    let _ = output_device;
-    false
-}
-
-fn output_access_status_for_config(config: &EngineConfig) -> OutputAccessStatus {
-    match config.output_access {
-        OutputAccessMode::Shared => OutputAccessStatus::Shared,
-        OutputAccessMode::ExclusivePreferred | OutputAccessMode::ExclusiveRequired => {
-            if output_device_uses_exclusive_backend(config.output_device.as_deref()) {
-                OutputAccessStatus::ExclusiveActive
-            } else if cfg!(target_os = "macos") {
-                OutputAccessStatus::ExclusivePending
-            } else if matches!(config.output_access, OutputAccessMode::ExclusivePreferred) {
-                OutputAccessStatus::FallbackShared
-            } else {
-                OutputAccessStatus::Unsupported
-            }
-        }
-    }
-}
-
-fn dsd_output_status_for_mode(mode: DsdOutputMode) -> DsdOutputStatus {
-    match mode {
-        DsdOutputMode::Disabled => DsdOutputStatus::Disabled,
-        DsdOutputMode::PcmDecode => DsdOutputStatus::PcmDecodeAvailable,
-        DsdOutputMode::DopPreferred => DsdOutputStatus::DopFallbackPcm,
-        DsdOutputMode::DopRequired => DsdOutputStatus::DopUnavailable,
-        DsdOutputMode::NativePreferred => DsdOutputStatus::NativeFallbackPcm,
-        DsdOutputMode::NativeRequired => DsdOutputStatus::NativeUnavailable,
-    }
-}
-
-fn network_endpoint_status_for_mode(mode: NetworkEndpointMode) -> NetworkEndpointStatus {
-    match mode {
-        NetworkEndpointMode::Disabled => NetworkEndpointStatus::Disabled,
-        NetworkEndpointMode::InputClient => {
-            #[cfg(feature = "streaming")]
-            {
-                NetworkEndpointStatus::InputClientAvailable
-            }
-            #[cfg(not(feature = "streaming"))]
-            {
-                NetworkEndpointStatus::InputClientUnavailable
-            }
-        }
-        NetworkEndpointMode::HttpEndpoint => NetworkEndpointStatus::EndpointUnavailable,
-    }
-}
-
 #[cfg(feature = "streaming")]
 fn start_network_stream_server(
     config: &EngineConfig,
@@ -536,6 +479,7 @@ fn start_network_stream_server(
 }
 
 fn initial_engine_state_from_config(config: &EngineConfig) -> AudioEngineState {
+    let feature_plan = plan_engine_features(config);
     AudioEngineState {
         sample_rate: config.output_sample_rate,
         num_channels: config.output_channels,
@@ -543,12 +487,12 @@ fn initial_engine_state_from_config(config: &EngineConfig) -> AudioEngineState {
         muted: config.muted,
         latency_compensation_enabled: config.latency_compensation.is_enabled(),
         output_access_mode: config.output_access,
-        output_access_status: output_access_status_for_config(config),
+        output_access_status: feature_plan.output_access.status,
         dsd_output_mode: config.dsd_output,
-        dsd_output_status: dsd_output_status_for_mode(config.dsd_output),
+        dsd_output_status: feature_plan.dsd_output.status,
         oversampling_policy: config.oversampling_policy,
         network_endpoint: config.network_endpoint.clone(),
-        network_endpoint_status: network_endpoint_status_for_mode(config.network_endpoint.mode),
+        network_endpoint_status: feature_plan.network_endpoint.status,
         ..AudioEngineState::default()
     }
 }
@@ -564,24 +508,26 @@ fn run_manager_thread(
     log::debug!("[Manager Thread] Starting with config: {:?}", config);
     state.store(Arc::new(initial_engine_state_from_config(&config)));
 
+    let feature_plan = plan_engine_features(&config);
+    let output_access_plan = &feature_plan.output_access;
     if config.output_access.requires_exclusive()
-        && output_access_status_for_config(&config) == OutputAccessStatus::Unsupported
+        && output_access_plan.status == OutputAccessStatus::Unsupported
     {
-        return Err(
-            "Exclusive output is required, but this engine build only has shared cpal output for the selected device"
-                .to_string(),
-        );
+        return Err(output_access_plan.reason.clone().unwrap_or_else(|| {
+            "Exclusive output is required, but no exclusive backend is available".to_string()
+        }));
     }
+    let dsd_output_plan = &feature_plan.dsd_output;
     if config.dsd_output.requires_bitstream_output()
         && matches!(
-            dsd_output_status_for_mode(config.dsd_output),
+            dsd_output_plan.status,
             DsdOutputStatus::DopUnavailable | DsdOutputStatus::NativeUnavailable
         )
     {
-        return Err(
-            "DSD bitstream output is required, but this engine build only supports DSF-to-PCM decode"
-                .to_string(),
-        );
+        return Err(dsd_output_plan.reason.clone().unwrap_or_else(|| {
+            "DSD bitstream output is required, but no DSD bitstream backend is available"
+                .to_string()
+        }));
     }
 
     // Create config update queue for serializing plugin updates
@@ -2855,24 +2801,33 @@ mod tests {
 
     #[test]
     fn test_dsd_output_statuses_distinguish_pcm_fallbacks_from_required_bitstream() {
+        let status_for_mode = |mode| {
+            plan_engine_features(&EngineConfig {
+                dsd_output: mode,
+                ..Default::default()
+            })
+            .dsd_output
+            .status
+        };
+
         assert_eq!(
-            dsd_output_status_for_mode(sotf_types::DsdOutputMode::PcmDecode),
+            status_for_mode(sotf_types::DsdOutputMode::PcmDecode),
             sotf_types::DsdOutputStatus::PcmDecodeAvailable
         );
         assert_eq!(
-            dsd_output_status_for_mode(sotf_types::DsdOutputMode::DopPreferred),
+            status_for_mode(sotf_types::DsdOutputMode::DopPreferred),
             sotf_types::DsdOutputStatus::DopFallbackPcm
         );
         assert_eq!(
-            dsd_output_status_for_mode(sotf_types::DsdOutputMode::DopRequired),
+            status_for_mode(sotf_types::DsdOutputMode::DopRequired),
             sotf_types::DsdOutputStatus::DopUnavailable
         );
         assert_eq!(
-            dsd_output_status_for_mode(sotf_types::DsdOutputMode::NativePreferred),
+            status_for_mode(sotf_types::DsdOutputMode::NativePreferred),
             sotf_types::DsdOutputStatus::NativeFallbackPcm
         );
         assert_eq!(
-            dsd_output_status_for_mode(sotf_types::DsdOutputMode::NativeRequired),
+            status_for_mode(sotf_types::DsdOutputMode::NativeRequired),
             sotf_types::DsdOutputStatus::NativeUnavailable
         );
     }

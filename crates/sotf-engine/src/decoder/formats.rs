@@ -835,6 +835,32 @@ pub enum AudioFormat {
     Iamf,
 }
 
+/// User-facing decode capability for DSD/SACD containers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DsdDecodeCapability {
+    /// The format is not a DSD/SACD container.
+    NotDsd,
+    /// The engine can decode the DSD container to PCM with `DsdOutputMode::PcmDecode`.
+    PcmDecodeAvailable,
+    /// The engine can decode this DSD container to PCM only for uncompressed streams.
+    PcmDecodeAvailableUncompressedOnly,
+    /// The container is recognized but this build cannot decode it.
+    UnsupportedContainer,
+}
+
+impl DsdDecodeCapability {
+    pub fn description(self) -> &'static str {
+        match self {
+            DsdDecodeCapability::NotDsd => "not a DSD/SACD container",
+            DsdDecodeCapability::PcmDecodeAvailable => "PCM decode available",
+            DsdDecodeCapability::PcmDecodeAvailableUncompressedOnly => {
+                "PCM decode available for uncompressed DSD; compressed DST is unsupported"
+            }
+            DsdDecodeCapability::UnsupportedContainer => "recognized but unsupported",
+        }
+    }
+}
+
 impl AudioFormat {
     /// Detect audio format from file extension
     pub fn from_path<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Self> {
@@ -929,6 +955,16 @@ impl AudioFormat {
         )
     }
 
+    /// Report DSD/SACD decode support without attempting to open the file.
+    pub fn dsd_decode_capability(&self) -> DsdDecodeCapability {
+        match self {
+            AudioFormat::DsdDsf => DsdDecodeCapability::PcmDecodeAvailable,
+            AudioFormat::DsdDff => DsdDecodeCapability::PcmDecodeAvailableUncompressedOnly,
+            AudioFormat::SacdIso => DsdDecodeCapability::UnsupportedContainer,
+            _ => DsdDecodeCapability::NotDsd,
+        }
+    }
+
     /// Get all supported formats
     pub fn supported_formats() -> Vec<AudioFormat> {
         #[allow(unused_mut)]
@@ -953,6 +989,25 @@ impl AudioFormat {
             AudioFormat::DsdDff,
             AudioFormat::SacdIso,
         ]
+    }
+
+    /// User-facing DSD/SACD capability rows for settings and diagnostics.
+    pub fn dsd_capabilities() -> Vec<(AudioFormat, DsdDecodeCapability)> {
+        Self::recognized_dsd_formats()
+            .into_iter()
+            .map(|format| (format, format.dsd_decode_capability()))
+            .collect()
+    }
+
+    /// User-friendly summary of the current DSD/SACD decode surface.
+    pub fn dsd_capabilities_string() -> String {
+        Self::dsd_capabilities()
+            .into_iter()
+            .map(|(format, capability)| {
+                format!("{}: {}", format.as_str(), capability.description())
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     /// Get a user-friendly description of supported formats
@@ -1147,5 +1202,32 @@ mod tests {
                 AudioFormat::SacdIso
             ]
         );
+    }
+
+    #[test]
+    fn test_dsd_capability_surface_reports_pcm_decode_status() {
+        assert_eq!(
+            AudioFormat::DsdDsf.dsd_decode_capability(),
+            DsdDecodeCapability::PcmDecodeAvailable
+        );
+        assert_eq!(
+            AudioFormat::DsdDff.dsd_decode_capability(),
+            DsdDecodeCapability::PcmDecodeAvailableUncompressedOnly
+        );
+        assert_eq!(
+            AudioFormat::SacdIso.dsd_decode_capability(),
+            DsdDecodeCapability::UnsupportedContainer
+        );
+        assert_eq!(
+            AudioFormat::Flac.dsd_decode_capability(),
+            DsdDecodeCapability::NotDsd
+        );
+
+        let summary = AudioFormat::dsd_capabilities_string();
+        assert!(summary.contains("DSD DSF: PCM decode available"));
+        assert!(summary.contains(
+            "DSD DFF: PCM decode available for uncompressed DSD; compressed DST is unsupported"
+        ));
+        assert!(summary.contains("SACD ISO: recognized but unsupported"));
     }
 }

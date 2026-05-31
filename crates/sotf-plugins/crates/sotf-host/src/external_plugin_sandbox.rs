@@ -2,8 +2,8 @@
 //!
 //! The public policy is intentionally portable, but enforcement is platform
 //! specific. Linux currently applies a best-effort Landlock filesystem sandbox.
-//! macOS and Windows use explicit process-isolation-only backends until native
-//! sandbox helpers are wired in.
+//! macOS and Windows expose explicit process-isolation-only backends when native
+//! sandbox enforcement is unavailable in this build.
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -463,10 +463,9 @@ mod platform {
     const BACKEND_NAME: &str = "windows-process-isolation";
     #[cfg(target_os = "macos")]
     const BACKEND_NOTE: &str =
-        "macOS platform sandbox backend is not implemented yet; worker uses process isolation";
+        "macOS native sandbox backend is unavailable in this build; worker uses process isolation";
     #[cfg(target_os = "windows")]
-    const BACKEND_NOTE: &str =
-        "Windows platform sandbox backend is not implemented yet; worker uses process isolation";
+    const BACKEND_NOTE: &str = "Windows native sandbox backend is unavailable in this build; worker uses process isolation";
 
     use std::fs::OpenOptions;
     use std::path::Path;
@@ -566,6 +565,7 @@ mod tests {
             audio_outputs: 2,
             is_instrument: false,
             categories: Vec::new(),
+            scan_status: crate::external_plugin::PluginScanStatus::Discovered,
         };
         let shared =
             SecurePluginSharedMemory::create(PluginIpcLayout::new(48_000, 64, 2, 2).unwrap())
@@ -596,6 +596,7 @@ mod tests {
             audio_outputs: 2,
             is_instrument: false,
             categories: Vec::new(),
+            scan_status: crate::external_plugin::PluginScanStatus::Discovered,
         };
         let shared =
             SecurePluginSharedMemory::create(PluginIpcLayout::new(48_000, 64, 2, 2).unwrap())

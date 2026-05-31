@@ -1,7 +1,8 @@
 //! MIDI connection and device management
 
+use crate::clock::{MIDI_CLOCK_CONTINUE, MIDI_CLOCK_START, MIDI_CLOCK_STOP, MIDI_CLOCK_TICK};
 use crate::config::MidiConfig;
-use crate::device::{MidiDeviceInfo, MidiDeviceType};
+use crate::device::{MidiDeviceChange, MidiDeviceInfo, MidiDeviceSnapshot, MidiDeviceType};
 use crate::error::{MidiError, Result};
 use crate::message::MidiMessage;
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
@@ -128,6 +129,25 @@ impl MidiManager {
         self.midi_output = Some(midi_out);
 
         Ok(devices)
+    }
+
+    /// Poll MIDI ports without touching active input/output connections.
+    pub fn device_snapshot(&self) -> Result<MidiDeviceSnapshot> {
+        Ok(MidiDeviceSnapshot::new(
+            enumerate_input_devices()?,
+            enumerate_output_devices()?,
+        ))
+    }
+
+    /// Poll for hot-plug changes, update `previous`, and return the diff.
+    pub fn poll_device_changes(
+        &self,
+        previous: &mut MidiDeviceSnapshot,
+    ) -> Result<Vec<MidiDeviceChange>> {
+        let next = self.device_snapshot()?;
+        let changes = previous.diff(&next);
+        *previous = next;
+        Ok(changes)
     }
 
     /// Connect to a MIDI input device by index.
@@ -301,6 +321,26 @@ impl MidiManager {
         Ok(())
     }
 
+    /// Send MIDI Clock Start (`0xFA`).
+    pub fn send_clock_start(&self) -> Result<()> {
+        self.send_raw(&[MIDI_CLOCK_START])
+    }
+
+    /// Send MIDI Clock Continue (`0xFB`).
+    pub fn send_clock_continue(&self) -> Result<()> {
+        self.send_raw(&[MIDI_CLOCK_CONTINUE])
+    }
+
+    /// Send MIDI Clock Stop (`0xFC`).
+    pub fn send_clock_stop(&self) -> Result<()> {
+        self.send_raw(&[MIDI_CLOCK_STOP])
+    }
+
+    /// Send one MIDI Clock tick (`0xF8`).
+    pub fn send_clock_tick(&self) -> Result<()> {
+        self.send_raw(&[MIDI_CLOCK_TICK])
+    }
+
     /// Check if input is connected
     pub fn is_input_connected(&self) -> bool {
         self.input_connection.is_some()
@@ -353,6 +393,42 @@ fn channel_of(msg: &MidiMessage) -> Option<u8> {
         | MidiMessage::PitchBend { channel, .. } => Some(*channel),
         MidiMessage::SystemExclusive { .. } | MidiMessage::Raw { .. } => None,
     }
+}
+
+fn enumerate_input_devices() -> Result<Vec<MidiDeviceInfo>> {
+    let midi_in = MidiInput::new("SOTF MIDI Hotplug Input")?;
+    Ok(midi_in
+        .ports()
+        .iter()
+        .enumerate()
+        .map(|(index, port)| MidiDeviceInfo {
+            index,
+            name: midi_in
+                .port_name(port)
+                .unwrap_or_else(|_| format!("Unknown Input {}", index)),
+            device_type: MidiDeviceType::Input,
+            manufacturer: None,
+            is_connected: false,
+        })
+        .collect())
+}
+
+fn enumerate_output_devices() -> Result<Vec<MidiDeviceInfo>> {
+    let midi_out = MidiOutput::new("SOTF MIDI Hotplug Output")?;
+    Ok(midi_out
+        .ports()
+        .iter()
+        .enumerate()
+        .map(|(index, port)| MidiDeviceInfo {
+            index,
+            name: midi_out
+                .port_name(port)
+                .unwrap_or_else(|_| format!("Unknown Output {}", index)),
+            device_type: MidiDeviceType::Output,
+            manufacturer: None,
+            is_connected: false,
+        })
+        .collect())
 }
 
 impl Drop for MidiManager {

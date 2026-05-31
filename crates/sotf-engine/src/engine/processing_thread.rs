@@ -1152,6 +1152,7 @@ mod tests {
             audio_outputs: 2,
             is_instrument: false,
             categories: Vec::new(),
+            scan_status: sotf_plugins::PluginScanStatus::Discovered,
         };
         (dir, descriptor)
     }

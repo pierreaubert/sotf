@@ -16,6 +16,18 @@ pub use types::*;
 mod audio_sink;
 pub use audio_sink::{AudioSink, SinkConfig, SinkOpenResult, SinkType};
 
+mod dsd_output;
+pub use dsd_output::{DsdOutputBackend, DsdOutputPlan, plan_dsd_output};
+
+mod feature_plan;
+pub use feature_plan::{EngineFeaturePlan, plan_engine_features};
+
+mod network_endpoint;
+pub use network_endpoint::{NetworkEndpointBackend, NetworkEndpointPlan, plan_network_endpoint};
+
+mod output_access;
+pub use output_access::{OutputAccessBackend, OutputAccessPlan, plan_output_access};
+
 #[cfg(not(target_os = "ios"))]
 mod cpal_sink;
 #[cfg(not(target_os = "ios"))]

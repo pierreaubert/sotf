@@ -7,7 +7,10 @@
 
 use std::time::Duration;
 
-use crate::external_plugin::PluginDescriptor;
+use crate::external_plugin::{
+    ExternalPluginHostingPlan, ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor,
+    plan_external_plugin_hosting,
+};
 use crate::external_plugin_host::{ExternalPluginHostBlockStatus, ExternalPluginHostProxy};
 use crate::external_plugin_ipc::{PluginIpcLayout, PluginSandboxRuntimeStatus};
 use crate::external_plugin_process::{
@@ -98,6 +101,33 @@ impl IsolatedExternalPlugin {
 
     pub fn descriptor(&self) -> &PluginDescriptor {
         &self.descriptor
+    }
+
+    pub fn hosting_plan(&self) -> ExternalPluginHostingPlan {
+        plan_external_plugin_hosting(&self.descriptor)
+    }
+
+    pub fn placeholder_state(&self) -> ExternalPluginState {
+        ExternalPluginState::new(
+            self.descriptor.clone(),
+            ExternalPluginSandboxMode::Isolated,
+            Vec::new(),
+        )
+    }
+
+    pub fn from_placeholder_state(
+        state: &ExternalPluginState,
+        sample_rate: u32,
+        config: IsolatedExternalPluginConfig,
+    ) -> Result<Self, String> {
+        state.validate_descriptor_consistency()?;
+        if state.sandbox_mode != ExternalPluginSandboxMode::Isolated {
+            return Err(format!(
+                "External plugin state sandbox mode {:?} cannot restore isolated plugin",
+                state.sandbox_mode
+            ));
+        }
+        Self::new(state.descriptor.clone(), sample_rate, config)
     }
 
     pub fn launch_error(&self) -> Option<&str> {
@@ -290,6 +320,7 @@ mod tests {
             audio_outputs: 2,
             is_instrument: false,
             categories: Vec::new(),
+            scan_status: crate::external_plugin::PluginScanStatus::Discovered,
         }
     }
 
@@ -376,5 +407,54 @@ mod tests {
         assert_eq!(plugin.block_timeout_count(), 1);
         assert_eq!(plugin.block_worker_failure_count(), 0);
         assert_eq!(plugin.block_wrong_sequence_count(), 0);
+    }
+
+    #[test]
+    fn isolated_external_plugin_placeholder_state_round_trips() {
+        let plugin = IsolatedExternalPlugin::new(
+            descriptor(),
+            48_000,
+            IsolatedExternalPluginConfig {
+                start_worker: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let mut state = plugin.placeholder_state();
+        state.opaque_state = vec![9, 8, 7];
+
+        let json = serde_json::to_string(&state).unwrap();
+        let decoded: ExternalPluginState = serde_json::from_str(&json).unwrap();
+        let restored = IsolatedExternalPlugin::from_placeholder_state(
+            &decoded,
+            48_000,
+            IsolatedExternalPluginConfig {
+                start_worker: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(decoded.sandbox_mode, ExternalPluginSandboxMode::Isolated);
+        assert_eq!(decoded.opaque_state, vec![9, 8, 7]);
+        assert_eq!(restored.descriptor(), plugin.descriptor());
+    }
+
+    #[test]
+    fn isolated_external_plugin_reports_same_hosting_plan_as_descriptor() {
+        let plugin = IsolatedExternalPlugin::new(
+            descriptor(),
+            48_000,
+            IsolatedExternalPluginConfig {
+                start_worker: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            plugin.hosting_plan(),
+            plan_external_plugin_hosting(plugin.descriptor())
+        );
     }
 }

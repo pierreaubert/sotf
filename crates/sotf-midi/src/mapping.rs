@@ -78,15 +78,17 @@ impl MidiMapping {
             .find(|b| b.page == self.current_page && b.control_id == control_id)
     }
 
-    /// Find the binding for a given parameter index (any page)
+    /// Find the binding for a given parameter index on the current page.
     pub fn binding_for_param(
         &self,
         plugin_index: usize,
         param_index: usize,
     ) -> Option<&ControlBinding> {
-        self.bindings
-            .iter()
-            .find(|b| b.plugin_index == plugin_index && b.param_index == param_index)
+        self.bindings.iter().find(|b| {
+            b.page == self.current_page
+                && b.plugin_index == plugin_index
+                && b.param_index == param_index
+        })
     }
 
     /// Navigate to next page
@@ -308,5 +310,54 @@ mod tests {
         assert_eq!(mapping.current_page, 2);
         mapping.prev_page();
         assert_eq!(mapping.current_page, 1);
+    }
+
+    #[test]
+    fn test_binding_for_param_is_page_aware() {
+        let mut mapping = MidiMapping::new("Test".to_string(), "Compressor".to_string());
+        mapping.total_pages = 2;
+        mapping.bindings.push(ControlBinding {
+            control_id: "page0-knob".to_string(),
+            plugin_index: 0,
+            param_index: 1,
+            page: 0,
+            scaling: ValueScaling::Linear,
+        });
+        mapping.bindings.push(ControlBinding {
+            control_id: "page1-knob".to_string(),
+            plugin_index: 0,
+            param_index: 1,
+            page: 1,
+            scaling: ValueScaling::Linear,
+        });
+        mapping.bindings.push(ControlBinding {
+            control_id: "other-plugin".to_string(),
+            plugin_index: 1,
+            param_index: 1,
+            page: 0,
+            scaling: ValueScaling::Linear,
+        });
+
+        assert_eq!(
+            mapping
+                .binding_for_param(0, 1)
+                .map(|b| b.control_id.as_str()),
+            Some("page0-knob")
+        );
+        assert_eq!(
+            mapping
+                .binding_for_param(1, 1)
+                .map(|b| b.control_id.as_str()),
+            Some("other-plugin")
+        );
+
+        mapping.current_page = 1;
+        assert_eq!(
+            mapping
+                .binding_for_param(0, 1)
+                .map(|b| b.control_id.as_str()),
+            Some("page1-knob")
+        );
+        assert!(mapping.binding_for_param(1, 1).is_none());
     }
 }

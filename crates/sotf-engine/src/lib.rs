@@ -15,7 +15,7 @@ pub use devices_stub::SharedAudioState;
 pub mod decoder;
 pub use decoder::{
     AudioDecoder, AudioDecoderError, AudioDecoderResult, AudioFormat, AudioStream, DecodedAudio,
-    StreamConfig, create_decoder, probe_file,
+    DsdDecodeCapability, StreamConfig, create_decoder, probe_file,
 };
 
 pub use decoder::core::AudioSpec;
@@ -51,9 +51,11 @@ pub mod engine;
 #[cfg(not(target_os = "ios"))]
 pub use engine::CpalSink;
 pub use engine::{
-    AudioEngine, AudioEngineState, AudioSink, EngineConfig, PlaybackState, PluginConfig,
-    PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig, SinkConfig, SinkOpenResult,
-    SinkType,
+    AudioEngine, AudioEngineState, AudioSink, DsdOutputBackend, DsdOutputPlan, EngineConfig,
+    EngineFeaturePlan, NetworkEndpointBackend, NetworkEndpointPlan, OutputAccessBackend,
+    OutputAccessPlan, PlaybackState, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig,
+    PluginGraphNodeConfig, SinkConfig, SinkOpenResult, SinkType, plan_dsd_output,
+    plan_engine_features, plan_network_endpoint, plan_output_access,
 };
 pub use sotf_types::{
     DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy, LatencyCompensationMode,
