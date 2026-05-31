@@ -434,6 +434,7 @@ fn review_display_curve_prefers_dsp_chain_final_curve() {
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
     };
 
     let points = room_eq_display_response_points(Some(&chain), Some(&fallback)).unwrap();
@@ -470,6 +471,7 @@ fn review_initial_curve_prefers_dsp_chain_initial_curve() {
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
     };
 
     let points = room_eq_initial_response_points(Some(&chain), Some(&fallback)).unwrap();
@@ -509,6 +511,7 @@ fn review_display_curve_finds_chain_by_embedded_channel_name() {
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
     };
     let mut channels = std::collections::HashMap::new();
     channels.insert("Front Right".to_string(), chain);
@@ -633,6 +636,7 @@ fn build_channel_dsp_from_real_emitters(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
     }
 }
 

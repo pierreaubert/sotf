@@ -2,10 +2,12 @@
 
 use crate::recorder::OptimizationRecorder;
 use crate::{DEConfig, DEReport, differential_evolution};
+#[cfg(not(test))]
 use directories::ProjectDirs;
 use ndarray::Array1;
 
 /// Get the records directory using the directories crate
+#[cfg(not(test))]
 fn get_records_dir() -> Result<std::path::PathBuf, String> {
     let proj_dirs = ProjectDirs::from("org", "spinorama", "math-audio")
         .ok_or("Failed to determine project directories")?;
@@ -14,6 +16,19 @@ fn get_records_dir() -> Result<std::path::PathBuf, String> {
     let records_dir = cache_dir.join("records");
 
     // Create the directory if it doesn't exist
+    std::fs::create_dir_all(&records_dir)
+        .map_err(|e| format!("Failed to create records directory: {}", e))?;
+
+    Ok(records_dir)
+}
+
+/// Get an isolated records directory for tests.
+#[cfg(test)]
+fn get_records_dir() -> Result<std::path::PathBuf, String> {
+    let records_dir = std::env::temp_dir()
+        .join("math-optimisation-records")
+        .join(std::process::id().to_string());
+
     std::fs::create_dir_all(&records_dir)
         .map_err(|e| format!("Failed to create records directory: {}", e))?;
 

@@ -197,6 +197,7 @@ fn make_report_channel(
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
     }
 }
 
@@ -212,6 +213,7 @@ fn make_empty_report_channel(name: &str) -> autoeq::roomeq::ChannelDspChain {
         pre_ir: None,
         post_ir: None,
         fir_temporal_masking: None,
+        direct_early_late_correction: None,
     }
 }
 

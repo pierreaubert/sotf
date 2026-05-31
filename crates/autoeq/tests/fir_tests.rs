@@ -55,6 +55,7 @@ fn create_curve_with_null(null_freq: f64, null_depth_db: f64) -> Curve {
     freqs.extend_from_slice(&[
         150.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
     ]);
+    freqs.sort_by(f64::total_cmp);
 
     // Create SPL values with a null
     let baseline = 85.0;

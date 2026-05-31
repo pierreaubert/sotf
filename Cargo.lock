@@ -4100,7 +4100,6 @@ dependencies = [
 [[package]]
 name = "gpui_wgpu"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git?tag=v1.0.0#5ec84a926ef83865afb92d2a3d1ca3b419572cf9"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -11207,45 +11206,22 @@ dependencies = [
 
 [[package]]
 name = "sotf-tools"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "anyhow",
  "bincode",
- "chrono",
  "clap",
- "directories",
  "env_logger",
  "gpui",
  "hound",
- "image",
  "log",
- "ndarray 0.17.2",
- "num-complex 0.4.6",
- "num_cpus",
- "parking_lot",
- "rubato",
  "rusqlite",
  "serde",
  "serde_json",
  "sotf-engine",
  "sotf-gpui",
- "sotf-player",
  "sotf-plugins",
- "symphonia 0.6.0",
- "symphonia-bundle-flac",
- "symphonia-bundle-mp3 0.6.0",
- "symphonia-codec-aac",
- "symphonia-core 0.6.0",
- "symphonia-format-isomp4",
- "symphonia-format-ogg 0.6.0",
- "symphonia-format-riff",
- "symphonia-metadata 0.6.0",
  "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "unicode-normalization",
- "uuid",
- "walkdir",
 ]
 
 [[package]]
