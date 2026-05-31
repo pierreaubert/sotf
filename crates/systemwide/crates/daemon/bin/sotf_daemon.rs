@@ -1768,7 +1768,7 @@ impl AudioDaemon {
         flush_audio: bool,
     ) -> Result<(), String> {
         match driver_hal::SharedAudioBuffer::open_default() {
-            Ok(mut buffer) => {
+            Ok(buffer) => {
                 if flush_audio {
                     buffer.flush_audio();
                 }
@@ -2235,7 +2235,10 @@ fn handle_driver_config_change(
                 buffer_frames: requested_frames,
                 channel_count: config.channel_count,
             },
-            driver_common::ConfigResult::Error("Invalid sample rate".to_string()),
+            driver_common::ConfigResult::error(driver_common::DriverError::invalid_config(
+                "sample_rate",
+                "Invalid sample rate",
+            )),
         );
         return;
     }
@@ -2250,7 +2253,10 @@ fn handle_driver_config_change(
                 buffer_frames: 512,
                 channel_count: config.channel_count,
             },
-            driver_common::ConfigResult::Error("Invalid buffer frames".to_string()),
+            driver_common::ConfigResult::error(driver_common::DriverError::invalid_config(
+                "buffer_frames",
+                "Invalid buffer frames",
+            )),
         );
         return;
     }
@@ -2265,7 +2271,10 @@ fn handle_driver_config_change(
                 buffer_frames: requested_frames,
                 channel_count: 2,
             },
-            driver_common::ConfigResult::Error("Invalid channel count".to_string()),
+            driver_common::ConfigResult::error(driver_common::DriverError::invalid_config(
+                "channel_count",
+                "Invalid channel count",
+            )),
         );
         return;
     }
@@ -2303,10 +2312,11 @@ fn handle_driver_config_change(
                     requested_rate,
                     actual_rate
                 );
-                driver_common::ConfigResult::Negotiated {
+                driver_common::ConfigResult::negotiated(
                     actual_rate,
-                    actual_frames: requested_frames,
-                }
+                    requested_frames,
+                    requested_channels,
+                )
             } else {
                 driver_common::ConfigResult::Accepted
             };
@@ -2335,7 +2345,7 @@ fn handle_driver_config_change(
                     buffer_frames: requested_frames,
                     channel_count: config.channel_count,
                 },
-                driver_common::ConfigResult::Error(e),
+                driver_common::ConfigResult::error(e),
             );
         }
     }
@@ -2753,7 +2763,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod ipc_safety_tests {
     use super::*;
-    use driver_common::{AudioDriver, ConfigResult, DriverStatus};
+    use driver_common::{AudioDriver, ConfigResult, DriverError, DriverStatus};
     use std::io::Cursor;
 
     /// `serialize_response_safely` must produce valid JSON on the OK
@@ -2963,7 +2973,7 @@ mod ipc_safety_tests {
     }
 
     impl AudioDriver for FakeDriver {
-        fn initialize(&mut self) -> Result<(), String> {
+        fn initialize(&mut self) -> Result<(), DriverError> {
             Ok(())
         }
 

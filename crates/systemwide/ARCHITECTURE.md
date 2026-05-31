@@ -34,7 +34,7 @@ The current code is split into four major surfaces:
 | --- | --- | --- |
 | Configbar toolbar | `crates/daemon/configbar/src/*.swift` | macOS menu bar app, daemon lifecycle, user commands, plugin rack UI, metering UI, hardware-device recovery polling, menu bar status icon |
 | Daemon | `crates/daemon/bin/sotf_daemon.rs` | IPC server, command authorization, playback lifecycle, plugin-chain orchestration, output device choice, encryption commands |
-| Driver abstraction | `crates/driver-common/src/lib.rs` | Cross-platform `AudioDriver` trait, `DriverStatus`, `DriverConfig`, `ConfigResult`, `NullDriver` fallback |
+| Driver abstraction | `crates/driver-common/src/lib.rs` | Cross-platform single-owner `AudioDriver` trait, `DriverStatus`, `DriverConfig`, `ConfigResult`, `DriverError`, `NullDriver` fallback |
 | macOS HAL bridge | `crates/driver-hal/src/*`, `crates/driver-hal/swift/Sources/*` | Shared-memory protocol, encrypted audio records, CoreAudio HAL driver implementation, Rust `HalDriver` adapter |
 | Installer scripts | `scripts/build-systemwide.sh` | App bundle, package/DMG build, running-system quiesce, HAL driver replacement, stale runtime cleanup |
 
@@ -139,6 +139,7 @@ classDiagram
         +initialize()
         +status()
         +read_audio(buffer)
+        +read_frames(buffer)
         +request_config(config)
         +poll_config_change()
         +acknowledge_config_change(actual, result)

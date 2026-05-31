@@ -3,7 +3,7 @@
 //! This adapter connects the platform-agnostic [`AudioDriver`] trait to the existing
 //! [`HalInputReader`] and [`SharedAudioBuffer`] types.
 
-use driver_common::{AudioDriver, ConfigResult, DriverConfig, DriverStatus};
+use driver_common::{AudioDriver, ConfigResult, DriverConfig, DriverError, DriverStatus};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
@@ -62,21 +62,25 @@ impl HalDriver {
             match buf.config_status() {
                 1 => return ConfigResult::Accepted,
                 2 => {
-                    return ConfigResult::Negotiated {
-                        actual_rate: buf.actual_sample_rate(),
-                        actual_frames: buf.actual_buffer_frames(),
-                    };
+                    return ConfigResult::negotiated(
+                        buf.actual_sample_rate(),
+                        buf.actual_buffer_frames(),
+                        buf.channel_count(),
+                    );
                 }
                 3 => {
-                    return ConfigResult::Error(format!(
-                        "HAL rejected config request (error code {})",
-                        buf.config_error_code()
+                    return ConfigResult::error(DriverError::invalid_config(
+                        "hal_config",
+                        format!(
+                            "HAL rejected config request (error code {})",
+                            buf.config_error_code()
+                        ),
                     ));
                 }
                 _ if Instant::now() >= deadline => {
-                    return ConfigResult::Error(
-                        "Timed out waiting for HAL to apply config request".to_string(),
-                    );
+                    return ConfigResult::error(DriverError::timeout(
+                        "Timed out waiting for HAL to apply config request",
+                    ));
                 }
                 _ => std::thread::sleep(DAEMON_CONFIG_ACK_POLL_INTERVAL),
             }
@@ -157,7 +161,7 @@ impl Default for HalDriver {
 }
 
 impl AudioDriver for HalDriver {
-    fn initialize(&mut self) -> Result<(), String> {
+    fn initialize(&mut self) -> Result<(), DriverError> {
         log::info!("[HalDriver] Initializing macOS HAL driver");
 
         // Check if driver bundle is installed
@@ -286,33 +290,27 @@ impl AudioDriver for HalDriver {
             let current_rate = buf.sample_rate();
             let current_frames = buf.buffer_frames();
             let current_channels = buf.channel_count();
-            let requested_rate = if config.sample_rate > 0 {
-                config.sample_rate
-            } else {
-                current_rate
-            };
-            let requested_frames = if config.buffer_frames > 0 {
-                config.buffer_frames
-            } else {
-                current_frames
-            };
-            let requested_channels = if config.channel_count > 0 {
-                config.channel_count
-            } else {
-                current_channels
-            };
+            let requested_rate = config.sample_rate_or(current_rate);
+            let requested_frames = config.buffer_frames_or(current_frames);
+            let requested_channels = config.channel_count_or(current_channels);
 
             if requested_channels == 0 || requested_channels > MAX_HAL_CHANNEL_COUNT {
-                return ConfigResult::Error(format!(
-                    "HAL channel count must be between 1 and {}, got {}",
-                    MAX_HAL_CHANNEL_COUNT, requested_channels
+                return ConfigResult::error(DriverError::invalid_config(
+                    "channel_count",
+                    format!(
+                        "HAL channel count must be between 1 and {}, got {}",
+                        MAX_HAL_CHANNEL_COUNT, requested_channels
+                    ),
                 ));
             }
             if requested_channels > buf.max_channel_count() {
-                return ConfigResult::Error(format!(
-                    "HAL shared memory was sized for at most {} channels, cannot request {}",
-                    buf.max_channel_count(),
-                    requested_channels
+                return ConfigResult::error(DriverError::invalid_config(
+                    "channel_count",
+                    format!(
+                        "HAL shared memory was sized for at most {} channels, cannot request {}",
+                        buf.max_channel_count(),
+                        requested_channels
+                    ),
                 ));
             }
 
@@ -326,7 +324,7 @@ impl AudioDriver for HalDriver {
             );
             Self::wait_for_daemon_config_ack(buf)
         } else {
-            ConfigResult::Error("Shared memory not available".to_string())
+            ConfigResult::error(DriverError::not_available("Shared memory not available"))
         }
     }
 

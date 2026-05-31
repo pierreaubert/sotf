@@ -12,7 +12,8 @@ lib.rs
   NullDriver    -- No-op fallback (compiles everywhere, returns zero frames)
   DriverStatus  -- Runtime status: platform_supported, driver_installed, capture_active, sample_rate, channels, buffer_frames
   DriverConfig  -- Configuration request: sample_rate, buffer_frames, channel_count
-  ConfigResult  -- Accepted, Negotiated { actual_rate, actual_frames }, Error(String)
+  ConfigResult  -- Accepted, Negotiated { actual_rate, actual_frames, actual_channels }, Error(DriverError)
+  DriverError   -- Structured driver/config failure reason
 ```
 
 ## Key Public API
@@ -22,6 +23,7 @@ lib.rs
 - `DriverStatus` -- Serializable status snapshot
 - `DriverConfig` -- Sample rate + buffer size + channel count request
 - `ConfigResult` -- Three-way result for config negotiation
+- `DriverError` -- Structured errors for unavailable drivers, invalid config, timeouts, I/O, etc.
 
 ## Testing
 
@@ -31,8 +33,10 @@ cargo test -p driver-common
 
 ## Important Notes
 
-- `AudioDriver` is `Send + 'static` for use as `Box<dyn AudioDriver>` in the daemon
+- `AudioDriver` is `Send + 'static` for single-owner use as `Box<dyn AudioDriver>` in the daemon; it is intentionally not `Sync`
 - `read_audio()` returns number of *samples* (not frames) -- caller provides buffer of `frame_count * channel_count` floats
+- `read_frames()` is the frame-count convenience wrapper for new callers
+- `DriverConfig::default()` / `keep_current()` preserve current settings; `0` remains the wire-level sentinel for compatibility
 - Driver-initiated config changes use the `poll_config_change()` / `acknowledge_config_change()` handshake
 - Platform implementations: macOS HAL (`driver-hal`), Linux PipeWire (planned), Windows APO (planned)
 - `NullDriver` allows the daemon to compile and run gracefully on unsupported platforms
