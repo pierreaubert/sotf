@@ -12,6 +12,7 @@ description = "Generic constraint-based layout solver for GPUI applications"
 [dependencies]
 gpui-design = { workspace = true, optional = true }
 gpui-pretext = { workspace = true }
+serde = { workspace = true }
 # GPUI deps are optional, enabled by the `gpui` feature for the showcase binary.
 gpui = { workspace = true, optional = true }
 gpui-ui-kit = { workspace = true, optional = true }
@@ -28,3 +29,6 @@ showcase = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui-miniapp", "dep:gpui-design"
 name = "layout-showcase"
 path = "src/bin/layout_showcase.rs"
 required-features = ["showcase"]
+
+[dev-dependencies]
+serde_json = { workspace = true }

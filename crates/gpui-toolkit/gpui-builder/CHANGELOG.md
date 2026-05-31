@@ -1,3 +1,11 @@
+# Unreleased
+
+## Visual regression
+
+- Visual regression manifests are now serializable for screenshot runners.
+- Added required color-scheme coverage validation and deterministic output
+  paths for capture artifacts.
+
 # 0.6.3
 
 ## Accessibility tree model

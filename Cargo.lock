@@ -3814,6 +3814,8 @@ dependencies = [
  "gpui-miniapp",
  "gpui-pretext",
  "gpui-ui-kit",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
