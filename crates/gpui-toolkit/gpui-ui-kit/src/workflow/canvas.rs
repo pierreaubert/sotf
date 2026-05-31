@@ -17,6 +17,7 @@ use crate::menu::{Menu, MenuItem};
 use crate::theme::ThemeExt;
 use gpui::*;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Callback type for node double-click events
 pub type NodeDoubleClickCallback = Box<dyn Fn(NodeId, &mut Window, &mut App) + 'static>;
@@ -30,6 +31,9 @@ pub type GraphChangeCallback = Box<dyn Fn(&mut App) + 'static>;
 /// menu item id, the node that was right-clicked, the window, and the app.
 pub type NodeMenuSelectCallback =
     Box<dyn Fn(&SharedString, NodeId, &mut Window, &mut App) + 'static>;
+
+type SharedNodeMenuSelectCallback =
+    Rc<NodeMenuSelectCallback>;
 
 /// Callback that returns the menu items for a given node, or None to fall
 /// through to the canvas-level menu. Lets the parent show different menus
@@ -62,7 +66,7 @@ pub struct WorkflowCanvas {
     /// Callback fired after the underlying graph mutates structurally
     on_graph_change: Option<GraphChangeCallback>,
     /// Callback for node-context-menu item selection
-    on_node_menu_select: Option<NodeMenuSelectCallback>,
+    on_node_menu_select: Option<SharedNodeMenuSelectCallback>,
 }
 
 impl WorkflowCanvas {
@@ -130,7 +134,7 @@ impl WorkflowCanvas {
         &mut self,
         callback: impl Fn(&SharedString, NodeId, &mut Window, &mut App) + 'static,
     ) {
-        self.on_node_menu_select = Some(Box::new(callback));
+        self.on_node_menu_select = Some(Rc::new(Box::new(callback)));
     }
 
     /// Set callback for node double-click events
@@ -1276,19 +1280,12 @@ impl Render for WorkflowCanvas {
                 move |id, window, cx| {
                     if is_node_menu {
                         if let Some(node_id) = target_node {
-                            // Read+take callback to invoke without holding a
-                            // mutable borrow of the canvas, then close menu.
-                            let cb_taken = entity.update(cx, |this, _| {
+                            let cb = entity.update(cx, |this, _| {
                                 this.state.context_menu = None;
-                                this.on_node_menu_select.take()
+                                this.on_node_menu_select.clone()
                             });
-                            if let Some(cb) = cb_taken {
-                                cb(id, node_id, window, cx);
-                                entity.update(cx, |this, _| {
-                                    if this.on_node_menu_select.is_none() {
-                                        this.on_node_menu_select = Some(cb);
-                                    }
-                                });
+                            if let Some(cb) = cb {
+                                (**cb)(id, node_id, window, cx);
                             }
                             entity.update(cx, |_, cx| cx.notify());
                         }

@@ -68,12 +68,10 @@ fn solve_slot(
         };
     }
 
-    // Determine active display tier based on the smaller of width/height
-    // (we use the size that will be constrained by the parent's main axis,
-    // but at this point we don't know the parent axis, so we use the
-    // minimum dimension as a conservative estimate — the solver will
-    // re-assign the tier after allocation).
-    let active_tier = resolve_display_tier(slot, width.min(height));
+    // A root slot has no parent main axis. Use its resolved width as the
+    // inline size; container children are re-tiered from their allocated
+    // parent-axis size below.
+    let active_tier = resolve_display_tier(slot, width);
 
     SolvedNode {
         id: slot.id.to_string(),
@@ -834,6 +832,32 @@ mod tests {
         // Tiny → no tier
         let solved = solve(&root, 50.0, 600.0, &LayoutPreferences::default());
         assert_eq!(solved.find("rack").unwrap().active_tier, None);
+    }
+
+    #[test]
+    fn root_slot_display_tier_uses_width_not_short_height() {
+        static TIERS: &[DisplayTier<'_>] = &[
+            DisplayTier {
+                name: "Full",
+                min_size: 200.0,
+            },
+            DisplayTier {
+                name: "Mini",
+                min_size: 100.0,
+            },
+        ];
+
+        let root = LayoutNode::Slot(SlotNode {
+            id: "root-slot",
+            sizing: Sizing::flex(0.0),
+            priority: 1.0,
+            collapsible: false,
+            display_tiers: TIERS,
+            collapse_label: None,
+        });
+
+        let solved = solve(&root, 240.0, 48.0, &LayoutPreferences::default());
+        assert_eq!(solved.active_tier.as_deref(), Some("Full"));
     }
 
     // ===== Preference override tests =====

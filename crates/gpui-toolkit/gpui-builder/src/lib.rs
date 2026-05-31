@@ -89,7 +89,10 @@ pub use types::{
 pub use validation::{
     LayoutIssue, LayoutIssueKind, LayoutIssueSeverity, LayoutValidationReport, validate_layout,
 };
-pub use visual_regression::{VisualColorScheme, VisualRegressionCase, VisualRegressionManifest};
+pub use visual_regression::{
+    VisualColorScheme, VisualRegressionCase, VisualRegressionCoverageReport,
+    VisualRegressionFinding, VisualRegressionManifest,
+};
 
 // gpui-pretext re-exports for text-measured sizing
 pub use gpui_pretext::{

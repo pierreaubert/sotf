@@ -99,6 +99,28 @@ let solved = catalog.solve_all();
 Scenarios can also carry ratio overrides and collapsed-slot preferences, so the
 same catalog can drive responsive examples and regression snapshots.
 
+## Visual Regression Manifests
+
+Turn layout story catalogs into deterministic screenshot-runner input. The
+manifest serializes capture ids, viewport sizes, color schemes, solved layout
+text, and stable output paths.
+
+```rust
+use gpui_builder::{VisualColorScheme, VisualRegressionManifest};
+
+let manifest = VisualRegressionManifest::from_catalog(
+    &catalog,
+    &[VisualColorScheme::Light, VisualColorScheme::Dark],
+);
+let coverage = manifest.validate_required_schemes(&[
+    VisualColorScheme::Light,
+    VisualColorScheme::Dark,
+]);
+
+assert!(coverage.passed());
+println!("{}", manifest.to_markdown_table());
+```
+
 ## Layout State
 
 Use `LayoutState` for mutable, persistent user-driven overrides and convert it to solver input

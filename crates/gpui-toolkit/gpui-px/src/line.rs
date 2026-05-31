@@ -157,7 +157,7 @@ fn generate_log_ticks(min: f64, max: f64) -> Vec<f64> {
         ticks.push(final_decade);
     }
 
-    ticks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    ticks.sort_by(|a, b| a.total_cmp(b));
     ticks.dedup();
     ticks
 }

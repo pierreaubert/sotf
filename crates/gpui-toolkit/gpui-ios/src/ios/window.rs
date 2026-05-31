@@ -531,6 +531,8 @@ pub(crate) struct IosWindow {
     /// Momentum scroller — produces decelerating scroll deltas after a fling
     /// gesture, driven by the CADisplayLink frame callback.
     momentum_scroller: RefCell<MomentumScroller>,
+    /// NotificationCenter observer tokens for keyboard show/hide callbacks.
+    keyboard_observers: RefCell<Vec<*mut Object>>,
     /// The wgpu renderer (Metal backend on iOS).
     /// Wrapped in a `Mutex<Option<…>>` so that `draw()` (called from the
     /// `request_frame` callback) can acquire a mutable reference without
@@ -545,6 +547,8 @@ unsafe impl Sync for IosWindow {}
 
 impl Drop for IosWindow {
     fn drop(&mut self) {
+        self.unregister_keyboard_observers();
+
         // Unregister from the global window list so lifecycle callbacks
         // don't dereference freed memory.
         super::ffi::unregister_window(self as *const Self);
@@ -666,6 +670,7 @@ impl IosWindow {
                 touch_states: RefCell::new(HashMap::new()),
                 velocity_tracker: RefCell::new(VelocityTracker::new()),
                 momentum_scroller: RefCell::new(MomentumScroller::new()),
+                keyboard_observers: RefCell::new(Vec::new()),
                 renderer: Mutex::new(None),
             };
 
@@ -781,23 +786,16 @@ impl IosWindow {
     /// Register for keyboard show/hide notifications so we can track the
     /// keyboard height and allow the UI to shift content above the keyboard.
     pub(crate) fn register_keyboard_observers(&self) {
+        if !self.keyboard_observers.borrow().is_empty() {
+            return;
+        }
+
         unsafe {
             let notification_center: *mut Object =
                 msg_send![class!(NSNotificationCenter), defaultCenter];
 
-            // Helper to create an NSString from a Rust &str.
-            fn make_nsstring(s: &str) -> *mut Object {
-                let cls = class!(NSString);
-                let bytes = s.as_ptr() as *const c_void;
-                let len = s.len();
-                unsafe {
-                    let ns: *mut Object = msg_send![cls, alloc];
-                    msg_send![ns, initWithBytes:bytes length:len encoding:4u64] // NSUTF8StringEncoding
-                }
-            }
-
-            let show_name = make_nsstring("UIKeyboardWillShowNotification");
-            let hide_name = make_nsstring("UIKeyboardWillHideNotification");
+            let show_name = super::ns_string_from_str("UIKeyboardWillShowNotification");
+            let hide_name = super::ns_string_from_str("UIKeyboardWillHideNotification");
 
             // Block that fires when the keyboard appears — extracts the
             // end-frame height and stores it in the global atomic.
@@ -812,7 +810,7 @@ impl IosWindow {
                 if user_info.is_null() {
                     return;
                 }
-                let frame_key = make_nsstring("UIKeyboardFrameEndUserInfoKey");
+                let frame_key = super::ns_string_from_str("UIKeyboardFrameEndUserInfoKey");
                 let frame_value: *mut Object = msg_send![user_info, objectForKey: frame_key];
                 if frame_value.is_null() {
                     return;
@@ -828,22 +826,43 @@ impl IosWindow {
                 crate::set_keyboard_height(0.0);
             });
 
-            let _: *mut Object = msg_send![notification_center,
+            let show_observer: *mut Object = msg_send![notification_center,
                 addObserverForName: show_name
                 object: std::ptr::null::<Object>()
                 queue: std::ptr::null::<Object>()
                 usingBlock: &*show_block
             ];
-            let _: *mut Object = msg_send![notification_center,
+            let hide_observer: *mut Object = msg_send![notification_center,
                 addObserverForName: hide_name
                 object: std::ptr::null::<Object>()
                 queue: std::ptr::null::<Object>()
                 usingBlock: &*hide_block
             ];
 
-            // Leak the blocks so they live for the app lifetime.
-            std::mem::forget(show_block);
-            std::mem::forget(hide_block);
+            let mut observers = self.keyboard_observers.borrow_mut();
+            if !show_observer.is_null() {
+                observers.push(show_observer);
+            }
+            if !hide_observer.is_null() {
+                observers.push(hide_observer);
+            }
+        }
+    }
+
+    fn unregister_keyboard_observers(&self) {
+        let mut observers = self.keyboard_observers.borrow_mut();
+        if observers.is_empty() {
+            return;
+        }
+
+        unsafe {
+            let notification_center: *mut Object =
+                msg_send![class!(NSNotificationCenter), defaultCenter];
+            for observer in observers.drain(..) {
+                if !observer.is_null() {
+                    let _: () = msg_send![notification_center, removeObserver: observer];
+                }
+            }
         }
     }
 

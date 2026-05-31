@@ -2,12 +2,12 @@
 
 use core_graphics::geometry::CGRect;
 use gpui::{Bounds, DisplayId, Pixels, PlatformDisplay, px, size};
-use objc::{class, msg_send, sel, sel_impl};
+use objc::{class, msg_send, runtime::Object, sel, sel_impl};
 use uuid::Uuid;
 
 #[derive(Debug)]
 pub(crate) struct IosDisplay {
-    screen: *mut objc::runtime::Object,
+    screen: *mut Object,
 }
 
 unsafe impl Send for IosDisplay {}
@@ -16,22 +16,29 @@ unsafe impl Sync for IosDisplay {}
 impl IosDisplay {
     pub fn main() -> Self {
         unsafe {
-            let screen: *mut objc::runtime::Object = msg_send![class!(UIScreen), mainScreen];
-            Self { screen }
+            let screen: *mut Object = msg_send![class!(UIScreen), mainScreen];
+            Self::retain(screen)
         }
     }
 
     pub fn all() -> Vec<Self> {
         unsafe {
-            let screens: *mut objc::runtime::Object = msg_send![class!(UIScreen), screens];
+            let screens: *mut Object = msg_send![class!(UIScreen), screens];
             let count: usize = msg_send![screens, count];
             let mut result = Vec::with_capacity(count);
             for i in 0..count {
-                let screen: *mut objc::runtime::Object = msg_send![screens, objectAtIndex: i];
-                result.push(Self { screen });
+                let screen: *mut Object = msg_send![screens, objectAtIndex: i];
+                result.push(Self::retain(screen));
             }
             result
         }
+    }
+
+    unsafe fn retain(screen: *mut Object) -> Self {
+        if !screen.is_null() {
+            let _: *mut Object = msg_send![screen, retain];
+        }
+        Self { screen }
     }
 
     fn bounds_in_points(&self) -> CGRect {
@@ -49,6 +56,16 @@ impl IosDisplay {
         unsafe {
             let scale: f64 = msg_send![self.screen, scale];
             scale as f32
+        }
+    }
+}
+
+impl Drop for IosDisplay {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.screen.is_null() {
+                let _: () = msg_send![self.screen, release];
+            }
         }
     }
 }

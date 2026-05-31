@@ -162,7 +162,7 @@ impl ContourGenerator {
     pub fn contour(&self, values: &[f64], threshold: f64) -> Contour {
         let mut contour = Contour::new(threshold);
 
-        if values.len() < (self.width * self.height) {
+        if self.width < 2 || self.height < 2 || values.len() < (self.width * self.height) {
             return contour;
         }
 
@@ -622,7 +622,11 @@ impl ContourGenerator {
     /// # Returns
     /// A vector of ContourBand, one for each pair of consecutive thresholds.
     pub fn contour_bands(&self, values: &[f64], thresholds: &[f64]) -> Vec<ContourBand> {
-        if thresholds.len() < 2 || values.len() < (self.width * self.height) {
+        if self.width < 2
+            || self.height < 2
+            || thresholds.len() < 2
+            || values.len() < (self.width * self.height)
+        {
             return Vec::new();
         }
 
@@ -954,5 +958,12 @@ mod tests {
     fn test_transform_single_dimension() {
         let generator = ContourGenerator::new(1, 1);
         assert_eq!(generator.contour(&[1.0], 0.5).coordinates.len(), 0);
+    }
+
+    #[test]
+    fn test_contour_zero_dimension_returns_empty() {
+        let generator = ContourGenerator::new(0, 0);
+        assert_eq!(generator.contour(&[], 0.5).coordinates.len(), 0);
+        assert!(generator.contour_bands(&[], &[0.0, 1.0]).is_empty());
     }
 }

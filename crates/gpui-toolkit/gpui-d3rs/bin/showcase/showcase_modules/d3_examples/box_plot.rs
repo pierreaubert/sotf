@@ -13,7 +13,7 @@ const DIAMONDS_CSV: &str = include_str!("../../data/diamonds.csv");
 
 pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     // Load real diamonds data, bin by carat range for box plot groups
-    let rows = d3rs::fetch::parse_csv(DIAMONDS_CSV);
+    let rows = d3rs::fetch::parse_csv(DIAMONDS_CSV).expect("valid diamonds CSV");
     let mut binned: std::collections::BTreeMap<String, Vec<f64>> =
         std::collections::BTreeMap::new();
     for row in &rows {

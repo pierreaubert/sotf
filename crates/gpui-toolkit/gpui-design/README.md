@@ -70,6 +70,23 @@ fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoE
 | Typography sizes, font family | **Design System** | `gpui-design` |
 | Shadow/elevation model | **Design System** | `gpui-design` |
 
+## Conformance Gate
+
+`DesignConformanceMatrix::all_presets()` validates every built-in preset in
+standard and reduced-motion modes. It checks touch-target rules, typography
+ordering, spacing/radius sanity, motion duration ordering, reduced-motion
+collapse, audio-control geometry, and token export coverage.
+
+```rust
+use gpui_design::DesignConformanceMatrix;
+
+let matrix = DesignConformanceMatrix::all_presets();
+assert!(matrix.passed(), "{}", matrix.to_markdown_table());
+```
+
+`DesignTokenExport::for_all_presets()` returns a serializable Style
+Dictionary-friendly export for tooling and future Figma integration.
+
 ## Sub-structs
 
 - `CornerRadii` — sm/md/lg/xl radius + continuous vs circular style

@@ -78,10 +78,22 @@ fn classify_char(code: u32) -> BidiType {
         BASE_TYPES[code as usize]
     } else if (0x0590..=0x05F4).contains(&code) {
         R
+    } else if (0xFB1D..=0xFB4F).contains(&code) {
+        R
     } else if (0x0600..=0x06FF).contains(&code) {
         ARABIC_TYPES[(code & 0xFF) as usize]
-    } else if (0x0700..=0x08AC).contains(&code) {
+    } else if (0x0700..=0x08FF).contains(&code)
+        || (0xFB50..=0xFDFF).contains(&code)
+        || (0xFE70..=0xFEFC).contains(&code)
+        || (0x1EE00..=0x1EEFF).contains(&code)
+    {
         AL
+    } else if code == 0x200E || code == 0x202A || code == 0x202D {
+        L
+    } else if code == 0x200F || code == 0x202B || code == 0x202E {
+        R
+    } else if code == 0x202C || (0x2066..=0x2069).contains(&code) {
+        BN
     } else {
         L
     }
@@ -303,6 +315,15 @@ mod tests {
     fn test_rtl_arabic() {
         let levels = compute_bidi_levels("مرحبا").unwrap();
         assert!(levels.iter().all(|&l| l > 0));
+    }
+
+    #[test]
+    fn test_higher_rtl_ranges_are_not_ltr() {
+        assert_eq!(classify_char('\u{200F}' as u32), R);
+        assert_eq!(classify_char('\u{202B}' as u32), R);
+        assert_eq!(classify_char('\u{FB50}' as u32), AL);
+        assert_eq!(classify_char('\u{FE8E}' as u32), AL);
+        assert_eq!(classify_char('\u{FB1D}' as u32), R);
     }
 
     #[test]

@@ -193,7 +193,7 @@ math-rir = { path = "crates/math-audio/math-rir", version = "0.5" }
 autoeq = { version = "0.4", path = "crates/autoeq" }
 
 # using git version
-gpui-d3rs = { version = "0.6", path = "crates/gpui-toolkit/gpui-d3rs" }
+gpui-d3rs = { version = "0.7", path = "crates/gpui-toolkit/gpui-d3rs" }
 gpui-px = { version = "0.6", path = "crates/gpui-toolkit/gpui-px", default-features = false }
 gpui-ui-kit ={ version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
 gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }

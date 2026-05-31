@@ -3814,11 +3814,13 @@ dependencies = [
  "gpui-miniapp",
  "gpui-pretext",
  "gpui-ui-kit",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.6.9"
+version = "0.7.0"
 dependencies = [
  "approx",
  "autoeq",

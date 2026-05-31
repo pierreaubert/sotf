@@ -638,7 +638,7 @@ fn tile_squarify(
 
     // Sort by value descending for better packing
     let mut sorted: Vec<_> = children.iter().map(|(n, v)| (*n, *v)).collect();
-    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| b.1.total_cmp(&a.1));
 
     let mut rects = Vec::new();
     let mut remaining_start = 0;

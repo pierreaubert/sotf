@@ -8,7 +8,7 @@
 //! This module contains only data types — no rendering code, no framework deps.
 //! Platform renderers consume it alongside Theme colors.
 
-use serde::Serialize;
+use serde::{ser::SerializeStruct, Serialize, Serializer};
 
 // ============================================================================
 // Enums
@@ -783,7 +783,7 @@ impl DesignLanguage {
 // ============================================================================
 
 /// A style token in a shape compatible with Style Dictionary export.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DesignToken {
     pub path: Vec<String>,
     pub value: String,
@@ -796,15 +796,29 @@ impl DesignToken {
     }
 }
 
+impl Serialize for DesignToken {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("DesignToken", 4)?;
+        state.serialize_field("name", &self.name())?;
+        state.serialize_field("path", &self.path)?;
+        state.serialize_field("value", &self.value)?;
+        state.serialize_field("token_type", &self.token_type)?;
+        state.end()
+    }
+}
+
 /// Accessibility and platform-conformance finding.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ConformanceFinding {
     pub id: &'static str,
     pub message: String,
 }
 
 /// Summary used by CI and component docs.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct DesignConformanceReport {
     pub findings: Vec<ConformanceFinding>,
 }
@@ -812,6 +826,123 @@ pub struct DesignConformanceReport {
 impl DesignConformanceReport {
     pub fn passed(&self) -> bool {
         self.findings.is_empty()
+    }
+}
+
+/// Conformance result for one preset and one motion policy.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DesignConformanceCase {
+    pub preset_id: &'static str,
+    pub reduced_motion: bool,
+    pub report: DesignConformanceReport,
+    pub motion: MotionSpec,
+    pub token_count: usize,
+}
+
+impl DesignConformanceCase {
+    pub fn passed(&self) -> bool {
+        self.report.passed()
+    }
+
+    pub fn motion_label(&self) -> &'static str {
+        if self.reduced_motion {
+            "reduced"
+        } else {
+            "standard"
+        }
+    }
+}
+
+/// CI-facing conformance matrix across design presets and motion policies.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct DesignConformanceMatrix {
+    pub cases: Vec<DesignConformanceCase>,
+}
+
+impl DesignConformanceMatrix {
+    pub fn all_presets() -> Self {
+        let mut cases = Vec::new();
+        for (preset_id, system) in all_design_presets() {
+            for reduced_motion in [false, true] {
+                cases.push(DesignConformanceCase {
+                    preset_id,
+                    reduced_motion,
+                    report: system.conformance_report(reduced_motion),
+                    motion: system.motion_spec(reduced_motion),
+                    token_count: system.style_dictionary_tokens().len(),
+                });
+            }
+        }
+        Self { cases }
+    }
+
+    pub fn passed(&self) -> bool {
+        self.cases.iter().all(DesignConformanceCase::passed)
+    }
+
+    pub fn findings(&self) -> Vec<(&DesignConformanceCase, &ConformanceFinding)> {
+        let mut findings = Vec::new();
+        for case in &self.cases {
+            for finding in &case.report.findings {
+                findings.push((case, finding));
+            }
+        }
+        findings
+    }
+
+    pub fn to_markdown_table(&self) -> String {
+        let mut output = String::from(
+            "| preset | motion | tokens | status | findings |\n\
+             | --- | --- | ---: | --- | --- |\n",
+        );
+        for case in &self.cases {
+            let findings = if case.report.findings.is_empty() {
+                "none".to_string()
+            } else {
+                case.report
+                    .findings
+                    .iter()
+                    .map(|finding| finding.id)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            output.push_str(&format!(
+                "| {} | {} | {} | {} | {} |\n",
+                case.preset_id,
+                case.motion_label(),
+                case.token_count,
+                if case.passed() { "pass" } else { "fail" },
+                findings
+            ));
+        }
+        output
+    }
+}
+
+/// Style Dictionary token export for one preset.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DesignTokenPresetExport {
+    pub preset_id: &'static str,
+    pub tokens: Vec<DesignToken>,
+}
+
+/// Stable token export for all built-in presets.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct DesignTokenExport {
+    pub presets: Vec<DesignTokenPresetExport>,
+}
+
+impl DesignTokenExport {
+    pub fn for_all_presets() -> Self {
+        Self {
+            presets: all_design_presets()
+                .into_iter()
+                .map(|(preset_id, system)| DesignTokenPresetExport {
+                    preset_id,
+                    tokens: system.style_dictionary_tokens(),
+                })
+                .collect(),
+        }
     }
 }
 
@@ -844,10 +975,52 @@ impl DesignSystem {
                 self.spacing.control_padding_y,
                 "dimension",
             ),
+            token("spacing.control_gap", self.spacing.control_gap, "dimension"),
+            token("spacing.section_gap", self.spacing.section_gap, "dimension"),
+            token(
+                "spacing.card_padding",
+                self.spacing.card_padding,
+                "dimension",
+            ),
             token(
                 "interaction.min_touch_target",
                 self.interaction.min_touch_target,
                 "dimension",
+            ),
+            token(
+                "interaction.border_width",
+                self.interaction.border_width,
+                "dimension",
+            ),
+            token(
+                "interaction.focus_ring_width",
+                self.interaction.focus_ring_width,
+                "dimension",
+            ),
+            token(
+                "interaction.focus_ring_offset",
+                self.interaction.focus_ring_offset,
+                "dimension",
+            ),
+            token(
+                "elevation.level_0_blur",
+                self.elevation.level_0_blur,
+                "dimension",
+            ),
+            token(
+                "elevation.level_1_blur",
+                self.elevation.level_1_blur,
+                "dimension",
+            ),
+            token(
+                "elevation.level_2_blur",
+                self.elevation.level_2_blur,
+                "dimension",
+            ),
+            token(
+                "elevation.shadow_opacity",
+                self.elevation.shadow_opacity,
+                "number",
             ),
             token(
                 "typography.font_family",
@@ -867,6 +1040,46 @@ impl DesignSystem {
             token("motion.duration_ms", self.animation.duration_ms, "duration"),
             token("motion.fast_ms", self.animation.fast_ms, "duration"),
             token("motion.slow_ms", self.animation.slow_ms, "duration"),
+            token(
+                "motion.prefer_spring",
+                self.animation.prefer_spring,
+                "boolean",
+            ),
+            token(
+                "audio.knob_arc_start_deg",
+                self.audio_controls.knob_arc_start_deg,
+                "number",
+            ),
+            token(
+                "audio.knob_arc_sweep_deg",
+                self.audio_controls.knob_arc_sweep_deg,
+                "number",
+            ),
+            token(
+                "audio.knob_arc_width",
+                self.audio_controls.knob_arc_width,
+                "dimension",
+            ),
+            token(
+                "audio.knob_arc_segments",
+                self.audio_controls.knob_arc_segments,
+                "number",
+            ),
+            token(
+                "audio.slider_track_sm",
+                self.audio_controls.slider_track_widths[0],
+                "dimension",
+            ),
+            token(
+                "audio.slider_track_md",
+                self.audio_controls.slider_track_widths[1],
+                "dimension",
+            ),
+            token(
+                "audio.slider_track_lg",
+                self.audio_controls.slider_track_widths[2],
+                "dimension",
+            ),
         ]
     }
 
@@ -874,10 +1087,100 @@ impl DesignSystem {
     pub fn conformance_report(&self, reduced_motion_required: bool) -> DesignConformanceReport {
         let mut findings = Vec::new();
 
+        finite_positive(
+            &mut findings,
+            "spacing.grid_unit",
+            self.spacing.grid_unit,
+            "spacing grid_unit must be finite and positive",
+        );
+        finite_non_negative(
+            &mut findings,
+            "spacing.control_padding_x",
+            self.spacing.control_padding_x,
+            "control horizontal padding must be finite and non-negative",
+        );
+        finite_non_negative(
+            &mut findings,
+            "spacing.control_padding_y",
+            self.spacing.control_padding_y,
+            "control vertical padding must be finite and non-negative",
+        );
+        finite_non_negative(
+            &mut findings,
+            "spacing.control_gap",
+            self.spacing.control_gap,
+            "control gap must be finite and non-negative",
+        );
+        finite_non_negative(
+            &mut findings,
+            "spacing.section_gap",
+            self.spacing.section_gap,
+            "section gap must be finite and non-negative",
+        );
+
+        for (id, value) in [
+            ("radius.sm", self.corners.sm),
+            ("radius.md", self.corners.md),
+            ("radius.lg", self.corners.lg),
+            ("radius.xl", self.corners.xl),
+        ] {
+            finite_non_negative(
+                &mut findings,
+                id,
+                value,
+                "corner radii must be finite and non-negative",
+            );
+        }
+
+        finite_positive(
+            &mut findings,
+            "interaction.min_touch_target",
+            self.interaction.min_touch_target,
+            "minimum touch target must be finite and positive",
+        );
+        finite_non_negative(
+            &mut findings,
+            "interaction.focus_ring_width",
+            self.interaction.focus_ring_width,
+            "focus ring width must be finite and non-negative",
+        );
+
         if self.language == DesignLanguage::AppleHig && self.interaction.min_touch_target < 44.0 {
             findings.push(ConformanceFinding {
                 id: "apple.touch_target",
                 message: "Apple HIG touch targets should be at least 44px".to_string(),
+            });
+        }
+        if self.language == DesignLanguage::Material3 && self.interaction.min_touch_target < 48.0 {
+            findings.push(ConformanceFinding {
+                id: "material.touch_target",
+                message: "Material 3 touch targets should be at least 48px".to_string(),
+            });
+        }
+
+        if !(0.0..=1.0).contains(&self.elevation.shadow_opacity)
+            || !self.elevation.shadow_opacity.is_finite()
+        {
+            findings.push(ConformanceFinding {
+                id: "elevation.shadow_opacity",
+                message: "shadow opacity must be finite and in [0, 1]".to_string(),
+            });
+        }
+
+        if !(self.typography.small_size.is_finite()
+            && self.typography.base_size.is_finite()
+            && self.typography.large_size.is_finite()
+            && self.typography.small_size > 0.0
+            && self.typography.base_size > 0.0
+            && self.typography.large_size > 0.0
+            && self.typography.small_size <= self.typography.base_size
+            && self.typography.base_size <= self.typography.large_size)
+        {
+            findings.push(ConformanceFinding {
+                id: "typography.scale",
+                message:
+                    "typography sizes must be finite, positive, and ordered small <= base <= large"
+                        .to_string(),
             });
         }
         if self.typography.dynamic_sizing && self.typography.large_size < self.typography.base_size
@@ -887,10 +1190,76 @@ impl DesignSystem {
                 message: "dynamic typography large_size must be >= base_size".to_string(),
             });
         }
-        if reduced_motion_required && self.animation.fast_ms > 1 {
+
+        if !(self.animation.fast_ms <= self.animation.duration_ms
+            && self.animation.duration_ms <= self.animation.slow_ms)
+        {
+            findings.push(ConformanceFinding {
+                id: "motion.duration_order",
+                message: "motion durations must be ordered fast <= default <= slow".to_string(),
+            });
+        }
+        finite_positive(
+            &mut findings,
+            "motion.spring_stiffness",
+            self.animation.spring_stiffness,
+            "spring stiffness must be finite and positive",
+        );
+        finite_positive(
+            &mut findings,
+            "motion.spring_damping",
+            self.animation.spring_damping,
+            "spring damping must be finite and positive",
+        );
+
+        let motion = self.motion_spec(reduced_motion_required);
+        if reduced_motion_required
+            && (motion.duration_ms != 0 || motion.fast_ms != 0 || motion.slow_ms != 0)
+        {
             findings.push(ConformanceFinding {
                 id: "motion.reduced",
-                message: "reduced-motion mode should collapse fast transitions".to_string(),
+                message: "reduced-motion mode should collapse transition durations".to_string(),
+            });
+        }
+
+        if self.layout.slider_height_compact > self.layout.slider_height_normal {
+            findings.push(ConformanceFinding {
+                id: "layout.slider_height_order",
+                message: "compact slider height should not exceed normal slider height".to_string(),
+            });
+        }
+
+        if !(self.audio_controls.knob_arc_sweep_deg.is_finite()
+            && self.audio_controls.knob_arc_sweep_deg > 0.0
+            && self.audio_controls.knob_arc_sweep_deg <= 360.0)
+        {
+            findings.push(ConformanceFinding {
+                id: "audio.knob_arc_sweep",
+                message: "knob arc sweep must be finite and in (0, 360]".to_string(),
+            });
+        }
+        if self.audio_controls.knob_arc_segments < 12 {
+            findings.push(ConformanceFinding {
+                id: "audio.knob_arc_segments",
+                message: "knob arc should use at least 12 segments".to_string(),
+            });
+        }
+        for (index, width) in self.audio_controls.slider_track_widths.iter().enumerate() {
+            if !width.is_finite() || *width <= 0.0 {
+                findings.push(ConformanceFinding {
+                    id: "audio.slider_track_width",
+                    message: format!(
+                        "slider track width at index {index} must be finite and positive"
+                    ),
+                });
+            }
+        }
+
+        let token_count = self.style_dictionary_tokens().len();
+        if token_count < 24 {
+            findings.push(ConformanceFinding {
+                id: "tokens.coverage",
+                message: "style dictionary export should include core shape, spacing, interaction, typography, motion, and audio tokens".to_string(),
             });
         }
 
@@ -915,6 +1284,43 @@ impl DesignSystem {
                 reduced_motion: false,
             }
         }
+    }
+}
+
+fn all_design_presets() -> Vec<(&'static str, DesignSystem)> {
+    vec![
+        ("neutral", DesignSystem::neutral()),
+        ("apple_hig", DesignSystem::apple_hig()),
+        ("material3", DesignSystem::material3()),
+        ("fluent", DesignSystem::fluent()),
+    ]
+}
+
+fn finite_positive(
+    findings: &mut Vec<ConformanceFinding>,
+    id: &'static str,
+    value: f32,
+    message: &'static str,
+) {
+    if !value.is_finite() || value <= 0.0 {
+        findings.push(ConformanceFinding {
+            id,
+            message: message.to_string(),
+        });
+    }
+}
+
+fn finite_non_negative(
+    findings: &mut Vec<ConformanceFinding>,
+    id: &'static str,
+    value: f32,
+    message: &'static str,
+) {
+    if !value.is_finite() || value < 0.0 {
+        findings.push(ConformanceFinding {
+            id,
+            message: message.to_string(),
+        });
     }
 }
 
@@ -1080,16 +1486,12 @@ mod tests {
         let tokens = ds.style_dictionary_tokens();
 
         assert!(tokens.iter().any(|token| token.name() == "design.language"));
-        assert!(
-            tokens
-                .iter()
-                .any(|token| token.name() == "motion.duration_ms")
-        );
-        assert!(
-            tokens
-                .iter()
-                .any(|token| token.name() == "interaction.min_touch_target")
-        );
+        assert!(tokens
+            .iter()
+            .any(|token| token.name() == "motion.duration_ms"));
+        assert!(tokens
+            .iter()
+            .any(|token| token.name() == "interaction.min_touch_target"));
     }
 
     #[test]
@@ -1099,6 +1501,48 @@ mod tests {
         assert!(ds.conformance_report(false).passed());
         assert_eq!(ds.motion_spec(true).duration_ms, 0);
         assert_eq!(ds.motion_spec(false).duration_ms, ds.animation.duration_ms);
+    }
+
+    #[test]
+    fn conformance_matrix_covers_all_presets_and_motion_modes() {
+        let matrix = DesignConformanceMatrix::all_presets();
+
+        assert_eq!(matrix.cases.len(), 8);
+        assert!(matrix.passed(), "{}", matrix.to_markdown_table());
+        assert!(matrix
+            .cases
+            .iter()
+            .any(|case| case.preset_id == "apple_hig" && case.reduced_motion));
+        assert!(matrix
+            .to_markdown_table()
+            .contains("| apple_hig | reduced |"));
+    }
+
+    #[test]
+    fn conformance_report_catches_mutated_public_fields() {
+        let mut ds = DesignSystem::neutral();
+        ds.spacing.grid_unit = 0.0;
+        ds.elevation.shadow_opacity = 1.5;
+        ds.typography.large_size = ds.typography.base_size - 1.0;
+        ds.animation.fast_ms = ds.animation.slow_ms + 1;
+
+        let report = ds.conformance_report(false);
+        let ids: Vec<_> = report.findings.iter().map(|finding| finding.id).collect();
+
+        assert!(ids.contains(&"spacing.grid_unit"));
+        assert!(ids.contains(&"elevation.shadow_opacity"));
+        assert!(ids.contains(&"typography.scale"));
+        assert!(ids.contains(&"motion.duration_order"));
+    }
+
+    #[test]
+    fn style_dictionary_export_is_serializable_and_complete() {
+        let export = DesignTokenExport::for_all_presets();
+        let json = serde_json::to_string(&export).unwrap();
+
+        assert!(json.contains("\"apple_hig\""));
+        assert!(json.contains("\"interaction.min_touch_target\""));
+        assert!(json.contains("\"audio.knob_arc_sweep_deg\""));
     }
 
     #[test]
