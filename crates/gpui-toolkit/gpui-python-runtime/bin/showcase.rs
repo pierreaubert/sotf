@@ -1,94 +1,82 @@
-//! GPUI Python Runtime Showcase.
+//! Native GPUI host for Python-authored showcase apps.
 
 use gpui::*;
 use gpui_design::{DesignExt, DesignSystem};
 use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_px::{ColorScale, ScaleType, bar, heatmap, line, scatter};
 use gpui_python_runtime::gpui_adapter::Gpui3DCache;
-use gpui_python_runtime::{
-    AxisLabels, CameraSpec, ColorRgba, LinesSpec, OrbitCameraSpec, Point3, ScalarRange, SurfaceSpec,
+use gpui_python_runtime::ui_ir::{
+    BadgeNode, ButtonNode, CardNode, ChartKind, ChartNode, ProgressNode, PythonAppIr, Scene3dNode,
+    SectionHeaderNode, SimpleNode, SpinnerNode, StackNode, TableNode, TabsNode, TextNode, UiNode,
 };
+use gpui_python_runtime::{LinesSpec, MeshSpec, SceneSpec, SurfaceSpec};
 use gpui_ui_kit::theme::{Theme, ThemeExt};
-use std::f64::consts::TAU;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+use std::env;
+use std::error::Error;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn main() {
+    let app = match load_python_app() {
+        Ok(app) => app,
+        Err(error) => {
+            eprintln!("failed to load Python GPUI app: {error}");
+            std::process::exit(1);
+        }
+    };
+
+    let title = app.title.clone();
+    let width = app.width;
+    let height = app.height;
+
+    if env::var_os("GPUI_TOOLKIT_VALIDATE_ONLY").is_some() {
+        println!(
+            "validated Python GPUI app {:?} with {} sections",
+            app.title,
+            app.sections.len()
+        );
+        return;
+    }
+
     MiniApp::run(
-        MiniAppConfig::new("GPUI Python Runtime Showcase")
-            .size(1240.0, 820.0)
+        MiniAppConfig::new(title)
+            .size(width, height)
             .with_theme(true)
             .scrollable(false),
-        |cx| cx.new(PythonShowcase::new),
+        move |cx| {
+            let app = app.clone();
+            cx.new(move |_cx| PythonIrShowcase::new(app))
+        },
     );
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum ShowcaseSection {
-    #[default]
-    Surface3D,
-    Lines3D,
-    PxCharts,
-    MixedScene,
-}
-
-impl ShowcaseSection {
-    fn all() -> &'static [Self] {
-        &[
-            Self::Surface3D,
-            Self::Lines3D,
-            Self::PxCharts,
-            Self::MixedScene,
-        ]
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Surface3D => "3D Surface",
-            Self::Lines3D => "3D Lines",
-            Self::PxCharts => "gpui-px Charts",
-            Self::MixedScene => "Scene Specs",
-        }
-    }
-}
-
-struct PythonShowcase {
-    current_section: ShowcaseSection,
+struct PythonIrShowcase {
+    app: PythonAppIr,
+    current_section: String,
     gpui_3d: Gpui3DCache,
-    scatter_x: Vec<f64>,
-    scatter_y: Vec<f64>,
-    line_x: Vec<f64>,
-    line_y: Vec<f64>,
-    heatmap_z: Vec<f64>,
-    heatmap_size: usize,
-    bar_categories: Vec<&'static str>,
-    bar_values: Vec<f64>,
 }
 
-impl PythonShowcase {
-    fn new(_cx: &mut Context<Self>) -> Self {
-        let (scatter_x, scatter_y) = generate_scatter_data();
-        let (line_x, line_y) = generate_frequency_response();
-        let heatmap_size = 24;
-        let heatmap_z = generate_heatmap_data(heatmap_size);
+impl PythonIrShowcase {
+    fn new(app: PythonAppIr) -> Self {
+        let current_section = app
+            .sections
+            .first()
+            .map(|section| section.id.clone())
+            .unwrap_or_default();
 
         Self {
-            current_section: ShowcaseSection::default(),
+            app,
+            current_section,
             gpui_3d: Gpui3DCache::new(),
-            scatter_x,
-            scatter_y,
-            line_x,
-            line_y,
-            heatmap_z,
-            heatmap_size,
-            bar_categories: vec!["Surface", "Lines", "Mesh", "Light", "Callback"],
-            bar_values: vec![42.0, 31.0, 18.0, 8.0, 5.0],
         }
     }
 
     fn render_sidebar(&mut self, theme: &Theme, ds: &DesignSystem, cx: &mut Context<Self>) -> Div {
-        let current = self.current_section;
-
         div()
-            .w(px(230.0))
+            .w(px(240.0))
             .h_full()
             .flex()
             .flex_col()
@@ -108,17 +96,18 @@ impl PythonShowcase {
                             .text_size(px(ds.typography.large_size))
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
-                            .child("Scene3D"),
+                            .child(self.app.sidebar_title.clone()),
                     )
                     .child(
                         div()
                             .text_size(px(ds.typography.small_size))
                             .text_color(theme.text_muted)
-                            .child("Python declarations, Rust renderers"),
+                            .child(self.app.sidebar_subtitle.clone()),
                     ),
             )
-            .children(ShowcaseSection::all().iter().copied().map(|section| {
-                let selected = section == current;
+            .children(self.app.sections.iter().map(|section| {
+                let selected = section.id == self.current_section;
+                let section_id = section.id.clone();
                 let bg = if selected {
                     theme.accent
                 } else {
@@ -136,7 +125,7 @@ impl PythonShowcase {
                 };
 
                 div()
-                    .id(ElementId::Name(section.label().into()))
+                    .id(ElementId::Name(section_id.clone().into()))
                     .px(px(ds.spacing.control_padding_x))
                     .py(px(ds.spacing.control_padding_y))
                     .rounded(px(ds.corners.md))
@@ -144,20 +133,34 @@ impl PythonShowcase {
                     .bg(bg)
                     .hover(move |style| style.bg(hover_bg))
                     .text_color(text)
-                    .child(section.label())
-                    .on_click(cx.listener(move |this, _, _window, _cx| {
-                        this.current_section = section;
+                    .child(section.label.clone())
+                    .on_click(cx.listener(move |this, _, _window, cx| {
+                        this.current_section = section_id.clone();
+                        cx.notify();
                     }))
             }))
     }
 
-    fn render_content(&mut self, theme: &Theme, ds: &DesignSystem) -> impl IntoElement {
-        let content = match self.current_section {
-            ShowcaseSection::Surface3D => self.render_surface_3d(theme, ds),
-            ShowcaseSection::Lines3D => self.render_lines_3d(theme, ds),
-            ShowcaseSection::PxCharts => self.render_px_charts(theme, ds),
-            ShowcaseSection::MixedScene => self.render_scene_specs(theme, ds),
-        };
+    fn render_content(
+        &mut self,
+        theme: &Theme,
+        ds: &DesignSystem,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let content = self
+            .app
+            .sections
+            .iter()
+            .find(|section| section.id == self.current_section)
+            .or_else(|| self.app.sections.first())
+            .map(|section| section.content.clone());
+
+        let content = content
+            .as_ref()
+            .map(|node| self.render_node(node, theme, ds, cx))
+            .unwrap_or_else(|| {
+                self.render_error("Python app did not define any sections", theme, ds)
+            });
 
         div()
             .id("python-showcase-content")
@@ -169,210 +172,618 @@ impl PythonShowcase {
             .child(content)
     }
 
-    fn render_surface_3d(&mut self, theme: &Theme, ds: &DesignSystem) -> Div {
-        let spec = build_surface_spec();
-        let element = self
-            .gpui_3d
-            .surface_element(&spec)
-            .expect("surface spec is static and validated");
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(ds.spacing.section_gap))
-            .child(section_header(
-                "3D Surface",
-                "Rust-owned wgpu surface from a Python-style spec",
-                theme,
-                ds,
-            ))
-            .child(
-                div()
-                    .w(px(760.0))
-                    .h(px(480.0))
-                    .bg(theme.surface)
-                    .rounded(px(ds.corners.md))
-                    .border_1()
-                    .border_color(theme.border)
-                    .child(element),
-            )
-            .child(spec_summary(
-                theme,
-                ds,
-                &[
-                    ("id", spec.id.as_str()),
-                    ("grid", "10 x 7"),
-                    ("camera", "orbit distance 3.8"),
-                    ("resource path", "Surface3DElement"),
-                ],
-            ))
+    fn render_node(
+        &mut self,
+        node: &UiNode,
+        theme: &Theme,
+        ds: &DesignSystem,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        match node {
+            UiNode::Vstack(node) => {
+                self.render_stack(node, StackDirection::Vertical, theme, ds, cx)
+            }
+            UiNode::Hstack(node) => {
+                self.render_stack(node, StackDirection::Horizontal, theme, ds, cx)
+            }
+            UiNode::Wrap(node) => self.render_stack(node, StackDirection::Wrap, theme, ds, cx),
+            UiNode::Heading(node) => self.render_heading(node, theme, ds),
+            UiNode::Text(node) => self.render_text(node, theme, ds),
+            UiNode::Code(node) => self.render_code(node, theme, ds),
+            UiNode::SectionHeader(node) => self.render_section_header(node, theme, ds),
+            UiNode::Card(node) => self.render_card(node, theme, ds, cx),
+            UiNode::Button(node) => self.render_button(node, theme, ds, cx),
+            UiNode::Badge(node) => self.render_badge(node, theme, ds),
+            UiNode::Metric(node) => self.render_metric(node, theme, ds),
+            UiNode::Progress(node) => self.render_progress(node, theme, ds),
+            UiNode::Spinner(node) => self.render_spinner(node, theme, ds),
+            UiNode::Tabs(node) => self.render_tabs(node, theme, ds),
+            UiNode::Table(node) => self.render_table(node, theme, ds),
+            UiNode::Divider(node) => self.render_divider(node, theme),
+            UiNode::Spacer(node) => self.render_spacer(node),
+            UiNode::Chart(node) => self.render_chart(node, theme, ds),
+            UiNode::Scene3d(node) => self.render_scene3d(node, theme, ds),
+        }
     }
 
-    fn render_lines_3d(&mut self, theme: &Theme, ds: &DesignSystem) -> Div {
-        let spec = build_lines_spec();
-        let element = self
-            .gpui_3d
-            .lines_element(&spec)
-            .expect("line spec is static and validated");
+    fn render_stack(
+        &mut self,
+        node: &StackNode,
+        direction: StackDirection,
+        theme: &Theme,
+        ds: &DesignSystem,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let children = node
+            .children
+            .iter()
+            .map(|child| self.render_node(child, theme, ds, cx))
+            .collect::<Vec<_>>();
+        let gap = px(node.gap.unwrap_or(ds.spacing.control_gap));
+        let mut element = div().flex().gap(gap).children(children);
+        element = match direction {
+            StackDirection::Vertical => element.flex_col(),
+            StackDirection::Horizontal => element.flex_row(),
+            StackDirection::Wrap => element.flex_row().flex_wrap(),
+        };
+        apply_size(element, node.width, node.height).into_any_element()
+    }
 
+    fn render_heading(&self, node: &TextNode, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        let size = match node.level.unwrap_or(1) {
+            1 => ds.typography.large_size + 6.0,
+            2 => ds.typography.large_size + 2.0,
+            _ => ds.typography.large_size,
+        };
+        div()
+            .text_size(px(size))
+            .font_weight(FontWeight::BOLD)
+            .text_color(theme.text_primary)
+            .child(node.text.clone())
+            .into_any_element()
+    }
+
+    fn render_text(&self, node: &TextNode, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        div()
+            .text_size(px(ds.typography.small_size))
+            .text_color(tone_color(&node.tone, theme))
+            .child(node.text.clone())
+            .into_any_element()
+    }
+
+    fn render_code(&self, node: &TextNode, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        div()
+            .px(px(ds.spacing.control_padding_x))
+            .py(px(ds.spacing.control_padding_y))
+            .rounded(px(ds.corners.sm))
+            .bg(theme.muted)
+            .text_size(px(ds.typography.small_size))
+            .text_color(theme.code_text)
+            .child(node.text.clone())
+            .into_any_element()
+    }
+
+    fn render_section_header(
+        &self,
+        node: &SectionHeaderNode,
+        theme: &Theme,
+        ds: &DesignSystem,
+    ) -> AnyElement {
         div()
             .flex()
             .flex_col()
-            .gap(px(ds.spacing.section_gap))
-            .child(section_header(
-                "3D Lines",
-                "Line strips using the same orbit camera model",
-                theme,
-                ds,
-            ))
+            .gap(px(ds.spacing.grid_unit))
             .child(
                 div()
-                    .w(px(700.0))
-                    .h(px(440.0))
-                    .rounded(px(ds.corners.md))
-                    .border_1()
-                    .border_color(theme.border)
+                    .text_size(px(ds.typography.large_size))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
+                    .child(node.title.clone()),
+            )
+            .child(
+                div()
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
+                    .child(node.subtitle.clone()),
+            )
+            .into_any_element()
+    }
+
+    fn render_card(
+        &mut self,
+        node: &CardNode,
+        theme: &Theme,
+        ds: &DesignSystem,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let children = node
+            .children
+            .iter()
+            .map(|child| self.render_node(child, theme, ds, cx))
+            .collect::<Vec<_>>();
+        let mut element = div()
+            .flex()
+            .flex_col()
+            .gap(px(ds.spacing.control_gap))
+            .p(px(ds.spacing.card_padding))
+            .bg(theme.surface)
+            .rounded(px(ds.corners.md))
+            .border_1()
+            .border_color(theme.border);
+
+        if let Some(title) = &node.title {
+            element = element.child(
+                div()
+                    .text_size(px(ds.typography.large_size))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
+                    .child(title.clone()),
+            );
+        }
+
+        apply_size(element.children(children), node.width, node.height).into_any_element()
+    }
+
+    fn render_button(
+        &self,
+        node: &ButtonNode,
+        theme: &Theme,
+        ds: &DesignSystem,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let bg = if node.selected {
+            theme.accent
+        } else {
+            theme.surface_hover
+        };
+        let text = if node.disabled {
+            theme.text_muted
+        } else if node.selected {
+            theme.text_on_accent
+        } else {
+            theme.text_primary
+        };
+
+        let element = div()
+            .id(ElementId::Name(format!("button-{}", node.label).into()))
+            .px(px(ds.spacing.control_padding_x))
+            .py(px(ds.spacing.control_padding_y))
+            .rounded(px(ds.corners.md))
+            .bg(bg)
+            .text_color(text)
+            .cursor_pointer()
+            .child(node.label.clone());
+
+        if node.disabled {
+            return element.into_any_element();
+        }
+
+        if let Some(section_id) = node
+            .action
+            .as_deref()
+            .and_then(|action| action.strip_prefix("select:"))
+        {
+            let section_id = section_id.to_string();
+            return element
+                .on_click(cx.listener(move |this, _, _window, cx| {
+                    this.current_section = section_id.clone();
+                    cx.notify();
+                }))
+                .into_any_element();
+        }
+
+        element.into_any_element()
+    }
+
+    fn render_badge(&self, node: &BadgeNode, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        let (bg, text) = badge_colors(&node.tone, theme);
+        div()
+            .px(px(ds.spacing.control_padding_x))
+            .py(px(ds.spacing.grid_unit))
+            .rounded(px(ds.corners.sm))
+            .bg(bg)
+            .text_color(text)
+            .text_size(px(ds.typography.small_size))
+            .child(node.label.clone())
+            .into_any_element()
+    }
+
+    fn render_metric(
+        &self,
+        node: &gpui_python_runtime::ui_ir::MetricNode,
+        theme: &Theme,
+        ds: &DesignSystem,
+    ) -> AnyElement {
+        div()
+            .w(px(180.0))
+            .p(px(ds.spacing.card_padding))
+            .bg(theme.surface)
+            .rounded(px(ds.corners.md))
+            .border_1()
+            .border_color(theme.border)
+            .flex()
+            .flex_col()
+            .gap(px(ds.spacing.grid_unit))
+            .child(
+                div()
+                    .text_size(px(ds.typography.large_size))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
+                    .child(node.value.clone()),
+            )
+            .child(
+                div()
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_muted)
+                    .child(node.label.clone()),
+            )
+            .into_any_element()
+    }
+
+    fn render_progress(&self, node: &ProgressNode, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        let value = node.value.clamp(0.0, 1.0);
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(ds.spacing.grid_unit))
+            .children(node.label.as_ref().map(|label| {
+                div()
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
+                    .child(label.clone())
+            }))
+            .child(
+                div()
+                    .w(px(260.0))
+                    .h(px(8.0))
+                    .rounded(px(4.0))
+                    .bg(theme.muted)
                     .overflow_hidden()
-                    .child(element),
-            )
-            .child(spec_summary(
-                theme,
-                ds,
-                &[
-                    ("id", spec.id.as_str()),
-                    ("strips", "helix + xyz axes"),
-                    ("resource path", "Lines3DElement"),
-                ],
-            ))
-    }
-
-    fn render_px_charts(&self, theme: &Theme, ds: &DesignSystem) -> Div {
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(ds.spacing.section_gap))
-            .child(section_header(
-                "gpui-px Charts",
-                "A compact chart set embedded beside scene3d",
-                theme,
-                ds,
-            ))
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(ds.spacing.section_gap))
                     .child(
-                        scatter(&self.scatter_x, &self.scatter_y)
-                            .title("Callback Latency")
-                            .color(0x1f77b4)
-                            .point_radius(4.0)
-                            .size(360.0, 260.0)
-                            .build()
-                            .expect("static scatter data"),
-                    )
-                    .child(
-                        line(&self.line_x, &self.line_y)
-                            .title("Frequency Response")
-                            .color(0xff7f0e)
-                            .x_scale(ScaleType::Log)
-                            .stroke_width(2.0)
-                            .size(360.0, 260.0)
-                            .build()
-                            .expect("static line data"),
-                    )
-                    .child(
-                        bar(&self.bar_categories, &self.bar_values)
-                            .title("Scene Nodes")
-                            .color(0x2ca02c)
-                            .size(360.0, 260.0)
-                            .build()
-                            .expect("static bar data"),
-                    )
-                    .child(
-                        heatmap(&self.heatmap_z, self.heatmap_size, self.heatmap_size)
-                            .title("Upload Activity")
-                            .color_scale(ColorScale::Viridis)
-                            .size(360.0, 260.0)
-                            .build()
-                            .expect("static heatmap data"),
+                        div()
+                            .w(px(260.0 * value))
+                            .h_full()
+                            .rounded(px(4.0))
+                            .bg(theme.accent),
                     ),
             )
+            .into_any_element()
     }
 
-    fn render_scene_specs(&mut self, theme: &Theme, ds: &DesignSystem) -> Div {
-        let surface = build_surface_spec();
-        let lines = build_lines_spec();
-
+    fn render_spinner(&self, node: &SpinnerNode, theme: &Theme, ds: &DesignSystem) -> AnyElement {
         div()
             .flex()
-            .flex_col()
-            .gap(px(ds.spacing.section_gap))
-            .child(section_header(
-                "Scene Specs",
-                "Stable ids drive retained GPU resources",
-                theme,
-                ds,
-            ))
+            .items_center()
+            .gap(px(ds.spacing.control_gap))
             .child(
                 div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(ds.spacing.section_gap))
-                    .child(metric_tile(
-                        "Surface samples",
-                        surface.z.values.len(),
-                        theme,
-                        ds,
-                    ))
-                    .child(metric_tile("Line points", 80 + 2 + 2 + 2, theme, ds))
-                    .child(metric_tile("Cache entries", 2, theme, ds))
-                    .child(metric_tile("Python calls while idle", 0, theme, ds)),
+                    .w(px(10.0))
+                    .h(px(10.0))
+                    .rounded(px(5.0))
+                    .bg(theme.accent),
             )
-            .child(spec_summary(
-                theme,
-                ds,
-                &[
-                    ("surface id", surface.id.as_str()),
-                    ("lines id", lines.id.as_str()),
-                    ("dirty split", "geometry / material / camera"),
-                    ("raw wgpu", "private"),
-                ],
-            ))
-            .child(
+            .children(node.label.as_ref().map(|label| {
                 div()
-                    .flex()
-                    .gap(px(ds.spacing.section_gap))
-                    .child({
-                        let surface_element = self
-                            .gpui_3d
-                            .surface_element(&surface)
-                            .expect("surface spec");
-                        div()
-                            .w(px(420.0))
-                            .h(px(280.0))
-                            .rounded(px(ds.corners.md))
-                            .border_1()
-                            .border_color(theme.border)
-                            .overflow_hidden()
-                            .child(surface_element)
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
+                    .child(label.clone())
+            }))
+            .into_any_element()
+    }
+
+    fn render_tabs(&self, node: &TabsNode, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        div()
+            .flex()
+            .gap(px(ds.spacing.grid_unit))
+            .children(node.items.iter().enumerate().map(|(index, item)| {
+                let active = index == node.active;
+                div()
+                    .px(px(ds.spacing.control_padding_x))
+                    .py(px(ds.spacing.control_padding_y))
+                    .rounded(px(ds.corners.md))
+                    .bg(if active {
+                        theme.accent
+                    } else {
+                        theme.surface_hover
                     })
-                    .child({
-                        let lines_element = self.gpui_3d.lines_element(&lines).expect("lines spec");
-                        div()
-                            .w(px(420.0))
-                            .h(px(280.0))
-                            .rounded(px(ds.corners.md))
-                            .border_1()
-                            .border_color(theme.border)
-                            .overflow_hidden()
-                            .child(lines_element)
-                    }),
+                    .text_color(if active {
+                        theme.text_on_accent
+                    } else {
+                        theme.text_primary
+                    })
+                    .child(item.clone())
+            }))
+            .into_any_element()
+    }
+
+    fn render_table(&self, node: &TableNode, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        let mut table = div()
+            .flex()
+            .flex_col()
+            .rounded(px(ds.corners.md))
+            .border_1()
+            .border_color(theme.border)
+            .overflow_hidden();
+
+        if !node.headers.is_empty() {
+            table = table.child(self.render_table_row(&node.headers, true, theme, ds));
+        }
+
+        for row in &node.rows {
+            table = table.child(self.render_table_row(row, false, theme, ds));
+        }
+
+        table.into_any_element()
+    }
+
+    fn render_table_row(
+        &self,
+        row: &[String],
+        header: bool,
+        theme: &Theme,
+        ds: &DesignSystem,
+    ) -> Div {
+        div()
+            .flex()
+            .bg(if header { theme.muted } else { theme.surface })
+            .border_b_1()
+            .border_color(theme.border)
+            .children(row.iter().map(|cell| {
+                div()
+                    .w(px(180.0))
+                    .px(px(ds.spacing.control_padding_x))
+                    .py(px(ds.spacing.control_padding_y))
+                    .text_size(px(ds.typography.small_size))
+                    .font_weight(if header {
+                        FontWeight::BOLD
+                    } else {
+                        FontWeight::NORMAL
+                    })
+                    .text_color(if header {
+                        theme.text_primary
+                    } else {
+                        theme.text_secondary
+                    })
+                    .child(cell.clone())
+            }))
+    }
+
+    fn render_divider(&self, node: &SimpleNode, theme: &Theme) -> AnyElement {
+        apply_size(
+            div()
+                .h(px(node.height.unwrap_or(1.0)))
+                .w_full()
+                .bg(theme.border),
+            node.width,
+            node.height,
+        )
+        .into_any_element()
+    }
+
+    fn render_spacer(&self, node: &SimpleNode) -> AnyElement {
+        apply_size(div(), node.width.or(Some(1.0)), node.height.or(Some(1.0))).into_any_element()
+    }
+
+    fn render_chart(&self, node: &ChartNode, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        let result = match node.chart {
+            ChartKind::Scatter => {
+                let x = node.x.as_deref().unwrap_or_default();
+                let y = node.y.as_deref().unwrap_or_default();
+                scatter(x, y)
+                    .title(node.title.clone())
+                    .color(hex_color(node.color.as_deref(), 0x1f77b4))
+                    .point_radius(node.point_radius)
+                    .x_scale(scale_type(node.x_log))
+                    .y_scale(scale_type(node.y_log))
+                    .size(node.width, node.height)
+                    .build()
+                    .map(IntoElement::into_any_element)
+            }
+            ChartKind::Line => {
+                let x = node.x.as_deref().unwrap_or_default();
+                let y = node.y.as_deref().unwrap_or_default();
+                line(x, y)
+                    .title(node.title.clone())
+                    .color(hex_color(node.color.as_deref(), 0xff7f0e))
+                    .stroke_width(node.stroke_width)
+                    .x_scale(scale_type(node.x_log))
+                    .y_scale(scale_type(node.y_log))
+                    .size(node.width, node.height)
+                    .build()
+                    .map(IntoElement::into_any_element)
+            }
+            ChartKind::Bar => {
+                let categories = node.categories.as_deref().unwrap_or_default();
+                let values = node.values.as_deref().unwrap_or_default();
+                bar(categories, values)
+                    .title(node.title.clone())
+                    .color(hex_color(node.color.as_deref(), 0x2ca02c))
+                    .size(node.width, node.height)
+                    .build()
+                    .map(IntoElement::into_any_element)
+            }
+            ChartKind::Heatmap => {
+                let z = node.z.as_deref().unwrap_or_default();
+                heatmap(
+                    z,
+                    node.width_count.unwrap_or_default(),
+                    node.height_count.unwrap_or_default(),
+                )
+                .title(node.title.clone())
+                .color_scale(color_scale(&node.color_scale))
+                .size(node.width, node.height)
+                .build()
+                .map(IntoElement::into_any_element)
+            }
+        };
+
+        result.unwrap_or_else(|error| {
+            self.render_error(&format!("chart {}: {error}", node.id), theme, ds)
+        })
+    }
+
+    fn render_scene3d(
+        &mut self,
+        node: &Scene3dNode,
+        theme: &Theme,
+        ds: &DesignSystem,
+    ) -> AnyElement {
+        let width = node.width.unwrap_or(560.0);
+        let height = node.height.unwrap_or(360.0);
+        let element = match node.spec.get("kind").and_then(Value::as_str) {
+            Some("surface") => self.render_surface_spec(&node.spec, theme, ds),
+            Some("lines") => self.render_lines_spec(&node.spec, theme, ds),
+            Some("mesh") => self.render_mesh_summary(&node.spec, theme, ds),
+            Some("light") => self.render_error("light nodes render inside scene specs", theme, ds),
+            Some(kind) => {
+                self.render_error(&format!("unsupported scene3d kind: {kind}"), theme, ds)
+            }
+            None if node.spec.get("children").is_some() => {
+                self.render_scene_summary(&node.spec, theme, ds)
+            }
+            None => self.render_error("scene3d spec is missing kind or children", theme, ds),
+        };
+
+        div()
+            .w(px(width))
+            .h(px(height))
+            .rounded(px(ds.corners.md))
+            .border_1()
+            .border_color(theme.border)
+            .overflow_hidden()
+            .child(element)
+            .into_any_element()
+    }
+
+    fn render_surface_spec(
+        &mut self,
+        value: &Value,
+        theme: &Theme,
+        ds: &DesignSystem,
+    ) -> AnyElement {
+        let spec = match parse_spec::<SurfaceSpec>(value).and_then(|spec| {
+            spec.validate().map_err(|error| error.to_string())?;
+            Ok(spec)
+        }) {
+            Ok(spec) => spec,
+            Err(error) => return self.render_error(&error, theme, ds),
+        };
+
+        self.gpui_3d
+            .surface_element(&spec)
+            .map(IntoElement::into_any_element)
+            .unwrap_or_else(|error| self.render_error(&error.to_string(), theme, ds))
+    }
+
+    fn render_lines_spec(&mut self, value: &Value, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        let spec = match parse_spec::<LinesSpec>(value).and_then(|spec| {
+            spec.validate().map_err(|error| error.to_string())?;
+            Ok(spec)
+        }) {
+            Ok(spec) => spec,
+            Err(error) => return self.render_error(&error, theme, ds),
+        };
+
+        self.gpui_3d
+            .lines_element(&spec)
+            .map(IntoElement::into_any_element)
+            .unwrap_or_else(|error| self.render_error(&error.to_string(), theme, ds))
+    }
+
+    fn render_mesh_summary(&self, value: &Value, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        match parse_spec::<MeshSpec>(value).and_then(|spec| {
+            spec.validate().map_err(|error| error.to_string())?;
+            Ok(spec)
+        }) {
+            Ok(spec) => self.render_spec_summary(
+                "Mesh spec",
+                &[
+                    ("id", spec.id.as_str()),
+                    ("vertices", &spec.vertices.len().to_string()),
+                    ("indices", &spec.indices.len().to_string()),
+                    ("renderer", "pending"),
+                ],
+                theme,
+                ds,
+            ),
+            Err(error) => self.render_error(&error, theme, ds),
+        }
+    }
+
+    fn render_scene_summary(&self, value: &Value, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        match parse_spec::<SceneSpec>(value).and_then(|spec| {
+            spec.validate().map_err(|error| error.to_string())?;
+            Ok(spec)
+        }) {
+            Ok(spec) => self.render_spec_summary(
+                "Scene spec",
+                &[
+                    ("id", spec.id.as_str()),
+                    ("children", &spec.children.len().to_string()),
+                    ("camera", "orbit/perspective"),
+                    ("mesh renderer", "pending"),
+                ],
+                theme,
+                ds,
+            ),
+            Err(error) => self.render_error(&error, theme, ds),
+        }
+    }
+
+    fn render_spec_summary(
+        &self,
+        title: &str,
+        rows: &[(&str, &str)],
+        theme: &Theme,
+        ds: &DesignSystem,
+    ) -> AnyElement {
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .gap(px(ds.spacing.control_gap))
+            .p(px(ds.spacing.card_padding))
+            .bg(theme.surface)
+            .child(
+                div()
+                    .text_size(px(ds.typography.large_size))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
+                    .child(title.to_string()),
             )
+            .children(rows.iter().map(|(label, value)| {
+                div()
+                    .flex()
+                    .justify_between()
+                    .gap(px(ds.spacing.section_gap))
+                    .child(
+                        div()
+                            .text_size(px(ds.typography.small_size))
+                            .text_color(theme.text_muted)
+                            .child((*label).to_string()),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(ds.typography.small_size))
+                            .text_color(theme.text_primary)
+                            .child((*value).to_string()),
+                    )
+            }))
+            .into_any_element()
+    }
+
+    fn render_error(&self, message: &str, theme: &Theme, ds: &DesignSystem) -> AnyElement {
+        div()
+            .p(px(ds.spacing.card_padding))
+            .bg(theme.alert_error_bg)
+            .text_color(theme.error)
+            .text_size(px(ds.typography.small_size))
+            .child(message.to_string())
+            .into_any_element()
     }
 }
 
-impl Render for PythonShowcase {
+impl Render for PythonIrShowcase {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let ds = cx.design();
@@ -382,208 +793,142 @@ impl Render for PythonShowcase {
             .flex()
             .flex_row()
             .child(self.render_sidebar(&theme, &ds, cx))
-            .child(self.render_content(&theme, &ds))
+            .child(self.render_content(&theme, &ds, cx))
     }
 }
 
-fn section_header(title: &str, subtitle: &str, theme: &Theme, ds: &DesignSystem) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(ds.spacing.grid_unit))
-        .child(
-            div()
-                .text_size(px(ds.typography.large_size))
-                .font_weight(FontWeight::BOLD)
-                .text_color(theme.text_primary)
-                .child(title.to_string()),
-        )
-        .child(
-            div()
-                .text_size(px(ds.typography.small_size))
-                .text_color(theme.text_secondary)
-                .child(subtitle.to_string()),
-        )
+#[derive(Debug, Clone, Copy)]
+enum StackDirection {
+    Vertical,
+    Horizontal,
+    Wrap,
 }
 
-fn spec_summary(theme: &Theme, ds: &DesignSystem, rows: &[(&str, &str)]) -> Div {
-    div()
-        .w(px(760.0))
-        .flex()
-        .flex_col()
-        .gap(px(ds.spacing.grid_unit))
-        .p(px(ds.spacing.card_padding))
-        .bg(theme.surface)
-        .rounded(px(ds.corners.md))
-        .border_1()
-        .border_color(theme.border)
-        .children(rows.iter().map(|(label, value)| {
-            div()
-                .flex()
-                .justify_between()
-                .gap(px(ds.spacing.section_gap))
-                .child(
-                    div()
-                        .text_size(px(ds.typography.small_size))
-                        .text_color(theme.text_muted)
-                        .child((*label).to_string()),
-                )
-                .child(
-                    div()
-                        .text_size(px(ds.typography.small_size))
-                        .text_color(theme.text_primary)
-                        .child((*value).to_string()),
-                )
-        }))
-}
+fn load_python_app() -> Result<PythonAppIr, Box<dyn Error>> {
+    let script = env::args_os()
+        .nth(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(default_showcase_path);
+    let output = Command::new(python_executable())
+        .arg(&script)
+        .env("GPUI_TOOLKIT_DUMP_IR", "1")
+        .env("PYTHONPATH", python_path(&script))
+        .output()?;
 
-fn metric_tile(label: &str, value: usize, theme: &Theme, ds: &DesignSystem) -> Div {
-    div()
-        .w(px(180.0))
-        .p(px(ds.spacing.card_padding))
-        .bg(theme.surface)
-        .rounded(px(ds.corners.md))
-        .border_1()
-        .border_color(theme.border)
-        .flex()
-        .flex_col()
-        .gap(px(ds.spacing.grid_unit))
-        .child(
-            div()
-                .text_size(px(ds.typography.large_size))
-                .font_weight(FontWeight::BOLD)
-                .text_color(theme.text_primary)
-                .child(value.to_string()),
-        )
-        .child(
-            div()
-                .text_size(px(ds.typography.small_size))
-                .text_color(theme.text_muted)
-                .child(label.to_string()),
-        )
-}
-
-fn build_surface_spec() -> SurfaceSpec {
-    let freqs = vec![
-        20.0, 40.0, 80.0, 160.0, 315.0, 630.0, 1250.0, 2500.0, 5000.0, 10000.0,
-    ];
-    let angles = vec![-90.0, -60.0, -30.0, 0.0, 30.0, 60.0, 90.0];
-    let mut z = Vec::with_capacity(freqs.len() * angles.len());
-
-    for angle in &angles {
-        let angle_weight = f64::abs(*angle) / 90.0;
-        for freq in &freqs {
-            let octave = f64::log2(*freq / 1000.0);
-            let on_axis_ripple = 2.0 * f64::sin(octave * 2.4);
-            let off_axis_rolloff = -9.0 * angle_weight * f64::max(0.0, f64::log10(*freq / 1000.0));
-            z.push(on_axis_ripple + off_axis_rolloff);
-        }
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("{} exited with {stderr}", script.display()).into());
     }
 
-    let mut spec = SurfaceSpec::from_flat("dispersion", z, freqs.len(), angles.len());
-    spec.x = Some(freqs);
-    spec.y = Some(angles);
-    spec.x_log = true;
-    spec.z_range = Some(ScalarRange::new(-12.0, 4.0));
-    spec.labels = AxisLabels {
-        x: Some("Frequency (Hz)".to_string()),
-        y: Some("Angle (deg)".to_string()),
-        z: Some("Level (dB)".to_string()),
-        title: None,
-    };
-    spec.camera = Some(CameraSpec::Orbit(OrbitCameraSpec::new(3.8, 58.0, 28.0)));
-    spec
+    let stdout = String::from_utf8(output.stdout)?;
+    let app: PythonAppIr = serde_json::from_str(stdout.trim())?;
+    app.validate()?;
+    Ok(app)
 }
 
-fn build_lines_spec() -> LinesSpec {
-    let mut helix = Vec::with_capacity(80);
-    for index in 0..80 {
-        let t = index as f64 / 79.0;
-        let angle = t * 2.5 * TAU;
-        let radius = 0.7 + 0.2 * f64::sin(t * TAU);
-        helix.push(Point3::new(
-            (radius * f64::cos(angle)) as f32,
-            ((t - 0.5) * 1.8) as f32,
-            (radius * f64::sin(angle)) as f32,
-        ));
+fn python_executable() -> OsString {
+    if let Some(value) = env::var_os("GPUI_PYTHON") {
+        return value;
     }
+    let repo_venv = repo_root().join("venv/bin/python");
+    if repo_venv.exists() {
+        return repo_venv.into_os_string();
+    }
+    OsString::from("python3")
+}
 
-    LinesSpec {
-        id: "orbit-lines".to_string(),
-        strips: vec![
-            gpui_python_runtime::LineStripSpec {
-                id: "helix".to_string(),
-                points: helix,
-                color: ColorRgba::from_hex("#7dd3fc").expect("static color"),
-                width: 2.5,
-            },
-            gpui_python_runtime::LineStripSpec {
-                id: "x-axis".to_string(),
-                points: vec![Point3::new(-1.2, 0.0, 0.0), Point3::new(1.2, 0.0, 0.0)],
-                color: ColorRgba::from_hex("#ef4444").expect("static color"),
-                width: 1.5,
-            },
-            gpui_python_runtime::LineStripSpec {
-                id: "y-axis".to_string(),
-                points: vec![Point3::new(0.0, -1.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                color: ColorRgba::from_hex("#22c55e").expect("static color"),
-                width: 1.5,
-            },
-            gpui_python_runtime::LineStripSpec {
-                id: "z-axis".to_string(),
-                points: vec![Point3::new(0.0, 0.0, -1.2), Point3::new(0.0, 0.0, 1.2)],
-                color: ColorRgba::from_hex("#3b82f6").expect("static color"),
-                width: 1.5,
-            },
-        ],
-        background: Some(ColorRgba::from_hex("#0b1020").expect("static color")),
-        camera: Some(CameraSpec::Orbit(OrbitCameraSpec::new(4.2, 42.0, 24.0))),
-        ..LinesSpec::default()
+fn python_path(script: &Path) -> OsString {
+    let mut paths = vec![PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("python")];
+    if let Some(parent) = script.parent() {
+        paths.push(parent.to_path_buf());
+    }
+    if let Some(existing) = env::var_os("PYTHONPATH") {
+        paths.extend(env::split_paths(&existing));
+    }
+    env::join_paths(paths).unwrap_or_else(|_| OsString::new())
+}
+
+fn default_showcase_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("python/showcase.py")
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn apply_size(mut element: Div, width: Option<f32>, height: Option<f32>) -> Div {
+    if let Some(width) = width {
+        element = element.w(px(width));
+    }
+    if let Some(height) = height {
+        element = element.h(px(height));
+    }
+    element
+}
+
+fn tone_color(tone: &str, theme: &Theme) -> Rgba {
+    match tone {
+        "secondary" => theme.text_secondary,
+        "muted" => theme.text_muted,
+        "accent" => theme.accent,
+        "success" => theme.success,
+        "warning" => theme.warning,
+        "error" => theme.error,
+        "info" => theme.info,
+        _ => theme.text_primary,
     }
 }
 
-fn generate_scatter_data() -> (Vec<f64>, Vec<f64>) {
-    let mut x = Vec::with_capacity(80);
-    let mut y = Vec::with_capacity(80);
-    for i in 0..80 {
-        let t = i as f64 / 79.0;
-        x.push(t * 100.0);
-        y.push(20.0 + 28.0 * t + 8.0 * f64::sin(t * TAU * 3.0));
+fn badge_colors(tone: &str, theme: &Theme) -> (Rgba, Rgba) {
+    match tone {
+        "accent" | "primary" => (theme.badge_primary_bg, theme.badge_primary_text),
+        "success" => (theme.badge_success_bg, theme.badge_success_text),
+        "warning" => (theme.badge_warning_bg, theme.badge_warning_text),
+        "error" => (theme.badge_error_bg, theme.badge_error_text),
+        "info" => (theme.badge_info_bg, theme.badge_info_text),
+        _ => (theme.muted, theme.text_secondary),
     }
-    (x, y)
 }
 
-fn generate_frequency_response() -> (Vec<f64>, Vec<f64>) {
-    let mut x = Vec::with_capacity(72);
-    let mut y = Vec::with_capacity(72);
-    for i in 0..72 {
-        let freq = 20.0 * 10_f64.powf(i as f64 / 23.0);
-        let bass_shelf = if freq < 120.0 {
-            -5.0 * (120.0 - freq) / 100.0
-        } else {
-            0.0
-        };
-        let treble = if freq > 6000.0 {
-            -4.0 * (freq - 6000.0) / 14000.0
-        } else {
-            0.0
-        };
-        x.push(freq);
-        y.push(bass_shelf + treble + 1.2 * f64::sin(f64::log2(freq / 1000.0) * 3.0));
+fn scale_type(log: bool) -> ScaleType {
+    if log {
+        ScaleType::Log
+    } else {
+        ScaleType::Linear
     }
-    (x, y)
 }
 
-fn generate_heatmap_data(size: usize) -> Vec<f64> {
-    let mut values = Vec::with_capacity(size * size);
-    for y in 0..size {
-        for x in 0..size {
-            let nx = x as f64 / (size - 1) as f64 * 2.0 - 1.0;
-            let ny = y as f64 / (size - 1) as f64 * 2.0 - 1.0;
-            let left = f64::exp(-((nx + 0.35).powi(2) + (ny - 0.2).powi(2)) * 8.0);
-            let right = 0.7 * f64::exp(-((nx - 0.4).powi(2) + (ny + 0.25).powi(2)) * 18.0);
-            values.push(left + right);
-        }
+fn hex_color(value: Option<&str>, fallback: u32) -> u32 {
+    value
+        .and_then(|value| value.trim().strip_prefix('#'))
+        .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+        .unwrap_or(fallback)
+}
+
+fn color_scale(value: &str) -> ColorScale {
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .replace(['-', '_'], "")
+        .as_str()
+    {
+        "plasma" => ColorScale::Plasma,
+        "inferno" => ColorScale::Inferno,
+        "magma" => ColorScale::Magma,
+        "heat" => ColorScale::Heat,
+        "coolwarm" => ColorScale::Coolwarm,
+        "greys" | "grays" => ColorScale::Greys,
+        _ => ColorScale::Viridis,
     }
-    values
+}
+
+fn parse_spec<T>(value: &Value) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_value(value.clone()).map_err(|error| error.to_string())
 }

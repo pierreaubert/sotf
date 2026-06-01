@@ -1,3 +1,48 @@
+# 0.6.8
+
+## Features
+
+### RoomEQ
+
+- Added support for atmosphere to optimised for hifi, cinema, reference, night, speech
+- Added audibility/JND residual deadbands and safer high-frequency correction
+- Added EPA temporal masking integration
+
+### Server and streaming
+
+- SotF can now act as a server (you can stream from your computer) and can also act as client (you can listen to stream)
+- Support for Spotify and other streaming protocols is in but not well tested
+
+### Audio Plugins
+
+- You can now load external plugins. For security reasons (untrusted code) they run in an isolated sandbox, some of them may not work if they need access to external IP or PACE protection. Relax mode is not yet implemented.
+- Export to AUv3, VST3 and CLAP is working but not well tested.
+
+### SytemWide MacOS
+
+- Lots of debugging but it sometimes does not work and i dont know why yet. Not ready for general usage.
+
+### iOS support
+
+- Alpha version is working on iPad, need more love on iOS
+- Even more alpha on tvOS
+
+
+## Bug fixes
+
+
+
+# 0.6.7
+
+Lots of bug fixes
+
+## Bug fixes
+
+- Allow to write on the disk in Apple allowed directories via the sandbox
+- Fix sample rate propagation in roomEQ
+
+
+
 # 0.6.6
 
 ## Apple Store and Microsoft Store availability
@@ -70,6 +115,8 @@ Windows App Store
 - Hw interface UI was not activated properly (currently supporting only 2 hw interfaces but it is easy to add more, next is likely avid s1/s3)
 - Fixed auto gain in Upmixer
 
+
+
 # 0.6.1 -> 0.6.5
 
 ## tweaks to be accepted in the Apple Store
@@ -82,6 +129,8 @@ Windows App Store
 
 - Microsoft wants all runtime libraries to be declared: remove them one by one and rewrote code in Rust to make it easier.
 - Microsoft wants a video of the running app.
+
+
 
 # 0.6.0
 

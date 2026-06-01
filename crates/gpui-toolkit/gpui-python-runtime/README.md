@@ -48,16 +48,17 @@ PYTHONPATH=python python examples/mesh_scene.py
 
 ## Showcase Application
 
-Run the native GPUI showcase with retained 3D scenes and embedded `gpui-px`
-charts:
+Run the Python-authored native GPUI showcase with retained 3D scenes and
+embedded `gpui-px` charts:
 
 ```bash
-cargo run -p gpui-python-runtime --features showcase --bin gpui-python-showcase
+cargo run -p gpui-python-runtime --features showcase --bin gpui-python-showcase -- crates/gpui-toolkit/gpui-python-runtime/python/showcase.py
+PYTHONPATH=crates/gpui-toolkit/gpui-python-runtime/python ./venv/bin/python crates/gpui-toolkit/gpui-python-runtime/python/showcase.py
 ```
 
-The showcase keeps the Python-facing scene specs as the data source while Rust
-owns the retained GPUI elements, 3D renderer state, chart widgets, and theme
-integration.
+The showcase app, sections, UI kit demos, chart data, and `scene3d` specs live
+in Python. Rust loads the JSON UI IR, then owns GPUI, retained 3D renderer
+state, chart widgets, and theme integration.
 
 ## Platform Notes
 

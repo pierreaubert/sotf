@@ -3,7 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from gpui_toolkit import scene3d as s3
+from gpui_toolkit import App, charts, scene3d as s3, section, ui
 
 
 class Scene3DTests(unittest.TestCase):
@@ -53,8 +53,8 @@ class Scene3DTests(unittest.TestCase):
             with self.subTest(filename=filename):
                 path = examples_dir / filename
                 module_spec = importlib.util.spec_from_file_location(path.stem, path)
-                self.assertIsNotNone(module_spec)
-                self.assertIsNotNone(module_spec.loader)
+                assert module_spec is not None
+                assert module_spec.loader is not None
                 module = importlib.util.module_from_spec(module_spec)
                 module_spec.loader.exec_module(module)
 
@@ -64,6 +64,47 @@ class Scene3DTests(unittest.TestCase):
                     self.assertIn("children", spec)
                 else:
                     self.assertEqual(spec["kind"], kind)
+
+    def test_ui_and_chart_helpers_build_app_ir(self):
+        app = App(
+            title="Demo",
+            sections=[
+                section(
+                    "overview",
+                    "Overview",
+                    ui.vstack(
+                        [
+                            ui.heading("Demo"),
+                            ui.card([charts.scatter("points", [1.0, 2.0], [3.0, 4.0])]),
+                        ]
+                    ),
+                )
+            ],
+        )
+        spec = app.to_spec()
+        json.dumps(spec)
+
+        self.assertEqual(spec["sections"][0]["content"]["kind"], "vstack")
+        chart = spec["sections"][0]["content"]["children"][1]["children"][0]
+        self.assertEqual(chart["kind"], "chart")
+        self.assertEqual(chart["chart"], "scatter")
+
+    def test_python_showcase_is_authored_as_app_ir(self):
+        showcase_path = Path(__file__).parents[1] / "showcase.py"
+        module_spec = importlib.util.spec_from_file_location("python_showcase", showcase_path)
+        assert module_spec is not None
+        assert module_spec.loader is not None
+        module = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(module)
+
+        spec = module.build_app().to_spec()
+        json.dumps(spec)
+
+        self.assertGreaterEqual(len(spec["sections"]), 6)
+        self.assertIn("gpui-px Charts", [section["label"] for section in spec["sections"]])
+        self.assertTrue(
+            any(section["content"]["kind"] == "vstack" for section in spec["sections"])
+        )
 
 
 if __name__ == "__main__":

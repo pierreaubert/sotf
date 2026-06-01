@@ -9,6 +9,7 @@ mod error;
 #[cfg(feature = "gpui")]
 pub mod gpui_adapter;
 mod scene3d;
+pub mod ui_ir;
 
 pub use cache::{CacheUpdate, DirtyResources, RetainedSceneCache};
 pub use error::Scene3DError;
@@ -17,3 +18,4 @@ pub use scene3d::{
     LineSegmentSpec, LineStripSpec, LinesSpec, MaterialSpec, MeshSpec, OrbitCameraSpec,
     PerspectiveCameraSpec, Point3, ScalarRange, SceneNode, SceneSpec, SurfaceSpec, ViewportSize,
 };
+pub use ui_ir::{PythonAppIr, UiIrError};
