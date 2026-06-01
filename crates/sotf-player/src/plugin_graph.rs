@@ -23,9 +23,9 @@ mod misc;
 mod node_position;
 mod plugin_graph_node;
 mod special_node;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use graph_connection::*;
 pub use graph_selection::*;
@@ -2277,4 +2277,3 @@ impl PluginGraph {
         }
     }
 }
-

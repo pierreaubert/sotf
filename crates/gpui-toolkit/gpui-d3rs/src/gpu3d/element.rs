@@ -64,6 +64,7 @@ impl Surface3DState {
 }
 
 /// GPUI Element for interactive 3D surface visualization
+#[derive(Clone)]
 pub struct Surface3DElement {
     data: SurfaceData,
     config: Surface3DConfig,

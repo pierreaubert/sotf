@@ -74,7 +74,7 @@ test-proptest:
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest: test-negative test-proptest
-	AEQ_E2E_DEVICE='BlackHole 64ch' RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
+	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --test-threads=1 --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
 
 # ----------------------------------------------------------------------
 # LINT
@@ -306,6 +306,10 @@ dev:
 	cargo build --bin roomeq-fuzzer -p autoeq --features plotly
 	cargo build --bin plot-functions -p math-test-functions --features plotly
 	cargo build --bin plot-de -p math-optimisation --features plotly
+
+[group('dev')]
+systemwide-lab:
+	SOTF_SYSTEMWIDE_DRIVER=lab SOTF_SYSTEMWIDE_RUNTIME_DIR="${SOTF_SYSTEMWIDE_RUNTIME_DIR:-/tmp/sotf-systemwide-lab-$USER}" cargo run -p sotf-daemon --bin sotf-daemon --features hal
 
 # ----------------------------------------------------------------------
 # UPDATE

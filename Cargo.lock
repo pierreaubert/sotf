@@ -3926,6 +3926,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-python-runtime"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "gpui",
+ "gpui-d3rs",
+ "gpui-design",
+ "gpui-miniapp",
+ "gpui-px",
+ "gpui-ui-kit",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "gpui-themes"
 version = "0.6.2"
 dependencies = [

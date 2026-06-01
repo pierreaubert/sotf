@@ -9,6 +9,7 @@
 // - Unix signals: SIGHUP (reload), SIGTERM/SIGINT (shutdown)
 // - Windows: File watching only (no signal support)
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -123,6 +124,16 @@ fn run_config_watcher(
     log::debug!("[Config Watcher]   Config file: {:?}", config_path);
     log::debug!("[Config Watcher]   Watch signals: {}", watch_signals);
 
+    let poll_config_path = config_path
+        .as_ref()
+        .map(|path| normalized_config_path(path));
+    let mut last_config_modified = poll_config_path.as_ref().and_then(|path| {
+        fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+    });
+    let mut last_poll_sent = Instant::now() - Duration::from_millis(DEBOUNCE_MS);
+
     // Setup file watcher if config path provided
     let _file_watcher = if let Some(ref path) = config_path {
         match setup_file_watcher(path.clone(), event_tx.clone()) {
@@ -184,7 +195,17 @@ fn run_config_watcher(
                 break;
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // Continue waiting
+                if let Some(path) = &poll_config_path
+                    && let Ok(modified) =
+                        fs::metadata(path).and_then(|metadata| metadata.modified())
+                    && Some(modified) != last_config_modified
+                {
+                    last_config_modified = Some(modified);
+                    if last_poll_sent.elapsed() >= Duration::from_millis(DEBOUNCE_MS) {
+                        event_tx.send(ConfigEvent::ConfigChanged(path.clone())).ok();
+                        last_poll_sent = Instant::now();
+                    }
+                }
             }
         }
     }
@@ -458,7 +479,10 @@ mod tests {
         assert!(event.is_some());
         match event.unwrap() {
             ConfigEvent::ConfigChanged(path) => {
-                assert_eq!(path, config_path);
+                assert_eq!(
+                    normalized_config_path(&path),
+                    normalized_config_path(&config_path)
+                );
             }
             _ => panic!("Expected ConfigChanged event"),
         }

@@ -1826,6 +1826,10 @@ mod tests {
         std::thread::spawn(move || {
             let mut state = DecoderState::new(recycle_rx, DsdOutputMode::Disabled);
             state.start_silent_source(2);
+            #[cfg(all(target_os = "macos", feature = "hal"))]
+            {
+                state.hal_reader = None;
+            }
             let result =
                 state.process_hal_input(&message_tx, &command_rx, &response_tx, 16, 48_000);
             done_tx.send(result).ok();
@@ -1936,6 +1940,10 @@ mod tests {
         let (_recycle_tx, recycle_rx) = std::sync::mpsc::channel();
         let mut state = DecoderState::new(recycle_rx, DsdOutputMode::Disabled);
         state.start_silent_source(6);
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        {
+            state.hal_reader = None;
+        }
 
         let (message_tx, message_rx) = std::sync::mpsc::sync_channel(1);
         let (_command_tx, command_rx) = std::sync::mpsc::channel();

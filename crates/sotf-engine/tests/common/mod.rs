@@ -30,28 +30,51 @@ static VIRTUAL_DEVICE: OnceLock<Option<String>> = OnceLock::new();
 /// Checks `AEQ_E2E_DEVICE` env var first (allows overriding the device),
 /// then auto-detects BlackHole or SotF HAL driver.
 pub fn find_virtual_device() -> Option<String> {
-    // Allow explicit override via environment variable
-    if let Ok(device) = std::env::var("AEQ_E2E_DEVICE")
-        && !device.is_empty()
-    {
-        return Some(device);
-    }
-
     use cpal::traits::{DeviceTrait, HostTrait};
 
     let host = cpal::default_host();
-    let devices: Vec<_> = host
+    let devices: Vec<String> = host
         .output_devices()
-        .map(|d| d.collect())
+        .map(|devices| {
+            devices
+                .filter_map(|device| {
+                    device
+                        .description()
+                        .ok()
+                        .map(|description| description.name().to_string())
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
+    // Allow explicit override via environment variable, but only if the
+    // requested device is visible to cpal in this test process.
+    if let Ok(device) = std::env::var("AEQ_E2E_DEVICE")
+        && !device.is_empty()
+    {
+        if let Some(actual_name) = devices
+            .iter()
+            .find(|name| *name == &device || name.contains(&device))
+        {
+            return Some(actual_name.clone());
+        }
+
+        eprintln!(
+            "AEQ_E2E_DEVICE='{}' is not available to cpal; available output devices: {}",
+            device,
+            if devices.is_empty() {
+                "<none>".to_string()
+            } else {
+                devices.join(", ")
+            }
+        );
+        return None;
+    }
+
     for virtual_name in VIRTUAL_DEVICES {
-        for device in &devices {
-            if let Ok(desc) = device.description() {
-                let name = desc.name().to_string();
-                if name.contains(virtual_name) {
-                    return Some(name);
-                }
+        for name in &devices {
+            if name.contains(virtual_name) {
+                return Some(name.clone());
             }
         }
     }

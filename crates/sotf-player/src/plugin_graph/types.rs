@@ -50,4 +50,3 @@ pub struct NodeDrag {
     pub node_id: GraphNodeId,
     pub offset: (f32, f32), // Offset from node position to mouse position
 }
-

@@ -101,6 +101,7 @@ pub struct Lines3DScene {
 /// GPUI element. Construct fresh each paint with the scene to render. State
 /// lives behind an `Rc<RefCell<_>>` so the owning view can mutate it from
 /// mouse handlers.
+#[derive(Clone)]
 pub struct Lines3DElement {
     state: Rc<RefCell<Lines3DState>>,
     scene: Lines3DScene,

@@ -14,4 +14,3 @@ impl NodePosition {
         Self { x, y }
     }
 }
-

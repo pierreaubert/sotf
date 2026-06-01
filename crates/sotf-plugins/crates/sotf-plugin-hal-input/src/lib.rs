@@ -317,7 +317,8 @@ impl Plugin for HalInputPlugin {
                     Self::zero_fill_from(output, samples_read);
                 }
             } else {
-                return Err("HAL reader not available".to_string());
+                self.is_connected = false;
+                Self::zero_fill_from(output, 0);
             }
         }
 

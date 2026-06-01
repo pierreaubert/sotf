@@ -84,6 +84,7 @@ members = [
     "crates/gpui-toolkit/gpui-design",
     "crates/gpui-toolkit/gpui-keybinding",
     "crates/gpui-toolkit/gpui-pretext",
+    "crates/gpui-toolkit/gpui-python-runtime",
     "crates/gpui-toolkit/gpui-themes",
     # iOS/tvOS app shells — compile on macOS (cargo check) but only link for iOS/tvOS targets
     "crates/gpui-toolkit/gpui-ui-kit/ios",
