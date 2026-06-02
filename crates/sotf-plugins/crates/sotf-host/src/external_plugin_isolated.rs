@@ -16,7 +16,10 @@ use crate::external_plugin_ipc::{PluginIpcLayout, PluginSandboxRuntimeStatus};
 use crate::external_plugin_process::{
     ExternalPluginProcessEvent, ExternalPluginProcessSupervisor, ExternalPluginWorkerCommand,
 };
-use crate::external_plugin_sandbox::ExternalPluginSandboxPolicy;
+use crate::external_plugin_sandbox::{
+    ExternalPluginSandboxPolicy, PluginSandboxLaunchBackend, PluginSandboxPolicy,
+    current_plugin_sandbox_launch_backend, default_plugin_sandbox_launcher_command_for_backend,
+};
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 
@@ -30,17 +33,26 @@ pub struct IsolatedExternalPluginConfig {
     pub deadline: Duration,
     pub worker_command: ExternalPluginWorkerCommand,
     pub sandbox_policy: ExternalPluginSandboxPolicy,
+    pub capability_sandbox_policy: Option<PluginSandboxPolicy>,
+    pub sandbox_launch_backend: PluginSandboxLaunchBackend,
+    pub sandbox_launcher_command: Option<ExternalPluginWorkerCommand>,
     pub start_worker: bool,
     pub max_consecutive_block_failures: u32,
 }
 
 impl Default for IsolatedExternalPluginConfig {
     fn default() -> Self {
+        let sandbox_launch_backend = current_plugin_sandbox_launch_backend();
         Self {
             max_block_frames: DEFAULT_MAX_BLOCK_FRAMES,
             deadline: Duration::from_micros(DEFAULT_DEADLINE_MICROS),
             worker_command: ExternalPluginWorkerCommand::default_worker_binary(),
             sandbox_policy: ExternalPluginSandboxPolicy::default(),
+            capability_sandbox_policy: None,
+            sandbox_launch_backend,
+            sandbox_launcher_command: default_plugin_sandbox_launcher_command_for_backend(
+                sandbox_launch_backend,
+            ),
             start_worker: true,
             max_consecutive_block_failures: DEFAULT_MAX_CONSECUTIVE_BLOCK_FAILURES,
         }
@@ -81,12 +93,11 @@ impl IsolatedExternalPlugin {
         let proxy = ExternalPluginHostProxy::new(layout, config.deadline)?;
         let descriptor_json = serde_json::to_string(&descriptor)
             .map_err(|err| format!("failed to serialize external plugin descriptor: {err}"))?;
-        let command = config
-            .worker_command
-            .clone()
-            .arg("--descriptor-json")
-            .arg(descriptor_json)
-            .args(config.sandbox_policy.command_args());
+        let sandbox_args = match &config.capability_sandbox_policy {
+            Some(policy) => policy.command_args_for_backend(config.sandbox_launch_backend)?,
+            None => config.sandbox_policy.command_args(),
+        };
+        let command = build_worker_launch_command(&config, descriptor_json, sandbox_args)?;
         let mut supervisor =
             ExternalPluginProcessSupervisor::new(command, proxy.shared_path().to_path_buf());
         let launch_error = if config.start_worker {
@@ -292,6 +303,49 @@ impl IsolatedExternalPlugin {
     }
 }
 
+fn build_worker_launch_command(
+    config: &IsolatedExternalPluginConfig,
+    descriptor_json: String,
+    sandbox_args: Vec<String>,
+) -> Result<ExternalPluginWorkerCommand, String> {
+    let command = if config.sandbox_launch_backend.requires_host_launcher() {
+        let launcher = config.sandbox_launcher_command.clone().ok_or_else(|| {
+            format!(
+                "sandbox backend '{}' requires a host-owned sandbox launcher command",
+                config.sandbox_launch_backend.backend_id()
+            )
+        })?;
+        decorate_sandbox_launcher_command(launcher, &config.worker_command)
+    } else {
+        config.worker_command.clone()
+    };
+
+    Ok(command
+        .arg("--descriptor-json")
+        .arg(descriptor_json)
+        .args(sandbox_args))
+}
+
+fn decorate_sandbox_launcher_command(
+    mut launcher: ExternalPluginWorkerCommand,
+    worker: &ExternalPluginWorkerCommand,
+) -> ExternalPluginWorkerCommand {
+    launcher = launcher
+        .arg("--sandbox-worker-binary")
+        .arg(worker.program().display().to_string());
+
+    for arg in worker.command_args() {
+        launcher = launcher.arg("--sandbox-worker-arg").arg(arg.clone());
+    }
+    for (key, value) in worker.command_env() {
+        launcher = launcher
+            .arg("--sandbox-worker-env")
+            .arg(format!("{key}={value}"));
+    }
+
+    launcher
+}
+
 impl Plugin for IsolatedExternalPlugin {
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
@@ -383,6 +437,8 @@ impl Plugin for IsolatedExternalPlugin {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::external_plugin::PluginFormat;
 
@@ -566,5 +622,104 @@ mod tests {
             plugin.hosting_plan(),
             plan_external_plugin_hosting(plugin.descriptor())
         );
+    }
+
+    #[test]
+    fn isolated_external_plugin_uses_selected_capability_sandbox_backend() {
+        let config = IsolatedExternalPluginConfig {
+            capability_sandbox_policy: Some(PluginSandboxPolicy::strict_with_preset_dir(
+                "/tmp/sotf-presets",
+            )),
+            sandbox_launch_backend: PluginSandboxLaunchBackend::MacosAppSandboxHelper,
+            sandbox_launcher_command: Some(ExternalPluginWorkerCommand::new(
+                "/tmp/sotf-sandbox-helper",
+            )),
+            start_worker: false,
+            ..Default::default()
+        };
+
+        let plugin = IsolatedExternalPlugin::new(descriptor(), 48_000, config).unwrap();
+
+        assert_eq!(plugin.worker_start_count(), 0);
+    }
+
+    #[test]
+    fn isolated_external_plugin_rejects_helper_backend_without_launcher() {
+        let config = IsolatedExternalPluginConfig {
+            capability_sandbox_policy: Some(PluginSandboxPolicy::strict_with_preset_dir(
+                "/tmp/sotf-presets",
+            )),
+            sandbox_launch_backend: PluginSandboxLaunchBackend::MacosAppSandboxHelper,
+            start_worker: false,
+            ..Default::default()
+        };
+
+        let err = match IsolatedExternalPlugin::new(descriptor(), 48_000, config) {
+            Ok(_) => panic!("expected helper backend to require launcher command"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("requires a host-owned sandbox launcher command"));
+    }
+
+    #[test]
+    fn sandbox_launcher_command_receives_worker_metadata() {
+        let config = IsolatedExternalPluginConfig {
+            worker_command: ExternalPluginWorkerCommand::new("/tmp/sotf-worker")
+                .arg("--idle-sleep-micros")
+                .arg("50")
+                .env("SOTF_WORKER_TEST", "1"),
+            sandbox_launch_backend: PluginSandboxLaunchBackend::WindowsAppContainerWorker,
+            sandbox_launcher_command: Some(ExternalPluginWorkerCommand::new(
+                "/tmp/sotf-appcontainer-launcher",
+            )),
+            start_worker: false,
+            ..Default::default()
+        };
+
+        let command =
+            build_worker_launch_command(&config, "{\"id\":\"test\"}".to_string(), Vec::new())
+                .unwrap();
+
+        assert_eq!(
+            command.program(),
+            Path::new("/tmp/sotf-appcontainer-launcher")
+        );
+        assert_eq!(
+            command.command_args(),
+            &[
+                "--sandbox-worker-binary".to_string(),
+                "/tmp/sotf-worker".to_string(),
+                "--sandbox-worker-arg".to_string(),
+                "--idle-sleep-micros".to_string(),
+                "--sandbox-worker-arg".to_string(),
+                "50".to_string(),
+                "--sandbox-worker-env".to_string(),
+                "SOTF_WORKER_TEST=1".to_string(),
+                "--descriptor-json".to_string(),
+                "{\"id\":\"test\"}".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn isolated_external_plugin_rejects_capability_policy_for_process_only_backend() {
+        let config = IsolatedExternalPluginConfig {
+            capability_sandbox_policy: Some(PluginSandboxPolicy::strict_with_preset_dir(
+                "/tmp/sotf-presets",
+            )),
+            sandbox_launch_backend: PluginSandboxLaunchBackend::ProcessIsolationOnly {
+                platform: "test-process-only",
+            },
+            start_worker: false,
+            ..Default::default()
+        };
+
+        let err = match IsolatedExternalPlugin::new(descriptor(), 48_000, config) {
+            Ok(_) => panic!("expected process-only backend to reject strict capability policy"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("cannot satisfy required policy"));
     }
 }

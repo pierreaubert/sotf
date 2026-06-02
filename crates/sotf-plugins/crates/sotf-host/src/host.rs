@@ -3233,6 +3233,9 @@ fn sandbox_reason_text(
                 "macOS native sandbox backend is unavailable in this build; worker uses process isolation"
                     .to_string()
             }
+            PluginSandboxBackendCode::MacosAppSandboxHelper => {
+                "macOS App Sandbox helper reported unsupported at runtime".to_string()
+            }
             PluginSandboxBackendCode::WindowsProcessIsolation => {
                 "Windows native sandbox backend is unavailable in this build; worker uses process isolation"
                     .to_string()

@@ -17,15 +17,21 @@ pub struct ExternalPluginWorkerCommand {
 
 impl ExternalPluginWorkerCommand {
     pub const DEFAULT_WORKER_BINARY: &'static str = "sotf-external-plugin-worker";
+    pub const DEFAULT_MACOS_SANDBOX_HELPER_BINARY: &'static str = "sotf-macos-sandbox-helper";
 
     pub fn default_worker_binary() -> Self {
+        Self::sibling_binary(Self::DEFAULT_WORKER_BINARY)
+    }
+
+    pub fn default_macos_sandbox_helper_binary() -> Self {
+        Self::sibling_binary(Self::DEFAULT_MACOS_SANDBOX_HELPER_BINARY)
+    }
+
+    fn sibling_binary(name: &'static str) -> Self {
         let program = std::env::current_exe()
             .ok()
-            .and_then(|exe| {
-                exe.parent()
-                    .map(|parent| parent.join(Self::DEFAULT_WORKER_BINARY))
-            })
-            .unwrap_or_else(|| PathBuf::from(Self::DEFAULT_WORKER_BINARY));
+            .and_then(|exe| exe.parent().map(|parent| parent.join(name)))
+            .unwrap_or_else(|| PathBuf::from(name));
         Self::new(program)
     }
 
@@ -319,6 +325,16 @@ mod tests {
         assert_eq!(
             command.command_env(),
             &[("SOTF_TEST_PLUGIN_WORKER".to_string(), "1".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_default_macos_sandbox_helper_uses_sibling_binary_name() {
+        let command = ExternalPluginWorkerCommand::default_macos_sandbox_helper_binary();
+
+        assert_eq!(
+            command.program().file_name().and_then(|name| name.to_str()),
+            Some(ExternalPluginWorkerCommand::DEFAULT_MACOS_SANDBOX_HELPER_BINARY)
         );
     }
 

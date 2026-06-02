@@ -29,12 +29,79 @@ use crate::{ExternalPlugin, PluginDescriptor, PluginFormat, PluginScanStatus};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::{
     ExternalPluginSandboxPolicy, ExternalPluginSandboxTiming, ExternalPluginTrust,
-    IsolatedExternalPlugin, IsolatedExternalPluginConfig,
+    ExternalPluginWorkerCommand, IsolatedExternalPlugin, IsolatedExternalPluginConfig,
+    PluginSandboxGrantStore, PluginSandboxLaunchBackend, PluginSandboxLifecycleMode,
+    PluginSandboxPolicy, current_plugin_sandbox_launch_backend,
+    current_plugin_sandbox_launcher_command,
 };
 use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use std::sync::{OnceLock, RwLock};
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 const MAX_EXTERNAL_PLUGIN_DEADLINE_MICROS: u64 = 10_000;
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+static DEFAULT_SANDBOXED_PLUGIN_CREATION_OPTIONS: OnceLock<
+    RwLock<Option<SandboxedPluginCreationOptions>>,
+> = OnceLock::new();
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[derive(Debug, Clone)]
+pub struct SandboxedPluginCreationOptions {
+    pub grants: PluginSandboxGrantStore,
+    pub preset_root: PathBuf,
+    pub lifecycle: PluginSandboxLifecycleMode,
+    pub protected_media_paths: Vec<PathBuf>,
+    pub media_read_paths: Vec<PathBuf>,
+    pub sandbox_launch_backend: PluginSandboxLaunchBackend,
+    pub sandbox_launcher_command: Option<ExternalPluginWorkerCommand>,
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+impl SandboxedPluginCreationOptions {
+    pub fn authorized_runtime(
+        grants: PluginSandboxGrantStore,
+        preset_root: impl Into<PathBuf>,
+        media_read_paths: impl IntoIterator<Item = PathBuf>,
+    ) -> Self {
+        Self {
+            grants,
+            preset_root: preset_root.into(),
+            lifecycle: PluginSandboxLifecycleMode::AuthorizedRuntime,
+            protected_media_paths: Vec::new(),
+            media_read_paths: media_read_paths.into_iter().collect(),
+            sandbox_launch_backend: current_plugin_sandbox_launch_backend(),
+            sandbox_launcher_command: current_plugin_sandbox_launcher_command(),
+        }
+    }
+
+    pub fn import(
+        grants: PluginSandboxGrantStore,
+        preset_root: impl Into<PathBuf>,
+        protected_media_paths: impl IntoIterator<Item = PathBuf>,
+    ) -> Self {
+        Self {
+            grants,
+            preset_root: preset_root.into(),
+            lifecycle: PluginSandboxLifecycleMode::Import,
+            protected_media_paths: protected_media_paths.into_iter().collect(),
+            media_read_paths: Vec::new(),
+            sandbox_launch_backend: current_plugin_sandbox_launch_backend(),
+            sandbox_launcher_command: current_plugin_sandbox_launcher_command(),
+        }
+    }
+
+    pub fn with_backend(mut self, backend: PluginSandboxLaunchBackend) -> Self {
+        self.sandbox_launch_backend = backend;
+        self
+    }
+
+    pub fn with_launcher(mut self, launcher: Option<ExternalPluginWorkerCommand>) -> Self {
+        self.sandbox_launcher_command = launcher;
+        self
+    }
+}
 
 /// Plugin type strings accepted by [`create_plugin`].
 pub const SUPPORTED_PLUGIN_TYPES: &[&str] = &[
@@ -105,6 +172,31 @@ pub fn is_supported_plugin_type(plugin_type: &str) -> bool {
     SUPPORTED_PLUGIN_TYPES.contains(&lower.as_str())
 }
 
+fn is_external_plugin_type(plugin_type: &str) -> bool {
+    matches!(plugin_type, "external" | "external_plugin")
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub fn set_default_sandboxed_plugin_creation_options(
+    options: Option<SandboxedPluginCreationOptions>,
+) {
+    let lock = DEFAULT_SANDBOXED_PLUGIN_CREATION_OPTIONS.get_or_init(|| RwLock::new(None));
+    *lock
+        .write()
+        .expect("sandboxed plugin creation options lock poisoned") = options;
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub fn default_sandboxed_plugin_creation_options() -> Option<SandboxedPluginCreationOptions> {
+    DEFAULT_SANDBOXED_PLUGIN_CREATION_OPTIONS
+        .get()
+        .and_then(|lock| {
+            lock.read()
+                .expect("sandboxed plugin creation options lock poisoned")
+                .clone()
+        })
+}
+
 pub fn validate_plugin_security_config(
     plugin_type: &str,
     parameters: &serde_json::Value,
@@ -127,6 +219,19 @@ pub fn create_plugin(
     channels: usize,
     sample_rate: u32,
 ) -> Result<Box<dyn Plugin>, String> {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    if is_external_plugin_type(plugin_type)
+        && let Some(options) = default_sandboxed_plugin_creation_options()
+    {
+        return create_plugin_with_sandbox_options(
+            plugin_type,
+            parameters,
+            channels,
+            sample_rate,
+            &options,
+        );
+    }
+
     match plugin_type {
         "gain" => {
             let params: GainPluginParams = serde_json::from_value(parameters.clone())
@@ -549,6 +654,96 @@ pub fn create_plugin(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub fn create_plugin_with_sandbox_grants(
+    plugin_type: &str,
+    parameters: &serde_json::Value,
+    channels: usize,
+    sample_rate: u32,
+    sandbox_grants: &PluginSandboxGrantStore,
+    preset_root: impl Into<PathBuf>,
+) -> Result<Box<dyn Plugin>, String> {
+    create_plugin_with_sandbox_options(
+        plugin_type,
+        parameters,
+        channels,
+        sample_rate,
+        &SandboxedPluginCreationOptions::authorized_runtime(
+            sandbox_grants.clone(),
+            preset_root,
+            Vec::new(),
+        ),
+    )
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub fn create_plugin_with_sandbox_grants_for_backend(
+    plugin_type: &str,
+    parameters: &serde_json::Value,
+    channels: usize,
+    sample_rate: u32,
+    sandbox_grants: &PluginSandboxGrantStore,
+    preset_root: impl Into<PathBuf>,
+    sandbox_launch_backend: PluginSandboxLaunchBackend,
+) -> Result<Box<dyn Plugin>, String> {
+    create_plugin_with_sandbox_options(
+        plugin_type,
+        parameters,
+        channels,
+        sample_rate,
+        &SandboxedPluginCreationOptions::authorized_runtime(
+            sandbox_grants.clone(),
+            preset_root,
+            Vec::new(),
+        )
+        .with_backend(sandbox_launch_backend)
+        .with_launcher(None),
+    )
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[allow(clippy::too_many_arguments)]
+pub fn create_plugin_with_sandbox_grants_for_backend_and_launcher(
+    plugin_type: &str,
+    parameters: &serde_json::Value,
+    channels: usize,
+    sample_rate: u32,
+    sandbox_grants: &PluginSandboxGrantStore,
+    preset_root: impl Into<PathBuf>,
+    sandbox_launch_backend: PluginSandboxLaunchBackend,
+    sandbox_launcher_command: Option<ExternalPluginWorkerCommand>,
+) -> Result<Box<dyn Plugin>, String> {
+    create_plugin_with_sandbox_options(
+        plugin_type,
+        parameters,
+        channels,
+        sample_rate,
+        &SandboxedPluginCreationOptions::authorized_runtime(
+            sandbox_grants.clone(),
+            preset_root,
+            Vec::new(),
+        )
+        .with_backend(sandbox_launch_backend)
+        .with_launcher(sandbox_launcher_command),
+    )
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub fn create_plugin_with_sandbox_options(
+    plugin_type: &str,
+    parameters: &serde_json::Value,
+    channels: usize,
+    sample_rate: u32,
+    options: &SandboxedPluginCreationOptions,
+) -> Result<Box<dyn Plugin>, String> {
+    match plugin_type {
+        "external" | "external_plugin" => {
+            create_external_plugin_with_sandbox_options(parameters, channels, sample_rate, options)
+        }
+        _ => create_plugin(plugin_type, parameters, channels, sample_rate),
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn validate_external_plugin_security_config(parameters: &serde_json::Value) -> Result<(), String> {
     let trust = external_plugin_trust(parameters)?;
     reject_worker_overrides(parameters)?;
@@ -563,6 +758,63 @@ fn validate_external_plugin_security_config(parameters: &serde_json::Value) -> R
     }
 
     Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn create_external_plugin_with_sandbox_options(
+    parameters: &serde_json::Value,
+    channels: usize,
+    sample_rate: u32,
+    options: &SandboxedPluginCreationOptions,
+) -> Result<Box<dyn Plugin>, String> {
+    validate_external_plugin_security_config(parameters)?;
+    let descriptor = parse_external_plugin_descriptor(parameters)
+        .map_err(|e| format!("Failed to parse external plugin descriptor: {e}"))?;
+    if descriptor.audio_inputs != 0 && descriptor.audio_inputs != channels {
+        return Err(format!(
+            "External plugin '{}' requires {} input channels, got {channels}",
+            descriptor.name, descriptor.audio_inputs
+        ));
+    }
+
+    let plugin_trust = external_plugin_trust(parameters)?;
+    if external_plugin_isolation_requested(parameters, plugin_trust)? {
+        let mut config = parse_isolated_external_plugin_config(parameters, plugin_trust)?;
+        config.sandbox_launch_backend = options.sandbox_launch_backend;
+        config.sandbox_launcher_command = options.sandbox_launcher_command.clone();
+        config.capability_sandbox_policy =
+            Some(sandbox_policy_for_creation_options(options, &descriptor)?);
+        let plugin = IsolatedExternalPlugin::new(descriptor, sample_rate, config)
+            .map_err(|e| format!("Failed to create isolated external plugin: {e}"))?;
+        return Ok(Box::new(plugin));
+    }
+
+    let plugin = ExternalPlugin::new(&descriptor, sample_rate)
+        .map_err(|e| format!("Failed to load external plugin: {e}"))?;
+    Ok(Box::new(plugin))
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn sandbox_policy_for_creation_options(
+    options: &SandboxedPluginCreationOptions,
+    descriptor: &PluginDescriptor,
+) -> Result<PluginSandboxPolicy, String> {
+    let policy = match options.lifecycle {
+        PluginSandboxLifecycleMode::Import => options.grants.import_policy_for_plugin(
+            descriptor,
+            &options.preset_root,
+            options.protected_media_paths.clone(),
+        ),
+        PluginSandboxLifecycleMode::AuthorizedRuntime => {
+            options.grants.authorized_runtime_policy_for_plugin(
+                descriptor,
+                &options.preset_root,
+                options.media_read_paths.clone(),
+            )
+        }
+    };
+    policy.validate_protected_media_paths()?;
+    Ok(policy)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -1000,7 +1252,14 @@ fn resize_matrix(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
     use tempfile::tempdir;
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    fn sandbox_options_test_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     #[test]
     fn supported_plugin_type_list_covers_factory_aliases() {
@@ -1114,6 +1373,245 @@ mod tests {
             .unwrap();
         assert_eq!(frames, 2);
         assert_eq!(output, input);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn create_external_plugin_respects_backend_for_host_owned_sandbox_grants() {
+        use crate::{
+            PluginSandboxGrantStore, PluginSandboxIdentity, PluginSandboxNetworkGrant,
+            PluginSandboxPermission, PluginSandboxUserGrant,
+        };
+
+        let dir = tempdir().unwrap();
+        let plugin_path = dir.path().join("external-test-plugin-grants.clap");
+        std::fs::write(&plugin_path, b"stub plugin").unwrap();
+        let params = serde_json::json!({
+            "path": plugin_path.to_string_lossy(),
+            "audio_inputs": 2,
+            "audio_outputs": 2,
+            "name": "External Grant Test",
+            "vendor": "Test Vendor",
+            "id": "com.test.grants",
+            "format": "clap",
+            "plugin_trust": "unknown",
+            "start_worker": false,
+        });
+        let descriptor = parse_external_plugin_descriptor(&params).unwrap();
+        let identity = PluginSandboxIdentity::from_descriptor(&descriptor);
+        let mut grants = PluginSandboxGrantStore::default();
+        grants.remember(PluginSandboxUserGrant {
+            identity,
+            permission: PluginSandboxPermission::Network(PluginSandboxNetworkGrant::AnyOutbound),
+        });
+
+        let expected_policy =
+            grants.strict_policy_for_plugin(&descriptor, dir.path().join("presets"));
+        let backend_can_launch = expected_policy
+            .current_backend_launch_plan()
+            .validate_for_launch(&expected_policy)
+            .is_ok();
+
+        let result = create_plugin_with_sandbox_grants(
+            "external",
+            &params,
+            2,
+            48_000,
+            &grants,
+            dir.path().join("presets"),
+        );
+
+        if backend_can_launch {
+            let plugin = result.unwrap();
+            assert_eq!(plugin.input_channels(), 2);
+            assert_eq!(plugin.output_channels(), 2);
+        } else {
+            let err = match result {
+                Ok(_) => panic!("expected unsupported sandbox backend to fail"),
+                Err(err) => err,
+            };
+            assert!(err.contains("cannot satisfy required policy"));
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn create_external_plugin_accepts_host_selected_store_sandbox_backend() {
+        use crate::{
+            ExternalPluginWorkerCommand, PluginSandboxGrantStore, PluginSandboxLaunchBackend,
+            PluginSandboxNetworkGrant, PluginSandboxPermission, PluginSandboxUserGrant,
+        };
+
+        let dir = tempdir().unwrap();
+        let plugin_path = dir.path().join("external-test-plugin-store-helper.clap");
+        std::fs::write(&plugin_path, b"stub plugin").unwrap();
+        let params = serde_json::json!({
+            "path": plugin_path.to_string_lossy(),
+            "audio_inputs": 2,
+            "audio_outputs": 2,
+            "name": "External Store Helper Test",
+            "vendor": "Test Vendor",
+            "id": "com.test.store-helper",
+            "format": "clap",
+            "plugin_trust": "unknown",
+            "start_worker": false,
+        });
+        let descriptor = parse_external_plugin_descriptor(&params).unwrap();
+        let mut grants = PluginSandboxGrantStore::default();
+        grants.remember(PluginSandboxUserGrant {
+            identity: crate::PluginSandboxIdentity::from_descriptor(&descriptor),
+            permission: PluginSandboxPermission::Network(PluginSandboxNetworkGrant::AnyOutbound),
+        });
+
+        let plugin = create_plugin_with_sandbox_grants_for_backend_and_launcher(
+            "external",
+            &params,
+            2,
+            48_000,
+            &grants,
+            dir.path().join("presets"),
+            PluginSandboxLaunchBackend::MacosAppSandboxHelper,
+            Some(ExternalPluginWorkerCommand::new("/tmp/sotf-sandbox-helper")),
+        )
+        .unwrap();
+
+        assert_eq!(plugin.input_channels(), 2);
+        assert_eq!(plugin.output_channels(), 2);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn create_plugin_uses_installed_authorized_runtime_sandbox_options() {
+        use crate::{
+            ExternalPluginWorkerCommand, PluginSandboxGrantStore, PluginSandboxIdentity,
+            PluginSandboxLaunchBackend, PluginSandboxNetworkGrant, PluginSandboxPermission,
+            PluginSandboxUserGrant,
+        };
+
+        let _guard = sandbox_options_test_lock();
+        let dir = tempdir().unwrap();
+        let plugin_path = dir.path().join("external-test-plugin-default-options.clap");
+        let media_path = dir.path().join("Music");
+        std::fs::write(&plugin_path, b"stub plugin").unwrap();
+        std::fs::create_dir_all(&media_path).unwrap();
+        let params = serde_json::json!({
+            "path": plugin_path.to_string_lossy(),
+            "audio_inputs": 2,
+            "audio_outputs": 2,
+            "name": "External Default Options Test",
+            "vendor": "Test Vendor",
+            "id": "com.test.default-options",
+            "format": "clap",
+            "plugin_trust": "unknown",
+            "start_worker": false,
+        });
+        let descriptor = parse_external_plugin_descriptor(&params).unwrap();
+        let mut grants = PluginSandboxGrantStore::default();
+        grants.remember(PluginSandboxUserGrant {
+            identity: PluginSandboxIdentity::from_descriptor(&descriptor),
+            permission: PluginSandboxPermission::Network(PluginSandboxNetworkGrant::AnyOutbound),
+        });
+        let options = SandboxedPluginCreationOptions::authorized_runtime(
+            grants,
+            dir.path().join("presets"),
+            vec![media_path],
+        )
+        .with_backend(PluginSandboxLaunchBackend::MacosAppSandboxHelper)
+        .with_launcher(Some(ExternalPluginWorkerCommand::new(
+            "/tmp/sotf-sandbox-helper",
+        )));
+        set_default_sandboxed_plugin_creation_options(Some(options));
+
+        let plugin = create_plugin("external", &params, 2, 48_000).unwrap();
+
+        assert_eq!(plugin.input_channels(), 2);
+        assert_eq!(plugin.output_channels(), 2);
+        set_default_sandboxed_plugin_creation_options(None);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn create_external_plugin_rejects_helper_backend_without_launcher() {
+        use crate::{PluginSandboxGrantStore, PluginSandboxLaunchBackend};
+
+        let dir = tempdir().unwrap();
+        let plugin_path = dir.path().join("external-test-plugin-no-helper.clap");
+        std::fs::write(&plugin_path, b"stub plugin").unwrap();
+        let params = serde_json::json!({
+            "path": plugin_path.to_string_lossy(),
+            "audio_inputs": 2,
+            "audio_outputs": 2,
+            "name": "External Missing Helper Test",
+            "vendor": "Test Vendor",
+            "id": "com.test.no-helper",
+            "format": "clap",
+            "plugin_trust": "unknown",
+            "start_worker": false,
+        });
+        let grants = PluginSandboxGrantStore::default();
+
+        let err = match create_plugin_with_sandbox_grants_for_backend(
+            "external",
+            &params,
+            2,
+            48_000,
+            &grants,
+            dir.path().join("presets"),
+            PluginSandboxLaunchBackend::MacosAppSandboxHelper,
+        ) {
+            Ok(_) => panic!("expected helper backend to require launcher command"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("requires a host-owned sandbox launcher command"));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn create_external_plugin_rejects_unrepresentable_host_owned_sandbox_grants() {
+        use crate::{
+            PluginSandboxGrantStore, PluginSandboxIdentity, PluginSandboxNetworkGrant,
+            PluginSandboxPermission, PluginSandboxUserGrant,
+        };
+
+        let dir = tempdir().unwrap();
+        let plugin_path = dir.path().join("external-test-plugin-loopback.clap");
+        std::fs::write(&plugin_path, b"stub plugin").unwrap();
+        let params = serde_json::json!({
+            "path": plugin_path.to_string_lossy(),
+            "audio_inputs": 2,
+            "audio_outputs": 2,
+            "name": "External Loopback Test",
+            "vendor": "Test Vendor",
+            "id": "com.test.loopback",
+            "format": "clap",
+            "plugin_trust": "unknown",
+            "start_worker": false,
+        });
+        let descriptor = parse_external_plugin_descriptor(&params).unwrap();
+        let identity = PluginSandboxIdentity::from_descriptor(&descriptor);
+        let mut grants = PluginSandboxGrantStore::default();
+        grants.remember(PluginSandboxUserGrant {
+            identity,
+            permission: PluginSandboxPermission::Network(PluginSandboxNetworkGrant::LoopbackOnly),
+        });
+
+        let err = match create_plugin_with_sandbox_grants(
+            "external",
+            &params,
+            2,
+            48_000,
+            &grants,
+            dir.path().join("presets"),
+        ) {
+            Ok(_) => panic!("expected unrepresentable sandbox grant to fail"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.contains("cannot launch current worker policy")
+                || err.contains("cannot satisfy required policy")
+        );
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]

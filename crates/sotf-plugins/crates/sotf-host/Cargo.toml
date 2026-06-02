@@ -21,6 +21,10 @@ required-features = ["qa"]
 name = "sotf-external-plugin-worker"
 path = "bin/external_plugin_worker.rs"
 
+[[bin]]
+name = "sotf-macos-sandbox-helper"
+path = "bin/macos_sandbox_helper.rs"
+
 [features]
 default = []
 qa = ["dep:criterion"]

@@ -284,6 +284,69 @@ impl PluginScanner {
         }
     }
 
+    /// Scan a caller-selected plugin file/bundle or directory.
+    ///
+    /// When `format` is omitted, file/bundle paths infer the format from their
+    /// extension and directories are scanned for every format supported by the
+    /// current platform.
+    pub fn scan_path(
+        &mut self,
+        path: impl AsRef<Path>,
+        format: Option<PluginFormat>,
+    ) -> Result<(), String> {
+        let path = path.as_ref();
+        if !path.exists() {
+            return Err(format!(
+                "plugin scan path does not exist: {}",
+                path.display()
+            ));
+        }
+
+        if path.is_dir() {
+            if let Some(format) = format {
+                if Self::matches_extension(path, format) {
+                    self.add_plugin(path.to_path_buf());
+                } else {
+                    self.scan_directory(path, format);
+                }
+            } else if let Some(format) = Self::format_from_path(path) {
+                self.add_plugin(path.to_path_buf());
+                if self.detect_format(path) != format {
+                    return Err(format!(
+                        "plugin path {} does not match inferred format {:?}",
+                        path.display(),
+                        format
+                    ));
+                }
+            } else {
+                self.scan_directory(path, PluginFormat::Clap);
+                self.scan_directory(path, PluginFormat::Vst3);
+                #[cfg(target_os = "macos")]
+                self.scan_directory(path, PluginFormat::AudioUnit);
+            }
+            return Ok(());
+        }
+
+        let detected = Self::format_from_path(path).ok_or_else(|| {
+            format!(
+                "unable to infer plugin format from path extension: {}",
+                path.display()
+            )
+        })?;
+        if let Some(format) = format
+            && format != detected
+        {
+            return Err(format!(
+                "plugin path {} has format {:?}, not {:?}",
+                path.display(),
+                detected,
+                format
+            ));
+        }
+        self.add_plugin(path.to_path_buf());
+        Ok(())
+    }
+
     /// Get standard search paths for a plugin format.
     fn search_paths(format: PluginFormat) -> Vec<PathBuf> {
         let mut paths = Vec::new();
@@ -409,6 +472,19 @@ impl PluginScanner {
             .is_some_and(|ext| ext.eq_ignore_ascii_case(format.extension()))
     }
 
+    fn format_from_path(path: &Path) -> Option<PluginFormat> {
+        let ext = path.extension().and_then(|ext| ext.to_str())?;
+        if ext.eq_ignore_ascii_case("clap") {
+            Some(PluginFormat::Clap)
+        } else if ext.eq_ignore_ascii_case("vst3") {
+            Some(PluginFormat::Vst3)
+        } else if ext.eq_ignore_ascii_case("component") {
+            Some(PluginFormat::AudioUnit)
+        } else {
+            None
+        }
+    }
+
     fn add_plugin(&mut self, path: PathBuf) {
         let path = match path.canonicalize() {
             Ok(p) => p,
@@ -450,14 +526,7 @@ impl PluginScanner {
     }
 
     fn detect_format(&self, path: &Path) -> PluginFormat {
-        let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-        if ext.eq_ignore_ascii_case("clap") {
-            PluginFormat::Clap
-        } else if ext.eq_ignore_ascii_case("vst3") {
-            PluginFormat::Vst3
-        } else {
-            PluginFormat::AudioUnit
-        }
+        Self::format_from_path(path).unwrap_or(PluginFormat::AudioUnit)
     }
 
     /// Find a plugin by name (case-insensitive).
@@ -1162,6 +1231,50 @@ mod tests {
     fn test_plugin_scanner_scan_nonexistent() {
         let mut scanner = PluginScanner::new();
         scanner.scan_directory(Path::new("/nonexistent/path"), PluginFormat::Clap);
+        assert!(scanner.plugins.is_empty());
+    }
+
+    #[test]
+    fn test_plugin_scanner_scan_path_single_bundle() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin_path = dir.path().join("scan-path-single.clap");
+        fs::write(&plugin_path, b"stub plugin").unwrap();
+        let mut scanner = PluginScanner::new();
+
+        scanner.scan_path(&plugin_path, None).unwrap();
+
+        assert_eq!(scanner.plugins.len(), 1);
+        assert_eq!(scanner.plugins[0].format, PluginFormat::Clap);
+        assert_eq!(scanner.plugins[0].name, "scan-path-single");
+    }
+
+    #[test]
+    fn test_plugin_scanner_scan_path_directory_recursive() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("recursive-test.vst3"), b"stub plugin").unwrap();
+        let mut scanner = PluginScanner::new();
+
+        scanner.scan_path(dir.path(), None).unwrap();
+
+        assert_eq!(scanner.plugins.len(), 1);
+        assert_eq!(scanner.plugins[0].format, PluginFormat::Vst3);
+        assert_eq!(scanner.plugins[0].name, "recursive-test");
+    }
+
+    #[test]
+    fn test_plugin_scanner_scan_path_rejects_format_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin_path = dir.path().join("mismatch.clap");
+        fs::write(&plugin_path, b"stub plugin").unwrap();
+        let mut scanner = PluginScanner::new();
+
+        let err = scanner
+            .scan_path(&plugin_path, Some(PluginFormat::Vst3))
+            .unwrap_err();
+
+        assert!(err.contains("not Vst3"));
         assert!(scanner.plugins.is_empty());
     }
 

@@ -7,7 +7,7 @@ mod desktop {
     use sotf_host::{
         ExternalPlugin, ExternalPluginSandboxPolicy, ExternalPluginSandboxStatus,
         ExternalPluginSandboxTiming, ExternalPluginWorker, ExternalPluginWorkerStep,
-        PluginDescriptor, PluginSandboxBackendCode, PluginSandboxStatusCode,
+        PluginDescriptor, PluginSandboxBackendCode, PluginSandboxPolicy, PluginSandboxStatusCode,
         SecurePluginSharedMemory, enter_external_plugin_sandbox,
     };
 
@@ -40,6 +40,14 @@ mod desktop {
         /// When to enter the worker sandbox.
         #[arg(long, default_value = "before-plugin-load")]
         sandbox_timing: String,
+
+        /// Portable sandbox policy as JSON.
+        #[arg(long, conflicts_with = "sandbox_policy_file")]
+        sandbox_policy_json: Option<String>,
+
+        /// Path to a JSON file containing the portable sandbox policy.
+        #[arg(long, conflicts_with = "sandbox_policy_json")]
+        sandbox_policy_file: Option<PathBuf>,
 
         /// Treat missing platform sandbox support as a worker startup error.
         #[arg(long)]
@@ -119,6 +127,20 @@ mod desktop {
     }
 
     fn sandbox_policy(args: &Args) -> Result<ExternalPluginSandboxPolicy, String> {
+        if let Some(json) = &args.sandbox_policy_json {
+            return parse_sandbox_policy_json(json).and_then(portable_sandbox_policy_to_legacy);
+        }
+
+        if let Some(path) = &args.sandbox_policy_file {
+            let json = std::fs::read_to_string(path).map_err(|err| {
+                format!(
+                    "failed to read external plugin sandbox policy file '{}': {err}",
+                    path.display()
+                )
+            })?;
+            return parse_sandbox_policy_json(&json).and_then(portable_sandbox_policy_to_legacy);
+        }
+
         let timing = args.sandbox_timing.parse::<ExternalPluginSandboxTiming>()?;
         Ok(ExternalPluginSandboxPolicy {
             timing,
@@ -128,6 +150,18 @@ mod desktop {
             extra_read_paths: args.sandbox_read_paths.clone(),
             extra_write_paths: args.sandbox_write_paths.clone(),
         })
+    }
+
+    fn parse_sandbox_policy_json(json: &str) -> Result<PluginSandboxPolicy, String> {
+        serde_json::from_str(json)
+            .map_err(|err| format!("failed to parse external plugin sandbox policy JSON: {err}"))
+    }
+
+    fn portable_sandbox_policy_to_legacy(
+        policy: PluginSandboxPolicy,
+    ) -> Result<ExternalPluginSandboxPolicy, String> {
+        policy.validate_legacy_worker_adapter()?;
+        Ok(policy.to_legacy_policy())
     }
 
     fn load_descriptor(args: &Args) -> Result<PluginDescriptor, String> {
@@ -196,6 +230,7 @@ mod desktop {
     fn sandbox_backend_code(backend: &str) -> PluginSandboxBackendCode {
         match backend {
             "linux-landlock" => PluginSandboxBackendCode::LinuxLandlock,
+            "macos-app-sandbox-helper" => PluginSandboxBackendCode::MacosAppSandboxHelper,
             "macos-process-isolation" => PluginSandboxBackendCode::MacosProcessIsolation,
             "windows-process-isolation" => PluginSandboxBackendCode::WindowsProcessIsolation,
             _ => PluginSandboxBackendCode::Unknown,
@@ -238,6 +273,8 @@ mod desktop {
                 once: true,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
+                sandbox_policy_json: None,
+                sandbox_policy_file: None,
                 sandbox_required: false,
                 sandbox_allow_network: false,
                 sandbox_allow_child_processes: false,
@@ -257,6 +294,8 @@ mod desktop {
                 once: true,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
+                sandbox_policy_json: None,
+                sandbox_policy_file: None,
                 sandbox_required: false,
                 sandbox_allow_network: false,
                 sandbox_allow_child_processes: false,
@@ -279,6 +318,8 @@ mod desktop {
                 once: true,
                 idle_sleep_micros: 1,
                 sandbox_timing: "before-plugin-load".to_string(),
+                sandbox_policy_json: None,
+                sandbox_policy_file: None,
                 sandbox_required: true,
                 sandbox_allow_network: false,
                 sandbox_allow_child_processes: false,
@@ -296,6 +337,67 @@ mod desktop {
             assert_eq!(
                 policy.extra_write_paths,
                 vec![PathBuf::from("/tmp/plugin-cache")]
+            );
+        }
+
+        #[test]
+        fn sandbox_policy_parses_portable_policy_json() {
+            let portable = PluginSandboxPolicy::strict_with_preset_dir("/tmp/sotf-presets");
+            let args = Args {
+                shared_memory: Some(PathBuf::from("/tmp/fake.shm")),
+                descriptor_json: None,
+                descriptor_file: None,
+                once: true,
+                idle_sleep_micros: 1,
+                sandbox_timing: "disabled".to_string(),
+                sandbox_policy_json: Some(serde_json::to_string(&portable).unwrap()),
+                sandbox_policy_file: None,
+                sandbox_required: false,
+                sandbox_allow_network: true,
+                sandbox_allow_child_processes: true,
+                sandbox_read_paths: Vec::new(),
+                sandbox_write_paths: Vec::new(),
+            };
+
+            let policy = sandbox_policy(&args).unwrap();
+            assert_eq!(policy.timing, ExternalPluginSandboxTiming::BeforePluginLoad);
+            assert!(!policy.allow_network);
+            assert!(!policy.allow_child_processes);
+            assert_eq!(
+                policy.extra_write_paths,
+                vec![PathBuf::from("/tmp/sotf-presets")]
+            );
+        }
+
+        #[test]
+        fn sandbox_policy_rejects_unrepresentable_portable_policy_json() {
+            let mut portable = PluginSandboxPolicy::strict_with_preset_dir("/tmp/sotf-presets");
+            portable.network = sotf_host::PluginSandboxNetworkGrant::LoopbackOnly;
+            let args = Args {
+                shared_memory: Some(PathBuf::from("/tmp/fake.shm")),
+                descriptor_json: None,
+                descriptor_file: None,
+                once: true,
+                idle_sleep_micros: 1,
+                sandbox_timing: "disabled".to_string(),
+                sandbox_policy_json: Some(serde_json::to_string(&portable).unwrap()),
+                sandbox_policy_file: None,
+                sandbox_required: false,
+                sandbox_allow_network: false,
+                sandbox_allow_child_processes: false,
+                sandbox_read_paths: Vec::new(),
+                sandbox_write_paths: Vec::new(),
+            };
+
+            let err = sandbox_policy(&args).unwrap_err();
+            assert!(err.contains("cannot be represented"));
+        }
+
+        #[test]
+        fn sandbox_backend_code_maps_macos_app_sandbox_helper() {
+            assert_eq!(
+                sandbox_backend_code("macos-app-sandbox-helper"),
+                PluginSandboxBackendCode::MacosAppSandboxHelper
             );
         }
     }

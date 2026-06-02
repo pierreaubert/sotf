@@ -14,6 +14,13 @@ pub use factory::{
     SUPPORTED_PLUGIN_TYPES, create_plugin, is_supported_plugin_type,
     validate_plugin_security_config,
 };
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub use factory::{
+    SandboxedPluginCreationOptions, create_plugin_with_sandbox_grants,
+    create_plugin_with_sandbox_grants_for_backend,
+    create_plugin_with_sandbox_grants_for_backend_and_launcher, create_plugin_with_sandbox_options,
+    default_sandboxed_plugin_creation_options, set_default_sandboxed_plugin_creation_options,
+};
 
 // Re-export infrastructure modules from sotf-host
 pub use sotf_host::analyzer;
@@ -24,17 +31,28 @@ pub use sotf_host::automation;
 pub use sotf_host::error;
 pub use sotf_host::layout_solver;
 pub use sotf_host::param_registry;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub use sotf_host::{
+    DenyPluginSandboxPermissionBroker, ExternalPluginProcessEvent, ExternalPluginSandboxPolicy,
+    ExternalPluginSandboxStatus, ExternalPluginSandboxTiming, ExternalPluginTrust,
+    ExternalPluginWorkerCommand, IsolatedExternalPlugin, IsolatedExternalPluginConfig,
+    IsolatedExternalPluginWorkerReport, PluginSandboxAuthorizationGrant, PluginSandboxBackend,
+    PluginSandboxBackendCapabilities, PluginSandboxBackendCode, PluginSandboxBrokerPolicy,
+    PluginSandboxChildProcessGrant, PluginSandboxFileGrant, PluginSandboxGrantPersistence,
+    PluginSandboxGrantStore, PluginSandboxIdentity, PluginSandboxLaunchBackend,
+    PluginSandboxLaunchPlan, PluginSandboxLifecycleMode, PluginSandboxNetworkGrant,
+    PluginSandboxPermission, PluginSandboxPermissionBroker, PluginSandboxPermissionDecision,
+    PluginSandboxPermissionOutcome, PluginSandboxPermissionRequest, PluginSandboxPolicy,
+    PluginSandboxPolicyAdapterIssue, PluginSandboxPolicySupportIssue, PluginSandboxStatusCode,
+    PluginSandboxUserGrant, current_plugin_sandbox_backend_capabilities,
+    current_plugin_sandbox_launch_backend, current_plugin_sandbox_launcher_command,
+    default_plugin_sandbox_launcher_command_for_backend,
+    default_plugin_sandbox_protected_media_paths, enter_external_plugin_sandbox,
+};
 pub use sotf_host::{
     ExternalHostingBackend, ExternalPlugin, ExternalPluginSandboxMode, ExternalPluginState,
     PluginDescriptor, PluginFormat, PluginFormatCapability, PluginScanStatus, PluginScanner,
     plugin_format_capabilities,
-};
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-pub use sotf_host::{
-    ExternalPluginProcessEvent, ExternalPluginSandboxPolicy, ExternalPluginSandboxStatus,
-    ExternalPluginSandboxTiming, ExternalPluginTrust, ExternalPluginWorkerCommand,
-    IsolatedExternalPlugin, IsolatedExternalPluginConfig, IsolatedExternalPluginWorkerReport,
-    PluginSandboxBackendCode, PluginSandboxStatusCode, enter_external_plugin_sandbox,
 };
 /// Parameter specifications: types from `sotf-host`, per-plugin definitions
 /// from individual plugin crates.

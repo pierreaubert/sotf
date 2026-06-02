@@ -101,8 +101,19 @@ pub use external_plugin_process::{
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use external_plugin_sandbox::{
-    ExternalPluginSandboxPolicy, ExternalPluginSandboxStatus, ExternalPluginSandboxTiming,
-    ExternalPluginTrust, enter_external_plugin_sandbox,
+    DenyPluginSandboxPermissionBroker, ExternalPluginSandboxPolicy, ExternalPluginSandboxStatus,
+    ExternalPluginSandboxTiming, ExternalPluginTrust, MACOS_APP_SANDBOX_HELPER_ENV,
+    PluginSandboxAuthorizationGrant, PluginSandboxBackend, PluginSandboxBackendCapabilities,
+    PluginSandboxBrokerPolicy, PluginSandboxChildProcessGrant, PluginSandboxFileGrant,
+    PluginSandboxGrantPersistence, PluginSandboxGrantStore, PluginSandboxIdentity,
+    PluginSandboxLaunchBackend, PluginSandboxLaunchPlan, PluginSandboxLifecycleMode,
+    PluginSandboxNetworkGrant, PluginSandboxPermission, PluginSandboxPermissionBroker,
+    PluginSandboxPermissionDecision, PluginSandboxPermissionOutcome,
+    PluginSandboxPermissionRequest, PluginSandboxPolicy, PluginSandboxPolicyAdapterIssue,
+    PluginSandboxPolicySupportIssue, PluginSandboxUserGrant,
+    current_plugin_sandbox_backend_capabilities, current_plugin_sandbox_launch_backend,
+    current_plugin_sandbox_launcher_command, default_plugin_sandbox_launcher_command_for_backend,
+    default_plugin_sandbox_protected_media_paths, enter_external_plugin_sandbox,
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use external_plugin_worker::{ExternalPluginWorker, ExternalPluginWorkerStep};

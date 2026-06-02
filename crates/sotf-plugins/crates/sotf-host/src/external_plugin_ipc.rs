@@ -48,6 +48,7 @@ pub enum PluginSandboxBackendCode {
     LinuxLandlock = 1,
     MacosProcessIsolation = 2,
     WindowsProcessIsolation = 3,
+    MacosAppSandboxHelper = 4,
 }
 
 impl PluginSandboxBackendCode {
@@ -56,6 +57,7 @@ impl PluginSandboxBackendCode {
             1 => Self::LinuxLandlock,
             2 => Self::MacosProcessIsolation,
             3 => Self::WindowsProcessIsolation,
+            4 => Self::MacosAppSandboxHelper,
             _ => Self::Unknown,
         }
     }
