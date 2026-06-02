@@ -32,6 +32,8 @@ set -euo pipefail
 APP_NAME="sotf-desktop"
 BUNDLE_ID="org.spinorama.sotf"
 BINARY_NAME="sotf-desktop"
+EXTERNAL_PLUGIN_WORKER_NAME="sotf-external-plugin-worker"
+MACOS_SANDBOX_HELPER_NAME="sotf-macos-sandbox-helper"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -52,6 +54,7 @@ CONFIG_FILE="${HOME}/.sotf-release.conf"
 [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
 
 ENTITLEMENTS="$PROJECT_ROOT/builds/macos/entitlements-mas.plist"
+INHERIT_ENTITLEMENTS="$PROJECT_ROOT/builds/macos/entitlements-mas-inherit.plist"
 INFO_PLIST_TEMPLATE="$PROJECT_ROOT/builds/macos/org.spinorama.sotf.plist"
 PB=/usr/libexec/PlistBuddy
 
@@ -121,31 +124,40 @@ if [ "$BUILD_NUMBER_SOURCE" = "git commit count" ] \
     log_warn "Use --build-number <integer> if App Store Connect needs a higher value."
 fi
 
-# Default binary path follows --arch.
+# Default binary paths follow --arch.
+case "$ARCH" in
+    arm64)  TARGET_TRIPLE="aarch64-apple-darwin" ;;
+    x86_64) TARGET_TRIPLE="x86_64-apple-darwin" ;;
+    *) log_error "Unsupported --arch: $ARCH (expected arm64 or x86_64)"; exit 1 ;;
+esac
+DEFAULT_BINARY_DIR="$PROJECT_ROOT/target/$TARGET_TRIPLE/release"
 if [ -z "$SOURCE_BINARY" ]; then
-    case "$ARCH" in
-        arm64)  SOURCE_BINARY="$PROJECT_ROOT/target/aarch64-apple-darwin/release/$BINARY_NAME" ;;
-        x86_64) SOURCE_BINARY="$PROJECT_ROOT/target/x86_64-apple-darwin/release/$BINARY_NAME" ;;
-        *) log_error "Unsupported --arch: $ARCH (expected arm64 or x86_64)"; exit 1 ;;
-    esac
+    SOURCE_BINARY="$DEFAULT_BINARY_DIR/$BINARY_NAME"
 fi
+EXTERNAL_PLUGIN_WORKER_BINARY="${EXTERNAL_PLUGIN_WORKER_BINARY:-$DEFAULT_BINARY_DIR/$EXTERNAL_PLUGIN_WORKER_NAME}"
+MACOS_SANDBOX_HELPER_BINARY="${MACOS_SANDBOX_HELPER_BINARY:-$DEFAULT_BINARY_DIR/$MACOS_SANDBOX_HELPER_NAME}"
 
 # ---- Preflight ----
 log_step "Preflight checks"
-[ -f "$SOURCE_BINARY" ]    || { log_error "Binary not found: $SOURCE_BINARY"; exit 1; }
-[ -f "$ENTITLEMENTS" ]     || { log_error "Entitlements not found: $ENTITLEMENTS"; exit 1; }
+[ -f "$SOURCE_BINARY" ]    || { log_error "App binary not found: $SOURCE_BINARY"; exit 1; }
+[ -f "$EXTERNAL_PLUGIN_WORKER_BINARY" ] || { log_error "External plugin worker not found: $EXTERNAL_PLUGIN_WORKER_BINARY"; exit 1; }
+[ -f "$MACOS_SANDBOX_HELPER_BINARY" ] || { log_error "macOS sandbox helper not found: $MACOS_SANDBOX_HELPER_BINARY"; exit 1; }
+[ -f "$ENTITLEMENTS" ]     || { log_error "App entitlements not found: $ENTITLEMENTS"; exit 1; }
+[ -f "$INHERIT_ENTITLEMENTS" ] || { log_error "Inherited sandbox entitlements not found: $INHERIT_ENTITLEMENTS"; exit 1; }
 [ -f "$INFO_PLIST_TEMPLATE" ] || { log_error "Info.plist template not found: $INFO_PLIST_TEMPLATE"; exit 1; }
 
 # Private-API scan: aborts the build if the binary references SPI symbols
 # (e.g. CGSSetWindowBackgroundBlurRadius) or links non-public frameworks.
 # Catches MAS-rejection-class issues before we sign + upload.
-log_step "Scanning binary for private Apple APIs..."
-if ! "$SCRIPT_DIR/check-mas-private-api.sh" "$SOURCE_BINARY"; then
-    log_error "Refusing to build a .pkg that would be rejected by App Review."
-    log_error "Address the findings above (vendor-and-patch the offending"
-    log_error "dependency, or extend the ALLOWLIST if the symbol is in fact public)."
-    exit 1
-fi
+log_step "Scanning binaries for private Apple APIs..."
+for api_binary in "$SOURCE_BINARY" "$EXTERNAL_PLUGIN_WORKER_BINARY" "$MACOS_SANDBOX_HELPER_BINARY"; do
+    if ! "$SCRIPT_DIR/check-mas-private-api.sh" "$api_binary"; then
+        log_error "Refusing to build a .pkg that would be rejected by App Review."
+        log_error "Address the findings above (vendor-and-patch the offending"
+        log_error "dependency, or extend the ALLOWLIST if the symbol is in fact public)."
+        exit 1
+    fi
+done
 if [ ! -f "$MAS_PROVISIONING_PROFILE" ]; then
     log_error "MAS provisioning profile not found: $MAS_PROVISIONING_PROFILE"
     log_error "Download a 'Mac App Store Distribution' profile for $BUNDLE_ID from"
@@ -242,7 +254,10 @@ fi
 
 log_ok "Version v$VERSION (build #$BUILD_NUMBER, from $BUILD_NUMBER_SOURCE)"
 log_ok "Binary: $SOURCE_BINARY"
+log_ok "External plugin worker: $EXTERNAL_PLUGIN_WORKER_BINARY"
+log_ok "macOS sandbox helper: $MACOS_SANDBOX_HELPER_BINARY"
 log_ok "Entitlements: $ENTITLEMENTS"
+log_ok "Inherited sandbox entitlements: $INHERIT_ENTITLEMENTS"
 log_ok "Provisioning profile: $MAS_PROVISIONING_PROFILE"
 log_ok "Profile lists distribution cert ($DIST_CERT_SHA1)"
 log_ok "Profile application identifier: $PROFILE_APP_ID"
@@ -262,6 +277,10 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$SOURCE_BINARY" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
+cp "$EXTERNAL_PLUGIN_WORKER_BINARY" "$APP_BUNDLE/Contents/MacOS/$EXTERNAL_PLUGIN_WORKER_NAME"
+chmod +x "$APP_BUNDLE/Contents/MacOS/$EXTERNAL_PLUGIN_WORKER_NAME"
+cp "$MACOS_SANDBOX_HELPER_BINARY" "$APP_BUNDLE/Contents/MacOS/$MACOS_SANDBOX_HELPER_NAME"
+chmod +x "$APP_BUNDLE/Contents/MacOS/$MACOS_SANDBOX_HELPER_NAME"
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
 # ---- Info.plist (template + MAS-required keys) ----
@@ -396,6 +415,24 @@ if "$PB" -c "Print :application-identifier" "$SIGN_ENTITLEMENTS" >/dev/null 2>&1
     exit 1
 fi
 log_info "Signing with team-identifier = $TEAM_ID and application-identifier = $PROFILE_APP_ID"
+
+# ---- Code-sign nested command-line tools first ----
+log_step "Code-signing inherited sandbox helper tools"
+for helper_binary in "$APP_BUNDLE/Contents/MacOS/$EXTERNAL_PLUGIN_WORKER_NAME" \
+                     "$APP_BUNDLE/Contents/MacOS/$MACOS_SANDBOX_HELPER_NAME"; do
+    codesign --force \
+        --options runtime \
+        --timestamp \
+        --entitlements "$INHERIT_ENTITLEMENTS" \
+        --sign "$MAS_DISTRIBUTION_CERT" \
+        "$helper_binary"
+    codesign --verify --strict --verbose=2 "$helper_binary"
+    HELPER_ENT=$(codesign -d --entitlements :- "$helper_binary" 2>/dev/null)
+    if ! printf '%s\n' "$HELPER_ENT" | grep -Fq "<key>com.apple.security.inherit</key>"; then
+        log_error "Signed helper missing com.apple.security.inherit: $helper_binary"
+        exit 1
+    fi
+done
 
 # ---- Code-sign with Apple Distribution cert + patched MAS entitlements ----
 log_step "Code-signing .app with $MAS_DISTRIBUTION_CERT"

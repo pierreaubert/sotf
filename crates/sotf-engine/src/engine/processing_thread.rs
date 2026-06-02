@@ -885,6 +885,9 @@ fn isolated_external_plugin_sandbox_backend(
         PluginSandboxBackendCode::MacosProcessIsolation => {
             IsolatedExternalPluginSandboxBackend::MacosProcessIsolation
         }
+        PluginSandboxBackendCode::MacosAppSandboxHelper => {
+            IsolatedExternalPluginSandboxBackend::MacosAppSandboxHelper
+        }
         PluginSandboxBackendCode::WindowsProcessIsolation => {
             IsolatedExternalPluginSandboxBackend::WindowsProcessIsolation
         }
@@ -1941,6 +1944,12 @@ mod tests {
             status.event,
             Some(IsolatedExternalPluginWorkerEvent::Started { pid }) if pid == 777
         ));
+        assert_eq!(
+            isolated_external_plugin_sandbox_backend(
+                PluginSandboxBackendCode::MacosAppSandboxHelper
+            ),
+            IsolatedExternalPluginSandboxBackend::MacosAppSandboxHelper
+        );
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
