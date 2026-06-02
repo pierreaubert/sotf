@@ -274,7 +274,7 @@ impl Accordion {
                 &theme,
                 on_change.clone(),
             );
-            let mut item_wrapper = div().child(header);
+            let mut item_wrapper = div().w_full().child(header);
 
             // Content (only if expanded)
             if is_expanded && let Some(content) = item.content {
@@ -369,7 +369,6 @@ impl Accordion {
         let mut header = div()
             .id(SharedString::from(format!("accordion-header-{}", item_id)))
             .flex()
-            .items_center()
             .gap_2()
             .px_4()
             .py_3()
@@ -380,9 +379,11 @@ impl Accordion {
             })
             .cursor_pointer();
 
-        if !is_vertical {
-            header = header.flex_1();
-        }
+        header = if is_vertical {
+            header.items_start().w_full().flex_shrink_0()
+        } else {
+            header.items_center().flex_1()
+        };
 
         if !is_first {
             header = if is_vertical {
@@ -418,12 +419,21 @@ impl Accordion {
         } else {
             theme.accent_tint
         };
-        header = header.child(div().w(px(3.0)).h(px(22.0)).rounded(px(1.5)).bg(rail_bg));
+        header = header.child(
+            div()
+                .w(px(3.0))
+                .h(px(22.0))
+                .flex_shrink_0()
+                .rounded(px(1.5))
+                .bg(rail_bg),
+        );
 
         header = header.child(
             div()
                 .flex_1()
+                .min_w_0()
                 .text_sm()
+                .line_height(px(20.0))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(theme.title_color)
                 .child(title),
@@ -439,6 +449,8 @@ impl Accordion {
         header.child(
             div()
                 .text_xs()
+                .line_height(px(20.0))
+                .flex_shrink_0()
                 .text_color(if is_expanded {
                     theme.accent
                 } else {

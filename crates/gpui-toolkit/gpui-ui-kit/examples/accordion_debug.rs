@@ -225,6 +225,16 @@ impl Render for AccordionDebug {
                                         &theme,
                                     )),
                             )
+                            .item(
+                                AccordionItem::new(
+                                    "multi-4",
+                                    "A deliberately long accordion title that wraps across multiple lines while every item keeps the same width",
+                                )
+                                .content(Self::sample_content(
+                                    "Long headers should wrap inside the available row instead of widening individual accordion items.",
+                                    &theme,
+                                )),
+                            )
                             .on_change({
                                 let entity = entity.clone();
                                 move |id, expanded, _window, cx| {
