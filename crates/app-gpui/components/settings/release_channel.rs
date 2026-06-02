@@ -137,6 +137,10 @@ impl PlayerView {
         // --- Features (screens) ---
         let features: Vec<FeatureRow> = vec![
             FeatureRow {
+                name: "Now Playing",
+                maturity: Screen::NowPlaying.maturity(),
+            },
+            FeatureRow {
                 name: "Library",
                 maturity: Screen::Library.maturity(),
             },

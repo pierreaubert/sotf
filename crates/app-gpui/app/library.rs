@@ -5,6 +5,8 @@
 use std::path::PathBuf;
 
 use sotf_audio_player::Album;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use sotf_audio_player::config::install_authorized_runtime_plugin_sandbox;
 
 use super::state::App;
 use super::state::library::{ChannelFilter, LibrarySortOrder};
@@ -87,6 +89,30 @@ impl App {
     /// Add a directory without triggering rescan (for startup initialization)
     pub fn add_directory_quiet(&mut self, path: PathBuf) {
         let _ = self.library_state.library.add_directory(path);
+        self.install_external_plugin_runtime_sandbox();
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    pub fn install_external_plugin_runtime_sandbox(&mut self) {
+        let directories = self.external_plugin_media_directories();
+        match install_authorized_runtime_plugin_sandbox(directories) {
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!("Failed to install external plugin runtime sandbox policy: {err}");
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    pub fn install_external_plugin_runtime_sandbox(&mut self) {}
+
+    pub fn external_plugin_media_directories(&self) -> Vec<PathBuf> {
+        self.library_state
+            .library
+            .directories
+            .iter()
+            .map(|dir| dir.path.clone())
+            .collect()
     }
 
     /// Full rescan of the library
@@ -106,6 +132,7 @@ impl App {
             .iter()
             .map(|d| d.path.clone())
             .collect();
+        self.install_external_plugin_runtime_sandbox();
         self.library_scanner = Some(sotf_audio_player::LibraryScanner::start_force(directories));
 
         Ok(())
@@ -185,6 +212,7 @@ impl App {
                     }
                     self.ui_state.toast_message =
                         Some(ToastMessage::success("Directory removed and cleaned up."));
+                    self.install_external_plugin_runtime_sandbox();
                 }
             } else {
                 self.ui_state.toast_message =
@@ -223,6 +251,7 @@ impl App {
             .iter()
             .map(|d| d.path.clone())
             .collect();
+        self.install_external_plugin_runtime_sandbox();
         self.library_scanner = Some(sotf_audio_player::LibraryScanner::start(directories));
 
         Ok(())

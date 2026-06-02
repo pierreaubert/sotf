@@ -1593,7 +1593,7 @@ impl EditorTheme {
             background_tertiary: Color::from_hex(0x191a21),
             surface: Color::from_hex(0x44475a),
             surface_hover: Color::from_hex(0x6272a4),
-            surface_selected: Color::from_hex(0x6272a4),
+            surface_selected: Color::from_hex(0x60709f),
 
             text_primary: Color::from_hex(0xf8f8f2),
             text_secondary: Color::from_hex(0xbfbfbf),

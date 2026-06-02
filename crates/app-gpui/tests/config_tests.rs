@@ -166,6 +166,7 @@ fn test_recording_config_state_serialization() {
 fn test_config_serialization() {
     use gpui_themes::{AccessibilityPalette, ThemeModePreference, ThemeSchedule, TimeOfDay};
     use sotf_audio_player::ReleaseChannel;
+    use sotf_audio_player_gpui::app::types::DensityMode;
     use sotf_audio_player_gpui::i18n::Language;
     use sotf_audio_player_gpui::keybindings::KeymapPreset;
     use sotf_audio_player_gpui::theme::{CommunityThemeId, ThemeAccentPreference, ThemeId};
@@ -180,6 +181,7 @@ fn test_config_serialization() {
         theme_accent_preference: ThemeAccentPreference::System,
         community_theme_id: Some(CommunityThemeId::Nord),
         reduce_motion: false,
+        density_mode: DensityMode::Standard,
         language: Language::default(),
         keymap_preset: KeymapPreset::default(),
         panel_layout: PanelLayout::default(),
@@ -261,7 +263,7 @@ fn test_theme_accessibility_palette_mapping() {
 fn test_theme_mode_and_motion_state_defaults() {
     use gpui_themes::{AccessibilityPalette, ThemeModePreference};
     use sotf_audio_player_gpui::app::state::UIState;
-    use sotf_audio_player_gpui::theme::ThemeAccentPreference;
+    use sotf_audio_player_gpui::{app::types::DensityMode, theme::ThemeAccentPreference};
 
     let state = UIState::default();
     assert_eq!(
@@ -270,6 +272,7 @@ fn test_theme_mode_and_motion_state_defaults() {
     );
     assert_eq!(state.accessibility_palette, AccessibilityPalette::Standard);
     assert_eq!(state.theme_accent_preference, ThemeAccentPreference::Theme);
+    assert_eq!(state.density_mode, DensityMode::Standard);
     assert_eq!(state.community_theme_id, None);
     assert!(state.community_theme_json_draft.is_empty());
     assert!(!state.reduce_motion);
@@ -287,11 +290,26 @@ fn test_community_theme_preset_exports_valid_bundle() {
         assert_eq!(bundle.manifest.display_name, id.name());
         assert!(bundle.validate().is_ok());
 
-        let app_theme = Theme::from_community_bundle(&bundle).unwrap();
+        let app_theme = Theme::from_community_bundle(&bundle)
+            .unwrap_or_else(|err| panic!("{} failed app contrast validation: {err}", id.name()));
         assert_eq!(app_theme.accent, bundle.theme.accent.to_rgba());
         assert!(!app_theme.band_colors.is_empty());
         assert_eq!(app_theme.channel_colors, app_theme.band_colors);
     }
+}
+
+#[test]
+fn test_community_theme_import_rejects_low_contrast_text() {
+    use gpui_themes::{CommunityThemeBundle, EditorTheme};
+    use sotf_audio_player_gpui::theme::Theme;
+
+    let mut editor_theme = EditorTheme::dark();
+    editor_theme.text_primary = editor_theme.background;
+    let bundle = CommunityThemeBundle::from_theme(editor_theme);
+
+    assert!(bundle.validate().is_ok());
+    let error = Theme::from_community_bundle(&bundle).unwrap_err();
+    assert!(error.contains("text_primary/background"));
 }
 
 #[test]

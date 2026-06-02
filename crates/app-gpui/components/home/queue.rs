@@ -373,14 +373,14 @@ impl PlayerView {
             .iter()
             .enumerate()
             .map(|(idx, item)| {
-                let title = format!(
-                    "{} - {}    Track {}/{}",
-                    item.album.title,
-                    item.album.artist(),
+                let title = format!("{} - {}", item.album.title, item.album.artist());
+                let track_position = format!(
+                    "Track {}/{}",
                     item.current_track_index + 1,
                     item.album.tracks.len()
                 );
                 AccordionItem::new(format!("queue-album-{idx}"), title)
+                    .trailing(track_position)
                     .content(self.render_queue_album_detail(idx, translations, cx))
             })
             .collect::<Vec<_>>();

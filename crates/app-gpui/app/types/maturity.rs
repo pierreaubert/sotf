@@ -7,6 +7,7 @@ impl Screen {
     pub fn maturity(&self) -> ReleaseChannel {
         match self {
             Screen::Library
+            | Screen::NowPlaying
             | Screen::Queue
             | Screen::Spectrum
             | Screen::Settings

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
+    NowPlaying,
     Library,
     Queue,
     Playlists,
@@ -17,6 +18,58 @@ pub enum Screen {
     HeadphoneEq,
     Spinorama,
     PluginGraph,
+}
+
+impl Screen {
+    pub fn primary_destinations() -> &'static [Self] {
+        const DESTINATIONS: &[Screen] = &[
+            Screen::NowPlaying,
+            Screen::Library,
+            Screen::Queue,
+            Screen::Studio,
+        ];
+
+        DESTINATIONS
+    }
+
+    pub fn primary_destination_index(self) -> usize {
+        if let Some(index) = Self::primary_destinations()
+            .iter()
+            .position(|screen| *screen == self)
+        {
+            return index;
+        }
+
+        if self.is_studio_tool() { 3 } else { 0 }
+    }
+
+    pub fn is_studio_tool(self) -> bool {
+        matches!(
+            self,
+            Screen::PluginGraph
+                | Screen::Recording
+                | Screen::RoomEq
+                | Screen::HeadphoneEq
+                | Screen::Spinorama
+                | Screen::Spectrum
+        )
+    }
+
+    pub fn from_view_menu_id(id: &str) -> Option<Self> {
+        match id {
+            "now-playing" => Some(Screen::NowPlaying),
+            "library" => Some(Screen::Library),
+            "queue" => Some(Screen::Queue),
+            "studio" => Some(Screen::Studio),
+            "plugingraph" => Some(Screen::PluginGraph),
+            "recording" => Some(Screen::Recording),
+            "roomeq" => Some(Screen::RoomEq),
+            "headphoneeq" => Some(Screen::HeadphoneEq),
+            "spinorama" => Some(Screen::Spinorama),
+            "settings" => Some(Screen::Settings),
+            _ => None,
+        }
+    }
 }
 
 pub use sotf_audio_player::ReplayGainMode;
@@ -100,6 +153,54 @@ pub enum LayoutMode {
     Compact, // Below 800px - tabs bar visible
     #[default]
     Expanded, // Above 800px - split Library/Queue view
+}
+
+/// Product density mode.
+///
+/// Standard keeps one primary destination visible at a time. Expert opts into
+/// the dense multi-panel Library | Queue | Rack workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum DensityMode {
+    #[default]
+    Standard,
+    Expert,
+}
+
+impl DensityMode {
+    pub fn all() -> &'static [Self] {
+        const MODES: &[DensityMode] = &[DensityMode::Standard, DensityMode::Expert];
+
+        MODES
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            DensityMode::Standard => "Standard",
+            DensityMode::Expert => "Expert",
+        }
+    }
+
+    pub fn value(self) -> &'static str {
+        match self {
+            DensityMode::Standard => "standard",
+            DensityMode::Expert => "expert",
+        }
+    }
+
+    pub fn from_value(value: &str) -> Option<Self> {
+        match value {
+            "standard" => Some(DensityMode::Standard),
+            "expert" => Some(DensityMode::Expert),
+            _ => None,
+        }
+    }
+
+    pub fn layout_mode_for_window(self, width: f32, height: f32) -> LayoutMode {
+        match self {
+            DensityMode::Expert if width >= 600.0 && height >= 500.0 => LayoutMode::Expanded,
+            _ => LayoutMode::Compact,
+        }
+    }
 }
 
 /// Layout orientation based on window aspect ratio

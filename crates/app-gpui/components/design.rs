@@ -13,34 +13,59 @@
 //! that radii track the design language (Apple HIG / Material 3 / Fluent)
 //! rather than the text scale.
 //!
-//! # Typography unification (Typography Phase 2)
+//! # Typography unification (Typography Phase 1)
 //!
 //! The text-sized fields (`text_sm`, `text_base`, `text_lg`, `text_xl`,
-//! `text_xxl`) delegate to [`gpui_ui_kit::TextSize::to_rems`] so that both
-//! styling APIs resolve to identical rem values. A call to `Text::new(...)
-//! .size(TextSize::Sm)` and a call to `div().text_size(d.text_sm)` now render
-//! at the same size, whereas previously they could drift (e.g. 14 px vs 11 px
-//! at 1× zoom with the neutral platform rules).
+//! `text_xxl`) derive from the active [`gpui_design::TypographyRules`] so
+//! platform presets affect more than font family. The neutral preset preserves
+//! the previous scale: caption 10px, small 14px, base 16px, large 18px, xl
+//! 20px, and xxl 24px at the 16px rem baseline.
 //!
 //! The exception is `text_xs`: it stays a specialized "caption / axis tick"
-//! size, smaller than [`TextSize::Xs`] by design. Use `text_xs` for chart axis
-//! labels, badges, and other micro-type; use `TextSize::Xs` / `d.text_sm` for
-//! body-small labels.
+//! size. Use `text_xs` for chart axis labels, badges, and other micro-type;
+//! use `d.text_sm` for body-small labels.
 
 use gpui::{Pixels, Rems, px, rems};
-use gpui_design::DesignExt;
-use gpui_ui_kit::TextSize;
+use gpui_design::{DesignExt, TypographyRules};
 
 /// GPUI's default root rem size, matching the baseline used when
 /// `window.set_rem_size` has not been adjusted. Design-token pixel values are
 /// divided by this constant to produce rem-relative sizes.
 const BASE_REM_PX: f32 = 16.0;
 
-/// Rem value for the caption-sized `text_xs` field. Intentionally smaller than
-/// [`TextSize::Xs`] (0.75 rem) so chart axis ticks, badges, and other
-/// micro-type can shrink below body-small without callers reaching for raw
-/// `rems()` values. Equivalent to roughly 10 px at the 16 px rem baseline.
-const TEXT_XS_CAPTION_REMS: f32 = 0.625;
+const LEGACY_BASE_SIZE_PX: f32 = 14.0;
+const LEGACY_LARGE_SIZE_PX: f32 = 18.0;
+const LEGACY_CAPTION_OFFSET_PX: f32 = 1.0;
+
+/// Typography rem values derived from platform typography tokens.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TypographyRems {
+    pub text_xs: Rems,
+    pub text_sm: Rems,
+    pub text_base: Rems,
+    pub text_lg: Rems,
+    pub text_xl: Rems,
+    pub text_xxl: Rems,
+}
+
+/// Convert platform typography tokens into the app's historical size slots.
+///
+/// The neutral preset stays byte-for-byte equivalent to the old scale while
+/// Apple / Material / Fluent can tune base and heading size through their
+/// design-system presets.
+pub fn typography_rems_from_rules(typography: &TypographyRules) -> TypographyRems {
+    let to_rems = |px_value: f32| rems(px_value / BASE_REM_PX);
+    let caption_px = (typography.small_size - LEGACY_CAPTION_OFFSET_PX).max(8.0);
+
+    TypographyRems {
+        text_xs: to_rems(caption_px),
+        text_sm: to_rems(typography.base_size),
+        text_base: to_rems(typography.base_size * (16.0 / LEGACY_BASE_SIZE_PX)),
+        text_lg: to_rems(typography.large_size),
+        text_xl: to_rems(typography.large_size * (20.0 / LEGACY_LARGE_SIZE_PX)),
+        text_xxl: to_rems(typography.large_size * (24.0 / LEGACY_LARGE_SIZE_PX)),
+    }
+}
 
 /// Pre-computed design system values for direct use in GPUI method chains.
 ///
@@ -116,16 +141,32 @@ impl Ds {
             r_md: px(ds.corners.md),
             r_lg: px(ds.corners.lg),
             r_xl: px(ds.corners.xl),
-            // Typography fields delegate to `TextSize::to_rems()` so both APIs
-            // (`Text::new(...).size(TextSize::Sm)` and `.text_size(d.text_sm)`)
-            // resolve to identical values — see module docs. `text_xs` stays
-            // smaller than `TextSize::Xs` by design (chart tick / caption use).
-            text_xs: rems(TEXT_XS_CAPTION_REMS),
-            text_sm: TextSize::Sm.to_rems(),
-            text_base: TextSize::Md.to_rems(),
-            text_lg: TextSize::Lg.to_rems(),
-            text_xl: TextSize::Xl.to_rems(),
-            text_xxl: TextSize::Xxl.to_rems(),
+            ..Self::from_typography_rems(typography_rems_from_rules(&ds.typography))
+        }
+    }
+
+    fn from_typography_rems(typography: TypographyRems) -> Self {
+        Self {
+            grid: rems(0.0),
+            pad_x: rems(0.0),
+            pad_y: rems(0.0),
+            pad_y_half: rems(0.0),
+            gap: rems(0.0),
+            gap_md: rems(0.0),
+            section: rems(0.0),
+            section_lg: rems(0.0),
+            section_xl: rems(0.0),
+            card: rems(0.0),
+            r_sm: px(0.0),
+            r_md: px(0.0),
+            r_lg: px(0.0),
+            r_xl: px(0.0),
+            text_xs: typography.text_xs,
+            text_sm: typography.text_sm,
+            text_base: typography.text_base,
+            text_lg: typography.text_lg,
+            text_xl: typography.text_xl,
+            text_xxl: typography.text_xxl,
         }
     }
 }

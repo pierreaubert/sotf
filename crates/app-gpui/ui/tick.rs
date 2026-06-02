@@ -22,7 +22,7 @@ pub(crate) struct TickSnapshot {
 /// screen and should not pay for compressor/level-meter refreshes.
 pub fn screen_shows_rack_data(screen: Screen, layout_mode: crate::app::LayoutMode) -> bool {
     matches!(screen, Screen::Studio | Screen::PluginGraph)
-        || (matches!(screen, Screen::Library | Screen::Queue)
+        || (matches!(screen, Screen::NowPlaying | Screen::Library | Screen::Queue)
             && layout_mode == crate::app::LayoutMode::Expanded)
 }
 

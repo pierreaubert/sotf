@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use sotf_audio_player::{DirectoryInfo, ReleaseChannel};
 
 use crate::app::constants::recording::DEFAULT_SIGNAL_LEVEL_DB;
-use crate::app::types::{PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType};
+use crate::app::types::{
+    DensityMode, PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType,
+};
 use crate::components::plugins::theme::RackThemeState;
 use crate::i18n::Language;
 use crate::keybindings::KeymapPreset;
@@ -275,6 +277,9 @@ pub struct Config {
     /// Disable theme and UI transition motion
     #[serde(default)]
     pub reduce_motion: bool,
+    /// UI density: Standard is calm/single-surface, Expert enables dense multi-panel workflows.
+    #[serde(default)]
+    pub density_mode: DensityMode,
     /// Selected language
     #[serde(default)]
     pub language: Language,
@@ -320,7 +325,8 @@ pub struct Config {
     /// Contextual hints that have been seen and dismissed
     #[serde(default)]
     pub seen_hints: Vec<String>,
-    /// Selected design system language ("neutral", "apple_hig", "material3", "fluent")
+    /// Selected design system language (`None` = platform default).
+    /// Supported values: "neutral", "apple_hig", "material3", "fluent".
     #[serde(default)]
     pub design_language: Option<String>,
     /// Plugin chassis theme: rack default + per-plugin overrides. Independent
@@ -352,6 +358,7 @@ impl Config {
                 theme_accent_preference: ThemeAccentPreference::default(),
                 community_theme_id: None,
                 reduce_motion: false,
+                density_mode: DensityMode::default(),
                 language: Language::default(),
                 keymap_preset: KeymapPreset::default(),
                 panel_layout: PanelLayout::default(),

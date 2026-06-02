@@ -19,11 +19,12 @@ pub use plugins::{
     render_plugin_content,
 };
 
-use crate::app::Screen;
 use crate::app::types::PluginUpdateType;
+use crate::app::{Screen, SettingsTab};
 use crate::components::design::Ds;
-use crate::components::icons::{Icon, IconName};
+use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::plugins::editing::PluginEditingManager;
+use crate::i18n::Translations;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -32,6 +33,34 @@ use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
     TextWeight, VStack,
 };
+
+pub fn settings_tab_icon_name(tab: SettingsTab) -> IconName {
+    match tab {
+        SettingsTab::Library => IconName::Library,
+        SettingsTab::Theme => IconName::PenTool,
+        SettingsTab::Language => IconName::User,
+        SettingsTab::Keybindings => IconName::Settings,
+        SettingsTab::AudioDevice => IconName::Speaker,
+        SettingsTab::Misc => IconName::SlidersHorizontal,
+        SettingsTab::Federation => IconName::Plug,
+        SettingsTab::Servers => IconName::Plug,
+        SettingsTab::ReleaseChannel => IconName::AudioWaveform,
+    }
+}
+
+pub fn settings_tab_label(tab: SettingsTab, translations: &Translations) -> &'static str {
+    match tab {
+        SettingsTab::Library => translations.settings_tab_library,
+        SettingsTab::Theme => "Appearance",
+        SettingsTab::Language => translations.settings_tab_language,
+        SettingsTab::Keybindings => translations.settings_tab_keybindings,
+        SettingsTab::AudioDevice => translations.settings_tab_audio_device,
+        SettingsTab::Misc => "Resources",
+        SettingsTab::Federation => translations.settings_tab_federation,
+        SettingsTab::Servers => translations.settings_tab_servers,
+        SettingsTab::ReleaseChannel => translations.settings_tab_release_channel,
+    }
+}
 
 /// Themed tooltip view for GPUI's native tooltip system.
 /// Used by rack buttons, footer controls, and other interactive elements.
@@ -129,10 +158,13 @@ impl PlayerView {
                 div()
                     .w_full()
                     .bg(theme.surface)
+                    .border_b_1()
+                    .border_color(theme.border)
                     .px(d.card)
-                    .pt(d.pad_y)
+                    .py(d.pad_y)
                     .flex()
                     .items_center()
+                    .gap(d.gap)
                     // Home button on the left
                     .child(
                         div()
@@ -144,67 +176,61 @@ impl PlayerView {
                             .h(rems(2.0))
                             .cursor_pointer()
                             .rounded(d.r_md)
+                            .border_1()
+                            .border_color(theme.border)
                             .hover(move |s| s.bg(theme.surface_hover))
-                            .child(Icon::new(IconName::Home).color(text_muted))
+                            .child(
+                                Icon::new(IconName::Home)
+                                    .size(IconSize::Sm)
+                                    .color(text_muted),
+                            )
                             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                                 state_for_home.update(cx, |state, _cx| {
-                                    state.app.ui_state.current_screen = Screen::Library;
+                                    state.app.set_screen(Screen::NowPlaying, "SettingsHome");
                                 });
                             }),
                     )
                     // Centered tabs (flex-1 with centered content)
-                    .child(div().flex_1().flex().justify_center().child({
+                    .child(div().flex_1().min_w_0().child({
                         // Custom tab rendering to avoid context issues
                         let state_entity = self.state.clone();
                         let tab_data = [
-                            (
-                                translations.settings_tab_library,
-                                crate::app::SettingsTab::Library,
-                            ),
-                            (
-                                translations.settings_tab_theme,
-                                crate::app::SettingsTab::Theme,
-                            ),
-                            (
-                                translations.settings_tab_language,
-                                crate::app::SettingsTab::Language,
-                            ),
-                            (
-                                translations.settings_tab_keybindings,
-                                crate::app::SettingsTab::Keybindings,
-                            ),
-                            (
-                                translations.settings_tab_audio_device,
-                                crate::app::SettingsTab::AudioDevice,
-                            ),
-                            (
-                                translations.settings_tab_misc,
-                                crate::app::SettingsTab::Misc,
-                            ),
-                            (
-                                translations.settings_tab_federation,
-                                crate::app::SettingsTab::Federation,
-                            ),
-                            (
-                                translations.settings_tab_servers,
-                                crate::app::SettingsTab::Servers,
-                            ),
-                            (
-                                translations.settings_tab_release_channel,
-                                crate::app::SettingsTab::ReleaseChannel,
-                            ),
+                            SettingsTab::Library,
+                            SettingsTab::Theme,
+                            SettingsTab::Language,
+                            SettingsTab::Keybindings,
+                            SettingsTab::AudioDevice,
+                            SettingsTab::Misc,
+                            SettingsTab::Federation,
+                            SettingsTab::Servers,
+                            SettingsTab::ReleaseChannel,
                         ];
 
-                        let mut tabs_container = div().flex().items_center();
+                        let mut tabs_container = div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .justify_center()
+                            .gap(d.grid);
 
-                        for (label, tab_variant) in tab_data {
+                        for tab_variant in tab_data {
+                            let label = settings_tab_label(tab_variant, &translations);
                             let is_selected = active_tab == tab_variant;
                             let entity_clone = state_entity.clone();
                             let accent = theme.accent;
                             let border = theme.border;
+                            let surface = theme.surface;
+                            let surface_hover = theme.surface_hover;
+                            let surface_selected = theme.surface_selected;
                             let text_selected = theme.text_primary;
                             let text_unselected = theme.text_muted;
                             let text_hover = text_secondary;
+                            let icon_color = if is_selected {
+                                theme.accent
+                            } else {
+                                text_unselected
+                            };
+                            let icon_name = settings_tab_icon_name(tab_variant);
 
                             let tab = div()
                                 .id(SharedString::from(format!(
@@ -212,36 +238,33 @@ impl PlayerView {
                                     tab_variant
                                 )))
                                 .flex()
-                                .flex_col()
+                                .items_center()
+                                .gap(d.grid)
+                                .flex_shrink_0()
+                                .px(d.pad_x)
+                                .py(d.pad_y_half)
+                                .rounded(d.r_md)
+                                .border_1()
+                                .border_color(if is_selected { accent } else { border })
+                                .bg(if is_selected {
+                                    surface_selected
+                                } else {
+                                    surface
+                                })
+                                .text_size(d.text_sm)
+                                .text_color(if is_selected {
+                                    text_selected
+                                } else {
+                                    text_unselected
+                                })
+                                .whitespace_nowrap()
                                 .cursor_pointer()
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(d.gap)
-                                        .px(d.card)
-                                        .py(d.pad_y)
-                                        .text_size(d.text_sm)
-                                        .text_color(if is_selected {
-                                            text_selected
-                                        } else {
-                                            text_unselected
-                                        })
-                                        .when(!is_selected, |el| {
-                                            el.hover(move |s| s.text_color(text_hover))
-                                        })
-                                        .when(is_selected, |el| {
-                                            el.font_weight(FontWeight::SEMIBOLD)
-                                        })
-                                        .child(label),
-                                )
-                                .child(
-                                    div()
-                                        // intentional: 1/2px tab underline hairlines convey selection state, no matching tokens
-                                        .h(if is_selected { px(2.0) } else { px(1.0) })
-                                        .w_full()
-                                        .bg(if is_selected { accent } else { border }),
-                                )
+                                .child(Icon::new(icon_name).size(IconSize::Xs).color(icon_color))
+                                .child(label)
+                                .when(!is_selected, |el| {
+                                    el.hover(move |s| s.bg(surface_hover).text_color(text_hover))
+                                })
+                                .when(is_selected, |el| el.font_weight(FontWeight::SEMIBOLD))
                                 .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                                     entity_clone.update(cx, |state, _cx| {
                                         state.app.ui_state.active_settings_tab = tab_variant;
@@ -269,7 +292,7 @@ impl PlayerView {
                     .overflow_y_scroll()
                     .flex_1()
                     .p(d.card)
-                    .child(content),
+                    .child(div().w_full().max_w(rems(78.0)).child(content)),
             )
     }
 

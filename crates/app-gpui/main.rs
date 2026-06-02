@@ -295,13 +295,8 @@ fn main() {
             // Apply saved design language if present
             if let Some(dl) = config.as_ref().and_then(|c| c.design_language.as_ref()) {
                 use gpui_design::{DesignSystem, DesignSystemState};
-                let system = match dl.as_str() {
-                    "neutral" => DesignSystem::neutral(),
-                    "apple_hig" => DesignSystem::apple_hig(),
-                    "material3" => DesignSystem::material3(),
-                    "fluent" => DesignSystem::fluent(),
-                    _ => DesignSystem::platform_default(),
-                };
+                let system = DesignSystem::from_language_id(dl)
+                    .unwrap_or_else(DesignSystem::platform_default);
                 cx.set_global(DesignSystemState::with_system(system));
             }
 

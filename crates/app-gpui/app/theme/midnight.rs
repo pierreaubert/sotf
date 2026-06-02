@@ -31,9 +31,9 @@ impl Theme {
             accent_muted: rgb(0x1f6feb),
 
             // Text on accent
-            text_on_accent: rgb(0xffffff),
-            text_on_accent_muted: rgba(0xffffffcc),
-            icon_on_accent: rgb(0xffffff),
+            text_on_accent: rgb(0x000000),
+            text_on_accent_muted: rgba(0x000000cc),
+            icon_on_accent: rgb(0x000000),
 
             // Semantic colors
             success: rgb(0x3fb950),
@@ -208,7 +208,7 @@ impl Theme {
             separator_size: 20.0,
 
             // Font family
-            font_family: Some("B612".into()),
+            font_family: None,
             design_tokens: Default::default(),
         }
     }

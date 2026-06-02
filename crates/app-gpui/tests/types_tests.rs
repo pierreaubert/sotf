@@ -5,7 +5,7 @@
 
 use sotf_audio_player::PluginType;
 use sotf_audio_player::library::{Album, Track};
-use sotf_audio_player_gpui::app::types::{HeadphoneEqState, SpinoramaEqState};
+use sotf_audio_player_gpui::app::types::{DensityMode, HeadphoneEqState, SpinoramaEqState};
 use sotf_audio_player_gpui::{
     App, CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState, ContextMenuType,
     CrossoverType, InputMode, LayoutMode, LibraryStats, MeasureState, MeterDisplayMode,
@@ -23,8 +23,10 @@ use std::path::PathBuf;
 #[test]
 fn test_screen_variants() {
     let screens = [
+        Screen::NowPlaying,
         Screen::Library,
         Screen::Queue,
+        Screen::Playlists,
         Screen::Spectrum,
         Screen::Settings,
         Screen::Studio,
@@ -34,8 +36,69 @@ fn test_screen_variants() {
         Screen::Spinorama,
         Screen::PluginGraph,
     ];
-    assert_eq!(screens.len(), 10);
+    assert_eq!(screens.len(), 12);
     assert_ne!(Screen::Library, Screen::Queue);
+}
+
+#[test]
+fn test_primary_information_architecture_destinations() {
+    assert_eq!(
+        Screen::primary_destinations(),
+        &[
+            Screen::NowPlaying,
+            Screen::Library,
+            Screen::Queue,
+            Screen::Studio
+        ]
+    );
+    assert_eq!(Screen::NowPlaying.primary_destination_index(), 0);
+    assert_eq!(Screen::Library.primary_destination_index(), 1);
+    assert_eq!(Screen::Queue.primary_destination_index(), 2);
+    assert_eq!(Screen::Studio.primary_destination_index(), 3);
+
+    assert_eq!(Screen::RoomEq.primary_destination_index(), 3);
+    assert_eq!(Screen::PluginGraph.primary_destination_index(), 3);
+    assert_eq!(Screen::Settings.primary_destination_index(), 0);
+}
+
+#[test]
+fn test_view_menu_ids_map_to_screens() {
+    assert_eq!(
+        Screen::from_view_menu_id("now-playing"),
+        Some(Screen::NowPlaying)
+    );
+    assert_eq!(Screen::from_view_menu_id("library"), Some(Screen::Library));
+    assert_eq!(Screen::from_view_menu_id("queue"), Some(Screen::Queue));
+    assert_eq!(Screen::from_view_menu_id("studio"), Some(Screen::Studio));
+    assert_eq!(
+        Screen::from_view_menu_id("plugingraph"),
+        Some(Screen::PluginGraph)
+    );
+    assert_eq!(
+        Screen::from_view_menu_id("settings"),
+        Some(Screen::Settings)
+    );
+    assert_eq!(Screen::from_view_menu_id("unknown"), None);
+}
+
+#[test]
+fn test_density_mode_layout_policy() {
+    assert_eq!(
+        DensityMode::Standard.layout_mode_for_window(1600.0, 1000.0),
+        LayoutMode::Compact
+    );
+    assert_eq!(
+        DensityMode::Expert.layout_mode_for_window(1600.0, 1000.0),
+        LayoutMode::Expanded
+    );
+    assert_eq!(
+        DensityMode::Expert.layout_mode_for_window(599.0, 1000.0),
+        LayoutMode::Compact
+    );
+    assert_eq!(
+        DensityMode::Expert.layout_mode_for_window(1600.0, 499.0),
+        LayoutMode::Compact
+    );
 }
 
 #[test]
@@ -55,11 +118,19 @@ fn test_tick_rack_data_is_screen_and_layout_gated() {
         LayoutMode::Compact
     ));
     assert!(screen_shows_rack_data(
+        Screen::NowPlaying,
+        LayoutMode::Expanded
+    ));
+    assert!(screen_shows_rack_data(
         Screen::Library,
         LayoutMode::Expanded
     ));
     assert!(screen_shows_rack_data(Screen::Queue, LayoutMode::Expanded));
 
+    assert!(!screen_shows_rack_data(
+        Screen::NowPlaying,
+        LayoutMode::Compact
+    ));
     assert!(!screen_shows_rack_data(
         Screen::Library,
         LayoutMode::Compact

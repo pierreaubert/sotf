@@ -549,7 +549,9 @@ impl Theme {
 
     pub fn from_community_bundle(bundle: &CommunityThemeBundle) -> Result<Self, String> {
         bundle.validate()?;
-        Ok(Self::from_editor_theme(&bundle.theme))
+        let theme = Self::from_editor_theme(&bundle.theme);
+        theme.validate_accessibility()?;
+        Ok(theme)
     }
 
     pub fn from_editor_theme(editor_theme: &EditorTheme) -> Self {
@@ -796,8 +798,8 @@ impl Theme {
             header_hover_bg: self.surface_hover,
             header_active_bg: self.accent_muted,
             content_bg: self.background,
-            border: Self::with_opacity(self.text_muted, 0.42),
-            accent_tint: Self::with_opacity(self.accent, 0.36),
+            border: Self::with_opacity(self.text_muted, 0.62),
+            accent_tint: Self::with_opacity(self.accent, 0.46),
             accent: self.accent,
             title_color: self.text_primary,
             indicator_color: self.text_muted,

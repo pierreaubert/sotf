@@ -348,7 +348,7 @@ impl PlayerView {
                         _ => {}
                     }
                 }
-                Screen::Queue => {
+                Screen::NowPlaying | Screen::Queue => {
                     // Play selected album in queue
                     if let Some(path) = state.app.play_selected_queue_item() {
                         Self::play_track(state, path);
@@ -451,7 +451,7 @@ impl PlayerView {
 
                 Screen::Library => self.state.update(cx, |state, _cx| state.app.select_next_album()),
 
-                Screen::Queue => self.state.update(cx, |state, _cx| state.app.select_next_queue_item()),
+                Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| state.app.select_next_queue_item()),
 
                 Screen::Settings => {
 
@@ -477,7 +477,7 @@ impl PlayerView {
 
                 Screen::Library => self.state.update(cx, |state, _cx| state.app.select_previous_album()),
 
-                Screen::Queue => {
+                Screen::NowPlaying | Screen::Queue => {
 
                     self.state.update(cx, |state, _cx| state.app.select_previous_queue_item())
 
@@ -523,7 +523,7 @@ impl PlayerView {
 
                 }),
 
-                Screen::Queue => self.state.update(cx, |state, _cx| {
+                Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| {
 
                     state.app.page_down_queue(10);
 
@@ -569,7 +569,7 @@ impl PlayerView {
 
                 }),
 
-                Screen::Queue => self.state.update(cx, |state, _cx| {
+                Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| {
 
                     state.app.page_up_queue(10);
 

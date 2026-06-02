@@ -129,6 +129,7 @@ pub enum IsolatedExternalPluginSandboxBackend {
     #[default]
     Unknown,
     LinuxLandlock,
+    MacosAppSandboxHelper,
     MacosProcessIsolation,
     WindowsProcessIsolation,
 }

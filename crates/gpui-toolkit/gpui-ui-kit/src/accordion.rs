@@ -38,6 +38,7 @@ type AccordionChangeHandler =
 pub struct AccordionItem {
     id: SharedString,
     title: SharedString,
+    trailing: Option<SharedString>,
     content: Option<AnyElement>,
     disabled: bool,
 }
@@ -48,9 +49,16 @@ impl AccordionItem {
         Self {
             id: id.into(),
             title: title.into(),
+            trailing: None,
             content: None,
             disabled: false,
         }
+    }
+
+    /// Set trailing metadata shown at the end of the header.
+    pub fn trailing(mut self, trailing: impl Into<SharedString>) -> Self {
+        self.trailing = Some(trailing.into());
+        self
     }
 
     /// Set content
@@ -68,6 +76,16 @@ impl AccordionItem {
     /// Get the item ID
     pub fn id(&self) -> &SharedString {
         &self.id
+    }
+
+    /// Get the item title
+    pub fn title(&self) -> &SharedString {
+        &self.title
+    }
+
+    /// Get the optional trailing metadata
+    pub fn trailing_text(&self) -> Option<&SharedString> {
+        self.trailing.as_ref()
     }
 }
 
@@ -251,7 +269,7 @@ impl Accordion {
         }
 
         let on_change = self.on_change.map(|h| std::rc::Rc::new(h));
-        let mut container = div().flex().flex_col();
+        let mut container = div().flex().flex_col().w_full().min_w_0();
         if self.bordered {
             container = container.border_1().border_color(theme.border);
         }
@@ -267,6 +285,7 @@ impl Accordion {
             let header = Self::build_header_static(
                 item_id,
                 item.title,
+                item.trailing,
                 is_expanded,
                 item.disabled,
                 is_first,
@@ -310,7 +329,7 @@ impl Accordion {
         rounded: bool,
         content_padding: bool,
     ) -> Div {
-        let mut container = div().flex().flex_col();
+        let mut container = div().flex().flex_col().w_full().min_w_0();
         if bordered {
             container = container.border_1().border_color(theme.border);
         }
@@ -318,7 +337,7 @@ impl Accordion {
             container = container.rounded_lg();
         }
 
-        let mut headers_container = div().flex().flex_row().w_full();
+        let mut headers_container = div().flex().flex_row().items_stretch().w_full().min_w_0();
         let mut content_container = div().flex().flex_col().w_full();
 
         for (idx, item) in items.into_iter().enumerate() {
@@ -328,6 +347,7 @@ impl Accordion {
             let header = Self::build_header_static(
                 item_id,
                 item.title,
+                item.trailing,
                 is_expanded,
                 item.disabled,
                 idx == 0,
@@ -359,6 +379,7 @@ impl Accordion {
     fn build_header_static(
         item_id: SharedString,
         title: SharedString,
+        trailing: Option<SharedString>,
         is_expanded: bool,
         disabled: bool,
         is_first: bool,
@@ -370,6 +391,8 @@ impl Accordion {
             .id(SharedString::from(format!("accordion-header-{}", item_id)))
             .flex()
             .gap_2()
+            .w_full()
+            .min_w_0()
             .px_4()
             .py_3()
             .bg(if is_expanded {
@@ -380,9 +403,9 @@ impl Accordion {
             .cursor_pointer();
 
         header = if is_vertical {
-            header.items_start().w_full().flex_shrink_0()
+            header.items_start().flex_shrink_0()
         } else {
-            header.items_center().flex_1()
+            header.items_start().flex_1().min_w_0()
         };
 
         if !is_first {
@@ -438,6 +461,19 @@ impl Accordion {
                 .text_color(theme.title_color)
                 .child(title),
         );
+
+        if let Some(trailing) = trailing {
+            header = header.child(
+                div()
+                    .flex_shrink_0()
+                    .text_xs()
+                    .line_height(px(20.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(theme.indicator_color)
+                    .whitespace_nowrap()
+                    .child(trailing),
+            );
+        }
 
         let indicator = if is_vertical {
             if is_expanded { "▼" } else { "▶" }

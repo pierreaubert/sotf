@@ -12,6 +12,9 @@ mod common;
 use std::path::Path;
 
 // Production imports
+use gpui_design::DesignSystem;
+use sotf_audio_player_gpui::IconName;
+use sotf_audio_player_gpui::components::design::typography_rems_from_rules;
 use sotf_audio_player_gpui::components::graphs::common::rgba_to_u32;
 use sotf_audio_player_gpui::components::home::album_card::{
     AlbumCardMode, album_card_height, format_channel_info, format_dr, format_sample_info,
@@ -20,8 +23,9 @@ use sotf_audio_player_gpui::components::home::album_card::{
 use sotf_audio_player_gpui::components::plugins::common::{
     compute_transfer, format_shortcut_label,
 };
-use sotf_audio_player_gpui::i18n::Language;
-use sotf_audio_player_gpui::theme::ThemeId;
+use sotf_audio_player_gpui::components::{settings_tab_icon_name, settings_tab_label};
+use sotf_audio_player_gpui::i18n::{Language, Translations};
+use sotf_audio_player_gpui::theme::{Theme, ThemeId};
 use sotf_audio_player_gpui::{InputMode, Screen, SettingsTab};
 
 // Test-only utilities (not mirrors — pure math helpers and EQ validation)
@@ -30,6 +34,82 @@ use common::{
     denormalize_parameter_log, normalize_parameter, normalize_parameter_log, remove_eq_band,
     validate_eq_filter,
 };
+
+// ============================================================================
+// DESIGN TOKEN TESTS (production: components/design.rs)
+// ============================================================================
+
+fn assert_rem_close(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() < 0.0001,
+        "expected {expected}, got {actual}"
+    );
+}
+
+#[test]
+fn test_typography_rems_neutral_preserves_existing_scale() {
+    let typography = typography_rems_from_rules(&DesignSystem::neutral().typography);
+
+    assert_rem_close(typography.text_xs.0, 0.625);
+    assert_rem_close(typography.text_sm.0, 0.875);
+    assert_rem_close(typography.text_base.0, 1.0);
+    assert_rem_close(typography.text_lg.0, 1.125);
+    assert_rem_close(typography.text_xl.0, 1.25);
+    assert_rem_close(typography.text_xxl.0, 1.5);
+}
+
+#[test]
+fn test_typography_rems_platform_presets_affect_type_scale() {
+    let neutral = typography_rems_from_rules(&DesignSystem::neutral().typography);
+    let apple = typography_rems_from_rules(&DesignSystem::apple_hig().typography);
+    let material = typography_rems_from_rules(&DesignSystem::material3().typography);
+
+    assert!(apple.text_sm.0 > neutral.text_sm.0);
+    assert!(apple.text_lg.0 > neutral.text_lg.0);
+    assert!(material.text_lg.0 > neutral.text_lg.0);
+}
+
+#[test]
+fn test_settings_tabs_have_distinct_scan_icons() {
+    assert_eq!(
+        settings_tab_icon_name(SettingsTab::Library),
+        IconName::Library
+    );
+    assert_eq!(
+        settings_tab_icon_name(SettingsTab::Theme),
+        IconName::PenTool
+    );
+    assert_eq!(
+        settings_tab_icon_name(SettingsTab::AudioDevice),
+        IconName::Speaker
+    );
+    assert_eq!(
+        settings_tab_icon_name(SettingsTab::ReleaseChannel),
+        IconName::AudioWaveform
+    );
+}
+
+#[test]
+fn test_settings_tabs_use_product_labels() {
+    let translations = Translations::for_language(Language::English);
+
+    assert_eq!(
+        settings_tab_label(SettingsTab::Library, &translations),
+        "Library"
+    );
+    assert_eq!(
+        settings_tab_label(SettingsTab::Theme, &translations),
+        "Appearance"
+    );
+    assert_eq!(
+        settings_tab_label(SettingsTab::Misc, &translations),
+        "Resources"
+    );
+    assert_eq!(
+        settings_tab_label(SettingsTab::ReleaseChannel, &translations),
+        "Features"
+    );
+}
 
 // ============================================================================
 // ALBUM CARD TESTS (production: album_card.rs)
@@ -376,6 +456,29 @@ fn test_theme_names_unique() {
     );
 }
 
+#[test]
+fn test_builtin_themes_pass_core_contrast_validation() {
+    for theme_id in ThemeId::all() {
+        let theme = Theme::from_id(*theme_id);
+        let validation = theme.validate_accessibility();
+        assert!(
+            validation.is_ok(),
+            "{} should pass core contrast validation: {:?}",
+            theme_id.name(),
+            validation.err()
+        );
+    }
+}
+
+#[test]
+fn test_theme_contrast_validation_rejects_unreadable_text() {
+    let mut theme = Theme::dark();
+    theme.text_primary = theme.background;
+
+    let error = theme.validate_accessibility().unwrap_err();
+    assert!(error.contains("text_primary/background"));
+}
+
 // ============================================================================
 // LANGUAGE TESTS (production: i18n::Language)
 // ============================================================================
@@ -554,6 +657,7 @@ fn test_rgba_to_u32_gray() {
 #[test]
 fn test_screen_includes_library() {
     // Verify key screen variants exist and are usable
+    let _now_playing = Screen::NowPlaying;
     let _library = Screen::Library;
     let _settings = Screen::Settings;
     let _plugins = Screen::PluginGraph;

@@ -1,11 +1,14 @@
 use super::{GraphLineColors, PluginColorMap, Theme, rgb};
 use gpui::Rgba;
 
+pub const WCAG_AA_TEXT_CONTRAST: f32 = 4.5;
+pub const WCAG_NON_TEXT_CONTRAST: f32 = 3.0;
+
 impl Theme {
     /// Protanopia-safe dark theme using blue, yellow, teal, and purple separation.
     pub fn protanopia() -> Self {
         Self::dark().with_accessible_semantics(
-            rgb(0x0072b2),
+            rgb(0x008fd5),
             rgb(0x009e73),
             rgb(0xe69f00),
             rgb(0xcc79a7),
@@ -17,7 +20,7 @@ impl Theme {
     /// Deuteranopia-safe dark theme using blue/orange/pink separation.
     pub fn deuteranopia() -> Self {
         Self::dark().with_accessible_semantics(
-            rgb(0x0072b2),
+            rgb(0x008fd5),
             rgb(0x56b4e9),
             rgb(0xe69f00),
             rgb(0xd55e00),
@@ -128,6 +131,54 @@ impl Theme {
         self.optimization_color = secondary;
         self
     }
+
+    /// Validate the core color pairs that carry readable UI state.
+    ///
+    /// This intentionally avoids decorative pairs such as hairline borders.
+    /// Selection backgrounds are composited over the surface first because many
+    /// accent-muted colors are transparent overlays.
+    pub fn validate_accessibility(&self) -> Result<(), String> {
+        validate_pair(
+            "text_primary/background",
+            self.text_primary,
+            self.background,
+            WCAG_AA_TEXT_CONTRAST,
+        )?;
+        validate_pair(
+            "text_primary/surface",
+            self.text_primary,
+            self.surface,
+            WCAG_AA_TEXT_CONTRAST,
+        )?;
+        validate_pair(
+            "text_secondary/surface",
+            self.text_secondary,
+            self.surface,
+            WCAG_NON_TEXT_CONTRAST,
+        )?;
+        validate_pair(
+            "text_on_accent/accent",
+            self.text_on_accent,
+            self.accent,
+            WCAG_AA_TEXT_CONTRAST,
+        )?;
+
+        let selected_surface = composite_over(self.surface_selected, self.surface);
+        validate_pair(
+            "text_primary/surface_selected",
+            self.text_primary,
+            selected_surface,
+            WCAG_AA_TEXT_CONTRAST,
+        )?;
+        validate_pair(
+            "accent/surface",
+            self.accent,
+            self.surface,
+            WCAG_NON_TEXT_CONTRAST,
+        )?;
+
+        Ok(())
+    }
 }
 
 fn lighten(color: Rgba, amount: f32) -> Rgba {
@@ -150,12 +201,50 @@ fn readable_text_color(background: Rgba) -> Rgba {
     }
 }
 
-fn contrast_ratio(foreground: Rgba, background: Rgba) -> f32 {
+fn validate_pair(
+    label: &'static str,
+    foreground: Rgba,
+    background: Rgba,
+    minimum: f32,
+) -> Result<(), String> {
+    let contrast = contrast_ratio(foreground, background);
+    if contrast < minimum {
+        Err(format!(
+            "{label} contrast {contrast:.2}:1 is below required {minimum:.1}:1"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+pub fn contrast_ratio(foreground: Rgba, background: Rgba) -> f32 {
     let foreground_luminance = relative_luminance(foreground);
     let background_luminance = relative_luminance(background);
     let lighter = foreground_luminance.max(background_luminance);
     let darker = foreground_luminance.min(background_luminance);
     (lighter + 0.05) / (darker + 0.05)
+}
+
+pub fn composite_over(foreground: Rgba, background: Rgba) -> Rgba {
+    let alpha = foreground.a + background.a * (1.0 - foreground.a);
+    if alpha <= f32::EPSILON {
+        return Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        };
+    }
+
+    Rgba {
+        r: (foreground.r * foreground.a + background.r * background.a * (1.0 - foreground.a))
+            / alpha,
+        g: (foreground.g * foreground.a + background.g * background.a * (1.0 - foreground.a))
+            / alpha,
+        b: (foreground.b * foreground.a + background.b * background.a * (1.0 - foreground.a))
+            / alpha,
+        a: alpha,
+    }
 }
 
 fn relative_luminance(color: Rgba) -> f32 {

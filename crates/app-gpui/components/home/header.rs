@@ -1,15 +1,13 @@
 //! Header component rendering with dropdown menus
 
 use crate::app::actions::QuitApp;
-use crate::app::{ActiveMenu, LayoutMode, Screen};
+use crate::app::{ActiveMenu, Screen};
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    HStack, LoadingDots, Menu, MenuItem, StackSpacing, TabItem, TabVariant, Tabs, menu_bar_button,
-};
+use gpui_ui_kit::{HStack, LoadingDots, Menu, MenuItem, StackSpacing, menu_bar_button};
 
 /// Platform-appropriate modifier prefix for menu shortcut display.
 #[cfg(target_os = "macos")]
@@ -177,7 +175,7 @@ impl PlayerView {
             match id.as_ref() {
                 "settings" => {
                     state.update(cx, |state, _cx| {
-                        state.app.ui_state.current_screen = Screen::Settings;
+                        state.app.set_screen(Screen::Settings, "FileMenu");
                     });
                 }
                 "quit" => {
@@ -205,11 +203,17 @@ impl PlayerView {
         Menu::new(
             "view-menu",
             vec![
+                MenuItem::new("now-playing", translations.queue_now_playing)
+                    .with_shortcut(format!("{MOD_PREFIX}0")),
+                MenuItem::new("library", translations.screen_library),
+                MenuItem::new("queue", translations.screen_queue),
                 MenuItem::new("studio", translations.screen_studio)
                     .with_shortcut(format!("{MOD_PREFIX}1"))
                     .disabled(!channel.allows(Screen::Studio.maturity())),
-                MenuItem::new("recording", translations.screen_recording)
-                    .with_shortcut(format!("{MOD_PREFIX}2")),
+                MenuItem::separator(),
+                MenuItem::new("plugingraph", translations.screen_studio_full)
+                    .disabled(!channel.allows(Screen::PluginGraph.maturity())),
+                MenuItem::new("recording", translations.screen_recording),
                 MenuItem::new("roomeq", translations.screen_room_eq)
                     .with_shortcut(format!("{MOD_PREFIX}3"))
                     .disabled(!channel.allows(Screen::RoomEq.maturity())),
@@ -218,10 +222,6 @@ impl PlayerView {
                 MenuItem::new("spinorama", translations.screen_spinorama)
                     .with_shortcut(format!("{MOD_PREFIX}5")),
                 MenuItem::separator(),
-                MenuItem::new("library", translations.screen_library)
-                    .with_shortcut(format!("{MOD_PREFIX}0")),
-                MenuItem::separator(),
-                MenuItem::new("queue", translations.screen_queue),
                 MenuItem::new("settings", translations.screen_settings),
             ],
         )
@@ -229,16 +229,8 @@ impl PlayerView {
         .on_select(move |id, _window, cx| {
             state.update(cx, |state, _cx| {
                 state.app.ui_state.active_menu = ActiveMenu::None;
-                match id.as_ref() {
-                    "studio" => state.app.ui_state.current_screen = Screen::Studio,
-                    "recording" => state.app.ui_state.current_screen = Screen::Recording,
-                    "roomeq" => state.app.ui_state.current_screen = Screen::RoomEq,
-                    "headphoneeq" => state.app.ui_state.current_screen = Screen::HeadphoneEq,
-                    "spinorama" => state.app.ui_state.current_screen = Screen::Spinorama,
-                    "library" => state.app.ui_state.current_screen = Screen::Library,
-                    "queue" => state.app.ui_state.current_screen = Screen::Queue,
-                    "settings" => state.app.ui_state.current_screen = Screen::Settings,
-                    _ => {}
+                if let Some(screen) = Screen::from_view_menu_id(id.as_ref()) {
+                    state.app.set_screen(screen, "ViewMenu");
                 }
             });
         })
@@ -290,65 +282,5 @@ impl PlayerView {
         .absolute()
         .top(rems(1.75))
         .left(rems(6.0))
-    }
-
-    /// Render the tab bar header (for compact mode)
-    pub(crate) fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let d = Ds::from_cx(cx);
-        let (theme, layout_mode, current_screen, translations) = {
-            let state = self.state.read(cx);
-            (
-                state.app.ui_state.theme.clone(),
-                state.app.ui_state.layout_mode,
-                state.app.ui_state.current_screen,
-                state.app.ui_state.translations.clone(),
-            )
-        };
-
-        // Only show tabs in compact mode
-        if layout_mode == LayoutMode::Expanded {
-            return div().into_any_element();
-        }
-
-        let screens = [Screen::Library, Screen::Queue];
-        let selected_index = screens
-            .iter()
-            .position(|s| *s == current_screen)
-            .unwrap_or(0);
-
-        let state_entity = self.state.clone();
-
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .p(d.card)
-            .bg(theme.surface)
-            .border_b_1()
-            .border_color(theme.border)
-            .child(
-                div()
-                    .text_size(d.text_lg)
-                    .font_weight(FontWeight::BOLD)
-                    .child(translations.app_title),
-            )
-            .child(
-                Tabs::new("nav-tabs")
-                    .tabs(vec![
-                        TabItem::new("library", translations.screen_library),
-                        TabItem::new("queue", translations.screen_queue),
-                    ])
-                    .selected_index(selected_index)
-                    .variant(TabVariant::Pills)
-                    .theme(theme.to_tabs_theme())
-                    .on_change(move |index, _window, cx| {
-                        if let Some(screen) = screens.get(index).copied() {
-                            state_entity.update(cx, |state, _cx| {
-                                state.app.ui_state.current_screen = screen;
-                            });
-                        }
-                    }),
-            )
-            .into_any_element()
     }
 }

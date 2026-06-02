@@ -118,7 +118,7 @@ doc-manual: doc-info doc-html
 # 127.0.0.1:7777 (override via SOTF_DEV_API_PORT). Release builds never include it.
 [group('run')]
 run-gpui:
-	cargo build --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+	cargo build --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf"
 	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/sotf-desktop
 	./target/debug/sotf-desktop
 
@@ -277,7 +277,7 @@ alias terminal := gpui
 
 [group('build')]
 gpui:
-	cargo run --release --bin sotf-desktop -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d,iamf,dev-api"
+	cargo run --release --bin sotf-desktop -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d,iamf"
 
 alias desktop := gpui
 alias native := gpui

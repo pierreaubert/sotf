@@ -21,6 +21,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let screen_name = match state.app.ui_state.current_screen {
+            Screen::NowPlaying => "Now Playing",
             Screen::Library => "Library",
             Screen::Queue => "Queue",
             Screen::Spectrum => "Spectrum",
@@ -913,6 +914,12 @@ impl PlayerView {
 
 fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str)> {
     match screen {
+        Screen::NowPlaying => vec![
+            ("Space", "Play/Pause"),
+            ("N", "Next track"),
+            ("P", "Previous track"),
+            ("J/K", "Move through queue"),
+        ],
         Screen::Library => vec![
             ("↑/↓ or K/J", "Navigate albums/artists"),
             ("PageUp/PageDown", "Jump by page"),

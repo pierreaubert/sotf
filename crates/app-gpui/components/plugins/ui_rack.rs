@@ -182,7 +182,8 @@ impl PlayerView {
             .flex()
             .flex_col()
             .size_full()
-            .overflow_y_scroll()
+            .min_h_0()
+            .overflow_hidden()
             .bg(theme.background)
             .on_action(cx.listener(Self::toggle_upmixer_config))
             // Plugin parameter actions - needed for knob/slider interaction
@@ -1972,6 +1973,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .min_h(rems(21.875))
+            .min_h_0()
             .when(has_plugin, |el| {
                 let plugin = plugin_data.clone().unwrap();
                 let plugin_type = plugin.plugin_type().clone();
@@ -2229,11 +2231,13 @@ impl PlayerView {
                         .flex_1()
                         .flex()
                         .min_h(rems(18.75)) // Minimum height for meters and content
+                        .min_h_0()
                         // Plugin Content (now takes full left area)
                         .child(
                             div()
                                 .id("params-scroll")
                                 .flex_1()
+                                .min_h_0()
                                 .overflow_y_scroll()
                                 .bg(plugin_bg)
                                 .p(d.card)
@@ -2488,15 +2492,23 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
+            .min_h_0()
             .bg(theme.background_secondary)
             .border_l_1()
             .border_color(theme.border)
             .child(
                 div()
                     .flex()
+                    .items_stretch()
+                    .justify_center()
                     .gap_0()
                     .flex_1()
+                    .w_full()
                     .min_h(rems(18.75))
+                    .child(
+                        self.render_vertical_legend(&d, &theme, false)
+                            .into_any_element(),
+                    )
                     // Input group (stereo L/R, no M/S/D)
                     .children(in_groups.iter().enumerate().map(|(i, group)| {
                         self.render_meter_group(
@@ -2510,10 +2522,6 @@ impl PlayerView {
                         )
                         .into_any_element()
                     }))
-                    .child(
-                        self.render_vertical_legend(&d, &theme, true)
-                            .into_any_element(),
-                    )
                     // Output groups (real indices → M/S/D connected to matrix plugin)
                     .children(out_groups.iter().enumerate().map(|(i, group)| {
                         self.render_meter_group(
@@ -2526,7 +2534,11 @@ impl PlayerView {
                             cx,
                         )
                         .into_any_element()
-                    })),
+                    }))
+                    .child(
+                        self.render_vertical_legend(&d, &theme, true)
+                            .into_any_element(),
+                    ),
             )
     }
 

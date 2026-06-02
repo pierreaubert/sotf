@@ -1,11 +1,14 @@
 //! Appearance settings content (Theme and Language)
 
+use crate::app::types::DensityMode;
 use crate::components::design::Ds;
 use crate::i18n::Language;
 use crate::theme::{CommunityThemeId, ThemeAccentPreference, ThemeId};
 use crate::ui::PlayerView;
+use crate::ui::{DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_design::{DesignLanguage, DesignSystem, DesignSystemState};
 use gpui_themes::{
     AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeSchedule, TimeOfDay,
 };
@@ -26,6 +29,21 @@ fn theme_mode_value(preference: &ThemeModePreference) -> &'static str {
         ThemeModePreference::Light => "light",
         ThemeModePreference::Dark => "dark",
         ThemeModePreference::Scheduled { .. } => "scheduled",
+    }
+}
+
+fn design_language_value(language: Option<&str>) -> &'static str {
+    language
+        .and_then(DesignLanguage::from_id)
+        .map(|language| language.as_str())
+        .unwrap_or("system")
+}
+
+fn design_language_from_value(value: &SharedString) -> Option<Option<DesignLanguage>> {
+    if value.as_ref() == "system" {
+        Some(None)
+    } else {
+        DesignLanguage::from_id(value.as_ref()).map(Some)
     }
 }
 
@@ -97,6 +115,18 @@ fn theme_appearance_from_window(window: &Window) -> ThemeAppearance {
     }
 }
 
+fn render_settings_heading(
+    d: Ds,
+    theme: crate::theme::Theme,
+    label: impl Into<SharedString>,
+) -> impl IntoElement {
+    div()
+        .text_size(d.text_base)
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(theme.text_primary)
+        .child(label.into())
+}
+
 fn render_schedule_time_row(
     d: Ds,
     theme: crate::theme::Theme,
@@ -108,11 +138,12 @@ fn render_schedule_time_row(
 ) -> impl IntoElement {
     div()
         .flex()
+        .flex_wrap()
         .items_center()
         .gap(d.gap)
         .child(
             div()
-                .w(rems(5.5))
+                .min_w(rems(6.5))
                 .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
                 .child(label),
@@ -233,6 +264,11 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme_id = state.app.ui_state.theme_id;
+        let design_language = state.app.ui_state.design_language.clone();
+        let density_mode = state.app.ui_state.density_mode;
+        let font_scale = state.app.ui_state.font_scale;
+        let min_font_px = state.app.ui_state.min_font_size_px;
+        let max_font_px = state.app.ui_state.max_font_size_px;
         let theme_mode_preference = state.app.ui_state.theme_mode_preference.clone();
         let schedule = schedule_from_preference(&theme_mode_preference);
         let is_scheduled = matches!(
@@ -257,13 +293,231 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap)
+                    .child(render_settings_heading(d, theme.clone(), "Interface"))
+                    .child({
+                        let state_entity = self.state.clone();
+                        ButtonSet::new("design-language-select")
+                            .size(ButtonSetSize::Sm)
+                            .options(vec![
+                                ButtonSetOption::new("system", "System"),
+                                ButtonSetOption::new(
+                                    DesignLanguage::AppleHig.as_str(),
+                                    DesignLanguage::AppleHig.label(),
+                                ),
+                                ButtonSetOption::new(
+                                    DesignLanguage::Material3.as_str(),
+                                    DesignLanguage::Material3.label(),
+                                ),
+                                ButtonSetOption::new(
+                                    DesignLanguage::Fluent.as_str(),
+                                    DesignLanguage::Fluent.label(),
+                                ),
+                                ButtonSetOption::new(
+                                    DesignLanguage::Neutral.as_str(),
+                                    DesignLanguage::Neutral.label(),
+                                ),
+                            ])
+                            .selected(design_language_value(design_language.as_deref()))
+                            .theme(theme.to_button_set_theme())
+                            .on_change(move |value, _window, cx| {
+                                if let Some(selection) = design_language_from_value(value) {
+                                    let system = selection
+                                        .map(DesignSystem::for_language)
+                                        .unwrap_or_else(DesignSystem::platform_default);
+                                    cx.set_global(DesignSystemState::with_system(system));
+                                    state_entity.update(cx, |state, cx| {
+                                        state.app.ui_state.design_language =
+                                            selection.map(|language| language.as_str().to_string());
+                                        let layout = state.layout.read(cx);
+                                        if let Err(error) = state.app.save_config(layout) {
+                                            log::error!("Failed to save config: {error}");
+                                        }
+                                    });
+                                }
+                            })
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .child(render_settings_heading(d, theme.clone(), "Density"))
+                    .child({
+                        let state_entity = self.state.clone();
+                        ButtonSet::new("density-mode-select")
+                            .size(ButtonSetSize::Sm)
+                            .options(
+                                DensityMode::all()
+                                    .iter()
+                                    .map(|mode| ButtonSetOption::new(mode.value(), mode.label()))
+                                    .collect(),
+                            )
+                            .selected(density_mode.value())
+                            .theme(theme.to_button_set_theme())
+                            .on_change(move |value, _window, cx| {
+                                if let Some(mode) = DensityMode::from_value(value.as_ref()) {
+                                    state_entity.update(cx, |state, cx| {
+                                        state.app.ui_state.density_mode = mode;
+                                        state.app.ui_state.layout_mode = mode
+                                            .layout_mode_for_window(
+                                                state.app.ui_state.window_width,
+                                                state.app.ui_state.window_height,
+                                            );
+                                        let layout = state.layout.read(cx);
+                                        if let Err(error) = state.app.save_config(layout) {
+                                            log::error!("Failed to save config: {error}");
+                                        }
+                                    });
+                                }
+                            })
+                    })
                     .child(
                         div()
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .child("Mode"),
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_secondary)
+                            .child(
+                                "Standard shows one primary destination at a time. Expert enables the dense Library | Queue | Rack workspace.",
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .child(render_settings_heading(d, theme.clone(), "Typography"))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .flex_wrap()
+                            .gap(d.section)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(d.grid)
+                                    .flex_1()
+                                    .min_w(rems(14.0))
+                                    .child(
+                                        div()
+                                            .text_size(d.text_sm)
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(theme.text_primary)
+                                            .child("Text size"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(d.text_xs)
+                                            .text_color(theme.text_secondary)
+                                            .child("Scales the interface immediately and is saved with Appearance."),
+                                    ),
+                            )
+                            .child({
+                                let state_entity = self.state.clone();
+                                NumberInput::new("appearance-text-size")
+                                    .value((font_scale * 100.0) as f64)
+                                    .range(50.0, 200.0)
+                                    .step(5.0)
+                                    .decimals(0)
+                                    .unit("%")
+                                    .size(NumberInputSize::Sm)
+                                    .width(120.0)
+                                    .on_change(move |val, _window, cx| {
+                                        let scale = ((val as f32) / 100.0).clamp(0.5, 2.0);
+                                        state_entity.update(cx, |state, cx| {
+                                            state.app.ui_state.font_scale = scale;
+                                            let layout = state.layout.read(cx);
+                                            if let Err(error) = state.app.save_config(layout) {
+                                                log::error!("Failed to save config: {error}");
+                                            }
+                                        });
+                                    })
+                            }),
                     )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .flex_wrap()
+                            .gap(d.section)
+                            .child({
+                                let state_entity = self.state.clone();
+                                let current_max = max_font_px.unwrap_or(DEFAULT_MAX_FONT_SIZE_PX);
+                                NumberInput::new("appearance-min-font-size")
+                                    .value(min_font_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX) as f64)
+                                    .range(4.0, (current_max - 1.0) as f64)
+                                    .step(1.0)
+                                    .decimals(0)
+                                    .unit("px min")
+                                    .size(NumberInputSize::Sm)
+                                    .width(128.0)
+                                    .on_change(move |val, _window, cx| {
+                                        let px = (val as f32).clamp(4.0, current_max - 1.0);
+                                        state_entity.update(cx, |state, cx| {
+                                            state.app.ui_state.min_font_size_px = Some(px);
+                                            let layout = state.layout.read(cx);
+                                            if let Err(error) = state.app.save_config(layout) {
+                                                log::error!("Failed to save config: {error}");
+                                            }
+                                        });
+                                    })
+                            })
+                            .child({
+                                let state_entity = self.state.clone();
+                                let current_min = min_font_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX);
+                                NumberInput::new("appearance-max-font-size")
+                                    .value(max_font_px.unwrap_or(DEFAULT_MAX_FONT_SIZE_PX) as f64)
+                                    .range((current_min + 1.0) as f64, 48.0)
+                                    .step(1.0)
+                                    .decimals(0)
+                                    .unit("px max")
+                                    .size(NumberInputSize::Sm)
+                                    .width(128.0)
+                                    .on_change(move |val, _window, cx| {
+                                        let px = (val as f32).clamp(current_min + 1.0, 48.0);
+                                        state_entity.update(cx, |state, cx| {
+                                            state.app.ui_state.max_font_size_px = Some(px);
+                                            let layout = state.layout.read(cx);
+                                            if let Err(error) = state.app.save_config(layout) {
+                                                log::error!("Failed to save config: {error}");
+                                            }
+                                        });
+                                    })
+                            }),
+                    )
+                    .child(
+                        div()
+                            .p(d.card)
+                            .rounded(d.r_md)
+                            .bg(theme.background_secondary)
+                            .border_1()
+                            .border_color(theme.border)
+                            .flex()
+                            .flex_col()
+                            .gap(d.grid)
+                            .child(
+                                div()
+                                    .text_size(d.text_lg)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(theme.text_primary)
+                                    .child("Live preview"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(d.text_sm)
+                                    .text_color(theme.text_secondary)
+                                    .child("Now Playing, Library, Queue, and Studio use this scale and density."),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .child(render_settings_heading(d, theme.clone(), "Mode"))
                     .child({
                         let state_entity = self.state.clone();
                         ButtonSet::new("theme-mode-select")
@@ -323,13 +577,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap)
-                    .child(
-                        div()
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .child("Accent"),
-                    )
+                    .child(render_settings_heading(d, theme.clone(), "Accent"))
                     .child({
                         let mut swatches = div().flex().flex_wrap().gap(d.gap);
                         for preference in ThemeAccentPreference::all() {
@@ -350,13 +598,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap)
-                    .child(
-                        div()
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .child("Accessibility"),
-                    )
+                    .child(render_settings_heading(d, theme.clone(), "Accessibility"))
                     .child({
                         let state_entity = self.state.clone();
                         ButtonSet::new("theme-accessibility-select")
@@ -387,33 +629,22 @@ impl PlayerView {
                             })
                     })
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .gap(d.section)
-                            .child(
-                                div()
-                                    .text_size(d.text_sm)
-                                    .text_color(theme.text_secondary)
-                                    .child("Motion"),
-                            )
-                            .child(
-                                Toggle::new("theme-reduce-motion")
-                                    .size(ToggleSize::Sm)
-                                    .checked(reduce_motion)
-                                    .label("Reduce motion")
-                                    .style(ToggleStyle::Segmented)
-                                    .theme(theme.to_toggle_theme())
-                                    .on_change({
-                                        let state_entity = self.state.clone();
-                                        move |enabled, _window, cx| {
-                                            state_entity.update(cx, |state, _cx| {
-                                                state.app.set_reduce_motion(enabled);
-                                            });
-                                        }
-                                    }),
-                            ),
+                        div().flex().items_center().flex_wrap().gap(d.gap).child(
+                            Toggle::new("theme-reduce-motion")
+                                .size(ToggleSize::Sm)
+                                .checked(reduce_motion)
+                                .label("Reduce motion")
+                                .style(ToggleStyle::Segmented)
+                                .theme(theme.to_toggle_theme())
+                                .on_change({
+                                    let state_entity = self.state.clone();
+                                    move |enabled, _window, cx| {
+                                        state_entity.update(cx, |state, _cx| {
+                                            state.app.set_reduce_motion(enabled);
+                                        });
+                                    }
+                                }),
+                        ),
                     ),
             )
             .child(
@@ -421,13 +652,11 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap_md)
-                    .child(
-                        div()
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .child("Community"),
-                    )
+                    .child(render_settings_heading(
+                        d,
+                        theme.clone(),
+                        "Community themes",
+                    ))
                     .child({
                         let mut container = div().flex().flex_wrap().gap(d.section);
 
@@ -457,7 +686,7 @@ impl PlayerView {
                                 div()
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
-                                    .child("Import JSON"),
+                                    .child("Custom theme JSON"),
                             )
                             .child(
                                 Input::new("community-theme-json-input")
@@ -480,7 +709,7 @@ impl PlayerView {
                                     .flex()
                                     .gap(d.grid)
                                     .child(
-                                        Button::new("community-theme-import-apply", "Apply JSON")
+                                        Button::new("community-theme-import-apply", "Import")
                                             .variant(ButtonVariant::Primary)
                                             .size(ButtonSize::Xs)
                                             .theme(theme.to_button_theme())
@@ -536,13 +765,11 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap_md)
-                    .child(
-                        div()
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .child(translations.settings_theme),
-                    )
+                    .child(render_settings_heading(
+                        d,
+                        theme.clone(),
+                        translations.settings_theme,
+                    ))
                     .child({
                         let mut container = div().flex().flex_wrap().gap(d.section);
 

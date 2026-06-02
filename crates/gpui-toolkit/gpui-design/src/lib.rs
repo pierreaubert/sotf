@@ -27,6 +27,17 @@ pub enum DesignLanguage {
     Neutral,
 }
 
+/// Host platform bucket used to choose an appropriate default design language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+pub enum DesignPlatform {
+    Macos,
+    Ios,
+    Windows,
+    Android,
+    Linux,
+    Other,
+}
+
 /// Corner radius rendering strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum CornerRadiusStyle {
@@ -498,7 +509,7 @@ impl DesignSystem {
                 spring_damping: 26.0,
             },
             typography: TypographyRules {
-                font_family: ".SystemUI".to_string(),
+                font_family: ".SystemUIFont".to_string(),
                 dynamic_sizing: false,
                 base_size: 14.0,
                 small_size: 11.0,
@@ -569,7 +580,7 @@ impl DesignSystem {
                 spring_damping: 14.0,
             },
             typography: TypographyRules {
-                font_family: "SF Pro".to_string(),
+                font_family: ".SystemUIFont".to_string(),
                 dynamic_sizing: true,
                 base_size: 15.0,
                 small_size: 12.0,
@@ -640,7 +651,7 @@ impl DesignSystem {
                 spring_damping: 26.0,
             },
             typography: TypographyRules {
-                font_family: "Roboto".to_string(),
+                font_family: ".SystemUIFont".to_string(),
                 dynamic_sizing: false,
                 base_size: 14.0,
                 small_size: 12.0,
@@ -711,7 +722,7 @@ impl DesignSystem {
                 spring_damping: 30.0,
             },
             typography: TypographyRules {
-                font_family: "Segoe UI Variable".to_string(),
+                font_family: ".SystemUIFont".to_string(),
                 dynamic_sizing: false,
                 base_size: 14.0,
                 small_size: 12.0,
@@ -741,29 +752,31 @@ impl DesignSystem {
         }
     }
 
+    pub fn for_language(language: DesignLanguage) -> Self {
+        match language {
+            DesignLanguage::AppleHig => Self::apple_hig(),
+            DesignLanguage::Material3 => Self::material3(),
+            DesignLanguage::Fluent => Self::fluent(),
+            DesignLanguage::Neutral => Self::neutral(),
+        }
+    }
+
+    pub fn from_language_id(id: &str) -> Option<Self> {
+        DesignLanguage::from_id(id).map(Self::for_language)
+    }
+
+    pub fn for_platform(platform: DesignPlatform) -> Self {
+        match platform {
+            DesignPlatform::Macos | DesignPlatform::Ios => Self::apple_hig(),
+            DesignPlatform::Windows => Self::fluent(),
+            DesignPlatform::Android => Self::material3(),
+            DesignPlatform::Linux | DesignPlatform::Other => Self::neutral(),
+        }
+    }
+
     /// Returns the platform-appropriate default design system.
     pub fn platform_default() -> Self {
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        {
-            Self::apple_hig()
-        }
-        #[cfg(target_os = "windows")]
-        {
-            Self::fluent()
-        }
-        #[cfg(target_os = "android")]
-        {
-            Self::material3()
-        }
-        #[cfg(not(any(
-            target_os = "macos",
-            target_os = "ios",
-            target_os = "windows",
-            target_os = "android"
-        )))]
-        {
-            Self::neutral()
-        }
+        Self::for_platform(DesignPlatform::current())
     }
 }
 
@@ -774,6 +787,60 @@ impl DesignLanguage {
             Self::Material3 => "material3",
             Self::Fluent => "fluent",
             Self::Neutral => "neutral",
+        }
+    }
+
+    pub fn from_id(value: &str) -> Option<Self> {
+        match value {
+            "apple_hig" => Some(Self::AppleHig),
+            "material3" => Some(Self::Material3),
+            "fluent" => Some(Self::Fluent),
+            "neutral" => Some(Self::Neutral),
+            _ => None,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::AppleHig => "Apple",
+            Self::Material3 => "Material",
+            Self::Fluent => "Fluent",
+            Self::Neutral => "Neutral",
+        }
+    }
+}
+
+impl DesignPlatform {
+    pub fn current() -> Self {
+        #[cfg(target_os = "macos")]
+        {
+            Self::Macos
+        }
+        #[cfg(target_os = "ios")]
+        {
+            Self::Ios
+        }
+        #[cfg(target_os = "windows")]
+        {
+            Self::Windows
+        }
+        #[cfg(target_os = "android")]
+        {
+            Self::Android
+        }
+        #[cfg(target_os = "linux")]
+        {
+            Self::Linux
+        }
+        #[cfg(not(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "windows",
+            target_os = "android",
+            target_os = "linux"
+        )))]
+        {
+            Self::Other
         }
     }
 }
@@ -1425,6 +1492,66 @@ mod tests {
     }
 
     #[test]
+    fn test_platform_mapping_covers_main_os_families() {
+        assert_eq!(
+            DesignSystem::for_platform(DesignPlatform::Macos).language,
+            DesignLanguage::AppleHig
+        );
+        assert_eq!(
+            DesignSystem::for_platform(DesignPlatform::Ios).language,
+            DesignLanguage::AppleHig
+        );
+        assert_eq!(
+            DesignSystem::for_platform(DesignPlatform::Windows).language,
+            DesignLanguage::Fluent
+        );
+        assert_eq!(
+            DesignSystem::for_platform(DesignPlatform::Android).language,
+            DesignLanguage::Material3
+        );
+        assert_eq!(
+            DesignSystem::for_platform(DesignPlatform::Linux).language,
+            DesignLanguage::Neutral
+        );
+        assert_eq!(
+            DesignSystem::for_platform(DesignPlatform::Other).language,
+            DesignLanguage::Neutral
+        );
+    }
+
+    #[test]
+    fn test_design_language_ids_select_presets() {
+        for language in [
+            DesignLanguage::AppleHig,
+            DesignLanguage::Material3,
+            DesignLanguage::Fluent,
+            DesignLanguage::Neutral,
+        ] {
+            assert_eq!(DesignLanguage::from_id(language.as_str()), Some(language));
+            assert_eq!(
+                DesignSystem::from_language_id(language.as_str())
+                    .unwrap()
+                    .language,
+                language
+            );
+            assert!(!language.label().is_empty());
+        }
+
+        assert_eq!(DesignLanguage::from_id("system"), None);
+        assert_eq!(DesignSystem::from_language_id("system"), None);
+    }
+
+    #[test]
+    fn test_presets_use_gpui_system_font_alias() {
+        for (preset_id, system) in all_design_presets() {
+            assert_eq!(
+                system.typography.font_family, ".SystemUIFont",
+                "{preset_id} should resolve through GPUI's native system UI font alias"
+            );
+        }
+    }
+
+    #[test]
     fn test_presets_differ() {
         let neutral = DesignSystem::neutral();
         let apple = DesignSystem::apple_hig();
@@ -1603,14 +1730,14 @@ mod tests {
 
     #[test]
     fn test_typography_rules_new_validates() {
-        let t = TypographyRules::new(".SystemUI", false, 14.0, 11.0, 18.0);
+        let t = TypographyRules::new(".SystemUIFont", false, 14.0, 11.0, 18.0);
         assert_eq!(t.base_size, 14.0);
     }
 
     #[test]
     #[should_panic(expected = "base_size must be > 0")]
     fn test_typography_rules_new_rejects_zero_size() {
-        TypographyRules::new(".SystemUI", false, 0.0, 11.0, 18.0);
+        TypographyRules::new(".SystemUIFont", false, 0.0, 11.0, 18.0);
     }
 
     #[test]

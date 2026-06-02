@@ -1,3 +1,6 @@
+use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName, IconSize};
+
 #[derive(Debug)]
 pub(crate) struct PendingGeometrySave {
     geometry: crate::config::WindowGeometry,
@@ -43,14 +46,11 @@ impl Render for PlayerView {
                         state.layout.update(cx, |layout, _cx| {
                             state.app.ui_state.window_height = window_height;
                             state.app.ui_state.window_width = window_width;
-                            // Use Expanded layout when both dimensions are large enough
-                            // for multi-panel view. Compact for small screens (phones/tablets).
-                            state.app.ui_state.layout_mode =
-                                if window_height >= 500.0 && window_width >= 600.0 {
-                                    crate::app::LayoutMode::Expanded
-                                } else {
-                                    crate::app::LayoutMode::Compact
-                                };
+                            state.app.ui_state.layout_mode = state
+                                .app
+                                .ui_state
+                                .density_mode
+                                .layout_mode_for_window(window_width, window_height);
 
                             // Derive layout orientation, rack display mode, and
                             // queue-meter visibility from the constraint solver.
@@ -178,9 +178,6 @@ impl Render for PlayerView {
             show_migration_modal,
             show_move_position_modal,
             context_menu,
-            show_studio_menu,
-            show_device_popup,
-            playback_output_devices,
             min_font_size_px,
             max_font_size_px,
         ) = {
@@ -200,9 +197,6 @@ impl Render for PlayerView {
                     .recording_state
                     .move_position_modal_open,
                 state.app.ui_state.context_menu.is_some(),
-                state.app.ui_state.show_studio_menu,
-                state.app.ui_state.show_device_popup,
-                state.app.ui_state.translations.playback_output_devices,
                 state.app.ui_state.min_font_size_px,
                 state.app.ui_state.max_font_size_px,
             )
@@ -583,19 +577,36 @@ impl Render for PlayerView {
             .when(!cfg!(target_os = "macos") && !cfg!(target_os = "ios") && !cfg!(target_os = "tvos"), |div| {
                 div.child(self.render_menu_bar(cx))
             })
-            .child(self.render_header(cx))
             .child(
                 div()
                     .flex()
                     .flex_1()
+                    .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_current_screen(current_screen, layout_mode, cx)),
+                    .child(self.render_app_sidebar(cx))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .min_h_0()
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_1()
+                                    .min_h_0()
+                                    .overflow_hidden()
+                                    .child(self.render_current_screen(current_screen, layout_mode, cx)),
+                            )
+                            .when(
+                                self.state.read(cx).app.federation.scan_progress.is_some(),
+                                |div| div.child(self.render_federation_scan_progress(cx)),
+                            )
+                            .child(self.render_footer(cx)),
+                    ),
             )
-            .when(
-                self.state.read(cx).app.federation.scan_progress.is_some(),
-                |div| div.child(self.render_federation_scan_progress(cx)),
-            )
-            .child(self.render_footer(cx))
             .when(input_mode == crate::app::InputMode::Help, |div| {
                 div.child(self.render_help_modal(cx))
             })
@@ -651,18 +662,6 @@ impl Render for PlayerView {
             })
             .child(self.render_toast(cx))
             .when(context_menu, |div| div.child(self.render_context_menu(cx)))
-            // Studio menu overlay (click outside to close)
-            .when(show_studio_menu, |div| {
-                div.child(self.render_studio_menu_overlay(cx))
-            })
-            // Device popup overlay (click outside to close)
-            .when(show_device_popup, |div| {
-                div.child(self.render_device_popup_overlay(cx))
-            })
-            // Device popup (rendered here to be above overlay)
-            .when(show_device_popup, |div| {
-                div.child(self.render_device_popup(playback_output_devices, cx))
-            })
             // Menu dropdowns rendered last for z-ordering
             .when(active_menu != crate::app::ActiveMenu::None, |div| {
                 div.child(self.render_menu_dropdowns(cx))
@@ -693,7 +692,7 @@ impl PlayerView {
             Screen::PluginGraph => self.render_plugin_graph_screen(cx).into_any_element(),
             Screen::Playlists => div().into_any_element(),
             // Library/Queue use 3-panel layout in Expanded mode, individual screens in Compact
-            Screen::Library | Screen::Queue => {
+            Screen::NowPlaying | Screen::Library | Screen::Queue => {
                 let layout_orientation = self.state.read(cx).app.layout_orientation;
                 match layout_mode {
                     crate::app::LayoutMode::Expanded => match layout_orientation {
@@ -705,14 +704,663 @@ impl PlayerView {
                         }
                     }
                     crate::app::LayoutMode::Compact => {
-                        if screen == Screen::Library {
-                            self.render_library_screen(cx).into_any_element()
-                        } else {
-                            self.render_queue_screen(cx).into_any_element()
+                        match screen {
+                            Screen::Library => self.render_library_screen(cx).into_any_element(),
+                            Screen::NowPlaying | Screen::Queue => {
+                                self.render_queue_screen(cx).into_any_element()
+                            }
+                            _ => unreachable!("handled by outer match"),
                         }
                     }
                 }
             }
         }
+    }
+
+    fn render_app_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let (
+            theme,
+            current_screen,
+            input_mode,
+            collapsed,
+            release_channel,
+            translations,
+            output_devices,
+            selected_output_device_index,
+            cast_devices,
+            selected_cast_device,
+            cast_discovery_running,
+        ) = {
+            let state = self.state.read(cx);
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.current_screen,
+                state.app.ui_state.input_mode,
+                state.app.ui_state.primary_nav_collapsed,
+                state.app.ui_state.release_channel,
+                state.app.ui_state.translations.clone(),
+                state.app.audio_device_state.output_devices.clone(),
+                state.app.audio_device_state.selected_output_device_index,
+                state.app.audio_device_state.cast_devices.clone(),
+                state.app.audio_device_state.selected_cast_device,
+                state.app.audio_device_state.cast_discovery_running,
+            )
+        };
+
+        let rail_width = if collapsed { rems(3.75) } else { rems(12.0) };
+        let toggle_icon = if collapsed {
+            IconName::ChevronRight
+        } else {
+            IconName::ChevronLeft
+        };
+        let state_for_toggle = self.state.clone();
+
+        div()
+            .id("app-sidebar")
+            .flex()
+            .flex_col()
+            .flex_none()
+            .w(rail_width)
+            .h_full()
+            .min_h_0()
+            .bg(theme.surface)
+            .border_r_1()
+            .border_color(theme.border)
+            .p(d.pad_y_half)
+            .gap(d.grid)
+            .child(
+                div()
+                    .id("app-sidebar-toggle")
+                    .h(rems(2.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(d.r_md)
+                    .cursor_pointer()
+                    .hover({
+                        let theme = theme.clone();
+                        move |s| s.bg(theme.surface_hover)
+                    })
+                    .child(
+                        Icon::new(toggle_icon)
+                            .size(IconSize::Sm)
+                            .color(theme.text_muted),
+                    )
+                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                        state_for_toggle.update(cx, |state, _cx| {
+                            state.app.ui_state.primary_nav_collapsed =
+                                !state.app.ui_state.primary_nav_collapsed;
+                        });
+                    }),
+            )
+            .child(self.render_sidebar_screen_item(
+                "nav-home",
+                "Home",
+                IconName::Home,
+                Screen::Library,
+                current_screen == Screen::Library,
+                collapsed,
+                &theme,
+                &d,
+            ))
+            .child(self.render_sidebar_search_item(
+                input_mode == crate::app::InputMode::Search,
+                collapsed,
+                &theme,
+                &d,
+            ))
+            .child(self.render_sidebar_screen_item(
+                "nav-playing",
+                "Playing",
+                IconName::Music,
+                Screen::NowPlaying,
+                matches!(current_screen, Screen::NowPlaying | Screen::Queue),
+                collapsed,
+                &theme,
+                &d,
+            ))
+            .child(self.render_sidebar_screen_item(
+                "nav-studio",
+                translations.screen_studio,
+                IconName::SlidersHorizontal,
+                Screen::Studio,
+                current_screen == Screen::Studio,
+                collapsed,
+                &theme,
+                &d,
+            ))
+            .child(self.render_sidebar_separator(&theme))
+            .child(self.render_sidebar_group_label("Tools", collapsed, &theme, &d))
+            .when(release_channel.allows(Screen::Recording.maturity()), |el| {
+                el.child(self.render_sidebar_screen_item(
+                    "nav-recording",
+                    translations.screen_recording,
+                    IconName::Disc,
+                    Screen::Recording,
+                    current_screen == Screen::Recording,
+                    collapsed,
+                    &theme,
+                    &d,
+                ))
+            })
+            .when(release_channel.allows(Screen::RoomEq.maturity()), |el| {
+                el.child(self.render_sidebar_screen_item(
+                    "nav-room-eq",
+                    translations.screen_room_eq,
+                    IconName::AudioWaveform,
+                    Screen::RoomEq,
+                    current_screen == Screen::RoomEq,
+                    collapsed,
+                    &theme,
+                    &d,
+                ))
+            })
+            .when(release_channel.allows(Screen::HeadphoneEq.maturity()), |el| {
+                el.child(self.render_sidebar_screen_item(
+                    "nav-headphone-eq",
+                    translations.screen_headphone_eq,
+                    IconName::Speaker,
+                    Screen::HeadphoneEq,
+                    current_screen == Screen::HeadphoneEq,
+                    collapsed,
+                    &theme,
+                    &d,
+                ))
+            })
+            .when(release_channel.allows(Screen::Spinorama.maturity()), |el| {
+                el.child(self.render_sidebar_screen_item(
+                    "nav-spinorama",
+                    translations.screen_spinorama,
+                    IconName::AudioWaveform,
+                    Screen::Spinorama,
+                    current_screen == Screen::Spinorama,
+                    collapsed,
+                    &theme,
+                    &d,
+                ))
+            })
+            .child(div().flex_1())
+            .child(self.render_sidebar_separator(&theme))
+            .child(self.render_sidebar_group_label("Devices", collapsed, &theme, &d))
+            .child(self.render_sidebar_devices_item(collapsed, &theme, &d))
+            .when(!collapsed, |el| {
+                el.child(self.render_sidebar_device_actions(
+                    cast_discovery_running,
+                    &theme,
+                    &d,
+                ))
+                .children(output_devices.iter().take(4).enumerate().map(|(idx, device)| {
+                    self.render_sidebar_output_device_item(
+                        idx,
+                        &device.name,
+                        idx == selected_output_device_index && selected_cast_device.is_none(),
+                        &theme,
+                        &d,
+                    )
+                }))
+                .child(self.render_sidebar_cast_group_label(
+                    cast_discovery_running,
+                    &theme,
+                    &d,
+                ))
+                .when(cast_devices.is_empty() && !cast_discovery_running, |el| {
+                    el.child(
+                        div()
+                            .px(d.pad_y)
+                            .py(d.grid)
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_muted)
+                            .child("No Cast devices"),
+                    )
+                })
+                .children(cast_devices.iter().take(4).enumerate().map(|(idx, device)| {
+                    self.render_sidebar_cast_device_item(
+                        idx,
+                        &device.name,
+                        &device.device_type,
+                        selected_cast_device == Some(idx),
+                        &theme,
+                        &d,
+                    )
+                }))
+            })
+            .into_any_element()
+    }
+
+    fn render_sidebar_separator(&self, theme: &crate::theme::Theme) -> AnyElement {
+        div()
+            .h(px(1.0))
+            .mx(rems(0.25))
+            .my(rems(0.25))
+            .bg(theme.border)
+            .into_any_element()
+    }
+
+    fn render_sidebar_group_label(
+        &self,
+        label: &'static str,
+        collapsed: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> AnyElement {
+        div()
+            .h(if collapsed { rems(0.25) } else { rems(1.5) })
+            .px(d.pad_y)
+            .flex()
+            .items_center()
+            .when(!collapsed, |el| {
+                el.child(
+                    div()
+                        .text_size(d.text_xs)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_muted)
+                        .child(label),
+                )
+            })
+            .into_any_element()
+    }
+
+    fn render_sidebar_screen_item(
+        &self,
+        id: &'static str,
+        label: &str,
+        icon: IconName,
+        screen: Screen,
+        selected: bool,
+        collapsed: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> AnyElement {
+        let label = label.to_string();
+        let state_entity = self.state.clone();
+
+        self.render_sidebar_item_base(id, &label, icon, selected, collapsed, theme, d)
+            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                state_entity.update(cx, |state, _cx| {
+                    state.app.set_screen(screen, "SidebarNav");
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                });
+            })
+            .into_any_element()
+    }
+
+    fn render_sidebar_search_item(
+        &self,
+        selected: bool,
+        collapsed: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> AnyElement {
+        let state_entity = self.state.clone();
+        let search_focus = self.search_focus_handle.clone();
+
+        self.render_sidebar_item_base(
+            "nav-search",
+            "Search",
+            IconName::Search,
+            selected,
+            collapsed,
+            theme,
+            d,
+        )
+        .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+            state_entity.update(cx, |state, _cx| {
+                state.app.set_screen(Screen::Library, "SidebarSearch");
+                state.app.ui_state.input_mode = crate::app::InputMode::Search;
+                state.app.library_state.search_query.clear();
+            });
+            search_focus.focus(window, cx);
+        })
+        .into_any_element()
+    }
+
+    fn render_sidebar_devices_item(
+        &self,
+        collapsed: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> AnyElement {
+        let state_entity = self.state.clone();
+
+        self.render_sidebar_item_base(
+            "nav-devices",
+            "Devices",
+            IconName::Speaker,
+            false,
+            collapsed,
+            theme,
+            d,
+        )
+        .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+            state_entity.update(cx, |state, _cx| {
+                state.app.set_screen(Screen::Settings, "SidebarDevices");
+                state.app.ui_state.active_settings_tab = crate::app::SettingsTab::AudioDevice;
+                state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+            });
+        })
+        .into_any_element()
+    }
+
+    fn render_sidebar_device_actions(
+        &self,
+        cast_discovery_running: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> AnyElement {
+        let state_for_refresh = self.state.clone();
+        let state_for_cast = self.state.clone();
+
+        div()
+            .id("nav-device-actions")
+            .flex()
+            .items_center()
+            .gap(d.grid)
+            .px(d.pad_y)
+            .py(d.grid)
+            .child(
+                div()
+                    .id("nav-refresh-devices")
+                    .flex_1()
+                    .h(rems(1.75))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(d.r_sm)
+                    .border_1()
+                    .border_color(theme.border)
+                    .text_size(d.text_xs)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(theme.text_secondary)
+                    .cursor_pointer()
+                    .hover({
+                        let theme = theme.clone();
+                        move |style| style.bg(theme.surface_hover).text_color(theme.text_primary)
+                    })
+                    .child("Refresh")
+                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                        state_for_refresh.update(cx, |state, _cx| {
+                            state.app.load_audio_devices();
+                        });
+                    }),
+            )
+            .child(
+                div()
+                    .id("nav-scan-cast")
+                    .flex_1()
+                    .h(rems(1.75))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(d.r_sm)
+                    .border_1()
+                    .border_color(theme.border)
+                    .text_size(d.text_xs)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(if cast_discovery_running {
+                        theme.accent
+                    } else {
+                        theme.text_secondary
+                    })
+                    .cursor_pointer()
+                    .hover({
+                        let theme = theme.clone();
+                        move |style| style.bg(theme.surface_hover).text_color(theme.text_primary)
+                    })
+                    .child(if cast_discovery_running {
+                        "Scanning"
+                    } else {
+                        "Scan Cast"
+                    })
+                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                        state_for_cast.update(cx, |state, _cx| {
+                            state.app.start_cast_discovery();
+                        });
+                    }),
+            )
+            .into_any_element()
+    }
+
+    fn render_sidebar_cast_group_label(
+        &self,
+        cast_discovery_running: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> AnyElement {
+        div()
+            .h(rems(1.5))
+            .px(d.pad_y)
+            .flex()
+            .items_center()
+            .child(
+                div()
+                    .text_size(d.text_xs)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(if cast_discovery_running {
+                        theme.accent
+                    } else {
+                        theme.text_muted
+                    })
+                    .child(if cast_discovery_running {
+                        "Cast Devices (scanning...)"
+                    } else {
+                        "Cast Devices"
+                    }),
+            )
+            .into_any_element()
+    }
+
+    fn render_sidebar_output_device_item(
+        &self,
+        index: usize,
+        name: &str,
+        selected: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> AnyElement {
+        let device_name = name.to_string();
+        let display_name = if device_name.chars().count() > 18 {
+            format!("{}...", device_name.chars().take(15).collect::<String>())
+        } else {
+            device_name.clone()
+        };
+        let state_entity = self.state.clone();
+
+        div()
+            .id(SharedString::from(format!("nav-device-{index}")))
+            .flex()
+            .items_center()
+            .gap(d.grid)
+            .h(rems(1.75))
+            .px(d.pad_y)
+            .rounded(d.r_sm)
+            .cursor_pointer()
+            .text_size(d.text_xs)
+            .when(selected, |el| {
+                el.bg(theme.surface_selected)
+                    .text_color(theme.text_primary)
+                    .font_weight(FontWeight::MEDIUM)
+            })
+            .when(!selected, |el| {
+                el.text_color(theme.text_secondary).hover({
+                    let theme = theme.clone();
+                    move |s| s.bg(theme.surface_hover).text_color(theme.text_primary)
+                })
+            })
+            .child(
+                div()
+                    .w(rems(0.75))
+                    .text_color(if selected {
+                        theme.accent
+                    } else {
+                        theme.text_muted
+                    })
+                    .child(if selected { "✓" } else { "›" }),
+            )
+            .child(
+                div()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(display_name),
+            )
+            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                state_entity.update(cx, |state, _cx| {
+                    let was_playing = state.app.playback.is_playing;
+                    let current_path = state.app.queue_state.current_track_source();
+                    let current_pos = state.app.playback.position_secs;
+
+                    state.app.audio_device_state.selected_output_device_index = index;
+                    state.app.audio_device_state.current_output_device_name =
+                        Some(device_name.clone());
+                    state.app.deselect_cast_device();
+
+                    let mut player = state.player.lock();
+                    if let Err(e) = player.set_output_device(device_name.clone()) {
+                        log::error!("Failed to set output device: {}", e);
+                    } else if was_playing && let Some(path) = current_path {
+                        drop(player);
+                        Self::play_track_at(state, path, Some(current_pos));
+                    }
+                });
+            })
+            .into_any_element()
+    }
+
+    fn render_sidebar_cast_device_item(
+        &self,
+        index: usize,
+        name: &str,
+        device_type: &str,
+        selected: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> AnyElement {
+        let device_name = name.to_string();
+        let display_name = if device_name.chars().count() > 15 {
+            format!("{}...", device_name.chars().take(12).collect::<String>())
+        } else {
+            device_name.clone()
+        };
+        let display_type = device_type.to_string();
+        let state_entity = self.state.clone();
+
+        div()
+            .id(SharedString::from(format!("nav-cast-device-{index}")))
+            .flex()
+            .items_center()
+            .gap(d.grid)
+            .h(rems(1.75))
+            .px(d.pad_y)
+            .rounded(d.r_sm)
+            .cursor_pointer()
+            .text_size(d.text_xs)
+            .when(selected, |el| {
+                el.bg(theme.surface_selected)
+                    .text_color(theme.text_primary)
+                    .font_weight(FontWeight::MEDIUM)
+            })
+            .when(!selected, |el| {
+                el.text_color(theme.text_secondary).hover({
+                    let theme = theme.clone();
+                    move |s| s.bg(theme.surface_hover).text_color(theme.text_primary)
+                })
+            })
+            .child(
+                div()
+                    .w(rems(0.75))
+                    .text_color(if selected {
+                        theme.accent
+                    } else {
+                        theme.text_muted
+                    })
+                    .child(if selected { "✓" } else { "›" }),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(display_name),
+            )
+            .child(
+                div()
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_muted)
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(display_type),
+            )
+            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                state_entity.update(cx, |state, _cx| {
+                    if state.app.audio_device_state.selected_cast_device == Some(index) {
+                        state.app.deselect_cast_device();
+                    } else {
+                        state.app.select_cast_device(index);
+                    }
+                });
+            })
+            .into_any_element()
+    }
+
+    fn render_sidebar_item_base(
+        &self,
+        id: &'static str,
+        label: &str,
+        icon: IconName,
+        selected: bool,
+        collapsed: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> Stateful<Div> {
+        let icon_color = if selected {
+            theme.icon_on_accent
+        } else {
+            theme.text_secondary
+        };
+        let label_color = if selected {
+            theme.text_on_accent
+        } else {
+            theme.text_secondary
+        };
+
+        div()
+            .id(id)
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap(d.gap)
+            .h(rems(2.25))
+            .px(if collapsed { d.grid } else { d.pad_y })
+            .rounded(d.r_md)
+            .cursor_pointer()
+            .when(selected, |el| {
+                el.bg(theme.accent)
+                    .text_color(theme.text_on_accent)
+                    .font_weight(FontWeight::MEDIUM)
+            })
+            .when(!selected, |el| {
+                el.text_color(theme.text_secondary).hover({
+                    let theme = theme.clone();
+                    move |s| s.bg(theme.surface_hover).text_color(theme.text_primary)
+                })
+            })
+            .child(Icon::new(icon).size(IconSize::Sm).color(icon_color))
+            .when(!collapsed, |el| {
+                el.justify_start().child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(d.text_sm)
+                        .text_color(label_color)
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .whitespace_nowrap()
+                        .child(label.to_string()),
+                )
+            })
     }
 }

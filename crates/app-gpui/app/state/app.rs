@@ -1295,6 +1295,7 @@ impl App {
 
         // Restore directories
         self.library_state.library.directories = config.directories;
+        self.install_external_plugin_runtime_sandbox();
 
         // Restore theme
         self.ui_state.theme_id = config.theme;
@@ -1308,6 +1309,7 @@ impl App {
             self.apply_theme(config.theme);
         }
         self.ui_state.reduce_motion = config.reduce_motion;
+        self.ui_state.density_mode = config.density_mode;
 
         // Restore language
         self.ui_state.language = config.language;
@@ -1506,6 +1508,7 @@ impl App {
             theme_accent_preference: self.ui_state.theme_accent_preference,
             community_theme_id: self.ui_state.community_theme_id,
             reduce_motion: self.ui_state.reduce_motion,
+            density_mode: self.ui_state.density_mode,
             language: self.ui_state.language,
             keymap_preset: self.ui_state.keymap_preset,
             panel_layout: PanelLayout {
