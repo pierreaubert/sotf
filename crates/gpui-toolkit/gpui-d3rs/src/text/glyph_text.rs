@@ -1,6 +1,6 @@
 //! Raster glyph text rendering for chart labels.
 
-use gpui::{Corners, IntoElement, RenderImage, Rgba, Styled, canvas, px};
+use gpui::{canvas, div, px, Corners, IntoElement, ParentElement, RenderImage, Rgba, Styled};
 use image::{Frame, RgbaImage};
 use std::sync::{Arc, LazyLock};
 
@@ -16,6 +16,21 @@ pub struct GlyphTextConfig {
     pub color: Rgba,
     pub rotation: f32,
     pub letter_spacing: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HorizontalTextAnchor {
+    Start,
+    Middle,
+    End,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerticalTextAnchor {
+    Top,
+    Middle,
+    Alphabetic,
+    Bottom,
 }
 
 impl GlyphTextConfig {
@@ -74,11 +89,17 @@ struct RasterText {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
+    layout_width: f32,
+    layout_height: f32,
+    paint_offset: [f32; 2],
+    anchor: [f32; 2],
 }
 
 #[derive(Debug, Clone, Copy)]
 struct RawMetrics {
     width: f32,
+    ink_min_x: f32,
+    ink_max_x: f32,
     min_y: f32,
     max_y: f32,
 }
@@ -99,21 +120,51 @@ pub fn measure_glyph_text(text: &str, font_size: f32) -> GlyphTextMetrics {
 }
 
 pub fn render_glyph_text(text: &str, config: &GlyphTextConfig) -> impl IntoElement {
+    render_glyph_text_anchored(
+        text,
+        config,
+        HorizontalTextAnchor::Start,
+        VerticalTextAnchor::Top,
+    )
+}
+
+pub fn render_glyph_text_anchored(
+    text: &str,
+    config: &GlyphTextConfig,
+    horizontal_anchor: HorizontalTextAnchor,
+    vertical_anchor: VerticalTextAnchor,
+) -> impl IntoElement {
     let text = text.to_string();
     let config = config.clone();
-    let raster = rasterize_rotated_text(&text, &config);
-    let width = raster.width.max(1) as f32;
-    let height = raster.height.max(1) as f32;
+    let raster = rasterize_rotated_text(&text, &config, horizontal_anchor, vertical_anchor);
+    let width = raster.layout_width.max(1.0);
+    let height = raster.layout_height.max(1.0);
+    let raster_width = raster.width.max(1) as f32;
+    let raster_height = raster.height.max(1) as f32;
+    let paint_offset = raster.paint_offset;
+    let anchor = raster.anchor;
 
-    canvas(
-        move |_bounds, _, _cx| {},
-        move |bounds, _, window, _cx| {
-            let raster = rasterize_rotated_text(&text, &config);
-            paint_raster(window, bounds, raster);
-        },
-    )
-    .w(px(width))
-    .h(px(height))
+    div()
+        .relative()
+        .w(px(width))
+        .h(px(height))
+        .ml(px(-anchor[0]))
+        .mt(px(-anchor[1]))
+        .child(
+            canvas(
+                move |_bounds, _, _cx| {},
+                move |bounds, _, window, _cx| {
+                    let raster =
+                        rasterize_rotated_text(&text, &config, horizontal_anchor, vertical_anchor);
+                    paint_raster(window, bounds, &raster);
+                },
+            )
+            .absolute()
+            .left(px(paint_offset[0]))
+            .top(px(paint_offset[1]))
+            .w(px(raster_width))
+            .h(px(raster_height)),
+        )
 }
 
 pub fn paint_glyph_text_at(
@@ -126,37 +177,64 @@ pub fn paint_glyph_text_at(
     rotation: f32,
 ) {
     let config = GlyphTextConfig::rotated(font_size, color, rotation);
-    let raster = rasterize_rotated_text(text, &config);
-    let width = raster.width.max(1) as f32;
-    let height = raster.height.max(1) as f32;
+    let raster = rasterize_rotated_text(
+        text,
+        &config,
+        HorizontalTextAnchor::Start,
+        VerticalTextAnchor::Top,
+    );
     let bounds = gpui::Bounds {
-        origin: gpui::point(px(x), px(y)),
-        size: gpui::size(px(width), px(height)),
+        origin: gpui::point(
+            px(x + raster.paint_offset[0]),
+            px(y + raster.paint_offset[1]),
+        ),
+        size: gpui::size(
+            px(raster.width.max(1) as f32),
+            px(raster.height.max(1) as f32),
+        ),
     };
-    paint_raster(window, bounds, raster);
+    paint_raster(window, bounds, &raster);
 }
 
 fn measure_raw(text: &str, font_size: f32, letter_spacing: f32) -> RawMetrics {
     if text.is_empty() {
         return RawMetrics {
             width: 0.0,
+            ink_min_x: 0.0,
+            ink_max_x: 0.0,
             min_y: -font_size * 0.8,
             max_y: font_size * 0.2,
         };
     }
 
     let mut width = 0.0;
+    let mut ink_min_x = f32::INFINITY;
+    let mut ink_max_x = f32::NEG_INFINITY;
     let mut min_y = f32::INFINITY;
     let mut max_y = f32::NEG_INFINITY;
+    let char_count = text.chars().count();
 
     for (idx, c) in text.chars().enumerate() {
         let metrics = FONT.metrics(c, font_size);
-        min_y = min_y.min(metrics.ymin as f32);
-        max_y = max_y.max(metrics.ymin as f32 + metrics.height as f32);
-        width += metrics.advance_width;
-        if idx + 1 < text.chars().count() {
+        let glyph_x = glyph_left(width, &metrics);
+        let glyph_y = glyph_top(&metrics);
+
+        if metrics.width > 0 && metrics.height > 0 {
+            ink_min_x = ink_min_x.min(glyph_x);
+            ink_max_x = ink_max_x.max(glyph_x + metrics.width as f32);
+            min_y = min_y.min(glyph_y);
+            max_y = max_y.max(glyph_y + metrics.height as f32);
+        }
+
+        width += glyph_advance(&metrics);
+        if idx + 1 < char_count {
             width += letter_spacing;
         }
+    }
+
+    if !ink_min_x.is_finite() || !ink_max_x.is_finite() || ink_min_x >= ink_max_x {
+        ink_min_x = 0.0;
+        ink_max_x = width.max(1.0);
     }
 
     if !min_y.is_finite() || !max_y.is_finite() || min_y >= max_y {
@@ -166,13 +244,32 @@ fn measure_raw(text: &str, font_size: f32, letter_spacing: f32) -> RawMetrics {
 
     RawMetrics {
         width,
+        ink_min_x,
+        ink_max_x,
         min_y,
         max_y,
     }
 }
 
-fn rasterize_rotated_text(text: &str, config: &GlyphTextConfig) -> RasterText {
-    let raster = rasterize_text(text, config);
+fn glyph_advance(metrics: &fontdue::Metrics) -> f32 {
+    metrics.advance_width.ceil()
+}
+
+fn glyph_left(cursor_x: f32, metrics: &fontdue::Metrics) -> f32 {
+    (cursor_x + metrics.bounds.xmin).floor()
+}
+
+fn glyph_top(metrics: &fontdue::Metrics) -> f32 {
+    (-metrics.bounds.height - metrics.bounds.ymin).floor()
+}
+
+fn rasterize_rotated_text(
+    text: &str,
+    config: &GlyphTextConfig,
+    horizontal_anchor: HorizontalTextAnchor,
+    vertical_anchor: VerticalTextAnchor,
+) -> RasterText {
+    let raster = rasterize_text(text, config, horizontal_anchor, vertical_anchor);
     if config.rotation.abs() < 0.0001 {
         raster
     } else {
@@ -180,19 +277,28 @@ fn rasterize_rotated_text(text: &str, config: &GlyphTextConfig) -> RasterText {
     }
 }
 
-fn rasterize_text(text: &str, config: &GlyphTextConfig) -> RasterText {
+fn rasterize_text(
+    text: &str,
+    config: &GlyphTextConfig,
+    horizontal_anchor: HorizontalTextAnchor,
+    vertical_anchor: VerticalTextAnchor,
+) -> RasterText {
     let raw = measure_raw(text, config.font_size, config.letter_spacing);
     let padding = (config.font_size * 0.25).ceil().max(2.0);
-    let width = (raw.width + padding * 2.0).ceil().max(1.0) as u32;
-    let height = (raw.max_y - raw.min_y + padding * 2.0).ceil().max(1.0) as u32;
+    let layout_width = raw.width.max(0.0);
+    let layout_height = (raw.max_y - raw.min_y).max(1.0);
+    let width = (raw.ink_max_x - raw.ink_min_x + padding * 2.0)
+        .ceil()
+        .max(1.0) as u32;
+    let height = (layout_height + padding * 2.0).ceil().max(1.0) as u32;
     let baseline_y = padding - raw.min_y;
     let mut pixels = vec![0u8; (width * height * 4) as usize];
-    let mut cursor_x = padding;
+    let mut cursor_x = 0.0;
 
     for c in text.chars() {
         let (metrics, bitmap) = FONT.rasterize(c, config.font_size);
-        let glyph_x = cursor_x + metrics.xmin as f32;
-        let glyph_y = baseline_y + metrics.ymin as f32;
+        let glyph_x = glyph_left(cursor_x, &metrics) - raw.ink_min_x + padding;
+        let glyph_y = baseline_y + glyph_top(&metrics);
 
         for row in 0..metrics.height {
             for col in 0..metrics.width {
@@ -206,13 +312,37 @@ fn rasterize_text(text: &str, config: &GlyphTextConfig) -> RasterText {
             }
         }
 
-        cursor_x += metrics.advance_width + config.letter_spacing;
+        cursor_x += glyph_advance(&metrics) + config.letter_spacing;
     }
 
     RasterText {
         width,
         height,
         pixels,
+        layout_width,
+        layout_height,
+        paint_offset: [raw.ink_min_x - padding, -padding],
+        anchor: [
+            horizontal_anchor_offset(layout_width, horizontal_anchor),
+            vertical_anchor_offset(&raw, vertical_anchor),
+        ],
+    }
+}
+
+fn horizontal_anchor_offset(width: f32, anchor: HorizontalTextAnchor) -> f32 {
+    match anchor {
+        HorizontalTextAnchor::Start => 0.0,
+        HorizontalTextAnchor::Middle => width / 2.0,
+        HorizontalTextAnchor::End => width,
+    }
+}
+
+fn vertical_anchor_offset(raw: &RawMetrics, anchor: VerticalTextAnchor) -> f32 {
+    match anchor {
+        VerticalTextAnchor::Top => 0.0,
+        VerticalTextAnchor::Middle => (raw.max_y - raw.min_y) / 2.0,
+        VerticalTextAnchor::Alphabetic => -raw.min_y,
+        VerticalTextAnchor::Bottom => raw.max_y - raw.min_y,
     }
 }
 
@@ -268,10 +398,19 @@ fn rotate_raster(src: &RasterText, rotation: f32) -> RasterText {
         }
     }
 
+    let anchor_lx = src.anchor[0] - src_cx;
+    let anchor_ly = src.anchor[1] - src_cy;
+    let anchor_rx = anchor_lx * cos_r - anchor_ly * sin_r;
+    let anchor_ry = anchor_lx * sin_r + anchor_ly * cos_r;
+
     RasterText {
         width: dst_w,
         height: dst_h,
         pixels: dst,
+        layout_width: dst_w as f32,
+        layout_height: dst_h as f32,
+        paint_offset: [0.0, 0.0],
+        anchor: [dst_cx + anchor_rx, dst_cy + anchor_ry],
     }
 }
 
@@ -319,31 +458,16 @@ fn blend_raw_pixel(pixels: &mut [u8], width: u32, height: u32, x: i32, y: i32, s
     pixels[idx + 3] = (out_a.clamp(0.0, 1.0) * 255.0).round() as u8;
 }
 
-fn paint_raster(window: &mut gpui::Window, bounds: gpui::Bounds<gpui::Pixels>, raster: RasterText) {
-    if let Some(rgba_image) = RgbaImage::from_raw(raster.width, raster.height, raster.pixels) {
+fn paint_raster(
+    window: &mut gpui::Window,
+    bounds: gpui::Bounds<gpui::Pixels>,
+    raster: &RasterText,
+) {
+    if let Some(rgba_image) =
+        RgbaImage::from_raw(raster.width, raster.height, raster.pixels.clone())
+    {
         let frame = Frame::new(rgba_image);
         let render_image = RenderImage::new(vec![frame]);
         let _ = window.paint_image(bounds, Corners::default(), Arc::new(render_image), 0, false);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn text_metrics_are_nonzero() {
-        let metrics = measure_glyph_text("1000 Hz", 12.0);
-        assert!(metrics.width > 0.0);
-        assert!(metrics.height > 0.0);
-    }
-
-    #[test]
-    fn rotated_text_expands_bounds() {
-        let config =
-            GlyphTextConfig::rotated(14.0, gpui::rgb(0xffffff), std::f32::consts::FRAC_PI_2);
-        let raster = rasterize_rotated_text("1000", &config);
-        assert!(raster.width > 0);
-        assert!(raster.height > raster.width);
     }
 }

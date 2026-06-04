@@ -2,7 +2,10 @@
 
 use super::{AxisConfig, AxisOrientation, AxisTheme};
 use crate::scale::Scale;
-use crate::text::{GlyphTextConfig, measure_glyph_text_width, render_glyph_text};
+use crate::text::{
+    render_glyph_text, render_glyph_text_anchored, GlyphTextConfig, HorizontalTextAnchor,
+    VerticalTextAnchor,
+};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -110,25 +113,22 @@ where
 
             // Label - positioned absolutely
             let label_top = tick_top + config.tick_size + config.tick_padding;
-            let label_width = measure_glyph_text_width(&label, config.label_font_size);
-
-            // For angled labels, adjust positioning
-            // Negative angle rotates counter-clockwise, so text goes down-left
-            let (ml_offset, mt_offset) = if config.label_angle.abs() > 0.1 {
-                // For angled text, anchor at the right end of the text
-                // so it appears to hang from the tick mark
-                (-label_width * angle_rad.cos().abs() * 0.1, 0.0)
+            let horizontal_anchor = if config.label_angle.abs() > 0.1 {
+                HorizontalTextAnchor::End
             } else {
-                // For horizontal text, center it
-                (-label_width / 2.0, 0.0)
+                HorizontalTextAnchor::Middle
             };
 
             let label_div = div()
                 .absolute()
                 .left(relative(x_pos as f32))
-                .ml(px(ml_offset))
-                .top(px(label_top + mt_offset))
-                .child(render_glyph_text(&label, &font_config));
+                .top(px(label_top))
+                .child(render_glyph_text_anchored(
+                    &label,
+                    &font_config,
+                    horizontal_anchor,
+                    VerticalTextAnchor::Top,
+                ));
 
             [tick_mark.into_any_element(), label_div.into_any_element()]
         }))
@@ -252,13 +252,16 @@ where
 
             // Label - positioned absolutely, above the tick
             let label_bottom = tick_bottom - config.tick_size - config.tick_padding;
-            let half_label_width = measure_glyph_text_width(&label, config.label_font_size) / 2.0;
             let label_div = div()
                 .absolute()
                 .left(relative(x_pos as f32))
-                .ml(px(-half_label_width))
-                .top(px(label_bottom - config.label_font_size))
-                .child(render_glyph_text(&label, &font_config));
+                .top(px(label_bottom))
+                .child(render_glyph_text_anchored(
+                    &label,
+                    &font_config,
+                    HorizontalTextAnchor::Middle,
+                    VerticalTextAnchor::Bottom,
+                ));
 
             [tick_mark.into_any_element(), label_div.into_any_element()]
         }))
@@ -376,6 +379,7 @@ where
             let half_tick_height = config.domain_line_width / 2.0;
             let font_config =
                 GlyphTextConfig::horizontal(config.label_font_size, theme.axis_label_color());
+            let label_x = width - tick_right - config.tick_size - config.tick_padding;
 
             // Tick mark - positioned absolutely and centered on the y position
             let tick_mark = div()
@@ -387,15 +391,16 @@ where
                 .h(px(config.domain_line_width))
                 .bg(theme.axis_line_color());
 
-            // Label - positioned absolutely, vertically centered on the y position
-            // We estimate half the label height as label_font_size / 2 for centering
-            let half_label_height = config.label_font_size / 2.0;
             let label_div = div()
                 .absolute()
-                .right(px(tick_right + config.tick_size + config.tick_padding))
+                .left(px(label_x))
                 .top(relative(y_pos as f32))
-                .mt(px(-half_label_height))
-                .child(render_glyph_text(&label, &font_config));
+                .child(render_glyph_text_anchored(
+                    &label,
+                    &font_config,
+                    HorizontalTextAnchor::End,
+                    VerticalTextAnchor::Middle,
+                ));
 
             [tick_mark.into_any_element(), label_div.into_any_element()]
         }))
@@ -487,14 +492,16 @@ where
                 .h(px(config.domain_line_width))
                 .bg(theme.axis_line_color());
 
-            // Label - positioned absolutely, vertically centered on the y position
-            let half_label_height = config.label_font_size / 2.0;
             let label_div = div()
                 .absolute()
                 .left(px(tick_left + config.tick_size + config.tick_padding))
                 .top(relative(y_pos as f32))
-                .mt(px(-half_label_height))
-                .child(render_glyph_text(&label, &font_config));
+                .child(render_glyph_text_anchored(
+                    &label,
+                    &font_config,
+                    HorizontalTextAnchor::Start,
+                    VerticalTextAnchor::Middle,
+                ));
 
             [tick_mark.into_any_element(), label_div.into_any_element()]
         }))
