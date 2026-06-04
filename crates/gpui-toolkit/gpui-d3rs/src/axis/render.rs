@@ -3,8 +3,8 @@
 use super::{AxisConfig, AxisOrientation, AxisTheme};
 use crate::scale::Scale;
 use crate::text::{
-    render_glyph_text, render_glyph_text_anchored, GlyphTextConfig, HorizontalTextAnchor,
-    VerticalTextAnchor,
+    GlyphTextConfig, HorizontalTextAnchor, VerticalTextAnchor, render_glyph_text,
+    render_glyph_text_anchored,
 };
 use gpui::prelude::*;
 use gpui::*;

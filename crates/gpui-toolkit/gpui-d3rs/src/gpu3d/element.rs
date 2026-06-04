@@ -6,7 +6,7 @@ use super::config::SurfacePlotType;
 use super::data::SurfaceData;
 use super::mesh::SurfaceMesh;
 use super::renderer::Surface3DRenderer;
-use crate::text::{measure_glyph_text_width, paint_glyph_text_at};
+use crate::text::{GlyphTextConfig, HorizontalTextAnchor, VerticalTextAnchor, paint_chart_text_at};
 use gpui::*;
 use image::{Frame, RgbaImage};
 use std::cell::RefCell;
@@ -208,7 +208,7 @@ impl Element for Surface3DElement {
         _request_layout: &mut Self::RequestLayoutState,
         _prepaint: &mut Self::PrepaintState,
         window: &mut Window,
-        _cx: &mut App,
+        cx: &mut App,
     ) {
         // Register mouse event handlers (must be done during paint)
         let _state = self.state.clone();
@@ -277,13 +277,23 @@ impl Element for Surface3DElement {
         };
         // Re-use width/height f32 from above
 
+        let upright_rotation = |mut angle: f32| -> f32 {
+            while angle > std::f32::consts::FRAC_PI_2 {
+                angle -= std::f32::consts::PI;
+            }
+            while angle < -std::f32::consts::FRAC_PI_2 {
+                angle += std::f32::consts::PI;
+            }
+            angle
+        };
+
         let billboard_rotation = |pos: glam::Vec3| -> f32 {
             let (right, _) = camera.billboard_axes();
             if let (Some(a), Some(b)) = (
                 camera.project_to_screen(pos, width, height),
                 camera.project_to_screen(pos + right * 0.08, width, height),
             ) {
-                (b.y - a.y).atan2(b.x - a.x)
+                upright_rotation((b.y - a.y).atan2(b.x - a.x))
             } else {
                 0.0
             }
@@ -293,42 +303,23 @@ impl Element for Surface3DElement {
         let draw_label = |window: &mut Window,
                           text: String,
                           pos: glam::Vec3,
-                          align_right: bool,
-                          align_bottom: bool| {
+                          horizontal_anchor: HorizontalTextAnchor,
+                          vertical_anchor: VerticalTextAnchor| {
             if let Some(screen_pos) = camera.project_to_screen(pos, width, height) {
                 // Check if point is within reasonable bounds (not clipped)
                 if screen_pos.z >= 0.0 && screen_pos.z <= 1.0 {
-                    let mut x = screen_pos.x + f32::from(bounds.origin.x);
-                    let mut y = screen_pos.y + f32::from(bounds.origin.y);
-
                     let font_size = 10.0;
-                    let color = overlay_color;
-                    let text_width = measure_glyph_text_width(&text, font_size);
-
-                    // Simple alignment adjustment
-                    if align_right {
-                        x -= text_width;
-                    } else {
-                        x -= text_width / 2.0;
-                    }
-
-                    // Center vertically on point (approximate)
-                    y -= font_size / 2.0;
-
-                    if align_bottom {
-                        // If we want the text to be ABOVE the point, we subtract height
-                        // If we want it BELOW, we add?
-                        // Default is centered.
-                    }
-
-                    paint_glyph_text_at(
+                    let text_config =
+                        GlyphTextConfig::rotated(font_size, overlay_color, billboard_rotation(pos));
+                    paint_chart_text_at(
                         window,
+                        cx,
                         &text,
-                        x,
-                        y,
-                        font_size,
-                        color,
-                        billboard_rotation(pos),
+                        screen_pos.x + f32::from(bounds.origin.x),
+                        screen_pos.y + f32::from(bounds.origin.y),
+                        &text_config,
+                        horizontal_anchor,
+                        vertical_anchor,
                     );
                 }
             }
@@ -378,7 +369,6 @@ impl Element for Surface3DElement {
                         (to_screen(pos), to_screen(tick_end), to_screen(label_pos_3d))
                     {
                         let font_size = 8.0;
-                        let text_width = measure_glyph_text_width(&label, font_size);
 
                         // Compute tick direction in screen space
                         let tick_dx = tick_end_screen.x - tick_start_screen.x;
@@ -403,19 +393,20 @@ impl Element for Surface3DElement {
                             (0.0, font_size * 0.8)
                         };
 
-                        let screen_x = label_screen.x + f32::from(bounds.origin.x) + offset_x
-                            - text_width / 2.0;
-                        let screen_y = label_screen.y + f32::from(bounds.origin.y) + offset_y
-                            - font_size / 2.0;
-
-                        paint_glyph_text_at(
-                            window,
-                            &label,
-                            screen_x,
-                            screen_y,
+                        let text_config = GlyphTextConfig::rotated(
                             font_size,
                             overlay_color,
                             billboard_rotation(label_pos_3d),
+                        );
+                        paint_chart_text_at(
+                            window,
+                            cx,
+                            &label,
+                            label_screen.x + f32::from(bounds.origin.x) + offset_x,
+                            label_screen.y + f32::from(bounds.origin.y) + offset_y,
+                            &text_config,
+                            HorizontalTextAnchor::Middle,
+                            VerticalTextAnchor::Middle,
                         );
                     }
                 };
@@ -472,8 +463,8 @@ impl Element for Surface3DElement {
                     -0.5,
                     best_x_z_val + 0.4 * (if best_x_z_val > 0.0 { 1.0 } else { -1.0 }),
                 ),
-                false,
-                false,
+                HorizontalTextAnchor::Middle,
+                VerticalTextAnchor::Middle,
             );
 
             // Dynamic Z Axis (Angle)
@@ -528,8 +519,8 @@ impl Element for Surface3DElement {
                     -0.5,
                     0.0,
                 ),
-                false,
-                false,
+                HorizontalTextAnchor::Middle,
+                VerticalTextAnchor::Middle,
             );
 
             // Dynamic Y Axis (SPL)
@@ -593,8 +584,8 @@ impl Element for Surface3DElement {
                 window,
                 self.data.z_label.clone().unwrap_or("SPL".to_string()),
                 glam::Vec3::new(best_y_x * 1.4, 0.0, best_y_z * 1.4),
-                false,
-                false,
+                HorizontalTextAnchor::Middle,
+                VerticalTextAnchor::Middle,
             );
         } else if self.config.plot_type == SurfacePlotType::Spherical {
             // Helper to get screen position of a 3D point
@@ -637,7 +628,6 @@ impl Element for Surface3DElement {
                         (to_screen(pos), to_screen(tick_end), to_screen(label_pos_3d))
                     {
                         let font_size = 8.0;
-                        let text_width = measure_glyph_text_width(&label, font_size);
 
                         // Compute tick direction in screen space
                         let tick_dx = tick_end_screen.x - tick_start_screen.x;
@@ -658,19 +648,20 @@ impl Element for Surface3DElement {
                             (0.0, font_size * 0.8)
                         };
 
-                        let screen_x = label_screen.x + f32::from(bounds.origin.x) + offset_x
-                            - text_width / 2.0;
-                        let screen_y = label_screen.y + f32::from(bounds.origin.y) + offset_y
-                            - font_size / 2.0;
-
-                        paint_glyph_text_at(
-                            window,
-                            &label,
-                            screen_x,
-                            screen_y,
+                        let text_config = GlyphTextConfig::rotated(
                             font_size,
                             overlay_color,
                             billboard_rotation(label_pos_3d),
+                        );
+                        paint_chart_text_at(
+                            window,
+                            cx,
+                            &label,
+                            label_screen.x + f32::from(bounds.origin.x) + offset_x,
+                            label_screen.y + f32::from(bounds.origin.y) + offset_y,
+                            &text_config,
+                            HorizontalTextAnchor::Middle,
+                            VerticalTextAnchor::Middle,
                         );
                     }
                 };
@@ -809,14 +800,16 @@ impl Element for Surface3DElement {
 
                 // Draw label
                 let label = format!("{:.0}", value);
-                paint_glyph_text_at(
+                let text_config = GlyphTextConfig::horizontal(font_size, overlay_color);
+                paint_chart_text_at(
                     window,
+                    cx,
                     &label,
                     colorbar_x + colorbar_width + 6.0,
-                    y - font_size / 2.0,
-                    font_size,
-                    overlay_color,
-                    0.0,
+                    y,
+                    &text_config,
+                    HorizontalTextAnchor::Start,
+                    VerticalTextAnchor::Middle,
                 );
             }
 
@@ -824,15 +817,16 @@ impl Element for Surface3DElement {
             if let Some(ref z_label) = self.data.z_label {
                 let label_x = colorbar_x + colorbar_width / 2.0;
                 let label_y = colorbar_y - 15.0;
-                let text_width = measure_glyph_text_width(z_label, 10.0);
-                paint_glyph_text_at(
+                let text_config = GlyphTextConfig::horizontal(10.0, overlay_color);
+                paint_chart_text_at(
                     window,
+                    cx,
                     z_label,
-                    label_x - text_width / 2.0,
+                    label_x,
                     label_y,
-                    10.0,
-                    overlay_color,
-                    0.0,
+                    &text_config,
+                    HorizontalTextAnchor::Middle,
+                    VerticalTextAnchor::Middle,
                 );
             }
         }

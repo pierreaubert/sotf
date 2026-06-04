@@ -1,7 +1,12 @@
-//! Raster glyph text rendering for chart labels.
+//! Chart text rendering helpers.
 
-use gpui::{canvas, div, px, Corners, IntoElement, ParentElement, RenderImage, Rgba, Styled};
+use gpui::{
+    Corners, Hsla, IntoElement, ParentElement, RenderImage, Rgba, SharedString, Styled,
+    TransformationMatrix, canvas, div, px,
+};
 use image::{Frame, RgbaImage};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
 
 static DEFAULT_FONT: &[u8] = include_bytes!("../../assets/DejaVuSansMono.ttf");
@@ -9,6 +14,9 @@ static FONT: LazyLock<fontdue::Font> = LazyLock::new(|| {
     fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default())
         .expect("failed to parse embedded d3rs label font")
 });
+
+const CHART_FONT_FAMILY: &str =
+    "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
 
 #[derive(Debug, Clone)]
 pub struct GlyphTextConfig {
@@ -18,14 +26,14 @@ pub struct GlyphTextConfig {
     pub letter_spacing: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HorizontalTextAnchor {
     Start,
     Middle,
     End,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VerticalTextAnchor {
     Top,
     Middle,
@@ -89,8 +97,6 @@ struct RasterText {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
-    layout_width: f32,
-    layout_height: f32,
     paint_offset: [f32; 2],
     anchor: [f32; 2],
 }
@@ -102,6 +108,23 @@ struct RawMetrics {
     ink_max_x: f32,
     min_y: f32,
     max_y: f32,
+}
+
+#[derive(Debug, Clone)]
+struct ChartTextLayout {
+    svg: String,
+    cache_key: SharedString,
+    width: f32,
+    height: f32,
+    anchor: [f32; 2],
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LogicalTextBox {
+    width: f32,
+    height: f32,
+    baseline_y: f32,
+    anchor: [f32; 2],
 }
 
 pub fn measure_glyph_text_width(text: &str, font_size: f32) -> f32 {
@@ -134,15 +157,13 @@ pub fn render_glyph_text_anchored(
     horizontal_anchor: HorizontalTextAnchor,
     vertical_anchor: VerticalTextAnchor,
 ) -> impl IntoElement {
-    let text = text.to_string();
-    let config = config.clone();
-    let raster = rasterize_rotated_text(&text, &config, horizontal_anchor, vertical_anchor);
-    let width = raster.layout_width.max(1.0);
-    let height = raster.layout_height.max(1.0);
-    let raster_width = raster.width.max(1) as f32;
-    let raster_height = raster.height.max(1) as f32;
-    let paint_offset = raster.paint_offset;
-    let anchor = raster.anchor;
+    let layout = chart_text_layout(text, config, horizontal_anchor, vertical_anchor);
+    let width = layout.width.max(1.0);
+    let height = layout.height.max(1.0);
+    let anchor = layout.anchor;
+    let color = config.color;
+    let cache_key = layout.cache_key.clone();
+    let svg = layout.svg.clone();
 
     div()
         .relative()
@@ -152,19 +173,239 @@ pub fn render_glyph_text_anchored(
         .mt(px(-anchor[1]))
         .child(
             canvas(
-                move |_bounds, _, _cx| {},
-                move |bounds, _, window, _cx| {
-                    let raster =
-                        rasterize_rotated_text(&text, &config, horizontal_anchor, vertical_anchor);
-                    paint_raster(window, bounds, &raster);
+                move |_bounds, _window, _cx| svg.clone(),
+                move |bounds, svg, window, cx| {
+                    let _ = window.paint_svg(
+                        bounds,
+                        cache_key.clone(),
+                        Some(svg.as_bytes()),
+                        TransformationMatrix::unit(),
+                        Hsla::from(color),
+                        cx,
+                    );
                 },
             )
             .absolute()
-            .left(px(paint_offset[0]))
-            .top(px(paint_offset[1]))
-            .w(px(raster_width))
-            .h(px(raster_height)),
+            .left_0()
+            .top_0()
+            .w(px(width))
+            .h(px(height)),
         )
+}
+
+pub fn paint_chart_text_at(
+    window: &mut gpui::Window,
+    cx: &gpui::App,
+    text: &str,
+    x: f32,
+    y: f32,
+    config: &GlyphTextConfig,
+    horizontal_anchor: HorizontalTextAnchor,
+    vertical_anchor: VerticalTextAnchor,
+) {
+    let layout = chart_text_layout(text, config, horizontal_anchor, vertical_anchor);
+    let bounds = gpui::Bounds {
+        origin: gpui::point(px(x - layout.anchor[0]), px(y - layout.anchor[1])),
+        size: gpui::size(px(layout.width.max(1.0)), px(layout.height.max(1.0))),
+    };
+    let _ = window.paint_svg(
+        bounds,
+        layout.cache_key,
+        Some(layout.svg.as_bytes()),
+        TransformationMatrix::unit(),
+        Hsla::from(config.color),
+        cx,
+    );
+}
+
+fn chart_text_layout(
+    text: &str,
+    config: &GlyphTextConfig,
+    horizontal_anchor: HorizontalTextAnchor,
+    vertical_anchor: VerticalTextAnchor,
+) -> ChartTextLayout {
+    let logical = logical_text_box(text, config, horizontal_anchor, vertical_anchor);
+    let padding = chart_text_padding(config.font_size);
+    let cos_r = config.rotation.cos();
+    let sin_r = config.rotation.sin();
+    let corners = [
+        [0.0, 0.0],
+        [logical.width, 0.0],
+        [0.0, logical.height],
+        [logical.width, logical.height],
+    ];
+
+    let rotate_point = |point: [f32; 2]| -> [f32; 2] {
+        let dx = point[0] - logical.anchor[0];
+        let dy = point[1] - logical.anchor[1];
+        [
+            logical.anchor[0] + dx * cos_r - dy * sin_r,
+            logical.anchor[1] + dx * sin_r + dy * cos_r,
+        ]
+    };
+
+    let mut min_x = logical.anchor[0];
+    let mut max_x = logical.anchor[0];
+    let mut min_y = logical.anchor[1];
+    let mut max_y = logical.anchor[1];
+    for corner in corners {
+        let rotated = rotate_point(corner);
+        min_x = min_x.min(rotated[0]);
+        max_x = max_x.max(rotated[0]);
+        min_y = min_y.min(rotated[1]);
+        max_y = max_y.max(rotated[1]);
+    }
+
+    let width = (max_x - min_x + padding * 2.0).ceil().max(1.0);
+    let height = (max_y - min_y + padding * 2.0).ceil().max(1.0);
+    let translate_x = padding - min_x;
+    let translate_y = padding - min_y;
+    let anchor = [
+        logical.anchor[0] + translate_x,
+        logical.anchor[1] + translate_y,
+    ];
+    let svg = chart_text_svg(
+        text,
+        config,
+        &logical,
+        width,
+        height,
+        translate_x,
+        translate_y,
+    );
+    let cache_key = chart_text_cache_key(
+        text,
+        config,
+        horizontal_anchor,
+        vertical_anchor,
+        width,
+        height,
+    );
+
+    ChartTextLayout {
+        svg,
+        cache_key,
+        width,
+        height,
+        anchor,
+    }
+}
+
+fn logical_text_box(
+    text: &str,
+    config: &GlyphTextConfig,
+    horizontal_anchor: HorizontalTextAnchor,
+    vertical_anchor: VerticalTextAnchor,
+) -> LogicalTextBox {
+    let raw = measure_raw(text, config.font_size, config.letter_spacing);
+    let width = raw.width.max(1.0);
+    let height = chart_line_height(config.font_size);
+    let baseline_y = chart_baseline_y(config.font_size, height);
+    let anchor = [
+        horizontal_anchor_offset(width, horizontal_anchor),
+        match vertical_anchor {
+            VerticalTextAnchor::Top => 0.0,
+            VerticalTextAnchor::Middle => height / 2.0,
+            VerticalTextAnchor::Alphabetic => baseline_y,
+            VerticalTextAnchor::Bottom => height,
+        },
+    ];
+
+    LogicalTextBox {
+        width,
+        height,
+        baseline_y,
+        anchor,
+    }
+}
+
+fn chart_line_height(font_size: f32) -> f32 {
+    (font_size * 1.25).ceil().max(1.0)
+}
+
+fn chart_baseline_y(font_size: f32, line_height: f32) -> f32 {
+    (font_size * 0.85).ceil().clamp(0.0, line_height)
+}
+
+fn chart_text_padding(font_size: f32) -> f32 {
+    (font_size * 0.75).ceil().max(4.0)
+}
+
+fn chart_text_svg(
+    text: &str,
+    config: &GlyphTextConfig,
+    logical: &LogicalTextBox,
+    width: f32,
+    height: f32,
+    translate_x: f32,
+    translate_y: f32,
+) -> String {
+    let escaped = escape_svg_text(text);
+    let text_anchor = svg_text_anchor(logical.anchor[0], logical.width);
+    let letter_spacing = if config.letter_spacing.abs() > f32::EPSILON {
+        format!(r#" letter-spacing="{:.3}px""#, config.letter_spacing)
+    } else {
+        String::new()
+    };
+    let rotation = config.rotation.to_degrees();
+
+    format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width:.3}" height="{height:.3}" viewBox="0 0 {width:.3} {height:.3}">
+<g transform="translate({translate_x:.3} {translate_y:.3}) rotate({rotation:.6} {anchor_x:.3} {anchor_y:.3})">
+<text x="{anchor_x:.3}" y="{baseline_y:.3}" text-anchor="{text_anchor}" dominant-baseline="alphabetic" font-family="{font_family}" font-size="{font_size:.3}" fill="black" xml:space="preserve"{letter_spacing}>{escaped}</text>
+</g>
+</svg>"#,
+        anchor_x = logical.anchor[0],
+        anchor_y = logical.anchor[1],
+        baseline_y = logical.baseline_y,
+        font_family = CHART_FONT_FAMILY,
+        font_size = config.font_size,
+    )
+}
+
+fn svg_text_anchor(anchor_x: f32, width: f32) -> &'static str {
+    if anchor_x <= 0.0 {
+        "start"
+    } else if anchor_x >= width {
+        "end"
+    } else {
+        "middle"
+    }
+}
+
+fn escape_svg_text(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&apos;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn chart_text_cache_key(
+    text: &str,
+    config: &GlyphTextConfig,
+    horizontal_anchor: HorizontalTextAnchor,
+    vertical_anchor: VerticalTextAnchor,
+    width: f32,
+    height: f32,
+) -> SharedString {
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    config.font_size.to_bits().hash(&mut hasher);
+    config.rotation.to_bits().hash(&mut hasher);
+    config.letter_spacing.to_bits().hash(&mut hasher);
+    horizontal_anchor.hash(&mut hasher);
+    vertical_anchor.hash(&mut hasher);
+    width.to_bits().hash(&mut hasher);
+    height.to_bits().hash(&mut hasher);
+    SharedString::from(format!("d3rs-chart-text:{:016x}", hasher.finish()))
 }
 
 pub fn paint_glyph_text_at(
@@ -232,9 +473,14 @@ fn measure_raw(text: &str, font_size: f32, letter_spacing: f32) -> RawMetrics {
         }
     }
 
+    let heuristic_width = heuristic_text_width(text, font_size, letter_spacing);
+    width = width.max(heuristic_width);
+
     if !ink_min_x.is_finite() || !ink_max_x.is_finite() || ink_min_x >= ink_max_x {
         ink_min_x = 0.0;
         ink_max_x = width.max(1.0);
+    } else {
+        ink_max_x = ink_max_x.max(width);
     }
 
     if !min_y.is_finite() || !max_y.is_finite() || min_y >= max_y {
@@ -249,6 +495,58 @@ fn measure_raw(text: &str, font_size: f32, letter_spacing: f32) -> RawMetrics {
         min_y,
         max_y,
     }
+}
+
+fn heuristic_text_width(text: &str, font_size: f32, letter_spacing: f32) -> f32 {
+    let mut width = 0.0;
+    let mut visible_count = 0usize;
+    for ch in text.chars() {
+        if is_combining_mark(ch) {
+            continue;
+        }
+        visible_count += 1;
+        width += if ch.is_ascii() {
+            0.0
+        } else if is_wide_char(ch) || is_emoji_hint(ch) {
+            font_size
+        } else {
+            font_size * 0.65
+        };
+    }
+    if visible_count > 1 {
+        width += letter_spacing * (visible_count - 1) as f32;
+    }
+    width
+}
+
+fn is_combining_mark(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x0300..=0x036f
+            | 0x1ab0..=0x1aff
+            | 0x1dc0..=0x1dff
+            | 0x20d0..=0x20ff
+            | 0xfe20..=0xfe2f
+    )
+}
+
+fn is_wide_char(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x1100..=0x11ff
+            | 0x2e80..=0xa4cf
+            | 0xac00..=0xd7af
+            | 0xf900..=0xfaff
+            | 0xfe10..=0xfe19
+            | 0xfe30..=0xfe6f
+            | 0xff00..=0xff60
+            | 0xffe0..=0xffe6
+            | 0x1f300..=0x1faff
+    )
+}
+
+fn is_emoji_hint(ch: char) -> bool {
+    matches!(ch as u32, 0x2600..=0x27bf | 0x1f000..=0x1faff)
 }
 
 fn glyph_advance(metrics: &fontdue::Metrics) -> f32 {
@@ -319,8 +617,6 @@ fn rasterize_text(
         width,
         height,
         pixels,
-        layout_width,
-        layout_height,
         paint_offset: [raw.ink_min_x - padding, -padding],
         anchor: [
             horizontal_anchor_offset(layout_width, horizontal_anchor),
@@ -407,8 +703,6 @@ fn rotate_raster(src: &RasterText, rotation: f32) -> RasterText {
         width: dst_w,
         height: dst_h,
         pixels: dst,
-        layout_width: dst_w as f32,
-        layout_height: dst_h as f32,
         paint_offset: [0.0, 0.0],
         anchor: [dst_cx + anchor_rx, dst_cy + anchor_ry],
     }

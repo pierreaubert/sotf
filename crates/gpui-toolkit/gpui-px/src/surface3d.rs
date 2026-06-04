@@ -353,4 +353,17 @@ mod tests {
         let result = surface3d(&z, 2, 2).x(&x).y(&y).build();
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_surface3d_with_unicode_labels() {
+        let z = vec![1.0, 2.0, 3.0, 4.0];
+        let result = surface3d(&z, 2, 2)
+            .title("Cafe\u{301} \u{00b1}3 dB")
+            .x_label("Elevation (\u{00b0})")
+            .y_label("\u{65e5}\u{672c}\u{8a9e}")
+            .z_label("\u{3bc}Pa")
+            .build();
+
+        assert!(result.is_ok());
+    }
 }
