@@ -203,6 +203,7 @@ impl PlayerView {
         Menu::new(
             "view-menu",
             vec![
+                MenuItem::new("home", "Home"),
                 MenuItem::new("now-playing", translations.queue_now_playing)
                     .with_shortcut(format!("{MOD_PREFIX}0")),
                 MenuItem::new("library", translations.screen_library),

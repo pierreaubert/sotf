@@ -6,7 +6,8 @@ impl Screen {
     /// Returns the maturity level of this screen.
     pub fn maturity(&self) -> ReleaseChannel {
         match self {
-            Screen::Library
+            Screen::Home
+            | Screen::Library
             | Screen::NowPlaying
             | Screen::Queue
             | Screen::Spectrum

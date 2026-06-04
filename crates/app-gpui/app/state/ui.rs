@@ -12,6 +12,7 @@ use crate::app::{ActiveMenu, InputMode, LayoutMode, Screen, SettingsTab};
 use gpui::EventEmitter;
 use gpui_themes::{AccessibilityPalette, ThemeModePreference};
 use sotf_audio_player::ReleaseChannel;
+use std::collections::BTreeSet;
 
 #[derive(Debug, Clone)]
 pub struct LayoutState {
@@ -158,6 +159,7 @@ pub struct UIState {
     pub show_studio_menu: bool,
     pub primary_nav_collapsed: bool,
     pub footer_collapsed: bool,
+    pub expanded_home_sections: BTreeSet<String>,
     pub pending_studio_close: bool,
     pub should_quit: bool,
     pub startup_db_check_done: bool,
@@ -184,7 +186,7 @@ pub struct UIState {
 impl Default for UIState {
     fn default() -> Self {
         Self {
-            current_screen: Screen::NowPlaying,
+            current_screen: Screen::Home,
             last_screen: Screen::Library,
             input_mode: InputMode::Normal,
             active_menu: ActiveMenu::None,
@@ -211,6 +213,7 @@ impl Default for UIState {
             show_studio_menu: false,
             primary_nav_collapsed: false,
             footer_collapsed: false,
+            expanded_home_sections: BTreeSet::new(),
             pending_studio_close: false,
             should_quit: false,
             startup_db_check_done: false,

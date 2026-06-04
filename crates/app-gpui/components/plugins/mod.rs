@@ -119,7 +119,12 @@ pub fn render_plugin_content(
         let window_width = state.app.ui_state.window_width;
         let is_standalone = state.app.ui_state.current_screen == crate::app::Screen::Studio;
         let content_width = if is_standalone {
-            window_width
+            let nav_width = if state.app.ui_state.primary_nav_collapsed {
+                60.0
+            } else {
+                192.0
+            };
+            (window_width - nav_width).max(300.0)
         } else {
             let layout_state = state.layout.read(cx);
             let rack_ratio = if layout_state.rack_panel_collapsed {

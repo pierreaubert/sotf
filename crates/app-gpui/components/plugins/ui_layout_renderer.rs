@@ -6,11 +6,10 @@
 //!
 //! Layout:
 //! ```text
-//! +------------------+--------------------------------------------+------------------+
-//! | CONFIG           | MAIN (groups side-by-side or stacked)       | OUTPUT           |
-//! |                  +--------------------------------------------+                  |
-//! |                  | [Tab1] [Tab2] ...  (+ collapsed columns)   |                  |
-//! +------------------+--------------------------------------------+------------------+
+//! +--------------------------------------------+------------------+
+//! | MAIN (groups side-by-side or stacked)       | OUTPUT           |
+//! | [Tab1] [Tab2] ...  (+ collapsed groups)    |                  |
+//! +--------------------------------------------+------------------+
 //! ```
 
 use super::actions::{OpenIrFile, OpenSofaFile};
@@ -149,13 +148,79 @@ pub fn render_main_controls_from_layout(
     .into_any_element()
 }
 
+/// Render only setup/output controls for use in the rack configuration
+/// popover. The main plugin surface intentionally stays focused on the
+/// primary controls; setup and generated output controls live behind the gear.
+#[allow(clippy::too_many_arguments)]
+pub fn render_config_controls_from_layout(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    settings: &PluginSettings,
+    is_editing: bool,
+    selected_param: usize,
+    available_width: f32,
+    theme: &Theme,
+    plugin_theme: &PluginTheme,
+) -> Option<AnyElement> {
+    let layout = settings.layout()?;
+    if layout.config.is_empty() && layout.output.is_empty() {
+        return None;
+    }
+
+    let params = settings.param_specs();
+    let values: Vec<f64> = (0..params.len())
+        .map(|i| settings.param_value(i).unwrap_or(0.0))
+        .collect();
+    let file_paths = extract_file_paths(params, settings);
+    let solved = solve_layout(layout.column_constraints, available_width);
+    let chassis_theme = plugin_theme.apply_to(theme);
+
+    let mut content = div().flex().flex_col().gap(d.section);
+    if !layout.config.is_empty() {
+        content = content.child(render_config_column(
+            d,
+            entity.clone(),
+            plugin_idx,
+            "CONFIG",
+            layout.config,
+            params,
+            &values,
+            &file_paths,
+            is_editing,
+            selected_param,
+            available_width.max(AUTO_COLUMN_MIN_SIDE_WIDTH),
+            solved.knob_size,
+            &chassis_theme,
+        ));
+    }
+    if !layout.output.is_empty() {
+        content = content.child(render_config_column(
+            d,
+            entity,
+            plugin_idx,
+            "OUTPUT",
+            layout.output,
+            params,
+            &values,
+            &file_paths,
+            is_editing,
+            selected_param,
+            available_width.max(AUTO_COLUMN_MIN_SIDE_WIDTH),
+            solved.knob_size,
+            &chassis_theme,
+        ));
+    }
+
+    Some(content.into_any_element())
+}
+
 // ============================================================================
 // Internal Rendering
 // ============================================================================
 
 const AUTO_COLUMN_MIN_SIDE_WIDTH: f32 = 180.0;
 const AUTO_COLUMN_MIN_MAIN_WIDTH: f32 = 260.0;
-const AUTO_COLUMN_DIVIDER_WIDTH: f32 = 6.0;
 
 fn control_column_width(knob_size: KnobSize) -> f32 {
     match knob_size {
@@ -172,43 +237,6 @@ fn visible_control_count(group: &ControlGroup) -> usize {
 fn auto_side_max_width(available_width: f32, other_side_width: f32, divider_total: f32) -> f32 {
     (available_width - other_side_width - divider_total - AUTO_COLUMN_MIN_MAIN_WIDTH)
         .max(AUTO_COLUMN_MIN_SIDE_WIDTH)
-}
-
-fn clamp_auto_side_width(
-    width: f32,
-    available_width: f32,
-    other_side_width: f32,
-    divider_total: f32,
-) -> f32 {
-    width.clamp(
-        AUTO_COLUMN_MIN_SIDE_WIDTH,
-        auto_side_max_width(available_width, other_side_width, divider_total),
-    )
-}
-
-fn auto_column_divider(
-    id: &'static str,
-    plugin_idx: usize,
-    divider_type: crate::app::state::DividerType,
-    start_width: f32,
-    theme: PaneDividerTheme,
-    entity: Entity<AppState>,
-) -> impl IntoElement {
-    PaneDivider::vertical(
-        SharedString::from(format!("plugin-auto-{plugin_idx}-{id}")),
-        CollapseDirection::Left,
-    )
-    .theme(theme)
-    .thickness(px(AUTO_COLUMN_DIVIDER_WIDTH))
-    .on_drag_start(move |pos, _window, cx| {
-        entity.update(cx, |state, _| {
-            state.app.dragging_divider = Some(crate::app::state::DividerDragState {
-                divider_type,
-                start_x: pos,
-                start_width,
-            });
-        });
-    })
 }
 
 fn auto_tab_divider(plugin_idx: usize, theme: PaneDividerTheme) -> impl IntoElement {
@@ -247,55 +275,9 @@ fn render_solved_layout(
         .size_full()
         .bg(theme.background);
 
-    let has_config_column = solved
-        .columns
-        .iter()
-        .any(|col| col.role == ColumnRole::Config && layout.has_config());
-    let has_output_column = solved
-        .columns
-        .iter()
-        .any(|col| col.role == ColumnRole::Output && layout.has_output());
-    let divider_count = usize::from(has_config_column) + usize::from(has_output_column);
-    let divider_total = AUTO_COLUMN_DIVIDER_WIDTH * divider_count as f32;
-    let solved_config_width = solved.column_width(ColumnRole::Config).unwrap_or(0.0);
-    let solved_output_width = solved.column_width(ColumnRole::Output).unwrap_or(0.0);
-
-    let output_width = if has_output_column {
-        clamp_auto_side_width(
-            output_width_override.unwrap_or(solved_output_width),
-            available_width,
-            solved_config_width,
-            divider_total,
-        )
-    } else {
-        0.0
-    };
-    let config_width = if has_config_column {
-        clamp_auto_side_width(
-            config_width_override.unwrap_or(solved_config_width),
-            available_width,
-            output_width,
-            divider_total,
-        )
-    } else {
-        0.0
-    };
-    let main_width = (available_width - config_width - output_width - divider_total)
-        .max(AUTO_COLUMN_MIN_MAIN_WIDTH);
-
-    let divider_theme = PaneDividerTheme {
-        background: theme.background,
-        background_hover: theme.surface_hover,
-        background_collapsed: theme.surface,
-        foreground: theme.text_muted,
-        foreground_hover: theme.text_secondary,
-        border: theme.border,
-        tint: Rgba {
-            a: 0.42,
-            ..theme.accent
-        },
-        tint_hover: theme.accent,
-    };
+    let _config_width_override = config_width_override;
+    let _output_width_override = output_width_override;
+    let main_width = available_width.max(AUTO_COLUMN_MIN_MAIN_WIDTH);
 
     let row_entity = entity.clone();
     let mut row = div()
@@ -318,9 +300,8 @@ fn render_solved_layout(
                             .plugin_auto_output_width
                             .get(&plugin_idx)
                             .copied()
-                            .unwrap_or(output_width);
-                        let max_width =
-                            auto_side_max_width(available_width, current_output, divider_total);
+                            .unwrap_or(0.0);
+                        let max_width = auto_side_max_width(available_width, current_output, 0.0);
                         let new_width = (drag.start_width + mouse_x - drag.start_x)
                             .clamp(AUTO_COLUMN_MIN_SIDE_WIDTH, max_width);
                         state
@@ -336,9 +317,8 @@ fn render_solved_layout(
                             .plugin_auto_config_width
                             .get(&plugin_idx)
                             .copied()
-                            .unwrap_or(config_width);
-                        let max_width =
-                            auto_side_max_width(available_width, current_config, divider_total);
+                            .unwrap_or(0.0);
+                        let max_width = auto_side_max_width(available_width, current_config, 0.0);
                         let new_width = (drag.start_width - (mouse_x - drag.start_x))
                             .clamp(AUTO_COLUMN_MIN_SIDE_WIDTH, max_width);
                         state
@@ -369,31 +349,6 @@ fn render_solved_layout(
             }
         });
 
-    if has_config_column {
-        row = row.child(render_config_column(
-            d,
-            entity.clone(),
-            plugin_idx,
-            layout.config,
-            params,
-            values,
-            file_paths,
-            is_editing,
-            selected_param,
-            config_width,
-            solved.knob_size,
-            theme,
-        ));
-        row = row.child(auto_column_divider(
-            "config-main",
-            plugin_idx,
-            crate::app::state::DividerType::PluginAutoConfig { plugin_idx },
-            config_width,
-            divider_theme.clone(),
-            entity.clone(),
-        ));
-    }
-
     row = row.child(render_main_column(
         d,
         entity.clone(),
@@ -412,32 +367,6 @@ fn render_solved_layout(
         theme,
         true,
     ));
-
-    if has_output_column {
-        row = row.child(auto_column_divider(
-            "main-output",
-            plugin_idx,
-            crate::app::state::DividerType::PluginAutoOutput { plugin_idx },
-            output_width,
-            divider_theme,
-            entity.clone(),
-        ));
-        row = row.child(render_output_column(
-            d,
-            entity.clone(),
-            plugin_idx,
-            layout.output,
-            params,
-            values,
-            file_paths,
-            is_editing,
-            selected_param,
-            plugin_data,
-            output_width,
-            solved.knob_size,
-            theme,
-        ));
-    }
 
     root = root.child(row);
 
@@ -486,6 +415,7 @@ fn render_config_column(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
+    title: &str,
     controls: &[ControlSpec],
     params: &[ParamSpec],
     values: &[f64],
@@ -497,7 +427,7 @@ fn render_config_column(
     theme: &Theme,
 ) -> impl IntoElement {
     let mut col = div().flex().flex_col().gap(d.gap).w(px(width)).flex_none();
-    col = col.child(render_section_title(d, "CONFIG", theme));
+    col = col.child(render_section_title(d, title, theme));
     for spec in controls {
         if spec.hidden {
             continue;
@@ -727,46 +657,6 @@ fn render_main_column(
     }
 
     center
-}
-
-/// Render the output (right) column.
-fn render_output_column(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    controls: &[ControlSpec],
-    params: &[ParamSpec],
-    values: &[f64],
-    file_paths: &HashMap<usize, String>,
-    is_editing: bool,
-    selected_param: usize,
-    plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
-    width: f32,
-    knob_size: KnobSize,
-    theme: &Theme,
-) -> impl IntoElement {
-    let mut col = div().flex().flex_col().gap(d.gap).w(px(width)).flex_none();
-    col = col.child(render_section_title(d, "OUTPUT", theme));
-    for spec in controls {
-        if spec.hidden {
-            continue;
-        }
-        col = col.child(render_control(
-            d,
-            entity.clone(),
-            plugin_idx,
-            spec,
-            params,
-            values,
-            file_paths,
-            is_editing,
-            selected_param,
-            plugin_data,
-            knob_size,
-            theme,
-        ));
-    }
-    col
 }
 
 /// Render a control group (titled section with controls).
@@ -1871,7 +1761,7 @@ fn detect_mode_selector(
 /// Collect all tabs: explicit LAYOUT tabs + collapsed column content.
 fn collect_all_tabs(
     layout: &'static PluginLayout,
-    solved: &SolvedLayout,
+    _solved: &SolvedLayout,
     overflow_groups: &[&'static ControlGroup],
 ) -> Vec<LayoutTab> {
     let mut tabs: Vec<LayoutTab> = Vec::new();
@@ -1890,25 +1780,6 @@ fn collect_all_tabs(
                 name: group.title,
                 content: LayoutTabContent::Group(group),
             });
-        }
-    }
-
-    // Collapsed columns become tabs
-    for collapsed in &solved.collapsed_tabs {
-        match collapsed.role {
-            ColumnRole::Config if layout.has_config() => {
-                tabs.push(LayoutTab {
-                    name: "Config",
-                    content: LayoutTabContent::Controls(layout.config),
-                });
-            }
-            ColumnRole::Output if layout.has_output() => {
-                tabs.push(LayoutTab {
-                    name: "Output",
-                    content: LayoutTabContent::Controls(layout.output),
-                });
-            }
-            _ => {}
         }
     }
 

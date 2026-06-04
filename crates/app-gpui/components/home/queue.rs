@@ -8,7 +8,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui::{InteractiveElement, Styled};
 use gpui_ui_kit::{
-    Accordion, AccordionItem, AccordionMode, Button, CollapseDirection, PaneDivider,
+    Accordion, AccordionItem, AccordionMode, Button, ButtonSize, CollapseDirection, PaneDivider,
     PaneDividerTheme, StackSpacing, Text, TextSize, VStack,
 };
 
@@ -75,15 +75,38 @@ impl PlayerView {
             .size_full()
             .overflow_hidden()
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
-                let (is_dragging_lufs, anchor_pos, anchor_lufs_ratio) = {
+                let (
+                    is_dragging_meters,
+                    is_dragging_lufs,
+                    anchor_pos,
+                    anchor_meters_ratio,
+                    anchor_lufs_ratio,
+                ) = {
                     let state = view.state.read(cx);
                     let layout = state.layout.read(cx);
                     (
+                        layout.is_dragging_meters_divider,
                         layout.is_dragging_lufs_divider,
                         layout.drag_anchor_pos,
+                        layout.drag_anchor_meters_ratio,
                         layout.drag_anchor_lufs_ratio,
                     )
                 };
+
+                if is_dragging_meters {
+                    let window_width: f32 = window.bounds().size.width.into();
+                    if window_width > 0.0 {
+                        let mouse_x: f32 = event.position.x.into();
+                        let dx = mouse_x - anchor_pos;
+                        let new_ratio =
+                            (anchor_meters_ratio - dx / window_width).clamp(0.10, 0.60);
+                        view.state.update(cx, |state, cx| {
+                            state.layout.update(cx, |layout, _| {
+                                layout.meters_panel_ratio = new_ratio;
+                            });
+                        });
+                    }
+                }
 
                 if is_dragging_lufs {
                     let window_height: f32 = window.bounds().size.height.into();
@@ -104,7 +127,9 @@ impl PlayerView {
                 cx.listener(|view, _event: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, cx| {
                         state.layout.update(cx, |layout, _| {
-                            if layout.is_dragging_lufs_divider {
+                            if layout.is_dragging_meters_divider || layout.is_dragging_lufs_divider
+                            {
+                                layout.is_dragging_meters_divider = false;
                                 layout.is_dragging_lufs_divider = false;
                                 if let Err(e) = state.app.save_config(layout) {
                                     log::warn!("Failed to save panel layout: {}", e);
@@ -437,7 +462,8 @@ impl PlayerView {
                                 "{} ({} {})",
                                 translations.queue_title, queue_len, translations.queue_albums
                             )),
-                    ),
+                    )
+                    .child(self.render_magic_radio_button(cx)),
             )
             .child(
                 div()
@@ -527,36 +553,27 @@ impl PlayerView {
                         )
                     }),
             )
-            .child(
-                div()
-                    .p(d.pad_y)
-                    .border_t_1()
-                    .border_color(theme.border)
-                    .child(
-                        Button::new("magic-radio-btn", "Magic Radio")
-                            .full_width(true)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(
-                                |view, _event: &ClickEvent, _window, cx| {
-                                    log::info!("[Queue] Magic Radio button clicked");
-                                    view.state.update(cx, |state, _cx| {
-                                        match state.app.fill_queue_magic() {
-                                            Ok(count) => {
-                                                log::info!(
-                                                    "[Queue] Magic Radio added {} tracks",
-                                                    count
-                                                );
-                                            }
-                                            Err(e) => {
-                                                log::error!("[Queue] Magic Radio error: {}", e);
-                                            }
-                                        }
-                                    });
-                                    cx.notify();
-                                },
-                            )),
-                    ),
-            )
+    }
+
+    fn render_magic_radio_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
+
+        Button::new("magic-radio-btn", "Magic Radio")
+            .size(ButtonSize::Xs)
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                log::info!("[Queue] Magic Radio button clicked");
+                view.state
+                    .update(cx, |state, _cx| match state.app.fill_queue_magic() {
+                        Ok(count) => {
+                            log::info!("[Queue] Magic Radio added {} tracks", count);
+                        }
+                        Err(e) => {
+                            log::error!("[Queue] Magic Radio error: {}", e);
+                        }
+                    });
+                cx.notify();
+            }))
     }
 
     fn render_queue_album_detail(

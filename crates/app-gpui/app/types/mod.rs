@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
+    Home,
     NowPlaying,
     Library,
     Queue,
@@ -23,6 +24,7 @@ pub enum Screen {
 impl Screen {
     pub fn primary_destinations() -> &'static [Self] {
         const DESTINATIONS: &[Screen] = &[
+            Screen::Home,
             Screen::NowPlaying,
             Screen::Library,
             Screen::Queue,
@@ -40,7 +42,14 @@ impl Screen {
             return index;
         }
 
-        if self.is_studio_tool() { 3 } else { 0 }
+        if self.is_studio_tool() {
+            Self::primary_destinations()
+                .iter()
+                .position(|screen| *screen == Screen::Studio)
+                .unwrap_or(0)
+        } else {
+            0
+        }
     }
 
     pub fn is_studio_tool(self) -> bool {
@@ -58,6 +67,7 @@ impl Screen {
     pub fn from_view_menu_id(id: &str) -> Option<Self> {
         match id {
             "now-playing" => Some(Screen::NowPlaying),
+            "home" => Some(Screen::Home),
             "library" => Some(Screen::Library),
             "queue" => Some(Screen::Queue),
             "studio" => Some(Screen::Studio),

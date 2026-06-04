@@ -7,7 +7,10 @@ use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
-use crate::ui::ALBUM_CARD_WIDTH_REMS;
+use crate::ui::{
+    ALBUM_CARD_WIDTH_REMS, DEFAULT_MIN_FONT_SIZE_PX, combined_scale_bounds,
+    compute_responsive_scale,
+};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -99,14 +102,55 @@ impl AlbumCard {
 }
 
 impl RenderOnce for AlbumCard {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let d = Ds::from_cx(cx);
+        let fallback_rem_px: f32 = window.rem_size().into();
+        let typography = self
+            .state
+            .as_ref()
+            .map(|state| {
+                let state = state.read(cx);
+                let ui = &state.app.ui_state;
+                let responsive_scale = compute_responsive_scale(ui.window_width, ui.window_height);
+                let (scale_min, scale_max) =
+                    combined_scale_bounds(ui.min_font_size_px, ui.max_font_size_px);
+                let effective_rem_px =
+                    16.0 * (ui.font_scale * responsive_scale).clamp(scale_min, scale_max);
+                (
+                    ui.min_font_size_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX),
+                    effective_rem_px,
+                )
+            })
+            .unwrap_or((DEFAULT_MIN_FONT_SIZE_PX, fallback_rem_px));
+        let text_sizes = AlbumCardTextSizes::from_design(d, typography.0, typography.1);
+
         match self.mode {
-            AlbumCardMode::Grid => self.render_grid(d),
-            AlbumCardMode::List => self.render_list(d),
-            AlbumCardMode::Compact => self.render_compact(d),
+            AlbumCardMode::Grid => self.render_grid(d, text_sizes),
+            AlbumCardMode::List => self.render_list(d, text_sizes),
+            AlbumCardMode::Compact => self.render_compact(d, text_sizes),
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct AlbumCardTextSizes {
+    title: Rems,
+    body: Rems,
+    metadata: Rems,
+}
+
+impl AlbumCardTextSizes {
+    fn from_design(d: Ds, min_font_size_px: f32, effective_rem_px: f32) -> Self {
+        Self {
+            title: text_size_at_least(d.text_base, min_font_size_px, effective_rem_px),
+            body: text_size_at_least(d.text_base, min_font_size_px, effective_rem_px),
+            metadata: text_size_at_least(d.text_sm, min_font_size_px, effective_rem_px),
+        }
+    }
+}
+
+fn text_size_at_least(size: Rems, min_font_size_px: f32, effective_rem_px: f32) -> Rems {
+    rems(size.0.max(min_font_size_px / effective_rem_px.max(1.0)))
 }
 
 /// Format sample rate and bit depth for display (e.g., "24/44.1k", "16/48k")
@@ -216,6 +260,7 @@ impl AlbumCard {
         theme: &Theme,
         state: &Option<Entity<AppState>>,
         d: &Ds,
+        metadata_text_size: Rems,
     ) -> impl IntoElement {
         let format = Self::get_format(album);
         let sample_info = Self::format_sample_info(album);
@@ -226,51 +271,66 @@ impl AlbumCard {
         div()
             .flex()
             .items_center()
-            .gap(d.grid)
-            .text_size(d.text_xs)
+            .justify_between()
+            .w_full()
+            .gap(d.gap)
+            .text_size(metadata_text_size)
             .text_color(theme.text_muted)
-            // Format (e.g., FLAC) - no wrapper div needed
-            .when_some(format, |el, fmt| el.child(fmt))
-            // Sample rate info (e.g., 24/44.1k)
-            .when_some(sample_info, |el, info| el.child(info))
-            // Channel layout/count for non-stereo albums (e.g., 5.1, 10ch)
-            .when_some(channel_info, |el, info| el.child(info))
-            // Dynamic range with icon
-            .when_some(dr, |el, dr_val| {
-                el.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_px()
-                        .child(
-                            Icon::new(IconName::AudioWaveform)
-                                .xs()
-                                .color(theme.text_muted),
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .items_center()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .gap(d.grid)
+                    // Format (e.g., FLAC) - no wrapper div needed
+                    .when_some(format, |el, fmt| el.child(fmt))
+                    // Sample rate info (e.g., 24/44.1k)
+                    .when_some(sample_info, |el, info| el.child(info))
+                    // Channel layout/count for non-stereo albums (e.g., 5.1, 10ch)
+                    .when_some(channel_info, |el, info| el.child(info))
+                    // Dynamic range with icon
+                    .when_some(dr, |el, dr_val| {
+                        el.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_px()
+                                .child(
+                                    Icon::new(IconName::AudioWaveform)
+                                        .xs()
+                                        .color(theme.text_muted),
+                                )
+                                .child(dr_val),
                         )
-                        .child(dr_val),
-                )
-            })
-            // Track count
-            .child("#")
-            .child(track_count.to_string())
+                    })
+                    // Track count
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_px()
+                            .child("#")
+                            .child(track_count.to_string()),
+                    ),
+            )
             // Favorite heart (always visible)
-            .child(Self::build_heart_icon(album, index, theme, state))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .child(Self::build_heart_icon(album, index, theme, state)),
+            )
     }
 
-    fn render_grid(self, d: Ds) -> AnyElement {
+    fn render_grid(self, d: Ds, text_sizes: AlbumCardTextSizes) -> AnyElement {
         // Card and thumbnail share the same width (card is sized by its thumbnail)
         let size_rems = ALBUM_CARD_WIDTH_REMS;
         let theme = self.theme;
         let album = self.album;
         let index = self.index;
         let state = self.state;
-
-        // Metadata for grid view (smaller font)
-        let format = Self::get_format(&album);
-        let sample_info = Self::format_sample_info(&album);
-        let channel_info = Self::format_channel_info(&album);
-        let dr = Self::format_dr(album.dynamic_range);
-        let track_count = album.tracks.len();
 
         div()
             .id(("album-card", index))
@@ -321,7 +381,7 @@ impl AlbumCard {
                         div()
                             .w_full()
                             .mt(d.grid)
-                            .text_size(d.text_xs)
+                            .text_size(text_sizes.title)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
                             .overflow_hidden()
@@ -333,7 +393,7 @@ impl AlbumCard {
                     .child(
                         div()
                             .w_full()
-                            .text_size(rems(0.625))
+                            .text_size(text_sizes.body)
                             .text_color(theme.text_secondary)
                             .overflow_hidden()
                             .text_ellipsis()
@@ -341,45 +401,19 @@ impl AlbumCard {
                             .child(album.artist()),
                     )
                     // Metadata line: FORMAT SAMPLE DR #count [heart]
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(d.grid)
-                            .text_size(rems(0.5625))
-                            .text_color(theme.text_muted)
-                            // Format (e.g., FLAC) - pass string directly, no wrapper div
-                            .when_some(format, |el, fmt| el.child(fmt))
-                            // Sample rate info (e.g., 24/44.1k)
-                            .when_some(sample_info, |el, info| el.child(info))
-                            // Channel layout/count for non-stereo albums (e.g., 5.1, 10ch)
-                            .when_some(channel_info, |el, info| el.child(info))
-                            // Dynamic range with icon - keep wrapper for flex layout
-                            .when_some(dr, |el, dr_val| {
-                                el.child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap_px()
-                                        .child(
-                                            Icon::new(IconName::AudioWaveform)
-                                                .xs()
-                                                .color(theme.text_muted),
-                                        )
-                                        .child(dr_val),
-                                )
-                            })
-                            // Track count - use static prefix
-                            .child("#")
-                            .child(track_count.to_string())
-                            // Favorite heart (always visible, clickable)
-                            .child(Self::build_heart_icon(&album, index, &theme, &state)),
-                    ),
+                    .child(Self::build_metadata_line(
+                        &album,
+                        index,
+                        &theme,
+                        &state,
+                        &d,
+                        text_sizes.metadata,
+                    )),
             )
             .into_any_element()
     }
 
-    fn render_list(self, d: Ds) -> AnyElement {
+    fn render_list(self, d: Ds, text_sizes: AlbumCardTextSizes) -> AnyElement {
         let theme = self.theme;
         let album = self.album;
         let index = self.index;
@@ -405,22 +439,30 @@ impl AlbumCard {
                     .flex_col()
                     .child(
                         div()
+                            .text_size(text_sizes.title)
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(album.title.clone()),
                     )
                     .child(
                         div()
-                            .text_size(d.text_sm)
+                            .text_size(text_sizes.body)
                             .text_color(theme.text_secondary)
                             .child(album.artist()),
                     )
                     // Metadata line: FORMAT [DR icon]DR #count [heart]
-                    .child(Self::build_metadata_line(&album, index, &theme, &state, &d)),
+                    .child(Self::build_metadata_line(
+                        &album,
+                        index,
+                        &theme,
+                        &state,
+                        &d,
+                        text_sizes.metadata,
+                    )),
             )
             .into_any_element()
     }
 
-    fn render_compact(self, d: Ds) -> AnyElement {
+    fn render_compact(self, d: Ds, text_sizes: AlbumCardTextSizes) -> AnyElement {
         let theme = self.theme;
         let album = self.album;
         let index = self.index;
@@ -449,7 +491,7 @@ impl AlbumCard {
                     .child(
                         div().flex().flex_col().child(album.title.clone()).child(
                             div()
-                                .text_size(d.text_xs)
+                                .text_size(text_sizes.metadata)
                                 .text_color(theme.text_muted)
                                 .child(album.artist()),
                         ),
@@ -459,7 +501,7 @@ impl AlbumCard {
                             .flex()
                             .items_center()
                             .gap(d.grid)
-                            .text_size(d.text_xs)
+                            .text_size(text_sizes.metadata)
                             .text_color(theme.text_secondary)
                             .child("#")
                             .child(album.tracks.len().to_string())

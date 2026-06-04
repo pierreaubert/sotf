@@ -50,6 +50,10 @@ pub struct PluginState {
     pub plugin_ui_view: PluginUiView,
     /// Whether the controller picker dropdown is open
     pub controller_picker_open: bool,
+    /// Whether the rack-level plugin configuration popover is open.
+    pub rack_config_overlay_open: bool,
+    /// Whether the plugin skin picker dropdown is open.
+    pub rack_skin_picker_open: bool,
     /// MIDI controller → plugin parameter mapping engine
     pub midi_mapping: MidiMappingEngine,
     /// Per-plugin preset picker state
@@ -184,7 +188,9 @@ impl Default for PluginState {
             ab_add_menu_target: None,
             plugin_ui_view: PluginUiView::UI,
             controller_picker_open: false,
+            rack_config_overlay_open: false,
             midi_mapping: MidiMappingEngine::new(),
+            rack_skin_picker_open: false,
             plugin_preset_open: None,
             plugin_preset_list: Vec::new(),
             plugin_preset_save_mode: false,

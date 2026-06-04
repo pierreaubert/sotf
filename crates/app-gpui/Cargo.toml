@@ -135,7 +135,7 @@ gpui_linux = { workspace = true }
 gpui_windows = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
-winresource = "0.1"
+winresource = { workspace = true }
 
 [target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
 gpui-ios = { workspace = true }
@@ -160,7 +160,7 @@ cpal = { workspace = true }
 hound = { workspace = true }
 sotf-engine = { workspace = true }
 sotf-player = { workspace = true, features = ["testing"] }
-proptest = "1.6"
+proptest = { workspace = true }
 
 [[test]]
 name = "e2e"

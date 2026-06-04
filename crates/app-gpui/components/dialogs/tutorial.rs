@@ -515,6 +515,7 @@ struct ScreenGuide {
 impl ScreenGuide {
     fn for_screen(screen: crate::app::Screen) -> &'static ScreenGuide {
         match screen {
+            crate::app::Screen::Home => &GUIDE_LIBRARY,
             crate::app::Screen::NowPlaying => &GUIDE_QUEUE,
             crate::app::Screen::Library => &GUIDE_LIBRARY,
             crate::app::Screen::Queue => &GUIDE_QUEUE,

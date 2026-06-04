@@ -23,6 +23,7 @@ use std::path::PathBuf;
 #[test]
 fn test_screen_variants() {
     let screens = [
+        Screen::Home,
         Screen::NowPlaying,
         Screen::Library,
         Screen::Queue,
@@ -36,7 +37,7 @@ fn test_screen_variants() {
         Screen::Spinorama,
         Screen::PluginGraph,
     ];
-    assert_eq!(screens.len(), 12);
+    assert_eq!(screens.len(), 13);
     assert_ne!(Screen::Library, Screen::Queue);
 }
 
@@ -45,24 +46,27 @@ fn test_primary_information_architecture_destinations() {
     assert_eq!(
         Screen::primary_destinations(),
         &[
+            Screen::Home,
             Screen::NowPlaying,
             Screen::Library,
             Screen::Queue,
             Screen::Studio
         ]
     );
-    assert_eq!(Screen::NowPlaying.primary_destination_index(), 0);
-    assert_eq!(Screen::Library.primary_destination_index(), 1);
-    assert_eq!(Screen::Queue.primary_destination_index(), 2);
-    assert_eq!(Screen::Studio.primary_destination_index(), 3);
+    assert_eq!(Screen::NowPlaying.primary_destination_index(), 1);
+    assert_eq!(Screen::Home.primary_destination_index(), 0);
+    assert_eq!(Screen::Library.primary_destination_index(), 2);
+    assert_eq!(Screen::Queue.primary_destination_index(), 3);
+    assert_eq!(Screen::Studio.primary_destination_index(), 4);
 
-    assert_eq!(Screen::RoomEq.primary_destination_index(), 3);
-    assert_eq!(Screen::PluginGraph.primary_destination_index(), 3);
+    assert_eq!(Screen::RoomEq.primary_destination_index(), 4);
+    assert_eq!(Screen::PluginGraph.primary_destination_index(), 4);
     assert_eq!(Screen::Settings.primary_destination_index(), 0);
 }
 
 #[test]
 fn test_view_menu_ids_map_to_screens() {
+    assert_eq!(Screen::from_view_menu_id("home"), Some(Screen::Home));
     assert_eq!(
         Screen::from_view_menu_id("now-playing"),
         Some(Screen::NowPlaying)

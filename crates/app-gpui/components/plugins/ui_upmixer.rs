@@ -9,14 +9,11 @@ use super::common::{render_knob, render_vertical_slider_with_ticks};
 use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
-use crate::components::plugins::level_meters::LevelMeterManager;
 use crate::components::plugins::theme::PluginTheme;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    HStack, Select, SelectOption, SelectSize, StackAlign, StackSpacing, Toggle, ToggleStyle, VStack,
-};
+use gpui_ui_kit::{HStack, StackSpacing, Toggle, ToggleStyle, VStack};
 use sotf_plugins::param_specs::{ParamCategory, find_by_key as pk, upmixer::PARAMS as UP};
 
 /// State for rendering the Upmixer plugin
@@ -142,10 +139,6 @@ mod param_idx {
     pub const FREQUENCY_RESOLUTION: usize = index_of(P, "frequency_resolution");
     pub const MULTI_SOURCE_EXTRACTION: usize = index_of(P, "multi_source_extraction");
     pub const MULTI_SOURCE_THRESHOLD: usize = index_of(P, "multi_source_threshold");
-    pub const BINAURAL_PREVIEW: usize = index_of(P, "binaural_preview");
-    pub const AUTO_GAIN_ENABLED: usize = index_of(P, "auto_gain_enabled");
-    pub const AUTO_GAIN_MAX_DB: usize = index_of(P, "auto_gain_max_db");
-    pub const AUTO_GAIN_SMOOTHING_MS: usize = index_of(P, "auto_gain_smoothing_ms");
 }
 
 /// Configuration menu items
@@ -179,10 +172,6 @@ pub fn render_upmixer_plugin(
     let chassis_theme = plugin_theme.apply_to(theme);
     let theme = &chassis_theme;
 
-    let config_column = render_config_column_controls(d, entity.clone(), plugin_idx, &state, theme);
-
-    let output_column = render_output_column(d, entity.clone(), plugin_idx, &state, theme);
-
     // Main area: Channel Gains + Spatial Controls side by side (centered)
     let main_area = render_main_area(d, entity.clone(), plugin_idx, &state, theme);
 
@@ -207,189 +196,23 @@ pub fn render_upmixer_plugin(
 
     div()
         .w_full()
+        .min_w_0()
         .bg(app_background)
         .rounded(d.r_lg)
         .flex()
         .justify_center()
         .p(d.pad_x)
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .align(StackAlign::Start)
-                .child(config_column)
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::Xs)
-                        .child(main_area)
-                        .child(tab_bar)
-                        .when((1..=9).contains(&selected_config), |el| {
-                            el.child(config_row)
-                        })
-                        .child(spider_graph_row)
-                        .build(),
-                )
-                .child(output_column)
-                .build(),
-        )
-}
-
-fn render_config_column_controls(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    theme: &Theme,
-) -> impl IntoElement {
-    let labels = pk(UP, "speaker_config").choice_labels();
-    let output_options: Vec<SelectOption> = labels
-        .iter()
-        .map(|label| SelectOption::new(label.to_string(), label.to_string()))
-        .collect();
-
-    div()
-        .w(px(180.0))
-        .flex_none()
-        .flex()
-        .flex_col()
-        .gap(d.gap)
-        .p(d.pad_y)
-        .bg(theme.surface)
-        .rounded(d.r_lg)
-        .child(render_section_header(d, "Configuration", theme))
+        .overflow_hidden()
         .child(
             VStack::new()
                 .spacing(StackSpacing::Xs)
-                .child(
-                    div()
-                        .text_size(d.text_xs)
-                        .text_color(theme.text_secondary)
-                        .child("Output Channels".to_string()),
-                )
-                .child(
-                    div().w_full().child(
-                        Select::new(format!("upmixer-output-config-{plugin_idx}"))
-                            .options(output_options)
-                            .selected(state.speaker_config.to_string())
-                            .is_open(state.config_open)
-                            .size(SelectSize::Xs)
-                            .theme(theme.to_select_theme())
-                            .on_toggle({
-                                let entity = entity.clone();
-                                move |is_open, _window, cx| {
-                                    entity.update(cx, |state, cx| {
-                                        state.app.upmixer_config_open = is_open;
-                                        cx.notify();
-                                    });
-                                }
-                            })
-                            .on_change({
-                                let entity = entity.clone();
-                                move |value, _window, cx| {
-                                    let idx = labels
-                                        .iter()
-                                        .position(|label| *label == value.as_ref())
-                                        .unwrap_or(0);
-                                    entity.update(cx, |state, _| {
-                                        state.app.set_plugin_param(
-                                            plugin_idx,
-                                            param_idx::_SPEAKER_CONFIG,
-                                            idx as f64,
-                                        );
-                                        state.app.upmixer_config_open = false;
-                                        state.app.update_level_meter_groups();
-                                    });
-                                }
-                            }),
-                    ),
-                )
+                .child(main_area)
+                .child(tab_bar)
+                .when((1..=9).contains(&selected_config), |el| {
+                    el.child(config_row)
+                })
+                .child(spider_graph_row)
                 .build(),
-        )
-        .child(render_diag_toggle(
-            d,
-            entity,
-            plugin_idx,
-            "Binaural Preview",
-            state.binaural_preview,
-            param_idx::BINAURAL_PREVIEW,
-            theme,
-        ))
-}
-
-fn render_output_column(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    theme: &Theme,
-) -> impl IntoElement {
-    div()
-        .w(px(220.0))
-        .flex_none()
-        .flex()
-        .flex_col()
-        .gap(d.gap_md)
-        .p(d.pad_y)
-        .bg(theme.surface)
-        .rounded(d.r_lg)
-        .child(render_section_header(d, "Output", theme))
-        .child(render_knob(
-            entity.clone(),
-            plugin_idx,
-            "Safety Cap",
-            state.safety_cap_db,
-            pk(UP, "safety_cap_db").min_f64(),
-            pk(UP, "safety_cap_db").max_f64(),
-            "dB",
-            param_idx::SAFETY_CAP_DB,
-            state.selected_param,
-            state.is_editing,
-            None,
-            theme,
-        ))
-        .child(render_diag_toggle(
-            d,
-            entity.clone(),
-            plugin_idx,
-            "Auto Gain",
-            state.auto_gain_enabled,
-            param_idx::AUTO_GAIN_ENABLED,
-            theme,
-        ))
-        .child(
-            div()
-                .when(!state.auto_gain_enabled, |d| d.opacity(0.3))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    "AG Max",
-                    state.auto_gain_max_db,
-                    pk(UP, "auto_gain_max_db").min_f64(),
-                    pk(UP, "auto_gain_max_db").max_f64(),
-                    "dB",
-                    param_idx::AUTO_GAIN_MAX_DB,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                )),
-        )
-        .child(
-            div()
-                .when(!state.auto_gain_enabled, |d| d.opacity(0.3))
-                .child(render_knob(
-                    entity,
-                    plugin_idx,
-                    "AG Smooth",
-                    state.auto_gain_smoothing_ms,
-                    pk(UP, "auto_gain_smoothing_ms").min_f64(),
-                    pk(UP, "auto_gain_smoothing_ms").max_f64(),
-                    "ms",
-                    param_idx::AUTO_GAIN_SMOOTHING_MS,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                )),
         )
 }
 
@@ -499,19 +322,28 @@ fn render_main_area(
     state: &UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    HStack::new()
-        .spacing(StackSpacing::Sm)
-        .align(StackAlign::Start)
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_wrap()
+        .items_start()
+        .justify_center()
+        .gap(d.section)
         // Channel Gains
         .child(
             div()
+                .min_w_0()
                 .flex()
                 .flex_col()
                 .gap(d.gap)
                 .child(render_section_header(d, "Channel Gains", theme))
                 .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .gap(d.gap)
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
@@ -571,8 +403,7 @@ fn render_main_area(
                             Some('t'),
                             180.0,
                             theme,
-                        ))
-                        .build(),
+                        )),
                 )
                 .p(d.pad_y)
                 .bg(theme.surface)
@@ -581,13 +412,17 @@ fn render_main_area(
         // Spatial Controls
         .child(
             div()
+                .min_w_0()
                 .flex()
                 .flex_col()
                 .gap(d.gap)
                 .child(render_section_header(d, "Spatial Controls", theme))
                 .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .gap(d.gap)
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
@@ -647,14 +482,12 @@ fn render_main_area(
                             None,
                             180.0,
                             theme,
-                        ))
-                        .build(),
+                        )),
                 )
                 .p(d.pad_y)
                 .bg(theme.surface)
                 .rounded(d.r_lg),
         )
-        .build()
 }
 
 /// Render the configuration row based on selected config menu item

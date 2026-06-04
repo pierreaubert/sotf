@@ -682,6 +682,7 @@ impl PlayerView {
     ) -> AnyElement {
         match screen {
             // These screens render the same regardless of layout mode
+            Screen::Home => self.render_home_screen(cx).into_any_element(),
             Screen::Spectrum => self.render_spectrum_screen(cx).into_any_element(),
             Screen::Settings => self.render_settings_screen(cx).into_any_element(),
             Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
@@ -798,8 +799,8 @@ impl PlayerView {
                 "nav-home",
                 "Home",
                 IconName::Home,
-                Screen::Library,
-                current_screen == Screen::Library,
+                Screen::Home,
+                current_screen == Screen::Home,
                 collapsed,
                 &theme,
                 &d,

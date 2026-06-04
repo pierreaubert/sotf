@@ -319,6 +319,20 @@ impl PlayerView {
             .gap(d.gap_md)
             .child(
                 div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(d.text_sm)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(theme.text_primary)
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(title),
+            )
+            .child(self.render_compact_transport(is_playing, theme.clone(), cx))
+            .child(self.render_compact_volume(volume, muted, theme.clone(), cx))
+            .child(
+                div()
                     .id("footer-expand")
                     .flex_none()
                     .w(rems(1.75))
@@ -343,20 +357,6 @@ impl PlayerView {
                         });
                     }),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(d.text_sm)
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(theme.text_primary)
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .whitespace_nowrap()
-                    .child(title),
-            )
-            .child(self.render_compact_transport(is_playing, theme.clone(), cx))
-            .child(self.render_compact_volume(volume, muted, theme, cx))
             .into_any_element()
     }
 
@@ -628,9 +628,9 @@ impl PlayerView {
             .flex()
             .flex_col()
             .items_center()
-            .gap(d.section)
-            .pt(d.pad_y)
-            .pb(d.pad_y)
+            .gap(d.gap)
+            .pt(d.gap_md)
+            .pb(d.gap_md)
             .justify_between()
             .flex_1()
             .max_w(rems(37.5))
@@ -998,12 +998,12 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let volume_percent = (volume * 100.0) as u32;
         let focus_handle = self.volume_focus_handle.clone();
-        let icon = if muted {
+        let icon = if volume <= 0.0 {
             IconName::VolumeX
         } else {
             IconName::Volume2
         };
-        let text_color = if muted {
+        let text_color = if muted || volume <= 0.0 {
             theme.text_muted
         } else {
             theme.text_primary
@@ -1092,6 +1092,7 @@ impl PlayerView {
             .items_center()
             .gap(d.gap_md)
             .justify_end()
+            .child(self.render_volume_button(volume, muted, theme_clone.clone(), cx))
             .child(
                 div()
                     .id("footer-collapse")
@@ -1117,7 +1118,6 @@ impl PlayerView {
                         });
                     }),
             )
-            .child(self.render_volume_button(volume, muted, theme_clone, cx))
     }
 
     /// Render a round volume button with circular progress indicator
