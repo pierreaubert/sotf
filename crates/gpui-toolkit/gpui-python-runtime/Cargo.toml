@@ -1,6 +1,6 @@
 [package]
 name = "gpui-python-runtime"
-version = "0.1.0"
+version = "0.7.0"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -29,7 +29,7 @@ showcase = [
 
 [dependencies]
 gpui = { workspace = true, optional = true }
-gpui-d3rs = { version = "0.7", path = "../gpui-d3rs", default-features = false, optional = true }
+gpui-d3rs = { workspace = true, optional = true }
 gpui-design = { workspace = true, optional = true }
 gpui-miniapp = { workspace = true, optional = true }
 gpui-px = { workspace = true, default-features = false, optional = true }

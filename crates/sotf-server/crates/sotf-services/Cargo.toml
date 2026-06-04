@@ -18,12 +18,12 @@ log = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread"] }
 
 # Spotify (optional)
-librespot-core = { version = "0.6", optional = true }
-librespot-playback = { version = "0.6", optional = true }
-librespot-metadata = { version = "0.6", optional = true }
+librespot-core = { workspace = true, optional = true }
+librespot-playback = { workspace = true, optional = true }
+librespot-metadata = { workspace = true, optional = true }
 
 # Tidal (optional)
-reqwest = { version = "0.13", features = ["json", "query", "form"], optional = true }
+reqwest = { workspace = true, features = ["json", "query", "form"], optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 

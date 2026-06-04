@@ -22,7 +22,7 @@ objc2-foundation = { workspace = true, features = [
     "NSValue",
     "NSObjCRuntime",
 ] }
-objc2-media-player = { version = "0.3", features = [
+objc2-media-player = { workspace = true, features = [
     "MPRemoteCommandCenter",
     "MPRemoteCommand",
     "MPRemoteCommandEvent",
@@ -30,11 +30,11 @@ objc2-media-player = { version = "0.3", features = [
     "MPMediaItem",
     "block2",
 ] }
-block2 = "0.6"
-dispatch2 = "0.3"
+block2 = { workspace = true }
+dispatch2 = { workspace = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
-mpris-server = "0.9"
+mpris-server = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 
 [lints]

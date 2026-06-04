@@ -46,5 +46,5 @@ rand = { workspace = true }
 rayon = { workspace = true }
 
 [dev-dependencies]
-approx = "0.5"
+approx = { workspace = true }
 serde_json = { workspace = true }

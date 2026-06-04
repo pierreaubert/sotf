@@ -98,7 +98,7 @@ libc = { workspace = true }
 objc2 = { workspace = true }
 objc2-app-kit = { workspace = true, features = ["NSApplication", "NSRunningApplication", "NSEvent"] }
 objc2-foundation = { workspace = true, features = ["NSObjCRuntime", "NSString", "NSDate"] }
-core-foundation-sys = "0.8"
+core-foundation-sys = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

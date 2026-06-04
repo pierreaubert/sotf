@@ -16,10 +16,10 @@ hls = ["dep:m3u8-rs"]
 log = { workspace = true }
 symphonia-core = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
-url = "2"
+url = { workspace = true }
 
 # HLS support
-m3u8-rs = { version = "6", optional = true }
+m3u8-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }

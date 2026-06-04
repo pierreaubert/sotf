@@ -3785,7 +3785,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-au"
-version = "0.6.3"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.0",
@@ -3808,7 +3808,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-builder"
-version = "0.6.2"
+version = "0.7.2"
 dependencies = [
  "gpui",
  "gpui-design",
@@ -3821,7 +3821,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "approx",
  "autoeq",
@@ -3850,7 +3850,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-design"
-version = "0.6.0"
+version = "0.7.1"
 dependencies = [
  "gpui",
  "serde",
@@ -3859,7 +3859,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ios"
-version = "0.6.2"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "block2",
@@ -3882,7 +3882,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-keybinding"
-version = "0.6.0"
+version = "0.7.1"
 dependencies = [
  "gpui",
  "serde",
@@ -3890,7 +3890,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-miniapp"
-version = "0.6.0"
+version = "0.7.5"
 dependencies = [
  "gpui",
  "gpui-design",
@@ -3903,14 +3903,14 @@ dependencies = [
 
 [[package]]
 name = "gpui-pretext"
-version = "0.6.2"
+version = "0.7.2"
 dependencies = [
  "unicode-segmentation",
 ]
 
 [[package]]
 name = "gpui-px"
-version = "0.6.4"
+version = "0.7.4"
 dependencies = [
  "autoeq",
  "gpui",
@@ -3927,7 +3927,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-python-runtime"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "glam",
  "gpui",
@@ -3943,7 +3943,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-themes"
-version = "0.6.2"
+version = "0.7.2"
 dependencies = [
  "gpui",
  "gpui-design",
@@ -3955,7 +3955,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.22"
+version = "0.7.23"
 dependencies = [
  "block2",
  "gpui",
@@ -3985,7 +3985,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit-macros"
-version = "0.6.0"
+version = "0.7.2"
 dependencies = [
  "proc-macro2",
  "quote",

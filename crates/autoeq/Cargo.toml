@@ -43,7 +43,7 @@ hound = { workspace = true }
 # `autoeq` binary degrades gracefully and skips chart generation when off.
 plotly = { workspace = true, optional = true }
 rand = { workspace = true }
-rand_chacha = "0.9"
+rand_chacha = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -65,7 +65,7 @@ ndarray = { workspace = true }
 oxiblas-ndarray = { workspace = true }
 
 # Optional features
-plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"], optional = true }
+plotly_static = { workspace = true, features = ["chromedriver", "webdriver_download"], optional = true }
 rayon.workspace = true
 
 [features]
@@ -136,6 +136,6 @@ name = "headphone_loss_demo"
 required-features = ["plotly"]
 
 [dev-dependencies]
-tempfile = "3.23"
-assert_fs = "1.0"
-serial_test = "3"
+tempfile = { workspace = true }
+assert_fs = { workspace = true }
+serial_test = { workspace = true }

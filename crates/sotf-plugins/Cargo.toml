@@ -125,7 +125,7 @@ rand = { workspace = true }
 criterion = { workspace = true }
 insta = { workspace = true }
 serial_test = { workspace = true }
-proptest = "1.5"
+proptest = { workspace = true }
 sofa-reader = { workspace = true }
 
 [[bin]]

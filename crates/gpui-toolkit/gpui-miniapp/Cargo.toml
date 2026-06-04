@@ -1,6 +1,6 @@
 [package]
 name = "gpui-miniapp"
-version = "0.6.0"
+version = "0.7.5"
 edition.workspace = true
 authors.workspace = true
 keywords.workspace = true

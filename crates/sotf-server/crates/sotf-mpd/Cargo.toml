@@ -12,7 +12,7 @@ categories.workspace = true
 log = { workspace = true }
 tokio = { workspace = true, features = ["net", "io-util", "macros", "sync"] }
 sotf-tls = { workspace = true, optional = true }
-tokio-rustls = { version = "0.26", optional = true }
+tokio-rustls = { workspace = true, optional = true }
 
 [features]
 default = []

@@ -54,7 +54,7 @@ rayon = { workspace = true }
 rubato = { workspace = true }
 audioadapter-buffers = { workspace = true }
 criterion = { workspace = true, optional = true }
-libloading = { version = "0.8", optional = true }
+libloading = { workspace = true, optional = true }
 
 [dev-dependencies]
 insta = { workspace = true }

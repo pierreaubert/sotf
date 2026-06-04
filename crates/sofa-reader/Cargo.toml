@@ -13,12 +13,12 @@ default = ["deflate"]
 deflate = ["dep:flate2"]
 
 [dependencies]
-thiserror = "2.0"
-flate2 = { version = "1.1", optional = true }
-log = "0.4"
+thiserror = { workspace = true }
+flate2 = { workspace = true, optional = true }
+log = { workspace = true }
 serde = { workspace = true }
 rusqlite = { workspace = true }
 bincode = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

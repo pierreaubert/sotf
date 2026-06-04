@@ -14,7 +14,7 @@ name = "math_rir"
 path = "src/lib.rs"
 
 [dependencies]
-math-iir-fir = { version="0.5", path = "../math-iir-fir" }
+math-iir-fir = { workspace = true }
 rayon = { workspace = true }
 
 [dev-dependencies]

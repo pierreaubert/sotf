@@ -34,7 +34,7 @@ sotf-mpd = { workspace = true, features = ["tls"] }
 sotf-dlna = { workspace = true }
 sotf-federation = { workspace = true }
 sotf-tls = { workspace = true }
-tokio-rustls = "0.26"
+tokio-rustls = { workspace = true }
 
 # math
 ndarray = { workspace = true }
@@ -58,7 +58,7 @@ parking_lot = { workspace = true }
 uuid = { workspace = true }
 crossbeam = { workspace = true }
 rand = { workspace = true }
-socket2 = "0.6"
+socket2 = { workspace = true }
 
 # Image processing for album art thumbnails
 image = { workspace = true }

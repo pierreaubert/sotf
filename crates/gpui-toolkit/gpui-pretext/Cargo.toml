@@ -1,6 +1,6 @@
 [package]
 name = "gpui-pretext"
-version = "0.6.2"
+version = "0.7.2"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -10,4 +10,4 @@ repository.workspace = true
 description = "High-performance text measurement and multiline layout without DOM reflows — Rust port of chenglou/pretext"
 
 [dependencies]
-unicode-segmentation = "1"
+unicode-segmentation = { workspace = true }

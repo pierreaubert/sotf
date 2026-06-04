@@ -127,29 +127,46 @@ build_html = "2.7"
 # Async and networking
 # ideally we would use only threads or only tokio
 anyhow = { version = "1.0" }
+assert_fs = "1.0"
+m3u8-rs = { version = "6" }
+librespot-core = { version = "0.6" }
+librespot-playback = { version = "0.6" }
+librespot-metadata = { version = "0.6" }
+rcgen = "0.13"
+rustls = "0.23"
+socket2 = "0.6"
+tokio-rustls = "0.26"
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "io-util", "process", "signal"] }
 # tokio-tungstenite = "0.21"
 signal-hook = "0.4"
 reqwest = { version = "0.13", features = ["json"] }
+url = "2"
 urlencoding = "2.1"
 parking_lot = { version = "0.12", features = ["deadlock_detection"] }
+futures = "0.3"
 
 # CLI and system
 base64 = "0.22"
+chacha20poly1305 = "0.10"
 byteorder = "1.5"
+coreaudio-rs = "0.13"
+core-foundation-sys = "0.8"
+dispatch2 = "0.3"
+flate2 = { version = "1.1" }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 csv = "1.4"
+hex = "0.4"
 ctrlc = "3.5"
 directories = "6"
-# env = "1"
 env_logger = "0.11"
-# getrandom = "0.2"
 libc = "0.2"
 log = "0.4"
 memmap2 = "0.9"
 mimalloc = { version = "0.1" }
 notify = { version = "8.2" }
+libloading = { version = "0.8" }
+rand_chacha = "0.9"
 num_cpus = "1.17"
 regex = "1.12"
 rfd = "0.16"
@@ -196,20 +213,17 @@ autoeq = { version = "0.4", path = "crates/autoeq" }
 
 # using git version
 gpui-d3rs = { version = "0.7", path = "crates/gpui-toolkit/gpui-d3rs" }
-gpui-px = { version = "0.6", path = "crates/gpui-toolkit/gpui-px", default-features = false }
-gpui-ui-kit ={ version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
-gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
-gpui-themes = { version = "0.6", path = "crates/gpui-toolkit/gpui-themes" }
+gpui-px = { version = "0.7", path = "crates/gpui-toolkit/gpui-px", default-features = false }
+gpui-ui-kit ={ version = "0.7", path = "crates/gpui-toolkit/gpui-ui-kit" }
+gpui-ui-kit-macros = { version = "0.7", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
+gpui-themes = { version = "0.7", path = "crates/gpui-toolkit/gpui-themes" }
 gpui-miniapp = { path = "crates/gpui-toolkit/gpui-miniapp" }
-gpui-ios = { version = "0.6", path = "crates/gpui-toolkit/gpui-ios" }
-gpui-au = { version = "0.6", path = "crates/gpui-toolkit/gpui-au" }
-gpui-builder = { version = "0.6", path = "crates/gpui-toolkit/gpui-builder" }
-gpui-design = { version = "0.6", path = "crates/gpui-toolkit/gpui-design" }
-gpui-keybinding = { version = "0.6", path = "crates/gpui-toolkit/gpui-keybinding" }
-gpui-pretext = { version = "0.6", path = "crates/gpui-toolkit/gpui-pretext" }
-
-# Editor
-gpui-elisp = { version = "0.6", path = "crates/elisp" }
+gpui-ios = { version = "0.7", path = "crates/gpui-toolkit/gpui-ios" }
+gpui-au = { version = "0.7", path = "crates/gpui-toolkit/gpui-au" }
+gpui-builder = { version = "0.7", path = "crates/gpui-toolkit/gpui-builder" }
+gpui-design = { version = "0.7", path = "crates/gpui-toolkit/gpui-design" }
+gpui-keybinding = { version = "0.7", path = "crates/gpui-toolkit/gpui-keybinding" }
+gpui-pretext = { version = "0.7", path = "crates/gpui-toolkit/gpui-pretext" }
 
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }
@@ -297,6 +311,7 @@ midir = "0.10"
 
 # TUI framework
 ratatui = "0.30"
+mpris-server = "0.9"
 ratatui-image = { version = "10", default-features = false, features = ["serde", "crossterm", "image-defaults"] }
 crossterm = "0.29"
 
@@ -313,10 +328,12 @@ objc = "0.2"
 cocoa = "0.26"
 # sysinfo = "0.37"
 # memory-stats = "1.2"
+objc2-core-audio = { version = "0.3", default-features = false }
 crossbeam = "0.8"
 arc-swap = "1"
 
 # Utilities
+unicode-segmentation = "1"
 sha2 = "0.10"
 toml = "0.8"
 approx = "0.5"
@@ -328,6 +345,7 @@ bincode = { version = "2.0.1", features = ["serde"] }
 # Proc macro dependencies
 proc-macro2 = "1"
 quote = "1"
+proptest = "1.6"
 syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
 
 # Graphics and visualization
@@ -339,16 +357,24 @@ pollster = "0.4"
 image = "0.25"
 fontdue = "0.9"
 delaunator = "1.0"
+raw-window-handle = "0.6"
+pathfinder_geometry = "0.5"
+smallvec = { version = "1.6", features = ["union", "const_new"] }
 
 # GPU and macOS graphics
+oslog = "0.2"
 metal = "0.33"
 core-foundation = "0.10"
+core-graphics = "0.24"
+core-text = "=21.0.0"
+winresource = "0.1"
 
 # objc2 framework bindings (macOS)
 objc2 = "0.6"
 objc2-foundation = "0.3"
-objc2-core-foundation = "0.3"
+objc2-core-foundation = { version = "0.3", default-features = false }
 objc2-app-kit = "0.3"
+objc2-media-player = "0.3"
 block2 = "0.6"
 
 # Media controls
@@ -369,9 +395,11 @@ nnnoiseless = "0.1"
 # pure-Rust path eliminates the native libonnxruntime build dependency.
 tract-onnx = "0.22"
 
+# Font-stack helper crate (Zed fork of font-kit)
+font-kit = { package = "zed-font-kit", version = "0.14.1-zed", git = "https://github.com/zed-industries/font-kit", rev = "110523127440aefb11ce0cf280ae7c5071337ec5" }
+
 # TUI extensions
 
-# ffi
 cbindgen = "0.28"
 
 [workspace.lints.rust]
