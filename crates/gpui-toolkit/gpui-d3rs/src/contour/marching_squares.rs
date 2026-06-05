@@ -68,6 +68,24 @@ impl Contour {
     }
 }
 
+/// A single independent contour line segment at a specific threshold value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ContourSegment {
+    /// The threshold value for this contour segment
+    pub value: f64,
+    /// Start point in output coordinates
+    pub start: Point,
+    /// End point in output coordinates
+    pub end: Point,
+}
+
+impl ContourSegment {
+    /// Create a new contour segment.
+    pub fn new(value: f64, start: Point, end: Point) -> Self {
+        Self { value, start, end }
+    }
+}
+
 /// Contour generator using the marching squares algorithm.
 ///
 /// # Example
@@ -105,6 +123,12 @@ pub struct ContourGenerator {
     x_values: Option<Vec<f64>>,
     /// Explicit y values for each row (if provided, overrides y0/y1 linear interpolation)
     y_values: Option<Vec<f64>>,
+    /// Optional scalar-field upsample factor before contour extraction
+    upsample_factor: usize,
+    /// Interpolate explicit x values in log space when possible
+    x_log_interpolation: bool,
+    /// Interpolate explicit y values in log space when possible
+    y_log_interpolation: bool,
 }
 
 impl ContourGenerator {
@@ -119,6 +143,9 @@ impl ContourGenerator {
             y1: height as f64,
             x_values: None,
             y_values: None,
+            upsample_factor: 1,
+            x_log_interpolation: false,
+            y_log_interpolation: false,
         }
     }
 
@@ -158,8 +185,34 @@ impl ContourGenerator {
         self
     }
 
+    /// Set an optional scalar-field upsample factor before contour extraction.
+    ///
+    /// A factor of 1 preserves the original marching-squares grid. Higher
+    /// values create denser bilinearly interpolated cells, which reduces
+    /// faceting on coarse grids at additional CPU cost.
+    pub fn upsample_factor(mut self, factor: usize) -> Self {
+        self.upsample_factor = factor.clamp(1, 8);
+        self
+    }
+
+    /// Interpolate explicit x values in log space when values are positive.
+    pub fn x_log_interpolation(mut self, enabled: bool) -> Self {
+        self.x_log_interpolation = enabled;
+        self
+    }
+
+    /// Interpolate explicit y values in log space when values are positive.
+    pub fn y_log_interpolation(mut self, enabled: bool) -> Self {
+        self.y_log_interpolation = enabled;
+        self
+    }
+
     /// Generate a contour at the given threshold value.
     pub fn contour(&self, values: &[f64], threshold: f64) -> Contour {
+        if let Some((generator, upsampled_values)) = self.upsampled(values) {
+            return generator.contour(&upsampled_values, threshold);
+        }
+
         let mut contour = Contour::new(threshold);
 
         if self.width < 2 || self.height < 2 || values.len() < (self.width * self.height) {
@@ -221,10 +274,118 @@ impl ContourGenerator {
 
     /// Generate contours at multiple threshold values.
     pub fn contours(&self, values: &[f64], thresholds: &[f64]) -> Vec<Contour> {
+        if let Some((generator, upsampled_values)) = self.upsampled(values) {
+            return generator.contours(&upsampled_values, thresholds);
+        }
+
         thresholds
             .iter()
             .map(|&t| self.contour(values, t))
             .collect()
+    }
+
+    /// Generate independent cell-local contour segments for multiple thresholds.
+    ///
+    /// This avoids connecting traced rings across discontinuities and is useful
+    /// for renderers that prefer to draw each marching-squares segment directly.
+    pub fn contour_segments(&self, values: &[f64], thresholds: &[f64]) -> Vec<ContourSegment> {
+        if let Some((generator, upsampled_values)) = self.upsampled(values) {
+            return generator.contour_segments(&upsampled_values, thresholds);
+        }
+
+        if self.width < 2 || self.height < 2 || values.len() < (self.width * self.height) {
+            return Vec::new();
+        }
+
+        let mut segments = Vec::new();
+        for &threshold in thresholds {
+            for j in 0..self.height - 1 {
+                for i in 0..self.width - 1 {
+                    let case = self.cell_case(values, i, j, threshold);
+                    for &(edge_a, edge_b) in Self::cell_segment_edge_pairs(case) {
+                        let Some(start) = self.edge_point(values, i, j, edge_a, threshold) else {
+                            continue;
+                        };
+                        let Some(end) = self.edge_point(values, i, j, edge_b, threshold) else {
+                            continue;
+                        };
+                        segments.push(ContourSegment::new(threshold, start, end));
+                    }
+                }
+            }
+        }
+        segments
+    }
+
+    fn cell_segment_edge_pairs(case: u8) -> &'static [(usize, usize)] {
+        match case {
+            0 | 15 => &[],
+            1 | 14 => &[(0, 3)],
+            2 | 13 => &[(0, 1)],
+            3 | 12 => &[(1, 3)],
+            4 | 11 => &[(1, 2)],
+            5 => &[(0, 1), (2, 3)],
+            6 | 9 => &[(0, 2)],
+            7 | 8 => &[(2, 3)],
+            10 => &[(0, 3), (1, 2)],
+            _ => &[],
+        }
+    }
+
+    fn upsampled(&self, values: &[f64]) -> Option<(Self, Vec<f64>)> {
+        let factor = self.upsample_factor;
+        if factor <= 1
+            || self.width < 2
+            || self.height < 2
+            || values.len() < self.width * self.height
+        {
+            return None;
+        }
+
+        let new_width = (self.width - 1) * factor + 1;
+        let new_height = (self.height - 1) * factor + 1;
+        let mut upsampled = vec![0.0; new_width * new_height];
+
+        for y in 0..new_height {
+            let source_y = y as f64 / factor as f64;
+            let y0 = (source_y.floor() as usize).min(self.height - 2);
+            let ty = source_y - y0 as f64;
+
+            for x in 0..new_width {
+                let source_x = x as f64 / factor as f64;
+                let x0 = (source_x.floor() as usize).min(self.width - 2);
+                let tx = source_x - x0 as f64;
+
+                let z00 = values[y0 * self.width + x0];
+                let z10 = values[y0 * self.width + x0 + 1];
+                let z01 = values[(y0 + 1) * self.width + x0];
+                let z11 = values[(y0 + 1) * self.width + x0 + 1];
+
+                let z0 = z00 + (z10 - z00) * tx;
+                let z1 = z01 + (z11 - z01) * tx;
+                upsampled[y * new_width + x] = z0 + (z1 - z0) * ty;
+            }
+        }
+
+        let generator = Self {
+            width: new_width,
+            height: new_height,
+            x0: self.x0,
+            y0: self.y0,
+            x1: self.x1,
+            y1: self.y1,
+            x_values: self.x_values.as_ref().map(|values| {
+                upsample_axis_values(values, factor, new_width, self.x_log_interpolation)
+            }),
+            y_values: self.y_values.as_ref().map(|values| {
+                upsample_axis_values(values, factor, new_height, self.y_log_interpolation)
+            }),
+            upsample_factor: 1,
+            x_log_interpolation: self.x_log_interpolation,
+            y_log_interpolation: self.y_log_interpolation,
+        };
+
+        Some((generator, upsampled))
     }
 
     /// Compute the marching squares case for a cell.
@@ -390,40 +551,7 @@ impl ContourGenerator {
         let px = x0 + t * (x1 - x0);
         let py = y0 + t * (y1 - y0);
 
-        // Transform to output coordinates
-        // If explicit values are provided, interpolate between them
-        let x = if let Some(ref x_vals) = self.x_values {
-            // px is in grid coordinates (e.g., 2.3 means between column 2 and 3)
-            // Interpolate between the explicit x values
-            let idx = px.floor() as usize;
-            let frac = px - px.floor();
-            if idx + 1 < x_vals.len() {
-                x_vals[idx] + frac * (x_vals[idx + 1] - x_vals[idx])
-            } else if idx < x_vals.len() {
-                x_vals[idx]
-            } else {
-                self.x0 + (px / (self.width - 1) as f64) * (self.x1 - self.x0)
-            }
-        } else {
-            self.x0 + (px / (self.width - 1) as f64) * (self.x1 - self.x0)
-        };
-
-        let y = if let Some(ref y_vals) = self.y_values {
-            // py is in grid coordinates
-            let idx = py.floor() as usize;
-            let frac = py - py.floor();
-            if idx + 1 < y_vals.len() {
-                y_vals[idx] + frac * (y_vals[idx + 1] - y_vals[idx])
-            } else if idx < y_vals.len() {
-                y_vals[idx]
-            } else {
-                self.y0 + (py / (self.height - 1) as f64) * (self.y1 - self.y0)
-            }
-        } else {
-            self.y0 + (py / (self.height - 1) as f64) * (self.y1 - self.y0)
-        };
-
-        Some(Point::new(x, y))
+        Some(Point::new(self.transform_x(px), self.transform_y(py)))
     }
 
     /// Find the exit edge for a given entry edge and case.
@@ -582,6 +710,32 @@ fn points_equal(a: &Point, b: &Point) -> bool {
     (a.x - b.x).abs() < EPSILON && (a.y - b.y).abs() < EPSILON
 }
 
+fn upsample_axis_values(
+    values: &[f64],
+    factor: usize,
+    new_len: usize,
+    log_space: bool,
+) -> Vec<f64> {
+    let mut result = Vec::with_capacity(new_len);
+    for i in 0..new_len {
+        let source = i as f64 / factor as f64;
+        let idx = (source.floor() as usize).min(values.len().saturating_sub(2));
+        let t = source - idx as f64;
+        let v0 = values[idx];
+        let v1 = values.get(idx + 1).copied().unwrap_or(v0);
+        result.push(interpolate_axis_value(v0, v1, t, log_space));
+    }
+    result
+}
+
+fn interpolate_axis_value(v0: f64, v1: f64, t: f64, log_space: bool) -> f64 {
+    if log_space && v0 > 0.0 && v1 > 0.0 {
+        (v0.ln() + (v1.ln() - v0.ln()) * t).exp()
+    } else {
+        v0 + (v1 - v0) * t
+    }
+}
+
 /// A contour band representing the filled region between two threshold values.
 #[derive(Debug, Clone)]
 pub struct ContourBand {
@@ -622,6 +776,10 @@ impl ContourGenerator {
     /// # Returns
     /// A vector of ContourBand, one for each pair of consecutive thresholds.
     pub fn contour_bands(&self, values: &[f64], thresholds: &[f64]) -> Vec<ContourBand> {
+        if let Some((generator, upsampled_values)) = self.upsampled(values) {
+            return generator.contour_bands(&upsampled_values, thresholds);
+        }
+
         if self.width < 2
             || self.height < 2
             || thresholds.len() < 2
@@ -831,7 +989,7 @@ impl ContourGenerator {
             let idx = px.floor() as usize;
             let frac = px - px.floor();
             if idx + 1 < x_vals.len() {
-                x_vals[idx] + frac * (x_vals[idx + 1] - x_vals[idx])
+                interpolate_axis_value(x_vals[idx], x_vals[idx + 1], frac, self.x_log_interpolation)
             } else if idx < x_vals.len() {
                 x_vals[idx]
             } else {
@@ -851,7 +1009,7 @@ impl ContourGenerator {
             let idx = py.floor() as usize;
             let frac = py - py.floor();
             if idx + 1 < y_vals.len() {
-                y_vals[idx] + frac * (y_vals[idx + 1] - y_vals[idx])
+                interpolate_axis_value(y_vals[idx], y_vals[idx + 1], frac, self.y_log_interpolation)
             } else if idx < y_vals.len() {
                 y_vals[idx]
             } else {
@@ -926,6 +1084,62 @@ mod tests {
         let thresholds = vec![0.25, 0.5, 0.75];
         let result = contours(&values, 3, 3, &thresholds);
         assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_contour_segments_keeps_saddle_segments_independent() {
+        let values = vec![1.0, 0.0, 0.0, 1.0];
+        let generator = ContourGenerator::new(2, 2).x(0.0, 1.0).y(0.0, 1.0);
+
+        let segments = generator.contour_segments(&values, &[0.5]);
+
+        assert_eq!(segments.len(), 2);
+        assert!((segments[0].start.x - 0.5).abs() < 1e-9);
+        assert!((segments[0].start.y - 0.0).abs() < 1e-9);
+        assert!((segments[0].end.x - 1.0).abs() < 1e-9);
+        assert!((segments[0].end.y - 0.5).abs() < 1e-9);
+        assert!((segments[1].start.x - 0.5).abs() < 1e-9);
+        assert!((segments[1].start.y - 1.0).abs() < 1e-9);
+        assert!((segments[1].end.x - 0.0).abs() < 1e-9);
+        assert!((segments[1].end.y - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_upsampled_contours() {
+        let values = vec![0.0, 1.0, 1.0, 0.0];
+
+        let generator = ContourGenerator::new(2, 2).upsample_factor(3);
+        let contour = generator.contour(&values, 0.5);
+
+        assert_eq!(contour.value, 0.5);
+    }
+
+    #[test]
+    fn test_log_axis_upsampling_preserves_midpoints() {
+        let values = upsample_axis_values(&[10.0, 1000.0], 2, 3, true);
+
+        assert!((values[1] - 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_log_axis_crossing_interpolates_in_log_space() {
+        let generator = ContourGenerator::new(2, 2)
+            .x_values(vec![10.0, 1000.0])
+            .x_log_interpolation(true);
+
+        assert!((generator.transform_x(0.25) - 31.622776601683793).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_upsampled_log_axis_crossing_interpolates_in_log_space() {
+        let values = vec![0.0, 1.0, 0.0, 1.0];
+        let generator = ContourGenerator::new(2, 2)
+            .x_values(vec![10.0, 1000.0])
+            .x_log_interpolation(true)
+            .upsample_factor(2);
+        let (upsampled_generator, _) = generator.upsampled(&values).expect("upsampled grid");
+
+        assert!((upsampled_generator.transform_x(0.5) - 31.622776601683793).abs() < 1e-9);
     }
 
     #[test]

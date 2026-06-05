@@ -15,6 +15,14 @@ struct Uniforms {
     x_range_log: f32,
     is_log_x: f32,
     show_surface_isolines: f32,
+    isoline_step: f32,
+    isoline_width_px: f32,
+    isoline_opacity: f32,
+    isoline_color_r: f32,
+    isoline_color_g: f32,
+    isoline_color_b: f32,
+    _padding0: f32,
+    _padding1: f32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -153,6 +161,24 @@ fn get_color(t: f32, map_id: f32) -> vec3<f32> {
     }
 }
 
+fn isoline_color() -> vec3<f32> {
+    return vec3<f32>(
+        uniforms.isoline_color_r,
+        uniforms.isoline_color_g,
+        uniforms.isoline_color_b
+    );
+}
+
+fn isoline_alpha(value: f32) -> f32 {
+    let step = max(uniforms.isoline_step, 0.001);
+    let phase = value / step;
+    let dist = abs(fract(phase + 0.5) - 0.5);
+    let phase_per_pixel = clamp(fwidth(phase), 0.0001, 0.5);
+    let half_width = max(0.5 * uniforms.isoline_width_px * phase_per_pixel, 0.35 * phase_per_pixel);
+    let feather = phase_per_pixel;
+    return 1.0 - smoothstep(half_width, half_width + feather, dist);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Calculate lighting
@@ -173,20 +199,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Isolines on surface (controlled by uniform)
     if (uniforms.show_surface_isolines > 0.5) {
-        // Every 3dB. Assuming normalized value 0..1 maps to range (e.g. 50dB).
-        // 3dB is approx 0.06 normalized units.
-        let step = 0.06;
-        let line_width = 0.001;
-        let feather = 0.0005;
-
-        let dist = abs(fract(in.normalized_value / step) - 0.5) * step;
-
-        // Anti-aliased line
-        let line_alpha = 1.0 - smoothstep(line_width - feather, line_width + feather, dist);
+        let line_alpha = isoline_alpha(in.normalized_value) * uniforms.isoline_opacity;
 
         if (line_alpha > 0.0) {
-            // Blend black line
-            color = mix(color, vec3<f32>(0.0, 0.0, 0.0), line_alpha * 0.5);
+            color = mix(color, isoline_color(), line_alpha);
         }
     }
 
@@ -227,19 +243,10 @@ fn vs_projection(in: VertexInput) -> VertexOutput {
 pub const PROJECTION_FRAGMENT_SHADER: &str = r#"
 @fragment
 fn fs_projection(in: VertexOutput) -> @location(0) vec4<f32> {
-    let value = in.normalized_value;
-    // Isolines every 3dB
-    let step = 0.06;
-    let line_width = 0.001;
-    let feather = 0.0005;
-
-    let dist = abs(fract(value / step) - 0.5) * step;
-
-    // Anti-aliased line
-    let line_alpha = 1.0 - smoothstep(line_width - feather, line_width + feather, dist);
+    let line_alpha = isoline_alpha(in.normalized_value) * uniforms.isoline_opacity;
 
     if (line_alpha > 0.0) {
-        return vec4<f32>(0.0, 0.0, 0.0, line_alpha * 0.8); // Black isolines
+        return vec4<f32>(isoline_color(), line_alpha);
     } else {
         discard; // Transparent between lines
     }

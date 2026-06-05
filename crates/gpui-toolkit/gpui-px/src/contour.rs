@@ -30,6 +30,7 @@ pub struct ContourChart {
     color_scale: ColorScale,
     title: Option<String>,
     opacity: f32,
+    contour_upsample_factor: usize,
     width: f32,
     height: f32,
     // Axis range overrides (for zoom support)
@@ -109,6 +110,12 @@ impl ContourChart {
     /// Set fill opacity (0.0 - 1.0).
     pub fn opacity(mut self, opacity: f32) -> Self {
         self.opacity = opacity.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set the contour upsample factor used before marching squares.
+    pub fn contour_upsample_factor(mut self, factor: usize) -> Self {
+        self.contour_upsample_factor = factor.clamp(1, 8);
         self
     }
 
@@ -257,7 +264,10 @@ impl ContourChart {
         // Generate contour bands
         let generator = ContourGenerator::new(self.grid_width, self.grid_height)
             .x_values(x_values)
-            .y_values(y_values);
+            .y_values(y_values)
+            .upsample_factor(self.contour_upsample_factor)
+            .x_log_interpolation(self.x_scale_type == ScaleType::Log)
+            .y_log_interpolation(self.y_scale_type == ScaleType::Log);
         let bands = generator.contour_bands(&self.z, &thresholds);
 
         // Build config with color scale
@@ -531,6 +541,7 @@ pub fn contour(z: &[f64], grid_width: usize, grid_height: usize) -> ContourChart
         color_scale: ColorScale::default(),
         title: None,
         opacity: 0.8,
+        contour_upsample_factor: 1,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
         x_range: None,
@@ -612,6 +623,7 @@ mod tests {
             .title("My Contour")
             .color_scale(ColorScale::Plasma)
             .thresholds(vec![0.0, 0.5, 1.0])
+            .contour_upsample_factor(2)
             .opacity(0.8)
             .size(800.0, 600.0)
             .build();

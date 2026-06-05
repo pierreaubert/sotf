@@ -10,9 +10,13 @@ use crate::{
 use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
 use d3rs::contour::ContourGenerator;
+#[cfg(feature = "gpu-2d")]
+use d3rs::gpu2d::render_contour;
 use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale};
-use d3rs::shape::{ContourConfig, render_contour};
+use d3rs::shape::ContourConfig;
+#[cfg(not(feature = "gpu-2d"))]
+use d3rs::shape::render_contour;
 use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
@@ -31,6 +35,10 @@ pub struct IsolineChart {
     color: u32,
     stroke_width: f32,
     opacity: f32,
+    contour_upsample_factor: usize,
+    smooth_strokes: bool,
+    smoothing_iterations: usize,
+    smoothing_max_deviation_px: f32,
     title: Option<String>,
     width: f32,
     height: f32,
@@ -94,6 +102,30 @@ impl IsolineChart {
     /// Set line opacity (0.0 - 1.0).
     pub fn opacity(mut self, opacity: f32) -> Self {
         self.opacity = opacity.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set the contour upsample factor used before marching squares.
+    pub fn contour_upsample_factor(mut self, factor: usize) -> Self {
+        self.contour_upsample_factor = factor.clamp(1, 8);
+        self
+    }
+
+    /// Enable or disable stroke smoothing for rendered isolines.
+    pub fn smooth_strokes(mut self, smooth: bool) -> Self {
+        self.smooth_strokes = smooth;
+        self
+    }
+
+    /// Set stroke smoothing iterations.
+    pub fn smoothing_iterations(mut self, iterations: usize) -> Self {
+        self.smoothing_iterations = iterations.min(4);
+        self
+    }
+
+    /// Set maximum allowed smoothing deviation in pixels.
+    pub fn smoothing_max_deviation_px(mut self, deviation: f32) -> Self {
+        self.smoothing_max_deviation_px = deviation.max(0.0);
         self
     }
 
@@ -248,7 +280,10 @@ impl IsolineChart {
         // Generate contours
         let generator = ContourGenerator::new(self.grid_width, self.grid_height)
             .x_values(x_values)
-            .y_values(y_values);
+            .y_values(y_values)
+            .upsample_factor(self.contour_upsample_factor)
+            .x_log_interpolation(self.x_scale_type == ScaleType::Log)
+            .y_log_interpolation(self.y_scale_type == ScaleType::Log);
         let contours = generator.contours(&self.z, &levels);
 
         // Build config with fixed color (no fill for isolines)
@@ -256,7 +291,10 @@ impl IsolineChart {
             .fill(false)
             .stroke_color(D3Color::from_hex(self.color))
             .stroke_width(self.stroke_width)
-            .stroke_opacity(self.opacity);
+            .stroke_opacity(self.opacity)
+            .smooth_strokes(self.smooth_strokes)
+            .smoothing_iterations(self.smoothing_iterations)
+            .smoothing_max_deviation_px(self.smoothing_max_deviation_px);
 
         // Build the element based on scale types
         let isoline_element: AnyElement = match (self.x_scale_type, self.y_scale_type) {
@@ -521,6 +559,10 @@ pub fn isoline(z: &[f64], grid_width: usize, grid_height: usize) -> IsolineChart
         color: DEFAULT_COLOR,
         stroke_width: 1.5,
         opacity: 1.0,
+        contour_upsample_factor: 1,
+        smooth_strokes: false,
+        smoothing_iterations: 1,
+        smoothing_max_deviation_px: 2.0,
         title: None,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
@@ -602,6 +644,10 @@ mod tests {
             .color(0xff0000)
             .stroke_width(2.0)
             .opacity(0.8)
+            .contour_upsample_factor(2)
+            .smooth_strokes(true)
+            .smoothing_iterations(1)
+            .smoothing_max_deviation_px(2.0)
             .levels(vec![0.5, 1.0, 1.5])
             .size(800.0, 600.0)
             .build();

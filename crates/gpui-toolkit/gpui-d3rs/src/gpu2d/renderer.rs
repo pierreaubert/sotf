@@ -177,6 +177,16 @@ impl Chart2DRenderer {
                             offset: 16,
                             shader_location: 2,
                         },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32,
+                            offset: 32,
+                            shader_location: 3,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32,
+                            offset: 36,
+                            shader_location: 4,
+                        },
                     ],
                 }],
                 compilation_options: Default::default(),

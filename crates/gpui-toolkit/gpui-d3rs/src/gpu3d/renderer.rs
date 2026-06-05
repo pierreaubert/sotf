@@ -27,6 +27,14 @@ struct Uniforms {
     x_range_log: f32,
     is_log_x: f32,
     show_surface_isolines: f32,
+    isoline_step: f32,
+    isoline_width_px: f32,
+    isoline_opacity: f32,
+    isoline_color_r: f32,
+    isoline_color_g: f32,
+    isoline_color_b: f32,
+    _padding0: f32,
+    _padding1: f32,
 }
 
 impl Uniforms {
@@ -60,6 +68,14 @@ impl Uniforms {
             x_range_log: range_log,
             is_log_x: is_log,
             show_surface_isolines: if config.isolines { 1.0 } else { 0.0 },
+            isoline_step: config.isoline_step.max(0.001),
+            isoline_width_px: config.isoline_width_px.max(0.25),
+            isoline_opacity: config.isoline_opacity.clamp(0.0, 1.0),
+            isoline_color_r: config.isoline_color[0],
+            isoline_color_g: config.isoline_color[1],
+            isoline_color_b: config.isoline_color[2],
+            _padding0: 0.0,
+            _padding1: 0.0,
         }
     }
 }
@@ -70,7 +86,6 @@ pub struct Surface3DRenderer {
     queue: Arc<wgpu::Queue>,
     surface_pipeline: wgpu::RenderPipeline,
     wireframe_pipeline: Option<wgpu::RenderPipeline>,
-    isoline_pipeline: Option<wgpu::RenderPipeline>,
     grid_pipeline: wgpu::RenderPipeline,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
@@ -100,7 +115,6 @@ impl Surface3DRenderer {
         let (
             surface_pipeline,
             wireframe_pipeline,
-            isoline_pipeline,
             grid_pipeline,
             uniform_buffer,
             uniform_bind_group,
@@ -125,7 +139,6 @@ impl Surface3DRenderer {
             queue,
             surface_pipeline,
             wireframe_pipeline,
-            isoline_pipeline,
             grid_pipeline,
             uniform_buffer,
             uniform_bind_group,
@@ -179,7 +192,6 @@ impl Surface3DRenderer {
         config: &Surface3DConfig,
     ) -> (
         wgpu::RenderPipeline,
-        Option<wgpu::RenderPipeline>,
         Option<wgpu::RenderPipeline>,
         wgpu::RenderPipeline,
         wgpu::Buffer,
@@ -342,54 +354,6 @@ impl Surface3DRenderer {
             None
         };
 
-        // Create isoline pipeline if enabled
-        let isoline_pipeline = if config.isolines {
-            Some(
-                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Isoline Pipeline"),
-                    layout: Some(&pipeline_layout),
-                    vertex: wgpu::VertexState {
-                        module: &shader,
-                        entry_point: Some("vs_projection"),
-                        buffers: std::slice::from_ref(&vertex_layout),
-                        compilation_options: Default::default(),
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &shader,
-                        entry_point: Some("fs_projection"),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: wgpu::TextureFormat::Rgba8Unorm,
-                            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                        compilation_options: Default::default(),
-                    }),
-                    primitive: wgpu::PrimitiveState {
-                        topology: wgpu::PrimitiveTopology::TriangleList,
-                        front_face: wgpu::FrontFace::Ccw,
-                        cull_mode: Some(wgpu::Face::Back), // Cull back faces to avoid seeing wireframe through transparent surface
-                        ..Default::default()
-                    },
-                    depth_stencil: Some(wgpu::DepthStencilState {
-                        format: wgpu::TextureFormat::Depth32Float,
-                        depth_write_enabled: Some(true),
-                        depth_compare: Some(wgpu::CompareFunction::Less),
-                        stencil: Default::default(),
-                        bias: Default::default(),
-                    }),
-                    multisample: wgpu::MultisampleState {
-                        count: config.msaa_samples,
-                        mask: !0,
-                        alpha_to_coverage_enabled: false,
-                    },
-                    multiview_mask: None,
-                    cache: None,
-                }),
-            )
-        } else {
-            None
-        };
-
         // Create grid pipeline
         let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Grid Pipeline"),
@@ -447,7 +411,6 @@ impl Surface3DRenderer {
         (
             surface_pipeline,
             wireframe_pipeline,
-            isoline_pipeline,
             grid_pipeline,
             uniform_buffer,
             bind_group,
@@ -557,7 +520,9 @@ impl Surface3DRenderer {
         }
 
         // Update uniforms
-        let uniforms = Uniforms::new(camera, &self.config, log_settings);
+        let mut surface_config = self.config.clone();
+        surface_config.isolines = false;
+        let uniforms = Uniforms::new(camera, &surface_config, log_settings);
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
@@ -634,10 +599,12 @@ impl Surface3DRenderer {
                 ..Default::default()
             });
 
-            // Draw grid box first (background)
-            // Use CullMode::Front (cull front, show back).
-
-            if self.config.show_grid
+            // Surface3DElement paints the Cartesian grid as projected GPUI
+            // strokes. Keeping the legacy shader grid disabled avoids
+            // fragment-space artifacts on grazing box faces.
+            let draw_legacy_shader_grid = false;
+            if draw_legacy_shader_grid
+                && self.config.show_grid
                 && self.config.show_axes
                 && self.config.plot_type == SurfacePlotType::Cartesian
             {
@@ -657,12 +624,6 @@ impl Surface3DRenderer {
                 wgpu::IndexFormat::Uint32,
             );
             render_pass.draw_indexed(0..self.index_count, 0, 0..1);
-
-            // Draw isolines if enabled (before wireframe)
-            if let Some(pipeline) = &self.isoline_pipeline {
-                render_pass.set_pipeline(pipeline);
-                render_pass.draw_indexed(0..self.index_count, 0, 0..1);
-            }
 
             // Draw wireframe if enabled
             if let (Some(pipeline), Some(index_buffer)) =

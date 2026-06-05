@@ -44,6 +44,7 @@
 
 pub mod arc;
 pub mod area;
+pub(crate) mod contour_smoothing;
 pub mod curve;
 pub mod link;
 pub mod path;

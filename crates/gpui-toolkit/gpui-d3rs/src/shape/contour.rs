@@ -5,6 +5,7 @@
 use crate::color::D3Color;
 use crate::contour::Contour;
 use crate::scale::Scale;
+use crate::shape::contour_smoothing::{StrokePoint, smooth_stroke_segment as smooth_stroke_points};
 use gpui::prelude::*;
 use gpui::*;
 use std::panic;
@@ -27,6 +28,12 @@ pub struct ContourConfig {
     pub stroke_color: D3Color,
     /// Fixed fill color (used if color_scale is None)
     pub fill_color: D3Color,
+    /// Whether to smooth contour stroke paths before painting
+    pub smooth_strokes: bool,
+    /// Number of Chaikin smoothing iterations
+    pub smoothing_iterations: usize,
+    /// Maximum allowed stroke deviation in pixels before smoothing is rejected
+    pub smoothing_max_deviation_px: f32,
 }
 
 impl Default for ContourConfig {
@@ -39,6 +46,9 @@ impl Default for ContourConfig {
             color_scale: None,
             stroke_color: D3Color::from_hex(0x4682b4),
             fill_color: D3Color::from_hex(0x4682b4),
+            smooth_strokes: false,
+            smoothing_iterations: 1,
+            smoothing_max_deviation_px: 2.0,
         }
     }
 }
@@ -93,6 +103,78 @@ impl ContourConfig {
         self.fill_color = color;
         self
     }
+
+    /// Enable or disable stroke path smoothing
+    pub fn smooth_strokes(mut self, smooth: bool) -> Self {
+        self.smooth_strokes = smooth;
+        self
+    }
+
+    /// Set the number of smoothing iterations
+    pub fn smoothing_iterations(mut self, iterations: usize) -> Self {
+        self.smoothing_iterations = iterations.min(4);
+        self
+    }
+
+    /// Set the max deviation allowed for smoothed paths
+    pub fn smoothing_max_deviation_px(mut self, deviation: f32) -> Self {
+        self.smoothing_max_deviation_px = deviation.max(0.0);
+        self
+    }
+}
+
+fn split_stroke_segments(
+    points: &[Point<Pixels>],
+    x_jump_threshold: f32,
+    y_jump_threshold: f32,
+) -> Vec<Vec<Point<Pixels>>> {
+    let mut segments = Vec::new();
+    let mut current: Vec<Point<Pixels>> = Vec::new();
+
+    for point in points {
+        if let Some(prev) = current.last() {
+            let dx: f32 = (point.x - prev.x).abs().into();
+            let dy: f32 = (point.y - prev.y).abs().into();
+            if dx > x_jump_threshold || dy > y_jump_threshold {
+                if current.len() >= 2 {
+                    segments.push(current);
+                }
+                current = Vec::new();
+            }
+        }
+        current.push(*point);
+    }
+
+    if current.len() >= 2 {
+        segments.push(current);
+    }
+
+    segments
+}
+
+fn smooth_stroke_segment(
+    points: &[Point<Pixels>],
+    closed: bool,
+    config: &ContourConfig,
+) -> Vec<Point<Pixels>> {
+    let smoothing_points: Vec<_> = points
+        .iter()
+        .map(|point| {
+            let x: f32 = point.x.into();
+            let y: f32 = point.y.into();
+            StrokePoint::new(x, y)
+        })
+        .collect();
+    smooth_stroke_points(
+        &smoothing_points,
+        closed,
+        config.smooth_strokes,
+        config.smoothing_iterations,
+        config.smoothing_max_deviation_px,
+    )
+    .into_iter()
+    .map(|stroke_point| point(px(stroke_point.x), px(stroke_point.y)))
+    .collect()
 }
 
 /// A custom element for rendering contours
@@ -383,26 +465,30 @@ where
                         &screen_points[..]
                     };
 
-                    for i in 0..points_to_draw.len() {
-                        if i == 0 {
-                            builder.move_to(points_to_draw[0]);
-                        } else {
-                            let prev = &points_to_draw[i - 1];
-                            let curr = &points_to_draw[i];
-                            let dx: f32 = (curr.x - prev.x).abs().into();
-                            let dy: f32 = (curr.y - prev.y).abs().into();
+                    let segments =
+                        split_stroke_segments(points_to_draw, x_jump_threshold, y_jump_threshold);
+                    let closes_single_segment = is_closed && segments.len() == 1;
+                    let mut has_stroke_segments = false;
 
-                            // Jump if either axis has a large discontinuity
-                            if dx > x_jump_threshold || dy > y_jump_threshold {
-                                // Large jump detected - start a new sub-path (lift the pen)
-                                builder.move_to(*curr);
-                            } else {
-                                builder.line_to(*curr);
-                            }
+                    for segment in segments {
+                        let segment_is_closed = closes_single_segment && segment.len() >= 3;
+                        let draw_points =
+                            smooth_stroke_segment(&segment, segment_is_closed, &self.config);
+                        if draw_points.len() < 2 {
+                            continue;
                         }
+
+                        builder.move_to(draw_points[0]);
+                        for point in &draw_points[1..] {
+                            builder.line_to(*point);
+                        }
+                        if segment_is_closed {
+                            builder.line_to(draw_points[0]);
+                        }
+                        has_stroke_segments = true;
                     }
 
-                    if let Ok(path) = builder.build() {
+                    if has_stroke_segments && let Ok(path) = builder.build() {
                         let mut stroke_rgba = stroke_color.to_rgba();
                         stroke_rgba.a *= self.config.stroke_opacity;
                         window.paint_path(path, stroke_rgba);

@@ -1,3 +1,15 @@
+# 0.6.24
+
+## Improvements
+
+- Made isolines less pixelized both in 2d and 3d, same with 3d axis and grid
+
+# 0.6.23
+
+## Fixes
+
+- Fixed text alignement (regression) in d3rs and px
+
 # 0.6.22
 
 ## Improvements

@@ -6,13 +6,19 @@ use super::config::SurfacePlotType;
 use super::data::SurfaceData;
 use super::mesh::SurfaceMesh;
 use super::renderer::Surface3DRenderer;
+use crate::color::D3Color;
+use crate::contour::ContourGenerator;
+use crate::shape::contour_smoothing::StrokePoint;
 use crate::text::{GlyphTextConfig, HorizontalTextAnchor, VerticalTextAnchor, paint_chart_text_at};
+use glam::Vec3;
 use gpui::*;
 use image::{Frame, RgbaImage};
 use std::cell::RefCell;
 use std::panic;
 use std::rc::Rc;
 use std::sync::Arc;
+
+const MAX_SURFACE_RENDER_DIMENSION: f32 = 4096.0;
 
 /// Interactive state for 3D surface element
 #[derive(Debug, Clone)]
@@ -144,6 +150,546 @@ impl Surface3DElement {
             *mesh_ref = Some(mesh);
         }
     }
+
+    fn normalized_z_grid(&self) -> Vec<f64> {
+        let x_count = self.data.x_count();
+        let y_count = self.data.y_count();
+        let mut values = Vec::with_capacity(x_count * y_count);
+        for y in 0..y_count {
+            for x in 0..x_count {
+                let z = self.data.z_at(x, y).unwrap_or(self.data.z_min);
+                values.push(self.data.normalize_z(z).clamp(0.0, 1.0) as f64);
+            }
+        }
+        values
+    }
+
+    fn isoline_levels(&self) -> Vec<f64> {
+        let step = self.config.isoline_step.max(0.001) as f64;
+        let mut level = step;
+        let mut levels = Vec::new();
+        while level < 1.0 {
+            levels.push(level);
+            level += step;
+        }
+        levels
+    }
+
+    fn isoline_world_position(&self, x: f64, y: f64, normalized_z: f64) -> Vec3 {
+        let nx = self.data.normalize_x(x);
+        let ny = self.data.normalize_y(y);
+        let nz = normalized_z as f32;
+        match self.config.plot_type {
+            SurfacePlotType::Cartesian => Vec3::new(nx, nz - 0.5, ny),
+            SurfacePlotType::Spherical => {
+                let phi = nx * std::f32::consts::FRAC_PI_2;
+                let theta = ny * std::f32::consts::PI;
+                let radius = 1.0;
+                let y_pos = radius * phi.sin();
+                let r_xz = radius * phi.cos();
+                let x_pos = r_xz * theta.sin();
+                let z_pos = r_xz * theta.cos();
+                Vec3::new(x_pos, y_pos, z_pos)
+            }
+        }
+    }
+
+    fn paint_projected_isolines(
+        &self,
+        bounds: Bounds<Pixels>,
+        width: f32,
+        height: f32,
+        camera: &Camera3D,
+        window: &mut Window,
+    ) {
+        if !self.config.isolines
+            || self.config.isoline_opacity <= 0.0
+            || self.config.isoline_width_px <= 0.0
+            || self.data.x_count() < 2
+            || self.data.y_count() < 2
+        {
+            return;
+        }
+
+        let levels = self.isoline_levels();
+        if levels.is_empty() {
+            return;
+        }
+
+        let values = self.normalized_z_grid();
+        let contour_segments = ContourGenerator::new(self.data.x_count(), self.data.y_count())
+            .x_values(self.data.x_values.clone())
+            .y_values(self.data.y_values.clone())
+            .x_log_interpolation(self.data.x_log)
+            .y_log_interpolation(self.data.y_log)
+            .upsample_factor(self.config.isoline_upsample_factor)
+            .contour_segments(&values, &levels);
+        let mut stroke_color = D3Color {
+            r: self.config.isoline_color[0].clamp(0.0, 1.0),
+            g: self.config.isoline_color[1].clamp(0.0, 1.0),
+            b: self.config.isoline_color[2].clamp(0.0, 1.0),
+            a: 1.0,
+        }
+        .to_rgba();
+        stroke_color.a *= self.config.isoline_opacity.clamp(0.0, 1.0);
+
+        for segment in contour_segments {
+            let start_world =
+                self.isoline_world_position(segment.start.x, segment.start.y, segment.value);
+            let end_world =
+                self.isoline_world_position(segment.end.x, segment.end.y, segment.value);
+            let Some(start) = camera.project_to_screen(start_world, width, height) else {
+                continue;
+            };
+            let Some(end) = camera.project_to_screen(end_world, width, height) else {
+                continue;
+            };
+
+            paint_stroke_segment(
+                &[
+                    StrokePoint::new(start.x, start.y),
+                    StrokePoint::new(end.x, end.y),
+                ],
+                bounds,
+                self.config.isoline_width_px,
+                stroke_color,
+                window,
+            );
+        }
+    }
+
+    fn paint_projected_grid(
+        &self,
+        bounds: Bounds<Pixels>,
+        width: f32,
+        height: f32,
+        camera: &Camera3D,
+        overlay_color: Rgba,
+        window: &mut Window,
+    ) {
+        if !self.config.show_grid
+            || !self.config.show_axes
+            || self.config.plot_type != SurfacePlotType::Cartesian
+        {
+            return;
+        }
+
+        for line in cartesian_grid_lines(&self.data, camera) {
+            let (stroke_width, alpha) = match line.kind {
+                CartesianGridLineKind::Minor => (0.75, 0.18),
+                CartesianGridLineKind::Major => (1.0, 0.36),
+                CartesianGridLineKind::Border => (1.25, 0.68),
+            };
+            let Some(start) = camera.project_to_screen(line.start, width, height) else {
+                continue;
+            };
+            let Some(end) = camera.project_to_screen(line.end, width, height) else {
+                continue;
+            };
+
+            let mut color = overlay_color;
+            color.a *= alpha;
+            paint_stroke_segment(
+                &[
+                    StrokePoint::new(start.x, start.y),
+                    StrokePoint::new(end.x, end.y),
+                ],
+                bounds,
+                stroke_width,
+                color,
+                window,
+            );
+        }
+    }
+}
+
+fn paint_stroke_segment(
+    segment: &[StrokePoint],
+    bounds: Bounds<Pixels>,
+    width_px: f32,
+    color: Rgba,
+    window: &mut Window,
+) {
+    if segment.len() < 2 {
+        return;
+    }
+
+    let mut builder = PathBuilder::stroke(px(width_px));
+    builder.move_to(Point {
+        x: px(segment[0].x) + bounds.origin.x,
+        y: px(segment[0].y) + bounds.origin.y,
+    });
+    for point in &segment[1..] {
+        builder.line_to(Point {
+            x: px(point.x) + bounds.origin.x,
+            y: px(point.y) + bounds.origin.y,
+        });
+    }
+    if let Ok(path) = builder.build() {
+        window.paint_path(path, color);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CartesianGridLineKind {
+    Minor,
+    Major,
+    Border,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CartesianGridLine {
+    start: Vec3,
+    end: Vec3,
+    kind: CartesianGridLineKind,
+}
+
+#[derive(Debug, Clone, Default)]
+struct AxisGridTicks {
+    major: Vec<f32>,
+    minor: Vec<f32>,
+}
+
+fn cartesian_grid_lines(data: &SurfaceData, camera: &Camera3D) -> Vec<CartesianGridLine> {
+    let x_ticks = frequency_grid_ticks(data);
+    let angle_ticks = angle_grid_ticks(data);
+    let spl_ticks = spl_grid_ticks(data);
+    let x_face = if camera.position.x >= camera.target.x {
+        -1.0
+    } else {
+        1.0
+    };
+    let z_face = if camera.position.z >= camera.target.z {
+        -1.0
+    } else {
+        1.0
+    };
+
+    let mut lines = Vec::new();
+    push_cartesian_grid_lines_for_ticks(
+        &mut lines,
+        &x_ticks.minor,
+        CartesianGridLineKind::Minor,
+        |x| {
+            [
+                (Vec3::new(x, -0.5, -1.0), Vec3::new(x, -0.5, 1.0)),
+                (Vec3::new(x, -0.5, z_face), Vec3::new(x, 0.5, z_face)),
+            ]
+        },
+    );
+    push_cartesian_grid_lines_for_ticks(
+        &mut lines,
+        &angle_ticks.minor,
+        CartesianGridLineKind::Minor,
+        |z| {
+            [
+                (Vec3::new(-1.0, -0.5, z), Vec3::new(1.0, -0.5, z)),
+                (Vec3::new(x_face, -0.5, z), Vec3::new(x_face, 0.5, z)),
+            ]
+        },
+    );
+    push_cartesian_grid_lines_for_ticks(
+        &mut lines,
+        &spl_ticks.minor,
+        CartesianGridLineKind::Minor,
+        |y| {
+            [
+                (Vec3::new(x_face, y, -1.0), Vec3::new(x_face, y, 1.0)),
+                (Vec3::new(-1.0, y, z_face), Vec3::new(1.0, y, z_face)),
+            ]
+        },
+    );
+    push_cartesian_grid_lines_for_ticks(
+        &mut lines,
+        &x_ticks.major,
+        CartesianGridLineKind::Major,
+        |x| {
+            [
+                (Vec3::new(x, -0.5, -1.0), Vec3::new(x, -0.5, 1.0)),
+                (Vec3::new(x, -0.5, z_face), Vec3::new(x, 0.5, z_face)),
+            ]
+        },
+    );
+    push_cartesian_grid_lines_for_ticks(
+        &mut lines,
+        &angle_ticks.major,
+        CartesianGridLineKind::Major,
+        |z| {
+            [
+                (Vec3::new(-1.0, -0.5, z), Vec3::new(1.0, -0.5, z)),
+                (Vec3::new(x_face, -0.5, z), Vec3::new(x_face, 0.5, z)),
+            ]
+        },
+    );
+    push_cartesian_grid_lines_for_ticks(
+        &mut lines,
+        &spl_ticks.major,
+        CartesianGridLineKind::Major,
+        |y| {
+            [
+                (Vec3::new(x_face, y, -1.0), Vec3::new(x_face, y, 1.0)),
+                (Vec3::new(-1.0, y, z_face), Vec3::new(1.0, y, z_face)),
+            ]
+        },
+    );
+    push_box_border_lines(&mut lines, x_face, z_face);
+    lines
+}
+
+fn push_cartesian_grid_lines_for_ticks<const N: usize>(
+    lines: &mut Vec<CartesianGridLine>,
+    ticks: &[f32],
+    kind: CartesianGridLineKind,
+    make_lines: impl Fn(f32) -> [(Vec3, Vec3); N],
+) {
+    for &tick in ticks {
+        for (start, end) in make_lines(tick) {
+            lines.push(CartesianGridLine { start, end, kind });
+        }
+    }
+}
+
+fn push_box_border_lines(lines: &mut Vec<CartesianGridLine>, x_face: f32, z_face: f32) {
+    let floor_edges = [
+        (Vec3::new(-1.0, -0.5, -1.0), Vec3::new(1.0, -0.5, -1.0)),
+        (Vec3::new(1.0, -0.5, -1.0), Vec3::new(1.0, -0.5, 1.0)),
+        (Vec3::new(1.0, -0.5, 1.0), Vec3::new(-1.0, -0.5, 1.0)),
+        (Vec3::new(-1.0, -0.5, 1.0), Vec3::new(-1.0, -0.5, -1.0)),
+    ];
+    let x_wall_edges = [
+        (Vec3::new(x_face, -0.5, -1.0), Vec3::new(x_face, -0.5, 1.0)),
+        (Vec3::new(x_face, 0.5, -1.0), Vec3::new(x_face, 0.5, 1.0)),
+        (Vec3::new(x_face, -0.5, -1.0), Vec3::new(x_face, 0.5, -1.0)),
+        (Vec3::new(x_face, -0.5, 1.0), Vec3::new(x_face, 0.5, 1.0)),
+    ];
+    let z_wall_edges = [
+        (Vec3::new(-1.0, -0.5, z_face), Vec3::new(1.0, -0.5, z_face)),
+        (Vec3::new(-1.0, 0.5, z_face), Vec3::new(1.0, 0.5, z_face)),
+        (Vec3::new(-1.0, -0.5, z_face), Vec3::new(-1.0, 0.5, z_face)),
+        (Vec3::new(1.0, -0.5, z_face), Vec3::new(1.0, 0.5, z_face)),
+    ];
+
+    for (start, end) in floor_edges
+        .into_iter()
+        .chain(x_wall_edges)
+        .chain(z_wall_edges)
+    {
+        push_unique_border_line(lines, start, end);
+    }
+}
+
+fn push_unique_border_line(lines: &mut Vec<CartesianGridLine>, start: Vec3, end: Vec3) {
+    const EPS: f32 = 1e-4;
+    let same_point = |a: Vec3, b: Vec3| (a - b).length_squared() < EPS * EPS;
+    if lines.iter().any(|line| {
+        line.kind == CartesianGridLineKind::Border
+            && ((same_point(line.start, start) && same_point(line.end, end))
+                || (same_point(line.start, end) && same_point(line.end, start)))
+    }) {
+        return;
+    }
+    lines.push(CartesianGridLine {
+        start,
+        end,
+        kind: CartesianGridLineKind::Border,
+    });
+}
+
+fn frequency_grid_ticks(data: &SurfaceData) -> AxisGridTicks {
+    let mut major = normalized_x_positions(
+        data.x_ticks
+            .clone()
+            .unwrap_or_else(default_frequency_ticks)
+            .into_iter(),
+        data,
+    );
+    let mut minor = if data.x_log {
+        normalized_x_positions(log_frequency_minor_ticks(data).into_iter(), data)
+    } else {
+        normalized_x_positions(
+            linear_subdivision_ticks(data.x_min, data.x_max, 25).into_iter(),
+            data,
+        )
+    };
+    sanitize_axis_positions(&mut major, -1.0, 1.0);
+    sanitize_axis_positions(&mut minor, -1.0, 1.0);
+    remove_positions(&mut minor, &major);
+    AxisGridTicks { major, minor }
+}
+
+fn angle_grid_ticks(data: &SurfaceData) -> AxisGridTicks {
+    let mut major = normalized_y_positions(angle_major_ticks(data).into_iter(), data);
+    let mut minor = normalized_y_positions(
+        linear_step_ticks(data.y_min, data.y_max, 10.0).into_iter(),
+        data,
+    );
+    sanitize_axis_positions(&mut major, -1.0, 1.0);
+    sanitize_axis_positions(&mut minor, -1.0, 1.0);
+    remove_positions(&mut minor, &major);
+    AxisGridTicks { major, minor }
+}
+
+fn spl_grid_ticks(data: &SurfaceData) -> AxisGridTicks {
+    let (major_ticks, major_step) = spl_major_ticks(data);
+    let mut major = normalized_z_positions(major_ticks.into_iter(), data);
+    let mut minor = if data.z_ticks.is_some() {
+        Vec::new()
+    } else {
+        normalized_z_positions(
+            linear_step_ticks(data.z_min, data.z_max, major_step / 5.0).into_iter(),
+            data,
+        )
+    };
+    sanitize_axis_positions(&mut major, -0.5, 0.5);
+    sanitize_axis_positions(&mut minor, -0.5, 0.5);
+    remove_positions(&mut minor, &major);
+    AxisGridTicks { major, minor }
+}
+
+fn default_frequency_ticks() -> Vec<f64> {
+    vec![
+        100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+    ]
+}
+
+fn angle_major_ticks(data: &SurfaceData) -> Vec<f64> {
+    data.y_ticks
+        .clone()
+        .unwrap_or_else(|| linear_step_ticks(data.y_min, data.y_max, 30.0))
+}
+
+fn spl_major_ticks(data: &SurfaceData) -> (Vec<f64>, f64) {
+    if let Some(ticks) = data.z_ticks.clone() {
+        return (ticks, 1.0);
+    }
+
+    let range = data.z_max - data.z_min;
+    let step = if range > 40.0 {
+        10.0
+    } else if range > 20.0 {
+        5.0
+    } else if range > 10.0 {
+        2.0
+    } else {
+        1.0
+    };
+    (linear_step_ticks(data.z_min, data.z_max, step), step)
+}
+
+fn linear_step_ticks(min: f64, max: f64, step: f64) -> Vec<f64> {
+    if !min.is_finite() || !max.is_finite() || !step.is_finite() || step <= 0.0 {
+        return Vec::new();
+    }
+    let start = (min / step).ceil() * step;
+    let mut ticks = Vec::new();
+    let mut value = start;
+    while value <= max + step * 1e-3 {
+        ticks.push(value);
+        value += step;
+    }
+    ticks
+}
+
+fn linear_subdivision_ticks(min: f64, max: f64, divisions: usize) -> Vec<f64> {
+    if divisions == 0 || !min.is_finite() || !max.is_finite() || min >= max {
+        return Vec::new();
+    }
+    (0..=divisions)
+        .map(|i| min + (max - min) * i as f64 / divisions as f64)
+        .collect()
+}
+
+fn log_frequency_minor_ticks(data: &SurfaceData) -> Vec<f64> {
+    let min = if data.x_min > 0.0 {
+        data.x_min
+    } else {
+        data.x_values
+            .iter()
+            .copied()
+            .filter(|value| *value > 0.0 && value.is_finite())
+            .fold(f64::INFINITY, f64::min)
+    };
+    let max = data.x_max;
+    if !min.is_finite() || !max.is_finite() || min <= 0.0 || max <= min {
+        return Vec::new();
+    }
+
+    let start_decade = min.log10().floor() as i32;
+    let end_decade = max.log10().ceil() as i32;
+    let mut ticks = Vec::new();
+    for decade in start_decade..=end_decade {
+        let base = 10_f64.powi(decade);
+        for multiplier in 2..10 {
+            let value = base * multiplier as f64;
+            if value >= min && value <= max {
+                ticks.push(value);
+            }
+        }
+    }
+    ticks
+}
+
+fn normalized_x_positions(ticks: impl Iterator<Item = f64>, data: &SurfaceData) -> Vec<f32> {
+    ticks.map(|value| data.normalize_x(value)).collect()
+}
+
+fn normalized_y_positions(ticks: impl Iterator<Item = f64>, data: &SurfaceData) -> Vec<f32> {
+    ticks.map(|value| data.normalize_y(value)).collect()
+}
+
+fn normalized_z_positions(ticks: impl Iterator<Item = f64>, data: &SurfaceData) -> Vec<f32> {
+    ticks.map(|value| data.normalize_z(value) - 0.5).collect()
+}
+
+fn sanitize_axis_positions(values: &mut Vec<f32>, min: f32, max: f32) {
+    const EPS: f32 = 1e-4;
+    values.retain(|value| value.is_finite() && *value > min + EPS && *value < max - EPS);
+    values.sort_by(|a, b| a.total_cmp(b));
+    values.dedup_by(|a, b| (*a - *b).abs() < EPS);
+}
+
+fn remove_positions(values: &mut Vec<f32>, positions_to_remove: &[f32]) {
+    const EPS: f32 = 1e-4;
+    values.retain(|value| {
+        !positions_to_remove
+            .iter()
+            .any(|position| (*value - *position).abs() < EPS)
+    });
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CartesianGridLineDebugKind {
+    Minor,
+    Major,
+    Border,
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CartesianGridLineDebug {
+    pub start: [f32; 3],
+    pub end: [f32; 3],
+    pub kind: CartesianGridLineDebugKind,
+}
+
+#[doc(hidden)]
+pub fn cartesian_grid_lines_for_testing(
+    data: &SurfaceData,
+    camera: &Camera3D,
+) -> Vec<CartesianGridLineDebug> {
+    cartesian_grid_lines(data, camera)
+        .into_iter()
+        .map(|line| CartesianGridLineDebug {
+            start: line.start.to_array(),
+            end: line.end.to_array(),
+            kind: match line.kind {
+                CartesianGridLineKind::Minor => CartesianGridLineDebugKind::Minor,
+                CartesianGridLineKind::Major => CartesianGridLineDebugKind::Major,
+                CartesianGridLineKind::Border => CartesianGridLineDebugKind::Border,
+            },
+        })
+        .collect()
 }
 
 impl IntoElement for Surface3DElement {
@@ -219,8 +765,17 @@ impl Element for Surface3DElement {
         // Now render the surface
         let width: f32 = bounds.size.width.into();
         let height: f32 = bounds.size.height.into();
-        let width_u32 = width as u32;
-        let height_u32 = height as u32;
+        let scale_factor = window.scale_factor().clamp(1.0, 3.0);
+        let mut render_width = width * scale_factor;
+        let mut render_height = height * scale_factor;
+        let max_render_dimension = render_width.max(render_height);
+        if max_render_dimension > MAX_SURFACE_RENDER_DIMENSION {
+            let downscale = MAX_SURFACE_RENDER_DIMENSION / max_render_dimension;
+            render_width *= downscale;
+            render_height *= downscale;
+        }
+        let width_u32 = render_width.ceil().max(1.0) as u32;
+        let height_u32 = render_height.ceil().max(1.0) as u32;
 
         if width_u32 > 0 && height_u32 > 0 {
             // Ensure renderer and mesh are initialized
@@ -264,9 +819,6 @@ impl Element for Surface3DElement {
             }
         }
 
-        // Draw axis labels (AFTER rendering surface to be ON TOP)
-        let camera = &self.state.borrow().camera;
-
         // Pick overlay color that contrasts with the background
         let bg = self.config.background_color;
         let luminance = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2];
@@ -275,6 +827,15 @@ impl Element for Surface3DElement {
         } else {
             gpui::rgba(0xffffffff) // white text on dark background
         };
+
+        {
+            let camera = &self.state.borrow().camera;
+            self.paint_projected_grid(bounds, width, height, camera, overlay_color, window);
+            self.paint_projected_isolines(bounds, width, height, camera, window);
+        }
+
+        // Draw axis labels (AFTER rendering surface to be ON TOP)
+        let camera = &self.state.borrow().camera;
         // Re-use width/height f32 from above
 
         let upright_rotation = |mut angle: f32| -> f32 {
@@ -431,11 +992,11 @@ impl Element for Surface3DElement {
             }
 
             // Freq Labels (X axis)
-            let freq_ticks = self.data.x_ticks.clone().unwrap_or_else(|| {
-                vec![
-                    100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
-                ]
-            });
+            let freq_ticks = self
+                .data
+                .x_ticks
+                .clone()
+                .unwrap_or_else(default_frequency_ticks);
             for freq in freq_ticks {
                 let x = self.data.normalize_x(freq);
                 let pos = glam::Vec3::new(x, -0.5, best_x_z_val);
@@ -486,19 +1047,7 @@ impl Element for Surface3DElement {
             }
 
             // Angle Labels (Z axis) - 30° major ticks
-            let angle_ticks = self.data.y_ticks.clone().unwrap_or_else(|| {
-                let min_angle = self.data.y_min;
-                let max_angle = self.data.y_max;
-                let step = 30.0; // 30° major ticks to match grid
-                let start = (min_angle / step).ceil() * step;
-                let mut ticks = Vec::new();
-                let mut angle = start;
-                while angle <= max_angle + 0.1 {
-                    ticks.push(angle);
-                    angle += step;
-                }
-                ticks
-            });
+            let angle_ticks = angle_major_ticks(&self.data);
 
             for angle in angle_ticks {
                 let z = self.data.normalize_y(angle);
@@ -547,30 +1096,7 @@ impl Element for Surface3DElement {
 
             // SPL Labels (Y axis)
             // Generate dynamic ticks based on actual data range
-            let spl_ticks = self.data.z_ticks.clone().unwrap_or_else(|| {
-                let z_min = self.data.z_min;
-                let z_max = self.data.z_max;
-                let range = z_max - z_min;
-                // Choose step size based on range
-                let step = if range > 40.0 {
-                    10.0
-                } else if range > 20.0 {
-                    5.0
-                } else if range > 10.0 {
-                    2.0
-                } else {
-                    1.0
-                };
-                // Generate ticks aligned to step size, within data range
-                let start = (z_min / step).ceil() * step;
-                let mut ticks = Vec::new();
-                let mut tick = start;
-                while tick <= z_max + 0.01 {
-                    ticks.push(tick);
-                    tick += step;
-                }
-                ticks
-            });
+            let (spl_ticks, _) = spl_major_ticks(&self.data);
             for spl in spl_ticks {
                 let y = self.data.normalize_z(spl) - 0.5;
                 let pos = glam::Vec3::new(best_y_x, y, best_y_z);

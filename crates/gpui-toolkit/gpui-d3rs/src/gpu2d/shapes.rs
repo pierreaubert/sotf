@@ -6,6 +6,9 @@ use super::element::Chart2DElement;
 use super::primitives::{Color4, Rect};
 use crate::color::D3Color;
 use crate::scale::Scale;
+use crate::shape::contour_smoothing::{
+    StrokePoint, smooth_stroke_segment as smooth_stroke_points, split_stroke_segments,
+};
 use gpui::*;
 
 use std::sync::Arc;
@@ -940,6 +943,9 @@ where
 
     let stroke_width = config.stroke_width;
     let do_fill = config.fill;
+    let smooth_strokes = config.smooth_strokes;
+    let smoothing_iterations = config.smoothing_iterations;
+    let smoothing_max_deviation_px = config.smoothing_max_deviation_px;
 
     Chart2DElement::new(move |renderer, bounds| {
         let width: f32 = bounds.size.width.into();
@@ -974,30 +980,54 @@ where
 
                 // Draw stroke
                 if stroke_width > 0.0 {
-                    let mut i = 0;
-                    while i < ring.len() - 1 {
-                        let (x0, y0) = ring[i];
-                        let (x1, y1) = ring[i + 1];
+                    let stroke_ring = if is_closed && ring.len() >= 2 {
+                        &ring[..ring.len() - 1]
+                    } else {
+                        &ring[..]
+                    };
+                    let stroke_points: Vec<_> = stroke_ring
+                        .iter()
+                        .map(|(x, y)| StrokePoint::new(x * width, y * height))
+                        .collect();
+                    let segments = split_stroke_segments(
+                        &stroke_points,
+                        x_jump_threshold * width,
+                        y_jump_threshold * height,
+                    );
+                    let closes_single_segment = is_closed && !has_jump && segments.len() == 1;
 
-                        // Skip if jump
-                        if (x1 - x0).abs() > x_jump_threshold || (y1 - y0).abs() > y_jump_threshold
-                        {
-                            i += 1;
-                            continue;
-                        }
-
-                        // Clip and draw
-                        if let Some((cx0, cy0, cx1, cy1)) = clip_line_segment(x0, y0, x1, y1) {
+                    for segment in segments {
+                        let segment_is_closed = closes_single_segment && segment.len() >= 3;
+                        let draw_points = smooth_stroke_points(
+                            &segment,
+                            segment_is_closed,
+                            smooth_strokes,
+                            smoothing_iterations,
+                            smoothing_max_deviation_px,
+                        );
+                        for pair in draw_points.windows(2) {
                             renderer.draw_line(
-                                cx0 * width,
-                                cy0 * height,
-                                cx1 * width,
-                                cy1 * height,
+                                pair[0].x,
+                                pair[0].y,
+                                pair[1].x,
+                                pair[1].y,
                                 stroke_width,
                                 data.stroke_color,
                             );
                         }
-                        i += 1;
+                        if segment_is_closed
+                            && let (Some(first), Some(last)) =
+                                (draw_points.first(), draw_points.last())
+                        {
+                            renderer.draw_line(
+                                last.x,
+                                last.y,
+                                first.x,
+                                first.y,
+                                stroke_width,
+                                data.stroke_color,
+                            );
+                        }
                     }
                 }
             }
