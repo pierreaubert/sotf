@@ -59,6 +59,24 @@ impl ContourConfig {
         Self::default()
     }
 
+    /// Create contour configuration from design-system interaction defaults.
+    #[cfg(feature = "gpui")]
+    pub fn from_design(design: &gpui_design::DesignSystem) -> Self {
+        Self {
+            stroke_width: design.interaction.border_width.max(1.5),
+            smoothing_max_deviation_px: design.spacing.grid_unit.max(2.0),
+            ..Self::default()
+        }
+    }
+
+    /// Apply design-system interaction defaults.
+    #[cfg(feature = "gpui")]
+    pub fn with_design(mut self, design: &gpui_design::DesignSystem) -> Self {
+        self.stroke_width = design.interaction.border_width.max(1.5);
+        self.smoothing_max_deviation_px = design.spacing.grid_unit.max(2.0);
+        self
+    }
+
     /// Set stroke width
     pub fn stroke_width(mut self, width: f32) -> Self {
         self.stroke_width = width;

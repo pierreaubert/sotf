@@ -2,9 +2,10 @@
 
 use crate::error::ChartError;
 use crate::{
-    DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
-    validate_data_length, validate_dimensions, validate_positive,
+    ChartSize, DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
+    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, apply_chart_size, default_design, extent_padded,
+    resolved_chart_dimensions, validate_data_array, validate_data_length, validate_dimensions,
+    validate_positive,
 };
 use d3rs::color::D3Color;
 use d3rs::scale::{LinearScale, LogScale, Scale};
@@ -12,6 +13,7 @@ use d3rs::shape::{Area, Curve};
 use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, PathBuilder, Rgba, canvas, div, hsla, px};
+use gpui_design::DesignSystem;
 use std::sync::Arc;
 
 /// Area chart builder.
@@ -26,8 +28,10 @@ pub struct AreaChart {
     curve: Curve,
     width: f32,
     height: f32,
+    chart_size: ChartSize,
     x_scale_type: ScaleType,
     y_scale_type: ScaleType,
+    design: Option<Arc<DesignSystem>>,
 }
 
 impl AreaChart {
@@ -59,6 +63,33 @@ impl AreaChart {
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.width = width;
         self.height = height;
+        self.chart_size = ChartSize::fixed(width, height);
+        self
+    }
+
+    /// Fill the parent using the current minimum chart dimensions.
+    pub fn fill(mut self) -> Self {
+        self.chart_size = ChartSize::fill().min_size(self.width, self.height);
+        self
+    }
+
+    /// Set minimum dimensions for responsive fill sizing.
+    pub fn min_size(mut self, width: f32, height: f32) -> Self {
+        self.width = width;
+        self.height = height;
+        self.chart_size = self.chart_size.min_size(width, height);
+        self
+    }
+
+    /// Set preferred fill-layout aspect ratio.
+    pub fn aspect_ratio(mut self, ratio: f32) -> Self {
+        self.chart_size = self.chart_size.aspect_ratio(ratio);
+        self
+    }
+
+    /// Override the design system used for chart defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
         self
     }
 
@@ -82,11 +113,14 @@ impl AreaChart {
 
     /// Build and validate the chart, returning renderable element.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
+        let design = self.design.clone().unwrap_or_else(default_design);
+        let (layout_width, layout_height) = resolved_chart_dimensions(self.chart_size);
+
         // Validate inputs
         validate_data_array(&self.x, "x")?;
         validate_data_array(&self.y, "y")?;
         validate_data_length(self.x.len(), self.y.len(), "x", "y")?;
-        validate_dimensions(self.width, self.height)?;
+        validate_dimensions(layout_width, layout_height)?;
 
         if let Some(ref y0) = self.y0 {
             validate_data_array(y0, "y0")?;
@@ -110,7 +144,7 @@ impl AreaChart {
         } else {
             0.0
         };
-        let plot_height = self.height - title_height;
+        let plot_height = layout_height - title_height;
 
         // Calculate domains with padding
         let (x_min, x_max) = extent_padded(&self.x, DEFAULT_PADDING_FRACTION);
@@ -229,7 +263,7 @@ impl AreaChart {
             (ScaleType::Linear, ScaleType::Linear) => {
                 let x_scale = LinearScale::new()
                     .domain(x_min, x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, layout_width as f64);
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
                     .range(plot_height as f64, 0.0);
@@ -238,7 +272,7 @@ impl AreaChart {
             (ScaleType::Log, ScaleType::Linear) => {
                 let x_scale = LogScale::new()
                     .domain(x_min.max(1e-10), x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, layout_width as f64);
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
                     .range(plot_height as f64, 0.0);
@@ -247,7 +281,7 @@ impl AreaChart {
             (ScaleType::Linear, ScaleType::Log) => {
                 let x_scale = LinearScale::new()
                     .domain(x_min, x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, layout_width as f64);
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height as f64, 0.0);
@@ -256,7 +290,7 @@ impl AreaChart {
             (ScaleType::Log, ScaleType::Log) => {
                 let x_scale = LogScale::new()
                     .domain(x_min.max(1e-10), x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, layout_width as f64);
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height as f64, 0.0);
@@ -265,17 +299,17 @@ impl AreaChart {
         };
 
         // Build container with optional title
-        let mut container = div()
-            .w(px(self.width))
-            .h(px(self.height))
+        let mut container = apply_chart_size(div(), self.chart_size)
             .relative()
             .flex()
             .flex_col();
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config =
-                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
+            let font_config = GlyphTextConfig::horizontal(
+                design.typography.large_size.max(DEFAULT_TITLE_FONT_SIZE),
+                hsla(0.0, 0.0, 0.2, 1.0),
+            );
             container = container.child(
                 div()
                     .w_full()
@@ -290,7 +324,7 @@ impl AreaChart {
         // Add plot area
         container = container.child(
             div()
-                .w(px(self.width))
+                .w(px(layout_width))
                 .h(px(plot_height))
                 .relative()
                 .child(area_element),
@@ -328,8 +362,10 @@ pub fn area(x: &[f64], y: &[f64]) -> AreaChart {
         curve: Curve::Linear,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+        chart_size: ChartSize::default(),
         x_scale_type: ScaleType::Linear,
         y_scale_type: ScaleType::Linear,
+        design: None,
     }
 }
 
@@ -352,5 +388,25 @@ mod tests {
         let y0 = vec![0.0, 0.0, 0.0];
         let result = area(&x, &y).y0(&y0).y_scale(ScaleType::Log).build();
         assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_area_responsive_size_defaults_and_fixed_opt_in() {
+        let x = vec![1.0, 2.0, 3.0];
+        let y = vec![2.0, 3.0, 4.0];
+
+        crate::assert_default_chart_size(area(&x, &y).chart_size);
+        crate::assert_fixed_chart_size(area(&x, &y).size(320.0, 180.0).chart_size, 320.0, 180.0);
+        crate::assert_fill_chart_size(
+            area(&x, &y)
+                .size(320.0, 180.0)
+                .fill()
+                .min_size(240.0, 160.0)
+                .aspect_ratio(1.5)
+                .chart_size,
+            240.0,
+            160.0,
+            Some(1.5),
+        );
     }
 }

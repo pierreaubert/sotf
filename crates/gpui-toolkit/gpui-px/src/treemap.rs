@@ -21,12 +21,17 @@
 //! ```
 
 use crate::error::ChartError;
-use crate::{DEFAULT_HEIGHT, DEFAULT_WIDTH, TITLE_AREA_HEIGHT, validate_dimensions};
+use crate::{
+    ChartSize, DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, TITLE_AREA_HEIGHT,
+    apply_chart_size, default_design, resolved_chart_dimensions, validate_dimensions,
+};
 use d3rs::color::ColorScheme;
 use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{IntoElement, MouseButton, Rgba, div, hsla, px, rgb};
+use gpui_design::DesignSystem;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// Tiling algorithm for treemap layout.
 ///
@@ -137,9 +142,11 @@ pub struct Treemap {
     padding: f64,
     width: f32,
     height: f32,
+    chart_size: ChartSize,
     color_scheme: Option<ColorScheme>,
     on_click: Option<Rc<dyn Fn(&str, f64) + 'static>>,
     hover_enabled: bool,
+    design: Option<Arc<DesignSystem>>,
 }
 
 impl Treemap {
@@ -171,6 +178,33 @@ impl Treemap {
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.width = width;
         self.height = height;
+        self.chart_size = ChartSize::fixed(width, height);
+        self
+    }
+
+    /// Fill the parent using the current minimum chart dimensions.
+    pub fn fill(mut self) -> Self {
+        self.chart_size = ChartSize::fill().min_size(self.width, self.height);
+        self
+    }
+
+    /// Set minimum dimensions for responsive fill sizing.
+    pub fn min_size(mut self, width: f32, height: f32) -> Self {
+        self.width = width;
+        self.height = height;
+        self.chart_size = self.chart_size.min_size(width, height);
+        self
+    }
+
+    /// Set preferred fill-layout aspect ratio.
+    pub fn aspect_ratio(mut self, ratio: f32) -> Self {
+        self.chart_size = self.chart_size.aspect_ratio(ratio);
+        self
+    }
+
+    /// Override the design system used for chart defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
         self
     }
 
@@ -209,8 +243,11 @@ impl Treemap {
 
     /// Build the treemap chart.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
+        let design = self.design.clone().unwrap_or_else(default_design);
+        let (layout_width, layout_height) = resolved_chart_dimensions(self.chart_size);
+
         // Validate
-        validate_dimensions(self.width, self.height)?;
+        validate_dimensions(layout_width, layout_height)?;
 
         let total_value = self.root.total_value();
         if !total_value.is_finite() || total_value <= 0.0 {
@@ -235,9 +272,9 @@ impl Treemap {
             0.0
         };
 
-        let margin = 10.0;
-        let plot_width = (self.width as f64 - 2.0 * margin).max(0.0);
-        let plot_height = (self.height as f64 - title_height as f64 - 2.0 * margin).max(0.0);
+        let margin = design.spacing.control_gap as f64;
+        let plot_width = (layout_width as f64 - 2.0 * margin).max(0.0);
+        let plot_height = (layout_height as f64 - title_height as f64 - 2.0 * margin).max(0.0);
 
         // Compute treemap layout
         let mut rects = Vec::new();
@@ -354,16 +391,17 @@ impl Treemap {
         }
 
         // Build container
-        let mut container = div()
-            .w(px(self.width))
-            .h(px(self.height))
+        let mut container = apply_chart_size(div(), self.chart_size)
             .flex()
             .flex_col()
             .bg(rgb(0xffffff));
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config = GlyphTextConfig::horizontal(16.0, hsla(0.0, 0.0, 0.2, 1.0));
+            let font_config = GlyphTextConfig::horizontal(
+                design.typography.large_size.max(DEFAULT_TITLE_FONT_SIZE),
+                hsla(0.0, 0.0, 0.2, 1.0),
+            );
             container = container.child(
                 div()
                     .w_full()
@@ -413,9 +451,11 @@ pub fn treemap(root: &TreemapNode) -> Treemap {
         padding: 1.0,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+        chart_size: ChartSize::default(),
         color_scheme: None,
         on_click: None,
         hover_enabled: true,
+        design: None,
     }
 }
 
@@ -904,5 +944,24 @@ mod tests {
             && y0.is_finite()
             && x1.is_finite()
             && y1.is_finite()));
+    }
+
+    #[test]
+    fn test_treemap_responsive_size_defaults_and_fixed_opt_in() {
+        let root = TreemapNode::new("Root", 100.0);
+
+        crate::assert_default_chart_size(treemap(&root).chart_size);
+        crate::assert_fixed_chart_size(treemap(&root).size(420.0, 260.0).chart_size, 420.0, 260.0);
+        crate::assert_fill_chart_size(
+            treemap(&root)
+                .size(420.0, 260.0)
+                .fill()
+                .min_size(360.0, 240.0)
+                .aspect_ratio(1.5)
+                .chart_size,
+            360.0,
+            240.0,
+            Some(1.5),
+        );
     }
 }

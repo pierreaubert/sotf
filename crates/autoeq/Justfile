@@ -30,7 +30,7 @@ publish-autoeq:
 
 [group('demo')]
 demo-headphone-loss:
-	cargo run --release --example headphone_loss_demo -- \
+	cargo run --release --example headphone_loss_demo --features="plotly" -- \
 	--spl "./data_tests/headphones/asr/bowerwilkins_p7/Bowers & Wilkins P7.csv" \
 	--target "./data_tests/targets/harman-over-ear-2018.csv"
 

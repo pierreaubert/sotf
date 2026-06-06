@@ -51,6 +51,20 @@ impl GlyphTextConfig {
         }
     }
 
+    /// Create horizontal text config from design-system typography defaults.
+    #[cfg(feature = "gpui")]
+    pub fn from_design(design: &gpui_design::DesignSystem, color: impl Into<Rgba>) -> Self {
+        Self::horizontal(design.typography.base_size, color)
+    }
+
+    /// Apply design-system typography defaults.
+    #[cfg(feature = "gpui")]
+    pub fn with_design(mut self, design: &gpui_design::DesignSystem) -> Self {
+        self.font_size = design.typography.base_size;
+        self.letter_spacing = 0.0;
+        self
+    }
+
     pub fn rotated(font_size: f32, color: impl Into<Rgba>, rotation: f32) -> Self {
         Self {
             font_size,

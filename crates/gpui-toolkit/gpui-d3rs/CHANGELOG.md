@@ -4,6 +4,8 @@
 
 - Spinorama demo now solves its shell layout with `gpui-builder` and uses the
   design system for spacing and typography.
+- Added design-aware GPUI config helpers for axes, grids, legends, glyph text,
+  GPU 2D/3D surfaces, and common shape defaults.
 - Spinorama CEA2034 and horizontal/vertical SPL legends can hide or show their
   corresponding curves. Horizontal and vertical SPL plots now use discrete line
   legend entries by angle instead of a contour-style color scale.

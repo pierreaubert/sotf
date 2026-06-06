@@ -1,4 +1,4 @@
-use gpui_ui_kit_macros::ComponentTheme;
+use gpui_ui_kit_macros::{ComponentBuilder, ComponentTheme, FormField};
 
 mod gpui {
     #[derive(Debug, Clone, Copy, PartialEq)]
@@ -80,4 +80,71 @@ fn test_explicit_path_theme() {
     };
     let t = ExplicitPathTheme::from(&global);
     assert_eq!(t.red, global.accent);
+}
+
+#[derive(Debug, Clone, ComponentBuilder)]
+pub struct BuilderComponent {
+    #[field(required, into)]
+    pub id: String,
+    #[field(optional, into)]
+    pub label: Option<String>,
+    #[field(default = "true")]
+    pub enabled: bool,
+    #[field(default = "4")]
+    pub count: usize,
+    #[field(default = "String::from(\"md\")", rename = "variant", into)]
+    pub kind: String,
+    #[field(skip, default = "99")]
+    pub skipped: usize,
+}
+
+#[derive(Debug, Clone, FormField)]
+pub struct FormComponent {
+    #[field(required, into)]
+    pub id: String,
+    #[field(optional, into)]
+    pub value: Option<String>,
+    #[field(default = "false")]
+    pub disabled: bool,
+}
+
+#[derive(Debug, Clone, FormField)]
+pub struct DocumentedFormComponent {
+    #[field(required)]
+    pub id: String,
+    #[field(optional, into)]
+    pub value: Option<String>,
+}
+
+#[test]
+fn test_component_builder_required_optional_into_defaults_and_rename() {
+    let component = BuilderComponent::new("field")
+        .label("Name")
+        .enabled(false)
+        .count(7)
+        .variant("lg");
+
+    assert_eq!(component.id, "field");
+    assert_eq!(component.label.as_deref(), Some("Name"));
+    assert!(!component.enabled);
+    assert_eq!(component.count, 7);
+    assert_eq!(component.kind, "lg");
+    assert_eq!(component.skipped, 99);
+}
+
+#[test]
+fn test_form_field_alias_generates_builder() {
+    let component = FormComponent::new("input").value("hello").disabled(true);
+
+    assert_eq!(component.id, "input");
+    assert_eq!(component.value.as_deref(), Some("hello"));
+    assert!(component.disabled);
+}
+
+#[test]
+fn test_form_field_required_fields_accept_into_like_readme() {
+    let component = DocumentedFormComponent::new("input").value("hello");
+
+    assert_eq!(component.id, "input");
+    assert_eq!(component.value.as_deref(), Some("hello"));
 }

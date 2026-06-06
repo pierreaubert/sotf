@@ -16,9 +16,11 @@ use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_design::DesignSystem;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// Split direction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -73,6 +75,7 @@ pub struct SplitPane {
     min_second: Pixels,
     divider_width: Pixels,
     on_resize: Option<Rc<dyn Fn(f32, &mut Window, &mut App) + 'static>>,
+    design: Option<Arc<DesignSystem>>,
 }
 
 impl SplitPane {
@@ -88,6 +91,7 @@ impl SplitPane {
             min_second: px(100.0),
             divider_width: px(10.0),
             on_resize: None,
+            design: None,
         }
     }
 
@@ -139,13 +143,35 @@ impl SplitPane {
         self
     }
 
+    /// Set an explicit design system override.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
+
     /// Build the split pane with theme
     pub fn build_with_theme(self, theme: &SplitPaneTheme) -> Stateful<Div> {
+        let design = self
+            .design
+            .clone()
+            .unwrap_or_else(crate::design::neutral_design);
+        self.build_with_theme_and_design(theme, &design)
+    }
+
+    /// Build the split pane with explicit theme and design defaults.
+    pub fn build_with_theme_and_design(
+        self,
+        theme: &SplitPaneTheme,
+        design: &DesignSystem,
+    ) -> Stateful<Div> {
         let divider_gutter = theme.divider_gutter;
         let divider_gutter_hover = theme.divider_gutter_hover;
         let divider_color = theme.divider;
         let divider_hover = theme.divider_hover;
         let divider_active = theme.divider_active;
+        let handle_long = px(design.interaction.min_touch_target.max(24.0));
+        let handle_short = px(design.interaction.border_width.max(2.0));
+        let divider_width = self.divider_width.max(px(design.spacing.grid_unit));
 
         let mut container = div()
             .id(self.id.clone())
@@ -180,7 +206,7 @@ impl SplitPane {
         let mut divider = match self.direction {
             SplitDirection::Horizontal => div()
                 .id("split-divider")
-                .w(self.divider_width)
+                .w(divider_width)
                 .h_full()
                 .flex()
                 .items_center()
@@ -192,8 +218,8 @@ impl SplitPane {
                 .cursor_col_resize()
                 .child(
                     div()
-                        .w(px(2.0))
-                        .h(px(32.0))
+                        .w(handle_short)
+                        .h(handle_long)
                         .rounded(px(1.0))
                         .bg(divider_color),
                 )
@@ -201,7 +227,7 @@ impl SplitPane {
                 .active(move |s| s.bg(divider_gutter_hover).border_color(divider_active)),
             SplitDirection::Vertical => div()
                 .id("split-divider")
-                .h(self.divider_width)
+                .h(divider_width)
                 .w_full()
                 .flex()
                 .items_center()
@@ -213,8 +239,8 @@ impl SplitPane {
                 .cursor_row_resize()
                 .child(
                     div()
-                        .w(px(32.0))
-                        .h(px(2.0))
+                        .w(handle_long)
+                        .h(handle_short)
                         .rounded(px(1.0))
                         .bg(divider_color),
                 )
@@ -297,7 +323,8 @@ impl RenderOnce for SplitPane {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
         let theme = SplitPaneTheme::from(&global_theme);
-        self.build_with_theme(&theme)
+        let design = crate::design::resolve_design(self.design.clone(), cx);
+        self.build_with_theme_and_design(&theme, &design)
     }
 }
 

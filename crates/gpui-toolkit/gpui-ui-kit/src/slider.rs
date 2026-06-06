@@ -17,8 +17,10 @@ use crate::ComponentTheme;
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
 use gpui::*;
+use gpui_design::DesignSystem;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 // Thread-local drag state: maps slider ElementId -> (click_x, value_at_click).
 // Stores the window-relative x position at mouse-down and the value at that
@@ -80,19 +82,19 @@ pub enum SliderSize {
 }
 
 impl SliderSize {
-    fn track_height(&self) -> f32 {
+    fn track_height_with_design(&self, design: &DesignSystem) -> f32 {
         match self {
-            Self::Sm => 4.0,
-            Self::Md => 6.0,
-            Self::Lg => 8.0,
+            Self::Sm => design.spacing.grid_unit,
+            Self::Md => design.spacing.grid_unit * 1.5,
+            Self::Lg => design.spacing.grid_unit * 2.0,
         }
     }
 
-    fn thumb_size(&self) -> f32 {
+    fn thumb_size_with_design(&self, design: &DesignSystem) -> f32 {
         match self {
-            Self::Sm => 14.0,
-            Self::Md => 18.0,
-            Self::Lg => 22.0,
+            Self::Sm => design.interaction.min_touch_target * 0.4375,
+            Self::Md => design.interaction.min_touch_target * 0.5625,
+            Self::Lg => design.interaction.min_touch_target * 0.6875,
         }
     }
 }
@@ -133,6 +135,7 @@ pub struct Slider {
     fill_color: Option<Rgba>,
     thumb_color: Option<Rgba>,
     theme: Option<SliderTheme>,
+    design: Option<Arc<DesignSystem>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
 }
@@ -158,6 +161,7 @@ impl Slider {
             fill_color: None,
             thumb_color: None,
             theme: None,
+            design: None,
             aria_label: None,
             aria_role: None,
         }
@@ -325,6 +329,12 @@ impl Slider {
         self.theme = Some(theme);
         self
     }
+
+    /// Override the design system used for track and thumb sizing.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
 }
 
 impl RenderOnce for Slider {
@@ -343,8 +353,9 @@ impl RenderOnce for Slider {
                 .maybe_state(self.disabled, AriaState::Disabled),
         });
 
-        let track_height = self.size.track_height();
-        let thumb_size = self.size.thumb_size();
+        let design = crate::design::resolve_design(self.design.clone(), cx);
+        let track_height = self.size.track_height_with_design(&design);
+        let thumb_size = self.size.thumb_size_with_design(&design);
         let width = self.width;
 
         // Use theme colors if available, then individual colors, then global theme

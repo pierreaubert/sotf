@@ -15,7 +15,6 @@ gpui-pretext = { workspace = true }
 serde = { workspace = true }
 # GPUI deps are optional, enabled by the `gpui` feature for the showcase binary.
 gpui = { workspace = true, optional = true }
-gpui-ui-kit = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 gpui_macos = { workspace = true, optional = true }
@@ -33,7 +32,6 @@ gpui-ios = { workspace = true, optional = true }
 default = []
 showcase = [
     "dep:gpui",
-    "dep:gpui-ui-kit",
     "dep:gpui-design",
     "gpui-design/gpui",
     "dep:gpui_macos",

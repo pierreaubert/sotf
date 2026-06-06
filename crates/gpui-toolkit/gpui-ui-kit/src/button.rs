@@ -7,9 +7,11 @@ use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaR
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_design::DesignSystem;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 // Thread-local registry mapping each Button's element id to a persistent
 // FocusHandle. Without this Button (a `RenderOnce` component) would allocate
@@ -125,6 +127,7 @@ pub struct Button {
     icon_left: Option<SharedString>,
     icon_right: Option<SharedString>,
     theme: Option<ButtonTheme>,
+    design: Option<Arc<DesignSystem>>,
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
@@ -144,6 +147,7 @@ impl Button {
             icon_left: None,
             icon_right: None,
             theme: None,
+            design: None,
             on_click: None,
             aria_label: None,
             aria_role: None,
@@ -195,6 +199,12 @@ impl Button {
     /// Set custom theme colors
     pub fn theme(mut self, theme: ButtonTheme) -> Self {
         self.theme = Some(theme);
+        self
+    }
+
+    /// Set an explicit design system override.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
         self
     }
 
@@ -296,22 +306,50 @@ impl Button {
         }
     }
 
+    fn padding_for_size(size: ButtonSize, design: &DesignSystem) -> (Pixels, Pixels) {
+        let px_base = design.spacing.control_padding_x;
+        let py_base = design.spacing.control_padding_y;
+        match size {
+            ButtonSize::Xs => (px(px_base * 0.5), px(py_base * 0.35)),
+            ButtonSize::Sm => (px(px_base * 0.7), px(py_base * 0.55)),
+            ButtonSize::Md => (px(px_base), px(py_base * 0.75)),
+            ButtonSize::Lg => (px(px_base * 2.0), px(py_base * 1.5)),
+        }
+    }
+
+    fn text_size_for_size(size: ButtonSize, design: &DesignSystem) -> Pixels {
+        match size {
+            ButtonSize::Xs | ButtonSize::Sm => px(design.typography.small_size),
+            ButtonSize::Md => px(design.typography.base_size),
+            ButtonSize::Lg => px(design.typography.large_size),
+        }
+    }
+
     /// Build the button into a `Stateful<Div>` that can have additional handlers added.
     /// Use this when you need to add a cx.listener() handler.
     ///
     /// Note: This bypasses accessibility registration. Prefer using the component
     /// directly via `RenderOnce` for automatic accessibility tree integration.
     pub fn build(self) -> Stateful<Div> {
-        let theme = self.theme.unwrap_or_default();
-        let (bg, bg_hover, text_color, border_color) =
-            Self::compute_colors(self.variant, self.selected, &theme);
+        let design = self
+            .design
+            .clone()
+            .unwrap_or_else(crate::design::neutral_design);
+        let theme = self.theme.clone().unwrap_or_default();
+        self.build_with_theme_and_design(&theme, &design)
+    }
 
-        let (px_val, py_val) = match self.size {
-            ButtonSize::Xs => (px(6.0), px(2.0)),
-            ButtonSize::Sm => (px(8.0), px(4.0)),
-            ButtonSize::Md => (px(12.0), px(6.0)),
-            ButtonSize::Lg => (px(24.0), px(12.0)),
-        };
+    /// Build with explicit theme and design defaults.
+    pub fn build_with_theme_and_design(
+        self,
+        theme: &ButtonTheme,
+        design: &DesignSystem,
+    ) -> Stateful<Div> {
+        let (bg, bg_hover, text_color, border_color) =
+            Self::compute_colors(self.variant, self.selected, theme);
+
+        let (px_val, py_val) = Self::padding_for_size(self.size, design);
+        let text_size = Self::text_size_for_size(self.size, design);
 
         let mut el = div()
             .id(self.id)
@@ -321,19 +359,12 @@ impl Button {
             .gap_2()
             .px(px_val)
             .py(py_val)
-            .rounded_md()
+            .rounded(px(design.corners.md))
+            .text_size(text_size)
             .bg(bg)
             .text_color(text_color)
             .border_1()
             .border_color(border_color);
-
-        // Apply text size based on button size
-        el = match self.size {
-            ButtonSize::Xs => el.text_xs(),
-            ButtonSize::Sm => el.text_xs(),
-            ButtonSize::Md => el.text_sm(),
-            ButtonSize::Lg => el.text_lg(),
-        };
 
         // Apply full width
         if self.full_width {
@@ -378,18 +409,15 @@ impl RenderOnce for Button {
         });
 
         let global_theme = cx.theme();
+        let design = crate::design::resolve_design(self.design.clone(), cx);
         let theme = self
             .theme
             .unwrap_or_else(|| ButtonTheme::from(&global_theme));
         let (bg, bg_hover, text_color, border_color) =
             Self::compute_colors(self.variant, self.selected, &theme);
 
-        let (px_val, py_val) = match self.size {
-            ButtonSize::Xs => (px(6.0), px(2.0)),
-            ButtonSize::Sm => (px(8.0), px(4.0)),
-            ButtonSize::Md => (px(12.0), px(6.0)),
-            ButtonSize::Lg => (px(24.0), px(12.0)),
-        };
+        let (px_val, py_val) = Self::padding_for_size(self.size, &design);
+        let text_size = Self::text_size_for_size(self.size, &design);
 
         // Get/create persistent focus handle for this button id so the
         // element is Tab-reachable across re-renders. See module-level
@@ -407,7 +435,8 @@ impl RenderOnce for Button {
             .gap_2()
             .px(px_val)
             .py(py_val)
-            .rounded_md()
+            .rounded(px(design.corners.md))
+            .text_size(text_size)
             .bg(bg)
             .text_color(text_color)
             .border_1()

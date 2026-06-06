@@ -5,6 +5,17 @@ test-examples:
 	RUST_MIN_STACK=16777216 cargo build --examples -p gpui-ui-kit
 	@echo "✓ All gpui-ui-kit examples compiled successfully"
 
+[group('test')]
+qa-gpui-obvious:
+	RUST_MIN_STACK=16777216 cargo test -p gpui-ui-kit-macros
+	RUST_MIN_STACK=16777216 cargo test -p gpui-builder
+	RUST_MIN_STACK=16777216 cargo check -p gpui-builder --features showcase
+	RUST_MIN_STACK=16777216 cargo test -p gpui-ui-kit
+	RUST_MIN_STACK=16777216 cargo test -p gpui-d3rs
+	RUST_MIN_STACK=16777216 cargo test -p gpui-px
+	RUST_MIN_STACK=16777216 cargo test -p gpui-px --features gpu-3d
+	RUST_MIN_STACK=16777216 cargo check -p sotf-gpui
+
 [group('demo')]
 demo-ui-kit:
 	cargo build --release --example showcase -p gpui-ui-kit
@@ -43,4 +54,3 @@ run-qr-debug:
 [windows]
 run-qr-debug:
 	cargo run -p gpui-ui-kit --example qr_debug
-

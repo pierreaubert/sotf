@@ -2,10 +2,10 @@
 
 use crate::error::ChartError;
 use crate::{
-    DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, ScaleType,
-    TITLE_AREA_HEIGHT, extent_padded, validate_data_array, validate_dimensions,
-    validate_grid_dimensions, validate_monotonic, validate_positive, validate_range,
-    validate_range_log,
+    ChartSize, DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, ScaleType,
+    TITLE_AREA_HEIGHT, apply_chart_size, default_design, extent_padded, resolved_chart_dimensions,
+    validate_data_array, validate_dimensions, validate_grid_dimensions, validate_monotonic,
+    validate_positive, validate_range, validate_range_log,
 };
 use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
@@ -20,6 +20,8 @@ use d3rs::shape::render_contour;
 use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
+use gpui_design::DesignSystem;
+use std::sync::Arc;
 
 /// Isoline chart builder (unfilled contour lines).
 #[derive(Debug, Clone)]
@@ -42,9 +44,11 @@ pub struct IsolineChart {
     title: Option<String>,
     width: f32,
     height: f32,
+    chart_size: ChartSize,
     // Axis range overrides (for zoom support)
     x_range: Option<[f64; 2]>,
     y_range: Option<[f64; 2]>,
+    design: Option<Arc<DesignSystem>>,
 }
 
 impl IsolineChart {
@@ -139,6 +143,33 @@ impl IsolineChart {
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.width = width;
         self.height = height;
+        self.chart_size = ChartSize::fixed(width, height);
+        self
+    }
+
+    /// Fill the parent using the current minimum chart dimensions.
+    pub fn fill(mut self) -> Self {
+        self.chart_size = ChartSize::fill().min_size(self.width, self.height);
+        self
+    }
+
+    /// Set minimum dimensions for responsive fill sizing.
+    pub fn min_size(mut self, width: f32, height: f32) -> Self {
+        self.width = width;
+        self.height = height;
+        self.chart_size = self.chart_size.min_size(width, height);
+        self
+    }
+
+    /// Set preferred fill-layout aspect ratio.
+    pub fn aspect_ratio(mut self, ratio: f32) -> Self {
+        self.chart_size = self.chart_size.aspect_ratio(ratio);
+        self
+    }
+
+    /// Override the design system used for chart defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
         self
     }
 
@@ -156,10 +187,13 @@ impl IsolineChart {
 
     /// Build and validate the chart, returning renderable element.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
+        let design = self.design.clone().unwrap_or_else(default_design);
+        let (layout_width, layout_height) = resolved_chart_dimensions(self.chart_size);
+
         // Validate inputs
         validate_data_array(&self.z, "z")?;
         validate_grid_dimensions(&self.z, self.grid_width, self.grid_height)?;
-        validate_dimensions(self.width, self.height)?;
+        validate_dimensions(layout_width, layout_height)?;
 
         // Generate or validate x values
         let x_values = match self.x_values {
@@ -229,10 +263,13 @@ impl IsolineChart {
         // Reserve space for axes
         let left_margin = 60.0_f64;
         let bottom_margin = 40.0_f64;
-        let plot_width = (self.width as f64) - left_margin;
-        let plot_height = (self.height as f64) - title_height as f64 - bottom_margin;
+        let plot_width = (layout_width as f64) - left_margin;
+        let plot_height = (layout_height as f64) - title_height as f64 - bottom_margin;
 
         let theme = DefaultAxisTheme;
+        let x_axis_config = AxisConfig::bottom().with_design(&design);
+        let y_axis_config = AxisConfig::left().with_design(&design);
+        let grid_config = GridConfig::default().with_design(&design);
 
         // Validate explicit ranges
         if let Some([min, max]) = self.x_range {
@@ -287,7 +324,7 @@ impl IsolineChart {
         let contours = generator.contours(&self.z, &levels);
 
         // Build config with fixed color (no fill for isolines)
-        let config = ContourConfig::new()
+        let config = ContourConfig::from_design(&design)
             .fill(false)
             .stroke_color(D3Color::from_hex(self.color))
             .stroke_width(self.stroke_width)
@@ -310,7 +347,7 @@ impl IsolineChart {
                     .flex()
                     .child(render_axis(
                         &y_scale,
-                        &AxisConfig::left(),
+                        &y_axis_config,
                         plot_height as f32,
                         &theme,
                     ))
@@ -328,7 +365,7 @@ impl IsolineChart {
                                     .child(render_grid(
                                         &x_scale,
                                         &y_scale,
-                                        &GridConfig::default(),
+                                        &grid_config,
                                         plot_width as f32,
                                         plot_height as f32,
                                         &theme,
@@ -339,7 +376,7 @@ impl IsolineChart {
                             )
                             .child(render_axis(
                                 &x_scale,
-                                &AxisConfig::bottom(),
+                                &x_axis_config,
                                 plot_width as f32,
                                 &theme,
                             )),
@@ -358,7 +395,7 @@ impl IsolineChart {
                     .flex()
                     .child(render_axis(
                         &y_scale,
-                        &AxisConfig::left(),
+                        &y_axis_config,
                         plot_height as f32,
                         &theme,
                     ))
@@ -376,7 +413,7 @@ impl IsolineChart {
                                     .child(render_grid(
                                         &x_scale,
                                         &y_scale,
-                                        &GridConfig::default(),
+                                        &grid_config,
                                         plot_width as f32,
                                         plot_height as f32,
                                         &theme,
@@ -387,7 +424,7 @@ impl IsolineChart {
                             )
                             .child(render_axis(
                                 &x_scale,
-                                &AxisConfig::bottom(),
+                                &x_axis_config,
                                 plot_width as f32,
                                 &theme,
                             )),
@@ -406,7 +443,7 @@ impl IsolineChart {
                     .flex()
                     .child(render_axis(
                         &y_scale,
-                        &AxisConfig::left(),
+                        &y_axis_config,
                         plot_height as f32,
                         &theme,
                     ))
@@ -424,7 +461,7 @@ impl IsolineChart {
                                     .child(render_grid(
                                         &x_scale,
                                         &y_scale,
-                                        &GridConfig::default(),
+                                        &grid_config,
                                         plot_width as f32,
                                         plot_height as f32,
                                         &theme,
@@ -435,7 +472,7 @@ impl IsolineChart {
                             )
                             .child(render_axis(
                                 &x_scale,
-                                &AxisConfig::bottom(),
+                                &x_axis_config,
                                 plot_width as f32,
                                 &theme,
                             )),
@@ -454,7 +491,7 @@ impl IsolineChart {
                     .flex()
                     .child(render_axis(
                         &y_scale,
-                        &AxisConfig::left(),
+                        &y_axis_config,
                         plot_height as f32,
                         &theme,
                     ))
@@ -472,7 +509,7 @@ impl IsolineChart {
                                     .child(render_grid(
                                         &x_scale,
                                         &y_scale,
-                                        &GridConfig::default(),
+                                        &grid_config,
                                         plot_width as f32,
                                         plot_height as f32,
                                         &theme,
@@ -483,7 +520,7 @@ impl IsolineChart {
                             )
                             .child(render_axis(
                                 &x_scale,
-                                &AxisConfig::bottom(),
+                                &x_axis_config,
                                 plot_width as f32,
                                 &theme,
                             )),
@@ -493,17 +530,17 @@ impl IsolineChart {
         };
 
         // Build container with optional title
-        let mut container = div()
-            .w(px(self.width))
-            .h(px(self.height))
+        let mut container = apply_chart_size(div(), self.chart_size)
             .relative()
             .flex()
             .flex_col();
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config =
-                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
+            let font_config = GlyphTextConfig::horizontal(
+                design.typography.large_size.max(DEFAULT_TITLE_FONT_SIZE),
+                hsla(0.0, 0.0, 0.2, 1.0),
+            );
             container = container.child(
                 div()
                     .w_full()
@@ -566,8 +603,10 @@ pub fn isoline(z: &[f64], grid_width: usize, grid_height: usize) -> IsolineChart
         title: None,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+        chart_size: ChartSize::default(),
         x_range: None,
         y_range: None,
+        design: None,
     }
 }
 
@@ -681,5 +720,28 @@ mod tests {
             .x_range(-1.0, 10.0)
             .build();
         assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_isoline_responsive_size_defaults_and_fixed_opt_in() {
+        let z = vec![1.0; 9];
+
+        crate::assert_default_chart_size(isoline(&z, 3, 3).chart_size);
+        crate::assert_fixed_chart_size(
+            isoline(&z, 3, 3).size(360.0, 240.0).chart_size,
+            360.0,
+            240.0,
+        );
+        crate::assert_fill_chart_size(
+            isoline(&z, 3, 3)
+                .size(360.0, 240.0)
+                .fill()
+                .min_size(300.0, 220.0)
+                .aspect_ratio(1.2)
+                .chart_size,
+            300.0,
+            220.0,
+            Some(1.2),
+        );
     }
 }

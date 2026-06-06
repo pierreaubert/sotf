@@ -15,7 +15,9 @@ use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaR
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_design::DesignSystem;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 /// Theme colors for table styling
 #[derive(Debug, Clone, ComponentTheme)]
@@ -239,6 +241,7 @@ pub struct Table<T> {
     alternating_rows: bool,
     show_footer: bool,
     theme: Option<TableTheme>,
+    design: Option<Arc<DesignSystem>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
 }
@@ -261,6 +264,7 @@ impl<T: 'static> Table<T> {
             alternating_rows: true,
             show_footer: false,
             theme: None,
+            design: None,
             aria_label: None,
             aria_role: None,
         }
@@ -356,6 +360,12 @@ impl<T: 'static> Table<T> {
         self
     }
 
+    /// Override the design system used for table spacing and hit-area defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
+
     /// Set an explicit ARIA label
     pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
         self.aria_label = Some(label.into());
@@ -368,8 +378,20 @@ impl<T: 'static> Table<T> {
         self
     }
 
-    fn build(self, theme: TableTheme, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn build(
+        self,
+        theme: TableTheme,
+        design: Arc<DesignSystem>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> impl IntoElement {
         let theme = std::rc::Rc::new(theme);
+        let cell_padding_x = px(design.spacing.card_padding);
+        let cell_padding_y = px(design.spacing.control_padding_y);
+        let compact_padding_x = px(design.spacing.control_padding_x * 0.5);
+        let compact_padding_y = px(design.spacing.control_padding_y * 0.5);
+        let resize_hit_width = px(design.interaction.min_touch_target * 0.25);
+        let control_radius = px(design.corners.sm);
         let mut container = div()
             .id(self.id.clone())
             .flex()
@@ -404,8 +426,8 @@ impl<T: 'static> Table<T> {
                 .flex()
                 .items_center()
                 .gap_2()
-                .px_4()
-                .py_2()
+                .px(cell_padding_x)
+                .py(cell_padding_y)
                 .text_sm()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.header_text);
@@ -480,7 +502,7 @@ impl<T: 'static> Table<T> {
                         .right_0()
                         .top_0()
                         .bottom_0()
-                        .w(px(4.0))
+                        .w(resize_hit_width)
                         .cursor(CursorStyle::ResizeLeftRight)
                         .hover(|s| s.bg(theme.sort_icon_color)),
                 );
@@ -553,8 +575,8 @@ impl<T: 'static> Table<T> {
 
             for column in &self.columns {
                 let mut cell = div()
-                    .px_4()
-                    .py_2()
+                    .px(cell_padding_x)
+                    .py(cell_padding_y)
                     .text_sm()
                     .text_color(theme.cell_text)
                     .flex()
@@ -588,8 +610,8 @@ impl<T: 'static> Table<T> {
 
             for column in &self.columns {
                 let mut footer_cell = div()
-                    .px_4()
-                    .py_2()
+                    .px(cell_padding_x)
+                    .py(cell_padding_y)
                     .text_xs()
                     .text_color(theme.footer_text)
                     .flex()
@@ -620,8 +642,8 @@ impl<T: 'static> Table<T> {
                 .flex()
                 .items_center()
                 .justify_between()
-                .px_4()
-                .py_2()
+                .px(cell_padding_x)
+                .py(cell_padding_y)
                 .bg(theme.header_bg)
                 .border_t_1()
                 .border_color(theme.header_border);
@@ -641,10 +663,10 @@ impl<T: 'static> Table<T> {
 
             // Prev button
             let mut prev_btn = div()
-                .px_2()
-                .py_1()
+                .px(compact_padding_x)
+                .py(compact_padding_y)
                 .text_xs()
-                .rounded_md()
+                .rounded(control_radius)
                 .border_1()
                 .border_color(theme.header_border)
                 .text_color(theme.pagination_text);
@@ -676,10 +698,10 @@ impl<T: 'static> Table<T> {
 
             // Next button
             let mut next_btn = div()
-                .px_2()
-                .py_1()
+                .px(compact_padding_x)
+                .py(compact_padding_y)
                 .text_xs()
-                .rounded_md()
+                .rounded(control_radius)
                 .border_1()
                 .border_color(theme.header_border)
                 .text_color(theme.pagination_text);
@@ -723,7 +745,8 @@ impl<T: 'static> RenderOnce for Table<T> {
             .theme
             .clone()
             .unwrap_or_else(|| TableTheme::from(&global_theme));
-        self.build(theme, window, cx)
+        let design = crate::design::resolve_design(self.design.clone(), cx);
+        self.build(theme, design, window, cx)
     }
 }
 

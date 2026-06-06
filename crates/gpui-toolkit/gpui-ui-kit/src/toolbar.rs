@@ -18,6 +18,8 @@ use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaR
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_design::DesignSystem;
+use std::sync::Arc;
 
 /// Theme colors for toolbar
 #[derive(Debug, Clone, ComponentTheme)]
@@ -119,6 +121,7 @@ pub struct Toolbar {
     id: ElementId,
     items: Vec<ToolbarItem>,
     bordered: bool,
+    design: Option<Arc<DesignSystem>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
 }
@@ -130,6 +133,7 @@ impl Toolbar {
             id: id.into(),
             items: Vec::new(),
             bordered: true,
+            design: None,
             aria_label: None,
             aria_role: None,
         }
@@ -165,22 +169,42 @@ impl Toolbar {
         self
     }
 
+    /// Override the design system used for spacing, radii, and sizing defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
+
     /// Build the toolbar with theme
     pub fn build_with_theme(self, theme: &ToolbarTheme) -> Stateful<Div> {
+        let design = self
+            .design
+            .clone()
+            .unwrap_or_else(crate::design::neutral_design);
+        self.build_with_theme_and_design(theme, &design)
+    }
+
+    /// Build the toolbar with theme and design-system sizing tokens.
+    pub fn build_with_theme_and_design(
+        self,
+        theme: &ToolbarTheme,
+        design: &DesignSystem,
+    ) -> Stateful<Div> {
+        let button_radius = px(design.corners.sm);
         let mut toolbar = div()
             .id(self.id)
             .flex()
             .items_center()
-            .gap_0p5()
-            .px_2()
-            .py_1()
+            .gap(px(design.spacing.grid_unit * 0.5))
+            .px(px(design.spacing.control_padding_x))
+            .py(px(design.spacing.control_padding_y * 0.5))
             .bg(theme.background);
 
         if self.bordered {
             toolbar = toolbar
                 .border_1()
                 .border_color(theme.border)
-                .rounded(px(6.0));
+                .rounded(px(design.corners.md));
         }
 
         for item in self.items {
@@ -195,9 +219,9 @@ impl Toolbar {
                     let hover_bg = theme.button_hover;
                     let mut btn = div()
                         .id(id)
-                        .px_2()
-                        .py_1()
-                        .rounded(px(4.0))
+                        .px(px(design.spacing.control_padding_x * 0.5))
+                        .py(px(design.spacing.control_padding_y * 0.5))
+                        .rounded(button_radius)
                         .text_sm()
                         .font_weight(FontWeight::MEDIUM);
 
@@ -225,8 +249,13 @@ impl Toolbar {
                     toolbar = toolbar.child(btn);
                 }
                 ToolbarItem::Separator => {
-                    toolbar =
-                        toolbar.child(div().w(px(1.0)).h(px(16.0)).mx_1().bg(theme.separator));
+                    toolbar = toolbar.child(
+                        div()
+                            .w(px(design.interaction.border_width))
+                            .h(px(design.interaction.min_touch_target * 0.5))
+                            .mx(px(design.spacing.grid_unit * 0.5))
+                            .bg(theme.separator),
+                    );
                 }
                 ToolbarItem::Custom(element) => {
                     toolbar = toolbar.child(element);
@@ -249,7 +278,8 @@ impl RenderOnce for Toolbar {
 
         let global_theme = cx.theme();
         let theme = ToolbarTheme::from(&global_theme);
-        self.build_with_theme(&theme)
+        let design = crate::design::resolve_design(self.design.clone(), cx);
+        self.build_with_theme_and_design(&theme, &design)
     }
 }
 

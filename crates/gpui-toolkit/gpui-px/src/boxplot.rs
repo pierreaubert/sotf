@@ -8,9 +8,10 @@
 
 use crate::error::ChartError;
 use crate::{
-    DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
-    validate_data_length, validate_dimensions, validate_positive,
+    ChartSize, DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
+    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, apply_chart_size, default_design, extent_padded,
+    resolved_chart_dimensions, validate_data_array, validate_data_length, validate_dimensions,
+    validate_positive,
 };
 use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
@@ -19,6 +20,8 @@ use d3rs::scale::{LinearScale, LogScale, Scale};
 use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
+use gpui_design::DesignSystem;
+use std::sync::Arc;
 
 /// Statistics for a single box in a box plot
 #[derive(Debug, Clone)]
@@ -138,8 +141,10 @@ pub struct BoxPlotChart {
     num_bins: Option<usize>,
     width: f32,
     height: f32,
+    chart_size: ChartSize,
     x_scale_type: ScaleType,
     y_scale_type: ScaleType,
+    design: Option<Arc<DesignSystem>>,
 }
 
 impl BoxPlotChart {
@@ -208,6 +213,33 @@ impl BoxPlotChart {
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.width = width;
         self.height = height;
+        self.chart_size = ChartSize::fixed(width, height);
+        self
+    }
+
+    /// Fill the parent using the current minimum chart dimensions.
+    pub fn fill(mut self) -> Self {
+        self.chart_size = ChartSize::fill().min_size(self.width, self.height);
+        self
+    }
+
+    /// Set minimum dimensions for responsive fill sizing.
+    pub fn min_size(mut self, width: f32, height: f32) -> Self {
+        self.width = width;
+        self.height = height;
+        self.chart_size = self.chart_size.min_size(width, height);
+        self
+    }
+
+    /// Set preferred fill-layout aspect ratio.
+    pub fn aspect_ratio(mut self, ratio: f32) -> Self {
+        self.chart_size = self.chart_size.aspect_ratio(ratio);
+        self
+    }
+
+    /// Override the design system used for chart defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
         self
     }
 
@@ -225,11 +257,14 @@ impl BoxPlotChart {
 
     /// Build and validate the chart, returning renderable element.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
+        let design = self.design.clone().unwrap_or_else(default_design);
+        let (layout_width, layout_height) = resolved_chart_dimensions(self.chart_size);
+
         // Validate inputs
         validate_data_array(&self.x, "x")?;
         validate_data_array(&self.y, "y")?;
         validate_data_length(self.x.len(), self.y.len(), "x", "y")?;
-        validate_dimensions(self.width, self.height)?;
+        validate_dimensions(layout_width, layout_height)?;
 
         // Validate positive values for log scale
         if self.x_scale_type == ScaleType::Log {
@@ -252,9 +287,9 @@ impl BoxPlotChart {
             0.0
         };
 
-        let plot_width = (self.width as f64 - margin_left - margin_right).max(0.0);
+        let plot_width = (layout_width as f64 - margin_left - margin_right).max(0.0);
         let plot_height =
-            (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
+            (layout_height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
 
         // Calculate domains
         let (x_min, x_max) = extent_padded(&self.x, DEFAULT_PADDING_FRACTION);
@@ -277,21 +312,29 @@ impl BoxPlotChart {
         let boxes = self.calculate_boxes(x_min, x_max, num_bins);
 
         // Build based on scale types
-        let chart_content =
-            self.render_chart(&boxes, x_min, x_max, y_min, y_max, plot_width, plot_height);
+        let chart_content = self.render_chart(
+            &boxes,
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+            plot_width,
+            plot_height,
+            &design,
+        );
 
         // Build container with optional title
-        let mut container = div()
-            .w(px(self.width))
-            .h(px(self.height))
+        let mut container = apply_chart_size(div(), self.chart_size)
             .relative()
             .flex()
             .flex_col();
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config =
-                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
+            let font_config = GlyphTextConfig::horizontal(
+                design.typography.large_size.max(DEFAULT_TITLE_FONT_SIZE),
+                hsla(0.0, 0.0, 0.2, 1.0),
+            );
             container = container.child(
                 div()
                     .w_full()
@@ -346,6 +389,7 @@ impl BoxPlotChart {
         y_max: f64,
         plot_width: f64,
         plot_height: f64,
+        design: &DesignSystem,
     ) -> AnyElement {
         let theme = DefaultAxisTheme;
 
@@ -358,7 +402,15 @@ impl BoxPlotChart {
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
 
-                self.render_with_scales(&x_scale, &y_scale, boxes, plot_width, plot_height, &theme)
+                self.render_with_scales(
+                    &x_scale,
+                    &y_scale,
+                    boxes,
+                    plot_width,
+                    plot_height,
+                    &theme,
+                    design,
+                )
             }
             (ScaleType::Log, ScaleType::Linear) => {
                 let x_scale = LogScale::new()
@@ -368,7 +420,15 @@ impl BoxPlotChart {
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
 
-                self.render_with_scales(&x_scale, &y_scale, boxes, plot_width, plot_height, &theme)
+                self.render_with_scales(
+                    &x_scale,
+                    &y_scale,
+                    boxes,
+                    plot_width,
+                    plot_height,
+                    &theme,
+                    design,
+                )
             }
             (ScaleType::Linear, ScaleType::Log) => {
                 let x_scale = LinearScale::new()
@@ -378,7 +438,15 @@ impl BoxPlotChart {
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height, 0.0);
 
-                self.render_with_scales(&x_scale, &y_scale, boxes, plot_width, plot_height, &theme)
+                self.render_with_scales(
+                    &x_scale,
+                    &y_scale,
+                    boxes,
+                    plot_width,
+                    plot_height,
+                    &theme,
+                    design,
+                )
             }
             (ScaleType::Log, ScaleType::Log) => {
                 let x_scale = LogScale::new()
@@ -388,7 +456,15 @@ impl BoxPlotChart {
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height, 0.0);
 
-                self.render_with_scales(&x_scale, &y_scale, boxes, plot_width, plot_height, &theme)
+                self.render_with_scales(
+                    &x_scale,
+                    &y_scale,
+                    boxes,
+                    plot_width,
+                    plot_height,
+                    &theme,
+                    design,
+                )
             }
         }
     }
@@ -402,6 +478,7 @@ impl BoxPlotChart {
         plot_width: f64,
         plot_height: f64,
         theme: &DefaultAxisTheme,
+        design: &DesignSystem,
     ) -> AnyElement
     where
         XS: Scale<f64, f64>,
@@ -411,6 +488,9 @@ impl BoxPlotChart {
         let median_color = D3Color::from_hex(self.median_color).to_rgba();
         let whisker_color = D3Color::from_hex(self.whisker_color).to_rgba();
         let outlier_color = D3Color::from_hex(self.outlier_color).to_rgba();
+        let x_axis_config = AxisConfig::bottom().with_design(design);
+        let y_axis_config = AxisConfig::left().with_design(design);
+        let grid_config = GridConfig::default().with_design(design);
 
         // Render all boxes
         #[allow(clippy::vec_init_then_push)]
@@ -536,7 +616,7 @@ impl BoxPlotChart {
             .flex()
             .child(render_axis(
                 y_scale,
-                &AxisConfig::left(),
+                &y_axis_config,
                 plot_height as f32,
                 theme,
             ))
@@ -553,7 +633,7 @@ impl BoxPlotChart {
                             .child(render_grid(
                                 x_scale,
                                 y_scale,
-                                &GridConfig::default(),
+                                &grid_config,
                                 plot_width as f32,
                                 plot_height as f32,
                                 theme,
@@ -562,7 +642,7 @@ impl BoxPlotChart {
                     )
                     .child(render_axis(
                         x_scale,
-                        &AxisConfig::bottom(),
+                        &x_axis_config,
                         plot_width as f32,
                         theme,
                     )),
@@ -608,8 +688,10 @@ pub fn boxplot(x: &[f64], y: &[f64]) -> BoxPlotChart {
         num_bins: None,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+        chart_size: ChartSize::default(),
         x_scale_type: ScaleType::Linear,
         y_scale_type: ScaleType::Linear,
+        design: None,
     }
 }
 
@@ -724,5 +806,25 @@ mod tests {
 
         let result = boxplot(&x, &y).x_scale(ScaleType::Log).build();
         assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_boxplot_responsive_size_defaults_and_fixed_opt_in() {
+        let x = vec![1.0, 2.0, 3.0, 4.0];
+        let y = vec![2.0, 3.0, 5.0, 8.0];
+
+        crate::assert_default_chart_size(boxplot(&x, &y).chart_size);
+        crate::assert_fixed_chart_size(boxplot(&x, &y).size(360.0, 240.0).chart_size, 360.0, 240.0);
+        crate::assert_fill_chart_size(
+            boxplot(&x, &y)
+                .size(360.0, 240.0)
+                .fill()
+                .min_size(300.0, 200.0)
+                .aspect_ratio(1.4)
+                .chart_size,
+            300.0,
+            200.0,
+            Some(1.4),
+        );
     }
 }

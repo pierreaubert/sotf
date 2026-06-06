@@ -32,7 +32,10 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{Data, DeriveInput, Expr, Fields, Lit, Meta, Token, parse_macro_input};
+use syn::{
+    Data, DeriveInput, Expr, Fields, GenericArgument, Ident, Lit, Meta, PathArguments, Token, Type,
+    parse_macro_input,
+};
 
 /// Derive macro for component themes.
 ///
@@ -516,4 +519,313 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+/// Derive a fluent builder API for GPUI component structs.
+///
+/// Field attributes use the documented `#[field(...)]` syntax:
+///
+/// - `required` includes the field in `new(...)`
+/// - `optional` initializes the field as `None` and makes the setter wrap `Some(...)`
+/// - `into` accepts `impl Into<T>` for constructor/setter arguments
+/// - `builder = false` or `skip` omits the setter
+/// - `default = "expr"` uses an explicit default expression
+/// - `rename = "method_name"` changes the generated setter name
+#[proc_macro_derive(ComponentBuilder, attributes(field, builder))]
+pub fn derive_component_builder(input: TokenStream) -> TokenStream {
+    derive_component_builder_impl(input)
+}
+
+/// Compatibility alias for the form-builder derive documented by gpui-ui-kit.
+#[proc_macro_derive(FormField, attributes(field, builder))]
+pub fn derive_form_field(input: TokenStream) -> TokenStream {
+    derive_component_builder_impl(input)
+}
+
+fn derive_component_builder_impl(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+
+    let fields = match &input.data {
+        Data::Struct(data) => match &data.fields {
+            Fields::Named(fields) => &fields.named,
+            _ => {
+                return syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    "ComponentBuilder only supports structs with named fields",
+                )
+                .to_compile_error()
+                .into();
+            }
+        },
+        _ => {
+            return syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "ComponentBuilder only supports structs",
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    let mut errors = Vec::new();
+    let mut parsed_fields = Vec::new();
+
+    for field in fields {
+        match BuilderField::parse(field) {
+            Ok(parsed) => parsed_fields.push(parsed),
+            Err(error) => errors.push(error),
+        }
+    }
+
+    if !errors.is_empty() {
+        let mut combined = errors.remove(0);
+        for error in errors {
+            combined.combine(error);
+        }
+        return combined.to_compile_error().into();
+    }
+
+    let new_args = parsed_fields
+        .iter()
+        .filter(|field| field.required)
+        .map(BuilderField::new_arg);
+    let initializers = parsed_fields.iter().map(BuilderField::initializer);
+    let setters = parsed_fields
+        .iter()
+        .filter(|field| field.generate_setter)
+        .map(BuilderField::setter);
+
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let expanded = quote! {
+        impl #impl_generics #name #ty_generics #where_clause {
+            pub fn new(#(#new_args),*) -> Self {
+                Self {
+                    #(#initializers),*
+                }
+            }
+
+            #(#setters)*
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+struct BuilderField<'a> {
+    ident: &'a Ident,
+    ty: &'a Type,
+    required: bool,
+    optional: bool,
+    into: bool,
+    generate_setter: bool,
+    default_expr: Option<Expr>,
+    setter_name: Ident,
+    option_inner_ty: Option<Type>,
+}
+
+impl<'a> BuilderField<'a> {
+    fn parse(field: &'a syn::Field) -> Result<Self, syn::Error> {
+        let ident = field
+            .ident
+            .as_ref()
+            .ok_or_else(|| syn::Error::new(field.span(), "expected named field"))?;
+
+        let mut required = false;
+        let mut optional = false;
+        let mut into = false;
+        let mut generate_setter = true;
+        let mut default_expr = None;
+        let mut setter_name = ident.clone();
+
+        for attr in &field.attrs {
+            if !attr.path().is_ident("field") && !attr.path().is_ident("builder") {
+                continue;
+            }
+
+            let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+            for meta in nested {
+                match meta {
+                    Meta::Path(path) => {
+                        if path.is_ident("required") {
+                            required = true;
+                        } else if path.is_ident("optional") {
+                            optional = true;
+                        } else if path.is_ident("into") {
+                            into = true;
+                        } else if path.is_ident("skip") {
+                            generate_setter = false;
+                        } else {
+                            return Err(syn::Error::new(
+                                path.span(),
+                                "unknown builder field attribute",
+                            ));
+                        }
+                    }
+                    Meta::NameValue(nv) => {
+                        let Some(name) = nv.path.get_ident() else {
+                            return Err(syn::Error::new(nv.path.span(), "expected identifier"));
+                        };
+                        match name.to_string().as_str() {
+                            "builder" => {
+                                if let Expr::Lit(lit) = &nv.value
+                                    && let Lit::Bool(value) = &lit.lit
+                                {
+                                    generate_setter = value.value;
+                                } else {
+                                    return Err(syn::Error::new(
+                                        nv.value.span(),
+                                        "builder must be a boolean",
+                                    ));
+                                }
+                            }
+                            "default" => {
+                                if let Expr::Lit(lit) = &nv.value
+                                    && let Lit::Str(value) = &lit.lit
+                                {
+                                    default_expr = Some(value.parse()?);
+                                } else {
+                                    return Err(syn::Error::new(
+                                        nv.value.span(),
+                                        "default must be a string expression",
+                                    ));
+                                }
+                            }
+                            "rename" | "name" => {
+                                if let Expr::Lit(lit) = &nv.value
+                                    && let Lit::Str(value) = &lit.lit
+                                {
+                                    setter_name = Ident::new(&value.value(), value.span());
+                                } else {
+                                    return Err(syn::Error::new(
+                                        nv.value.span(),
+                                        "rename must be a string",
+                                    ));
+                                }
+                            }
+                            _ => {
+                                return Err(syn::Error::new(
+                                    name.span(),
+                                    "unknown builder field attribute",
+                                ));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(syn::Error::new(
+                            meta.span(),
+                            "expected path or name = value in builder field attribute",
+                        ));
+                    }
+                }
+            }
+        }
+
+        if required && optional {
+            return Err(syn::Error::new(
+                field.span(),
+                "field cannot be both required and optional",
+            ));
+        }
+
+        Ok(Self {
+            ident,
+            ty: &field.ty,
+            required,
+            optional,
+            into,
+            generate_setter,
+            default_expr,
+            setter_name,
+            option_inner_ty: option_inner_type(&field.ty),
+        })
+    }
+
+    fn effective_arg_ty(&self) -> Type {
+        if self.optional {
+            self.option_inner_ty
+                .clone()
+                .unwrap_or_else(|| self.ty.clone())
+        } else {
+            self.ty.clone()
+        }
+    }
+
+    fn new_arg(&self) -> proc_macro2::TokenStream {
+        let ident = self.ident;
+        let arg_ty = self.effective_arg_ty();
+        if self.required || self.into {
+            quote! { #ident: impl Into<#arg_ty> }
+        } else {
+            quote! { #ident: #arg_ty }
+        }
+    }
+
+    fn initializer(&self) -> proc_macro2::TokenStream {
+        let ident = self.ident;
+        if self.required {
+            if self.optional {
+                quote! { #ident: Some(#ident.into()) }
+            } else {
+                quote! { #ident: #ident.into() }
+            }
+        } else if let Some(default_expr) = &self.default_expr {
+            quote! { #ident: #default_expr }
+        } else if self.optional {
+            quote! { #ident: None }
+        } else {
+            quote! { #ident: ::core::default::Default::default() }
+        }
+    }
+
+    fn setter(&self) -> proc_macro2::TokenStream {
+        let field = self.ident;
+        let method = &self.setter_name;
+        let arg_ty = self.effective_arg_ty();
+        let assignment = if self.optional {
+            if self.into {
+                quote! { self.#field = Some(#field.into()); }
+            } else {
+                quote! { self.#field = Some(#field); }
+            }
+        } else if self.into {
+            quote! { self.#field = #field.into(); }
+        } else {
+            quote! { self.#field = #field; }
+        };
+
+        if self.into {
+            quote! {
+                pub fn #method(mut self, #field: impl Into<#arg_ty>) -> Self {
+                    #assignment
+                    self
+                }
+            }
+        } else {
+            quote! {
+                pub fn #method(mut self, #field: #arg_ty) -> Self {
+                    #assignment
+                    self
+                }
+            }
+        }
+    }
+}
+
+fn option_inner_type(ty: &Type) -> Option<Type> {
+    let Type::Path(type_path) = ty else {
+        return None;
+    };
+    let segment = type_path.path.segments.last()?;
+    if segment.ident != "Option" {
+        return None;
+    }
+    let PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return None;
+    };
+    let Some(GenericArgument::Type(inner)) = args.args.first() else {
+        return None;
+    };
+    Some(inner.clone())
 }

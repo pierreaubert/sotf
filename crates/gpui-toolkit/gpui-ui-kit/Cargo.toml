@@ -12,6 +12,7 @@ repository.workspace = true
 [dependencies]
 # GPUI framework
 gpui = { workspace = true }
+gpui-builder = { workspace = true }
 gpui-design = { workspace = true, features = ["gpui"] }
 
 # Serialization for Color type

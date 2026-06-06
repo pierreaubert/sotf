@@ -4,6 +4,8 @@
 
 - Layout showcase now starts directly on the platform GPUI backends and installs
   the theme and design-system globals without depending on `gpui-miniapp`.
+- Removed the showcase dependency on `gpui-ui-kit`, breaking the builder/UI-kit
+  crate cycle so `gpui-ui-kit` can depend on `gpui-builder`.
 
 ## Visual regression
 

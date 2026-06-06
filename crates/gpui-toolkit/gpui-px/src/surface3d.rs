@@ -2,15 +2,18 @@
 
 use crate::error::ChartError;
 use crate::{
-    DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, TITLE_AREA_HEIGHT, validate_data_array,
+    ChartSize, DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, TITLE_AREA_HEIGHT,
+    apply_chart_size, default_design, resolved_chart_dimensions, validate_data_array,
     validate_dimensions, validate_grid_dimensions, validate_monotonic, validate_positive,
 };
 use d3rs::gpu3d::{Colormap, Surface3DConfig, Surface3DElement, Surface3DState, SurfaceData};
 use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{IntoElement, div, hsla, px};
+use gpui_design::DesignSystem;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// Surface 3D chart builder.
 #[derive(Clone)]
@@ -25,6 +28,7 @@ pub struct Surface3DChart {
     wireframe: bool,
     width: f32,
     height: f32,
+    chart_size: ChartSize,
     x_log: bool,
     y_log: bool,
     z_min: Option<f64>,
@@ -34,6 +38,7 @@ pub struct Surface3DChart {
     z_label: Option<String>,
     /// External state for camera/interaction control
     external_state: Option<Rc<RefCell<Surface3DState>>>,
+    design: Option<Arc<DesignSystem>>,
 }
 
 impl std::fmt::Debug for Surface3DChart {
@@ -91,6 +96,33 @@ impl Surface3DChart {
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.width = width;
         self.height = height;
+        self.chart_size = ChartSize::fixed(width, height);
+        self
+    }
+
+    /// Fill the parent using the current minimum chart dimensions.
+    pub fn fill(mut self) -> Self {
+        self.chart_size = ChartSize::fill().min_size(self.width, self.height);
+        self
+    }
+
+    /// Set minimum dimensions for responsive fill sizing.
+    pub fn min_size(mut self, width: f32, height: f32) -> Self {
+        self.width = width;
+        self.height = height;
+        self.chart_size = self.chart_size.min_size(width, height);
+        self
+    }
+
+    /// Set preferred fill-layout aspect ratio.
+    pub fn aspect_ratio(mut self, ratio: f32) -> Self {
+        self.chart_size = self.chart_size.aspect_ratio(ratio);
+        self
+    }
+
+    /// Override the design system used for chart defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
         self
     }
 
@@ -142,10 +174,13 @@ impl Surface3DChart {
 
     /// Build and validate the chart, returning renderable element.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
+        let design = self.design.clone().unwrap_or_else(default_design);
+        let (layout_width, layout_height) = resolved_chart_dimensions(self.chart_size);
+
         // Validate inputs
         validate_data_array(&self.z, "z")?;
         validate_grid_dimensions(&self.z, self.grid_width, self.grid_height)?;
-        validate_dimensions(self.width, self.height)?;
+        validate_dimensions(layout_width, layout_height)?;
 
         // Generate or validate x values
         let x_values = match self.x_values {
@@ -220,7 +255,7 @@ impl Surface3DChart {
         } else {
             0.0
         };
-        let plot_height = self.height - title_height;
+        let plot_height = layout_height - title_height;
 
         // Create SurfaceData
         let mut data = SurfaceData::from_grid(x_values, y_values, z_grid);
@@ -241,22 +276,22 @@ impl Surface3DChart {
         }
 
         // Create Surface3DConfig
-        let config = Surface3DConfig::new()
+        let config = Surface3DConfig::from_design(&design)
             .colormap(self.colormap)
             .wireframe(self.wireframe);
 
         // Build container with optional title
-        let mut container = div()
-            .w(px(self.width))
-            .h(px(self.height))
+        let mut container = apply_chart_size(div(), self.chart_size)
             .relative()
             .flex()
             .flex_col();
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config =
-                GlyphTextConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
+            let font_config = GlyphTextConfig::horizontal(
+                design.typography.large_size.max(DEFAULT_TITLE_FONT_SIZE),
+                hsla(0.0, 0.0, 0.2, 1.0),
+            );
             container = container.child(
                 div()
                     .w_full()
@@ -278,7 +313,7 @@ impl Surface3DChart {
 
         container = container.child(
             div()
-                .w(px(self.width))
+                .w(px(layout_width))
                 .h(px(plot_height))
                 .relative()
                 .child(element),
@@ -323,6 +358,7 @@ pub fn surface3d(z: &[f64], grid_width: usize, grid_height: usize) -> Surface3DC
         wireframe: false,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+        chart_size: ChartSize::default(),
         x_log: false,
         y_log: false,
         z_min: None,
@@ -331,6 +367,7 @@ pub fn surface3d(z: &[f64], grid_width: usize, grid_height: usize) -> Surface3DC
         y_label: None,
         z_label: None,
         external_state: None,
+        design: None,
     }
 }
 
@@ -365,5 +402,28 @@ mod tests {
             .build();
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_surface3d_responsive_size_defaults_and_fixed_opt_in() {
+        let z = vec![1.0, 2.0, 3.0, 4.0];
+
+        crate::assert_default_chart_size(surface3d(&z, 2, 2).chart_size);
+        crate::assert_fixed_chart_size(
+            surface3d(&z, 2, 2).size(420.0, 320.0).chart_size,
+            420.0,
+            320.0,
+        );
+        crate::assert_fill_chart_size(
+            surface3d(&z, 2, 2)
+                .size(420.0, 320.0)
+                .fill()
+                .min_size(360.0, 260.0)
+                .aspect_ratio(1.3)
+                .chart_size,
+            360.0,
+            260.0,
+            Some(1.3),
+        );
     }
 }

@@ -16,6 +16,8 @@ use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_design::DesignSystem;
+use std::sync::Arc;
 
 /// Which side the sidebar is on
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -52,6 +54,7 @@ pub struct Sidebar {
     header: Option<AnyElement>,
     footer: Option<AnyElement>,
     show_border: bool,
+    design: Option<Arc<DesignSystem>>,
 }
 
 impl Sidebar {
@@ -67,6 +70,7 @@ impl Sidebar {
             header: None,
             footer: None,
             show_border: true,
+            design: None,
         }
     }
 
@@ -121,8 +125,27 @@ impl Sidebar {
         self
     }
 
+    /// Override the design system used for sidebar sizing defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
+
     /// Build the sidebar with theme
     pub fn build_with_theme(self, theme: &SidebarTheme) -> Stateful<Div> {
+        let design = self
+            .design
+            .clone()
+            .unwrap_or_else(crate::design::neutral_design);
+        self.build_with_theme_and_design(theme, &design)
+    }
+
+    /// Build the sidebar with theme and design-system sizing tokens.
+    pub fn build_with_theme_and_design(
+        self,
+        theme: &SidebarTheme,
+        design: &DesignSystem,
+    ) -> Stateful<Div> {
         if self.collapsed {
             return div().id(self.id).w(px(0.0)).overflow_hidden();
         }
@@ -131,6 +154,7 @@ impl Sidebar {
         let mut sidebar = div()
             .id(self.id)
             .w(self.width)
+            .min_w(px(design.interaction.min_touch_target))
             .h_full()
             .flex_shrink_0()
             .flex()
@@ -176,7 +200,8 @@ impl RenderOnce for Sidebar {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
         let theme = SidebarTheme::from(&global_theme);
-        self.build_with_theme(&theme)
+        let design = crate::design::resolve_design(self.design.clone(), cx);
+        self.build_with_theme_and_design(&theme, &design)
     }
 }
 

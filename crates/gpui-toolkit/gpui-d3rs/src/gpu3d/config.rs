@@ -223,6 +223,15 @@ impl Surface3DConfig {
         Self::default()
     }
 
+    /// Create a 3D surface configuration from design-system interaction defaults.
+    #[cfg(feature = "gpui")]
+    pub fn from_design(design: &gpui_design::DesignSystem) -> Self {
+        Self {
+            isoline_width_px: design.interaction.border_width.max(1.25),
+            ..Self::default()
+        }
+    }
+
     /// Set the colormap
     pub fn colormap(mut self, colormap: Colormap) -> Self {
         self.colormap = colormap;

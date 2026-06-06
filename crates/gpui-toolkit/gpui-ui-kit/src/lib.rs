@@ -12,6 +12,7 @@
 pub mod accessibility;
 pub mod animation;
 pub mod color_tokens;
+pub mod design;
 pub mod i18n;
 pub mod mobile;
 pub mod theme;
@@ -209,6 +210,11 @@ pub use gpui_design::{DesignExt, DesignSystem, DesignSystemState};
 pub use i18n::{I18nExt, I18nState, Language, TranslationKey, Translations};
 pub use theme::{Theme, ThemeExt, ThemeState, ThemeVariant};
 
+// Builder/layout solver integration
+pub mod layout_builder {
+    pub use gpui_builder::*;
+}
+
 // Workflow canvas
 pub use workflow::{
     CanvasState, Command, Connection, ConnectionId, HistoryManager, HitTestResult, HitTester,
@@ -227,5 +233,5 @@ pub use tree_view::{TreeNode, TreeView, TreeViewTheme};
 // Shared size definitions
 pub use size::ComponentSize;
 
-// Derive macros for theme generation
-pub use gpui_ui_kit_macros::ComponentTheme;
+// Derive macros for theme and builder generation
+pub use gpui_ui_kit_macros::{ComponentBuilder, ComponentTheme, FormField};

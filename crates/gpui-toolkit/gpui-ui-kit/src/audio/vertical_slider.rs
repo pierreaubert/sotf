@@ -574,6 +574,13 @@ impl VerticalSlider {
         self
     }
 
+    /// Set platform design defaults through the shared design system.
+    pub fn design(mut self, design: impl Into<std::sync::Arc<gpui_design::DesignSystem>>) -> Self {
+        let design = design.into();
+        self.design_tokens = crate::audio_design_tokens::AudioDesignTokens::from(design.as_ref());
+        self
+    }
+
     /// Set value change handler (called on scroll wheel)
     pub fn on_change(mut self, handler: impl Fn(f64, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));

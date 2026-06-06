@@ -1,3 +1,16 @@
+# Unreleased
+
+## Features
+
+- Added `#[derive(ComponentBuilder)]` and the documented `#[derive(FormField)]`
+  alias for generating component constructors and fluent setters with required
+  fields, optional setters, defaults, skipped fields, and renamed setters.
+
+## Fixes
+
+- Required constructor fields now accept `impl Into<T>`, matching the README
+  `FormField` example for ID-like fields.
+
 # 0.6.0
 
 ## New

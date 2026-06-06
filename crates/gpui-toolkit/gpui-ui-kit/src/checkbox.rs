@@ -12,6 +12,8 @@ use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaR
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_design::DesignSystem;
+use std::sync::Arc;
 
 /// Theme colors for checkbox styling
 #[derive(Debug, Clone, ComponentTheme)]
@@ -49,11 +51,11 @@ pub enum CheckboxSize {
 }
 
 impl CheckboxSize {
-    fn size(&self) -> Pixels {
+    fn size_with_design(&self, design: &DesignSystem) -> Pixels {
         match self {
-            CheckboxSize::Sm => px(14.0),
-            CheckboxSize::Md => px(18.0),
-            CheckboxSize::Lg => px(22.0),
+            CheckboxSize::Sm => px(design.interaction.min_touch_target * 0.4375),
+            CheckboxSize::Md => px(design.interaction.min_touch_target * 0.5625),
+            CheckboxSize::Lg => px(design.interaction.min_touch_target * 0.6875),
         }
     }
 }
@@ -76,6 +78,7 @@ pub struct Checkbox {
     label: Option<SharedString>,
     size: CheckboxSize,
     disabled: bool,
+    design: Option<Arc<DesignSystem>>,
     on_change: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
@@ -91,6 +94,7 @@ impl Checkbox {
             label: None,
             size: CheckboxSize::default(),
             disabled: false,
+            design: None,
             on_change: None,
             aria_label: None,
             aria_role: None,
@@ -127,6 +131,12 @@ impl Checkbox {
         self
     }
 
+    /// Override the design system used for checkbox sizing and spacing.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
+
     /// Set change handler
     pub fn on_change(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
@@ -147,7 +157,20 @@ impl Checkbox {
 
     /// Build into element with theme
     pub fn build_with_theme(self, theme: &CheckboxTheme) -> Stateful<Div> {
-        let size = self.size.size();
+        let design = self
+            .design
+            .clone()
+            .unwrap_or_else(crate::design::neutral_design);
+        self.build_with_theme_and_design(theme, &design)
+    }
+
+    /// Build into element with theme and design-system sizing tokens.
+    pub fn build_with_theme_and_design(
+        self,
+        theme: &CheckboxTheme,
+        design: &DesignSystem,
+    ) -> Stateful<Div> {
+        let size = self.size.size_with_design(design);
         let checked = self.checked;
         let indeterminate = self.indeterminate;
 
@@ -161,7 +184,7 @@ impl Checkbox {
             .id(self.id)
             .flex()
             .items_center()
-            .gap_2()
+            .gap(px(design.spacing.control_gap))
             .cursor_pointer();
 
         if self.disabled {
@@ -175,7 +198,7 @@ impl Checkbox {
             .justify_center()
             .w(size)
             .h(size)
-            .rounded(px(3.0))
+            .rounded(px(design.corners.sm))
             .border_1()
             .border_color(border_color)
             .bg(bg);
@@ -187,7 +210,7 @@ impl Checkbox {
                     .w(size - px(6.0))
                     .h(px(2.0))
                     .bg(theme.check_color)
-                    .rounded(px(1.0)),
+                    .rounded(px(design.corners.sm * 0.5)),
             );
         } else if checked {
             checkbox = checkbox.child(
@@ -268,7 +291,8 @@ impl RenderOnce for Checkbox {
 
         let global_theme = cx.theme();
         let checkbox_theme = CheckboxTheme::from(&global_theme);
-        self.build_with_theme(&checkbox_theme)
+        let design = crate::design::resolve_design(self.design.clone(), cx);
+        self.build_with_theme_and_design(&checkbox_theme, &design)
     }
 }
 

@@ -2,10 +2,10 @@
 
 use crate::error::ChartError;
 use crate::{
-    DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
-    validate_data_length, validate_dimensions, validate_positive, validate_range,
-    validate_range_log,
+    ChartSize, DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
+    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, apply_chart_size, default_design, extent_padded,
+    resolved_chart_dimensions, validate_data_array, validate_data_length, validate_dimensions,
+    validate_positive, validate_range, validate_range_log,
 };
 use d3rs::axis::{AxisConfig, AxisTheme, render_axis};
 use d3rs::color::D3Color;
@@ -15,8 +15,10 @@ use d3rs::shape::{CurveType, LineConfig, LinePoint, StrokeDashArray, render_line
 use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, IntoElement, Rgba, Window, div, px, rgb};
+use gpui_design::DesignSystem;
 use std::collections::HashSet;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// Position of the legend relative to the chart
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -201,6 +203,7 @@ pub struct LineChart {
     show_points: bool,
     width: f32,
     height: f32,
+    chart_size: ChartSize,
     x_scale_type: ScaleType,
     y_scale_type: ScaleType,
     x_range: Option<[f64; 2]>,
@@ -212,6 +215,7 @@ pub struct LineChart {
     /// Target aspect ratio for the graph (height = width * ratio)
     graph_ratio: f32,
     theme: ChartTheme,
+    design: Option<Arc<DesignSystem>>,
     // Secondary Y-axis settings
     y2_label: Option<String>,
     y2_range: Option<[f64; 2]>,
@@ -327,6 +331,27 @@ impl LineChart {
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.width = width;
         self.height = height;
+        self.chart_size = ChartSize::fixed(width, height);
+        self
+    }
+
+    /// Fill the parent using the current minimum chart dimensions.
+    pub fn fill(mut self) -> Self {
+        self.chart_size = ChartSize::fill().min_size(self.width, self.height);
+        self
+    }
+
+    /// Set minimum dimensions for responsive fill sizing.
+    pub fn min_size(mut self, width: f32, height: f32) -> Self {
+        self.width = width;
+        self.height = height;
+        self.chart_size = self.chart_size.min_size(width, height);
+        self
+    }
+
+    /// Set preferred fill-layout aspect ratio.
+    pub fn aspect_ratio(mut self, ratio: f32) -> Self {
+        self.chart_size = self.chart_size.aspect_ratio(ratio);
         self
     }
 
@@ -587,6 +612,12 @@ impl LineChart {
         self
     }
 
+    /// Set an explicit design system for chart spacing and typography defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
+
     /// Set the legend position.
     ///
     /// Controls where the legend is displayed relative to the chart area.
@@ -687,11 +718,13 @@ impl LineChart {
 
     /// Build and validate the chart, returning renderable element.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
+        let design = self.design.clone().unwrap_or_else(default_design);
+        let (layout_width, layout_height) = resolved_chart_dimensions(self.chart_size);
         // Validate inputs
         validate_data_array(&self.x, "x")?;
         validate_data_array(&self.y, "y")?;
         validate_data_length(self.x.len(), self.y.len(), "x", "y")?;
-        validate_dimensions(self.width, self.height)?;
+        validate_dimensions(layout_width, layout_height)?;
 
         // Validate all additional series
         for series in &self.series {
@@ -726,7 +759,7 @@ impl LineChart {
         // Define margins - must match the rendered axis sizes
         // Left margin must match the Y-axis total_size() so control point overlays align
         let margin_left = {
-            let mut axis = d3rs::axis::AxisConfig::left().with_label_font_size(8.0);
+            let mut axis = d3rs::axis::AxisConfig::left().with_design(&design);
             if self.y_label.is_some() {
                 // title_font_size(12) + title_padding(8) = 20 added to base 60
                 axis = axis.with_title(String::new());
@@ -784,9 +817,9 @@ impl LineChart {
         let horizontal_legend_height = single_item_height + 8.0;
 
         // Base available dimensions (without legend)
-        let base_available_width = self.width as f64 - margin_left - margin_right;
+        let base_available_width = layout_width as f64 - margin_left - margin_right;
         let base_available_height =
-            self.height as f64 - title_height as f64 - margin_top - margin_bottom;
+            layout_height as f64 - title_height as f64 - margin_top - margin_bottom;
 
         // Determine legend position (auto-select if not explicit)
         let legend_position = if has_legend_items && !self.legend_position_explicit {
@@ -855,8 +888,8 @@ impl LineChart {
         };
 
         let plot_width =
-            (self.width as f64 - margin_left - margin_right - width_for_legend as f64).max(0.0);
-        let plot_height = (self.height as f64
+            (layout_width as f64 - margin_left - margin_right - width_for_legend as f64).max(0.0);
+        let plot_height = (layout_height as f64
             - title_height as f64
             - margin_top
             - margin_bottom
@@ -951,7 +984,7 @@ impl LineChart {
             .collect();
 
         // Create configs for primary series
-        let mut primary_config = LineConfig::new()
+        let mut primary_config = LineConfig::from_design(&design)
             .stroke_color(D3Color::from_hex(self.color))
             .stroke_width(self.stroke_width)
             .opacity(self.opacity)
@@ -979,7 +1012,7 @@ impl LineChart {
                 .map(|(&x, &y)| LinePoint::new(x, y))
                 .collect();
 
-            let mut series_config = LineConfig::new()
+            let mut series_config = LineConfig::from_design(&design)
                 .stroke_color(D3Color::from_hex(series.color))
                 .stroke_width(series.stroke_width)
                 .opacity(series.opacity)
@@ -1002,7 +1035,7 @@ impl LineChart {
         };
 
         let grid_config = GridConfig::with_lines()
-            .with_line_width(0.5)
+            .with_design(&design)
             .with_line_opacity(0.3);
 
         // Build the element based on scale types
@@ -1067,21 +1100,19 @@ impl LineChart {
                 }
 
                 // Create axis configs with labels
-                let mut y_axis_config = AxisConfig::left().with_label_font_size(8.0);
+                let mut y_axis_config = AxisConfig::left().with_design(&design);
                 if let Some(ref label) = self.y_label {
                     y_axis_config = y_axis_config.with_title(label.clone());
                 }
 
-                let mut x_axis_config = AxisConfig::bottom()
-                    .with_ticks(20)
-                    .with_label_font_size(8.0);
+                let mut x_axis_config = AxisConfig::bottom().with_design(&design).with_ticks(20);
                 if let Some(ref label) = self.x_label {
                     x_axis_config = x_axis_config.with_title(label.clone());
                 }
 
                 // Build chart with optional secondary Y axis
                 if has_secondary_axis {
-                    let mut y2_axis_config = AxisConfig::right().with_label_font_size(8.0);
+                    let mut y2_axis_config = AxisConfig::right().with_design(&design);
                     if let Some(ref label) = self.y2_label {
                         y2_axis_config = y2_axis_config.with_title(label.clone());
                     }
@@ -1183,7 +1214,7 @@ impl LineChart {
                 }
 
                 // Create axis configs with labels and angled X labels for log scale
-                let mut y_axis_config = AxisConfig::left().with_label_font_size(8.0);
+                let mut y_axis_config = AxisConfig::left().with_design(&design);
                 if let Some(ref label) = self.y_label {
                     y_axis_config = y_axis_config.with_title(label.clone());
                 }
@@ -1191,9 +1222,9 @@ impl LineChart {
                 // Generate smart tick values for log X axis to prevent collision
                 let x_ticks = generate_log_ticks(x_min, x_max);
                 let mut x_axis_config = AxisConfig::bottom()
+                    .with_design(&design)
                     .with_tick_values(x_ticks)
                     .with_label_angle(-45.0)
-                    .with_label_font_size(8.0)
                     .with_formatter(format_log_tick); // Use k/M formatting for log scale
                 if let Some(ref label) = self.x_label {
                     x_axis_config = x_axis_config.with_title(label.clone());
@@ -1201,7 +1232,7 @@ impl LineChart {
 
                 // Build chart with optional secondary Y axis
                 if has_secondary_axis {
-                    let mut y2_axis_config = AxisConfig::right().with_label_font_size(8.0);
+                    let mut y2_axis_config = AxisConfig::right().with_design(&design);
                     if let Some(ref label) = self.y2_label {
                         y2_axis_config = y2_axis_config.with_title(label.clone());
                     }
@@ -1306,23 +1337,21 @@ impl LineChart {
                 // Generate smart tick values for log Y axis to prevent collision
                 let y_ticks = generate_log_ticks(y_min, y_max);
                 let mut y_axis_config = AxisConfig::left()
+                    .with_design(&design)
                     .with_tick_values(y_ticks)
-                    .with_label_font_size(8.0)
                     .with_formatter(format_log_tick); // Use k/M formatting for log scale
                 if let Some(ref label) = self.y_label {
                     y_axis_config = y_axis_config.with_title(label.clone());
                 }
 
-                let mut x_axis_config = AxisConfig::bottom()
-                    .with_ticks(20)
-                    .with_label_font_size(8.0);
+                let mut x_axis_config = AxisConfig::bottom().with_design(&design).with_ticks(20);
                 if let Some(ref label) = self.x_label {
                     x_axis_config = x_axis_config.with_title(label.clone());
                 }
 
                 // Build chart with optional secondary Y axis
                 if has_secondary_axis {
-                    let mut y2_axis_config = AxisConfig::right().with_label_font_size(8.0);
+                    let mut y2_axis_config = AxisConfig::right().with_design(&design);
                     if let Some(ref label) = self.y2_label {
                         y2_axis_config = y2_axis_config.with_title(label.clone());
                     }
@@ -1425,8 +1454,8 @@ impl LineChart {
                 // Generate smart tick values for both log axes to prevent collision
                 let y_ticks = generate_log_ticks(y_min, y_max);
                 let mut y_axis_config = AxisConfig::left()
+                    .with_design(&design)
                     .with_tick_values(y_ticks)
-                    .with_label_font_size(8.0)
                     .with_formatter(format_log_tick); // Use k/M formatting for log scale
                 if let Some(ref label) = self.y_label {
                     y_axis_config = y_axis_config.with_title(label.clone());
@@ -1434,9 +1463,9 @@ impl LineChart {
 
                 let x_ticks = generate_log_ticks(x_min, x_max);
                 let mut x_axis_config = AxisConfig::bottom()
+                    .with_design(&design)
                     .with_tick_values(x_ticks)
                     .with_label_angle(-45.0)
-                    .with_label_font_size(8.0)
                     .with_formatter(format_log_tick); // Use k/M formatting for log scale
                 if let Some(ref label) = self.x_label {
                     x_axis_config = x_axis_config.with_title(label.clone());
@@ -1444,7 +1473,7 @@ impl LineChart {
 
                 // Build chart with optional secondary Y axis
                 if has_secondary_axis {
-                    let mut y2_axis_config = AxisConfig::right().with_label_font_size(8.0);
+                    let mut y2_axis_config = AxisConfig::right().with_design(&design);
                     if let Some(ref label) = self.y2_label {
                         y2_axis_config = y2_axis_config.with_title(label.clone());
                     }
@@ -1508,9 +1537,7 @@ impl LineChart {
         }
 
         // Build container with optional title
-        let mut container = div()
-            .w(px(self.width))
-            .h(px(self.height))
+        let mut container = apply_chart_size(div(), self.chart_size)
             .relative()
             .flex()
             .flex_col();
@@ -1711,6 +1738,7 @@ pub fn line(x: &[f64], y: &[f64]) -> LineChart {
         show_points: false,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+        chart_size: ChartSize::default(),
         x_scale_type: ScaleType::Linear,
         y_scale_type: ScaleType::Linear,
         x_range: None,
@@ -1720,6 +1748,7 @@ pub fn line(x: &[f64], y: &[f64]) -> LineChart {
         legend_position_explicit: false,
         graph_ratio: 1.414, // √2 ≈ A4 paper aspect ratio
         theme: ChartTheme::default(),
+        design: None,
         y2_label: None,
         y2_range: None,
         hidden_series: HashSet::new(),
@@ -2011,5 +2040,25 @@ mod tests {
             .x_range(-10.0, 100.0)
             .build();
         assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_line_responsive_size_defaults_and_fixed_opt_in() {
+        let x = vec![1.0, 2.0, 3.0];
+        let y = vec![2.0, 3.0, 5.0];
+
+        crate::assert_default_chart_size(line(&x, &y).chart_size);
+        crate::assert_fixed_chart_size(line(&x, &y).size(420.0, 240.0).chart_size, 420.0, 240.0);
+        crate::assert_fill_chart_size(
+            line(&x, &y)
+                .size(420.0, 240.0)
+                .fill()
+                .min_size(300.0, 180.0)
+                .aspect_ratio(1.75)
+                .chart_size,
+            300.0,
+            180.0,
+            Some(1.75),
+        );
     }
 }

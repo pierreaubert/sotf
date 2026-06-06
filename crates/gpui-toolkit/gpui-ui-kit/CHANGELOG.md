@@ -1,3 +1,20 @@
+# Unreleased
+
+## Features
+
+- Re-exported the `ComponentBuilder` derive plus the documented `FormField`
+  compatibility alias, and exposed `gpui-builder` layout primitives through
+  `layout_builder`.
+- Added default `DesignSystem` resolution helpers and explicit `.design(...)`
+  overrides for core UI-kit builders including buttons, stacks, split panes,
+  toolbars, tables, sliders, checkboxes, icon buttons, sidebar, and audio
+  controls.
+
+## Fixes
+
+- Direct `build_with_theme(...)` paths now preserve explicit design overrides
+  instead of always falling back to the neutral design.
+
 # 0.6.24
 
 ## Improvements

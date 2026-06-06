@@ -78,6 +78,24 @@ impl LineConfig {
         Self::default()
     }
 
+    /// Create a line configuration from design-system interaction defaults.
+    #[cfg(feature = "gpui")]
+    pub fn from_design(design: &gpui_design::DesignSystem) -> Self {
+        Self {
+            stroke_width: design.interaction.border_width.max(2.0),
+            point_radius: (design.spacing.grid_unit * 0.75).max(2.0),
+            ..Self::default()
+        }
+    }
+
+    /// Apply design-system interaction defaults.
+    #[cfg(feature = "gpui")]
+    pub fn with_design(mut self, design: &gpui_design::DesignSystem) -> Self {
+        self.stroke_width = design.interaction.border_width.max(2.0);
+        self.point_radius = (design.spacing.grid_unit * 0.75).max(2.0);
+        self
+    }
+
     /// Set the stroke color
     pub fn stroke_color(mut self, color: D3Color) -> Self {
         self.stroke_color = color;

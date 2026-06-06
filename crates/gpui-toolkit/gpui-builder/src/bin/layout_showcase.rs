@@ -18,7 +18,6 @@ use gpui_builder::{
     Axis, ContainerNode, DisplayTier, LayoutNode, Sizing, SlotNode, SolvedNode, solve,
 };
 use gpui_design::{DesignExt, DesignSystemState};
-use gpui_ui_kit::theme::{ThemeExt, ThemeState, ThemeVariant};
 use std::rc::Rc;
 
 // ============================================================================
@@ -48,6 +47,31 @@ struct ShowcaseView {
     sidebar_collapsed: bool,
     inspector_collapsed: bool,
     dragging: Option<DragTarget>,
+}
+
+#[derive(Clone, Copy)]
+struct ShowcaseTheme {
+    background: Rgba,
+    surface: Rgba,
+    muted: Rgba,
+    border: Rgba,
+    accent: Rgba,
+    text_primary: Rgba,
+    text_muted: Rgba,
+}
+
+impl ShowcaseTheme {
+    fn dark() -> Self {
+        Self {
+            background: rgb(0x181818),
+            surface: rgb(0x242424),
+            muted: rgb(0x2d2d2d),
+            border: rgb(0x3a3a3a),
+            accent: rgb(0x0a84ff),
+            text_primary: rgb(0xf2f2f2),
+            text_muted: rgb(0x9a9a9a),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -212,7 +236,7 @@ fn size_label(node: &SolvedNode) -> String {
 
 impl Render for ShowcaseView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let theme = ShowcaseTheme::dark();
         let ds = cx.design();
         let bounds = window.bounds();
         let w: f32 = bounds.size.width.into();
@@ -374,7 +398,7 @@ impl ShowcaseView {
         accent: Rgba,
         fg: Rgba,
         tabs: &[(&str, &str)],
-        theme: &gpui_ui_kit::theme::Theme,
+        theme: &ShowcaseTheme,
         base_sz: f32,
         small_sz: f32,
         large_sz: f32,
@@ -521,7 +545,7 @@ impl ShowcaseView {
         bg: Rgba,
         fg: Rgba,
         tabs: &[(&str, &str)],
-        theme: &gpui_ui_kit::theme::Theme,
+        theme: &ShowcaseTheme,
         ds: &gpui_design::DesignSystem,
         large_sz: f32,
         small_sz: f32,
@@ -700,7 +724,6 @@ fn main() {
     };
 
     gpui::Application::with_platform(platform).run(|cx: &mut App| {
-        cx.set_global(ThemeState::with_variant(ThemeVariant::Dark));
         cx.set_global(DesignSystemState::new());
 
         let bounds = Bounds::centered(None, size(px(1000.0), px(700.0)), cx);

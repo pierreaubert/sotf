@@ -3,10 +3,10 @@
 use crate::error::ChartError;
 use crate::line::LegendPosition;
 use crate::{
-    DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
-    validate_data_length, validate_dimensions, validate_positive, validate_range,
-    validate_range_log,
+    ChartSize, DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
+    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, apply_chart_size, default_design, extent_padded,
+    resolved_chart_dimensions, validate_data_array, validate_data_length, validate_dimensions,
+    validate_positive, validate_range, validate_range_log,
 };
 use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
@@ -16,6 +16,8 @@ use d3rs::shape::{ScatterConfig, ScatterPoint, render_scatter};
 use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, Rgba, div, hsla, px, rgb};
+use gpui_design::DesignSystem;
+use std::sync::Arc;
 
 /// A single series in a scatter chart
 #[derive(Debug, Clone)]
@@ -70,6 +72,7 @@ pub struct ScatterChart {
     title: Option<String>,
     width: f32,
     height: f32,
+    chart_size: ChartSize,
     x_scale_type: ScaleType,
     y_scale_type: ScaleType,
     // Axis range overrides (for zoom support)
@@ -81,6 +84,7 @@ pub struct ScatterChart {
     legend_position_explicit: bool,
     graph_ratio: f32,
     theme: ScatterTheme,
+    design: Option<Arc<DesignSystem>>,
 }
 
 impl ScatterChart {
@@ -120,6 +124,27 @@ impl ScatterChart {
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.width = width;
         self.height = height;
+        self.chart_size = ChartSize::fixed(width, height);
+        self
+    }
+
+    /// Fill the parent using the current minimum chart dimensions.
+    pub fn fill(mut self) -> Self {
+        self.chart_size = ChartSize::fill().min_size(self.width, self.height);
+        self
+    }
+
+    /// Set minimum dimensions for responsive fill sizing.
+    pub fn min_size(mut self, width: f32, height: f32) -> Self {
+        self.width = width;
+        self.height = height;
+        self.chart_size = self.chart_size.min_size(width, height);
+        self
+    }
+
+    /// Set preferred fill-layout aspect ratio.
+    pub fn aspect_ratio(mut self, ratio: f32) -> Self {
+        self.chart_size = self.chart_size.aspect_ratio(ratio);
         self
     }
 
@@ -217,6 +242,12 @@ impl ScatterChart {
         self
     }
 
+    /// Set an explicit design system for chart spacing and typography defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
+
     /// Set the legend position.
     ///
     /// Controls where the legend is displayed relative to the chart area.
@@ -244,11 +275,13 @@ impl ScatterChart {
 
     /// Build and validate the chart, returning renderable element.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
+        let design = self.design.clone().unwrap_or_else(default_design);
+        let (layout_width, layout_height) = resolved_chart_dimensions(self.chart_size);
         // Validate inputs
         validate_data_array(&self.x, "x")?;
         validate_data_array(&self.y, "y")?;
         validate_data_length(self.x.len(), self.y.len(), "x", "y")?;
-        validate_dimensions(self.width, self.height)?;
+        validate_dimensions(layout_width, layout_height)?;
 
         // Validate positive values for log scales
         if self.x_scale_type == ScaleType::Log {
@@ -321,9 +354,9 @@ impl ScatterChart {
         let horizontal_legend_height = single_item_height + 8.0;
 
         // Base available dimensions (without legend)
-        let base_available_width = self.width as f64 - margin_left - margin_right;
+        let base_available_width = layout_width as f64 - margin_left - margin_right;
         let base_available_height =
-            self.height as f64 - title_height as f64 - margin_top - margin_bottom;
+            layout_height as f64 - title_height as f64 - margin_top - margin_bottom;
 
         // Determine legend position (auto-select if not explicit)
         let legend_position = if has_legend_items && !self.legend_position_explicit {
@@ -385,8 +418,8 @@ impl ScatterChart {
         };
 
         let plot_width =
-            (self.width as f64 - margin_left - margin_right - width_for_legend as f64).max(0.0);
-        let plot_height = (self.height as f64
+            (layout_width as f64 - margin_left - margin_right - width_for_legend as f64).max(0.0);
+        let plot_height = (layout_height as f64
             - title_height as f64
             - margin_top
             - margin_bottom
@@ -461,6 +494,9 @@ impl ScatterChart {
             .collect();
 
         let axis_theme = DefaultAxisTheme;
+        let grid_config = GridConfig::default().with_design(&design);
+        let x_axis_config = AxisConfig::bottom().with_design(&design);
+        let y_axis_config = AxisConfig::left().with_design(&design);
 
         // Helper macro to build plot area with all series
         macro_rules! build_plot_area {
@@ -474,7 +510,7 @@ impl ScatterChart {
                     .child(render_grid(
                         &$x_scale,
                         &$y_scale,
-                        &GridConfig::default(),
+                        &grid_config,
                         plot_width as f32,
                         plot_height as f32,
                         &axis_theme,
@@ -518,13 +554,13 @@ impl ScatterChart {
                     .flex()
                     .child(render_axis(
                         &y_scale,
-                        &AxisConfig::left(),
+                        &y_axis_config,
                         plot_height as f32,
                         &axis_theme,
                     ))
                     .child(div().flex().flex_col().child(plot_area).child(render_axis(
                         &x_scale,
-                        &AxisConfig::bottom(),
+                        &x_axis_config,
                         plot_width as f32,
                         &axis_theme,
                     )))
@@ -544,13 +580,13 @@ impl ScatterChart {
                     .flex()
                     .child(render_axis(
                         &y_scale,
-                        &AxisConfig::left(),
+                        &y_axis_config,
                         plot_height as f32,
                         &axis_theme,
                     ))
                     .child(div().flex().flex_col().child(plot_area).child(render_axis(
                         &x_scale,
-                        &AxisConfig::bottom(),
+                        &x_axis_config,
                         plot_width as f32,
                         &axis_theme,
                     )))
@@ -570,13 +606,13 @@ impl ScatterChart {
                     .flex()
                     .child(render_axis(
                         &y_scale,
-                        &AxisConfig::left(),
+                        &y_axis_config,
                         plot_height as f32,
                         &axis_theme,
                     ))
                     .child(div().flex().flex_col().child(plot_area).child(render_axis(
                         &x_scale,
-                        &AxisConfig::bottom(),
+                        &x_axis_config,
                         plot_width as f32,
                         &axis_theme,
                     )))
@@ -596,13 +632,13 @@ impl ScatterChart {
                     .flex()
                     .child(render_axis(
                         &y_scale,
-                        &AxisConfig::left(),
+                        &y_axis_config,
                         plot_height as f32,
                         &axis_theme,
                     ))
                     .child(div().flex().flex_col().child(plot_area).child(render_axis(
                         &x_scale,
-                        &AxisConfig::bottom(),
+                        &x_axis_config,
                         plot_width as f32,
                         &axis_theme,
                     )))
@@ -624,9 +660,7 @@ impl ScatterChart {
         }
 
         // Build container with optional title
-        let mut container = div()
-            .w(px(self.width))
-            .h(px(self.height))
+        let mut container = apply_chart_size(div(), self.chart_size)
             .relative()
             .flex()
             .flex_col();
@@ -783,6 +817,7 @@ pub fn scatter(x: &[f64], y: &[f64]) -> ScatterChart {
         title: None,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+        chart_size: ChartSize::default(),
         x_scale_type: ScaleType::Linear,
         y_scale_type: ScaleType::Linear,
         x_range: None,
@@ -792,6 +827,7 @@ pub fn scatter(x: &[f64], y: &[f64]) -> ScatterChart {
         legend_position_explicit: false,
         graph_ratio: 1.414,
         theme: ScatterTheme::default(),
+        design: None,
     }
 }
 
@@ -981,5 +1017,25 @@ mod tests {
             .y_range(-1.0, 100.0)
             .build();
         assert!(matches!(result, Err(ChartError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_scatter_responsive_size_defaults_and_fixed_opt_in() {
+        let x = vec![1.0, 2.0, 3.0];
+        let y = vec![2.0, 4.0, 8.0];
+
+        crate::assert_default_chart_size(scatter(&x, &y).chart_size);
+        crate::assert_fixed_chart_size(scatter(&x, &y).size(320.0, 200.0).chart_size, 320.0, 200.0);
+        crate::assert_fill_chart_size(
+            scatter(&x, &y)
+                .size(320.0, 200.0)
+                .fill()
+                .min_size(280.0, 180.0)
+                .aspect_ratio(1.25)
+                .chart_size,
+            280.0,
+            180.0,
+            Some(1.25),
+        );
     }
 }

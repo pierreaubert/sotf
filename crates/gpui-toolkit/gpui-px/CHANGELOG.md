@@ -1,3 +1,17 @@
+# Unreleased
+
+## Features
+
+- Added public `ChartSize` support plus `.fill()`, `.min_size(...)`,
+  `.aspect_ratio(...)`, and `.design(...)` builder methods across PX charts.
+- PX charts now default to responsive fill sizing while preserving
+  `.size(width, height)` as the fixed-size opt-in.
+
+## Fixes
+
+- Chart plot geometry now resolves from `ChartSize` so responsive minimums and
+  aspect ratios are reflected in scales, canvases, and plot bounds.
+
 # 0.6.4
 
 ## Fixes

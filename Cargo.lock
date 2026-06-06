@@ -3814,7 +3814,6 @@ dependencies = [
  "gpui-design",
  "gpui-ios",
  "gpui-pretext",
- "gpui-ui-kit",
  "gpui_linux",
  "gpui_macos",
  "gpui_windows",
@@ -3963,6 +3962,7 @@ version = "0.7.24"
 dependencies = [
  "block2",
  "gpui",
+ "gpui-builder",
  "gpui-design",
  "gpui-miniapp",
  "gpui-ui-kit-macros",

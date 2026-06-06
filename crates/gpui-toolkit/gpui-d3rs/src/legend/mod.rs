@@ -198,6 +198,30 @@ impl LegendConfig {
         }
     }
 
+    /// Create a legend configuration from design-system spacing and typography defaults.
+    #[cfg(feature = "gpui")]
+    pub fn from_design(design: &gpui_design::DesignSystem) -> Self {
+        Self {
+            symbol_size: design.interaction.min_touch_target.min(16.0) as f64,
+            item_spacing: design.spacing.control_gap as f64,
+            padding: design.spacing.control_padding_x as f64,
+            border_width: design.interaction.border_width as f64,
+            font_size: design.typography.small_size as f64,
+            ..Self::new()
+        }
+    }
+
+    /// Apply design-system spacing and typography defaults.
+    #[cfg(feature = "gpui")]
+    pub fn with_design(mut self, design: &gpui_design::DesignSystem) -> Self {
+        self.symbol_size = design.interaction.min_touch_target.min(16.0) as f64;
+        self.item_spacing = design.spacing.control_gap as f64;
+        self.padding = design.spacing.control_padding_x as f64;
+        self.border_width = design.interaction.border_width as f64;
+        self.font_size = design.typography.small_size as f64;
+        self
+    }
+
     /// Set the position
     pub fn position(mut self, position: LegendPosition) -> Self {
         self.position = position;

@@ -238,6 +238,26 @@ impl SurfaceConfig {
         Self::default()
     }
 
+    /// Create a surface configuration from design-system interaction defaults.
+    #[cfg(feature = "gpui")]
+    pub fn from_design(design: &gpui_design::DesignSystem) -> Self {
+        Self {
+            wireframe_width: design.interaction.border_width.max(0.5),
+            axis_width: design.interaction.border_width.max(1.0),
+            axis_font_size: design.typography.small_size,
+            ..Self::default()
+        }
+    }
+
+    /// Apply design-system interaction and typography defaults.
+    #[cfg(feature = "gpui")]
+    pub fn with_design(mut self, design: &gpui_design::DesignSystem) -> Self {
+        self.wireframe_width = design.interaction.border_width.max(0.5);
+        self.axis_width = design.interaction.border_width.max(1.0);
+        self.axis_font_size = design.typography.small_size;
+        self
+    }
+
     /// Use isometric projection
     pub fn isometric(mut self) -> Self {
         self.projection_type = ProjectionType::Isometric;

@@ -410,6 +410,16 @@ impl Default for GpuGridConfig {
 }
 
 impl GpuGridConfig {
+    /// Create a GPU grid configuration from design-system interaction defaults.
+    #[cfg(feature = "gpui")]
+    pub fn from_design(design: &gpui_design::DesignSystem) -> Self {
+        Self {
+            line_width: design.interaction.border_width.max(1.0),
+            dot_radius: (design.spacing.grid_unit * 0.5).max(1.0),
+            ..Self::default()
+        }
+    }
+
     /// Create a grid with only lines
     pub fn with_lines() -> Self {
         Self::default()

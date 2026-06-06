@@ -5,6 +5,8 @@
 
 use gpui::prelude::*;
 use gpui::*;
+use gpui_design::DesignSystem;
+use std::sync::Arc;
 
 /// Spacing values
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -29,15 +31,16 @@ pub enum StackSpacing {
 }
 
 impl StackSpacing {
-    fn to_pixels(&self) -> Pixels {
+    fn to_pixels_with_design(&self, design: &DesignSystem) -> Pixels {
+        let grid = design.spacing.grid_unit;
         match self {
             StackSpacing::None => px(0.0),
-            StackSpacing::Xs => px(2.0),
-            StackSpacing::Sm => px(4.0),
-            StackSpacing::Md => px(8.0),
-            StackSpacing::Lg => px(16.0),
-            StackSpacing::Xl => px(24.0),
-            StackSpacing::Xxl => px(32.0),
+            StackSpacing::Xs => px(grid * 0.5),
+            StackSpacing::Sm => px(grid),
+            StackSpacing::Md => px(design.spacing.control_gap),
+            StackSpacing::Lg => px(design.spacing.section_gap),
+            StackSpacing::Xl => px(design.spacing.section_gap + design.spacing.control_gap),
+            StackSpacing::Xxl => px(design.spacing.section_gap * 2.0),
             StackSpacing::Custom(p) => *p,
         }
     }
@@ -123,6 +126,7 @@ pub struct VStack {
     min_height: Option<Pixels>,
     max_width: Option<Pixels>,
     max_height: Option<Pixels>,
+    design: Option<Arc<DesignSystem>>,
 }
 
 impl VStack {
@@ -144,6 +148,7 @@ impl VStack {
             min_height: None,
             max_width: None,
             max_height: None,
+            design: None,
         }
     }
 
@@ -267,9 +272,27 @@ impl VStack {
         self
     }
 
+    /// Set an explicit design system override.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
+
     /// Build into element
     pub fn build(self) -> Div {
-        let mut stack = div().flex().flex_col().gap(self.spacing.to_pixels());
+        let design = self
+            .design
+            .clone()
+            .unwrap_or_else(crate::design::neutral_design);
+        self.build_with_design(&design)
+    }
+
+    /// Build into element using explicit design-system defaults.
+    pub fn build_with_design(self, design: &DesignSystem) -> Div {
+        let mut stack = div()
+            .flex()
+            .flex_col()
+            .gap(self.spacing.to_pixels_with_design(design));
 
         // Apply width
         stack = match self.width {
@@ -393,6 +416,7 @@ pub struct HStack {
     min_height: Option<Pixels>,
     max_width: Option<Pixels>,
     max_height: Option<Pixels>,
+    design: Option<Arc<DesignSystem>>,
 }
 
 impl HStack {
@@ -415,6 +439,7 @@ impl HStack {
             min_height: None,
             max_width: None,
             max_height: None,
+            design: None,
         }
     }
 
@@ -544,9 +569,24 @@ impl HStack {
         self
     }
 
+    /// Set an explicit design system override.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
+
     /// Build into element
     pub fn build(self) -> Div {
-        let mut stack = div().flex().gap(self.spacing.to_pixels());
+        let design = self
+            .design
+            .clone()
+            .unwrap_or_else(crate::design::neutral_design);
+        self.build_with_design(&design)
+    }
+
+    /// Build into element using explicit design-system defaults.
+    pub fn build_with_design(self, design: &DesignSystem) -> Div {
+        let mut stack = div().flex().gap(self.spacing.to_pixels_with_design(design));
 
         if self.wrap {
             stack = stack.flex_wrap();

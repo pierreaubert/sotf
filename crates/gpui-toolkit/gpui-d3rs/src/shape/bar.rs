@@ -42,6 +42,26 @@ impl BarConfig {
         Self::default()
     }
 
+    /// Create a bar configuration from design-system spacing and shape defaults.
+    #[cfg(feature = "gpui")]
+    pub fn from_design(design: &gpui_design::DesignSystem) -> Self {
+        Self {
+            bar_gap: design.spacing.grid_unit * 0.5,
+            border_radius: design.corners.sm,
+            stroke_width: design.interaction.border_width.max(1.0),
+            ..Self::default()
+        }
+    }
+
+    /// Apply design-system spacing and shape defaults.
+    #[cfg(feature = "gpui")]
+    pub fn with_design(mut self, design: &gpui_design::DesignSystem) -> Self {
+        self.bar_gap = design.spacing.grid_unit * 0.5;
+        self.border_radius = design.corners.sm;
+        self.stroke_width = design.interaction.border_width.max(1.0);
+        self
+    }
+
     /// Set the fill color
     pub fn fill_color(mut self, color: D3Color) -> Self {
         self.fill_color = color;

@@ -142,6 +142,61 @@ impl Default for AudioDesignTokens {
     }
 }
 
+impl From<&gpui_design::DesignSystem> for AudioDesignTokens {
+    fn from(design: &gpui_design::DesignSystem) -> Self {
+        let knob_arc_width = design.audio_controls.knob_arc_width;
+
+        Self {
+            knob_arc_start_deg: design.audio_controls.knob_arc_start_deg,
+            knob_arc_sweep_deg: design.audio_controls.knob_arc_sweep_deg,
+            knob_arc_widths: [
+                knob_arc_width,
+                knob_arc_width * 1.2,
+                knob_arc_width * 1.4,
+                knob_arc_width * 1.6,
+            ],
+            knob_arc_track_widths: [
+                knob_arc_width,
+                knob_arc_width * 1.2,
+                knob_arc_width * 1.4,
+                knob_arc_width * 1.6,
+            ],
+            knob_arc_glow: 0.0,
+            knob_arc_segments: design.audio_controls.knob_arc_segments,
+            knob_border_width: design.audio_controls.knob_border_width,
+            knob_label_style: AudioDesignTokens::LABEL_BOXED,
+            knob_indicator_style: AudioDesignTokens::INDICATOR_DOT,
+            slider_track_widths: design.audio_controls.slider_track_widths,
+            meter_label_style: AudioDesignTokens::LABEL_BOXED,
+            meter_use_gradient: false,
+            meter_corner_radius: design.corners.sm,
+            meter_glow: 0.0,
+            toggle_variant: match design.toggle_variant {
+                gpui_design::ToggleVariant::Capsule => AudioDesignTokens::TOGGLE_SLIDING,
+                gpui_design::ToggleVariant::Segmented => AudioDesignTokens::TOGGLE_SEGMENTED,
+                gpui_design::ToggleVariant::ThumbOnTrack => {
+                    AudioDesignTokens::TOGGLE_THUMB_ON_TRACK
+                }
+                gpui_design::ToggleVariant::Pill => AudioDesignTokens::TOGGLE_PILL,
+            },
+            corner_radius: design.corners.md,
+            min_touch_target: design.interaction.min_touch_target,
+            control_padding_x: design.spacing.control_padding_x,
+            control_padding_y: design.spacing.control_padding_y,
+            animation_duration_ms: design.animation.duration_ms,
+            prefer_spring: design.animation.prefer_spring,
+            spring_stiffness: design.animation.spring_stiffness,
+            spring_damping: design.animation.spring_damping,
+        }
+    }
+}
+
+impl From<gpui_design::DesignSystem> for AudioDesignTokens {
+    fn from(design: gpui_design::DesignSystem) -> Self {
+        Self::from(&design)
+    }
+}
+
 /// Toggle variant constants (matches design_system::ToggleVariant ordering).
 impl AudioDesignTokens {
     pub const TOGGLE_SLIDING: u8 = 0;

@@ -8,9 +8,11 @@ use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaR
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_design::DesignSystem;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 // Thread-local FocusHandle registry for IconButton, mirroring the pattern
 // in `button.rs`. See its module-level comment for rationale; in short:
@@ -107,12 +109,16 @@ impl IconButtonSize {
     /// so the table maps to 16 / 24 / 24 / 32 / 48 logical px at 1× zoom
     /// and scales linearly with font zoom.
     pub fn size(&self) -> Rems {
+        self.size_with_design(&DesignSystem::neutral())
+    }
+
+    fn size_with_design(&self, design: &DesignSystem) -> Rems {
         match self {
-            IconButtonSize::Xs => rems(1.0),
-            IconButtonSize::Sm => rems(1.5),
-            IconButtonSize::Md => rems(1.5),
-            IconButtonSize::Lg => rems(2.0),
-            IconButtonSize::Xl => rems(3.0),
+            IconButtonSize::Xs => rems(design.interaction.min_touch_target * 0.5 / 16.0),
+            IconButtonSize::Sm => rems(design.interaction.min_touch_target * 0.75 / 16.0),
+            IconButtonSize::Md => rems(design.interaction.min_touch_target * 0.75 / 16.0),
+            IconButtonSize::Lg => rems(design.interaction.min_touch_target / 16.0),
+            IconButtonSize::Xl => rems(design.interaction.min_touch_target * 1.5 / 16.0),
             IconButtonSize::Custom(size) => rems(*size as f32 / 16.0),
         }
     }
@@ -174,6 +180,7 @@ pub struct IconButton {
     rounded_full: bool,
     padding: Option<Pixels>,
     theme: Option<IconButtonTheme>,
+    design: Option<Arc<DesignSystem>>,
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
     aria_label: Option<SharedString>,
     aria_role: Option<AriaRole>,
@@ -192,6 +199,7 @@ impl IconButton {
             rounded_full: false,
             padding: None,
             theme: None,
+            design: None,
             on_click: None,
             aria_label: None,
             aria_role: None,
@@ -210,6 +218,7 @@ impl IconButton {
             rounded_full: false,
             padding: None,
             theme: None,
+            design: None,
             on_click: None,
             aria_label: None,
             aria_role: None,
@@ -283,6 +292,12 @@ impl IconButton {
         self
     }
 
+    /// Override the design system used for sizing and radii defaults.
+    pub fn design(mut self, design: impl Into<Arc<DesignSystem>>) -> Self {
+        self.design = Some(design.into());
+        self
+    }
+
     /// Set an explicit ARIA label (overrides the icon text)
     pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
         self.aria_label = Some(label.into());
@@ -348,7 +363,21 @@ impl IconButton {
         global_theme: &crate::theme::Theme,
         icon_theme: &IconButtonTheme,
     ) -> Stateful<Div> {
-        let size = self.size.size();
+        let design = self
+            .design
+            .clone()
+            .unwrap_or_else(crate::design::neutral_design);
+        self.build_with_theme_and_design(global_theme, icon_theme, &design)
+    }
+
+    /// Build into element with theme and design-system sizing tokens.
+    pub fn build_with_theme_and_design(
+        self,
+        global_theme: &crate::theme::Theme,
+        icon_theme: &IconButtonTheme,
+        design: &DesignSystem,
+    ) -> Stateful<Div> {
+        let size = self.size.size_with_design(design);
         let (bg, bg_hover, text_color, border) = self.compute_colors(icon_theme);
 
         let mut el = div()
@@ -372,7 +401,7 @@ impl IconButton {
         if self.rounded_full {
             el = el.rounded_full();
         } else {
-            el = el.rounded_md();
+            el = el.rounded(px(design.corners.md));
         }
 
         if let Some(border_color) = border {
@@ -425,8 +454,9 @@ impl RenderOnce for IconButton {
         let disabled = self.disabled;
         let on_click_for_kbd = self.on_click.clone();
 
+        let design = crate::design::resolve_design(self.design.clone(), cx);
         let mut el = self
-            .build_with_theme(&global_theme, &icon_theme)
+            .build_with_theme_and_design(&global_theme, &icon_theme, &design)
             .track_focus(&focus_handle)
             // CSS `:focus-visible` analogue — only renders when reached via
             // keyboard. Layered 2px accent border on top of the (optional)
