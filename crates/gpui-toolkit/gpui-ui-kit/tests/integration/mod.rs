@@ -38,11 +38,6 @@ mod sidebar_test;
 mod stack_test;
 mod status_bar_test;
 
-// Component integration tests - Audio/Control Components
-mod potentiometer_test;
-mod vertical_slider_test;
-mod volume_knob_test;
-
 // Component integration tests - Feedback Components
 mod confirm_dialog_test;
 mod empty_state_test;

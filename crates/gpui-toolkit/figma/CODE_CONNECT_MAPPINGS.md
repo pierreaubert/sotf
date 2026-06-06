@@ -1,4 +1,4 @@
-# Code Connect Mappings — SOTF gpui-ui-kit
+# Code Connect Mappings — SOTF gpui-toolkit
 
 Figma file: https://www.figma.com/design/c7bS9PCykhmP2pjpaT0zKu
 File key: `c7bS9PCykhmP2pjpaT0zKu`
@@ -31,6 +31,15 @@ All use `label: "Swift"` (closest to Rust in the allowed list).
 | 1:1103 | Tooltip | crates/gpui-toolkit/gpui-ui-kit/src/tooltip.rs |
 | 1:1126 | Card | crates/gpui-toolkit/gpui-ui-kit/src/card.rs |
 | 1:354 | IconButton | crates/gpui-toolkit/gpui-ui-kit/src/icon_button.rs |
+| audio:potentiometer | Potentiometer | crates/gpui-toolkit/gpui-audio-kit/src/audio/potentiometer.rs |
+| audio:vertical-slider | VerticalSlider | crates/gpui-toolkit/gpui-audio-kit/src/audio/vertical_slider.rs |
+| audio:volume-knob | VolumeKnob | crates/gpui-toolkit/gpui-audio-kit/src/audio/volume_knob.rs |
+| audio:level-meter | LevelMeterElement | crates/gpui-toolkit/gpui-audio-kit/src/meter.rs |
+| audio:spectrum | SpectrumElement | crates/gpui-toolkit/gpui-audio-kit/src/spectrum.rs |
+
+The runtime story registry for design review and responsive matrices lives in
+`crates/gpui-toolkit/gpui-component-lab`. Token exports and validation live in
+`crates/gpui-toolkit/gpui-design-tools`.
 
 ## Code Connect Examples
 
@@ -96,4 +105,18 @@ VStack::new()
     .spacing(StackSpacing::Md)
     .align(StackAlign::Stretch)
     .children(vec![...])
+```
+
+When `get_design_context` returns an audio control, generate imports from
+`gpui_audio_kit`:
+```rust
+use gpui_audio_kit::{AudioScale, Potentiometer, PotentiometerSize};
+
+Potentiometer::new("frequency")
+    .label("Frequency")
+    .value(1000.0)
+    .min(20.0)
+    .max(20_000.0)
+    .scale(AudioScale::Logarithmic)
+    .size(PotentiometerSize::Md)
 ```

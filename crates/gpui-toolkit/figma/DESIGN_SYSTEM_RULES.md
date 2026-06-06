@@ -3,25 +3,38 @@
 ## 1. Token Definitions
 
 ### Colors
-Defined in `crates/gpui-toolkit/gpui-ui-kit/src/theme.rs` as the `Theme` struct with 6 variants:
-- `Dark` (default), `Light`, `Midnight`, `Forest`, `BlackAndWhite`, `Onyx`
+Defined by `gpui_design::DesignSystem` in
+`crates/gpui-toolkit/gpui-design/src/lib.rs`. UI components resolve design
+defaults through `DesignExt` and may accept an explicit `.design(...)`
+override.
 
-Each theme defines ~30 color fields: `background`, `surface`, `surface_hover`, `muted`, `text_primary`, `text_secondary`, `text_muted`, `text_on_accent`, `accent`, `accent_hover`, `accent_muted`, `success`, `warning`, `error`, `info`, `border`, `border_hover`, `overlay_bg`, plus badge colors.
+Export/import/validation lives in
+`crates/gpui-toolkit/gpui-design-tools`:
 
-Colors are `gpui::Rgba` values. No token transformation system — colors are hardcoded hex values per theme.
+```bash
+cargo run -p gpui-design-tools --bin gpui-export-design-tokens
+cargo run -p gpui-design-tools --bin gpui-validate-design-tokens
+```
+
+Token JSON is backed by
+`gpui_design::DesignSystem::style_dictionary_tokens` and grouped into names
+such as `color.background`, `color.surface`, `color.text.primary`,
+`color.accent`, `space.sm`, `radius.md`, `typography.text.md`, and
+`motion.duration.fast`.
 
 ### Typography
-- System font: `.SystemUI` (SF Pro on macOS)
-- Mono font: `B612`
-- Sizes: Xs=10, Sm=12, Md=14, Lg=18, Xl=24, Xxl=32 (pixels)
-- Weights: Light=300, Normal=400, Medium=500, Semibold=600, Bold=700
+- Use `DesignSystem` typography tokens for family, scale, line height, and
+  weights.
+- Legacy `gpui-ui-kit::theme::Theme` remains an app/theme bridge, not the
+  source of Figma token truth.
 
 ### Spacing
-No explicit spacing tokens. Components use hardcoded `px()` values following this scale:
-- xs=2, sm=4, md=8, lg=16, xl=24, xxl=32
+Use `DesignSystem` spacing tokens (`space.xs`, `space.sm`, `space.md`,
+`space.lg`, `space.xl`, `space.xxl`) through component builders.
 
 ### Border Radius
-- sm=4, md=6, lg=8, xl=12, full=9999
+Use `DesignSystem` radius tokens (`radius.sm`, `radius.md`, `radius.lg`,
+`radius.xl`, `radius.full`).
 
 ### Component Sizes
 `ComponentSize` enum: Xs (0.5x), Sm (0.75x), Md (1.0x default), Lg (1.5x), Xl (2.0x)
@@ -68,9 +81,13 @@ Located at `crates/gpui-toolkit/gpui-ui-kit/src/`. Each component is a single `.
 ### Audio Components
 | File | Component |
 |------|-----------|
-| `audio/potentiometer.rs` | `Potentiometer` — PotentiometerSize: Xs/Sm/Md/Lg |
-| `audio/vertical_slider.rs` | `VerticalSlider` |
-| `audio/volume_knob.rs` | `VolumeKnob` |
+| `../gpui-audio-kit/src/audio/potentiometer.rs` | `Potentiometer` — PotentiometerSize: Xs/Sm/Md/Lg |
+| `../gpui-audio-kit/src/audio/vertical_slider.rs` | `VerticalSlider` |
+| `../gpui-audio-kit/src/audio/volume_knob.rs` | `VolumeKnob` |
+| `../gpui-audio-kit/src/meter.rs` | `LevelMeterElement`, `MeterColors` |
+| `../gpui-audio-kit/src/spectrum.rs` | `SpectrumElement`, `SpectrumColors`, `MeterData` |
+
+Audio APIs are not re-exported by `gpui-ui-kit`.
 
 ## 3. Framework
 
@@ -105,7 +122,10 @@ Toggle::new("enable-toggle", is_checked)
     .on_toggle(|checked, cx| { /* handler */ })
 ```
 
-All components implement GPUI's `RenderOnce` or `Render` trait and are composed via `.child()` calls.
+All components implement GPUI's `RenderOnce` or `Render` trait and are
+composed via `.child()` calls. Component story metadata is registered in
+`crates/gpui-toolkit/gpui-component-lab` for prop panels, responsive matrices,
+and conformance checks.
 
 ## 5. Figma-to-GPUI Translation Rules
 
@@ -115,7 +135,7 @@ When translating from Figma designs:
 2. **Fill container → `.flex_grow()`**: Figma "Fill" = `flex_grow()` in GPUI.
 3. **Fixed size → `.w(px(N)).h(px(N))`**: Direct pixel mapping.
 4. **Corner radius → `.rounded(px(N))`**: Map to border radius tokens.
-5. **Colors → Theme fields**: Map Figma fills to theme color fields, never hardcode hex in components.
+5. **Colors → Design tokens**: Map Figma fills to `DesignSystem` color tokens, never hardcode hex in components.
 6. **Component instances → Builder calls**: Map Figma component variants to enum values in the builder pattern.
 7. **Text → `Text::new("content").size(TextSize::Md).weight(TextWeight::Normal)`**
 8. **Padding → `.px(px(N)).py(px(N))`**: Map Figma padding to GPUI padding calls.
@@ -132,7 +152,11 @@ No CDN. Assets are embedded at compile time or loaded from local filesystem. Ima
 
 ```
 crates/gpui-toolkit/
-  gpui-ui-kit/src/     # All UI components (this design system)
+  gpui-design/         # DesignSystem tokens, presets, conformance checks
+  gpui-design-tools/   # Token export/import/validation CLIs
+  gpui-component-lab/  # Story registry, responsive previews, designer JSON
+  gpui-ui-kit/src/     # General-purpose UI components
+  gpui-audio-kit/src/  # Audio controls, meters, spectrum, tick helpers
   gpui-icons/          # Icon library
   gpui-d3rs/           # D3-style charting for GPUI
 crates/app-gpui/       # The SOTF desktop app using gpui-ui-kit

@@ -1,7 +1,7 @@
 //! Potentiometer component tests
 
-use gpui_ui_kit::audio::potentiometer::{Potentiometer, PotentiometerSize};
-use gpui_ui_kit::scale::Scale;
+use gpui_audio_kit::AudioScale as Scale;
+use gpui_audio_kit::audio::potentiometer::{Potentiometer, PotentiometerSize};
 
 #[test]
 fn test_potentiometer_creation() {

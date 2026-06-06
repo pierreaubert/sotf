@@ -31,8 +31,6 @@ pub mod popover;
 pub mod tabs;
 pub mod toast;
 
-// Shared utilities
-pub mod scale;
 pub mod size;
 
 // Form components
@@ -44,10 +42,6 @@ pub mod number_input;
 pub mod select;
 pub mod slider;
 pub mod toggle;
-
-// audio
-pub mod audio;
-pub mod audio_design_tokens;
 
 // Data display
 pub mod avatar;
@@ -127,13 +121,6 @@ pub use alert::{Alert, AlertVariant, InlineAlert};
 pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 
 // Form
-pub use audio::potentiometer::{
-    Potentiometer, PotentiometerScale, PotentiometerSize, PotentiometerTheme,
-};
-pub use audio::vertical_slider::{
-    VerticalSlider, VerticalSliderScale, VerticalSliderSize, VerticalSliderTheme,
-};
-pub use audio::volume_knob::{VolumeKnob, VolumeKnobTheme};
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use color::Color;
 pub use color_picker::{ColorPickerMode, ColorPickerView};

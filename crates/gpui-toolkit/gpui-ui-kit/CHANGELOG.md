@@ -7,8 +7,10 @@
   `layout_builder`.
 - Added default `DesignSystem` resolution helpers and explicit `.design(...)`
   overrides for core UI-kit builders including buttons, stacks, split panes,
-  toolbars, tables, sliders, checkboxes, icon buttons, sidebar, and audio
-  controls.
+  toolbars, tables, sliders, checkboxes, icon buttons, and sidebar.
+- Moved audio controls out to `gpui-audio-kit` as a hard API split. UI-kit no
+  longer exports `audio`, `audio_design_tokens`, `scale`, `Potentiometer`,
+  `VerticalSlider`, or `VolumeKnob`.
 
 ## Fixes
 

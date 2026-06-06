@@ -122,9 +122,7 @@ impl ShowcaseGroup {
                 ShowcaseSection::StatusBar,
                 ShowcaseSection::Toolbar,
             ],
-            ShowcaseGroup::Controls => {
-                &[ShowcaseSection::Potentiometer, ShowcaseSection::Accordion]
-            }
+            ShowcaseGroup::Controls => &[ShowcaseSection::Accordion],
             ShowcaseGroup::MultiStep => &[
                 ShowcaseSection::Wizard,
                 ShowcaseSection::StepIndicator,
@@ -206,7 +204,6 @@ Toolbar is a horizontal bar of actions and controls, typically at the top of a v
 
             ShowcaseGroup::Controls => {
                 "\
-Potentiometer is a rotary knob control for continuous values (volume, frequency). \
 Accordion expands and collapses content sections, either one-at-a-time or multiple simultaneously."
             }
 
@@ -248,7 +245,6 @@ pub enum ShowcaseSection {
     Menu,
     Table,
     Tooltips,
-    Potentiometer,
     Accordion,
     Wizard,
     Workflow,
@@ -296,7 +292,6 @@ impl ShowcaseSection {
             ShowcaseSection::Menu => "Menu",
             ShowcaseSection::Table => "Table",
             ShowcaseSection::Tooltips => "Tooltips",
-            ShowcaseSection::Potentiometer => "Potentiometer",
             ShowcaseSection::Accordion => "Accordion",
             ShowcaseSection::Wizard => "Wizard",
             ShowcaseSection::Workflow => "Workflow",
@@ -342,7 +337,6 @@ pub struct Showcase {
     // Slider value
     pub slider_value: f32,
     // Vertical slider value
-    pub vertical_slider_value: f64,
     // Number input values
     pub number_value: f64,
     pub number_freq: f64,
@@ -365,18 +359,6 @@ pub struct Showcase {
     pub buttonset_alignment: SharedString,
     // Tabs state
     pub selected_tab: usize,
-    // Potentiometer values
-    pub pot_0: f64,
-    pub pot_25: f64,
-    pub pot_50: f64,
-    pub pot_75: f64,
-    pub pot_100: f64,
-    pub pot_selected: f64,
-    pub pot_lg: f64,
-    pub pot_freq_log: f64,
-    // Volume knob values
-    pub volume_value: f32,
-    pub volume_muted: bool,
     // Accordion states
     pub accordion_vertical_single: Vec<SharedString>,
     pub accordion_vertical_multiple: Vec<SharedString>,
@@ -420,7 +402,6 @@ impl Showcase {
             toggle_lg: false,
             checkbox_checked: true,
             slider_value: 0.5,
-            vertical_slider_value: 0.75,
             number_value: 42.0,
             number_freq: 1000.0,
             number_db: -3.0,
@@ -437,16 +418,6 @@ impl Showcase {
             buttonset_view_mode: "grid".into(),
             buttonset_alignment: "center".into(),
             selected_tab: 0,
-            pot_0: 0.0,
-            pot_25: 0.25,
-            pot_50: 0.5,
-            pot_75: 0.75,
-            pot_100: 1.0,
-            pot_selected: 0.5,
-            pot_lg: 0.7,
-            pot_freq_log: 1000.0,
-            volume_value: 0.75,
-            volume_muted: false,
             accordion_vertical_single: vec!["v-single-1".into()],
             accordion_vertical_multiple: vec!["v-multi-1".into(), "v-multi-2".into()],
             accordion_horizontal_single: vec!["h-single-1".into()],
@@ -646,7 +617,6 @@ impl Render for Showcase {
                     self.toggle_lg,
                     checkbox_checked,
                     slider_value,
-                    self.vertical_slider_value,
                     self.number_value,
                     self.number_freq,
                     self.number_db,
@@ -676,9 +646,6 @@ impl Render for Showcase {
             ShowcaseSection::Menu => self.render_menu_section(cx).into_any_element(),
             ShowcaseSection::Table => self.render_table_section(cx).into_any_element(),
             ShowcaseSection::Tooltips => self.render_tooltip_section(cx).into_any_element(),
-            ShowcaseSection::Potentiometer => {
-                self.render_potentiometer_section(cx).into_any_element()
-            }
             ShowcaseSection::Accordion => self.render_accordion_section(cx).into_any_element(),
             ShowcaseSection::Wizard => self.render_wizard_section(cx).into_any_element(),
             ShowcaseSection::Workflow => self.render_workflow_section(cx).into_any_element(),
@@ -1041,7 +1008,6 @@ include!("../examples/includes/render_form.inc.rs");
 include!("../examples/includes/render_icon.inc.rs");
 include!("../examples/includes/render_layout.inc.rs");
 include!("../examples/includes/render_menu.inc.rs");
-include!("../examples/includes/render_potentiometer.inc.rs");
 include!("../examples/includes/render_progress.inc.rs");
 include!("../examples/includes/render_spinners.inc.rs");
 include!("../examples/includes/render_table.inc.rs");

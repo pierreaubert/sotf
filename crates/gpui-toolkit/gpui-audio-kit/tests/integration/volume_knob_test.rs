@@ -16,7 +16,7 @@ use gpui::{
     Context, FocusHandle, Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext,
     TouchPhase, VisualTestContext, Window, div, point, prelude::*, px,
 };
-use gpui_ui_kit::audio::volume_knob::{VolumeKnob, VolumeKnobTheme};
+use gpui_audio_kit::audio::volume_knob::{VolumeKnob, VolumeKnobTheme};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;

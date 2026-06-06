@@ -18,10 +18,10 @@ use gpui::{
     Context, Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, TouchPhase,
     VisualTestContext, Window, div, point, prelude::*, px,
 };
-use gpui_ui_kit::audio::vertical_slider::{
+use gpui_audio_kit::AudioScale as Scale;
+use gpui_audio_kit::audio::vertical_slider::{
     VerticalSlider, VerticalSliderSize, VerticalSliderTheme,
 };
-use gpui_ui_kit::scale::Scale;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;

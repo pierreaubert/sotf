@@ -87,11 +87,10 @@ gpui-ui-kit = { version = "0.6.12", git="https://github.com/pierreaubert/sotf/tr
 
 ### Audio Controls
 
-| Component | Description |
-|-----------|-------------|
-| `Potentiometer` | Rotary knob control with customizable range and visual feedback |
-| `VerticalSlider` | Vertical slider with ticks and value display |
-| `VolumeKnob` | Specialized volume control with mute state and dB display |
+Audio-specific controls and visualizations live in the sibling
+`gpui-audio-kit` crate. Import `Potentiometer`, `VerticalSlider`,
+`VolumeKnob`, `AudioDesignTokens`, meters, spectrum elements, and audio scale
+helpers from `gpui_audio_kit`.
 
 ### Accessibility
 
@@ -600,63 +599,6 @@ ButtonSet::new("view-mode")
     })
 ```
 
-### Potentiometer
-
-```rust
-use gpui_ui_kit::{Potentiometer, PotentiometerSize};
-
-// Basic rotary knob
-Potentiometer::new("volume")
-    .value(0.75)
-    .min(0.0)
-    .max(1.0)
-    .size(PotentiometerSize::Md)
-    .on_change(|value, window, cx| {
-        println!("Volume: {:.0}%", value * 100.0);
-    })
-
-// With label and units
-Potentiometer::new("pan")
-    .label("Pan")
-    .value(0.0)
-    .min(-1.0)
-    .max(1.0)
-    .unit("L/R")
-```
-
-### VerticalSlider
-
-```rust
-use gpui_ui_kit::{VerticalSlider, VerticalSliderSize};
-
-VerticalSlider::new("fader")
-    .value(0.0)
-    .min(-60.0)
-    .max(12.0)
-    .height(200.0)
-    .show_ticks(true)
-    .on_change(|value, window, cx| {
-        println!("Level: {:.1} dB", value);
-    })
-```
-
-### VolumeKnob
-
-```rust
-use gpui_ui_kit::{VolumeKnob, VolumeKnobSize};
-
-VolumeKnob::new("master-volume")
-    .value(0.8)
-    .muted(false)
-    .size(VolumeKnobSize::Lg)
-    .on_change(|value, window, cx| {
-        println!("Volume: {:.0}%", value * 100.0);
-    })
-    .on_mute_toggle(|muted, window, cx| {
-        println!("Muted: {}", muted);
-    })
-```
-
 ### Wizard
 
 ```rust
@@ -857,8 +799,8 @@ A showcase is provided that demonstrate the capabilities of the library. Here ar
 | ![Alerts](./docs/images/7.png) | ![2](./docs/images/8.png) |
 | Tabs | Layouts |
 | ![Tabs](./docs/images/9.png) | ![Layouts](./docs/images/10.png) |
-| Menus | Potentiometers |
-| ![Menus](./docs/images/11.png) | ![Potentiometers](./docs/images/12.png) |
+| Menus |  |
+| ![Menus](./docs/images/11.png) |  |
 | Wizard | Workflow |
 | ![Wizard](./docs/images/14.png) | ![Workflow](./docs/images/15.png) |
 

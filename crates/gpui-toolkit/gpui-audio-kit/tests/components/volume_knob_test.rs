@@ -1,6 +1,6 @@
 //! VolumeKnob component tests
 
-use gpui_ui_kit::audio::volume_knob::VolumeKnob;
+use gpui_audio_kit::audio::volume_knob::VolumeKnob;
 
 #[test]
 fn test_volume_knob_creation() {

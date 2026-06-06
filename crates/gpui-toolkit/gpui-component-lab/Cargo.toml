@@ -1,0 +1,27 @@
+[package]
+name = "gpui-component-lab"
+version = "0.7.0"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Prop-driven component lab and responsive preview matrix for gpui-toolkit"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+gpui-audio-kit = { workspace = true }
+gpui-design-tools = { workspace = true }
+gpui-ui-kit = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lib]
+name = "gpui_component_lab"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gpui-component-lab"
+path = "src/bin/gpui_component_lab.rs"

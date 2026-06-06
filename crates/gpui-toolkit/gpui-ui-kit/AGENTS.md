@@ -1,4 +1,4 @@
-# gpui-ui-kit (lib: `gpui_ui_kit`, version: 0.6.16)
+# gpui-ui-kit (lib: `gpui_ui_kit`, version: 0.7)
 
 Reusable UI component library for the GPUI framework.
 
@@ -7,7 +7,7 @@ Read `GPUI.md` at the project root before working on GPUI code.
 ## Key Components
 
 - Button, Input, Slider, Dropdown, Modal, Tabs, Toggle, Select, NumberInput, ColorPicker
-- Audio controls: Potentiometer, VerticalSlider, VolumeKnob
+- Audio controls live in sibling crate `gpui-audio-kit`
 - Data display: Table, Badge, Avatar, Progress, Spinner, QrCode, KeyboardShortcutLabel, EmptyState
 - Layout: VStack, HStack, PaneDivider, Sidebar, StatusBar, Accordion, Breadcrumbs
 - Navigation: Tabs, Menu, ContextMenu, Wizard
