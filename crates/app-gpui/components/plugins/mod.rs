@@ -14,7 +14,6 @@ pub mod editing;
 pub mod level_meters;
 pub mod spatial_spider;
 pub mod theme;
-pub mod ticks;
 
 mod ui_ab_compare;
 mod ui_controller_view;
@@ -38,14 +37,16 @@ mod ui_upmixer;
 
 pub use common::*;
 pub use editing::get_param_count;
+pub use gpui_audio_kit::{
+    LevelMeterElement, MeterColors, ScaleType, TickConfig, db_to_position, render_tick_row,
+};
 pub use level_meters::{
-    LevelMeterElement, MeterColors, db_to_position, render_gr_meter, render_gradient_meter,
-    render_lufs_with_true_peak, render_peak_meter,
+    render_gr_meter, render_gradient_meter, render_lufs_with_true_peak, render_peak_meter,
 };
 pub use sotf_audio_player_midi::mapping::MidiOverlay;
 pub use theme::*;
-pub use ticks::{ScaleType, TickConfig, render_tick_row};
 
+pub use gpui_audio_kit::{MeterData, SpectrumColors, SpectrumElement};
 pub use ui_controller_view::render_controller_view;
 pub use ui_downmix::render_downmix_plugin;
 pub use ui_dynamic_eq::render_dynamic_eq_plugin;
@@ -60,9 +61,7 @@ pub use ui_mute_solo::render_mute_solo_plugin;
 pub use ui_plugin_shell::render_plugin_shell;
 pub use ui_rack::PluginDragInfo;
 pub use ui_simple::render_simple_plugin_view;
-pub use ui_spectrum::{
-    MeterData, SpectrumColors, SpectrumElement, render_spectrum_analyzer_plugin,
-};
+pub use ui_spectrum::render_spectrum_analyzer_plugin;
 pub use ui_upmixer::render_upmixer_plugin;
 
 use crate::app::AppState;

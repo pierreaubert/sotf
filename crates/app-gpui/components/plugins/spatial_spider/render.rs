@@ -11,22 +11,26 @@
 //! plugin UI is responsible for materialising the [`ChannelMetric`] and
 //! re-painting the element every refresh.
 
-use super::data::{
-    ChannelMetric, SpeakerVertex, SpiderPolygon, compute_polygon_2d, compute_polygon_3d,
-};
+use super::data::{compute_polygon_2d, ChannelMetric, SpeakerVertex};
+#[cfg(feature = "gpu-3d")]
+use super::data::{compute_polygon_3d, SpiderPolygon};
 use super::{SpatialSpiderSnapshot, SpiderMode, SpiderViewMode};
 use crate::app::AppState;
 use crate::components::design::Ds;
+#[cfg(feature = "gpu-3d")]
 use d3rs::gpu3d::{Line3D, Lines3DElement, Lines3DScene, Lines3DState, Polygon3D};
 use d3rs::text::{measure_glyph_text_width, paint_glyph_text_at};
+#[cfg(feature = "gpu-3d")]
 use glam::Vec3;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Select, SelectOption, SelectSize, StackSpacing, Toggle, ToggleStyle, VStack};
 use sotf_plugins::speaker_config::{
-    SpeakerConfig, get_speaker_config, get_speaker_config_by_channels,
+    get_speaker_config, get_speaker_config_by_channels, SpeakerConfig,
 };
+#[cfg(feature = "gpu-3d")]
 use std::cell::RefCell;
+#[cfg(feature = "gpu-3d")]
 use std::rc::Rc;
 
 /// Default reference radius (pixels) above which the polygon labels sit.
@@ -392,6 +396,7 @@ impl Element for SpiderDisc2DInner {
 
 /// 3D spider view. Owns a shared [`Lines3DState`] so the parent view can
 /// drive orbit / pan / zoom from mouse events.
+#[cfg(feature = "gpu-3d")]
 pub struct SpiderView3D<'a> {
     config: &'a SpeakerConfig,
     metric: ChannelMetric<'a>,
@@ -403,6 +408,7 @@ pub struct SpiderView3D<'a> {
     vertical_color: Rgba,
 }
 
+#[cfg(feature = "gpu-3d")]
 impl<'a> SpiderView3D<'a> {
     pub fn new(
         config: &'a SpeakerConfig,
@@ -492,6 +498,7 @@ impl<'a> SpiderView3D<'a> {
     }
 }
 
+#[cfg(feature = "gpu-3d")]
 impl IntoElement for SpiderView3D<'_> {
     type Element = AnyElement;
     fn into_element(self) -> Self::Element {
@@ -685,6 +692,7 @@ fn blend(a: Rgba, b: Rgba, t: f32) -> Rgba {
     }
 }
 
+#[cfg(any(feature = "gpu-3d", test))]
 fn translucent(color: Rgba, alpha: f32) -> Rgba {
     Rgba { a: alpha, ..color }
 }
@@ -793,11 +801,12 @@ fn build_header(
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     let e_2d = entity.clone();
+    #[cfg(feature = "gpu-3d")]
     let e_3d = entity.clone();
     let e_spl = entity.clone();
     let e_corr = entity.clone();
 
-    div()
+    let header = div()
         .flex()
         .items_center()
         .gap(d.gap_md)
@@ -837,7 +846,10 @@ fn build_header(
                 .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
                 .child("2D".to_string()),
-        )
+        );
+
+    #[cfg(feature = "gpu-3d")]
+    let header = header
         .child(
             Toggle::new(("spider-view-3d", plugin_idx))
                 .checked(view_mode == SpiderViewMode::View3D)
@@ -857,7 +869,9 @@ fn build_header(
                 .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
                 .child("3D".to_string()),
-        )
+        );
+
+    header
         .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
         .child(
             Toggle::new(("spider-mode-spl", plugin_idx))
@@ -1089,6 +1103,7 @@ fn build_body(
                     .highlight_channel(highlight),
             )
             .into_any_element(),
+        #[cfg(feature = "gpu-3d")]
         SpiderViewMode::View3D => {
             // Wrap the 3D element in an interactive container so mouse
             // events drive the OrbitControls. State is shared via Rc so
@@ -1098,12 +1113,21 @@ fn build_body(
                 .child(SpiderView3D::new(cfg, metric, camera_state).colors(palette))
                 .into_any_element()
         }
+        #[cfg(not(feature = "gpu-3d"))]
+        SpiderViewMode::View3D => container()
+            .child(
+                SpiderDisc2D::new(cfg, metric)
+                    .colors(palette)
+                    .highlight_channel(highlight),
+            )
+            .into_any_element(),
     }
 }
 
 /// Attach left-drag → rotate, middle-drag → pan, scroll → zoom handlers to
 /// an interactive (id'd) div, mutating the supplied `Lines3DState` so the
 /// next paint picks up the new camera.
+#[cfg(feature = "gpu-3d")]
 fn attach_orbit_handlers(
     container: Stateful<Div>,
     state: Rc<RefCell<Lines3DState>>,

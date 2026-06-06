@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Clarified that `export-design-tokens` and `import-design-tokens` are
+  app-specific SOTF GPUI theme adapters; generic gpui-toolkit token
+  export/import/validation now lives in `gpui-design-tools`.
+
 ## [0.5.7] - 2026-05-31
 
 ### Added

@@ -468,7 +468,7 @@ pub struct Theme {
     pub font_family: Option<SharedString>,
 
     // Design system tokens for platform-adaptive component geometry
-    pub design_tokens: gpui_ui_kit::audio_design_tokens::AudioDesignTokens,
+    pub design_tokens: gpui_audio_kit::AudioDesignTokens,
 }
 
 impl Theme {
@@ -879,9 +879,9 @@ impl Theme {
         }
     }
 
-    /// Convert to PotentiometerTheme for use with ui_kit Potentiometer component
-    pub fn to_potentiometer_theme(&self) -> gpui_ui_kit::PotentiometerTheme {
-        gpui_ui_kit::PotentiometerTheme {
+    /// Convert to PotentiometerTheme for use with audio-kit Potentiometer component
+    pub fn to_potentiometer_theme(&self) -> gpui_audio_kit::PotentiometerTheme {
+        gpui_audio_kit::PotentiometerTheme {
             surface: self.surface,
             surface_hover: self.surface_hover,
             knob_bg: self.background_secondary,

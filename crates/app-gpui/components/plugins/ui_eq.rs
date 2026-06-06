@@ -16,8 +16,8 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_audio_kit::PotentiometerSize;
 use gpui_px::{ChartTheme, ScaleType, line};
-use gpui_ui_kit::PotentiometerSize;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_audio_player_midi::mapping::MidiOverlay;
 // Tabs are now custom-rendered to avoid context issues

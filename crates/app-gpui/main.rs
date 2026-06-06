@@ -4,23 +4,25 @@
 use anyhow::anyhow;
 use clap::Parser;
 use gpui::*;
+#[cfg(feature = "mimalloc-allocator")]
 use mimalloc::MiMalloc;
 use rust_embed::RustEmbed;
 use sotf_audio_player::{Player, ReleaseChannel};
 use sotf_audio_player_gpui::app::actions::*;
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::{
-    App, AppState, Screen,
     i18n::{Language, Translations},
+    App, AppState, Screen,
 };
 use sotf_audio_player_gpui::config::Config;
-use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
+use sotf_audio_player_gpui::keybindings::{get_keybindings, KeymapPreset};
 use sotf_audio_player_gpui::ui;
 use std::borrow::Cow;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(feature = "mimalloc-allocator")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
@@ -521,15 +523,15 @@ fn install_default_presets() {
                 log::debug!("Default preset already exists, skipping: {}", filename);
                 continue;
             }
-            if let Some(parent) = dest.parent()
-                && let Err(e) = std::fs::create_dir_all(parent)
-            {
-                log::warn!(
-                    "Failed to create preset directory {}: {}",
-                    parent.display(),
-                    e
-                );
-                continue;
+            if let Some(parent) = dest.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    log::warn!(
+                        "Failed to create preset directory {}: {}",
+                        parent.display(),
+                        e
+                    );
+                    continue;
+                }
             }
             if let Some(file) = Assets::get(&path) {
                 match std::fs::write(&dest, &file.data) {

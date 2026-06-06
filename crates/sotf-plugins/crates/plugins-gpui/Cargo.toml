@@ -16,6 +16,7 @@ gpui = { workspace = true }
 gpui-design = { workspace = true }
 gpui-px = { workspace = true, features = ["gpui"] }
 gpui-ui-kit = { workspace = true }
+gpui-audio-kit = { workspace = true }
 
 # Audio math (Biquad for EQ response curves, etc.)
 math-iir-fir = { workspace = true }

@@ -3,7 +3,7 @@
 // intentional-file: rack with embedded meters and pixel-exact dividers
 
 use super::actions::ToggleUpmixerConfig;
-use super::level_meters::{db_to_position, render_gradient_meter};
+use super::level_meters::render_gradient_meter;
 use super::render_plugin_content;
 use crate::app::constants::spacing;
 use crate::app::state::plugin::{PluginUiView, available_controllers};
@@ -15,6 +15,7 @@ use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::level_meters::LevelMeterManager;
 use crate::components::plugins::theme::PluginThemeId;
 use crate::theme::Theme;
+use gpui_audio_kit::db_to_position;
 
 use crate::ui::PlayerView;
 use gpui::prelude::*;

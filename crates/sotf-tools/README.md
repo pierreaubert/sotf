@@ -45,7 +45,8 @@ cargo run --bin sofa-to-sqlite -- input.sofa output.hrtfdb
 
 ### `export-design-tokens`
 
-Export design tokens from the SOTF design system.
+Export app-specific SOTF GPUI theme tokens to `design-tokens/tokens.json`.
+Generic gpui-toolkit token export lives in `gpui-design-tools`.
 
 ```bash
 cargo run --bin export-design-tokens
@@ -53,7 +54,9 @@ cargo run --bin export-design-tokens
 
 ### `import-design-tokens`
 
-Import design tokens into the SOTF design system.
+Import app-specific SOTF GPUI theme tokens back into Rust theme files in
+`app-gpui`. Generic gpui-toolkit token validation/import lives in
+`gpui-design-tools`.
 
 ```bash
 cargo run --bin import-design-tokens

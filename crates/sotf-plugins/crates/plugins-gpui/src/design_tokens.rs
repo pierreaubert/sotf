@@ -5,7 +5,7 @@
 //! lightweight tokens consumed by audio UI components).
 
 use gpui_design::{DesignSystem, ToggleVariant};
-use gpui_ui_kit::audio_design_tokens::AudioDesignTokens;
+use gpui_audio_kit::AudioDesignTokens;
 
 /// Convert a `DesignSystem` into `AudioDesignTokens` for UI components.
 pub fn audio_tokens_from_ds(ds: &DesignSystem) -> AudioDesignTokens {

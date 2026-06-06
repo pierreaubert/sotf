@@ -24,6 +24,7 @@ log = { workspace = true }
 # GPUI AU rendering (linked into the same staticlib to avoid duplicate Rust runtime symbols)
 gpui-au = { workspace = true }
 gpui = { workspace = true }
+gpui-audio-kit = { workspace = true }
 
 # Plugin UI infrastructure
 plugins-gpui = { path = "../plugins-gpui" }

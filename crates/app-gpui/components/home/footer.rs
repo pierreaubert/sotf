@@ -7,9 +7,10 @@ use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::{FOOTER_HEIGHT_REMS, PlayerView};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_audio_kit::VolumeKnob;
 use gpui_ui_kit::{
     HStack, IconButton, IconButtonSize, IconButtonVariant, StackAlign, StackJustify, StackSpacing,
-    VStack, VolumeKnob,
+    VStack,
 };
 
 use std::cell::RefCell;

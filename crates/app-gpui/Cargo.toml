@@ -10,12 +10,15 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = ["gpu-2d", "gpu-3d"]
+default = ["gpu-2d"]
+shipping = ["gpu-2d", "gpu-3d", "iamf", "mimalloc-allocator"]
+full = ["shipping", "tidal", "spotify", "onnx"]
 hal = ["sotf-engine/hal", "sotf-player/hal", "driver-hal"]
 onnx = ["sotf-plugins/onnx"]
 iamf = ["sotf-engine/iamf", "sotf-plugins/iamf"]
-gpu-2d = ["gpui-px/gpu-2d"]
-gpu-3d = ["gpui-px/gpu-3d"]
+gpu-2d = ["gpui-px/gpu-2d", "gpui-d3rs/gpu-2d"]
+gpu-3d = ["gpui-px/gpu-3d", "gpui-d3rs/gpu-3d"]
+mimalloc-allocator = ["dep:mimalloc"]
 tidal = ["dep:sotf-services", "sotf-services/tidal"]
 spotify = ["dep:sotf-services", "sotf-services/spotify"]
 # QA/debug-only HTTP API for scripted E2E testing. Compile errors in release builds
@@ -28,10 +31,11 @@ gpui = { workspace = true }
 gpui-builder = { workspace = true }
 gpui-design = { workspace = true, features = ["gpui"] }
 gpui-keybinding = { workspace = true }
+gpui-audio-kit = { workspace = true }
 gpui-ui-kit = { workspace = true }
 gpui-themes = { workspace = true }
-gpui-px = { workspace = true, features = ["gpui"] }
-gpui-d3rs = { workspace = true, features = ["gpui", "gpu-3d"] }
+gpui-px = { workspace = true, default-features = false, features = ["gpui"] }
+gpui-d3rs = { workspace = true, features = ["gpui"] }
 glam = { workspace = true }
 
 # Shared audio player library (provides business logic, database, plugins, etc.)
@@ -40,7 +44,6 @@ sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
 sotf-midi = { workspace = true }
 sotf-cast = { workspace = true }
-sotf-federation = { workspace = true }
 sotf-tls = { workspace = true }
 sotf-services = { workspace = true, optional = true }
 # math libraries
@@ -112,7 +115,7 @@ anyhow = { workspace = true }
 image = { workspace = true }
 
 # Memory allocator
-mimalloc = { workspace = true }
+mimalloc = { workspace = true, optional = true }
 
 rustfft = { workspace = true }
 

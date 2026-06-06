@@ -10,7 +10,8 @@ use crate::components::themed_tooltip as footer_tooltip;
 use crate::ui::{FOOTER_HEIGHT_REMS, PlayerView};
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Menu, MenuItem, VolumeKnob};
+use gpui_audio_kit::VolumeKnob;
+use gpui_ui_kit::{Menu, MenuItem};
 
 impl PlayerView {
     pub(crate) fn render_footer_right(

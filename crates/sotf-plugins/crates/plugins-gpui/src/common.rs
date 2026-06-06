@@ -4,10 +4,8 @@ use crate::PluginViewHost;
 use crate::PluginViewTheme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    Potentiometer, PotentiometerScale, PotentiometerSize, Toggle, ToggleStyle, VerticalSlider,
-    VerticalSliderTheme,
-};
+use gpui_audio_kit::{Potentiometer, PotentiometerScale, PotentiometerSize, VerticalSlider, VerticalSliderTheme};
+use gpui_ui_kit::{Toggle, ToggleStyle};
 use sotf_audio_player_midi::PhysicalControlKind;
 use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 

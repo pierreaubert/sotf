@@ -5,7 +5,7 @@
 
 use super::plugin_theme::PluginTheme;
 use gpui::{Rgba, SharedString};
-use gpui_ui_kit::audio_design_tokens::AudioDesignTokens;
+use gpui_audio_kit::audio_design_tokens::AudioDesignTokens;
 
 const fn rgba(hex: u32, alpha: f32) -> Rgba {
     Rgba {

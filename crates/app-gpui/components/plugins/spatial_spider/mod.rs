@@ -12,13 +12,18 @@ pub mod data;
 pub mod render;
 
 pub use data::{ChannelMetric, SpeakerVertex, SpiderMode, SpiderPolygon};
+#[cfg(feature = "gpu-3d")]
+pub use render::SpiderView3D;
 pub use render::{
-    SpiderColors, SpiderDisc2D, SpiderView3D, render_spatial_spider_controls,
-    render_spatial_spider_graph, render_spatial_spider_panel, resolve_speaker_config,
+    render_spatial_spider_controls, render_spatial_spider_graph, render_spatial_spider_panel,
+    resolve_speaker_config, SpiderColors, SpiderDisc2D,
 };
 
+#[cfg(feature = "gpu-3d")]
 use d3rs::gpu3d::Lines3DState;
+#[cfg(feature = "gpu-3d")]
 use std::cell::RefCell;
+#[cfg(feature = "gpu-3d")]
 use std::rc::Rc;
 
 /// Top-level rendering mode for the spider widget.
@@ -48,6 +53,7 @@ pub struct SpatialSpiderUiState {
     /// Shared orbit-camera state for the 3D view. Wrapped in `Rc<RefCell>`
     /// so the GPUI element can mutate it from mouse handlers without
     /// borrowing `AppState`.
+    #[cfg(feature = "gpu-3d")]
     pub camera_3d: Rc<RefCell<Lines3DState>>,
 }
 
@@ -55,12 +61,14 @@ impl Default for SpatialSpiderUiState {
     fn default() -> Self {
         // Default camera: 3.5 units back, 20° azimuth, 20° elevation.
         // Picks an angle where both reference planes are clearly visible.
+        #[cfg(feature = "gpu-3d")]
         let camera_3d = Rc::new(RefCell::new(Lines3DState::new(3.5, 20.0, 20.0)));
         Self {
             view_mode: SpiderViewMode::Disc2D,
             spider_mode: SpiderMode::Spl,
             correlation_ref_channel: 0,
             ref_channel_select_open: false,
+            #[cfg(feature = "gpu-3d")]
             camera_3d,
         }
     }

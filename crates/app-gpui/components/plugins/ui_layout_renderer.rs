@@ -26,7 +26,7 @@ use crate::components::plugins::theme::PluginTheme;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::audio::potentiometer::PotentiometerSize;
+use gpui_audio_kit::audio::potentiometer::PotentiometerSize;
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::layout_solver::{KnobSize, SolvedLayout, solve_layout};

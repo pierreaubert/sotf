@@ -11,7 +11,7 @@ use crate::params::BAND_TEMPLATE as EQ;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
-use gpui_ui_kit::PotentiometerSize;
+use gpui_audio_kit::PotentiometerSize;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use plugins_gpui::common::{render_knob_sized, render_midi_badge, render_midi_page_indicator};
 use plugins_gpui::{PluginViewHost, PluginViewTheme};

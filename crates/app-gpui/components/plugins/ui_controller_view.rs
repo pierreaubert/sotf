@@ -18,7 +18,8 @@
 
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{PotentiometerSize, Toggle, ToggleStyle, VerticalSlider, VerticalSliderSize};
+use gpui_audio_kit::{PotentiometerSize, VerticalSlider, VerticalSliderSize};
+use gpui_ui_kit::{Toggle, ToggleStyle};
 
 use sotf_audio_player::PluginSettings;
 use sotf_audio_player_midi::MidiMappingEngine;
@@ -41,9 +42,9 @@ use crate::theme::Theme;
 fn cell_inner_theme(theme: &Theme) -> Theme {
     let mut out = theme.clone();
     out.design_tokens.knob_label_style =
-        gpui_ui_kit::audio_design_tokens::AudioDesignTokens::LABEL_UNDERLINED;
+        gpui_audio_kit::audio_design_tokens::AudioDesignTokens::LABEL_UNDERLINED;
     out.design_tokens.meter_label_style =
-        gpui_ui_kit::audio_design_tokens::AudioDesignTokens::LABEL_UNDERLINED;
+        gpui_audio_kit::audio_design_tokens::AudioDesignTokens::LABEL_UNDERLINED;
     out
 }
 

@@ -5,7 +5,7 @@
 //! `PluginViewTheme::from(&theme)`. In AU, use `PluginViewTheme::default_dark()`.
 
 use gpui::Rgba;
-use gpui_ui_kit::audio_design_tokens::AudioDesignTokens;
+use gpui_audio_kit::AudioDesignTokens;
 
 /// Colors for the EQ frequency response chart.
 #[derive(Debug, Clone)]
@@ -106,9 +106,9 @@ pub struct PluginViewTheme {
 }
 
 impl PluginViewTheme {
-    /// Convert to `gpui_ui_kit::PotentiometerTheme` for knob rendering.
-    pub fn to_potentiometer_theme(&self) -> gpui_ui_kit::PotentiometerTheme {
-        gpui_ui_kit::PotentiometerTheme {
+    /// Convert to `gpui_audio_kit::PotentiometerTheme` for knob rendering.
+    pub fn to_potentiometer_theme(&self) -> gpui_audio_kit::PotentiometerTheme {
+        gpui_audio_kit::PotentiometerTheme {
             surface: self.surface,
             surface_hover: self.surface_hover,
             knob_bg: self.background_secondary,
@@ -144,9 +144,9 @@ impl PluginViewTheme {
         }
     }
 
-    /// Convert to `gpui_ui_kit::VerticalSliderTheme` for slider rendering.
-    pub fn to_vertical_slider_theme(&self) -> gpui_ui_kit::VerticalSliderTheme {
-        gpui_ui_kit::VerticalSliderTheme {
+    /// Convert to `gpui_audio_kit::VerticalSliderTheme` for slider rendering.
+    pub fn to_vertical_slider_theme(&self) -> gpui_audio_kit::VerticalSliderTheme {
+        gpui_audio_kit::VerticalSliderTheme {
             surface: self.surface,
             surface_hover: self.surface_hover,
             track_bg: self.background,

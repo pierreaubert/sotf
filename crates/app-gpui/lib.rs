@@ -75,7 +75,7 @@ pub use components::home::image_cache::{ImageAccessTracker, TrackerStats};
 #[cfg(not(test))]
 pub use components::icons::{Icon, IconName, IconSize};
 #[cfg(not(test))]
-pub use components::plugins::ticks::{ScaleType, TickConfig, TickMark};
+pub use gpui_audio_kit::{ScaleType, TickConfig, TickMark};
 
 // Re-export debug types for testing
 #[cfg(not(test))]

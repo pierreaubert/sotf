@@ -2,11 +2,11 @@
 
 // intentional-file: spectrum analyzer with chart-internal pixel dimensions
 
-use std::panic;
 use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::*;
+use gpui_audio_kit::{SpectrumColors, SpectrumElement};
 use gpui_ui_kit::{Select, SelectOption, SelectSize};
 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
@@ -20,375 +20,15 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 
 // ============================================================================
-// GPU-Accelerated Spectrum Element
+// Spectrum color adapters
 // ============================================================================
 
-/// Colors used by the spectrum analyzer
-#[derive(Clone)]
-pub struct SpectrumColors {
-    /// Background color
-    pub background: Rgba,
-    /// Low frequency (bass) color
-    pub low: Rgba,
-    /// Mid frequency color
-    pub mid: Rgba,
-    /// High frequency (treble) color
-    pub high: Rgba,
-}
-
-impl SpectrumColors {
-    pub fn from_theme(theme: &Theme) -> Self {
-        Self::from(&theme.spectrum_colors)
-    }
-}
-
-impl Default for SpectrumColors {
-    fn default() -> Self {
-        let theme = Theme::from_id(crate::theme::ThemeId::default());
-        Self::from_theme(&theme)
-    }
-}
-
-impl From<&crate::theme::SpectrumColors> for SpectrumColors {
-    fn from(theme_colors: &crate::theme::SpectrumColors) -> Self {
-        Self {
-            background: theme_colors.background,
-            low: theme_colors.bass,
-            mid: theme_colors.mids,
-            high: theme_colors.treble,
-        }
-    }
-}
-
-/// GPU-accelerated spectrum analyzer element
-///
-/// Renders a frequency spectrum with bars colored by frequency band
-/// using direct GPU quad rendering for maximum performance.
-pub struct SpectrumElement {
-    /// Magnitude values for each frequency bin (in dB, typically -100 to 0)
-    magnitudes: Arc<[f32]>,
-    /// Min frequency (Hz) for display
-    min_freq: f32,
-    /// Max frequency (Hz) for display
-    max_freq: f32,
-    /// Smoothing factor for animation (0.0 = no smoothing, 1.0 = max smoothing)
-    smoothing: f32,
-    /// Previous magnitudes for smoothing animation
-    previous_magnitudes: Option<Arc<[f32]>>,
-    /// Colors for frequency bands
-    colors: SpectrumColors,
-    /// Height of the element
-    height: Pixels,
-    /// Gap between bars
-    bar_gap: Pixels,
-}
-
-impl SpectrumElement {
-    /// Create a new spectrum element with the given magnitude data
-    pub fn new(magnitudes: impl Into<Arc<[f32]>>) -> Self {
-        Self {
-            magnitudes: magnitudes.into(),
-            min_freq: 20.0,
-            max_freq: 20000.0,
-            smoothing: 0.3,
-            previous_magnitudes: None,
-            colors: SpectrumColors::default(),
-            height: px(120.0),
-            bar_gap: px(1.0),
-        }
-    }
-
-    /// Set the frequency range for display labels
-    pub fn frequency_range(mut self, min: f32, max: f32) -> Self {
-        self.min_freq = min;
-        self.max_freq = max;
-        self
-    }
-
-    /// Set the smoothing factor for animation
-    pub fn smoothing(mut self, smoothing: f32) -> Self {
-        self.smoothing = smoothing.clamp(0.0, 0.99);
-        self
-    }
-
-    /// Set previous magnitudes for smooth animation
-    pub fn previous(mut self, previous: impl Into<Arc<[f32]>>) -> Self {
-        self.previous_magnitudes = Some(previous.into());
-        self
-    }
-
-    /// Set custom colors
-    pub fn colors(mut self, colors: SpectrumColors) -> Self {
-        self.colors = colors;
-        self
-    }
-
-    /// Set the height
-    pub fn height(mut self, height: Pixels) -> Self {
-        self.height = height;
-        self
-    }
-
-    /// Set the gap between bars
-    pub fn bar_gap(mut self, gap: Pixels) -> Self {
-        self.bar_gap = gap;
-        self
-    }
-
-    /// Convert dB value to normalized height (0.0 to 1.0)
-    fn db_to_height(&self, db: f32) -> f32 {
-        // Range is -100 dB to +3 dB (103 dB total)
-        ((db + 100.0) / 103.0).clamp(0.0, 1.0)
-    }
-}
-
-impl IntoElement for SpectrumElement {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
-
-impl Element for SpectrumElement {
-    type RequestLayoutState = ();
-    type PrepaintState = ();
-
-    fn id(&self) -> Option<ElementId> {
-        None
-    }
-
-    fn source_location(&self) -> Option<&'static panic::Location<'static>> {
-        None
-    }
-
-    fn request_layout(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> (LayoutId, Self::RequestLayoutState) {
-        let layout_id = window.request_layout(
-            Style {
-                size: size(relative(1.0).into(), self.height.into()),
-                min_size: size(px(100.0).into(), px(60.0).into()),
-                ..Default::default()
-            },
-            [],
-            cx,
-        );
-        (layout_id, ())
-    }
-
-    fn prepaint(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
-        _request_layout: &mut Self::RequestLayoutState,
-        _window: &mut Window,
-        _cx: &mut App,
-    ) -> Self::PrepaintState {
-    }
-
-    fn paint(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        _request_layout: &mut Self::RequestLayoutState,
-        _prepaint: &mut Self::PrepaintState,
-        window: &mut Window,
-        _cx: &mut App,
-    ) {
-        let bar_count = self.magnitudes.len();
-        if bar_count == 0 {
-            return;
-        }
-
-        // Paint background
-        window.paint_quad(PaintQuad {
-            bounds,
-            corner_radii: Corners::all(px(4.0)),
-            background: self.colors.background.into(),
-            border_widths: Edges::default(),
-            border_color: Hsla::transparent_black(),
-            border_style: Default::default(),
-        });
-
-        // Color thresholds matching level meters:
-        // - Green: below -6 dB (safe zone)
-        // - Yellow: -6 dB to -1 dB (caution zone)
-        // - Red: above -1 dB (danger/clipping zone)
-        let yellow_threshold = self.db_to_height(-6.0); // ~0.94
-        let red_threshold = self.db_to_height(-1.0); // ~0.99
-
-        let total_width = bounds.size.width;
-        let step_width = total_width / bar_count as f32;
-        let meter_height = bounds.size.height;
-
-        // Pre-compute smoothed magnitudes and heights
-        let smoothed_heights: Vec<f32> = self
-            .magnitudes
-            .iter()
-            .enumerate()
-            .map(|(i, &mag)| {
-                let smoothed_mag = if let Some(ref prev) = self.previous_magnitudes {
-                    if i < prev.len() {
-                        prev[i] * self.smoothing + mag * (1.0 - self.smoothing)
-                    } else {
-                        mag
-                    }
-                } else {
-                    mag
-                };
-                self.db_to_height(smoothed_mag)
-            })
-            .collect();
-
-        // Build three paths for green, yellow, and red zones
-        // Green zone: from bottom to min(height, yellow_threshold)
-        let mut green_path = PathBuilder::fill();
-        green_path.move_to(point(bounds.origin.x, bounds.origin.y + meter_height));
-
-        // Yellow zone: from yellow_threshold to min(height, red_threshold)
-        let mut yellow_path = PathBuilder::fill();
-        let mut has_yellow = false;
-
-        // Red zone: from red_threshold to height
-        let mut red_path = PathBuilder::fill();
-        let mut has_red = false;
-
-        for (i, &height_ratio) in smoothed_heights.iter().enumerate() {
-            let x = bounds.origin.x + step_width * i as f32;
-
-            // Green segment (always present up to yellow_threshold)
-            let green_height = height_ratio.min(yellow_threshold);
-            let green_y = bounds.origin.y + meter_height - (meter_height * green_height);
-            green_path.line_to(point(x, green_y));
-            green_path.line_to(point(x + step_width, green_y));
-
-            // Yellow segment (only if above yellow_threshold)
-            if height_ratio > yellow_threshold {
-                if !has_yellow {
-                    has_yellow = true;
-                    yellow_path.move_to(point(
-                        bounds.origin.x,
-                        bounds.origin.y + meter_height - (meter_height * yellow_threshold),
-                    ));
-                }
-                let yellow_height =
-                    (height_ratio - yellow_threshold).min(red_threshold - yellow_threshold);
-                let yellow_top = yellow_threshold + yellow_height;
-                let yellow_y = bounds.origin.y + meter_height - (meter_height * yellow_top);
-                let _yellow_bottom_y =
-                    bounds.origin.y + meter_height - (meter_height * yellow_threshold);
-                yellow_path.line_to(point(x, yellow_y));
-                yellow_path.line_to(point(x + step_width, yellow_y));
-            } else if has_yellow {
-                // Close off any yellow at the threshold level
-                let yellow_bottom_y =
-                    bounds.origin.y + meter_height - (meter_height * yellow_threshold);
-                yellow_path.line_to(point(x, yellow_bottom_y));
-                yellow_path.line_to(point(x + step_width, yellow_bottom_y));
-            }
-
-            // Red segment (only if above red_threshold)
-            if height_ratio > red_threshold {
-                if !has_red {
-                    has_red = true;
-                    red_path.move_to(point(
-                        bounds.origin.x,
-                        bounds.origin.y + meter_height - (meter_height * red_threshold),
-                    ));
-                }
-                let red_height = height_ratio - red_threshold;
-                let red_top = red_threshold + red_height;
-                let red_y = bounds.origin.y + meter_height - (meter_height * red_top);
-                red_path.line_to(point(x, red_y));
-                red_path.line_to(point(x + step_width, red_y));
-            } else if has_red {
-                // Close off any red at the threshold level
-                let red_bottom_y = bounds.origin.y + meter_height - (meter_height * red_threshold);
-                red_path.line_to(point(x, red_bottom_y));
-                red_path.line_to(point(x + step_width, red_bottom_y));
-            }
-        }
-
-        // Close green path
-        green_path.line_to(point(
-            bounds.origin.x + bounds.size.width,
-            bounds.origin.y + meter_height,
-        ));
-        green_path.line_to(point(bounds.origin.x, bounds.origin.y + meter_height));
-
-        // Paint green (always)
-        if let Ok(path) = green_path.build() {
-            window.paint_path(path, self.colors.low);
-        }
-
-        // Close and paint yellow if present
-        if has_yellow {
-            let yellow_bottom_y =
-                bounds.origin.y + meter_height - (meter_height * yellow_threshold);
-            yellow_path.line_to(point(bounds.origin.x + bounds.size.width, yellow_bottom_y));
-            yellow_path.line_to(point(bounds.origin.x, yellow_bottom_y));
-            if let Ok(path) = yellow_path.build() {
-                window.paint_path(path, self.colors.mid);
-            }
-        }
-
-        // Close and paint red if present
-        if has_red {
-            let red_bottom_y = bounds.origin.y + meter_height - (meter_height * red_threshold);
-            red_path.line_to(point(bounds.origin.x + bounds.size.width, red_bottom_y));
-            red_path.line_to(point(bounds.origin.x, red_bottom_y));
-            if let Ok(path) = red_path.build() {
-                window.paint_path(path, self.colors.high);
-            }
-        }
-    }
-}
-
-// ============================================================================
-// Meter Data
-// ============================================================================
-
-/// A group of level meters with smoothed animation
-#[derive(Clone)]
-pub struct MeterData {
-    /// Current level values (in linear 0.0-1.0)
-    pub levels: Vec<f32>,
-    /// Peak hold values
-    pub peaks: Vec<f32>,
-    /// Channel names
-    pub names: Vec<String>,
-}
-
-impl MeterData {
-    /// Create empty meter data
-    pub fn new(channels: usize) -> Self {
-        Self {
-            levels: vec![0.0; channels],
-            peaks: vec![0.0; channels],
-            names: (0..channels).map(|i| format!("CH{}", i + 1)).collect(),
-        }
-    }
-
-    /// Update levels with smoothing
-    pub fn update(&mut self, new_levels: &[f32], smoothing: f32) {
-        for (i, &new_level) in new_levels.iter().enumerate() {
-            if i < self.levels.len() {
-                self.levels[i] = self.levels[i] * smoothing + new_level * (1.0 - smoothing);
-                // Update peak with slow decay
-                if new_level > self.peaks[i] {
-                    self.peaks[i] = new_level;
-                } else {
-                    self.peaks[i] *= 0.995; // Slow peak decay
-                }
-            }
-        }
+fn spectrum_colors_from_theme(theme_colors: &crate::theme::SpectrumColors) -> SpectrumColors {
+    SpectrumColors {
+        background: theme_colors.background,
+        low: theme_colors.bass,
+        mid: theme_colors.mids,
+        high: theme_colors.treble,
     }
 }
 
@@ -593,7 +233,7 @@ pub fn render_spectrum_analyzer_plugin(
                                 .height(px(200.0))
                                 .frequency_range(state.min_freq, state.max_freq)
                                 .smoothing(state.smoothing)
-                                .colors(SpectrumColors::from(&theme.spectrum_colors))
+                                .colors(spectrum_colors_from_theme(&theme.spectrum_colors))
                                 .into_any_element()
                         } else {
                             div()
@@ -843,7 +483,7 @@ impl PlayerView {
                                     .height(px(256.0))
                                     .frequency_range(20.0, 20000.0)
                                     .smoothing(0.3)
-                                    .colors(SpectrumColors::from(&theme.spectrum_colors)),
+                                    .colors(spectrum_colors_from_theme(&theme.spectrum_colors)),
                             ),
                         ),
                 )

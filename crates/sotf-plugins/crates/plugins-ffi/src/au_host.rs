@@ -19,7 +19,7 @@ use crate::param_cache::AtomicParamCache;
 use crate::parameter_map;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::PotentiometerSize;
+use gpui_audio_kit::PotentiometerSize;
 use math_audio_iir_fir::BiquadFilterType;
 use plugins_gpui::common::render_knob_sized;
 use plugins_gpui::{PluginViewHost, PluginViewTheme};

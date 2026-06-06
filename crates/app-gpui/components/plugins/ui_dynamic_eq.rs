@@ -7,7 +7,7 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::PotentiometerSize;
+use gpui_audio_kit::PotentiometerSize;
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::DynamicEqData;
 use sotf_plugins::param_specs::{dynamic_eq as specs, find_by_key as pk};

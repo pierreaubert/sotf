@@ -14,7 +14,7 @@ path = "src/lib.rs"
 
 [features]
 qa = ["sotf-host/qa"]
-gpui-ui = ["dep:plugins-gpui", "dep:gpui", "dep:gpui-px", "dep:gpui-ui-kit", "dep:sotf-midi"]
+gpui-ui = ["dep:plugins-gpui", "dep:gpui", "dep:gpui-audio-kit", "dep:gpui-px", "dep:gpui-ui-kit", "dep:sotf-midi"]
 
 [[bin]]
 name = "qa-eq"
@@ -30,5 +30,6 @@ serde = { workspace = true }
 plugins-gpui = { workspace = true, optional = true }
 gpui = { workspace = true, optional = true }
 gpui-px = { workspace = true, features = ["gpui"], optional = true }
+gpui-audio-kit = { workspace = true, optional = true }
 gpui-ui-kit = { workspace = true, optional = true }
 sotf-midi = { workspace = true, optional = true }
