@@ -8,16 +8,19 @@ use d3rs::color::ColorScheme;
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
-    render_radial(false)
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
+    render_radial(false, &ui_theme)
 }
 
-pub fn render_cluster(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
-    render_radial(true)
+pub fn render_cluster(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
+    render_radial(true, &ui_theme)
 }
 
-fn render_radial(cluster: bool) -> Div {
+fn render_radial(cluster: bool, ui_theme: &gpui_ui_kit::theme::Theme) -> Div {
     let result = d3rs::examples::radial_tree::compute(cluster);
 
     let scheme = ColorScheme::tableau10();
@@ -84,25 +87,19 @@ fn render_radial(cluster: bool) -> Div {
                 .mb_2()
                 .child(title),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: {} — {} nodes, {} links",
-                    source,
-                    result.nodes.len(),
-                    result.link_paths.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: {} — {} nodes, {} links",
+            source,
+            result.nodes.len(),
+            result.link_paths.len()
+        )))
         .child(
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xe0e0e0))
+                .border_color(ui_theme.border)
                 .relative()
                 .child(
                     canvas(
@@ -131,7 +128,6 @@ fn render_radial(cluster: bool) -> Div {
                         .left(px((x + 5.0) as f32))
                         .top(px((y - 5.0) as f32))
                         .text_size(px(8.0))
-                        .text_color(rgb(0x333333))
                         .child(name)
                 })),
         )

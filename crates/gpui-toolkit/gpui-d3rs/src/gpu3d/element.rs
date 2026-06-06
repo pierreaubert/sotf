@@ -10,7 +10,7 @@ use crate::color::D3Color;
 use crate::contour::ContourGenerator;
 use crate::shape::contour_smoothing::StrokePoint;
 use crate::text::{GlyphTextConfig, HorizontalTextAnchor, VerticalTextAnchor, paint_chart_text_at};
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use gpui::*;
 use image::{Frame, RgbaImage};
 use std::cell::RefCell;
@@ -19,6 +19,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 const MAX_SURFACE_RENDER_DIMENSION: f32 = 4096.0;
+const ISOLINE_OCCLUSION_SAMPLE_PX: f32 = 2.0;
+const ISOLINE_DEPTH_EPSILON: f32 = 0.004;
 
 /// Interactive state for 3D surface element
 #[derive(Debug, Clone)]
@@ -233,28 +235,53 @@ impl Surface3DElement {
         .to_rgba();
         stroke_color.a *= self.config.isoline_opacity.clamp(0.0, 1.0);
 
+        let view_projection = camera.view_projection_matrix();
+        let depth_buffer = if self.config.opacity > 0.0 {
+            self.ensure_mesh();
+            let mesh_ref = self.mesh.borrow();
+            mesh_ref.as_ref().and_then(|mesh| {
+                ProjectedDepthBuffer::from_mesh(mesh, view_projection, width, height)
+            })
+        } else {
+            None
+        };
+
         for segment in contour_segments {
             let start_world =
                 self.isoline_world_position(segment.start.x, segment.start.y, segment.value);
             let end_world =
                 self.isoline_world_position(segment.end.x, segment.end.y, segment.value);
-            let Some(start) = camera.project_to_screen(start_world, width, height) else {
+            let Some(start) = project_world_to_screen(view_projection, start_world, width, height)
+            else {
                 continue;
             };
-            let Some(end) = camera.project_to_screen(end_world, width, height) else {
+            let Some(end) = project_world_to_screen(view_projection, end_world, width, height)
+            else {
                 continue;
             };
 
-            paint_stroke_segment(
-                &[
-                    StrokePoint::new(start.x, start.y),
-                    StrokePoint::new(end.x, end.y),
-                ],
-                bounds,
-                self.config.isoline_width_px,
-                stroke_color,
-                window,
-            );
+            if let Some(depth_buffer) = depth_buffer.as_ref() {
+                paint_depth_clipped_stroke_segment(
+                    start,
+                    end,
+                    depth_buffer,
+                    bounds,
+                    self.config.isoline_width_px,
+                    stroke_color,
+                    window,
+                );
+            } else {
+                paint_stroke_segment(
+                    &[
+                        StrokePoint::new(start.x, start.y),
+                        StrokePoint::new(end.x, end.y),
+                    ],
+                    bounds,
+                    self.config.isoline_width_px,
+                    stroke_color,
+                    window,
+                );
+            }
         }
     }
 
@@ -301,6 +328,24 @@ impl Surface3DElement {
             );
         }
     }
+
+    fn paint_chart_background(&self, bounds: Bounds<Pixels>, window: &mut Window) {
+        let [r, g, b] = self.config.background_color;
+        window.paint_quad(PaintQuad {
+            bounds,
+            corner_radii: Corners::default(),
+            background: Rgba {
+                r: r.clamp(0.0, 1.0),
+                g: g.clamp(0.0, 1.0),
+                b: b.clamp(0.0, 1.0),
+                a: 1.0,
+            }
+            .into(),
+            border_widths: Edges::default(),
+            border_color: transparent_black(),
+            border_style: Default::default(),
+        });
+    }
 }
 
 fn paint_stroke_segment(
@@ -328,6 +373,244 @@ fn paint_stroke_segment(
     if let Ok(path) = builder.build() {
         window.paint_path(path, color);
     }
+}
+
+fn paint_depth_clipped_stroke_segment(
+    start: Vec3,
+    end: Vec3,
+    depth_buffer: &ProjectedDepthBuffer,
+    bounds: Bounds<Pixels>,
+    width_px: f32,
+    color: Rgba,
+    window: &mut Window,
+) {
+    let screen_length = (end - start).truncate().length();
+    let steps = (screen_length / ISOLINE_OCCLUSION_SAMPLE_PX)
+        .ceil()
+        .max(1.0) as usize;
+    let mut visible_run = Vec::new();
+
+    for step in 0..=steps {
+        let t = step as f32 / steps as f32;
+        let point = start.lerp(end, t);
+        if depth_buffer.is_visible(point) {
+            visible_run.push(StrokePoint::new(point.x, point.y));
+        } else {
+            if visible_run.len() >= 2 {
+                paint_stroke_segment(&visible_run, bounds, width_px, color, window);
+            }
+            visible_run.clear();
+        }
+    }
+
+    if visible_run.len() >= 2 {
+        paint_stroke_segment(&visible_run, bounds, width_px, color, window);
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ProjectedDepthBuffer {
+    width: usize,
+    height: usize,
+    depths: Vec<f32>,
+}
+
+impl ProjectedDepthBuffer {
+    fn from_mesh(
+        mesh: &SurfaceMesh,
+        view_projection: Mat4,
+        width: f32,
+        height: f32,
+    ) -> Option<Self> {
+        if mesh.is_empty() || width <= 0.0 || height <= 0.0 {
+            return None;
+        }
+
+        let pixel_width = width.ceil().clamp(1.0, MAX_SURFACE_RENDER_DIMENSION) as usize;
+        let pixel_height = height.ceil().clamp(1.0, MAX_SURFACE_RENDER_DIMENSION) as usize;
+        let mut buffer = Self::new(pixel_width, pixel_height);
+        let projected_vertices = mesh
+            .vertices
+            .iter()
+            .map(|vertex| {
+                project_world_to_screen(
+                    view_projection,
+                    Vec3::from_array(vertex.position),
+                    width,
+                    height,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        for triangle in mesh.indices.chunks_exact(3) {
+            let Some(p0) = triangle
+                .first()
+                .and_then(|index| projected_vertices.get(*index as usize))
+                .copied()
+                .flatten()
+            else {
+                continue;
+            };
+            let Some(p1) = triangle
+                .get(1)
+                .and_then(|index| projected_vertices.get(*index as usize))
+                .copied()
+                .flatten()
+            else {
+                continue;
+            };
+            let Some(p2) = triangle
+                .get(2)
+                .and_then(|index| projected_vertices.get(*index as usize))
+                .copied()
+                .flatten()
+            else {
+                continue;
+            };
+
+            buffer.rasterize_triangle(p0, p1, p2);
+        }
+
+        Some(buffer)
+    }
+
+    fn new(width: usize, height: usize) -> Self {
+        Self {
+            width,
+            height,
+            depths: vec![f32::INFINITY; width.saturating_mul(height)],
+        }
+    }
+
+    fn rasterize_triangle(&mut self, p0: Vec3, p1: Vec3, p2: Vec3) {
+        if !p0.is_finite() || !p1.is_finite() || !p2.is_finite() {
+            return;
+        }
+
+        let area = edge_function(p0, p1, p2);
+        if area.abs() <= f32::EPSILON {
+            return;
+        }
+
+        let max_x_bound = (self.width.saturating_sub(1)) as f32;
+        let max_y_bound = (self.height.saturating_sub(1)) as f32;
+        let min_x = p0.x.min(p1.x).min(p2.x).floor().clamp(0.0, max_x_bound) as usize;
+        let max_x = p0.x.max(p1.x).max(p2.x).ceil().clamp(0.0, max_x_bound) as usize;
+        let min_y = p0.y.min(p1.y).min(p2.y).floor().clamp(0.0, max_y_bound) as usize;
+        let max_y = p0.y.max(p1.y).max(p2.y).ceil().clamp(0.0, max_y_bound) as usize;
+
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let sample = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, 0.0);
+                let w0 = edge_function(p1, p2, sample) / area;
+                let w1 = edge_function(p2, p0, sample) / area;
+                let w2 = edge_function(p0, p1, sample) / area;
+                if w0 < -f32::EPSILON || w1 < -f32::EPSILON || w2 < -f32::EPSILON {
+                    continue;
+                }
+
+                let depth = w0 * p0.z + w1 * p1.z + w2 * p2.z;
+                let index = y * self.width + x;
+                if depth < self.depths[index] {
+                    self.depths[index] = depth;
+                }
+            }
+        }
+    }
+
+    fn is_visible(&self, point: Vec3) -> bool {
+        if !point.is_finite()
+            || point.x < 0.0
+            || point.y < 0.0
+            || point.x > self.width as f32
+            || point.y > self.height as f32
+        {
+            return false;
+        }
+
+        let Some(surface_depth) = self.sample_depth(point.x, point.y) else {
+            return true;
+        };
+
+        point.z <= surface_depth + ISOLINE_DEPTH_EPSILON
+    }
+
+    fn sample_depth(&self, x: f32, y: f32) -> Option<f32> {
+        if self.width == 0 || self.height == 0 {
+            return None;
+        }
+
+        let xi = x.round().clamp(0.0, (self.width - 1) as f32) as usize;
+        let yi = y.round().clamp(0.0, (self.height - 1) as f32) as usize;
+        let depth = self.depth_at(xi, yi);
+        if depth.is_finite() {
+            return Some(depth);
+        }
+
+        let mut nearest_depth = f32::INFINITY;
+        for y_offset in -1..=1 {
+            for x_offset in -1..=1 {
+                let sample_x = xi as isize + x_offset;
+                let sample_y = yi as isize + y_offset;
+                if sample_x < 0
+                    || sample_y < 0
+                    || sample_x >= self.width as isize
+                    || sample_y >= self.height as isize
+                {
+                    continue;
+                }
+                nearest_depth =
+                    nearest_depth.min(self.depth_at(sample_x as usize, sample_y as usize));
+            }
+        }
+
+        nearest_depth.is_finite().then_some(nearest_depth)
+    }
+
+    fn depth_at(&self, x: usize, y: usize) -> f32 {
+        self.depths[y * self.width + x]
+    }
+}
+
+fn edge_function(a: Vec3, b: Vec3, c: Vec3) -> f32 {
+    (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)
+}
+
+fn project_world_to_screen(
+    view_projection: Mat4,
+    world_pos: Vec3,
+    width: f32,
+    height: f32,
+) -> Option<Vec3> {
+    let clip_pos = view_projection * world_pos.extend(1.0);
+    if clip_pos.w <= 1e-6 {
+        return None;
+    }
+
+    let ndc = clip_pos.truncate() / clip_pos.w;
+    if !(0.0..=1.0).contains(&ndc.z) {
+        return None;
+    }
+
+    let x = (ndc.x + 1.0) * 0.5 * width;
+    let y = (1.0 - ndc.y) * 0.5 * height;
+    Some(Vec3::new(x, y, ndc.z))
+}
+
+#[doc(hidden)]
+pub fn projected_surface_depth_visibility_for_testing(
+    triangle: [[f32; 3]; 3],
+    sample: [f32; 3],
+    width: usize,
+    height: usize,
+) -> bool {
+    let mut buffer = ProjectedDepthBuffer::new(width, height);
+    buffer.rasterize_triangle(
+        Vec3::from_array(triangle[0]),
+        Vec3::from_array(triangle[1]),
+        Vec3::from_array(triangle[2]),
+    );
+    buffer.is_visible(Vec3::from_array(sample))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -762,9 +1045,27 @@ impl Element for Surface3DElement {
 
         // Mouse event handlers are now handled by the parent view
 
-        // Now render the surface
         let width: f32 = bounds.size.width.into();
         let height: f32 = bounds.size.height.into();
+        let bg = self.config.background_color;
+        let luminance = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2];
+        let overlay_color = if luminance > 0.5 {
+            gpui::rgba(0x000000ff) // dark text on light background
+        } else {
+            gpui::rgba(0xffffffff) // white text on dark background
+        };
+
+        self.paint_chart_background(bounds, window);
+
+        // Paint the Cartesian grid below the surface image. The offscreen
+        // surface renderer clears to transparent, so the surface naturally
+        // occludes grid strokes when composited over them.
+        {
+            let camera = &self.state.borrow().camera;
+            self.paint_projected_grid(bounds, width, height, camera, overlay_color, window);
+        }
+
+        // Now render the surface
         let scale_factor = window.scale_factor().clamp(1.0, 3.0);
         let mut render_width = width * scale_factor;
         let mut render_height = height * scale_factor;
@@ -797,7 +1098,7 @@ impl Element for Surface3DElement {
                     None
                 };
 
-                if let Some(pixels) = renderer.render(&state.camera, log_settings) {
+                if let Some(pixels) = renderer.render_transparent(&state.camera, log_settings) {
                     // Create RgbaImage from RGBA pixel data
                     if let Some(rgba_image) = RgbaImage::from_raw(width_u32, height_u32, pixels) {
                         // Create a Frame from the image
@@ -819,18 +1120,8 @@ impl Element for Surface3DElement {
             }
         }
 
-        // Pick overlay color that contrasts with the background
-        let bg = self.config.background_color;
-        let luminance = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2];
-        let overlay_color = if luminance > 0.5 {
-            gpui::rgba(0x000000ff) // dark text on light background
-        } else {
-            gpui::rgba(0xffffffff) // white text on dark background
-        };
-
         {
             let camera = &self.state.borrow().camera;
-            self.paint_projected_grid(bounds, width, height, camera, overlay_color, window);
             self.paint_projected_isolines(bounds, width, height, camera, window);
         }
 

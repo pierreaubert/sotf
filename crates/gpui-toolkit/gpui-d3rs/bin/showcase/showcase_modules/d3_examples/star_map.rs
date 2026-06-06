@@ -101,16 +101,10 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Star Map"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/star-map — {} stars visible",
-                    result.stars.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/star-map — {} stars visible",
+            result.stars.len()
+        )))
         .child(
             div()
                 .w(px(width as f32))

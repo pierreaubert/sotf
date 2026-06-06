@@ -7,6 +7,7 @@ use crate::ShowcaseApp;
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const AIRPORTS_CSV: &str = include_str!("../../data/airports.csv");
 
@@ -30,6 +31,7 @@ fn ribbon(x0: f64, y0: f64, x1: f64, y1: f64, hw: f64) -> d3rs::shape::path::Pat
 }
 
 pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let coords = d3rs::examples::voronoi_airports::load_csv(AIRPORTS_CSV);
     let rotation = (app.geo_rotation_lon, app.geo_rotation_lat);
     let zoom = app.geo_zoom;
@@ -137,22 +139,16 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("World Airports Voronoi"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/world-airports-voronoi — {} airports ({} visible)",
-                    result.point_count, visible_count
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/world-airports-voronoi — {} airports ({} visible)",
+            result.point_count, visible_count
+        )))
         .child(
             div()
                 .id("voronoi-globe")
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .cursor_pointer()
                 .on_mouse_down(
                     MouseButton::Left,

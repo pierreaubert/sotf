@@ -11,11 +11,13 @@ use d3rs::color::ColorScheme;
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 /// Embedded energy.json data (48 nodes, 68 links).
 const ENERGY_JSON: &str = include_str!("../../data/energy.json");
 
-pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let (names, links) = d3rs::examples::sankey::load_json(ENERGY_JSON);
 
     let result = d3rs::examples::sankey::compute(&names, &links);
@@ -104,17 +106,11 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Sankey Diagram — Energy Flows"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/sankey — {} nodes, {} links (energy.json)",
-                    result.nodes.len(),
-                    result.links.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/sankey — {} nodes, {} links (energy.json)",
+            result.nodes.len(),
+            result.links.len()
+        )))
         .child(
             div()
                 .flex()
@@ -127,9 +123,9 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xe0e0e0))
+                .border_color(ui_theme.border)
                 .relative()
                 .child(
                     canvas(
@@ -153,10 +149,7 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                     .size_full(),
                 )
                 .children(label_nodes.into_iter().map(|(name, lx, ly, is_right)| {
-                    let mut d = div()
-                        .absolute()
-                        .text_color(rgb(0x333333))
-                        .top(px(ly as f32 - 5.0));
+                    let mut d = div().absolute().top(px(ly as f32 - 5.0));
                     if is_right {
                         d = d.right(px((width - lx) as f32));
                     } else {

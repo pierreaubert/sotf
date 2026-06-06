@@ -8,8 +8,10 @@ use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::path::{PathBuilder as D3PathBuilder, Point as D3Point};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let data = d3rs::examples::line_chart::default_data();
     let result = d3rs::examples::line_chart::compute(&data);
 
@@ -101,7 +103,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(0x666666))
                 .mb_2()
                 .child("Source: observablehq.com/@d3/line-chart"),
         )
@@ -117,9 +118,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(chart_w as f32))
                 .h(px(chart_h as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xcccccc))
+                .border_color(ui_theme.border)
                 .relative()
                 // Y-axis line
                 .child(
@@ -129,7 +130,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px(margin_top as f32))
                         .w(px(1.0))
                         .h(px(plot_h as f32))
-                        .bg(rgb(0xcccccc)),
+                        .bg(ui_theme.border),
                 )
                 // X-axis line
                 .child(
@@ -139,7 +140,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((margin_top + plot_h) as f32))
                         .w(px(plot_w as f32))
                         .h(px(1.0))
-                        .bg(rgb(0xcccccc)),
+                        .bg(ui_theme.border),
                 )
                 // Y-axis ticks + labels + grid
                 .children(y_ticks.iter().map(|&val| {
@@ -152,12 +153,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .flex()
                         .justify_end()
                         .pr_1()
-                        .child(
-                            div()
-                                .text_color(rgb(0x888888))
-                                .text_xs()
-                                .child(format!("{:.0}", val)),
-                        )
+                        .child(div().text_xs().child(format!("{:.0}", val)))
                 }))
                 // Y grid lines
                 .children(y_ticks.iter().map(|&val| {
@@ -168,7 +164,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((margin_top + y) as f32))
                         .w(px(plot_w as f32))
                         .h(px(1.0))
-                        .bg(rgb(0xf0f0f0))
+                        .bg(ui_theme.surface)
                 }))
                 // X-axis ticks + labels
                 .children(x_ticks.iter().map(|&val| {
@@ -180,12 +176,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .w(px(20.0))
                         .flex()
                         .justify_center()
-                        .child(
-                            div()
-                                .text_color(rgb(0x888888))
-                                .text_xs()
-                                .child(format!("{:.0}", val)),
-                        )
+                        .child(div().text_xs().child(format!("{:.0}", val)))
                 }))
                 // X grid lines
                 .children(x_ticks.iter().map(|&val| {
@@ -196,7 +187,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px(margin_top as f32))
                         .w(px(1.0))
                         .h(px(plot_h as f32))
-                        .bg(rgb(0xf0f0f0))
+                        .bg(ui_theme.surface)
                 }))
                 // Plot area with curves
                 .child(
@@ -230,20 +221,14 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         ),
                 ),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x999999))
-                .mt_2()
-                .child(format!(
-                    "{} data points | x: [{:.0}..{:.0}] | y: [{:.1}..{:.1}]",
-                    data.len(),
-                    result.x_domain[0],
-                    result.x_domain[1],
-                    result.y_domain[0],
-                    result.y_domain[1]
-                )),
-        )
+        .child(div().text_xs().mt_2().child(format!(
+            "{} data points | x: [{:.0}..{:.0}] | y: [{:.1}..{:.1}]",
+            data.len(),
+            result.x_domain[0],
+            result.x_domain[1],
+            result.y_domain[0],
+            result.y_domain[1]
+        )))
 }
 
 /// Convert interpolated points to a thin filled ribbon d3rs Path to simulate a stroke.

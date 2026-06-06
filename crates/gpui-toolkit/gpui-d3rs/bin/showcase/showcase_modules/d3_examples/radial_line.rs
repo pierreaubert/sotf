@@ -10,11 +10,13 @@ use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 use std::f64::consts::PI;
 
 const SFO_CSV: &str = include_str!("../../data/sfo-temperature.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     // Parse CSV with d3rs
     let rows = d3rs::fetch::parse_csv(SFO_CSV).expect("valid SFO temperature CSV");
 
@@ -293,7 +295,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .font_weight(FontWeight::BOLD)
                 .child("Radial Area Chart — SFO Temperature"),
         )
-        .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+        .child(div().text_sm().child(format!(
             "Source: observablehq.com/@d3/radial-area-chart — {} days, {:.0}°F to {:.0}°F",
             n, temp_min, temp_max
         )))
@@ -330,9 +332,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(canvas_size as f32))
                 .h(px(canvas_size as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xcccccc))
+                .border_color(ui_theme.border)
                 .relative()
                 .child(
                     canvas(
@@ -360,12 +362,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .absolute()
                         .left(px(*x as f32))
                         .top(px((*y - 5.0) as f32))
-                        .child(
-                            div()
-                                .text_color(rgb(0x888888))
-                                .text_xs()
-                                .child(label.clone()),
-                        )
+                        .child(div().text_xs().child(label.clone()))
                 }))
                 // Month labels around the perimeter
                 .children(month_labels.iter().map(|(x, y, label)| {
@@ -378,7 +375,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .justify_center()
                         .child(
                             div()
-                                .text_color(rgb(0x555555))
                                 .text_xs()
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(*label),

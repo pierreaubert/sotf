@@ -1,5 +1,10 @@
 # Unreleased
 
+## Demos
+
+- Layout showcase now starts directly on the platform GPUI backends and installs
+  the theme and design-system globals without depending on `gpui-miniapp`.
+
 ## Visual regression
 
 - Visual regression manifests are now serializable for screenshot runners.

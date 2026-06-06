@@ -11,8 +11,10 @@ use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
-pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let width = app.content_width as f64;
     let height = 100.0;
     let bands = 4;
@@ -79,7 +81,7 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .relative()
                 .overflow_hidden()
                 .child(

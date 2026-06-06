@@ -6,8 +6,10 @@ use crate::ShowcaseApp;
 use d3rs::color::ColorScheme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let result = d3rs::examples::sunburst::compute();
 
     let scheme = ColorScheme::tableau10();
@@ -50,23 +52,17 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Sunburst — Flare Hierarchy"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/sunburst — {} slices",
-                    result.slices.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/sunburst — {} slices",
+            result.slices.len()
+        )))
         .child(
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xe0e0e0))
+                .border_color(ui_theme.border)
                 .relative()
                 .child(
                     canvas(
@@ -100,7 +96,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px((x - 15.0) as f32))
                         .top(px((y - 5.0) as f32))
                         .text_size(px(8.0))
-                        .text_color(rgb(0xffffff))
                         .child(name)
                 })),
         )

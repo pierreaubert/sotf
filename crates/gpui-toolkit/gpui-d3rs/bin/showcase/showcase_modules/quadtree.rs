@@ -4,8 +4,10 @@ use d3rs::quadtree::{QuadNode, QuadTree};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_ui_kit::Slider;
+use gpui_ui_kit::theme::ThemeExt;
 
 pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let entity = cx.entity().clone();
     let theme = DefaultAxisTheme;
 
@@ -88,7 +90,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .child(
                     div()
                         .text_sm()
-                        .text_color(rgb(0x666666))
                         .max_w(px(500.0))
                         .child("QuadTree is a 2D spatial index for efficient nearest-neighbor queries. Move the query point and adjust the search radius to see how the quadtree partitions space."),
                 )
@@ -121,9 +122,9 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                     div()
                                         .w(px(size))
                                         .h(px(size))
-                                        .bg(rgb(0xf8f8f8))
+                                        .bg(ui_theme.surface)
                                         .border_1()
-                                        .border_color(rgb(0xcccccc))
+                                        .border_color(ui_theme.border)
                                         .relative()
                                         // Draw quadtree partitions
                                         .children(bounds_list.iter().map(|&(bx0, by0, bx1, by1)| {
@@ -259,15 +260,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .flex_col()
                 .gap_4()
                 .p_4()
-                .bg(rgb(0xf8f8f8))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xe0e0e0))
+                .border_color(ui_theme.border)
                 .rounded_lg()
                 .child(
                     div()
                         .text_lg()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(0x333333))
                         .child("Controls"),
                 )
                 .child(
@@ -279,7 +279,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                             div()
                                 .text_sm()
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(rgb(0x555555))
                                 .child("Query Point"),
                         )
                         .child({
@@ -339,40 +338,35 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .gap_1()
                         .mt_4()
                         .p_3()
-                        .bg(rgb(0xffffff))
+                        .bg(ui_theme.surface)
                         .border_1()
-                        .border_color(rgb(0xe0e0e0))
+                        .border_color(ui_theme.border)
                         .rounded_md()
                         .child(
                             div()
                                 .text_xs()
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(rgb(0x888888))
                                 .child("STATISTICS"),
                         )
                         .child(
                             div()
                                 .text_sm()
-                                .text_color(rgb(0x333333))
                                 .child(format!("Total Points: {}", quadtree.size())),
                         )
                         .child(
                             div()
                                 .text_sm()
-                                .text_color(rgb(0x333333))
                                 .child(format!("Within Radius: {}", within_radius.len())),
                         )
                         .when_some(nearest.cloned(), |this, (nx, ny)| {
                             this.child(
                                 div()
                                     .text_sm()
-                                    .text_color(rgb(0x333333))
                                     .child(format!("Nearest: ({:.1}, {:.1})", nx, ny)),
                             )
                             .child(
                                 div()
                                     .text_sm()
-                                    .text_color(rgb(0x333333))
                                     .child(format!(
                                         "Distance: {:.2}",
                                         ((nx - query_x).powi(2) + (ny - query_y).powi(2)).sqrt()
@@ -383,14 +377,12 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                             this.child(
                                 div()
                                     .text_sm()
-                                    .text_color(rgb(0x333333))
                                     .child(format!("Extent: [{:.0},{:.0}]-[{:.0},{:.0}]", ext.x0, ext.y0, ext.x1, ext.y1)),
                             )
                         })
                         .child(
                             div()
                                 .text_sm()
-                                .text_color(rgb(0x333333))
                                 .child(format!("Cells: {}", bounds_list.len())),
                         ),
                 )
@@ -408,34 +400,29 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                             div()
                                 .text_xs()
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(rgb(0x888888))
                                 .child("API USAGE"),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(0x9cdcfe))
                                 .font_family("Monaco")
                                 .child("let mut qt = QuadTree::new();"),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(0x9cdcfe))
                                 .font_family("Monaco")
                                 .child("qt.add(x, y, data);"),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(0x9cdcfe))
                                 .font_family("Monaco")
                                 .child("qt.find(x, y, radius);"),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(0x9cdcfe))
                                 .font_family("Monaco")
                                 .child("qt.find_all(x, y, radius);"),
                         ),

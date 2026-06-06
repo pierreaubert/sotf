@@ -526,6 +526,11 @@ impl ShowcaseApp {
                 } else {
                     theme.surface_hover
                 };
+                let text_color = if is_selected {
+                    theme.text_on_accent
+                } else {
+                    theme.text_primary
+                };
 
                 div()
                     .id(ElementId::Name(section.label().into()))
@@ -535,7 +540,7 @@ impl ShowcaseApp {
                     .cursor_pointer()
                     .bg(bg)
                     .hover(move |s| s.bg(hover_bg))
-                    .text_color(theme.text_primary)
+                    .text_color(text_color)
                     .child(section.label())
                     .on_click(cx.listener(move |this, _, _window, _cx| {
                         this.current_section = section;
@@ -546,15 +551,15 @@ impl ShowcaseApp {
     fn render_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let content: Div = match self.current_section {
             DemoSection::Overview => showcase_modules::overview::render(self, cx),
-            DemoSection::Scales => showcase_modules::scales::render(self),
-            DemoSection::Axes => showcase_modules::axes::render(self),
-            DemoSection::BarCharts => showcase_modules::bar_charts::render(self),
-            DemoSection::LineCharts => showcase_modules::line_charts::render(self),
-            DemoSection::ScatterPlots => showcase_modules::scatter_plots::render(self),
+            DemoSection::Scales => showcase_modules::scales::render(self, cx),
+            DemoSection::Axes => showcase_modules::axes::render(self, cx),
+            DemoSection::BarCharts => showcase_modules::bar_charts::render(self, cx),
+            DemoSection::LineCharts => showcase_modules::line_charts::render(self, cx),
+            DemoSection::ScatterPlots => showcase_modules::scatter_plots::render(self, cx),
             DemoSection::SurfacePlots => showcase_modules::surface_plots::render(self, cx),
             DemoSection::QuadTree => showcase_modules::quadtree::render(self, cx),
             DemoSection::Contours => showcase_modules::contours::render(self, cx),
-            DemoSection::Transitions => showcase_modules::transitions::render(self),
+            DemoSection::Transitions => showcase_modules::transitions::render(self, cx),
             DemoSection::Geo => showcase_modules::geo::render(self, cx),
             DemoSection::Colors => showcase_modules::colors::render(self),
             // D3 Observable Examples
@@ -656,6 +661,7 @@ impl ShowcaseApp {
             .h_full()
             .overflow_y_scroll()
             .bg(theme.background)
+            .text_color(theme.text_primary)
             .p(px(ds.spacing.section_gap * 2.0))
             .child(content)
     }

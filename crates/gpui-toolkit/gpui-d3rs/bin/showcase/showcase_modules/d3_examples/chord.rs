@@ -10,8 +10,10 @@ use d3rs::shape::arc::{Arc as D3Arc, ArcDatum};
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let (names, matrix) = d3rs::examples::chord::default_matrix();
 
     let scheme = ColorScheme::tableau10();
@@ -126,7 +128,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(0x666666))
                 .mb_2()
                 .child("Source: observablehq.com/@d3/chord-diagram"),
         )
@@ -142,9 +143,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xcccccc))
+                .border_color(ui_theme.border)
                 .relative()
                 // Canvas for arcs, ticks, and ribbons
                 .child(
@@ -180,7 +181,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                             div()
                                 .text_xs()
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(rgb(0x333333))
                                 .child(name.clone()),
                         )
                 })),

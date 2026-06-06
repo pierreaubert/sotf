@@ -3,6 +3,7 @@ use d3rs::geo::{
     Stereographic,
 };
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 use super::ShowcaseApp;
 use super::world_data::get_world_data;
@@ -27,6 +28,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let rotation_lon = app.geo_rotation_lon;
     let rotation_lat = app.geo_rotation_lat;
     let use_large_data = app.use_large_data;
+    let theme = cx.theme();
 
     // Map dimensions
     let map_width = 800.0_f64;
@@ -48,7 +50,6 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
         .child(
             div()
                 .text_base()
-                .text_color(rgb(0x666666))
                 .max_w(px(700.0))
                 .child("The d3-geo module provides geographic projections for mapping spherical coordinates (longitude, latitude) to planar coordinates (x, y). Select a projection below to see how it transforms the globe."),
         )
@@ -71,14 +72,19 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .children(GeoProjectionType::all().into_iter().map(|proj_type| {
                             let is_selected = proj_type == current_projection;
                             let bg = if is_selected {
-                                rgb(0x007acc)
+                                theme.accent
                             } else {
-                                rgb(0xe8e8e8)
+                                theme.surface_hover
                             };
                             let text_color = if is_selected {
-                                rgb(0xffffff)
+                                theme.text_on_accent
                             } else {
-                                rgb(0x333333)
+                                theme.text_primary
+                            };
+                            let hover_bg = if is_selected {
+                                theme.accent
+                            } else {
+                                theme.muted
                             };
 
                             div()
@@ -88,7 +94,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .rounded_md()
                                 .cursor_pointer()
                                 .bg(bg)
-                                .hover(|s| s.bg(if is_selected { rgb(0x007acc) } else { rgb(0xd0d0d0) }))
+                                .hover(move |s| s.bg(hover_bg))
                                 .text_color(text_color)
                                 .text_sm()
                                 .child(proj_type.label())
@@ -117,8 +123,12 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .py_2()
                         .rounded_md()
                         .cursor_pointer()
-                        .bg(if use_large_data { rgb(0x448844) } else { rgb(0xe8e8e8) })
-                        .text_color(if use_large_data { rgb(0xffffff) } else { rgb(0x333333) })
+                        .bg(if use_large_data { theme.success } else { theme.surface_hover })
+                        .text_color(if use_large_data {
+                            theme.text_on_accent
+                        } else {
+                            theme.text_primary
+                        })
                         .text_sm()
                         .max_w(px(200.0))
                         .child(if use_large_data { "Large (50m)" } else { "Small (Simplified)" })
@@ -144,9 +154,9 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .w(px(map_width as f32))
                         .h(px(map_height as f32))
                         .relative()
-                        .bg(rgb(0xe8f4fc))
+                        .bg(theme.surface)
                         .border_1()
-                        .border_color(rgb(0xcccccc))
+                        .border_color(theme.border)
                         .rounded_lg()
                         .overflow_hidden()
                         .child(
@@ -314,10 +324,10 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .id("lon-minus")
                                         .px_3()
                                         .py_1()
-                                        .bg(rgb(0xe8e8e8))
+                                        .bg(theme.surface)
                                         .rounded_md()
                                         .cursor_pointer()
-                                        .hover(|s| s.bg(rgb(0xd0d0d0)))
+                                        .hover(|s| s.bg(theme.surface_hover))
                                         .child("-30°")
                                         .on_click(cx.listener(|this, _, _window, _cx| {
                                             this.geo_rotation_lon = (this.geo_rotation_lon - 30.0).rem_euclid(360.0);
@@ -335,10 +345,10 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .id("lon-plus")
                                         .px_3()
                                         .py_1()
-                                        .bg(rgb(0xe8e8e8))
+                                        .bg(theme.surface)
                                         .rounded_md()
                                         .cursor_pointer()
-                                        .hover(|s| s.bg(rgb(0xd0d0d0)))
+                                        .hover(|s| s.bg(theme.surface_hover))
                                         .child("+30°")
                                         .on_click(cx.listener(|this, _, _window, _cx| {
                                             this.geo_rotation_lon = (this.geo_rotation_lon + 30.0).rem_euclid(360.0);
@@ -356,10 +366,10 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .id("lat-minus")
                                         .px_3()
                                         .py_1()
-                                        .bg(rgb(0xe8e8e8))
+                                        .bg(theme.surface)
                                         .rounded_md()
                                         .cursor_pointer()
-                                        .hover(|s| s.bg(rgb(0xd0d0d0)))
+                                        .hover(|s| s.bg(theme.surface_hover))
                                         .child("-15°")
                                         .on_click(cx.listener(|this, _, _window, _cx| {
                                             this.geo_rotation_lat = (this.geo_rotation_lat - 15.0).max(-60.0);
@@ -377,10 +387,10 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .id("lat-plus")
                                         .px_3()
                                         .py_1()
-                                        .bg(rgb(0xe8e8e8))
+                                        .bg(theme.surface)
                                         .rounded_md()
                                         .cursor_pointer()
-                                        .hover(|s| s.bg(rgb(0xd0d0d0)))
+                                        .hover(|s| s.bg(theme.surface_hover))
                                         .child("+15°")
                                         .on_click(cx.listener(|this, _, _window, _cx| {
                                             this.geo_rotation_lat = (this.geo_rotation_lat + 15.0).min(60.0);
@@ -392,11 +402,10 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .id("reset-rotation")
                                 .px_3()
                                 .py_1()
-                                .bg(rgb(0x007acc))
-                                .text_color(rgb(0xffffff))
+                                .bg(theme.accent)
                                 .rounded_md()
                                 .cursor_pointer()
-                                .hover(|s| s.bg(rgb(0x005a9e)))
+                                .hover(|s| s.bg(theme.accent_hover))
                                 .child("Reset")
                                 .on_click(cx.listener(|this, _, _window, _cx| {
                                     this.geo_rotation_lon = 0.0;
@@ -428,7 +437,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .items_center()
                                 .gap_2()
                                 .child(div().w(px(16.0)).h(px(2.0)).bg(rgba(0x00000033))) // Updated color to match
-                                .child(div().text_sm().text_color(rgb(0x666666)).child("Graticule (30° grid)")),
+                                .child(div().text_sm().child("Graticule (30° grid)")),
                         )
                          .child(
                             div()
@@ -436,7 +445,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .items_center()
                                 .gap_2()
                                 .child(div().w(px(16.0)).h(px(16.0)).bg(rgb(0xd6e4ff)).border_1().border_color(rgb(0x3399ff)))
-                                .child(div().text_sm().text_color(rgb(0x666666)).child("Continents")),
+                                .child(div().text_sm().child("Continents")),
                         )
                         .child(
                             div()
@@ -444,7 +453,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .items_center()
                                 .gap_2()
                                 .child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(rgb(0xd62728)))
-                                .child(div().text_sm().text_color(rgb(0x666666)).child("Cities")),
+                                .child(div().text_sm().child("Cities")),
                         ),
                 ),
         )
@@ -455,7 +464,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .flex_col()
                 .gap_2()
                 .p_4()
-                .bg(rgb(0xf5f5f5))
+                .bg(theme.surface)
                 .rounded_lg()
                 .child(
                     div()
@@ -466,7 +475,6 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .child(
                     div()
                         .text_sm()
-                        .text_color(rgb(0x333333))
                         .child(projection_description(current_projection)),
                 ),
         )
@@ -606,7 +614,6 @@ fn render_cities(
                     .left(px(x as f32 + 6.0))
                     .top(px(y as f32 - 6.0))
                     .text_xs()
-                    .text_color(rgb(0x333333))
                     .bg(rgba(0xffffffcc))
                     .px_1()
                     .rounded(px(2.0))

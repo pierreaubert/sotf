@@ -80,6 +80,50 @@ impl Uniforms {
     }
 }
 
+fn transparent_surface_clear_color() -> wgpu::Color {
+    wgpu::Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    }
+}
+
+fn background_surface_clear_color(config: &Surface3DConfig) -> wgpu::Color {
+    let bg = &config.background_color;
+    wgpu::Color {
+        r: bg[0].clamp(0.0, 1.0) as f64,
+        g: bg[1].clamp(0.0, 1.0) as f64,
+        b: bg[2].clamp(0.0, 1.0) as f64,
+        a: 1.0,
+    }
+}
+
+#[doc(hidden)]
+pub fn transparent_surface_clear_color_for_testing() -> [f64; 4] {
+    let color = transparent_surface_clear_color();
+    [color.r, color.g, color.b, color.a]
+}
+
+fn unpremultiply_rgba(pixels: &mut [u8]) {
+    for rgba in pixels.chunks_exact_mut(4) {
+        let alpha = rgba[3];
+        if alpha == 0 || alpha == u8::MAX {
+            continue;
+        }
+
+        let scale = u8::MAX as f32 / alpha as f32;
+        for channel in &mut rgba[..3] {
+            *channel = ((*channel as f32 * scale).round().clamp(0.0, u8::MAX as f32)) as u8;
+        }
+    }
+}
+
+#[doc(hidden)]
+pub fn unpremultiply_rgba_for_testing(pixels: &mut [u8]) {
+    unpremultiply_rgba(pixels);
+}
+
 /// GPU-accelerated 3D surface renderer
 pub struct Surface3DRenderer {
     device: Arc<wgpu::Device>,
@@ -515,6 +559,30 @@ impl Surface3DRenderer {
         camera: &Camera3D,
         log_settings: Option<(f32, f32)>,
     ) -> Option<Vec<u8>> {
+        let clear_color = background_surface_clear_color(&self.config);
+        self.render_with_clear(camera, log_settings, clear_color, false)
+    }
+
+    pub(super) fn render_transparent(
+        &mut self,
+        camera: &Camera3D,
+        log_settings: Option<(f32, f32)>,
+    ) -> Option<Vec<u8>> {
+        self.render_with_clear(
+            camera,
+            log_settings,
+            transparent_surface_clear_color(),
+            true,
+        )
+    }
+
+    fn render_with_clear(
+        &mut self,
+        camera: &Camera3D,
+        log_settings: Option<(f32, f32)>,
+        clear_color: wgpu::Color,
+        unpremultiply_alpha: bool,
+    ) -> Option<Vec<u8>> {
         if self.vertex_buffer.is_none() || self.width == 0 || self.height == 0 {
             return None;
         }
@@ -552,18 +620,12 @@ impl Surface3DRenderer {
 
         // Render pass
         {
-            let bg = &self.config.background_color;
             let color_attachment = if self.config.msaa_samples > 1 {
                 wgpu::RenderPassColorAttachment {
                     view: self.render_texture_view.as_ref()?,
                     resolve_target: Some(&resolve_view),
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: bg[0] as f64,
-                            g: bg[1] as f64,
-                            b: bg[2] as f64,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(clear_color),
                         store: wgpu::StoreOp::Store,
                     },
                     depth_slice: None,
@@ -573,12 +635,7 @@ impl Surface3DRenderer {
                     view: self.render_texture_view.as_ref()?,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: bg[0] as f64,
-                            g: bg[1] as f64,
-                            b: bg[2] as f64,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(clear_color),
                         store: wgpu::StoreOp::Store,
                     },
                     depth_slice: None,
@@ -696,6 +753,9 @@ impl Surface3DRenderer {
                     let start = (row * bytes_per_row) as usize;
                     let end = start + (self.width * 4) as usize;
                     pixels.extend_from_slice(&data[start..end]);
+                }
+                if unpremultiply_alpha {
+                    unpremultiply_rgba(&mut pixels);
                 }
 
                 drop(data);

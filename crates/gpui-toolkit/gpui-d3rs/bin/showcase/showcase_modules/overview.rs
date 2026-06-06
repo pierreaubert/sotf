@@ -2,8 +2,10 @@ use super::ShowcaseApp;
 use crate::DemoSection;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 pub fn render(_app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     div()
         .flex()
         .flex_col()
@@ -17,7 +19,6 @@ pub fn render(_app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
         .child(
             div()
                 .text_base()
-                .text_color(rgb(0x666666))
                 .max_w(px(600.0))
                 .child("d3rs is a D3.js-inspired plotting library for GPUI. It brings familiar D3 concepts like scales, axes, and shape generators to Rust applications built with GPUI."),
         )
@@ -68,7 +69,6 @@ pub fn render(_app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
         .child(
             div()
                 .text_sm()
-                .text_color(rgb(0x888888))
                 .ml_4()
                 .mb_1()
                 .child("These use d3rs::examples::* compute modules — validated against D3.js golden files."),
@@ -109,7 +109,7 @@ pub fn render(_app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .mt_4()
                 .p_4()
-                .bg(rgb(0xf5f5f5))
+                .bg(ui_theme.surface)
                 .rounded_md()
                 .child(
                     div()
@@ -129,6 +129,7 @@ fn section_header(title: &str) -> Div {
 }
 
 fn nav_item(title: &str, desc: &str, section: DemoSection, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let title_str = title.to_string();
     let desc_str = desc.to_string();
     // Wrap in a plain Div so the return type stays Div
@@ -142,14 +143,13 @@ fn nav_item(title: &str, desc: &str, section: DemoSection, cx: &mut Context<Show
             .px_2()
             .rounded_md()
             .cursor_pointer()
-            .hover(|s| s.bg(rgb(0xf0f7ff)))
+            .hover(|s| s.bg(ui_theme.surface_hover))
             .child(
                 div()
-                    .text_color(rgb(0x007acc))
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(format!("{title_str}:")),
             )
-            .child(div().text_color(rgb(0x666666)).child(desc_str))
+            .child(div().child(desc_str))
             .on_click(cx.listener(move |this, _, _window, _cx| {
                 this.current_section = section;
             })),

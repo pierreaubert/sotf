@@ -9,10 +9,12 @@ use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const CARS_CSV: &str = include_str!("../../data/cars.csv");
 
-pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let width = app.content_width as f64;
     let height = (width * 0.525).min(app.content_height as f64 * 0.6);
     let margin_top = 30.0;
@@ -199,7 +201,7 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .font_weight(FontWeight::BOLD)
                 .child("Parallel Coordinates"),
         )
-        .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+        .child(div().text_sm().child(format!(
             "Source: observablehq.com/@d3/parallel-coordinates — {} cars from cars.csv",
             n_cars
         )))
@@ -229,9 +231,9 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xcccccc))
+                .border_color(ui_theme.border)
                 .relative()
                 .child(
                     canvas(
@@ -287,7 +289,6 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                             div()
                                 .text_xs()
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgb(0x333333))
                                 .child(axis_labels[i]),
                         )
                 }))
@@ -300,12 +301,7 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .w(px(28.0))
                         .flex()
                         .justify_end()
-                        .child(
-                            div()
-                                .text_color(rgb(0xaaaaaa))
-                                .text_xs()
-                                .child(label.clone()),
-                        )
+                        .child(div().text_xs().child(label.clone()))
                 })),
         )
 }

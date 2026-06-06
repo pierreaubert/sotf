@@ -9,8 +9,10 @@ use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use d3rs::shape::stack::{Stack, StackOffset, StackOrder};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let (states, ages, matrix) = d3rs::examples::stacked_bar::default_data();
 
     let scheme = ColorScheme::tableau10();
@@ -134,7 +136,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(0x666666))
                 .mb_2()
                 .child("Source: observablehq.com/@d3/stacked-bar-chart"),
         )
@@ -150,9 +151,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xcccccc))
+                .border_color(ui_theme.border)
                 .relative()
                 .children(state_labels)
                 .child(
@@ -196,12 +197,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .flex()
                         .justify_end()
                         .pr_1()
-                        .child(
-                            div()
-                                .text_color(rgb(0x888888))
-                                .text_xs()
-                                .child(format!("{:.0}", val)),
-                        )
+                        .child(div().text_xs().child(format!("{:.0}", val)))
                 }))
                 // Y grid lines
                 .children(y_ticks.iter().map(|&val| {
@@ -212,7 +208,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((margin_top + y) as f32))
                         .w(px(chart_width as f32))
                         .h(px(1.0))
-                        .bg(rgb(0xf0f0f0))
+                        .bg(ui_theme.surface)
                 }))
                 // X-axis line
                 .child(
@@ -222,7 +218,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((margin_top + chart_height) as f32))
                         .w(px(chart_width as f32))
                         .h(px(1.0))
-                        .bg(rgb(0xcccccc)),
+                        .bg(ui_theme.border),
                 )
                 // Y-axis line
                 .child(

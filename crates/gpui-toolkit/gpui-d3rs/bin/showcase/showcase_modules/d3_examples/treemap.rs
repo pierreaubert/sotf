@@ -13,6 +13,7 @@ use crate::ShowcaseApp;
 use d3rs::color::D3Color;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 /// Tiling algorithm for treemap layout
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -418,6 +419,7 @@ fn category_color(index: usize) -> D3Color {
 
 pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let entity = cx.entity().clone();
+    let theme = cx.theme();
 
     // Get parameters from app state
     let tiling_method = app.treemap_tiling;
@@ -466,7 +468,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .child(
                     div()
                         .text_sm()
-                        .text_color(rgb(0x666666))
                         .child("Ported from Observable: d3/treemap"),
                 ),
         )
@@ -496,10 +497,9 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                     div()
                                         .px_2()
                                         .py_1()
-                                        .bg(rgb(0x007acc))
+                                        .bg(theme.accent)
                                         .rounded_md()
                                         .text_xs()
-                                        .text_color(rgb(0xffffff))
                                         .child(format!("{} rects", rects.len())),
                                 ),
                         )
@@ -507,9 +507,9 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                             div()
                                 .w(px(plot_size))
                                 .h(px(plot_size))
-                                .bg(rgb(0xffffff))
+                                .bg(theme.surface)
                                 .border_1()
-                                .border_color(rgb(0xe0e0e0))
+                                .border_color(theme.border)
                                 .rounded_md()
                                 .relative()
                                 .overflow_hidden()
@@ -541,7 +541,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                 this.child(
                                                     div()
                                                         .text_xs()
-                                                        .text_color(rgb(0xffffff))
                                                         .p_1()
                                                         .overflow_hidden()
                                                         .child(rect.name.clone()),
@@ -565,15 +564,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .flex_col()
                                 .gap_3()
                                 .p_4()
-                                .bg(rgb(0xf8f8f8))
+                                .bg(theme.surface)
                                 .border_1()
-                                .border_color(rgb(0xe0e0e0))
+                                .border_color(theme.border)
                                 .rounded_lg()
                                 .child(
                                     div()
                                         .text_lg()
                                         .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(rgb(0x333333))
                                         .child("Controls"),
                                 )
                                 // Tiling method selector
@@ -585,7 +583,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .child(
                                             div()
                                                 .text_sm()
-                                                .text_color(rgb(0x555555))
                                                 .child("Tiling Method"),
                                         )
                                         .child(
@@ -598,14 +595,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                         let entity = entity.clone();
                                                         let is_selected = method == tiling_method;
                                                         let bg = if is_selected {
-                                                            rgb(0x007acc)
+                                                            theme.accent
                                                         } else {
-                                                            rgb(0xe0e0e0)
+                                                            theme.surface_hover
                                                         };
                                                         let text_color = if is_selected {
-                                                            rgb(0xffffff)
+                                                            theme.text_on_accent
                                                         } else {
-                                                            rgb(0x333333)
+                                                            theme.text_primary
                                                         };
 
                                                         div()
@@ -640,7 +637,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .child(
                                             div()
                                                 .text_sm()
-                                                .text_color(rgb(0x555555))
                                                 .child("Padding"),
                                         )
                                         .child(
@@ -653,14 +649,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                         let is_selected =
                                                             (padding - p).abs() < 0.1;
                                                         let bg = if is_selected {
-                                                            rgb(0x007acc)
+                                                            theme.accent
                                                         } else {
-                                                            rgb(0xe0e0e0)
+                                                            theme.surface_hover
                                                         };
                                                         let text_color = if is_selected {
-                                                            rgb(0xffffff)
+                                                            theme.text_on_accent
                                                         } else {
-                                                            rgb(0x333333)
+                                                            theme.text_primary
                                                         };
 
                                                         div()
@@ -693,15 +689,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .flex_col()
                                 .gap_2()
                                 .p_4()
-                                .bg(rgb(0xffffff))
+                                .bg(theme.surface)
                                 .border_1()
-                                .border_color(rgb(0xe0e0e0))
+                                .border_color(theme.border)
                                 .rounded_lg()
                                 .child(
                                     div()
                                         .text_xs()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(0x888888))
                                         .child("CATEGORIES"),
                                 )
                                 .children(categories.iter().enumerate().map(|(i, &name)| {
@@ -720,7 +715,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .child(
                                             div()
                                                 .text_xs()
-                                                .text_color(rgb(0x333333))
                                                 .child(name),
                                         )
                                 })),
@@ -732,33 +726,29 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .flex_col()
                                 .gap_1()
                                 .p_4()
-                                .bg(rgb(0xffffff))
+                                .bg(theme.surface)
                                 .border_1()
-                                .border_color(rgb(0xe0e0e0))
+                                .border_color(theme.border)
                                 .rounded_lg()
                                 .child(
                                     div()
                                         .text_xs()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(0x888888))
                                         .child("STATISTICS"),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(0x333333))
                                         .child(format!("Total size: {} bytes", total_value)),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(0x333333))
                                         .child(format!("Leaf nodes: {}", rects.len())),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(0x333333))
                                         .child(format!("Categories: {}", categories.len())),
                                 ),
                         )
@@ -777,13 +767,11 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                     div()
                                         .text_xs()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(0x888888))
                                         .child("TILING ALGORITHMS"),
                                 )
                                 .child(
                                     div()
                                         .text_xs()
-                                        .text_color(rgb(0xd4d4d4))
                                         .child(match tiling_method {
                                             TilingMethod::Squarify => {
                                                 "Squarify: Creates rectangles with aspect ratios close to 1 (square-like). Best for comparing sizes."

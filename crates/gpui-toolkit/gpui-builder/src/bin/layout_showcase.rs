@@ -17,10 +17,9 @@ use gpui_builder::types::LayoutPreferences;
 use gpui_builder::{
     Axis, ContainerNode, DisplayTier, LayoutNode, Sizing, SlotNode, SolvedNode, solve,
 };
-use gpui_design::DesignExt;
-use gpui_miniapp::{MiniApp, MiniAppConfig};
-use gpui_ui_kit::theme::ThemeExt;
-use gpui_ui_kit::*;
+use gpui_design::{DesignExt, DesignSystemState};
+use gpui_ui_kit::theme::{ThemeExt, ThemeState, ThemeVariant};
+use std::rc::Rc;
 
 // ============================================================================
 // Display tiers
@@ -660,12 +659,66 @@ impl ShowcaseView {
 // Entry point
 // ============================================================================
 
+fn current_platform() -> Result<Rc<dyn gpui::Platform>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        Ok(Rc::new(gpui_macos::MacPlatform::new(false)))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Ok(gpui_linux::current_platform(false))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        gpui_windows::WindowsPlatform::new(false)
+            .map(|p| Rc::new(p) as Rc<dyn gpui::Platform>)
+            .map_err(|e| format!("failed to create Windows platform: {e:?}"))
+    }
+    #[cfg(any(target_os = "ios", target_os = "tvos"))]
+    {
+        Ok(gpui_ios::current_platform(false))
+    }
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "tvos"
+    )))]
+    {
+        compile_error!("unsupported platform for layout showcase")
+    }
+}
+
 fn main() {
-    MiniApp::run(
-        MiniAppConfig::new("Layout Builder Showcase")
-            .size(1000.0, 700.0)
-            .scrollable(false)
-            .with_theme(true),
-        |cx| cx.new(|_cx| ShowcaseView::new()),
-    );
+    let platform = match current_platform() {
+        Ok(platform) => platform,
+        Err(error) => {
+            eprintln!("Layout showcase platform error: {error}");
+            return;
+        }
+    };
+
+    gpui::Application::with_platform(platform).run(|cx: &mut App| {
+        cx.set_global(ThemeState::with_variant(ThemeVariant::Dark));
+        cx.set_global(DesignSystemState::new());
+
+        let bounds = Bounds::centered(None, size(px(1000.0), px(700.0)), cx);
+        if let Err(error) = cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Layout Builder Showcase".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            |_, cx| cx.new(|_cx| ShowcaseView::new()),
+        ) {
+            eprintln!("Layout showcase window error: {error:?}");
+            return;
+        }
+
+        cx.activate(true);
+    });
 }

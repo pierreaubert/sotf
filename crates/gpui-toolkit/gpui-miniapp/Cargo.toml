@@ -19,8 +19,13 @@ publish = false
 name = "gpui_miniapp"
 path = "src/lib.rs"
 
+[features]
+default = ["builder"]
+builder = ["dep:gpui-builder"]
+
 [dependencies]
 gpui = { workspace = true }
+gpui-builder = { path = "../gpui-builder", optional = true, default-features = false }
 gpui-design = { workspace = true, features = ["gpui"] }
 gpui-ui-kit = { workspace = true }
 

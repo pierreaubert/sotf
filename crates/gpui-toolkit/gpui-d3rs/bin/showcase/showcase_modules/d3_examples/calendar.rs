@@ -12,10 +12,12 @@ use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const DJI_CSV: &str = include_str!("../../data/dji.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let cell_size = 10.0;
     let cell_pad = 1.5;
     let year_height = 7.0 * (cell_size + cell_pad) + 15.0; // 7 days + label space
@@ -159,29 +161,18 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Calendar Heatmap — DJI Daily Returns"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/calendar — {} trading days, {} years from dji.csv",
-                    days.len(),
-                    years.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/calendar — {} trading days, {} years from dji.csv",
+            days.len(),
+            years.len()
+        )))
         .child(
             div()
                 .flex()
                 .items_center()
                 .gap_2()
                 .mb_2()
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(0x666666))
-                        .child(format!("-{max_abs:.0}%")),
-                )
+                .child(div().text_xs().child(format!("-{max_abs:.0}%")))
                 .child(
                     div()
                         .flex()
@@ -195,20 +186,15 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                             div().flex_1().h_full().bg(c.to_rgba())
                         })),
                 )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(0x666666))
-                        .child(format!("+{max_abs:.0}%")),
-                ),
+                .child(div().text_xs().child(format!("+{max_abs:.0}%"))),
         )
         .child(
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xe0e0e0))
+                .border_color(ui_theme.border)
                 .relative()
                 .overflow_hidden()
                 .child(
@@ -238,7 +224,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px(2.0))
                         .top(px((y + 25.0) as f32))
                         .text_size(px(9.0))
-                        .text_color(rgb(0x666666))
                         .child(format!("{year}"))
                 }))
                 // Month labels at top
@@ -251,7 +236,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px(x as f32))
                         .top(px(5.0))
                         .text_size(px(8.0))
-                        .text_color(rgb(0x888888))
                         .child(month_names[mi].to_string())
                 })),
         )

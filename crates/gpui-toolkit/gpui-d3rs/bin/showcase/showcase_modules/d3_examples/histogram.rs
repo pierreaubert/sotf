@@ -11,10 +11,12 @@ use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const DIAMONDS_CSV: &str = include_str!("../../data/diamonds.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let width = 640.0;
     let height = 400.0;
     let margin_left = 50.0;
@@ -150,23 +152,17 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Histogram — Diamond Carat Distribution"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/histogram — {} diamonds from diamonds.csv",
-                    carats.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/histogram — {} diamonds from diamonds.csv",
+            carats.len()
+        )))
         .child(
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xe0e0e0))
+                .border_color(ui_theme.border)
                 .relative()
                 .child(
                     canvas(
@@ -196,7 +192,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .right(px((width - margin_left + 5.0) as f32))
                         .top(px((y - 6.0) as f32))
                         .text_size(px(9.0))
-                        .text_color(rgb(0x666666))
                         .child(format!("{:.0}", tick_val))
                 }))
                 // X-axis labels
@@ -207,7 +202,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px((x - 10.0) as f32))
                         .top(px((margin_top + chart_height + 5.0) as f32))
                         .text_size(px(9.0))
-                        .text_color(rgb(0x666666))
                         .child(format!("{tick_val:.1}"))
                 }))
                 // X-axis label
@@ -217,7 +211,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px((margin_left + chart_width / 2.0 - 15.0) as f32))
                         .top(px((height - 12.0) as f32))
                         .text_size(px(10.0))
-                        .text_color(rgb(0x666666))
                         .child("Carat"),
                 ),
         )

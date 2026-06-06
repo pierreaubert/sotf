@@ -212,9 +212,9 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(theme.surface)
                 .border_1()
-                .border_color(rgb(0xcccccc))
+                .border_color(theme.border)
                 .relative()
                 // Y-axis label
                 .child(
@@ -224,7 +224,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((margin_top + chart_height / 2.0 - 30.0) as f32))
                         .child(render_glyph_text(
                             "Revenue ($)",
-                            &GlyphTextConfig::vertical_bottom_to_top(10.0, rgb(0x666666)),
+                            &GlyphTextConfig::vertical_bottom_to_top(10.0, theme.text_secondary),
                         )),
                 )
                 // Y-axis line
@@ -235,7 +235,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px(margin_top as f32))
                         .w(px(1.0))
                         .h(px(chart_height as f32))
-                        .bg(rgb(0xcccccc)),
+                        .bg(theme.border),
                 )
                 // X-axis line
                 .child(
@@ -245,7 +245,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((margin_top + chart_height) as f32))
                         .w(px(chart_width as f32))
                         .h(px(1.0))
-                        .bg(rgb(0xcccccc)),
+                        .bg(theme.border),
                 )
                 // Y-axis ticks and labels
                 .children(y_ticks.iter().map(|&val| {
@@ -257,7 +257,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                     } else {
                         format!("{:.0}", val)
                     };
-                    let label_config = GlyphTextConfig::horizontal(9.0, rgb(0x666666));
+                    let label_config = GlyphTextConfig::horizontal(9.0, theme.text_secondary);
                     div()
                         .absolute()
                         .left(px((margin_left - 40.0) as f32))
@@ -276,7 +276,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((margin_top + y) as f32))
                         .w(px(chart_width as f32))
                         .h(px(1.0))
-                        .bg(rgb(0xf0f0f0))
+                        .bg(theme.surface)
                 }))
                 // Vertical year-tick lines (every year, thin)
                 .children((1973..=2018).map(|year| {
@@ -287,12 +287,12 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px(margin_top as f32))
                         .w(px(0.5))
                         .h(px(chart_height as f32))
-                        .bg(rgb(0xe8e8e8))
+                        .bg(theme.surface)
                 }))
                 // X-axis ticks and labels
                 .children(x_ticks.iter().map(|&year| {
                     let x = x_scale.scale(year as f64);
-                    let label_config = GlyphTextConfig::horizontal(9.0, rgb(0x333333));
+                    let label_config = GlyphTextConfig::horizontal(9.0, theme.text_primary);
                     div()
                         .absolute()
                         .left(px((margin_left + x - 15.0) as f32))
@@ -301,7 +301,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .flex()
                         .flex_col()
                         .items_center()
-                        .child(div().w(px(1.0)).h(px(5.0)).bg(rgb(0xcccccc)))
+                        .child(div().w(px(1.0)).h(px(5.0)).bg(theme.border))
                         .child(render_glyph_text(&format!("{}", year), &label_config))
                 }))
                 // X-axis label
@@ -312,7 +312,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((height - 16.0) as f32))
                         .child(render_glyph_text(
                             "Year",
-                            &GlyphTextConfig::horizontal(10.0, rgb(0x666666)),
+                            &GlyphTextConfig::horizontal(10.0, theme.text_secondary),
                         )),
                 )
                 // Chart area with stacked areas

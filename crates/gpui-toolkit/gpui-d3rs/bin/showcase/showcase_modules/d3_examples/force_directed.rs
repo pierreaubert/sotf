@@ -9,11 +9,13 @@ use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 /// Embedded miserables.json data (77 nodes, 254 links).
 const MISERABLES_JSON: &str = include_str!("../../data/miserables.json");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     // Load the full Les Miserables dataset from JSON
     let (node_data, links) = d3rs::examples::force_directed::load_json(MISERABLES_JSON);
 
@@ -129,17 +131,11 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Force-Directed Graph — Les Miserables"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/force-directed-graph — {} nodes, {} links",
-                    result.nodes.len(),
-                    result.links.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/force-directed-graph — {} nodes, {} links",
+            result.nodes.len(),
+            result.links.len()
+        )))
         .child(
             div()
                 .flex()
@@ -152,9 +148,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xe0e0e0))
+                .border_color(ui_theme.border)
                 .child(
                     canvas(
                         move |bounds, _, _| {

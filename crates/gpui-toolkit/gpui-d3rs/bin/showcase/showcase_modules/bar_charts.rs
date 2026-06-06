@@ -4,8 +4,10 @@ use d3rs::grid::{GridConfig, render_grid};
 use d3rs::prelude::*;
 use d3rs::shape::{GroupedBarConfig, GroupedBarDatum, analyze_grouped_data, render_grouped_bars};
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
-pub fn render(app: &ShowcaseApp) -> Div {
+pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let theme = DefaultAxisTheme;
     let width = app.content_width * 0.7;
     let height = (width * 0.5).min(app.content_height * 0.4);
@@ -96,9 +98,9 @@ pub fn render(app: &ShowcaseApp) -> Div {
                                         .w(px(width))
                                         .h(px(height))
                                         .relative()
-                                        .bg(rgb(0xf8f8f8))
+                                        .bg(ui_theme.surface)
                                         .border_1()
-                                        .border_color(rgb(0xcccccc))
+                                        .border_color(ui_theme.border)
                                         .child(render_grid(
                                             &x_scale,
                                             &y_scale,
@@ -163,9 +165,9 @@ pub fn render(app: &ShowcaseApp) -> Div {
                                         .w(px(width))
                                         .h(px(height))
                                         .relative()
-                                        .bg(rgb(0xf8f8f8))
+                                        .bg(ui_theme.surface)
                                         .border_1()
-                                        .border_color(rgb(0xcccccc))
+                                        .border_color(ui_theme.border)
                                         .child(render_grid(
                                             &mixed_x_scale,
                                             &mixed_y_scale,
@@ -224,9 +226,9 @@ pub fn render(app: &ShowcaseApp) -> Div {
                                         .w(px(width))
                                         .h(px(height))
                                         .relative()
-                                        .bg(rgb(0xf8f8f8))
+                                        .bg(ui_theme.surface)
                                         .border_1()
-                                        .border_color(rgb(0xcccccc))
+                                        .border_color(ui_theme.border)
                                         .child(render_grouped_bars(
                                             &grouped_y_scale,
                                             &grouped_data,
@@ -254,12 +256,7 @@ pub fn render(app: &ShowcaseApp) -> Div {
                                                     .rounded(px(2.0))
                                                     .bg(scheme.color(i).to_rgba()),
                                             )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(rgb(0x666666))
-                                                    .child(name.clone()),
-                                            )
+                                            .child(div().text_xs().child(name.clone()))
                                     }),
                                 )),
                         ),

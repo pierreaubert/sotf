@@ -9,10 +9,12 @@ use d3rs::scale::{LogScale, Scale};
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const DIAMONDS_CSV: &str = include_str!("../../data/diamonds.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     // Load real diamonds dataset (53,940 rows) via d3rs CSV parser
     let rows = d3rs::fetch::parse_csv(DIAMONDS_CSV).expect("valid diamonds CSV");
     let data: Vec<[f64; 2]> = rows
@@ -112,7 +114,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(0x666666))
                 .mb_2()
                 .child("Source: observablehq.com/@d3/hexbin"),
         )
@@ -140,7 +141,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(0x999999))
                         .child(format!("{} points -> {} bins", data_count, bin_count)),
                 ),
         )
@@ -148,9 +148,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xcccccc))
+                .border_color(ui_theme.border)
                 .relative()
                 // Y-axis line
                 .child(
@@ -160,7 +160,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px(margin_top as f32))
                         .w(px(1.0))
                         .h(px(plot_h as f32))
-                        .bg(rgb(0xcccccc)),
+                        .bg(ui_theme.border),
                 )
                 // X-axis line
                 .child(
@@ -170,7 +170,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((margin_top + plot_h) as f32))
                         .w(px(plot_w as f32))
                         .h(px(1.0))
-                        .bg(rgb(0xcccccc)),
+                        .bg(ui_theme.border),
                 )
                 // Y-axis tick labels
                 .children(y_ticks.iter().map(|&val| {
@@ -183,12 +183,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .flex()
                         .justify_end()
                         .pr_1()
-                        .child(
-                            div()
-                                .text_color(rgb(0x888888))
-                                .text_xs()
-                                .child(format!("{:.0}", val)),
-                        )
+                        .child(div().text_xs().child(format!("{:.0}", val)))
                 }))
                 // Y grid lines
                 .children(y_ticks.iter().map(|&val| {
@@ -199,7 +194,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((margin_top + y) as f32))
                         .w(px(plot_w as f32))
                         .h(px(1.0))
-                        .bg(rgb(0xf0f0f0))
+                        .bg(ui_theme.surface)
                 }))
                 // X-axis tick labels
                 .children(x_ticks.iter().map(|&val| {
@@ -211,16 +206,11 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .w(px(30.0))
                         .flex()
                         .justify_center()
-                        .child(
-                            div()
-                                .text_color(rgb(0x888888))
-                                .text_xs()
-                                .child(if val < 1.0 {
-                                    format!("{:.1}", val)
-                                } else {
-                                    format!("{:.0}", val)
-                                }),
-                        )
+                        .child(div().text_xs().child(if val < 1.0 {
+                            format!("{:.1}", val)
+                        } else {
+                            format!("{:.0}", val)
+                        }))
                 }))
                 // X grid lines
                 .children(x_ticks.iter().map(|&val| {
@@ -231,7 +221,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px(margin_top as f32))
                         .w(px(1.0))
                         .h(px(plot_h as f32))
-                        .bg(rgb(0xf0f0f0))
+                        .bg(ui_theme.surface)
                 }))
                 // Plot area with hexbin
                 .child(

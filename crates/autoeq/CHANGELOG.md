@@ -1,3 +1,10 @@
+# Unreleased
+
+## Fixes
+
+- Spinorama directivity angle parsing now accepts `ON` as the 0-degree trace and
+  handles Unicode minus signs in angle labels.
+
 # 0.4.45
 
 ## New features

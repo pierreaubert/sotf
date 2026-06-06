@@ -61,16 +61,10 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Hertzsprung-Russell Diagram"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/hertzsprung-russell-diagram — {} stars",
-                    data.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/hertzsprung-russell-diagram — {} stars",
+            data.len()
+        )))
         .child(
             div()
                 .w(px(width as f32))
@@ -107,7 +101,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px(2.0))
                         .top(px((y - 5.0) as f32))
                         .text_size(px(8.0))
-                        .text_color(rgb(0x888888))
                         .child(format!("{mag}"))
                 }))
                 // X-axis: B-V color index
@@ -118,7 +111,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px((x - 8.0) as f32))
                         .top(px((height - 15.0) as f32))
                         .text_size(px(8.0))
-                        .text_color(rgb(0x888888))
                         .child(format!("{bv:.1}"))
                 }))
                 // X-axis: temperature (top axis)
@@ -134,7 +126,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                                 .left(px((x - 15.0) as f32))
                                 .top(px(5.0))
                                 .text_size(px(8.0))
-                                .text_color(rgb(0x888888))
                                 .child(format!("{temp}K"))
                         }),
                 )
@@ -145,7 +136,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px(2.0))
                         .top(px((height / 2.0 - 30.0) as f32))
                         .text_size(px(9.0))
-                        .text_color(rgb(0xaaaaaa))
                         .child("← Brighter"),
                 )
                 .child(
@@ -154,7 +144,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .right(px(5.0))
                         .top(px(20.0))
                         .text_size(px(9.0))
-                        .text_color(rgb(0xaaaaaa))
                         .child("Temperature →"),
                 )
                 .child(
@@ -163,7 +152,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px((width / 2.0 - 30.0) as f32))
                         .bottom(px(2.0))
                         .text_size(px(9.0))
-                        .text_color(rgb(0xaaaaaa))
                         .child("B-V Color Index"),
                 ),
         )

@@ -20,6 +20,7 @@ fn render_cea2034_plot(&mut self, cx: &mut Context<Self>) -> Div {
     // Build PlotCurve list for SPL curves (primary axis)
     let mut plot_curves: Vec<PlotCurve> = spl_curve_names
         .iter()
+        .filter(|&&name| !self.hidden_cea2034_curves.contains(name))
         .filter_map(|&name| {
             let curve = self.cea2034_curves.get(name)?;
             let color = colors
@@ -43,6 +44,7 @@ fn render_cea2034_plot(&mut self, cx: &mut Context<Self>) -> Div {
     // Add DI curves (secondary axis)
     let di_curves: Vec<PlotCurve> = di_curve_names
         .iter()
+        .filter(|&&name| !self.hidden_cea2034_curves.contains(name))
         .filter_map(|&name| {
             let curve = self.cea2034_curves.get(name)?;
             let color = colors
@@ -119,6 +121,6 @@ fn render_cea2034_plot(&mut self, cx: &mut Context<Self>) -> Div {
                     .child("Zoomed (double-click to reset)"),
             )
         })
-        .child(self.render_legend(&colors, &ds, &theme))
+        .child(self.render_legend(&colors, &ds, &theme, cx))
 }
 }

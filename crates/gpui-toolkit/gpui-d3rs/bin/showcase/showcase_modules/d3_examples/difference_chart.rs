@@ -10,10 +10,12 @@ use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const SFO_CSV: &str = include_str!("../../data/sfo-temperature.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let data = d3rs::examples::difference_chart::load_csv(SFO_CSV);
     let result = d3rs::examples::difference_chart::compute(&data);
 
@@ -85,16 +87,10 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Difference Chart — SFO Temperature"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/difference-chart — {} daily readings",
-                    data.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/difference-chart — {} daily readings",
+            data.len()
+        )))
         .child(
             div()
                 .flex()
@@ -122,9 +118,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xe0e0e0))
+                .border_color(ui_theme.border)
                 .relative()
                 .child(
                     canvas(
@@ -154,7 +150,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px(5.0))
                         .top(px((y - 6.0) as f32))
                         .text_size(px(9.0))
-                        .text_color(rgb(0x666666))
                         .child(format!("{tick_val:.0}°F"))
                 })),
         )

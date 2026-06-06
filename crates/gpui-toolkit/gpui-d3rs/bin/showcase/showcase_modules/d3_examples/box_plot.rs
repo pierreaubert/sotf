@@ -8,10 +8,12 @@ use d3rs::scale::{BandScale, LinearScale, Scale};
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const DIAMONDS_CSV: &str = include_str!("../../data/diamonds.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     // Load real diamonds data, bin by carat range for box plot groups
     let rows = d3rs::fetch::parse_csv(DIAMONDS_CSV).expect("valid diamonds CSV");
     let mut binned: std::collections::BTreeMap<String, Vec<f64>> =
@@ -248,7 +250,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(0x666666))
                 .mb_2()
                 .child("Source: observablehq.com/@d3/box-plot"),
         )
@@ -257,9 +258,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xcccccc))
+                .border_color(ui_theme.border)
                 .relative()
                 .children(group_labels)
                 .child(
@@ -323,12 +324,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .flex()
                         .justify_end()
                         .pr_1()
-                        .child(
-                            div()
-                                .text_color(rgb(0x888888))
-                                .text_xs()
-                                .child(format!("{:.0}", val)),
-                        )
+                        .child(div().text_xs().child(format!("{:.0}", val)))
                 }))
                 // Y grid lines
                 .children(y_ticks.iter().map(|&val| {
@@ -339,7 +335,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .top(px((margin_top + y) as f32))
                         .w(px(chart_width as f32))
                         .h(px(1.0))
-                        .bg(rgb(0xf0f0f0))
+                        .bg(ui_theme.surface)
                 })),
         )
 }

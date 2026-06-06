@@ -1,6 +1,7 @@
 use d3rs::gpu3d::{
     Camera3D, CartesianGridLineDebugKind, Surface3DConfig, SurfaceData,
-    cartesian_grid_lines_for_testing,
+    cartesian_grid_lines_for_testing, projected_surface_depth_visibility_for_testing,
+    transparent_surface_clear_color_for_testing, unpremultiply_rgba_for_testing,
 };
 use glam::Vec3;
 
@@ -38,6 +39,24 @@ fn surface_config_clamps_projected_isoline_upsampling() {
 
     assert_eq!(low.isoline_upsample_factor, 1);
     assert_eq!(high.isoline_upsample_factor, 8);
+}
+
+#[test]
+fn projected_isolines_are_occluded_by_nearer_surface_depth() {
+    let triangle = [[2.0, 2.0, 0.40], [18.0, 2.0, 0.40], [2.0, 18.0, 0.40]];
+
+    assert!(
+        projected_surface_depth_visibility_for_testing(triangle, [8.0, 8.0, 0.402], 24, 24),
+        "an isoline sample near the surface depth should remain visible"
+    );
+    assert!(
+        !projected_surface_depth_visibility_for_testing(triangle, [8.0, 8.0, 0.45], 24, 24),
+        "an isoline sample behind a nearer surface triangle should be hidden"
+    );
+    assert!(
+        projected_surface_depth_visibility_for_testing(triangle, [22.0, 22.0, 0.45], 24, 24),
+        "samples without projected surface coverage should not be clipped"
+    );
 }
 
 fn grid_test_data() -> SurfaceData {
@@ -113,4 +132,24 @@ fn cartesian_grid_lines_use_floor_and_far_walls() {
             && near(line.end[2], -1.0)
             && !near(line.start[1], line.end[1])
     }));
+}
+
+#[test]
+fn surface_clear_is_transparent_for_projected_grid_compositing() {
+    assert_eq!(
+        transparent_surface_clear_color_for_testing(),
+        [0.0, 0.0, 0.0, 0.0]
+    );
+}
+
+#[test]
+fn transparent_surface_pixels_are_unpremultiplied_for_gpui_image() {
+    let mut pixels = vec![32, 64, 96, 128, 10, 20, 30, 255, 8, 9, 10, 0];
+
+    unpremultiply_rgba_for_testing(&mut pixels);
+
+    assert_eq!(
+        pixels,
+        vec![64, 128, 191, 128, 10, 20, 30, 255, 8, 9, 10, 0]
+    );
 }

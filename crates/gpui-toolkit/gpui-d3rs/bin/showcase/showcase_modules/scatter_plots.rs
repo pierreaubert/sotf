@@ -3,8 +3,10 @@ use d3rs::color::{ColorScheme, D3Color};
 use d3rs::grid::{GridConfig, render_grid};
 use d3rs::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
-pub fn render(app: &ShowcaseApp) -> Div {
+pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let theme = DefaultAxisTheme;
     let width = app.content_width * 0.7;
     let height = (width * 0.5).min(app.content_height * 0.4);
@@ -81,9 +83,9 @@ pub fn render(app: &ShowcaseApp) -> Div {
                                         .w(px(width))
                                         .h(px(height))
                                         .relative()
-                                        .bg(rgb(0xf8f8f8))
+                                        .bg(ui_theme.surface)
                                         .border_1()
-                                        .border_color(rgb(0xcccccc))
+                                        .border_color(ui_theme.border)
                                         .child(render_grid(
                                             &x_scale,
                                             &y_scale,
@@ -141,9 +143,9 @@ pub fn render(app: &ShowcaseApp) -> Div {
                                         .w(px(width))
                                         .h(px(height))
                                         .relative()
-                                        .bg(rgb(0xf8f8f8))
+                                        .bg(ui_theme.surface)
                                         .border_1()
-                                        .border_color(rgb(0xcccccc))
+                                        .border_color(ui_theme.border)
                                         .child(render_grid(
                                             &x_scale,
                                             &y_scale,

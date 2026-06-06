@@ -1,3 +1,32 @@
+# Unreleased
+
+## Features
+
+- Spinorama demo now solves its shell layout with `gpui-builder` and uses the
+  design system for spacing and typography.
+- Spinorama CEA2034 and horizontal/vertical SPL legends can hide or show their
+  corresponding curves. Horizontal and vertical SPL plots now use discrete line
+  legend entries by angle instead of a contour-style color scale.
+
+## Fixes
+
+- Fixed GPU 3D contour surface, isoline, and grid-line rendering artifacts so
+  clipped segments do not connect across gaps and grid lines stay behind the
+  surface.
+- Made 3D surface isolines depth-aware so foreground surface geometry occludes
+  far-side contour strokes.
+- Fixed spinorama frequency plot X-axis alignment when a secondary DI axis is
+  present, and centered line legends within their legend panels.
+- Made spinorama horizontal/vertical SPL signed-angle traces easier to inspect:
+  negative angles are rendered as dashed high-contrast lines with matching
+  legend markers so overlapped `-60°` and `60°` traces can be toggled
+  independently.
+- Spinorama horizontal/vertical SPL plots now include a `0°` on-axis fallback
+  from CEA2034 data when the directivity trace set does not expose one.
+- Aligned spinorama legend line markers with the middle of their labels.
+- Updated the d3rs showcase to inherit theme and design tokens for text and UI
+  chrome outside the color demo.
+
 # 0.7.0
 
 ## Breaking Changes

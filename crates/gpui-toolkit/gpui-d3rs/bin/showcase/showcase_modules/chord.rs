@@ -1,9 +1,11 @@
 use crate::ShowcaseApp;
 use d3rs::chord::{ChordLayout, RibbonGenerator};
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 use std::f64::consts::PI;
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let matrix = vec![
         vec![11975.0, 5871.0, 8916.0, 2868.0],
         vec![1951.0, 10048.0, 2060.0, 6171.0],
@@ -57,7 +59,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(0x666666))
                 .child("Hair color preferences — with ticks and group labels"),
         )
         .child(
@@ -78,9 +79,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xcccccc))
+                .border_color(ui_theme.border)
                 .relative()
                 // Canvas for arcs, ticks, and ribbons
                 .child(
@@ -191,7 +192,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                             div()
                                 .text_xs()
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgb(0x333333))
                                 .child(*name),
                         )
                 })),

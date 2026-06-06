@@ -10,10 +10,12 @@ use d3rs::color::SequentialScheme;
 use d3rs::scale::{LinearScale, Scale};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const WEATHER_CSV: &str = include_str!("../../data/weather.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let monthly = d3rs::examples::ridgeline::load_csv(WEATHER_CSV);
     let result = d3rs::examples::ridgeline::compute(&monthly);
 
@@ -70,23 +72,17 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Ridgeline Plot — Monthly Temperature Distribution"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/ridgeline-plot — {} months from weather.csv",
-                    monthly.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/ridgeline-plot — {} months from weather.csv",
+            monthly.len()
+        )))
         .child(
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xe0e0e0))
+                .border_color(ui_theme.border)
                 .relative()
                 .child(
                     canvas(
@@ -115,7 +111,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px(5.0))
                         .top(px((y - 10.0) as f32))
                         .text_size(px(10.0))
-                        .text_color(rgb(0x333333))
                         .child(name)
                 }))
                 // X-axis labels
@@ -126,7 +121,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .left(px((x - 10.0) as f32))
                         .bottom(px(2.0))
                         .text_size(px(9.0))
-                        .text_color(rgb(0x666666))
                         .child(format!("{tick_val:.0}°F"))
                 })),
         )

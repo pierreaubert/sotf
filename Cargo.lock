@@ -3812,9 +3812,12 @@ version = "0.7.2"
 dependencies = [
  "gpui",
  "gpui-design",
- "gpui-miniapp",
+ "gpui-ios",
  "gpui-pretext",
  "gpui-ui-kit",
+ "gpui_linux",
+ "gpui_macos",
+ "gpui_windows",
  "serde",
  "serde_json",
 ]
@@ -3893,6 +3896,7 @@ name = "gpui-miniapp"
 version = "0.7.5"
 dependencies = [
  "gpui",
+ "gpui-builder",
  "gpui-design",
  "gpui-ios",
  "gpui-ui-kit",
@@ -3955,7 +3959,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.7.23"
+version = "0.7.24"
 dependencies = [
  "block2",
  "gpui",

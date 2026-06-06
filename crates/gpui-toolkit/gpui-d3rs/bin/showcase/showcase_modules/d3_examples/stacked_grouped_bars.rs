@@ -13,6 +13,7 @@ use d3rs::color::D3Color;
 use d3rs::ease::ease_cubic_in_out;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 use smol::Timer;
 use std::time::Duration;
 
@@ -234,6 +235,7 @@ fn start_animation_loop(entity: Entity<ShowcaseApp>, cx: &mut Context<ShowcaseAp
 
 pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let entity = cx.entity().clone();
+    let theme = cx.theme();
 
     // Get parameters from app state
     let layout = app.stacked_bars_layout;
@@ -289,7 +291,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .child(
                     div()
                         .text_sm()
-                        .text_color(rgb(0x666666))
                         .child("Ported from Observable: d3/stacked-to-grouped-bars"),
                 ),
         )
@@ -319,10 +320,9 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                     div()
                                         .px_2()
                                         .py_1()
-                                        .bg(rgb(0x007acc))
+                                        .bg(theme.accent)
                                         .rounded_md()
                                         .text_xs()
-                                        .text_color(rgb(0xffffff))
                                         .child(layout.label()),
                                 )
                                 .when(animating, |this| {
@@ -330,10 +330,9 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         div()
                                             .px_2()
                                             .py_1()
-                                            .bg(rgb(0x28a745))
+                                            .bg(theme.success)
                                             .rounded_md()
                                             .text_xs()
-                                            .text_color(rgb(0xffffff))
                                             .child(format!(
                                                 "{:.0}%",
                                                 animation_progress * 100.0
@@ -345,9 +344,9 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                             div()
                                 .w(px(plot_width as f32))
                                 .h(px(plot_height as f32))
-                                .bg(rgb(0xfafafa))
+                                .bg(theme.surface)
                                 .border_1()
-                                .border_color(rgb(0xe0e0e0))
+                                .border_color(theme.border)
                                 .rounded_md()
                                 .relative()
                                 .overflow_hidden()
@@ -375,7 +374,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .w(px(plot_width as f32))
                                 .mt_1()
                                 .text_xs()
-                                .text_color(rgb(0x666666))
                                 .child("0")
                                 .child(format!("{}", m_samples / 2))
                                 .child(format!("{}", m_samples)),
@@ -395,15 +393,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .flex_col()
                                 .gap_3()
                                 .p_4()
-                                .bg(rgb(0xf8f8f8))
+                                .bg(theme.surface)
                                 .border_1()
-                                .border_color(rgb(0xe0e0e0))
+                                .border_color(theme.border)
                                 .rounded_lg()
                                 .child(
                                     div()
                                         .text_lg()
                                         .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(rgb(0x333333))
                                         .child("Layout"),
                                 )
                                 .child({
@@ -419,7 +416,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                             rgb(0x007acc)
                                         })
                                         .when(!disabled, |this| {
-                                            this.hover(|s| s.bg(rgb(0x005a9e)))
+                                            this.hover(|s| s.bg(theme.accent_hover))
                                         })
                                         .rounded_md()
                                         .cursor(if disabled {
@@ -428,7 +425,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                             CursorStyle::PointingHand
                                         })
                                         .text_sm()
-                                        .text_color(rgb(0xffffff))
                                         .text_center()
                                         .child(format!(
                                             "Switch to {}",
@@ -461,14 +457,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                     let entity = entity.clone();
                                                     let is_selected = l == layout && !animating;
                                                     let bg = if is_selected {
-                                                        rgb(0x007acc)
+                                                        theme.accent
                                                     } else {
-                                                        rgb(0xe0e0e0)
+                                                        theme.surface_hover
                                                     };
                                                     let text_color = if is_selected {
-                                                        rgb(0xffffff)
+                                                        theme.text_on_accent
                                                     } else {
-                                                        rgb(0x333333)
+                                                        theme.text_primary
                                                     };
 
                                                     div()
@@ -512,15 +508,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .flex_col()
                                 .gap_2()
                                 .p_4()
-                                .bg(rgb(0xffffff))
+                                .bg(theme.surface)
                                 .border_1()
-                                .border_color(rgb(0xe0e0e0))
+                                .border_color(theme.border)
                                 .rounded_lg()
                                 .child(
                                     div()
                                         .text_xs()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(0x888888))
                                         .child("DATA PARAMETERS"),
                                 )
                                 .child(
@@ -531,7 +526,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .child(
                                             div()
                                                 .text_sm()
-                                                .text_color(rgb(0x333333))
                                                 .child("Series"),
                                         )
                                         .child({
@@ -543,14 +537,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                     let entity = entity.clone();
                                                     let is_selected = n == n_series;
                                                     let bg = if is_selected {
-                                                        rgb(0x007acc)
+                                                        theme.accent
                                                     } else {
-                                                        rgb(0xe0e0e0)
+                                                        theme.surface_hover
                                                     };
                                                     let text_color = if is_selected {
-                                                        rgb(0xffffff)
+                                                        theme.text_on_accent
                                                     } else {
-                                                        rgb(0x333333)
+                                                        theme.text_primary
                                                     };
 
                                                     div()
@@ -582,7 +576,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .child(
                                             div()
                                                 .text_sm()
-                                                .text_color(rgb(0x333333))
                                                 .child("Samples"),
                                         )
                                         .child({
@@ -595,14 +588,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                         let entity = entity.clone();
                                                         let is_selected = m == m_samples;
                                                         let bg = if is_selected {
-                                                            rgb(0x007acc)
+                                                            theme.accent
                                                         } else {
-                                                            rgb(0xe0e0e0)
+                                                            theme.surface_hover
                                                         };
                                                         let text_color = if is_selected {
-                                                            rgb(0xffffff)
+                                                            theme.text_on_accent
                                                         } else {
-                                                            rgb(0x333333)
+                                                            theme.text_primary
                                                         };
 
                                                         div()
@@ -635,15 +628,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .flex_col()
                                 .gap_2()
                                 .p_4()
-                                .bg(rgb(0xffffff))
+                                .bg(theme.surface)
                                 .border_1()
-                                .border_color(rgb(0xe0e0e0))
+                                .border_color(theme.border)
                                 .rounded_lg()
                                 .child(
                                     div()
                                         .text_xs()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(0x888888))
                                         .child("SERIES"),
                                 )
                                 .child(
@@ -667,7 +659,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                 .child(
                                                     div()
                                                         .text_xs()
-                                                        .text_color(rgb(0x333333))
                                                         .child(format!("S{}", i + 1)),
                                                 )
                                         })),
@@ -688,11 +679,10 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                     div()
                                         .text_xs()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(0x888888))
                                         .child("ANIMATION"),
                                 )
                                 .child(
-                                    div().text_xs().text_color(rgb(0xd4d4d4)).child(
+                                    div().text_xs().child(
                                         "Click 'Switch' or the layout buttons to animate between stacked and grouped views. The transition uses cubic ease-in-out for smooth motion.",
                                     ),
                                 ),

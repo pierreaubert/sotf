@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -23,16 +23,20 @@ use d3rs::gpu3d::{
     Colormap as Surface3DColormap, Surface3DConfig, Surface3DElement, Surface3DState,
     SurfaceData as Surface3DData, SurfacePlotType,
 };
+use d3rs::shape::StrokeDashArray;
 use d3rs::text::{GlyphTextConfig, render_glyph_text};
 use d3rs::zoom::ZoomState;
 use gpui::prelude::*;
 use gpui::{deferred, *};
+use gpui_builder::{
+    Axis, ContainerNode, LayoutNode, Sizing, SlotNode, SolvedNode, solve, types::LayoutPreferences,
+};
 use gpui_design::{DesignExt, DesignSystem};
 use gpui_ui_kit::theme::{Theme, ThemeExt};
 use gpui_ui_kit::{SelectOption, Spinner, SpinnerSize};
 use tokio::runtime::Runtime;
 
-use super::render::render_freq_spl_plot;
+use super::render::{freq_spl_plot_margins, render_freq_spl_plot};
 use super::types::{
     BrushOverlay, ChartId, Colormap, ContourRenderMode, DirectivityPlane, LinePoint, LoadState,
     PlotCurve, PlotSection, SecondaryAxisConfig,
@@ -67,6 +71,8 @@ pub struct SpinoramaApp {
     pub speaker_dropdown_open: bool,
     pub version_dropdown_open: bool,
     pub section_dropdown_open: bool,
+    pub hidden_cea2034_curves: HashSet<String>,
+    pub hidden_directivity_curves: HashSet<String>,
     // Contour render mode for each plot (SPL Horizontal Contour, Directivity Contour)
     pub contour_mode_spl: ContourRenderMode,
     pub contour_mode_directivity: ContourRenderMode,
@@ -115,6 +121,20 @@ pub struct SpinoramaApp {
     pub content_height: f32,
 }
 impl SpinoramaApp {
+    fn solve_shell_layout(&self, width: f32, height: f32, header_height: f32) -> SolvedNode {
+        let root_children: &[LayoutNode<'_>] = &[
+            SlotNode::new("header", Sizing::Fixed(header_height)).into_node(),
+            SlotNode::new("content", Sizing::flex(300.0)).into_node(),
+        ];
+        let root = ContainerNode::new("root", Axis::Vertical, Sizing::flex(0.0), root_children)
+            .into_node();
+        let prefs = LayoutPreferences {
+            ratios: &[],
+            collapsed: &[],
+        };
+        solve(&root, width, height, &prefs)
+    }
+
     /// Scale factor for font sizes relative to 800px reference width.
     /// Clamped to [0.7, 1.2] so text stays readable at small sizes
     /// and doesn't get oversized on large displays.
@@ -147,6 +167,8 @@ impl SpinoramaApp {
             speaker_dropdown_open: false,
             version_dropdown_open: false,
             section_dropdown_open: false,
+            hidden_cea2034_curves: HashSet::new(),
+            hidden_directivity_curves: HashSet::new(),
             contour_mode_spl: ContourRenderMode::default(),
             contour_mode_directivity: ContourRenderMode::default(),
             contour_colormap: Colormap::default(),
@@ -627,6 +649,8 @@ impl SpinoramaApp {
                                             this.cea2034_curves.clear();
                                             this.directivity_data = None;
                                             this.contour_data = None;
+                                            this.hidden_cea2034_curves.clear();
+                                            this.hidden_directivity_curves.clear();
                                             this.data_load_state = LoadState::Idle;
                                             // Load versions for this speaker
                                             this.load_versions(cx);
@@ -738,6 +762,8 @@ impl SpinoramaApp {
                                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                                         entity.update(cx, |this, cx| {
                                             this.selected_version = Some(value.clone());
+                                            this.hidden_cea2034_curves.clear();
+                                            this.hidden_directivity_curves.clear();
                                             this.version_dropdown_open = false;
                                             // Load speaker data with the selected version
                                             this.load_speaker_data(cx);
@@ -950,8 +976,7 @@ impl SpinoramaApp {
         let chart_bounds_for_move = chart_bounds.clone();
         let chart_bounds_for_prepaint = chart_bounds.clone();
 
-        // Left axis spacer width (from render_freq_spl_plot)
-        let left_margin = 80.0_f32;
+        let left_margin = freq_spl_plot_margins(chart_width, false).left_axis_width;
 
         // Track drag start position for pan
         let drag_start: Rc<RefCell<Option<(f32, f32)>>> = Rc::new(RefCell::new(None));
@@ -1211,15 +1236,20 @@ impl Render for SpinoramaApp {
         let theme = cx.theme();
         let ds = cx.design();
 
-        // Compute available content dimensions from window bounds
         let bounds = window.bounds();
         let win_w: f32 = bounds.size.width.into();
         let win_h: f32 = bounds.size.height.into();
-        let header_h = 60.0_f32;
+        let header_h = 60.0_f32.max(
+            ds.typography.base_size
+                + ds.spacing.control_padding_y * 2.0
+                + ds.spacing.grid_unit * 2.0,
+        );
+        let solved = self.solve_shell_layout(win_w, win_h, header_h);
+        let header = solved.find("header").unwrap_or(&solved);
+        let content = solved.find("content").unwrap_or(&solved);
         let padding = ds.spacing.card_padding * 2.0;
-        // Subtract axis label space (~80px left + ~40px right)
-        self.content_width = (win_w - padding - 120.0).max(400.0);
-        self.content_height = (win_h - header_h - padding).max(300.0);
+        self.content_width = (content.width - padding - 120.0).max(400.0);
+        self.content_height = (content.height - padding).max(300.0);
 
         div()
             .id("main-container")
@@ -1227,8 +1257,24 @@ impl Render for SpinoramaApp {
             .flex()
             .flex_col()
             .bg(theme.background)
-            .child(self.render_header(cx))
-            .child(self.render_content(cx))
+            .child(
+                div()
+                    .id("layout-header-slot")
+                    .w(px(header.width))
+                    .h(px(header.height))
+                    .flex()
+                    .flex_col()
+                    .child(self.render_header(cx)),
+            )
+            .child(
+                div()
+                    .id("layout-content-slot")
+                    .w(px(content.width))
+                    .h(px(content.height))
+                    .flex()
+                    .flex_col()
+                    .child(self.render_content(cx)),
+            )
     }
 }
 

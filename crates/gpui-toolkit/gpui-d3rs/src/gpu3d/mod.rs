@@ -42,9 +42,11 @@ pub use config::{Colormap, Surface3DConfig, SurfacePlotType};
 pub use data::{SurfaceData, SurfaceVertex};
 pub use element::{
     CartesianGridLineDebug, CartesianGridLineDebugKind, Surface3DElement, Surface3DState,
-    cartesian_grid_lines_for_testing,
+    cartesian_grid_lines_for_testing, projected_surface_depth_visibility_for_testing,
 };
 pub use lines::{Line3D, Lines3DElement, Lines3DScene, Lines3DState, Polygon3D};
 pub use mesh::SurfaceMesh;
-pub use renderer::Surface3DRenderer;
+pub use renderer::{
+    Surface3DRenderer, transparent_surface_clear_color_for_testing, unpremultiply_rgba_for_testing,
+};
 pub mod projection_tests;

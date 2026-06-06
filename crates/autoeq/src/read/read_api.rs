@@ -605,13 +605,15 @@ pub fn extract_cea2034_curves(
 /// # Returns
 /// * Some(angle) if the angle could be parsed, None otherwise
 fn parse_angle_from_trace_name(name: &str) -> Option<f64> {
-    // Handle special case "0° (ON)"
-    let name = name.replace("(ON)", "").trim().to_string();
+    let normalized = name.replace('\u{2212}', "-").replace('°', " ");
 
-    // Remove degree symbol and parse
-    let angle_str = name.replace('°', "").trim().to_string();
+    if normalized.trim().eq_ignore_ascii_case("ON") {
+        return Some(0.0);
+    }
 
-    angle_str.parse::<f64>().ok()
+    normalized
+        .split(|c: char| c.is_whitespace() || c == '(' || c == ')' || c == ',' || c == ':')
+        .find_map(|token| token.parse::<f64>().ok())
 }
 
 /// Extract all directivity curves from a measurement plot
@@ -1155,4 +1157,18 @@ fn parse_headphone_csv(csv_text: &str) -> Result<crate::Curve, Box<dyn Error>> {
         phase: None,
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_angle_from_trace_name_accepts_spinorama_directivity_labels() {
+        assert_eq!(parse_angle_from_trace_name("-60°"), Some(-60.0));
+        assert_eq!(parse_angle_from_trace_name("−60°"), Some(-60.0));
+        assert_eq!(parse_angle_from_trace_name("0° (ON)"), Some(0.0));
+        assert_eq!(parse_angle_from_trace_name("ON"), Some(0.0));
+        assert_eq!(parse_angle_from_trace_name("10°"), Some(10.0));
+    }
 }

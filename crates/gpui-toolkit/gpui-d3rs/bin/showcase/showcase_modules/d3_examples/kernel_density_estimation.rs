@@ -14,6 +14,7 @@ use d3rs::prelude::*;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_ui_kit::Slider;
+use gpui_ui_kit::theme::ThemeExt;
 use std::sync::Arc;
 
 /// Kernel type for density estimation
@@ -111,6 +112,7 @@ fn histogram(data: &[f64], bin_count: usize, min: f64, max: f64) -> Vec<(f64, f6
 }
 
 pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let entity = cx.entity().clone();
 
     // Get parameters from app state
@@ -191,7 +193,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .child(
                     div()
                         .text_sm()
-                        .text_color(rgb(0x666666))
                         .child("Ported from Observable: d3/kernel-density-estimation"),
                 ),
         )
@@ -227,26 +228,20 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                             div()
                                                 .px_2()
                                                 .py_1()
-                                                .bg(rgb(0x007acc))
+                                                .bg(ui_theme.accent)
                                                 .rounded_md()
                                                 .text_xs()
-                                                .text_color(rgb(0xffffff))
                                                 .child(format!("Bandwidth: {:.1}", bandwidth)),
                                         ),
                                 )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(rgb(0x888888))
-                                        .child("Time between eruptions (minutes)"),
-                                )
+                                .child(div().text_xs().child("Time between eruptions (minutes)"))
                                 .child(
                                     div()
                                         .w(px(plot_width))
                                         .h(px(plot_height))
-                                        .bg(rgb(0xfafafa))
+                                        .bg(ui_theme.surface)
                                         .border_1()
-                                        .border_color(rgb(0xe0e0e0))
+                                        .border_color(ui_theme.border)
                                         .rounded_md()
                                         .relative()
                                         .overflow_hidden()
@@ -302,7 +297,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .w(px(plot_width))
                                         .mt_1()
                                         .text_xs()
-                                        .text_color(rgb(0x666666))
                                         .child(format!("{:.0}", x_min))
                                         .child(format!("{:.0}", (x_min + x_max) / 2.0))
                                         .child(format!("{:.0}", x_max)),
@@ -323,15 +317,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .flex_col()
                                 .gap_3()
                                 .p_4()
-                                .bg(rgb(0xf8f8f8))
+                                .bg(ui_theme.surface)
                                 .border_1()
-                                .border_color(rgb(0xe0e0e0))
+                                .border_color(ui_theme.border)
                                 .rounded_lg()
                                 .child(
                                     div()
                                         .text_lg()
                                         .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(rgb(0x333333))
                                         .child("Controls"),
                                 )
                                 // Bandwidth slider
@@ -357,24 +350,18 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .flex()
                                         .items_center()
                                         .justify_between()
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .text_color(rgb(0x555555))
-                                                .child("Kernel"),
-                                        )
+                                        .child(div().text_sm().child("Kernel"))
                                         .child({
                                             let entity = entity.clone();
                                             div()
                                                 .id("kernel-toggle")
                                                 .px_3()
                                                 .py_1()
-                                                .bg(rgb(0x007acc))
-                                                .hover(|s| s.bg(rgb(0x005a9e)))
+                                                .bg(ui_theme.accent)
+                                                .hover(|s| s.bg(ui_theme.accent_hover))
                                                 .rounded_md()
                                                 .cursor_pointer()
                                                 .text_sm()
-                                                .text_color(rgb(0xffffff))
                                                 .child(kernel_type.label())
                                                 .on_click(move |_, _window, cx| {
                                                     entity.update(cx, |this, _| {
@@ -390,12 +377,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .flex()
                                         .items_center()
                                         .justify_between()
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .text_color(rgb(0x555555))
-                                                .child("Show Histogram"),
-                                        )
+                                        .child(div().text_sm().child("Show Histogram"))
                                         .child({
                                             let entity = entity.clone();
                                             let bg = if show_histogram {
@@ -412,7 +394,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                 .rounded_md()
                                                 .cursor_pointer()
                                                 .text_sm()
-                                                .text_color(rgb(0xffffff))
                                                 .child(if show_histogram { "On" } else { "Off" })
                                                 .on_click(move |_, _window, cx| {
                                                     entity.update(cx, |this, _| {
@@ -447,37 +428,33 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .flex_col()
                                 .gap_1()
                                 .p_4()
-                                .bg(rgb(0xffffff))
+                                .bg(ui_theme.surface)
                                 .border_1()
-                                .border_color(rgb(0xe0e0e0))
+                                .border_color(ui_theme.border)
                                 .rounded_lg()
                                 .child(
                                     div()
                                         .text_xs()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(0x888888))
                                         .child("DATA STATISTICS"),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(0x333333))
                                         .child(format!("Observations: {}", stats.count)),
                                 )
-                                .child(div().text_sm().text_color(rgb(0x333333)).child(format!(
+                                .child(div().text_sm().child(format!(
                                     "Range: {:.0} - {:.0} min",
                                     stats.min, stats.max
                                 )))
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(0x333333))
                                         .child(format!("Mean: {:.1} min", stats.mean)),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(0x333333))
                                         .child(format!("Std Dev: {:.1} min", stats.std_dev)),
                                 ),
                         )
@@ -496,16 +473,10 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                     div()
                                         .text_xs()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(0x888888))
                                         .child("KDE ALGORITHM"),
                                 )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_family("monospace")
-                                        .text_color(rgb(0xd4d4d4))
-                                        .child(
-                                            r#"// Epanechnikov kernel
+                                .child(div().text_xs().font_family("monospace").child(
+                                    r#"// Epanechnikov kernel
 fn kernel(bandwidth: f64) -> impl Fn(f64) -> f64 {
   move |x| {
     let u = x / bandwidth;
@@ -524,8 +495,7 @@ fn kde(kernel, thresholds, data) {
     (t, d)
   })
 }"#,
-                                        ),
-                                ),
+                                )),
                         ),
                 ),
         )

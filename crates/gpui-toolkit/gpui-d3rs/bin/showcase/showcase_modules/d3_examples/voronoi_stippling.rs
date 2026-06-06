@@ -5,6 +5,7 @@ use crate::ShowcaseApp;
 use d3rs::examples::voronoi_stippling::StipplingState;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const WOOD_JPEG: &[u8] = include_bytes!("../../data/wood.jpeg");
 
@@ -37,6 +38,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let (img_w, img_h) = app.stippling_img_size;
     let current = app.stippling_iterations;
     let target = app.stippling_target;
+    let theme = cx.theme();
 
     // Advance one iteration per frame if we haven't reached target
     if current < target {
@@ -88,16 +90,10 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Voronoi Stippling"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_1()
-                .child(format!(
-                    "Source: observablehq.com/@mbostock/voronoi-stippling — {} dots, wood.jpeg {}×{}",
-                    n_points, img_w, img_h
-                )),
-        )
+        .child(div().text_xs().mb_1().child(format!(
+            "Source: observablehq.com/@mbostock/voronoi-stippling — {} dots, wood.jpeg {}×{}",
+            n_points, img_w, img_h
+        )))
         .child(
             div()
                 .flex()
@@ -108,13 +104,25 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                     div()
                         .text_xs()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(0x333333))
                         .child("Iterations:"),
                 )
                 .children(presets.into_iter().map(|preset| {
                     let is_selected = preset == target;
-                    let bg = if is_selected { rgb(0x007acc) } else { rgb(0xe8e8e8) };
-                    let tc = if is_selected { rgb(0xffffff) } else { rgb(0x333333) };
+                    let bg = if is_selected {
+                        theme.accent
+                    } else {
+                        theme.surface_hover
+                    };
+                    let tc = if is_selected {
+                        theme.text_on_accent
+                    } else {
+                        theme.text_primary
+                    };
+                    let hover_bg = if is_selected {
+                        theme.accent_hover
+                    } else {
+                        theme.muted
+                    };
                     div()
                         .id(ElementId::Name(format!("stip-{preset}").into()))
                         .px_2()
@@ -124,7 +132,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .text_xs()
                         .text_color(tc)
                         .cursor_pointer()
-                        .hover(|s| s.bg(rgb(0x005a9e)))
+                        .hover(move |s| s.bg(hover_bg))
                         .child(format!("{preset}"))
                         .on_click(cx.listener(move |this, _, _, _| {
                             this.stippling_target = preset;
@@ -136,12 +144,20 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                     div()
                         .text_xs()
                         .font_weight(FontWeight::MEDIUM)
-                        .text_color(if current < target { rgb(0x007acc) } else { rgb(0x999999) })
+                        .text_color(if current < target {
+                            theme.accent
+                        } else {
+                            theme.text_muted
+                        })
                         .ml_2()
                         .child(format!(
                             "{}{}",
                             current,
-                            if current < target { format!(" → {target}") } else { String::new() }
+                            if current < target {
+                                format!(" → {target}")
+                            } else {
+                                String::new()
+                            }
                         )),
                 )
                 // Reset button
@@ -153,7 +169,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         .rounded_md()
                         .bg(rgb(0xffcccc))
                         .text_xs()
-                        .text_color(rgb(0x993333))
                         .cursor_pointer()
                         .ml_2()
                         .child("Reset")
@@ -177,7 +192,9 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         move |bounds, _, _| {
                             d3_paths
                                 .iter()
-                                .map(|p| super::path_utils::d3rs_path_to_gpui_simple(p, bounds, 0.0, 0.0))
+                                .map(|p| {
+                                    super::path_utils::d3rs_path_to_gpui_simple(p, bounds, 0.0, 0.0)
+                                })
                                 .collect::<Vec<_>>()
                         },
                         move |_bounds, paths, window, _| {

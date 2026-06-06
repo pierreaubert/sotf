@@ -10,10 +10,12 @@ use d3rs::color::ColorScheme;
 use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const TITANIC_CSV: &str = include_str!("../../data/titanic.csv");
 
-pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let ui_theme = cx.theme();
     let (names, links) = d3rs::examples::parallel_sets::load_csv(TITANIC_CSV);
     let result = d3rs::examples::parallel_sets::compute(&names, &links);
 
@@ -87,25 +89,19 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Parallel Sets — Titanic Survival"),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child(format!(
-                    "Source: observablehq.com/@d3/parallel-sets — {} passengers, {} nodes, {} flows",
-                    result.links.iter().map(|l| l.value).sum::<f64>() as usize,
-                    result.nodes.len(),
-                    result.links.len()
-                )),
-        )
+        .child(div().text_xs().mb_2().child(format!(
+            "Source: observablehq.com/@d3/parallel-sets — {} passengers, {} nodes, {} flows",
+            result.links.iter().map(|l| l.value).sum::<f64>() as usize,
+            result.nodes.len(),
+            result.links.len()
+        )))
         .child(
             div()
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0xffffff))
+                .bg(ui_theme.surface)
                 .border_1()
-                .border_color(rgb(0xe0e0e0))
+                .border_color(ui_theme.border)
                 .relative()
                 .child(
                     canvas(
@@ -146,26 +142,17 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .bottom(px(2.0))
                         .text_size(px(10.0))
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(0x666666))
                         .child(name.to_string())
                 }))
                 // Node labels
                 .children(label_nodes.into_iter().map(|(name, lx, ly, is_right)| {
-                    let mut d = div()
-                        .absolute()
-                        .text_color(rgb(0x333333))
-                        .top(px(ly as f32 - 6.0));
+                    let mut d = div().absolute().top(px(ly as f32 - 6.0));
                     if is_right {
                         d = d.right(px((width - lx) as f32));
                     } else {
                         d = d.left(px(lx as f32));
                     }
-                    d.child(
-                        div()
-                            .text_size(px(10.0))
-                            .line_height(px(12.0))
-                            .child(name),
-                    )
+                    d.child(div().text_size(px(10.0)).line_height(px(12.0)).child(name))
                 })),
         )
 }
