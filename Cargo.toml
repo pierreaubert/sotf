@@ -80,8 +80,11 @@ members = [
     "crates/sofa-reader",
     "crates/gpui-toolkit/gpui-ios",
     "crates/gpui-toolkit/gpui-au",
+    "crates/gpui-toolkit/gpui-audio-kit",
     "crates/gpui-toolkit/gpui-builder",
+    "crates/gpui-toolkit/gpui-component-lab",
     "crates/gpui-toolkit/gpui-design",
+    "crates/gpui-toolkit/gpui-design-tools",
     "crates/gpui-toolkit/gpui-keybinding",
     "crates/gpui-toolkit/gpui-pretext",
     "crates/gpui-toolkit/gpui-python-runtime",
@@ -212,8 +215,11 @@ math-rir = { path = "crates/math-audio/math-rir", version = "0.5" }
 autoeq = { version = "0.4", path = "crates/autoeq" }
 
 # using git version
-gpui-d3rs = { version = "0.7", path = "crates/gpui-toolkit/gpui-d3rs" }
+gpui-d3rs = { version = "0.7", path = "crates/gpui-toolkit/gpui-d3rs", default-features = false }
 gpui-px = { version = "0.7", path = "crates/gpui-toolkit/gpui-px", default-features = false }
+gpui-audio-kit = { version = "0.7", path = "crates/gpui-toolkit/gpui-audio-kit" }
+gpui-component-lab = { version = "0.7", path = "crates/gpui-toolkit/gpui-component-lab" }
+gpui-design-tools = { version = "0.7", path = "crates/gpui-toolkit/gpui-design-tools" }
 gpui-ui-kit ={ version = "0.7", path = "crates/gpui-toolkit/gpui-ui-kit" }
 gpui-ui-kit-macros = { version = "0.7", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
 gpui-themes = { version = "0.7", path = "crates/gpui-toolkit/gpui-themes" }
@@ -526,3 +532,14 @@ inherits = "release"
 lto = "fat"
 codegen-units = 1
 incremental = false
+
+# Explicit size-optimised profile for measuring and shipping small desktop
+# binaries. It preserves unwind semantics for plugin/host panic boundaries,
+# but strips the final executable and lets LLVM optimise for size.
+[profile.size]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+incremental = false
+strip = "symbols"

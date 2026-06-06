@@ -3807,6 +3807,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-audio-kit"
+version = "0.7.0"
+dependencies = [
+ "gpui",
+ "gpui-design",
+ "gpui-miniapp",
+ "gpui-ui-kit",
+]
+
+[[package]]
 name = "gpui-builder"
 version = "0.7.2"
 dependencies = [
@@ -3817,6 +3827,19 @@ dependencies = [
  "gpui_linux",
  "gpui_macos",
  "gpui_windows",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "gpui-component-lab"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "gpui-audio-kit",
+ "gpui-design-tools",
+ "gpui-ui-kit",
  "serde",
  "serde_json",
 ]
@@ -3855,6 +3878,17 @@ name = "gpui-design"
 version = "0.7.1"
 dependencies = [
  "gpui",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "gpui-design-tools"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "gpui-design",
  "serde",
  "serde_json",
 ]
@@ -7855,6 +7889,7 @@ dependencies = [
  "cbindgen",
  "gpui",
  "gpui-au",
+ "gpui-audio-kit",
  "gpui-ui-kit",
  "log",
  "math-iir-fir",
@@ -7872,6 +7907,7 @@ name = "plugins-gpui"
 version = "0.5.3"
 dependencies = [
  "gpui",
+ "gpui-audio-kit",
  "gpui-design",
  "gpui-px",
  "gpui-ui-kit",
@@ -10359,6 +10395,7 @@ dependencies = [
  "env_logger",
  "glam",
  "gpui",
+ "gpui-audio-kit",
  "gpui-builder",
  "gpui-d3rs",
  "gpui-design",
@@ -10393,7 +10430,6 @@ dependencies = [
  "smol",
  "sotf-cast",
  "sotf-engine",
- "sotf-federation",
  "sotf-media-controls",
  "sotf-midi",
  "sotf-player",
@@ -10814,6 +10850,7 @@ name = "sotf-plugin-eq"
 version = "0.5.66"
 dependencies = [
  "gpui",
+ "gpui-audio-kit",
  "gpui-px",
  "gpui-ui-kit",
  "math-iir-fir",
