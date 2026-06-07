@@ -24,6 +24,7 @@ impl PlayerView {
             Screen::Home => "Home",
             Screen::NowPlaying => "Now Playing",
             Screen::Library => "Library",
+            Screen::Streams => "Streams",
             Screen::Queue => "Queue",
             Screen::Spectrum => "Spectrum",
             Screen::Settings => "Settings",
@@ -936,6 +937,11 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("C or 5/6/7/8/9", "Filter: All/Mono/Stereo/Multi/Mixed"),
             ("A or Enter", "Add album to queue"),
             ("Shift-Q", "Go to queue screen"),
+        ],
+        Screen::Streams => vec![
+            ("Tab", "Move between stream fields"),
+            ("Enter", "Play stream"),
+            ("Space", "Play/Pause"),
         ],
         Screen::Queue => vec![
             ("↑/↓ or K/J", "Navigate queue items"),

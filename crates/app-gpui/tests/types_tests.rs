@@ -26,6 +26,7 @@ fn test_screen_variants() {
         Screen::Home,
         Screen::NowPlaying,
         Screen::Library,
+        Screen::Streams,
         Screen::Queue,
         Screen::Playlists,
         Screen::Spectrum,
@@ -37,7 +38,7 @@ fn test_screen_variants() {
         Screen::Spinorama,
         Screen::PluginGraph,
     ];
-    assert_eq!(screens.len(), 13);
+    assert_eq!(screens.len(), 14);
     assert_ne!(Screen::Library, Screen::Queue);
 }
 
@@ -49,6 +50,7 @@ fn test_primary_information_architecture_destinations() {
             Screen::Home,
             Screen::NowPlaying,
             Screen::Library,
+            Screen::Streams,
             Screen::Queue,
             Screen::Studio
         ]
@@ -56,11 +58,12 @@ fn test_primary_information_architecture_destinations() {
     assert_eq!(Screen::NowPlaying.primary_destination_index(), 1);
     assert_eq!(Screen::Home.primary_destination_index(), 0);
     assert_eq!(Screen::Library.primary_destination_index(), 2);
-    assert_eq!(Screen::Queue.primary_destination_index(), 3);
-    assert_eq!(Screen::Studio.primary_destination_index(), 4);
+    assert_eq!(Screen::Streams.primary_destination_index(), 3);
+    assert_eq!(Screen::Queue.primary_destination_index(), 4);
+    assert_eq!(Screen::Studio.primary_destination_index(), 5);
 
-    assert_eq!(Screen::RoomEq.primary_destination_index(), 4);
-    assert_eq!(Screen::PluginGraph.primary_destination_index(), 4);
+    assert_eq!(Screen::RoomEq.primary_destination_index(), 5);
+    assert_eq!(Screen::PluginGraph.primary_destination_index(), 5);
     assert_eq!(Screen::Settings.primary_destination_index(), 0);
 }
 
@@ -72,6 +75,7 @@ fn test_view_menu_ids_map_to_screens() {
         Some(Screen::NowPlaying)
     );
     assert_eq!(Screen::from_view_menu_id("library"), Some(Screen::Library));
+    assert_eq!(Screen::from_view_menu_id("streams"), Some(Screen::Streams));
     assert_eq!(Screen::from_view_menu_id("queue"), Some(Screen::Queue));
     assert_eq!(Screen::from_view_menu_id("studio"), Some(Screen::Studio));
     assert_eq!(

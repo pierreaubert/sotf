@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use gpui::Entity;
@@ -240,6 +241,40 @@ impl QueueState {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct StreamUiState {
+    pub store: sotf_audio_player::SavedStreamStore,
+    pub selected_index: usize,
+    pub name_input: String,
+    pub url_input: String,
+    pub format_hint_input: String,
+    pub seekable_input: bool,
+    pub last_error: Option<String>,
+    pub last_status: Option<String>,
+}
+
+impl Default for StreamUiState {
+    fn default() -> Self {
+        Self {
+            store: sotf_audio_player::load_saved_streams().unwrap_or_default(),
+            selected_index: 0,
+            name_input: String::new(),
+            url_input: String::new(),
+            format_hint_input: String::new(),
+            seekable_input: false,
+            last_error: None,
+            last_status: None,
+        }
+    }
+}
+
+impl StreamUiState {
+    pub fn format_hint(&self) -> Option<String> {
+        let hint = self.format_hint_input.trim();
+        (!hint.is_empty()).then(|| hint.to_string())
+    }
+}
+
 #[derive(Debug)]
 pub struct App {
     // Library state - now managed via library_state
@@ -250,6 +285,9 @@ pub struct App {
 
     // Queue state
     pub queue_state: QueueState,
+
+    // Saved HTTP/SOTF streams
+    pub stream_state: StreamUiState,
 
     // Speaker Optimization State
     pub speaker_opt: SpeakerOptState,
@@ -376,6 +414,21 @@ pub struct App {
 
     // Native SOTF remote-control server picker state.
     pub remote: RemoteState,
+}
+
+fn stream_queue_album(stream: &sotf_audio_player::SavedStream) -> sotf_audio_player::Album {
+    sotf_audio_player::Album {
+        title: stream.name.clone(),
+        tracks: vec![sotf_audio_player::Track {
+            path: PathBuf::from(&stream.url),
+            source: Some(stream.audio_source()),
+            title: Some(stream.name.clone()),
+            artist: Some("Streams".to_string()),
+            duration_secs: None,
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
 }
 
 /// Play tracking for statistics — records a play after 30s threshold
@@ -619,6 +672,7 @@ impl App {
             library_stats: LibraryStats::default(),
             library_scanner: None,
             queue_state: QueueState::new(),
+            stream_state: StreamUiState::default(),
 
             speaker_opt: SpeakerOptState::default(),
 
@@ -688,6 +742,102 @@ impl App {
         app.update_level_meter_groups();
 
         app
+    }
+
+    pub fn save_stream_from_inputs(&mut self) -> Result<(), String> {
+        let stream = sotf_audio_player::SavedStream::new(
+            self.stream_state.name_input.clone(),
+            self.stream_state.url_input.clone(),
+            self.stream_state.format_hint(),
+            self.stream_state.seekable_input,
+        )
+        .map_err(|err| err.to_string())?;
+        self.stream_state.store.upsert(stream);
+        sotf_audio_player::save_saved_streams(&self.stream_state.store)
+            .map_err(|err| err.to_string())?;
+        self.stream_state.last_error = None;
+        self.stream_state.last_status = Some("Stream saved".to_string());
+        Ok(())
+    }
+
+    pub fn add_stream_to_queue(
+        &mut self,
+        stream: sotf_audio_player::SavedStream,
+    ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
+        let was_empty = self.queue_state.is_empty();
+        let was_not_playing = !self.playback.is_playing;
+        let album = stream_queue_album(&stream);
+        self.queue_state.add_album(album)?;
+        self.stream_state.last_error = None;
+        self.stream_state.last_status = Some(format!("Added {}", stream.name));
+        if was_empty || was_not_playing {
+            return Ok(self.start_queue());
+        }
+        Ok(None)
+    }
+
+    pub fn play_stream_now(
+        &mut self,
+        stream: sotf_audio_player::SavedStream,
+    ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
+        let effect = self
+            .queue_state
+            .play_album_now(stream_queue_album(&stream))?;
+        self.playback.current_queue_index = self.queue_state.current_index();
+        self.stream_state.last_error = None;
+        self.stream_state.last_status = Some(format!("Playing {}", stream.name));
+        if let QueuePlaybackEffect::Play(source) = effect {
+            self.playback.is_playing = true;
+            return Ok(Some(source));
+        }
+        Ok(None)
+    }
+
+    pub fn remove_stream_at(&mut self, index: usize) -> Result<(), String> {
+        let Some(stream) = self.stream_state.store.streams.get(index).cloned() else {
+            return Err("No stream selected".to_string());
+        };
+        if self.stream_state.store.remove_by_url(&stream.url) {
+            sotf_audio_player::save_saved_streams(&self.stream_state.store)
+                .map_err(|err| err.to_string())?;
+            if self.stream_state.selected_index >= self.stream_state.store.streams.len()
+                && self.stream_state.selected_index > 0
+            {
+                self.stream_state.selected_index -= 1;
+            }
+            self.stream_state.last_error = None;
+            self.stream_state.last_status = Some(format!("Removed {}", stream.name));
+        }
+        Ok(())
+    }
+
+    pub fn set_stream_inputs_from_selected(&mut self, index: usize) {
+        if let Some(stream) = self.stream_state.store.streams.get(index) {
+            self.stream_state.selected_index = index;
+            self.stream_state.name_input = stream.name.clone();
+            self.stream_state.url_input = stream.url.clone();
+            self.stream_state.format_hint_input = stream.format_hint.clone().unwrap_or_default();
+            self.stream_state.seekable_input = stream.seekable;
+            self.stream_state.last_error = None;
+        }
+    }
+
+    pub fn save_remote_media_stream(
+        &mut self,
+        name: impl Into<String>,
+        url: impl Into<String>,
+    ) -> Result<sotf_audio_player::SavedStream, String> {
+        let stream = sotf_audio_player::SavedStream::new(name, url, None, true)
+            .map_err(|err| err.to_string())?;
+        self.stream_state.store.upsert(stream.clone());
+        sotf_audio_player::save_saved_streams(&self.stream_state.store)
+            .map_err(|err| err.to_string())?;
+        Ok(stream)
+    }
+
+    pub fn record_stream_error(&mut self, error: impl Into<String>) {
+        self.stream_state.last_error = Some(error.into());
+        self.stream_state.last_status = None;
     }
 
     pub fn rollback_failed_plugin_update(

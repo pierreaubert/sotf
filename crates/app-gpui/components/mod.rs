@@ -14,6 +14,7 @@ pub mod recording;
 pub mod room_eq;
 mod settings;
 mod spinorama_eq;
+pub mod streams;
 pub use plugins::{
     LevelMeterElement, MeterColors, MeterData, SpectrumColors, SpectrumElement, get_param_count,
     render_plugin_content,

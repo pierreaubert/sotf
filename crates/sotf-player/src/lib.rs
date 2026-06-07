@@ -45,6 +45,7 @@ pub mod server;
 pub mod sotf_api_client;
 pub mod sotf_remote;
 pub mod sotf_server_event;
+pub mod streams;
 pub mod ui_params;
 pub mod waveform_scanner;
 
@@ -70,6 +71,10 @@ pub use queue::{Queue, QueueItem};
 pub use sotf_remote::{
     SotfRemoteAuthToken, SotfRemoteConnection, SotfRemoteConnectionInfo, SotfRemoteServer,
     SotfRemoteServerStore, SotfRemoteSnapshot, SotfRemoteTransportCommand,
+};
+pub use streams::{
+    SavedStream, SavedStreamStore, StreamStoreError, StreamValidationError, load_saved_streams,
+    parse_service_stream_reference, save_saved_streams, validate_stream_url,
 };
 // Re-export plugins from engine
 pub use replay_gain_scanner::{

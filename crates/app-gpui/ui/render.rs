@@ -683,6 +683,7 @@ impl PlayerView {
         match screen {
             // These screens render the same regardless of layout mode
             Screen::Home => self.render_home_screen(cx).into_any_element(),
+            Screen::Streams => self.render_streams_screen(cx).into_any_element(),
             Screen::Spectrum => self.render_spectrum_screen(cx).into_any_element(),
             Screen::Settings => self.render_settings_screen(cx).into_any_element(),
             Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
@@ -817,6 +818,16 @@ impl PlayerView {
                 IconName::Music,
                 Screen::NowPlaying,
                 matches!(current_screen, Screen::NowPlaying | Screen::Queue),
+                collapsed,
+                &theme,
+                &d,
+            ))
+            .child(self.render_sidebar_screen_item(
+                "nav-streams",
+                "Streams",
+                IconName::ListMusic,
+                Screen::Streams,
+                current_screen == Screen::Streams,
                 collapsed,
                 &theme,
                 &d,

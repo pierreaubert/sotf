@@ -127,7 +127,7 @@ class AudioManager: NSObject {
             return .success
         }
 
-        commandCenter.changePlaybackPositionCommand.isEnabled = true
+        commandCenter.changePlaybackPositionCommand.isEnabled = false
         commandCenter.changePlaybackPositionCommand.addTarget { event in
             guard let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
@@ -157,6 +157,7 @@ func sotfIosUpdateNowPlaying(
     isPlaying: Bool
 ) {
     var info = [String: Any]()
+    let isSeekable = duration > 0
 
     if let title = title {
         info[MPMediaItemPropertyTitle] = String(cString: title)
@@ -167,13 +168,14 @@ func sotfIosUpdateNowPlaying(
     if let album = album {
         info[MPMediaItemPropertyAlbumTitle] = String(cString: album)
     }
-    if duration > 0 {
+    if isSeekable {
         info[MPMediaItemPropertyPlaybackDuration] = duration
     }
     info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = position
     info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
 
     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    MPRemoteCommandCenter.shared().changePlaybackPositionCommand.isEnabled = isSeekable
 }
 
 /// Update position only (periodic update, no track metadata change)

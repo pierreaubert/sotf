@@ -9,6 +9,7 @@ pub enum Screen {
     Home,
     NowPlaying,
     Library,
+    Streams,
     Queue,
     Playlists,
     Spectrum,
@@ -27,6 +28,7 @@ impl Screen {
             Screen::Home,
             Screen::NowPlaying,
             Screen::Library,
+            Screen::Streams,
             Screen::Queue,
             Screen::Studio,
         ];
@@ -69,6 +71,7 @@ impl Screen {
             "now-playing" => Some(Screen::NowPlaying),
             "home" => Some(Screen::Home),
             "library" => Some(Screen::Library),
+            "streams" => Some(Screen::Streams),
             "queue" => Some(Screen::Queue),
             "studio" => Some(Screen::Studio),
             "plugingraph" => Some(Screen::PluginGraph),

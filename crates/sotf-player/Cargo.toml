@@ -54,6 +54,7 @@ walkdir = { workspace = true }
 rusqlite = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
+url = { workspace = true }
 parking_lot = { workspace = true }
 uuid = { workspace = true }
 crossbeam = { workspace = true }

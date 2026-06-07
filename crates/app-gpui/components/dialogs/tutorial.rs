@@ -518,6 +518,7 @@ impl ScreenGuide {
             crate::app::Screen::Home => &GUIDE_LIBRARY,
             crate::app::Screen::NowPlaying => &GUIDE_QUEUE,
             crate::app::Screen::Library => &GUIDE_LIBRARY,
+            crate::app::Screen::Streams => &GUIDE_LIBRARY,
             crate::app::Screen::Queue => &GUIDE_QUEUE,
             crate::app::Screen::Studio => &GUIDE_STUDIO,
             crate::app::Screen::PluginGraph => &GUIDE_PLUGIN_GRAPH,

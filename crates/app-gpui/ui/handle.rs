@@ -354,6 +354,27 @@ impl PlayerView {
                         Self::play_track(state, path);
                     }
                 }
+                Screen::Streams => {
+                    match sotf_audio_player::SavedStream::new(
+                        state.app.stream_state.name_input.clone(),
+                        state.app.stream_state.url_input.clone(),
+                        state.app.stream_state.format_hint(),
+                        state.app.stream_state.seekable_input,
+                    ) {
+                        Ok(stream) => match state.app.play_stream_now(stream) {
+                            Ok(Some(source)) => Self::play_track(state, source),
+                            Ok(None) => {}
+                            Err(e) => {
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::error(e));
+                            }
+                        },
+                        Err(e) => {
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::ToastMessage::error(e.to_string()));
+                        }
+                    }
+                }
                 Screen::Settings => {
                     // Enter key in Settings screen - no action needed
                 }

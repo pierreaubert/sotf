@@ -243,6 +243,7 @@ pub fn get_plugin_sandbox_grants_path() -> Option<PathBuf> {
 }
 
 /// Load external plugin sandbox grants from disk.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub fn load_plugin_sandbox_grants()
 -> Result<sotf_plugins::PluginSandboxGrantStore, Box<dyn std::error::Error>> {
     if let Some(path) = get_plugin_sandbox_grants_path() {
@@ -259,6 +260,7 @@ pub fn load_plugin_sandbox_grants()
 }
 
 /// Save external plugin sandbox grants to disk.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub fn save_plugin_sandbox_grants(
     grants: &sotf_plugins::PluginSandboxGrantStore,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -369,6 +371,7 @@ fn dedupe_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
     deduped
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginSandboxPermissionResolution {
     pub decision: sotf_plugins::PluginSandboxPermissionDecision,
@@ -377,11 +380,13 @@ pub struct PluginSandboxPermissionResolution {
     pub restart_required: bool,
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 #[derive(Debug, Clone, Default)]
 pub struct PluginSandboxPermissionController {
     grants: sotf_plugins::PluginSandboxGrantStore,
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 impl PluginSandboxPermissionController {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self::new(load_plugin_sandbox_grants()?))
@@ -485,6 +490,7 @@ impl PluginSandboxPermissionController {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub fn decide_plugin_sandbox_permission_or_deny(
     request: sotf_plugins::PluginSandboxPermissionRequest,
 ) -> Result<PluginSandboxPermissionResolution, Box<dyn std::error::Error>> {
@@ -492,6 +498,7 @@ pub fn decide_plugin_sandbox_permission_or_deny(
     controller.decide_or_deny_and_save(request)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub fn decide_plugin_sandbox_permission_with_broker(
     request: sotf_plugins::PluginSandboxPermissionRequest,
     broker: &mut dyn sotf_plugins::PluginSandboxPermissionBroker,

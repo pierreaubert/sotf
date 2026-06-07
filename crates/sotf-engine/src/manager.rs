@@ -485,11 +485,11 @@ impl AudioEngineManager {
 
         if let Some(pos) = position {
             engine
-                .play_at(&audio_info.path, pos)
+                .play_at(audio_info.source.clone(), pos)
                 .map_err(AudioDecoderError::IoError)?;
         } else {
             engine
-                .play(&audio_info.path)
+                .play(audio_info.source.clone())
                 .map_err(AudioDecoderError::IoError)?;
         }
 
@@ -500,8 +500,7 @@ impl AudioEngineManager {
         self.set_state(StreamingState::Playing);
 
         // Track current source for gapless transition detection
-        *lock_recover(&self.last_seen_source, "last_seen_source") =
-            Some(crate::decoder::AudioSource::File(audio_info.path.clone()));
+        *lock_recover(&self.last_seen_source, "last_seen_source") = Some(audio_info.source.clone());
 
         log::debug!("[AudioEngineManager] Playback started");
 

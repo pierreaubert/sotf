@@ -10614,6 +10614,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "unicode-normalization",
+ "url",
  "uuid",
  "walkdir",
 ]

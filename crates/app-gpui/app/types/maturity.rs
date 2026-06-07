@@ -8,6 +8,7 @@ impl Screen {
         match self {
             Screen::Home
             | Screen::Library
+            | Screen::Streams
             | Screen::NowPlaying
             | Screen::Queue
             | Screen::Spectrum

@@ -18,10 +18,45 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let max_cores = state.app.ui_state.max_cpu_cores;
-        let plugin_sandbox_status = {
+        let plugin_sandbox_status_section: Option<AnyElement> = {
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             {
-                plugin_sandbox_runtime_status(state.app.external_plugin_media_directories()).ok()
+                plugin_sandbox_runtime_status(state.app.external_plugin_media_directories())
+                    .ok()
+                    .map(|status| {
+                        VStack::new()
+                            .spacing(StackSpacing::Xs)
+                            .child(
+                                Text::new("External Plugins")
+                                    .size(TextSize::Sm)
+                                    .weight(gpui_ui_kit::TextWeight::Bold)
+                                    .color(theme.text_primary),
+                            )
+                            .child(
+                                Text::new(format!(
+                                    "Runtime external access: {}",
+                                    if status.runtime_external_access_disabled {
+                                        "disabled"
+                                    } else {
+                                        "enabled"
+                                    }
+                                ))
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
+                            )
+                            .child(
+                                Text::new(format!(
+                                    "{} import grants, {} media roots, {} protected import roots",
+                                    status.persistent_grant_count,
+                                    status.media_read_paths.len(),
+                                    status.protected_import_paths.len(),
+                                ))
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
+                            )
+                            .build()
+                            .into_any_element()
+                    })
             }
 
             #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -57,40 +92,8 @@ impl PlayerView {
                     .rounded(d.r_md)
                     .border_1()
                     .border_color(theme.border)
-                    .when_some(plugin_sandbox_status, |this, status| {
-                        this.child(
-                            VStack::new()
-                                .spacing(StackSpacing::Xs)
-                                .child(
-                                    Text::new("External Plugins")
-                                        .size(TextSize::Sm)
-                                        .weight(gpui_ui_kit::TextWeight::Bold)
-                                        .color(theme.text_primary),
-                                )
-                                .child(
-                                    Text::new(format!(
-                                        "Runtime external access: {}",
-                                        if status.runtime_external_access_disabled {
-                                            "disabled"
-                                        } else {
-                                            "enabled"
-                                        }
-                                    ))
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_secondary),
-                                )
-                                .child(
-                                    Text::new(format!(
-                                        "{} import grants, {} media roots, {} protected import roots",
-                                        status.persistent_grant_count,
-                                        status.media_read_paths.len(),
-                                        status.protected_import_paths.len(),
-                                    ))
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_secondary),
-                                )
-                                .build(),
-                        )
+                    .when_some(plugin_sandbox_status_section, |this, section| {
+                        this.child(section)
                     })
                     // CPU cores row
                     .child(

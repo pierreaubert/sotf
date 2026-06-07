@@ -274,7 +274,11 @@ fn validate_album_has_tracks(album: &Album) -> Result<(), String> {
 /// Check that at least one track in the album has a file that exists on disk.
 #[cfg(not(feature = "testing"))]
 fn validate_album_has_files(album: &Album) -> Result<(), String> {
-    if album.tracks.iter().any(|t| t.path.exists()) {
+    if album
+        .tracks
+        .iter()
+        .any(|t| !matches!(t.audio_source(), AudioSource::File(_)) || t.path.exists())
+    {
         return Ok(());
     }
     Err(format!(
@@ -360,6 +364,30 @@ mod tests {
         let result = ctrl.add_album(make_album("Missing", 2));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("None of the files"));
+    }
+
+    #[test]
+    #[cfg(not(feature = "testing"))]
+    fn test_add_album_accepts_url_sources_without_files() {
+        let mut ctrl = QueueController::new();
+        let stream = AudioSource::Url {
+            url: "https://example.com/live.m3u8".to_string(),
+            format_hint: Some("hls".to_string()),
+        };
+        let album = Album {
+            title: "Live Stream".to_string(),
+            tracks: vec![Track {
+                path: PathBuf::from("https://example.com/live.m3u8"),
+                source: Some(stream.clone()),
+                title: Some("Live".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let result = ctrl.add_album(album);
+        assert_eq!(result, Ok(0));
+        assert_eq!(ctrl.start(), QueuePlaybackEffect::Play(stream));
     }
 
     #[test]
