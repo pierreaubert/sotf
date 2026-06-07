@@ -11,11 +11,11 @@ use sotf_audio_player::{Player, ReleaseChannel};
 use sotf_audio_player_gpui::app::actions::*;
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::{
-    i18n::{Language, Translations},
     App, AppState, Screen,
+    i18n::{Language, Translations},
 };
 use sotf_audio_player_gpui::config::Config;
-use sotf_audio_player_gpui::keybindings::{get_keybindings, KeymapPreset};
+use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
 use sotf_audio_player_gpui::ui;
 use std::borrow::Cow;
 use std::fs::OpenOptions;

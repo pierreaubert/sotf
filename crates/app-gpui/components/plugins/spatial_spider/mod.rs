@@ -15,8 +15,8 @@ pub use data::{ChannelMetric, SpeakerVertex, SpiderMode, SpiderPolygon};
 #[cfg(feature = "gpu-3d")]
 pub use render::SpiderView3D;
 pub use render::{
-    render_spatial_spider_controls, render_spatial_spider_graph, render_spatial_spider_panel,
-    resolve_speaker_config, SpiderColors, SpiderDisc2D,
+    SpiderColors, SpiderDisc2D, render_spatial_spider_controls, render_spatial_spider_graph,
+    render_spatial_spider_panel, resolve_speaker_config,
 };
 
 #[cfg(feature = "gpu-3d")]

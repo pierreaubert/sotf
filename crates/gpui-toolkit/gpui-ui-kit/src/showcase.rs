@@ -387,6 +387,8 @@ pub struct Showcase {
     pub popover_open: Option<&'static str>,
     // Current section for navigation
     pub current_section: ShowcaseSection,
+    // Render only the selected section when embedded in another tool.
+    pub embedded: bool,
     // Entity for updating self
     pub entity: Entity<Self>,
     // Focus handle for keyboard input
@@ -482,9 +484,17 @@ impl Showcase {
             tooltip_hovered: None,
             popover_open: None,
             current_section: ShowcaseSection::default(),
+            embedded: false,
             entity: cx.entity().clone(),
             focus_handle: cx.focus_handle(),
         }
+    }
+
+    pub fn embedded_section(section: ShowcaseSection, cx: &mut Context<Self>) -> Self {
+        let mut showcase = Self::new(cx);
+        showcase.current_section = section;
+        showcase.embedded = true;
+        showcase
     }
 }
 
@@ -505,6 +515,99 @@ impl Render for Showcase {
         // Get translations
         let title = cx.t(TranslationKey::AppTitle);
         let subtitle = cx.t(TranslationKey::AppSubtitle);
+
+        let content = match current_section {
+            ShowcaseSection::Buttons => self.render_buttons_section(cx).into_any_element(),
+            ShowcaseSection::Text => self.render_text_section(cx).into_any_element(),
+            ShowcaseSection::Badges => self.render_badges_section(cx).into_any_element(),
+            ShowcaseSection::Avatars => self.render_avatars_section(cx).into_any_element(),
+            ShowcaseSection::FormControls => self
+                .render_form_controls_section(
+                    toggle_on,
+                    self.toggle_lg,
+                    checkbox_checked,
+                    slider_value,
+                    self.number_value,
+                    self.number_freq,
+                    self.number_db,
+                    self.editing_number,
+                    self.edit_text.clone(),
+                    self.text_selected,
+                    self.input_value.clone(),
+                    self.input_editing,
+                    self.input_edit_text.clone(),
+                    self.input_selected,
+                    self.buttonset_view_mode.clone(),
+                    self.buttonset_alignment.clone(),
+                    entity.clone(),
+                    cx,
+                )
+                .into_any_element(),
+            ShowcaseSection::Progress => self.render_progress_section(cx).into_any_element(),
+            ShowcaseSection::Alerts => self.render_alerts_section(cx).into_any_element(),
+            ShowcaseSection::Tabs => self.render_tabs_section(cx).into_any_element(),
+            ShowcaseSection::Cards => self.render_card_section(cx).into_any_element(),
+            ShowcaseSection::Breadcrumbs => self.render_breadcrumbs_section(cx).into_any_element(),
+            ShowcaseSection::Spinners => self.render_spinners_section(cx).into_any_element(),
+            ShowcaseSection::Layout => self.render_layout_section(cx).into_any_element(),
+            ShowcaseSection::IconButtons => self.render_icon_buttons_section(cx).into_any_element(),
+            ShowcaseSection::Toasts => self.render_toasts_section(cx).into_any_element(),
+            ShowcaseSection::Dialog => self.render_dialog_section(cx).into_any_element(),
+            ShowcaseSection::Menu => self.render_menu_section(cx).into_any_element(),
+            ShowcaseSection::Table => self.render_table_section(cx).into_any_element(),
+            ShowcaseSection::Tooltips => self.render_tooltip_section(cx).into_any_element(),
+            ShowcaseSection::Accordion => self.render_accordion_section(cx).into_any_element(),
+            ShowcaseSection::Wizard => self.render_wizard_section(cx).into_any_element(),
+            ShowcaseSection::Workflow => self.render_workflow_section(cx).into_any_element(),
+            ShowcaseSection::QrCode => self.render_qr_section(cx).into_any_element(),
+            ShowcaseSection::ContextMenu => self.render_context_menu_section(cx).into_any_element(),
+            ShowcaseSection::Popover => self.render_popover_section(cx).into_any_element(),
+            ShowcaseSection::Sidebar => self.render_sidebar_section(cx).into_any_element(),
+            ShowcaseSection::StatusBar => self.render_status_bar_section(cx).into_any_element(),
+            ShowcaseSection::SearchBar => self.render_search_bar_section(cx).into_any_element(),
+            ShowcaseSection::KeyboardShortcut => {
+                self.render_keyboard_shortcut_section(cx).into_any_element()
+            }
+            ShowcaseSection::EmptyState => self.render_empty_state_section(cx).into_any_element(),
+            ShowcaseSection::ConfirmDialog => {
+                self.render_confirm_dialog_section(cx).into_any_element()
+            }
+            ShowcaseSection::SplitPane => self.render_split_pane_section(cx).into_any_element(),
+            ShowcaseSection::ImageView => self.render_image_view_section(cx).into_any_element(),
+            ShowcaseSection::SettingsForm => {
+                self.render_settings_form_section(cx).into_any_element()
+            }
+            ShowcaseSection::StepIndicator => {
+                self.render_step_indicator_section(cx).into_any_element()
+            }
+            ShowcaseSection::LoadingOverlay => {
+                self.render_loading_overlay_section(cx).into_any_element()
+            }
+            ShowcaseSection::Tag => self.render_tag_section(cx).into_any_element(),
+            ShowcaseSection::Toolbar => self.render_toolbar_section(cx).into_any_element(),
+            ShowcaseSection::Notification => {
+                self.render_notification_section(cx).into_any_element()
+            }
+            ShowcaseSection::TreeView => self.render_tree_view_section(cx).into_any_element(),
+            ShowcaseSection::DragList => self.render_drag_list_section(cx).into_any_element(),
+            ShowcaseSection::CommandPalette => {
+                self.render_command_palette_section(cx).into_any_element()
+            }
+            ShowcaseSection::Accessibility => {
+                self.render_accessibility_section(cx).into_any_element()
+            }
+        };
+
+        if self.embedded {
+            return div()
+                .id("showcase-embedded-root")
+                .size_full()
+                .bg(bg_color)
+                .text_color(text_color)
+                .overflow_y_scroll()
+                .p_3()
+                .child(content);
+        }
 
         // Build navigation sidebar items grouped by category
         let mut nav_items = div().flex().flex_col().py_4().gap_1();
@@ -604,89 +707,6 @@ impl Render for Showcase {
                     .text_color(info_text)
                     .child(group_description),
             );
-
-        // Main content area
-        let content = match current_section {
-            ShowcaseSection::Buttons => self.render_buttons_section(cx).into_any_element(),
-            ShowcaseSection::Text => self.render_text_section(cx).into_any_element(),
-            ShowcaseSection::Badges => self.render_badges_section(cx).into_any_element(),
-            ShowcaseSection::Avatars => self.render_avatars_section(cx).into_any_element(),
-            ShowcaseSection::FormControls => self
-                .render_form_controls_section(
-                    toggle_on,
-                    self.toggle_lg,
-                    checkbox_checked,
-                    slider_value,
-                    self.number_value,
-                    self.number_freq,
-                    self.number_db,
-                    self.editing_number,
-                    self.edit_text.clone(),
-                    self.text_selected,
-                    self.input_value.clone(),
-                    self.input_editing,
-                    self.input_edit_text.clone(),
-                    self.input_selected,
-                    self.buttonset_view_mode.clone(),
-                    self.buttonset_alignment.clone(),
-                    entity.clone(),
-                    cx,
-                )
-                .into_any_element(),
-            ShowcaseSection::Progress => self.render_progress_section(cx).into_any_element(),
-            ShowcaseSection::Alerts => self.render_alerts_section(cx).into_any_element(),
-            ShowcaseSection::Tabs => self.render_tabs_section(cx).into_any_element(),
-            ShowcaseSection::Cards => self.render_card_section(cx).into_any_element(),
-            ShowcaseSection::Breadcrumbs => self.render_breadcrumbs_section(cx).into_any_element(),
-            ShowcaseSection::Spinners => self.render_spinners_section(cx).into_any_element(),
-            ShowcaseSection::Layout => self.render_layout_section(cx).into_any_element(),
-            ShowcaseSection::IconButtons => self.render_icon_buttons_section(cx).into_any_element(),
-            ShowcaseSection::Toasts => self.render_toasts_section(cx).into_any_element(),
-            ShowcaseSection::Dialog => self.render_dialog_section(cx).into_any_element(),
-            ShowcaseSection::Menu => self.render_menu_section(cx).into_any_element(),
-            ShowcaseSection::Table => self.render_table_section(cx).into_any_element(),
-            ShowcaseSection::Tooltips => self.render_tooltip_section(cx).into_any_element(),
-            ShowcaseSection::Accordion => self.render_accordion_section(cx).into_any_element(),
-            ShowcaseSection::Wizard => self.render_wizard_section(cx).into_any_element(),
-            ShowcaseSection::Workflow => self.render_workflow_section(cx).into_any_element(),
-            ShowcaseSection::QrCode => self.render_qr_section(cx).into_any_element(),
-            ShowcaseSection::ContextMenu => self.render_context_menu_section(cx).into_any_element(),
-            ShowcaseSection::Popover => self.render_popover_section(cx).into_any_element(),
-            ShowcaseSection::Sidebar => self.render_sidebar_section(cx).into_any_element(),
-            ShowcaseSection::StatusBar => self.render_status_bar_section(cx).into_any_element(),
-            ShowcaseSection::SearchBar => self.render_search_bar_section(cx).into_any_element(),
-            ShowcaseSection::KeyboardShortcut => {
-                self.render_keyboard_shortcut_section(cx).into_any_element()
-            }
-            ShowcaseSection::EmptyState => self.render_empty_state_section(cx).into_any_element(),
-            ShowcaseSection::ConfirmDialog => {
-                self.render_confirm_dialog_section(cx).into_any_element()
-            }
-            ShowcaseSection::SplitPane => self.render_split_pane_section(cx).into_any_element(),
-            ShowcaseSection::ImageView => self.render_image_view_section(cx).into_any_element(),
-            ShowcaseSection::SettingsForm => {
-                self.render_settings_form_section(cx).into_any_element()
-            }
-            ShowcaseSection::StepIndicator => {
-                self.render_step_indicator_section(cx).into_any_element()
-            }
-            ShowcaseSection::LoadingOverlay => {
-                self.render_loading_overlay_section(cx).into_any_element()
-            }
-            ShowcaseSection::Tag => self.render_tag_section(cx).into_any_element(),
-            ShowcaseSection::Toolbar => self.render_toolbar_section(cx).into_any_element(),
-            ShowcaseSection::Notification => {
-                self.render_notification_section(cx).into_any_element()
-            }
-            ShowcaseSection::TreeView => self.render_tree_view_section(cx).into_any_element(),
-            ShowcaseSection::DragList => self.render_drag_list_section(cx).into_any_element(),
-            ShowcaseSection::CommandPalette => {
-                self.render_command_palette_section(cx).into_any_element()
-            }
-            ShowcaseSection::Accessibility => {
-                self.render_accessibility_section(cx).into_any_element()
-            }
-        };
 
         div()
             .id("showcase-root")

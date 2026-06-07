@@ -6,7 +6,10 @@ use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::*;
-use gpui_audio_kit::{SpectrumColors, SpectrumElement};
+use gpui_audio_kit::{
+    SpectrumAxisTheme, SpectrumColors, SpectrumElement, render_spectrum_db_axis,
+    render_spectrum_frequency_axis,
+};
 use gpui_ui_kit::{Select, SelectOption, SelectSize};
 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
@@ -32,132 +35,17 @@ fn spectrum_colors_from_theme(theme_colors: &crate::theme::SpectrumColors) -> Sp
     }
 }
 
-// ============================================================================
-// Axis Components
-// ============================================================================
-
-/// Format frequency value for axis label
-fn format_freq_label(freq: f32) -> String {
-    if freq >= 1000.0 {
-        let khz = freq / 1000.0;
-        if khz == khz.floor() {
-            format!("{}k", khz as i32)
-        } else {
-            format!("{:.1}k", khz)
-        }
-    } else if freq == freq.floor() {
-        format!("{}", freq as i32)
-    } else {
-        format!("{:.0}", freq)
+fn spectrum_axis_theme(d: &Ds, theme: &Theme) -> SpectrumAxisTheme {
+    SpectrumAxisTheme {
+        text_color: theme.text_muted,
+        text_size: d.text_xs,
+        db_axis_padding_right: d.grid,
+        ..Default::default()
     }
 }
 
-/// Calculate logarithmic position of a frequency within a range
-fn freq_to_log_position(freq: f32, min_freq: f32, max_freq: f32) -> f32 {
-    let log_min = min_freq.log10();
-    let log_max = max_freq.log10();
-    let log_freq = freq.log10();
-    (log_freq - log_min) / (log_max - log_min)
-}
-
-/// Generate frequency labels for the given range
-fn generate_freq_labels(min_freq: f32, max_freq: f32) -> Vec<(String, f32)> {
-    // Standard frequency points to consider
-    let all_freqs: [f32; 15] = [
-        20.0, 30.0, 50.0, 100.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 3000.0, 5000.0, 10000.0,
-        15000.0, 20000.0, 24000.0,
-    ];
-
-    let mut labels = Vec::new();
-
-    // Always include min and max
-    labels.push((format_freq_label(min_freq), 0.0));
-
-    // Add intermediate labels that fall within range
-    for &freq in &all_freqs {
-        if freq > min_freq * 1.1 && freq < max_freq * 0.9 {
-            let pos = freq_to_log_position(freq, min_freq, max_freq);
-            labels.push((format_freq_label(freq), pos));
-        }
-    }
-
-    labels.push((format_freq_label(max_freq), 1.0));
-
-    // Filter to avoid overlapping labels (keep at least 0.08 apart)
-    let mut filtered = Vec::new();
-    for (label, pos) in labels {
-        if filtered.is_empty()
-            || filtered
-                .last()
-                .map(|(_, last_pos): &(String, f32)| pos - last_pos > 0.08)
-                .unwrap_or(true)
-        {
-            filtered.push((label, pos));
-        }
-    }
-
-    filtered
-}
-
-/// Render horizontal frequency axis (logarithmic scale)
-fn render_frequency_axis(d: &Ds, min_freq: f32, max_freq: f32, theme: &Theme) -> impl IntoElement {
-    let freq_labels = generate_freq_labels(min_freq, max_freq);
-
-    div()
-        .w_full()
-        // intentional: axis label row height — chart-internal layout
-        .h(px(20.0))
-        .relative()
-        .children(freq_labels.into_iter().map(|(label, pos)| {
-            div()
-                .absolute()
-                .left(relative(pos))
-                .top_0()
-                .text_size(d.text_xs)
-                .text_color(theme.text_muted)
-                .child(
-                    div()
-                        // intentional: pixel-exact label centering offset
-                        .ml(px(-12.0))
-                        .child(label),
-                )
-        }))
-}
-
-/// Render vertical dB axis (-60dB to +3dB)
-fn render_db_axis(d: &Ds, theme: &Theme) -> impl IntoElement {
-    // Range: -100 dB to +3 dB (103 dB total)
-    // Position = (3 - db) / 103
-    let db_labels = [
-        ("+3", 0.0),    // (3 - 3) / 103 = 0.0
-        ("0", 0.029),   // (3 - 0) / 103 ≈ 0.029
-        ("-20", 0.223), // (3 - (-20)) / 103 ≈ 0.223
-        ("-40", 0.417), // (3 - (-40)) / 103 ≈ 0.417
-        ("-60", 0.612), // (3 - (-60)) / 103 ≈ 0.612
-    ];
-
-    div()
-        // intentional: dB axis column width — chart-internal layout
-        .w(px(32.0))
-        .h_full()
-        .flex()
-        .flex_col()
-        .relative()
-        .children(db_labels.iter().map(|(label, pos)| {
-            div()
-                .absolute()
-                .top(relative(*pos as f32))
-                .right_0()
-                .text_size(d.text_xs)
-                .text_color(theme.text_muted)
-                .pr(d.grid)
-                .child(
-                    div()
-                        // intentional: pixel-exact label centering offset
-                        .mt(px(-6.0))
-                        .child(*label),
-                )
-        }))
+fn spectrum_db_axis_spacer(d: &Ds, theme: &Theme) -> impl IntoElement {
+    div().w(px(spectrum_axis_theme(d, theme).db_axis_width))
 }
 
 // ============================================================================
@@ -213,7 +101,7 @@ pub fn render_spectrum_analyzer_plugin(
             div()
                 .flex()
                 .gap(d.grid)
-                .child(render_db_axis(d, theme))
+                .child(render_spectrum_db_axis(spectrum_axis_theme(d, theme)))
                 .child(
                     div()
                         .flex_1()
@@ -248,17 +136,13 @@ pub fn render_spectrum_analyzer_plugin(
                 ),
         )
         // Frequency axis
-        .child(
-            div()
-                .flex()
-                .child(div().w(px(32.0)))
-                .child(render_frequency_axis(
-                    d,
-                    state.min_freq,
-                    state.max_freq,
-                    theme,
-                )),
-        );
+        .child(div().flex().child(spectrum_db_axis_spacer(d, theme)).child(
+            render_spectrum_frequency_axis(
+                state.min_freq,
+                state.max_freq,
+                spectrum_axis_theme(d, theme),
+            ),
+        ));
 
     // === BOTTOM: Config params (horizontal row with wrapping) ===
     let config_row = div()
@@ -475,7 +359,7 @@ impl PlayerView {
                         .flex_1()
                         .gap(d.grid)
                         // dB axis (vertical, left side)
-                        .child(render_db_axis(&d, &theme))
+                        .child(render_spectrum_db_axis(spectrum_axis_theme(&d, &theme)))
                         // GPU-accelerated spectrum visualization
                         .child(
                             div().flex_1().child(
@@ -491,8 +375,12 @@ impl PlayerView {
                 .child(
                     div()
                         .flex()
-                        .child(div().w(px(32.0))) // Spacer to align with dB axis
-                        .child(render_frequency_axis(&d, 20.0, 20000.0, &theme)),
+                        .child(spectrum_db_axis_spacer(&d, &theme))
+                        .child(render_spectrum_frequency_axis(
+                            20.0,
+                            20000.0,
+                            spectrum_axis_theme(&d, &theme),
+                        )),
                 )
         } else {
             div()

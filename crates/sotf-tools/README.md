@@ -50,6 +50,7 @@ Generic gpui-toolkit token export lives in `gpui-design-tools`.
 
 ```bash
 cargo run --bin export-design-tokens
+cargo run --bin export-design-tokens -- --toolkit
 ```
 
 ### `import-design-tokens`
@@ -60,6 +61,7 @@ Import app-specific SOTF GPUI theme tokens back into Rust theme files in
 
 ```bash
 cargo run --bin import-design-tokens
+cargo run --bin import-design-tokens -- --toolkit --input design-tokens/gpui-tokens.json
 ```
 
 ## Dependencies

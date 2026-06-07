@@ -1,11 +1,11 @@
 //! Conversion from `DesignSystem` to `AudioDesignTokens`.
 //!
 //! This module bridges `gpui_design::DesignSystem` (the full platform design
-//! system) and `gpui_ui_kit::audio_design_tokens::AudioDesignTokens` (the
+//! system) and `gpui_audio_kit::AudioDesignTokens` (the
 //! lightweight tokens consumed by audio UI components).
 
-use gpui_design::{DesignSystem, ToggleVariant};
 use gpui_audio_kit::AudioDesignTokens;
+use gpui_design::{DesignSystem, ToggleVariant};
 
 /// Convert a `DesignSystem` into `AudioDesignTokens` for UI components.
 pub fn audio_tokens_from_ds(ds: &DesignSystem) -> AudioDesignTokens {

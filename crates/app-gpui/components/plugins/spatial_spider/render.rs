@@ -11,9 +11,9 @@
 //! plugin UI is responsible for materialising the [`ChannelMetric`] and
 //! re-painting the element every refresh.
 
-use super::data::{compute_polygon_2d, ChannelMetric, SpeakerVertex};
+use super::data::{ChannelMetric, SpeakerVertex, compute_polygon_2d};
 #[cfg(feature = "gpu-3d")]
-use super::data::{compute_polygon_3d, SpiderPolygon};
+use super::data::{SpiderPolygon, compute_polygon_3d};
 use super::{SpatialSpiderSnapshot, SpiderMode, SpiderViewMode};
 use crate::app::AppState;
 use crate::components::design::Ds;
@@ -26,7 +26,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Select, SelectOption, SelectSize, StackSpacing, Toggle, ToggleStyle, VStack};
 use sotf_plugins::speaker_config::{
-    get_speaker_config, get_speaker_config_by_channels, SpeakerConfig,
+    SpeakerConfig, get_speaker_config, get_speaker_config_by_channels,
 };
 #[cfg(feature = "gpu-3d")]
 use std::cell::RefCell;

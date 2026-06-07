@@ -26,9 +26,17 @@ pub use audio::{
     handle_keyboard, handle_scroll, store_drag_state, value_tracker,
 };
 pub use audio_design_tokens::AudioDesignTokens;
-pub use meter::{LevelMeterElement, MeterColors, db_to_position};
+pub use meter::{
+    HorizontalMeterTheme, LevelMeterElement, MeterColors, db_to_position,
+    render_horizontal_meter_bar, render_horizontal_meter_bar_with,
+};
 pub use scale::Scale as AudioScale;
-pub use spectrum::{MeterData, SpectrumColors, SpectrumElement};
+pub use spectrum::{
+    MeterData, SpectrumAxisLabel, SpectrumAxisTheme, SpectrumColors, SpectrumDbAxisLabel,
+    SpectrumElement, format_spectrum_frequency_label, logarithmic_frequency_position,
+    render_spectrum_db_axis, render_spectrum_frequency_axis, spectrum_db_axis_labels,
+    spectrum_frequency_axis_labels,
+};
 pub use ticks::{ScaleType, TickConfig, TickMark, render_tick_row};
 
 pub use gpui_ui_kit::{ComponentBuilder, ComponentSize, ComponentTheme};

@@ -10,7 +10,10 @@
 
 use gpui::prelude::*;
 use gpui::*;
-use gpui_audio_kit::{TickConfig, db_to_position, render_tick_row};
+use gpui_audio_kit::{
+    TickConfig, db_to_position, render_horizontal_meter_bar, render_horizontal_meter_bar_with,
+    render_tick_row,
+};
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::ChannelState;
 use sotf_plugins::speaker_config::{
@@ -1029,65 +1032,8 @@ impl PlayerView {
         tick_config: &TickConfig,
         meter_theme: &MeterTheme,
     ) -> impl IntoElement {
-        // Use the same scale as the ticks for bar fill
-        let ratio = tick_config.value_to_position(value);
-        let bar_color = meter_theme.color_for_ratio(ratio);
-
-        // Fill: when gradient is enabled, paint several stacked horizontal
-        // strips with rising alpha to fake a low→high luminance ramp.
-        let fill = if meter_theme.use_gradient {
-            let strips = 10usize;
-            let mut row = div().h_full().w(gpui::relative(ratio)).flex();
-            for i in 0..strips {
-                let t = (i as f32 + 0.5) / strips as f32;
-                let alpha = 0.35 + 0.65 * t;
-                let strip_color = Rgba {
-                    r: bar_color.r,
-                    g: bar_color.g,
-                    b: bar_color.b,
-                    a: bar_color.a * alpha,
-                };
-                row = row.child(div().h_full().flex_1().bg(strip_color));
-            }
-            row
-        } else {
-            div().h_full().w(gpui::relative(ratio)).bg(bar_color)
-        };
-
-        div()
-            .flex()
-            .items_center()
-            .gap(spacing::SM) // Tighter gap for more bar space
-            // Label
-            .child(
-                div()
-                    .w(px(meter_theme.label_width))
-                    .text_size(d.text_xs)
-                    .text_color(meter_theme.color_text)
-                    .child(label.to_string()),
-            )
-            // Bar with border
-            .child(
-                div()
-                    .flex_1()
-                    .h(px(meter_theme.bar_height))
-                    .rounded(px(meter_theme.border_radius))
-                    .border(px(meter_theme.border_width))
-                    .border_color(meter_theme.color_border)
-                    .bg(meter_theme.color_background)
-                    .overflow_hidden()
-                    .child(fill),
-            )
-            // Value display
-            .child(
-                div()
-                    .w(px(meter_theme.value_width))
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(meter_theme.color_text)
-                    .text_align(TextAlign::Right)
-                    .child(format!("{:.1}", value)),
-            )
+        let horizontal_theme = meter_theme.to_horizontal_meter_theme(d.text_xs, spacing::SM);
+        render_horizontal_meter_bar(label.to_string(), value, tick_config, horizontal_theme)
     }
 
     /// Render stereo width bar (0 = mono, 1 = wide)
@@ -1098,45 +1044,15 @@ impl PlayerView {
         tick_config: &TickConfig,
         meter_theme: &MeterTheme,
     ) -> impl IntoElement {
-        // Use the same scale as the ticks for bar fill
+        let horizontal_theme = meter_theme.to_horizontal_meter_theme(d.text_xs, spacing::SM);
         let ratio = tick_config.value_to_position(width);
-        // Color: cyan/teal for width (uses info color from theme via meter_theme)
-        let bar_color = meter_theme.color_info;
-
-        div()
-            .flex()
-            .items_center()
-            .gap(spacing::SM)
-            // Label
-            .child(
-                div()
-                    .w(px(meter_theme.label_width))
-                    .text_size(d.text_xs)
-                    .text_color(meter_theme.color_text)
-                    .child("W"),
-            )
-            // Bar with border
-            .child(
-                div()
-                    .flex_1()
-                    .h(px(meter_theme.bar_height))
-                    .rounded(px(meter_theme.border_radius))
-                    .border(px(meter_theme.border_width))
-                    .border_color(meter_theme.color_border)
-                    .bg(meter_theme.color_background)
-                    .overflow_hidden()
-                    .child(div().h_full().w(gpui::relative(ratio)).bg(bar_color)),
-            )
-            // Value display
-            .child(
-                div()
-                    .w(px(meter_theme.value_width))
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(meter_theme.color_text)
-                    .text_align(TextAlign::Right)
-                    .child(format!("{:.0}%", width * 100.0)),
-            )
+        render_horizontal_meter_bar_with(
+            "W",
+            ratio,
+            meter_theme.color_info,
+            format!("{:.0}%", width * 100.0),
+            horizontal_theme,
+        )
     }
 
     /// Render multichannel peak spread bar (0 = even, higher = wider channel imbalance)
@@ -1146,40 +1062,15 @@ impl PlayerView {
         tick_config: &TickConfig,
         meter_theme: &MeterTheme,
     ) -> impl IntoElement {
+        let horizontal_theme = meter_theme.to_horizontal_meter_theme(d.text_xs, spacing::SM);
         let ratio = tick_config.value_to_position(spread_db);
-        let bar_color = meter_theme.color_info;
-
-        div()
-            .flex()
-            .items_center()
-            .gap(spacing::SM)
-            .child(
-                div()
-                    .w(px(meter_theme.label_width))
-                    .text_size(d.text_xs)
-                    .text_color(meter_theme.color_text)
-                    .child("D"),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .h(px(meter_theme.bar_height))
-                    .rounded(px(meter_theme.border_radius))
-                    .border(px(meter_theme.border_width))
-                    .border_color(meter_theme.color_border)
-                    .bg(meter_theme.color_background)
-                    .overflow_hidden()
-                    .child(div().h_full().w(gpui::relative(ratio)).bg(bar_color)),
-            )
-            .child(
-                div()
-                    .w(px(meter_theme.value_width))
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(meter_theme.color_text)
-                    .text_align(TextAlign::Right)
-                    .child(format!("{:.1} dB", spread_db)),
-            )
+        render_horizontal_meter_bar_with(
+            "D",
+            ratio,
+            meter_theme.color_info,
+            format!("{spread_db:.1} dB"),
+            horizontal_theme,
+        )
     }
 
     /// Render LUFS display with True Peak bars at top (wrapper method)

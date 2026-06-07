@@ -1,6 +1,7 @@
 //! Meter / LUFS / TruePeak styling — derives from the global app `Theme`.
 
 use gpui::*;
+use gpui_audio_kit::HorizontalMeterTheme;
 
 /// Meter styling parameters for LUFS and True Peak displays
 pub struct MeterTheme {
@@ -74,6 +75,29 @@ impl MeterTheme {
             self.color_warning
         } else {
             self.color_normal
+        }
+    }
+
+    /// Convert to the toolkit-owned horizontal meter renderer theme.
+    pub fn to_horizontal_meter_theme(&self, text_size: Rems, gap: Pixels) -> HorizontalMeterTheme {
+        HorizontalMeterTheme {
+            color_normal: self.color_normal,
+            color_warning: self.color_warning,
+            color_critical: self.color_critical,
+            color_info: self.color_info,
+            color_background: self.color_background,
+            color_border: self.color_border,
+            color_text: self.color_text,
+            bar_height: self.bar_height,
+            border_radius: self.border_radius,
+            border_width: self.border_width,
+            label_width: self.label_width,
+            value_width: self.value_width,
+            warning_threshold: self.warning_threshold,
+            critical_threshold: self.critical_threshold,
+            use_gradient: self.use_gradient,
+            text_size,
+            gap,
         }
     }
 }

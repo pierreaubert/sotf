@@ -31,14 +31,33 @@ All use `label: "Swift"` (closest to Rust in the allowed list).
 | 1:1103 | Tooltip | crates/gpui-toolkit/gpui-ui-kit/src/tooltip.rs |
 | 1:1126 | Card | crates/gpui-toolkit/gpui-ui-kit/src/card.rs |
 | 1:354 | IconButton | crates/gpui-toolkit/gpui-ui-kit/src/icon_button.rs |
+| px:scatter | ScatterChart | crates/gpui-toolkit/gpui-px/src/scatter.rs |
+| px:line | LineChart | crates/gpui-toolkit/gpui-px/src/line.rs |
+| px:bar | BarChart | crates/gpui-toolkit/gpui-px/src/bar.rs |
+| px:area | AreaChart | crates/gpui-toolkit/gpui-px/src/area.rs |
+| px:heatmap | HeatmapChart | crates/gpui-toolkit/gpui-px/src/heatmap.rs |
+| px:contour | ContourChart | crates/gpui-toolkit/gpui-px/src/contour.rs |
+| px:isoline | IsolineChart | crates/gpui-toolkit/gpui-px/src/isoline.rs |
+| px:pie | PieChart | crates/gpui-toolkit/gpui-px/src/pie.rs |
+| px:boxplot | BoxPlotChart | crates/gpui-toolkit/gpui-px/src/boxplot.rs |
+| px:treemap | Treemap | crates/gpui-toolkit/gpui-px/src/treemap.rs |
 | audio:potentiometer | Potentiometer | crates/gpui-toolkit/gpui-audio-kit/src/audio/potentiometer.rs |
 | audio:vertical-slider | VerticalSlider | crates/gpui-toolkit/gpui-audio-kit/src/audio/vertical_slider.rs |
 | audio:volume-knob | VolumeKnob | crates/gpui-toolkit/gpui-audio-kit/src/audio/volume_knob.rs |
 | audio:level-meter | LevelMeterElement | crates/gpui-toolkit/gpui-audio-kit/src/meter.rs |
+| audio:horizontal-meter | HorizontalMeterTheme + render_horizontal_meter_bar | crates/gpui-toolkit/gpui-audio-kit/src/meter.rs |
 | audio:spectrum | SpectrumElement | crates/gpui-toolkit/gpui-audio-kit/src/spectrum.rs |
+| audio:spectrum-axis | SpectrumAxisTheme + spectrum axis render helpers | crates/gpui-toolkit/gpui-audio-kit/src/spectrum.rs |
 
 The runtime story registry for design review and responsive matrices lives in
-`crates/gpui-toolkit/gpui-component-lab`. Token exports and validation live in
+`crates/gpui-toolkit/gpui-component-lab`. Current first-party story ids are
+`ui-kit.button`, `ui-kit.form`, `ui-kit.status`, `ui-kit.navigation`,
+`ui-kit.feedback`, `ui-kit.card`, `px.line`, `px.bar`, `px.scatter`,
+`px.area`, `px.heatmap`, `px.contour`, `px.isoline`, `px.pie`,
+`px.boxplot`, `px.treemap`, `audio-kit.potentiometer`,
+`audio-kit.vertical-slider`, `audio-kit.volume-knob`, `audio-kit.meter`,
+`audio-kit.horizontal-meter`, `audio-kit.spectrum`, and
+`audio-kit.spectrum-axis`. Token exports and validation live in
 `crates/gpui-toolkit/gpui-design-tools`.
 
 ## Code Connect Examples
@@ -83,11 +102,12 @@ Alert::new("id", "Message")
 
 When `get_design_context` returns Tabs, generate:
 ```rust
-Tabs::new("id", vec![
-    TabItem::new("tab1", "General"),
-    TabItem::new("tab2", "Audio"),
-])
-.variant(TabVariant::Underline)
+Tabs::new("id")
+    .tabs(vec![
+        TabItem::new("tab1", "General"),
+        TabItem::new("tab2", "Audio"),
+    ])
+    .variant(TabVariant::Underline)
 ```
 
 When `get_design_context` returns a Select, generate:
@@ -110,7 +130,10 @@ VStack::new()
 When `get_design_context` returns an audio control, generate imports from
 `gpui_audio_kit`:
 ```rust
-use gpui_audio_kit::{AudioScale, Potentiometer, PotentiometerSize};
+use gpui_audio_kit::{
+    AudioScale, Potentiometer, PotentiometerSize, VerticalSlider, VerticalSliderSize,
+    VolumeKnob,
+};
 
 Potentiometer::new("frequency")
     .label("Frequency")
@@ -119,4 +142,63 @@ Potentiometer::new("frequency")
     .max(20_000.0)
     .scale(AudioScale::Logarithmic)
     .size(PotentiometerSize::Md)
+
+VerticalSlider::new("gain")
+    .label("Gain")
+    .value(-6.0)
+    .min(-60.0)
+    .max(6.0)
+    .unit("dB")
+    .with_ticks()
+    .size(VerticalSliderSize::Lg);
+
+VolumeKnob::new()
+    .id("output")
+    .label("Output")
+    .value(0.72)
+    .muted(false);
+```
+
+When `get_design_context` returns a horizontal meter or spectrum axis, keep the
+imports in `gpui_audio_kit` and map visual settings from `DesignSystem`/theme
+tokens:
+```rust
+use gpui_audio_kit::{
+    HorizontalMeterTheme, SpectrumAxisTheme, TickConfig, render_horizontal_meter_bar,
+    render_spectrum_db_axis, render_spectrum_frequency_axis,
+};
+
+render_horizontal_meter_bar(
+    "LUFS",
+    -18.0,
+    &TickConfig::lufs(),
+    HorizontalMeterTheme::default(),
+);
+
+render_spectrum_db_axis(SpectrumAxisTheme::default());
+render_spectrum_frequency_axis(20.0, 20_000.0, SpectrumAxisTheme::default());
+```
+
+When `get_design_context` returns a chart surface, generate responsive
+`gpui_px` builders by default and keep fixed pixel sizing as an explicit opt-in:
+```rust
+use gpui_px::{ColorScale, heatmap, line, scatter};
+
+line(&x, &y)
+    .title("Frequency Sweep")
+    .fill()
+    .min_size(320.0, 220.0)
+    .aspect_ratio(1.6)
+    .build()?;
+
+scatter(&x, &y)
+    .fill()
+    .min_size(320.0, 220.0)
+    .build()?;
+
+heatmap(&z, width, height)
+    .color_scale(ColorScale::Viridis)
+    .fill()
+    .min_size(320.0, 220.0)
+    .build()?;
 ```

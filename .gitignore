@@ -1,5 +1,6 @@
 # rust
 /target
+/crates/gpui-toolkit/target
 /target-static
 /coverage
 mutants.out

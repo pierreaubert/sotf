@@ -4,7 +4,9 @@ use crate::PluginViewHost;
 use crate::PluginViewTheme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_audio_kit::{Potentiometer, PotentiometerScale, PotentiometerSize, VerticalSlider, VerticalSliderTheme};
+use gpui_audio_kit::{
+    Potentiometer, PotentiometerScale, PotentiometerSize, VerticalSlider, VerticalSliderTheme,
+};
 use gpui_ui_kit::{Toggle, ToggleStyle};
 use sotf_audio_player_midi::PhysicalControlKind;
 use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
@@ -434,7 +436,7 @@ pub fn format_shortcut_label(label: &str, shortcut_key: Option<char>) -> String 
     }
 }
 
-/// Convert PluginViewTheme to VerticalSliderTheme for gpui-ui-kit VerticalSlider
+/// Convert PluginViewTheme to VerticalSliderTheme for gpui-audio-kit VerticalSlider
 fn theme_to_vertical_slider_theme(theme: &PluginViewTheme) -> VerticalSliderTheme {
     VerticalSliderTheme {
         surface: theme.surface,
@@ -1295,7 +1297,7 @@ pub fn render_dynamics_layout(
     )
 }
 
-/// Render a rotary knob control using gpui-ui-kit Potentiometer
+/// Render a rotary knob control using gpui-audio-kit Potentiometer
 /// Uses `Entity<H>` for direct state updates via `PluginViewHost`
 pub fn render_knob<H: PluginViewHost>(
     entity: Entity<H>,

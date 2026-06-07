@@ -34,6 +34,7 @@ sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
 sotf-gpui = { path = "../app-gpui" }
 gpui = { workspace = true }
+gpui-design-tools = { workspace = true }
 
 anyhow = { workspace = true }
 log = { workspace = true }

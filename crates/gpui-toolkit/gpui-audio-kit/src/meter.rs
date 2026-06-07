@@ -1,5 +1,6 @@
 //! Level meter primitives for audio UIs.
 
+use crate::TickConfig;
 use gpui::prelude::*;
 use gpui::*;
 use std::panic;
@@ -44,6 +45,138 @@ impl Default for MeterColors {
             use_gradient: false,
         }
     }
+}
+
+/// Theme for reusable horizontal meter bars.
+#[derive(Clone)]
+pub struct HorizontalMeterTheme {
+    pub color_normal: Rgba,
+    pub color_warning: Rgba,
+    pub color_critical: Rgba,
+    pub color_info: Rgba,
+    pub color_background: Rgba,
+    pub color_border: Rgba,
+    pub color_text: Rgba,
+    pub bar_height: f32,
+    pub border_radius: f32,
+    pub border_width: f32,
+    pub label_width: f32,
+    pub value_width: f32,
+    pub warning_threshold: f32,
+    pub critical_threshold: f32,
+    pub use_gradient: bool,
+    pub text_size: Rems,
+    pub gap: Pixels,
+}
+
+impl Default for HorizontalMeterTheme {
+    fn default() -> Self {
+        Self {
+            color_normal: rgba(0x4caf50ff),
+            color_warning: rgba(0xffc107ff),
+            color_critical: rgba(0xf44336ff),
+            color_info: rgba(0x38bdf8ff),
+            color_background: rgba(0x1f1f1fff),
+            color_border: rgba(0x3f3f46ff),
+            color_text: rgba(0xd0d0d0ff),
+            bar_height: 20.0,
+            border_radius: 2.0,
+            border_width: 1.0,
+            label_width: 32.0,
+            value_width: 50.0,
+            warning_threshold: 0.75,
+            critical_threshold: 0.90,
+            use_gradient: false,
+            text_size: rems(0.75),
+            gap: px(4.0),
+        }
+    }
+}
+
+impl HorizontalMeterTheme {
+    /// Get the semantic meter color for a fill ratio from 0.0 to 1.0.
+    pub fn color_for_ratio(&self, ratio: f32) -> Rgba {
+        if ratio >= self.critical_threshold {
+            self.color_critical
+        } else if ratio >= self.warning_threshold {
+            self.color_warning
+        } else {
+            self.color_normal
+        }
+    }
+}
+
+/// Render a horizontal meter bar using a tick config for value positioning.
+pub fn render_horizontal_meter_bar(
+    label: impl Into<SharedString>,
+    value: f64,
+    tick_config: &TickConfig,
+    theme: HorizontalMeterTheme,
+) -> impl IntoElement {
+    let ratio = tick_config.value_to_position(value);
+    let bar_color = theme.color_for_ratio(ratio);
+    render_horizontal_meter_bar_with(label, ratio, bar_color, format!("{value:.1}"), theme)
+}
+
+/// Render a horizontal meter bar with explicit fill ratio, color, and value text.
+pub fn render_horizontal_meter_bar_with(
+    label: impl Into<SharedString>,
+    ratio: f32,
+    bar_color: Rgba,
+    value_text: impl Into<SharedString>,
+    theme: HorizontalMeterTheme,
+) -> impl IntoElement {
+    let ratio = ratio.clamp(0.0, 1.0);
+    let mut fill = div().h_full().w(relative(ratio));
+    if theme.use_gradient {
+        fill = fill.flex();
+        let strips = 10usize;
+        for index in 0..strips {
+            let t = (index as f32 + 0.5) / strips as f32;
+            let alpha = 0.35 + 0.65 * t;
+            let strip_color = Rgba {
+                r: bar_color.r,
+                g: bar_color.g,
+                b: bar_color.b,
+                a: bar_color.a * alpha,
+            };
+            fill = fill.child(div().h_full().flex_1().bg(strip_color));
+        }
+    } else {
+        fill = fill.bg(bar_color);
+    }
+
+    div()
+        .flex()
+        .items_center()
+        .gap(theme.gap)
+        .child(
+            div()
+                .w(px(theme.label_width))
+                .text_size(theme.text_size)
+                .text_color(theme.color_text)
+                .child(label.into()),
+        )
+        .child(
+            div()
+                .flex_1()
+                .h(px(theme.bar_height))
+                .rounded(px(theme.border_radius))
+                .border(px(theme.border_width))
+                .border_color(theme.color_border)
+                .bg(theme.color_background)
+                .overflow_hidden()
+                .child(fill),
+        )
+        .child(
+            div()
+                .w(px(theme.value_width))
+                .text_size(theme.text_size)
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(theme.color_text)
+                .text_align(TextAlign::Right)
+                .child(value_text.into()),
+        )
 }
 
 /// GPU-accelerated vertical level meter element.
@@ -323,5 +456,26 @@ fn rgba(hex: u32) -> Rgba {
         g: ((hex >> 16) & 0xff) as f32 / 255.0,
         b: ((hex >> 8) & 0xff) as f32 / 255.0,
         a: (hex & 0xff) as f32 / 255.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[::core::prelude::v1::test]
+    fn horizontal_meter_theme_uses_threshold_colors() {
+        let theme = HorizontalMeterTheme::default();
+        assert_eq!(theme.color_for_ratio(0.25), theme.color_normal);
+        assert_eq!(theme.color_for_ratio(0.80), theme.color_warning);
+        assert_eq!(theme.color_for_ratio(0.95), theme.color_critical);
+    }
+
+    #[::core::prelude::v1::test]
+    fn horizontal_meter_bar_helper_is_constructible() {
+        let theme = HorizontalMeterTheme::default();
+        let config = TickConfig::lufs();
+        let _bar = render_horizontal_meter_bar("L", -18.0, &config, theme.clone());
+        let _custom = render_horizontal_meter_bar_with("W", 0.72, theme.color_info, "72%", theme);
     }
 }

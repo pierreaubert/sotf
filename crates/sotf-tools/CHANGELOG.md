@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarified that `export-design-tokens` and `import-design-tokens` are
   app-specific SOTF GPUI theme adapters; generic gpui-toolkit token
   export/import/validation now lives in `gpui-design-tools`.
+- Added `--toolkit` forwarding modes to the SOTF token import/export binaries
+  so callers can delegate generic DesignSystem token work to `gpui-design-tools`
+  without changing the legacy app-theme defaults.
 
 ## [0.5.7] - 2026-05-31
 

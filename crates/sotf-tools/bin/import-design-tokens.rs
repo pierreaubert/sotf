@@ -1,8 +1,25 @@
 use anyhow::{Context, Result, anyhow, bail};
+use clap::Parser;
+use gpui_design_tools::{DesignTokenFormat, import_design_tokens_from_path};
 use serde_json::Value;
 use sotf_audio_player_gpui::theme::ThemeId;
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Parser)]
+struct Args {
+    /// Import and validate a generic gpui-toolkit DesignSystem token document.
+    #[arg(long)]
+    toolkit: bool,
+
+    /// Input token path. Defaults to the legacy SOTF app token file or toolkit token file.
+    #[arg(short, long)]
+    input: Option<PathBuf>,
+
+    /// Generic toolkit token format when --toolkit is used.
+    #[arg(long, default_value = "style-dictionary-json")]
+    format: String,
+}
 
 fn hex_nibble(ch: char, component: &str, display: &str) -> Result<u8> {
     ch.to_digit(16)
@@ -540,13 +557,23 @@ fn needs_rgba_import(theme_obj: &Value) -> bool {
 }
 
 fn main() -> Result<()> {
-    let tokens_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or_else(|| anyhow!("parent of crates/sotf-tools"))?
-        .parent()
-        .ok_or_else(|| anyhow!("workspace root"))?
-        .join("design-tokens")
-        .join("tokens.json");
+    let args = Args::parse();
+
+    if args.toolkit {
+        let format = DesignTokenFormat::parse(&args.format)?;
+        let tokens_path = args.input.unwrap_or_else(default_toolkit_tokens_path);
+        let imported = import_design_tokens_from_path(&tokens_path, format)
+            .with_context(|| format!("import {}", tokens_path.display()))?;
+        println!(
+            "Imported {} toolkit design token(s) from {} across {} preset(s)",
+            imported.token_count,
+            tokens_path.display(),
+            imported.preset_count
+        );
+        return Ok(());
+    }
+
+    let tokens_path = args.input.unwrap_or_else(default_app_tokens_path);
 
     let tokens_str = std::fs::read_to_string(&tokens_path)
         .with_context(|| format!("read {}", tokens_path.display()))?;
@@ -586,6 +613,25 @@ fn main() -> Result<()> {
         tokens_path.display()
     );
     Ok(())
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("parent of crates/sotf-tools")
+        .parent()
+        .expect("workspace root")
+        .to_path_buf()
+}
+
+fn default_app_tokens_path() -> PathBuf {
+    workspace_root().join("design-tokens").join("tokens.json")
+}
+
+fn default_toolkit_tokens_path() -> PathBuf {
+    workspace_root()
+        .join("design-tokens")
+        .join("gpui-tokens.json")
 }
 
 #[cfg(test)]

@@ -1,13 +1,17 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use gpui_component_lab::{StoryDocument, builtin_story_registry, load_story_documents};
+use gpui_component_lab::lab_ui::{LabAppConfig, run_lab_app};
+use gpui_component_lab::{
+    ComponentLabConformanceReport, builtin_story_registry, ensure_component_lab_conformance_passed,
+    latest_rust_source_modified, load_story_documents, validate_component_lab_conformance,
+};
 use gpui_design_tools::{
-    DesignTokenFormat, ensure_passed, validate_current_design_tokens,
+    DesignTokenFormat, DesignTokenValidationReport, validate_current_design_tokens,
     validate_design_tokens_from_path,
 };
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 #[derive(Parser)]
 struct Args {
@@ -35,6 +39,15 @@ struct Args {
     /// Validate design conformance before starting.
     #[arg(long)]
     conformance: bool,
+    /// Emit conformance as JSON instead of Markdown.
+    #[arg(long)]
+    conformance_json: bool,
+    /// Write conformance report JSON.
+    #[arg(long)]
+    report_json: Option<PathBuf>,
+    /// Write conformance report Markdown.
+    #[arg(long)]
+    report_markdown: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -43,96 +56,105 @@ fn main() -> Result<()> {
         return supervise_rust_source(&args.rust_watch_root, args.child_command.as_deref());
     }
 
-    if args.conformance {
-        let report = validate_current_design_tokens()?;
-        ensure_passed(&report)?;
+    if args.conformance
+        || args.conformance_json
+        || args.report_json.is_some()
+        || args.report_markdown.is_some()
+    {
+        let report = run_conformance(&args.stories_dir, &args.tokens)?;
+        emit_conformance_report(
+            &report,
+            args.conformance_json,
+            args.report_json.as_deref(),
+            args.report_markdown.as_deref(),
+        )?;
+        return ensure_component_lab_conformance_passed(&report);
     }
 
-    let registry = builtin_story_registry()?;
     if args.json {
+        let registry = builtin_story_registry()?;
         println!("{}", serde_json::to_string_pretty(&registry)?);
-    } else {
-        println!("gpui-component-lab: {} built-in stories", registry.len());
-        for story in registry.stories() {
-            println!("- {} ({})", story.id, story.crate_name);
+        return Ok(());
+    }
+
+    run_lab_app(LabAppConfig::new(args.stories_dir, args.tokens).with_watch(args.watch))
+}
+
+fn run_conformance(
+    stories_dir: &Path,
+    tokens: &[PathBuf],
+) -> Result<ComponentLabConformanceReport> {
+    let registry = builtin_story_registry()?;
+    let docs = load_story_documents(stories_dir)?;
+    let token_report = validate_conformance_tokens(tokens)?;
+    Ok(validate_component_lab_conformance(
+        &registry,
+        &docs,
+        &token_report,
+    ))
+}
+
+fn validate_conformance_tokens(tokens: &[PathBuf]) -> Result<DesignTokenValidationReport> {
+    if tokens.is_empty() {
+        return validate_current_design_tokens();
+    }
+
+    let mut combined: Option<DesignTokenValidationReport> = None;
+    for token in tokens {
+        let report =
+            validate_design_tokens_from_path(token, DesignTokenFormat::StyleDictionaryJson)
+                .with_context(|| format!("validate {}", token.display()))?;
+        if let Some(combined) = combined.as_mut() {
+            combined.passed &= report.passed;
+            combined.preset_count += report.preset_count;
+            combined.token_count += report.token_count;
+            combined.findings.extend(
+                report
+                    .findings
+                    .into_iter()
+                    .map(|finding| format!("{}: {finding}", token.display())),
+            );
+            combined
+                .conformance_markdown
+                .push_str(&format!("\n\n### {}\n\n", token.display()));
+            combined
+                .conformance_markdown
+                .push_str(&report.conformance_markdown);
+        } else {
+            combined = Some(report);
         }
     }
 
-    let docs = load_story_documents(&args.stories_dir)?;
-    if !docs.is_empty() {
-        println!(
-            "Loaded {} designer story document(s) from {}",
-            docs.len(),
-            args.stories_dir.display()
-        );
+    combined.context("no token reports produced")
+}
+
+fn emit_conformance_report(
+    report: &ComponentLabConformanceReport,
+    json_stdout: bool,
+    report_json: Option<&Path>,
+    report_markdown: Option<&Path>,
+) -> Result<()> {
+    if json_stdout {
+        println!("{}", serde_json::to_string_pretty(report)?);
+    } else {
+        println!("{}", report.to_markdown());
     }
 
-    if args.watch {
-        watch_live_state(args.stories_dir, args.tokens)?;
+    if let Some(path) = report_json {
+        write_report(path, serde_json::to_string_pretty(report)?)?;
+    }
+    if let Some(path) = report_markdown {
+        write_report(path, report.to_markdown())?;
     }
 
     Ok(())
 }
 
-fn watch_live_state(stories_dir: PathBuf, tokens: Vec<PathBuf>) -> Result<()> {
-    println!(
-        "Watching {} for *.story.json changes",
-        stories_dir.display()
-    );
-    for token in &tokens {
-        println!("Watching {} for design token changes", token.display());
+fn write_report(path: &Path, body: String) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
-    let mut last_seen = latest_story_or_token_modified(&stories_dir, &tokens)?;
-    loop {
-        std::thread::sleep(Duration::from_millis(750));
-        let next = latest_story_or_token_modified(&stories_dir, &tokens)?;
-        if next > last_seen {
-            let docs: Vec<StoryDocument> = load_story_documents(&stories_dir)?;
-            println!("Reloaded {} story document(s)", docs.len());
-            for token in &tokens {
-                let report = validate_design_tokens_from_path(
-                    token,
-                    DesignTokenFormat::StyleDictionaryJson,
-                )?;
-                println!(
-                    "Reloaded {} token(s) from {}",
-                    report.token_count,
-                    token.display()
-                );
-                ensure_passed(&report)?;
-            }
-            last_seen = next;
-        }
-    }
-}
-
-fn latest_story_or_token_modified(dir: &Path, tokens: &[PathBuf]) -> Result<SystemTime> {
-    let mut latest = latest_story_modified(dir)?;
-    for token in tokens {
-        if token.exists() {
-            latest = latest.max(token.metadata()?.modified()?);
-        }
-    }
-    Ok(latest)
-}
-
-fn latest_story_modified(dir: &Path) -> Result<SystemTime> {
-    let mut latest = SystemTime::UNIX_EPOCH;
-    if !dir.exists() {
-        return Ok(latest);
-    }
-    for entry in std::fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
-        let entry = entry?;
-        let path = entry.path();
-        if path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.ends_with(".story.json"))
-        {
-            latest = latest.max(entry.metadata()?.modified()?);
-        }
-    }
-    Ok(latest)
+    std::fs::write(path, body).with_context(|| format!("write {}", path.display()))
 }
 
 fn supervise_rust_source(root: &Path, child_command: Option<&str>) -> Result<()> {
@@ -142,7 +164,7 @@ fn supervise_rust_source(root: &Path, child_command: Option<&str>) -> Result<()>
         root.display()
     );
     let mut child = Some(spawn_child(command)?);
-    let mut last_seen = latest_rust_modified(root)?;
+    let mut last_seen = latest_rust_source_modified(root)?;
 
     loop {
         std::thread::sleep(Duration::from_millis(1000));
@@ -152,7 +174,7 @@ fn supervise_rust_source(root: &Path, child_command: Option<&str>) -> Result<()>
             }
         }
 
-        let next = latest_rust_modified(root)?;
+        let next = latest_rust_source_modified(root)?;
         if next > last_seen {
             if let Some(mut running) = child.take() {
                 let _ = running.kill();
@@ -171,32 +193,4 @@ fn spawn_child(command: &str) -> Result<Child> {
         .args(parts)
         .spawn()
         .with_context(|| format!("spawn child command '{command}'"))
-}
-
-fn latest_rust_modified(root: &Path) -> Result<SystemTime> {
-    let mut latest = SystemTime::UNIX_EPOCH;
-    if !root.exists() {
-        return Ok(latest);
-    }
-    for entry in std::fs::read_dir(root).with_context(|| format!("read {}", root.display()))? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            if path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name == "target")
-            {
-                continue;
-            }
-            latest = latest.max(latest_rust_modified(&path)?);
-        } else if path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ext == "rs" || ext == "toml")
-        {
-            latest = latest.max(entry.metadata()?.modified()?);
-        }
-    }
-    Ok(latest)
 }

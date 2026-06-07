@@ -20,15 +20,27 @@ impl Gpu2DContext {
     ///
     /// This lazily initializes the wgpu device on first access.
     pub fn global() -> &'static Self {
-        static CONTEXT: LazyLock<Gpu2DContext> = LazyLock::new(|| {
-            let (instance, device, queue) = pollster::block_on(create_device());
-            Gpu2DContext {
+        Self::try_global().unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    /// Try to get the global GPU context singleton.
+    ///
+    /// Missing adapters are stored as an error instead of panicking inside the
+    /// static initializer, so tests and callers that tolerate missing GPUs do
+    /// not poison the process-global context.
+    pub fn try_global() -> Result<&'static Self, &'static str> {
+        static CONTEXT: LazyLock<Result<Gpu2DContext, String>> = LazyLock::new(|| {
+            let (instance, device, queue) = pollster::block_on(create_device())?;
+            Ok(Gpu2DContext {
                 device: Arc::new(device),
                 queue: Arc::new(queue),
                 _instance: instance,
-            }
+            })
         });
-        &CONTEXT
+        match &*CONTEXT {
+            Ok(context) => Ok(context),
+            Err(err) => Err(err.as_str()),
+        }
     }
 
     /// Get a clone of the device Arc
@@ -43,7 +55,7 @@ impl Gpu2DContext {
 }
 
 /// Create a new wgpu instance, device and queue
-async fn create_device() -> (wgpu::Instance, wgpu::Device, wgpu::Queue) {
+async fn create_device() -> Result<(wgpu::Instance, wgpu::Device, wgpu::Queue), String> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
         ..wgpu::InstanceDescriptor::new_without_display_handle()
@@ -56,7 +68,7 @@ async fn create_device() -> (wgpu::Instance, wgpu::Device, wgpu::Queue) {
             force_fallback_adapter: false,
         })
         .await
-        .expect("Failed to find suitable GPU adapter");
+        .map_err(|err| format!("Failed to find suitable GPU adapter: {err:?}"))?;
 
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
@@ -68,7 +80,7 @@ async fn create_device() -> (wgpu::Instance, wgpu::Device, wgpu::Queue) {
             experimental_features: wgpu::ExperimentalFeatures::default(),
         })
         .await
-        .expect("Failed to create device");
+        .map_err(|err| format!("Failed to create device: {err:?}"))?;
 
-    (instance, device, queue)
+    Ok((instance, device, queue))
 }

@@ -1,5 +1,24 @@
+use anyhow::{Context, Result};
+use clap::Parser;
+use gpui_design_tools::{DesignTokenFormat, export_design_tokens_to_path};
 use serde_json::{Map, Value, json};
 use sotf_audio_player_gpui::theme::{Theme, ThemeId};
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Parser)]
+struct Args {
+    /// Export the generic gpui-toolkit DesignSystem token document.
+    #[arg(long)]
+    toolkit: bool,
+
+    /// Output path. Defaults to the legacy SOTF app token file or toolkit token file.
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Generic toolkit token format when --toolkit is used.
+    #[arg(long, default_value = "style-dictionary-json")]
+    format: String,
+}
 
 fn rgba_to_hex(r: f32, g: f32, b: f32, a: f32) -> String {
     let ri = (r * 255.0).round() as u8;
@@ -162,7 +181,16 @@ fn export_theme_colors(theme: &Theme) -> Value {
     })
 }
 
-fn main() {
+fn main() -> Result<()> {
+    let args = Args::parse();
+    if args.toolkit {
+        let format = DesignTokenFormat::parse(&args.format)?;
+        let output = args.output.unwrap_or_else(default_toolkit_tokens_path);
+        export_design_tokens_to_path(&output, format)?;
+        println!("Wrote {}", output.display());
+        return Ok(());
+    }
+
     let global = json!({
         "typography": {
             "fontFamily": { "$type": "fontFamily", "$value": "B612" },
@@ -208,14 +236,29 @@ fn main() {
 
     let output = serde_json::to_string_pretty(&Value::Object(root)).expect("JSON serialization");
 
-    let out_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let out_path = args.output.unwrap_or_else(default_app_tokens_path);
+
+    std::fs::write(&out_path, output.as_bytes())
+        .with_context(|| format!("write {}", out_path.display()))?;
+    println!("Wrote {}", out_path.display());
+    Ok(())
+}
+
+fn workspace_root() -> PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("parent of crates/export-design-tokens")
+        .expect("parent of crates/sotf-tools")
         .parent()
         .expect("workspace root")
-        .join("design-tokens")
-        .join("tokens.json");
+        .to_path_buf()
+}
 
-    std::fs::write(&out_path, output.as_bytes()).expect("write tokens.json");
-    println!("Wrote {}", out_path.display());
+fn default_app_tokens_path() -> PathBuf {
+    workspace_root().join("design-tokens").join("tokens.json")
+}
+
+fn default_toolkit_tokens_path() -> PathBuf {
+    workspace_root()
+        .join("design-tokens")
+        .join("gpui-tokens.json")
 }

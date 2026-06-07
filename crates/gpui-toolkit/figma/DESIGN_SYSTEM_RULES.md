@@ -78,16 +78,38 @@ Located at `crates/gpui-toolkit/gpui-ui-kit/src/`. Each component is a single `.
 | `divider.rs` | `Divider` |
 | `pane_divider.rs` | `PaneDivider` |
 
+### Chart Components
+| File | Component |
+|------|-----------|
+| `../gpui-px/src/line.rs` | `LineChart` |
+| `../gpui-px/src/bar.rs` | `BarChart` |
+| `../gpui-px/src/scatter.rs` | `ScatterChart` |
+| `../gpui-px/src/area.rs` | `AreaChart` |
+| `../gpui-px/src/heatmap.rs` | `HeatmapChart` |
+| `../gpui-px/src/contour.rs` | `ContourChart` |
+| `../gpui-px/src/isoline.rs` | `IsolineChart` |
+| `../gpui-px/src/pie.rs` | `PieChart` |
+| `../gpui-px/src/boxplot.rs` | `BoxPlotChart` |
+| `../gpui-px/src/treemap.rs` | `Treemap` |
+
+Charts should use `.fill().min_size(...).aspect_ratio(...)` by default in lab
+and product surfaces. Use `.size(width, height)` only when a fixed pixel chart
+is intentional.
+
 ### Audio Components
 | File | Component |
 |------|-----------|
 | `../gpui-audio-kit/src/audio/potentiometer.rs` | `Potentiometer` — PotentiometerSize: Xs/Sm/Md/Lg |
 | `../gpui-audio-kit/src/audio/vertical_slider.rs` | `VerticalSlider` |
 | `../gpui-audio-kit/src/audio/volume_knob.rs` | `VolumeKnob` |
-| `../gpui-audio-kit/src/meter.rs` | `LevelMeterElement`, `MeterColors` |
-| `../gpui-audio-kit/src/spectrum.rs` | `SpectrumElement`, `SpectrumColors`, `MeterData` |
+| `../gpui-audio-kit/src/meter.rs` | `LevelMeterElement`, `MeterColors`, `HorizontalMeterTheme`, horizontal meter bar helpers |
+| `../gpui-audio-kit/src/spectrum.rs` | `SpectrumElement`, `SpectrumColors`, `MeterData`, `SpectrumAxisTheme`, spectrum frequency/dB axis helpers |
 
-Audio APIs are not re-exported by `gpui-ui-kit`.
+Audio APIs are not re-exported by `gpui-ui-kit`. Design review coverage for
+audio lives in component-lab stories `audio-kit.potentiometer`,
+`audio-kit.vertical-slider`, `audio-kit.volume-knob`, `audio-kit.meter`,
+`audio-kit.horizontal-meter`, `audio-kit.spectrum`, and
+`audio-kit.spectrum-axis`.
 
 ## 3. Framework
 
@@ -125,7 +147,8 @@ Toggle::new("enable-toggle", is_checked)
 All components implement GPUI's `RenderOnce` or `Render` trait and are
 composed via `.child()` calls. Component story metadata is registered in
 `crates/gpui-toolkit/gpui-component-lab` for prop panels, responsive matrices,
-and conformance checks.
+and conformance checks. First-party `gpui-ui-kit`, `gpui-px`, and
+`gpui-audio-kit` stories must have matching interactive lab renderers.
 
 ## 5. Figma-to-GPUI Translation Rules
 

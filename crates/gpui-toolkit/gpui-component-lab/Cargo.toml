@@ -12,11 +12,17 @@ repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
+gpui = { workspace = true }
 gpui-audio-kit = { workspace = true }
 gpui-design-tools = { workspace = true }
+gpui-miniapp = { workspace = true }
+gpui-px = { workspace = true, features = ["gpui", "gpu-3d"] }
 gpui-ui-kit = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lib]
 name = "gpui_component_lab"

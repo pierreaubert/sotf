@@ -3837,11 +3837,15 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "clap",
+ "gpui",
  "gpui-audio-kit",
  "gpui-design-tools",
+ "gpui-miniapp",
+ "gpui-px",
  "gpui-ui-kit",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -11271,6 +11275,7 @@ dependencies = [
  "clap",
  "env_logger",
  "gpui",
+ "gpui-design-tools",
  "hound",
  "log",
  "rusqlite",

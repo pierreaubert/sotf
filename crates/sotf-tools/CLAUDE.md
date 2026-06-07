@@ -32,5 +32,6 @@ cargo run --bin sofa-to-sqlite --release
   means editing this crate forces an `app-gpui` rebuild.
 - Generic gpui-toolkit token export/import/validation lives in
   `crates/gpui-toolkit/gpui-design-tools`; keep this crate as the SOTF app-theme adapter.
+  The token binaries support `--toolkit` only as a forwarding mode to the toolkit-owned crate.
 - `generate-upmixer-golden` and noise-based audio fixtures use fixed seeds so regenerated
   golden files are byte-stable.
