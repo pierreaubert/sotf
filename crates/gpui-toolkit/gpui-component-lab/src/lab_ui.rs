@@ -2,9 +2,10 @@
 
 use crate::{
     ComponentStory, LivePreviewReload, LivePreviewTokenReload, MotionPreset,
-    ResponsivePreviewMatrix, StoryDocument, StoryProp, StoryPropValue, StoryRegistry, ThemePreset,
-    ViewportPreset, builtin_story_registry, latest_story_or_token_modified, load_story_documents,
-    reload_live_preview_state,
+    ResponsivePreviewMatrix, StoryDocument, StoryProp, StoryPropValue, StoryRegistry,
+    StoryRendererRegistry, ThemePreset, UI_KIT_EXPORTED_COMPONENT_STORY_IDS, ViewportPreset,
+    builtin_story_registry, builtin_story_renderers, latest_story_or_token_modified,
+    load_story_documents, reload_live_preview_state,
 };
 use anyhow::{Context as AnyhowContext, Result};
 use gpui::prelude::*;
@@ -23,16 +24,31 @@ use gpui_px::{
     ColorScale, Colormap, LegendPosition, ScaleType, StrokeDashArray, TilingMethod, TreemapNode,
     area, bar, boxplot, contour, donut, heatmap, isoline, line, pie, scatter, surface3d, treemap,
 };
+use gpui_ui_kit::qr::AnimatedQrCode;
 use gpui_ui_kit::showcase::{Showcase, ShowcaseSection};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::{
-    Alert, AlertVariant, Badge, BadgeSize, BadgeVariant, Button, ButtonSize, ButtonVariant, Card,
-    DesignSystem, Heading, Input, InputSize, NumberInput, NumberInputSize, Progress, ProgressSize,
-    ProgressVariant, Slider, TabItem, TabVariant, Tabs, Text, TextSize, TextWeight, Toggle,
-    ToggleSize, ToggleStyle,
+    Accordion, AccordionItem, Alert, AlertVariant, Avatar, AvatarGroup, AvatarShape, AvatarSize,
+    AvatarStatus, Badge, BadgeDot, BadgeSize, BadgeVariant, BreadcrumbItem, Breadcrumbs, Button,
+    ButtonSet, ButtonSetOption, ButtonSize, ButtonVariant, Card, Checkbox, CheckboxSize,
+    CircularProgress, Code, Color, ColorPickerView, Column, CommandItem, CommandPalette,
+    ConfirmDialog, ConfirmDialogVariant, ContextMenu, DesignSystem, Dialog, DialogSize, Divider,
+    DragItem, DragList, EmptyState, FocusDirection, FocusGroup, HStack, Heading, IconButton,
+    IconButtonSize, IconButtonVariant, ImageView, InlineAlert, Input, InputSize,
+    KeyboardShortcutLabel, KeyboardShortcutSize, Link, LoadingDots, LoadingOverlay, Menu, MenuBar,
+    MenuBarItem, MenuItem, Notification, NotificationVariant, NumberInput, NumberInputSize,
+    PaneDivider, Popover, Port, PortDirection, Position, Progress, ProgressSize, ProgressVariant,
+    QrCode, SearchBar, SearchBarSize, Select, SelectOption, SelectSize, SettingsForm, SettingsRow,
+    Sidebar, Slider, Spacer, Spinner, SpinnerSize, SplitDirection, SplitPane, StatusBar,
+    StepIndicator, StepIndicatorSize, StepItem, StepItemStatus, StepOrientation, StepStatus,
+    TabItem, TabVariant, Table, Tabs, Tag, TagVariant, Text, TextSize, TextWeight, Toast,
+    ToastContainer, ToastPosition, ToastVariant, Toggle, ToggleSize, ToggleStyle, Toolbar,
+    ToolbarItem, Tooltip, TreeNode, TreeView, VStack, WithTooltip, Wizard, WizardHeader,
+    WizardNavigation, WizardStep, WizardVariant, WorkflowCanvas, WorkflowGraph, WorkflowNode,
+    WorkflowNodeData,
 };
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -405,6 +421,7 @@ pub fn run_lab_app(config: LabAppConfig) -> Result<()> {
 /// Interactive storybook/designer view.
 pub struct ComponentLab {
     registry: StoryRegistry,
+    renderers: StoryRendererRegistry,
     documents: BTreeMap<String, StoryDocument>,
     story_ids: Vec<String>,
     ui_showcases: BTreeMap<String, Entity<Showcase>>,
@@ -426,6 +443,7 @@ pub struct ComponentLab {
 impl ComponentLab {
     fn new(config: LabAppConfig, cx: &mut Context<Self>) -> Self {
         let registry = builtin_story_registry().expect("builtin story registry");
+        let renderers = builtin_story_renderers().expect("builtin story renderers");
         let mut documents: BTreeMap<String, StoryDocument> = registry
             .stories()
             .cloned()
@@ -451,6 +469,7 @@ impl ComponentLab {
                 .unwrap_or(SystemTime::UNIX_EPOCH);
         let mut lab = Self {
             registry,
+            renderers,
             documents,
             story_ids,
             ui_showcases,
@@ -904,6 +923,7 @@ impl ComponentLab {
             .border_l_1()
             .border_color(theme.border)
             .child(self.render_story_metadata(story, cx))
+            .child(self.render_story_renderer(story, cx))
             .child(
                 div()
                     .flex()
@@ -933,6 +953,53 @@ impl ComponentLab {
                         ),
                 )
             })
+            .into_any_element()
+    }
+
+    fn render_story_renderer(&self, story: &ComponentStory, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let mut rows = div().flex().flex_col().gap_2();
+
+        if let Some(renderer) = self.renderers.renderer(&story.id) {
+            for (label, value) in [
+                ("Kind", renderer.kind.label().to_string()),
+                ("Interactive", renderer.interactive.to_string()),
+                ("Matrix", renderer.matrix_preview.to_string()),
+            ] {
+                rows = rows.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_3()
+                        .child(Text::new(label).size(TextSize::Xs).color(theme.text_muted))
+                        .child(
+                            Text::new(value)
+                                .size(TextSize::Xs)
+                                .weight(TextWeight::Medium)
+                                .color(theme.text_secondary),
+                        ),
+                );
+            }
+        } else {
+            rows = rows.child(
+                Text::new("No interactive renderer registered")
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
+            );
+        }
+
+        div()
+            .p_3()
+            .rounded_md()
+            .bg(theme.surface_hover)
+            .border_1()
+            .border_color(theme.border)
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(Heading::h3("Renderer"))
+            .child(rows)
             .into_any_element()
     }
 
@@ -1594,6 +1661,9 @@ impl ComponentLab {
             "ui-kit.navigation" => self.render_navigation_story(story, scope, design, cx),
             "ui-kit.feedback" => self.render_feedback_story(story, scope, design, cx),
             "ui-kit.card" => self.render_card_story(story, scope, design, cx),
+            story_id if ui_kit_exported_component_story_id(story_id) => {
+                self.render_exported_ui_kit_component_story(story, scope, interactive, design, cx)
+            }
             story_id if self.ui_showcases.contains_key(story_id) => {
                 self.render_ui_kit_showcase_story(story, scope, cx)
             }
@@ -1620,13 +1690,498 @@ impl ComponentLab {
             "px.contour" => self.render_contour_chart_story(story, scope, design, cx),
             "px.isoline" => self.render_isoline_chart_story(story, scope, design, cx),
             "px.pie" => self.render_pie_chart_story(story, scope, design, cx),
+            "px.donut" => self.render_donut_chart_story(story, scope, design, cx),
             "px.boxplot" => self.render_boxplot_chart_story(story, scope, design, cx),
             "px.treemap" => self.render_treemap_chart_story(story, scope, design, cx),
             "px.surface3d" => self.render_surface3d_chart_story(story, scope, design, cx),
+            _ if self.renderers.contains(&story.id) => div()
+                .child(
+                    Text::new("Renderer metadata exists, but no preview handler is wired")
+                        .muted(true),
+                )
+                .into_any_element(),
             _ => div()
                 .child(Text::new("No renderer registered").muted(true))
                 .into_any_element(),
         }
+    }
+
+    fn render_exported_ui_kit_component_story(
+        &self,
+        story: &ComponentStory,
+        scope: &str,
+        _interactive: bool,
+        design: Arc<DesignSystem>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = cx.theme();
+        let label = text_prop(story, "label", story.title.as_str());
+        let value = number_prop(story, "value", 0.64).clamp(0.0, 1.0);
+        let disabled = bool_prop(story, "disabled", false);
+        let selected = bool_prop(story, "selected", true);
+        let open = bool_prop(story, "open", true);
+        let variant_name = choice_prop(story, "variant", "default");
+        let story_id = story.id.as_str();
+        let scoped = |name: &str| lab_id(&[name, scope]);
+
+        let element = match story_id {
+            "ui-kit.button-set" => ButtonSet::new(scoped("button-set"))
+                .options(vec![
+                    ButtonSetOption::new("mix", "Mix"),
+                    ButtonSetOption::new("edit", "Edit"),
+                    ButtonSetOption::new("ship", "Ship"),
+                ])
+                .selected("edit")
+                .disabled(disabled)
+                .into_any_element(),
+            "ui-kit.icon-button" => IconButton::new(scoped("icon-button"), "✦")
+                .variant(icon_button_variant(&variant_name))
+                .size(IconButtonSize::Lg)
+                .selected(selected)
+                .disabled(disabled)
+                .aria_label(label)
+                .into_any_element(),
+            "ui-kit.alert" => Alert::new(scoped("alert"), label)
+                .title("Alert")
+                .variant(alert_variant(&variant_name))
+                .closeable(open)
+                .into_any_element(),
+            "ui-kit.inline-alert" => InlineAlert::new(label)
+                .variant(alert_variant(&variant_name))
+                .into_any_element(),
+            "ui-kit.toast" => Toast::new(scoped("toast"), label)
+                .title("Toast")
+                .variant(toast_variant(&variant_name))
+                .closeable(open)
+                .into_any_element(),
+            "ui-kit.toast-container" => div()
+                .relative()
+                .w(px(360.0))
+                .h(px(160.0))
+                .child(
+                    ToastContainer::new(ToastPosition::TopRight)
+                        .toast(Toast::new(scoped("toast-container-item"), label).title("Toast")),
+                )
+                .into_any_element(),
+            "ui-kit.checkbox" => Checkbox::new(scoped("checkbox"))
+                .label(label)
+                .checked(selected)
+                .disabled(disabled)
+                .size(CheckboxSize::Md)
+                .design(design)
+                .into_any_element(),
+            "ui-kit.color-picker" => cx
+                .new(|_| ColorPickerView::new(label, Color::from_hex(0x3b82f6)))
+                .into_any_element(),
+            "ui-kit.input" => Input::new(scoped("input"))
+                .label("Label")
+                .value(label)
+                .placeholder("Type text")
+                .size(InputSize::Md)
+                .disabled(disabled)
+                .into_any_element(),
+            "ui-kit.number-input" => NumberInput::new(scoped("number-input"))
+                .label("Value")
+                .value(value)
+                .width(160.0)
+                .size(NumberInputSize::Md)
+                .disabled(disabled)
+                .into_any_element(),
+            "ui-kit.select" => Select::new(scoped("select"))
+                .label("Mode")
+                .options(vec![
+                    SelectOption::new("design", "Design"),
+                    SelectOption::new("build", "Build"),
+                    SelectOption::new("verify", "Verify"),
+                ])
+                .selected("build")
+                .placeholder("Choose")
+                .size(SelectSize::Md)
+                .disabled(disabled)
+                .is_open(open)
+                .into_any_element(),
+            "ui-kit.slider" => Slider::new(scoped("slider"))
+                .label(label)
+                .range(0.0, 1.0)
+                .value(value as f32)
+                .show_value(true)
+                .width(260.0)
+                .disabled(disabled)
+                .design(design)
+                .into_any_element(),
+            "ui-kit.toggle" => Toggle::new(scoped("toggle"))
+                .label(label)
+                .checked(selected)
+                .disabled(disabled)
+                .size(ToggleSize::Md)
+                .style(ToggleStyle::Sliding)
+                .into_any_element(),
+            "ui-kit.avatar" => Avatar::new()
+                .name(label)
+                .size(AvatarSize::Lg)
+                .shape(AvatarShape::Circle)
+                .status(AvatarStatus::Online)
+                .into_any_element(),
+            "ui-kit.avatar-group" => AvatarGroup::new()
+                .avatars(vec![
+                    Avatar::new().name("Ada Lovelace"),
+                    Avatar::new().name("Grace Hopper"),
+                    Avatar::new().name("Katherine Johnson"),
+                ])
+                .max_display(3)
+                .size(AvatarSize::Md)
+                .into_any_element(),
+            "ui-kit.badge" => Badge::new(label)
+                .variant(badge_variant(&variant_name))
+                .size(BadgeSize::Lg)
+                .rounded(true)
+                .into_any_element(),
+            "ui-kit.badge-dot" => BadgeDot::new()
+                .variant(badge_variant(&variant_name))
+                .size(px(12.0))
+                .into_any_element(),
+            "ui-kit.empty-state-component" => EmptyState::new(label)
+                .description("No matching items")
+                .action(Button::new(scoped("empty-action"), "Create"))
+                .into_any_element(),
+            "ui-kit.image-view-component" => ImageView::new(scoped("image-view"))
+                .size(px(160.0))
+                .placeholder_icon("image")
+                .into_any_element(),
+            "ui-kit.keyboard-shortcut-label" => KeyboardShortcutLabel::new("⌘ K")
+                .size(KeyboardShortcutSize::Md)
+                .into_any_element(),
+            "ui-kit.progress-bar" => Progress::new(value as f32)
+                .variant(progress_variant(&variant_name))
+                .size(ProgressSize::Lg)
+                .show_label(true)
+                .into_any_element(),
+            "ui-kit.circular-progress" => CircularProgress::new(value as f32)
+                .variant(progress_variant(&variant_name))
+                .size(px(64.0))
+                .show_label(true)
+                .into_any_element(),
+            "ui-kit.qr-code-component" => QrCode::new("https://sotf.dev")
+                .size(px(128.0))
+                .into_any_element(),
+            "ui-kit.animated-qr-code" => cx
+                .new(|cx| AnimatedQrCode::new("https://sotf.dev/lab", px(48.0), cx))
+                .into_any_element(),
+            "ui-kit.spinner" => Spinner::new()
+                .size(SpinnerSize::Lg)
+                .label(label)
+                .into_any_element(),
+            "ui-kit.loading-dots" => LoadingDots::new().size(SpinnerSize::Lg).into_any_element(),
+            "ui-kit.step-indicator-component" => StepIndicator::new(
+                scoped("step-indicator"),
+                vec![
+                    StepItem::new("Props").status(StepItemStatus::Completed),
+                    StepItem::new("Preview").status(StepItemStatus::Active),
+                    StepItem::new("Ship").status(StepItemStatus::NotVisited),
+                ],
+            )
+            .orientation(StepOrientation::Horizontal)
+            .size(StepIndicatorSize::Md)
+            .into_any_element(),
+            "ui-kit.text-component" => Text::new(label).size(TextSize::Lg).into_any_element(),
+            "ui-kit.heading" => Heading::new(label).level(2).into_any_element(),
+            "ui-kit.code" => Code::new("ComponentStory::new(...)").into_any_element(),
+            "ui-kit.link" => Link::new(scoped("link"), label)
+                .href("https://sotf.dev")
+                .external(true)
+                .into_any_element(),
+            "ui-kit.search-bar-component" => SearchBar::new(scoped("search-bar"))
+                .value(label)
+                .placeholder("Search stories")
+                .size(SearchBarSize::Md)
+                .show_clear(true)
+                .into_any_element(),
+            "ui-kit.tooltip-component" => Tooltip::new(label).into_any_element(),
+            "ui-kit.with-tooltip" => WithTooltip::new(
+                Button::new(scoped("with-tooltip-button"), "Hover target"),
+                label,
+            )
+            .into_any_element(),
+            "ui-kit.loading-overlay-component" => div()
+                .relative()
+                .w(px(300.0))
+                .h(px(180.0))
+                .bg(theme.surface)
+                .border_1()
+                .border_color(theme.border)
+                .rounded_md()
+                .child(LoadingOverlay::new(scoped("loading-overlay")).message(label))
+                .into_any_element(),
+            "ui-kit.pane-divider" => div()
+                .h(px(120.0))
+                .child(
+                    PaneDivider::vertical(
+                        scoped("pane-divider"),
+                        gpui_ui_kit::CollapseDirection::Left,
+                    )
+                    .label(label),
+                )
+                .into_any_element(),
+            "ui-kit.settings-row" => {
+                let row = SettingsRow::new(label)
+                    .description("A reusable settings row")
+                    .control(Toggle::new(scoped("settings-row-toggle")).checked(selected));
+                SettingsForm::new(scoped("settings-row-form"))
+                    .row(row)
+                    .into_any_element()
+            }
+            "ui-kit.settings-form-component" => SettingsForm::new(scoped("settings-form"))
+                .section("Audio")
+                .row(
+                    SettingsRow::new(label)
+                        .description("Design-token aware setting")
+                        .control(Toggle::new(scoped("settings-form-toggle")).checked(selected)),
+                )
+                .into_any_element(),
+            "ui-kit.sidebar-component" => Sidebar::new(scoped("sidebar"))
+                .content(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(Heading::h3(label))
+                        .child(Text::new("Sidebar content").muted(true)),
+                )
+                .design(design)
+                .into_any_element(),
+            "ui-kit.split-pane-component" => div()
+                .w(px(420.0))
+                .h(px(180.0))
+                .child(
+                    SplitPane::new(scoped("split-pane"))
+                        .direction(SplitDirection::Horizontal)
+                        .first(div().p_3().child("Left"))
+                        .second(div().p_3().child("Right"))
+                        .design(design),
+                )
+                .into_any_element(),
+            "ui-kit.vstack" => VStack::new()
+                .child(Text::new(label.clone()))
+                .child(Button::new(scoped("vstack-button"), "Action"))
+                .into_any_element(),
+            "ui-kit.hstack" => HStack::new()
+                .child(Text::new(label.clone()))
+                .child(Badge::new("Live").variant(BadgeVariant::Success))
+                .into_any_element(),
+            "ui-kit.spacer" => HStack::new()
+                .child(Text::new("Start"))
+                .child(Spacer::new())
+                .child(Text::new("End"))
+                .into_any_element(),
+            "ui-kit.divider" => VStack::new()
+                .child(Text::new("Above"))
+                .child(Divider::new())
+                .child(Text::new("Below"))
+                .into_any_element(),
+            "ui-kit.status-bar-component" => StatusBar::new(scoped("status-bar"))
+                .left(Text::new(label))
+                .center(Badge::new("Ready").variant(BadgeVariant::Success))
+                .right(Text::new("42ms"))
+                .into_any_element(),
+            "ui-kit.accordion-component" => Accordion::new()
+                .items(vec![
+                    AccordionItem::new("one", label).content(Text::new("Expanded content")),
+                    AccordionItem::new("two", "Details").content(Text::new("Second panel")),
+                ])
+                .into_any_element(),
+            "ui-kit.breadcrumbs-component" => Breadcrumbs::new()
+                .items(vec![
+                    BreadcrumbItem::new("home", "Home"),
+                    BreadcrumbItem::new("lab", "Lab"),
+                    BreadcrumbItem::new("story", label),
+                ])
+                .into_any_element(),
+            "ui-kit.menu-component" => Menu::new(
+                scoped("menu"),
+                vec![
+                    MenuItem::new("copy", "Copy"),
+                    MenuItem::new("paste", "Paste").disabled(disabled),
+                ],
+            )
+            .into_any_element(),
+            "ui-kit.menu-bar" => MenuBar::new(vec![
+                MenuBarItem::new("file", "File").with_items(vec![
+                    MenuItem::new("new", "New"),
+                    MenuItem::new("save", "Save"),
+                ]),
+                MenuBarItem::new("view", "View")
+                    .with_items(vec![MenuItem::new("matrix", "Matrix")]),
+            ])
+            .into_any_element(),
+            "ui-kit.dialog-component" => Dialog::new(scoped("dialog"))
+                .title(label)
+                .size(DialogSize::Md)
+                .content(Text::new("Dialog content"))
+                .into_any_element(),
+            "ui-kit.confirm-dialog-component" => ConfirmDialog::new(scoped("confirm-dialog"))
+                .title(label)
+                .message("This action can be reviewed before it runs.")
+                .variant(confirm_dialog_variant(&variant_name))
+                .into_any_element(),
+            "ui-kit.popover-component" => Popover::new(scoped("popover"))
+                .content(div().p_3().child(label))
+                .width(px(220.0))
+                .into_any_element(),
+            "ui-kit.context-menu-component" => ContextMenu::new(
+                scoped("context-menu"),
+                vec![
+                    MenuItem::new("inspect", "Inspect"),
+                    MenuItem::new("copy", "Copy"),
+                ],
+            )
+            .into_any_element(),
+            "ui-kit.tabs-component" => Tabs::new(scoped("tabs-component"))
+                .tabs(vec![
+                    TabItem::new("props", "Props"),
+                    TabItem::new("preview", "Preview").badge("2"),
+                    TabItem::new("qa", "QA"),
+                ])
+                .selected_index(1)
+                .variant(tab_variant(&variant_name))
+                .into_any_element(),
+            "ui-kit.wizard-component" => Wizard::new()
+                .steps(sample_wizard_steps())
+                .variant(WizardVariant::Horizontal)
+                .into_any_element(),
+            "ui-kit.wizard-header" => WizardHeader::new()
+                .title(label)
+                .steps(sample_wizard_steps())
+                .step_statuses(vec![
+                    StepStatus::Completed,
+                    StepStatus::Active,
+                    StepStatus::NotVisited,
+                ])
+                .current_step(1)
+                .into_any_element(),
+            "ui-kit.wizard-navigation" => WizardNavigation::new(1, 3)
+                .progress(value as f32)
+                .status_message(label)
+                .show_cancel(true)
+                .into_any_element(),
+            "ui-kit.command-palette-component" => CommandPalette::new(
+                scoped("command-palette"),
+                vec![
+                    CommandItem::new("open", "Open Story").shortcut("⌘O"),
+                    CommandItem::new("save", "Save Story").shortcut("⌘S"),
+                    CommandItem::new("qa", "Run Conformance").category("QA"),
+                ],
+            )
+            .query("story")
+            .selected_index(0)
+            .into_any_element(),
+            "ui-kit.drag-list-component" => DragList::new(
+                scoped("drag-list"),
+                vec![
+                    DragItem::new("one", Text::new("Props")),
+                    DragItem::new("two", Text::new("Preview")),
+                    DragItem::new("three", Text::new("QA")),
+                ],
+            )
+            .into_any_element(),
+            "ui-kit.notification-component" => Notification::new(scoped("notification"), label)
+                .description("Conformance report passed")
+                .variant(notification_variant(&variant_name))
+                .dismissible(open)
+                .into_any_element(),
+            "ui-kit.tag-component" => Tag::new(scoped("tag"), label)
+                .variant(tag_variant(&variant_name))
+                .removable(open)
+                .into_any_element(),
+            "ui-kit.toolbar-component" => Toolbar::new(scoped("toolbar"))
+                .item(ToolbarItem::button(scoped("toolbar-save"), "Save").active(selected))
+                .separator()
+                .item(ToolbarItem::button(scoped("toolbar-run"), "Run").disabled(disabled))
+                .design(design)
+                .into_any_element(),
+            "ui-kit.tree-view-component" => {
+                let mut expanded = HashSet::new();
+                expanded.insert(SharedString::from("root"));
+                TreeView::new(
+                    scoped("tree-view"),
+                    vec![TreeNode::new("root", label).children(vec![
+                        TreeNode::new("child-props", "Props").leaf(true),
+                        TreeNode::new("child-renderer", "Renderer").leaf(true),
+                    ])],
+                )
+                .expanded(expanded)
+                .selected("child-renderer")
+                .into_any_element()
+            }
+            "ui-kit.table-component" => {
+                let rows = vec![
+                    ("Button".to_string(), "interactive".to_string()),
+                    ("Chart".to_string(), "responsive".to_string()),
+                ];
+                Table::new(scoped("table"), rows)
+                    .columns(vec![
+                        Column::new("component", "Component").cell_render(
+                            |row: &(String, String), _, _, _| Text::new(row.0.clone()),
+                        ),
+                        Column::new("status", "Status").cell_render(
+                            |row: &(String, String), _, _, _| Badge::new(row.1.clone()),
+                        ),
+                    ])
+                    .design(design)
+                    .into_any_element()
+            }
+            "ui-kit.workflow-node" => WorkflowNode::new(
+                scoped("workflow-node"),
+                WorkflowNodeData::new(label, Position::new(0.0, 0.0)).with_ports(2, 1),
+            )
+            .selected(selected)
+            .into_any_element(),
+            "ui-kit.focus-group" => FocusGroup::new(scoped("focus-group"))
+                .direction(FocusDirection::Horizontal)
+                .wraparound(open)
+                .child(Button::new(scoped("focus-first"), label.clone()).disabled(disabled))
+                .child(Button::new(scoped("focus-second"), "Second"))
+                .child(Input::new(scoped("focus-input")).placeholder("Focusable input"))
+                .into_any_element(),
+            "ui-kit.workflow-port" => HStack::new()
+                .child(
+                    Port::new(scoped("workflow-port-in"), PortDirection::Input, 0)
+                        .connected(selected),
+                )
+                .child(Text::new(label.clone()).size(TextSize::Sm))
+                .child(
+                    Port::new(scoped("workflow-port-out"), PortDirection::Output, 0)
+                        .connected(open)
+                        .valid_target(Some(!disabled)),
+                )
+                .into_any_element(),
+            "ui-kit.workflow-canvas" => div()
+                .w(px(420.0))
+                .h(px(260.0))
+                .border_1()
+                .border_color(theme.border)
+                .rounded_md()
+                .overflow_hidden()
+                .child(cx.new(|cx| WorkflowCanvas::with_graph(sample_workflow_graph(label), cx)))
+                .into_any_element(),
+            "ui-kit.showcase-component" => div()
+                .id(scoped("showcase-component"))
+                .w(px(420.0))
+                .max_h(px(300.0))
+                .overflow_y_scroll()
+                .child(cx.new(|cx| Showcase::embedded_section(ShowcaseSection::Buttons, cx)))
+                .into_any_element(),
+            _ => div()
+                .child(Text::new("No exported component renderer registered").muted(true))
+                .into_any_element(),
+        };
+
+        div()
+            .max_w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(element)
+            .into_any_element()
     }
 
     fn render_button_story(
@@ -2521,6 +3076,27 @@ impl ComponentLab {
         design: Arc<DesignSystem>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        self.render_pie_like_chart_story(story, scope, design, cx, bool_prop(story, "donut", false))
+    }
+
+    fn render_donut_chart_story(
+        &self,
+        story: &ComponentStory,
+        scope: &str,
+        design: Arc<DesignSystem>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        self.render_pie_like_chart_story(story, scope, design, cx, true)
+    }
+
+    fn render_pie_like_chart_story(
+        &self,
+        story: &ComponentStory,
+        scope: &str,
+        design: Arc<DesignSystem>,
+        cx: &mut Context<Self>,
+        donut_chart: bool,
+    ) -> AnyElement {
         let theme = cx.theme();
         let fill = bool_prop(story, "fill", true);
         let (min_width, min_height) = self.chart_minimum(scope);
@@ -2531,13 +3107,13 @@ impl ComponentLab {
         let values = (0..count)
             .map(|index| 12.0 + (index as f64 * 1.7).sin().abs() * 36.0 + index as f64 * 4.0)
             .collect::<Vec<_>>();
-        let mut chart = if bool_prop(story, "donut", true) {
+        let mut chart = if donut_chart {
             donut(&values)
         } else {
             pie(&values)
         }
         .labels(&labels)
-        .title("Mix")
+        .title(if donut_chart { "Share" } else { "Mix" })
         .design(design);
 
         chart = if fill {
@@ -2808,6 +3384,81 @@ fn live_reload_status(story_count: usize, token_reports: &[LivePreviewTokenReloa
             "Live reloaded {story_count} story document(s); {failed_tokens} token file(s) failed validation"
         )
     }
+}
+
+fn ui_kit_exported_component_story_id(story_id: &str) -> bool {
+    UI_KIT_EXPORTED_COMPONENT_STORY_IDS.contains(&story_id)
+}
+
+fn icon_button_variant(value: &str) -> IconButtonVariant {
+    match value {
+        "outline" => IconButtonVariant::Outline,
+        "primary" | "secondary" | "success" | "warning" | "error" | "info" => {
+            IconButtonVariant::Filled
+        }
+        _ => IconButtonVariant::Ghost,
+    }
+}
+
+fn toast_variant(value: &str) -> ToastVariant {
+    match value {
+        "success" => ToastVariant::Success,
+        "warning" => ToastVariant::Warning,
+        "error" => ToastVariant::Error,
+        _ => ToastVariant::Info,
+    }
+}
+
+fn notification_variant(value: &str) -> NotificationVariant {
+    match value {
+        "success" => NotificationVariant::Success,
+        "warning" => NotificationVariant::Warning,
+        "error" => NotificationVariant::Error,
+        _ => NotificationVariant::Info,
+    }
+}
+
+fn tag_variant(value: &str) -> TagVariant {
+    match value {
+        "primary" | "info" => TagVariant::Primary,
+        "success" => TagVariant::Success,
+        "warning" => TagVariant::Warning,
+        "error" => TagVariant::Error,
+        "outline" | "ghost" | "secondary" => TagVariant::Outlined,
+        _ => TagVariant::Default,
+    }
+}
+
+fn confirm_dialog_variant(value: &str) -> ConfirmDialogVariant {
+    match value {
+        "warning" => ConfirmDialogVariant::Warning,
+        "error" => ConfirmDialogVariant::Destructive,
+        _ => ConfirmDialogVariant::Default,
+    }
+}
+
+fn sample_wizard_steps() -> Vec<WizardStep> {
+    vec![
+        WizardStep::new("props", "Props").description("Edit story props"),
+        WizardStep::new("preview", "Preview").description("Inspect responsive output"),
+        WizardStep::new("qa", "QA").description("Run conformance"),
+    ]
+}
+
+fn sample_workflow_graph(label: impl Into<String>) -> WorkflowGraph {
+    let mut graph = WorkflowGraph::new();
+    let source = graph.add_node(
+        WorkflowNodeData::new(label, Position::new(48.0, 72.0))
+            .with_ports(0, 1)
+            .with_size(150.0, 90.0),
+    );
+    let sink = graph.add_node(
+        WorkflowNodeData::new("Preview", Position::new(250.0, 96.0))
+            .with_ports(1, 0)
+            .with_size(150.0, 90.0),
+    );
+    let _ = graph.add_connection(source, 0, sink, 0);
+    graph
 }
 
 struct LineStoryData {
@@ -3460,6 +4111,41 @@ mod tests {
             Some(ShowcaseSection::Accessibility)
         );
         assert_eq!(showcase_section_for_story_id("ui-kit.button"), None);
+    }
+
+    #[test]
+    fn builtin_renderer_story_ids_have_preview_handlers() {
+        let missing = crate::BUILTIN_RENDERER_STORY_IDS
+            .iter()
+            .copied()
+            .filter(|story_id| !builtin_preview_handler_story_id(story_id))
+            .collect::<Vec<_>>();
+
+        assert!(
+            missing.is_empty(),
+            "builtin renderer stories without preview handlers: {missing:?}"
+        );
+    }
+
+    fn builtin_preview_handler_story_id(story_id: &str) -> bool {
+        matches!(
+            story_id,
+            "ui-kit.button"
+                | "ui-kit.form"
+                | "ui-kit.status"
+                | "ui-kit.navigation"
+                | "ui-kit.feedback"
+                | "ui-kit.card"
+                | "audio-kit.potentiometer"
+                | "audio-kit.vertical-slider"
+                | "audio-kit.volume-knob"
+                | "audio-kit.meter"
+                | "audio-kit.horizontal-meter"
+                | "audio-kit.spectrum"
+                | "audio-kit.spectrum-axis"
+        ) || UI_KIT_EXPORTED_COMPONENT_STORY_IDS.contains(&story_id)
+            || showcase_section_for_story_id(story_id).is_some()
+            || crate::PX_CHART_STORY_IDS.contains(&story_id)
     }
 
     #[test]

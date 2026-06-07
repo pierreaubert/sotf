@@ -35,3 +35,16 @@
   horizontal/vertical alignment, overflow, surface, gap, and border controls.
 - Added public `StoryMetadataItem` support so stories carry inspector-visible,
   conformance-checked metadata in story JSON.
+- Added public `StoryRenderer` and `StoryRendererRegistry` metadata so
+  renderer coverage is typed, inspectable, and checked against built-in stories.
+- Added an explicit exported `gpui-ui-kit` renderable component inventory so
+  every exported UI-kit component type has a separate bespoke prop-driven story,
+  including focus, workflow, animated QR, and embedded showcase renderables.
+- Added an explicit `gpui-px` chart story inventory with a dedicated
+  `px.donut` story/renderer and PX-specific responsive conformance checks for
+  renderer coverage, fill/fixed sizing controls, and mobile-safe bounds.
+- Tightened touch target, focus metadata, and overflow conformance with
+  observed rendered bounds, touch target count/area validation, and duplicate
+  or extra focus label failures.
+- Added a preview-handler coverage guard so every built-in renderer-backed
+  story has an actual lab preview path, not only renderer metadata.

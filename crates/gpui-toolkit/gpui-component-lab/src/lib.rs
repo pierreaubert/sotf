@@ -75,6 +75,10 @@ pub struct RenderedPreviewConformance {
     pub min_width: f32,
     #[serde(default = "default_preview_min_height")]
     pub min_height: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_width: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_height: Option<f32>,
     #[serde(default)]
     pub allow_scroll: bool,
 }
@@ -84,8 +88,16 @@ impl RenderedPreviewConformance {
         Self {
             min_width,
             min_height,
+            max_width: None,
+            max_height: None,
             allow_scroll: false,
         }
+    }
+
+    pub fn observed_bounds(mut self, max_width: f32, max_height: f32) -> Self {
+        self.max_width = Some(max_width);
+        self.max_height = Some(max_height);
+        self
     }
 
     pub fn scrollable(mut self, allow_scroll: bool) -> Self {
@@ -111,6 +123,8 @@ pub struct StoryConformance {
     pub min_touch_target: Option<f32>,
     #[serde(default)]
     pub focusable_count: usize,
+    #[serde(default)]
+    pub touch_target_count: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub focus_labels: Vec<String>,
     #[serde(default = "default_true")]
@@ -124,6 +138,7 @@ impl StoryConformance {
             rendered: RenderedPreviewConformance::new(min_width, min_height),
             min_touch_target: None,
             focusable_count: 0,
+            touch_target_count: 0,
             focus_labels: Vec::new(),
             builder_layout: true,
         }
@@ -141,6 +156,7 @@ impl StoryConformance {
             rendered: RenderedPreviewConformance::new(min_width, min_height),
             min_touch_target: Some(min_touch_target),
             focusable_count: focus_labels.len().max(1),
+            touch_target_count: focus_labels.len().max(1),
             focus_labels,
             builder_layout: true,
         }
@@ -176,6 +192,7 @@ impl StoryConformance {
                 "ui-kit.navigation" => Self::interactive(320.0, 140.0, 48.0, ["Tabs"]),
                 "ui-kit.feedback" => Self::display(320.0, 120.0),
                 "ui-kit.card" => Self::display(320.0, 180.0),
+                "ui-kit.showcase-component" => Self::scrollable_showcase(["Showcase"]),
                 _ => Self::scrollable_showcase([story_id.replace("ui-kit.", "")]),
             },
             _ => Self::default(),
@@ -199,6 +216,122 @@ fn default_preview_min_width() -> f32 {
 
 fn default_preview_min_height() -> f32 {
     RenderedPreviewConformance::default().min_height
+}
+
+/// Renderer category used by the component lab preview surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StoryRendererKind {
+    Component,
+    Showcase,
+    Chart,
+    Audio,
+}
+
+impl StoryRendererKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Component => "Component",
+            Self::Showcase => "Showcase",
+            Self::Chart => "PX Chart",
+            Self::Audio => "Audio",
+        }
+    }
+}
+
+/// Metadata for a story renderer registered by the component lab.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoryRenderer {
+    pub story_id: String,
+    pub label: String,
+    pub kind: StoryRendererKind,
+    pub interactive: bool,
+    pub matrix_preview: bool,
+}
+
+impl StoryRenderer {
+    pub fn new(
+        story_id: impl Into<String>,
+        label: impl Into<String>,
+        kind: StoryRendererKind,
+    ) -> Self {
+        Self {
+            story_id: story_id.into(),
+            label: label.into(),
+            kind,
+            interactive: false,
+            matrix_preview: true,
+        }
+    }
+
+    pub fn interactive(mut self, interactive: bool) -> Self {
+        self.interactive = interactive;
+        self
+    }
+
+    pub fn matrix_preview(mut self, matrix_preview: bool) -> Self {
+        self.matrix_preview = matrix_preview;
+        self
+    }
+
+    fn for_builtin(story_id: &str) -> Option<Self> {
+        if !BUILTIN_RENDERER_STORY_IDS.contains(&story_id) {
+            return None;
+        }
+
+        let kind = builtin_renderer_kind(story_id);
+        let interactive = matches!(kind, StoryRendererKind::Component)
+            || matches!(
+                story_id,
+                "audio-kit.potentiometer" | "audio-kit.vertical-slider" | "audio-kit.volume-knob"
+            );
+        let matrix_preview = !matches!(kind, StoryRendererKind::Showcase);
+        Some(
+            Self::new(story_id, kind.label(), kind)
+                .interactive(interactive)
+                .matrix_preview(matrix_preview),
+        )
+    }
+}
+
+/// Registry of story renderers available to the interactive lab.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoryRendererRegistry {
+    renderers: BTreeMap<String, StoryRenderer>,
+}
+
+impl StoryRendererRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register(&mut self, renderer: StoryRenderer) -> Result<()> {
+        if self.renderers.contains_key(&renderer.story_id) {
+            bail!("duplicate story renderer id '{}'", renderer.story_id);
+        }
+        self.renderers.insert(renderer.story_id.clone(), renderer);
+        Ok(())
+    }
+
+    pub fn renderer(&self, story_id: &str) -> Option<&StoryRenderer> {
+        self.renderers.get(story_id)
+    }
+
+    pub fn contains(&self, story_id: &str) -> bool {
+        self.renderers.contains_key(story_id)
+    }
+
+    pub fn renderers(&self) -> impl Iterator<Item = &StoryRenderer> {
+        self.renderers.values()
+    }
+
+    pub fn len(&self) -> usize {
+        self.renderers.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.renderers.is_empty()
+    }
 }
 
 /// Named viewport used by responsive previews.
@@ -332,11 +465,9 @@ impl ComponentStory {
 }
 
 fn default_story_metadata(story_id: &str, crate_name: &str) -> Vec<StoryMetadataItem> {
-    let renderer = if builtin_story_has_renderer(story_id) {
-        "Renderer-backed"
-    } else {
-        "Metadata-only"
-    };
+    let renderer = builtin_story_renderer(story_id)
+        .map(|renderer| renderer.label)
+        .unwrap_or_else(|| "Metadata-only".into());
     vec![
         StoryMetadataItem::new("crate", "Crate", crate_name),
         StoryMetadataItem::new("story", "Story", story_id),
@@ -430,6 +561,75 @@ pub const BUILTIN_RENDERER_STORY_IDS: &[&str] = &[
     "ui-kit.drag-list",
     "ui-kit.command-palette",
     "ui-kit.accessibility",
+    "ui-kit.button-set",
+    "ui-kit.icon-button",
+    "ui-kit.alert",
+    "ui-kit.inline-alert",
+    "ui-kit.toast",
+    "ui-kit.toast-container",
+    "ui-kit.checkbox",
+    "ui-kit.color-picker",
+    "ui-kit.input",
+    "ui-kit.number-input",
+    "ui-kit.select",
+    "ui-kit.slider",
+    "ui-kit.toggle",
+    "ui-kit.avatar",
+    "ui-kit.avatar-group",
+    "ui-kit.badge",
+    "ui-kit.badge-dot",
+    "ui-kit.empty-state-component",
+    "ui-kit.image-view-component",
+    "ui-kit.keyboard-shortcut-label",
+    "ui-kit.progress-bar",
+    "ui-kit.circular-progress",
+    "ui-kit.qr-code-component",
+    "ui-kit.animated-qr-code",
+    "ui-kit.spinner",
+    "ui-kit.loading-dots",
+    "ui-kit.step-indicator-component",
+    "ui-kit.text-component",
+    "ui-kit.heading",
+    "ui-kit.code",
+    "ui-kit.link",
+    "ui-kit.search-bar-component",
+    "ui-kit.tooltip-component",
+    "ui-kit.with-tooltip",
+    "ui-kit.loading-overlay-component",
+    "ui-kit.pane-divider",
+    "ui-kit.settings-row",
+    "ui-kit.settings-form-component",
+    "ui-kit.sidebar-component",
+    "ui-kit.split-pane-component",
+    "ui-kit.vstack",
+    "ui-kit.hstack",
+    "ui-kit.spacer",
+    "ui-kit.divider",
+    "ui-kit.status-bar-component",
+    "ui-kit.accordion-component",
+    "ui-kit.breadcrumbs-component",
+    "ui-kit.menu-component",
+    "ui-kit.menu-bar",
+    "ui-kit.dialog-component",
+    "ui-kit.confirm-dialog-component",
+    "ui-kit.popover-component",
+    "ui-kit.context-menu-component",
+    "ui-kit.tabs-component",
+    "ui-kit.wizard-component",
+    "ui-kit.wizard-header",
+    "ui-kit.wizard-navigation",
+    "ui-kit.command-palette-component",
+    "ui-kit.drag-list-component",
+    "ui-kit.notification-component",
+    "ui-kit.tag-component",
+    "ui-kit.toolbar-component",
+    "ui-kit.tree-view-component",
+    "ui-kit.table-component",
+    "ui-kit.workflow-node",
+    "ui-kit.focus-group",
+    "ui-kit.workflow-port",
+    "ui-kit.workflow-canvas",
+    "ui-kit.showcase-component",
     "audio-kit.potentiometer",
     "audio-kit.vertical-slider",
     "audio-kit.volume-knob",
@@ -445,13 +645,224 @@ pub const BUILTIN_RENDERER_STORY_IDS: &[&str] = &[
     "px.contour",
     "px.isoline",
     "px.pie",
+    "px.donut",
     "px.boxplot",
     "px.treemap",
     "px.surface3d",
 ];
 
+pub const UI_KIT_EXPORTED_COMPONENT_STORY_IDS: &[&str] = &[
+    "ui-kit.button",
+    "ui-kit.card",
+    "ui-kit.button-set",
+    "ui-kit.icon-button",
+    "ui-kit.alert",
+    "ui-kit.inline-alert",
+    "ui-kit.toast",
+    "ui-kit.toast-container",
+    "ui-kit.checkbox",
+    "ui-kit.color-picker",
+    "ui-kit.input",
+    "ui-kit.number-input",
+    "ui-kit.select",
+    "ui-kit.slider",
+    "ui-kit.toggle",
+    "ui-kit.avatar",
+    "ui-kit.avatar-group",
+    "ui-kit.badge",
+    "ui-kit.badge-dot",
+    "ui-kit.empty-state-component",
+    "ui-kit.image-view-component",
+    "ui-kit.keyboard-shortcut-label",
+    "ui-kit.progress-bar",
+    "ui-kit.circular-progress",
+    "ui-kit.qr-code-component",
+    "ui-kit.animated-qr-code",
+    "ui-kit.spinner",
+    "ui-kit.loading-dots",
+    "ui-kit.step-indicator-component",
+    "ui-kit.text-component",
+    "ui-kit.heading",
+    "ui-kit.code",
+    "ui-kit.link",
+    "ui-kit.search-bar-component",
+    "ui-kit.tooltip-component",
+    "ui-kit.with-tooltip",
+    "ui-kit.loading-overlay-component",
+    "ui-kit.pane-divider",
+    "ui-kit.settings-row",
+    "ui-kit.settings-form-component",
+    "ui-kit.sidebar-component",
+    "ui-kit.split-pane-component",
+    "ui-kit.vstack",
+    "ui-kit.hstack",
+    "ui-kit.spacer",
+    "ui-kit.divider",
+    "ui-kit.status-bar-component",
+    "ui-kit.accordion-component",
+    "ui-kit.breadcrumbs-component",
+    "ui-kit.menu-component",
+    "ui-kit.menu-bar",
+    "ui-kit.dialog-component",
+    "ui-kit.confirm-dialog-component",
+    "ui-kit.popover-component",
+    "ui-kit.context-menu-component",
+    "ui-kit.tabs-component",
+    "ui-kit.wizard-component",
+    "ui-kit.wizard-header",
+    "ui-kit.wizard-navigation",
+    "ui-kit.command-palette-component",
+    "ui-kit.drag-list-component",
+    "ui-kit.notification-component",
+    "ui-kit.tag-component",
+    "ui-kit.toolbar-component",
+    "ui-kit.tree-view-component",
+    "ui-kit.table-component",
+    "ui-kit.workflow-node",
+    "ui-kit.focus-group",
+    "ui-kit.workflow-port",
+    "ui-kit.workflow-canvas",
+    "ui-kit.showcase-component",
+];
+
+pub const UI_KIT_EXPORTED_COMPONENT_STORY_TYPES: &[(&str, &str)] = &[
+    ("Button", "ui-kit.button"),
+    ("Card", "ui-kit.card"),
+    ("ButtonSet", "ui-kit.button-set"),
+    ("IconButton", "ui-kit.icon-button"),
+    ("Alert", "ui-kit.alert"),
+    ("InlineAlert", "ui-kit.inline-alert"),
+    ("Toast", "ui-kit.toast"),
+    ("ToastContainer", "ui-kit.toast-container"),
+    ("Checkbox", "ui-kit.checkbox"),
+    ("ColorPickerView", "ui-kit.color-picker"),
+    ("Input", "ui-kit.input"),
+    ("NumberInput", "ui-kit.number-input"),
+    ("Select", "ui-kit.select"),
+    ("Slider", "ui-kit.slider"),
+    ("Toggle", "ui-kit.toggle"),
+    ("Avatar", "ui-kit.avatar"),
+    ("AvatarGroup", "ui-kit.avatar-group"),
+    ("Badge", "ui-kit.badge"),
+    ("BadgeDot", "ui-kit.badge-dot"),
+    ("EmptyState", "ui-kit.empty-state-component"),
+    ("ImageView", "ui-kit.image-view-component"),
+    ("KeyboardShortcutLabel", "ui-kit.keyboard-shortcut-label"),
+    ("Progress", "ui-kit.progress-bar"),
+    ("CircularProgress", "ui-kit.circular-progress"),
+    ("QrCode", "ui-kit.qr-code-component"),
+    ("AnimatedQrCode", "ui-kit.animated-qr-code"),
+    ("Spinner", "ui-kit.spinner"),
+    ("LoadingDots", "ui-kit.loading-dots"),
+    ("StepIndicator", "ui-kit.step-indicator-component"),
+    ("Text", "ui-kit.text-component"),
+    ("Heading", "ui-kit.heading"),
+    ("Code", "ui-kit.code"),
+    ("Link", "ui-kit.link"),
+    ("SearchBar", "ui-kit.search-bar-component"),
+    ("Tooltip", "ui-kit.tooltip-component"),
+    ("WithTooltip", "ui-kit.with-tooltip"),
+    ("LoadingOverlay", "ui-kit.loading-overlay-component"),
+    ("PaneDivider", "ui-kit.pane-divider"),
+    ("SettingsRow", "ui-kit.settings-row"),
+    ("SettingsForm", "ui-kit.settings-form-component"),
+    ("Sidebar", "ui-kit.sidebar-component"),
+    ("SplitPane", "ui-kit.split-pane-component"),
+    ("VStack", "ui-kit.vstack"),
+    ("HStack", "ui-kit.hstack"),
+    ("Spacer", "ui-kit.spacer"),
+    ("Divider", "ui-kit.divider"),
+    ("StatusBar", "ui-kit.status-bar-component"),
+    ("Accordion", "ui-kit.accordion-component"),
+    ("Breadcrumbs", "ui-kit.breadcrumbs-component"),
+    ("Menu", "ui-kit.menu-component"),
+    ("MenuBar", "ui-kit.menu-bar"),
+    ("Dialog", "ui-kit.dialog-component"),
+    ("ConfirmDialog", "ui-kit.confirm-dialog-component"),
+    ("Popover", "ui-kit.popover-component"),
+    ("ContextMenu", "ui-kit.context-menu-component"),
+    ("Tabs", "ui-kit.tabs-component"),
+    ("Wizard", "ui-kit.wizard-component"),
+    ("WizardHeader", "ui-kit.wizard-header"),
+    ("WizardNavigation", "ui-kit.wizard-navigation"),
+    ("CommandPalette", "ui-kit.command-palette-component"),
+    ("DragList", "ui-kit.drag-list-component"),
+    ("Notification", "ui-kit.notification-component"),
+    ("Tag", "ui-kit.tag-component"),
+    ("Toolbar", "ui-kit.toolbar-component"),
+    ("TreeView", "ui-kit.tree-view-component"),
+    ("Table", "ui-kit.table-component"),
+    ("WorkflowNode", "ui-kit.workflow-node"),
+    ("FocusGroup", "ui-kit.focus-group"),
+    ("Port", "ui-kit.workflow-port"),
+    ("WorkflowCanvas", "ui-kit.workflow-canvas"),
+    ("Showcase", "ui-kit.showcase-component"),
+];
+
+pub const PX_CHART_STORY_IDS: &[&str] = &[
+    "px.line",
+    "px.bar",
+    "px.scatter",
+    "px.area",
+    "px.heatmap",
+    "px.contour",
+    "px.isoline",
+    "px.pie",
+    "px.donut",
+    "px.boxplot",
+    "px.treemap",
+    "px.surface3d",
+];
+
+pub const PX_CHART_STORY_TYPES: &[(&str, &str)] = &[
+    ("LineChart", "px.line"),
+    ("BarChart", "px.bar"),
+    ("ScatterChart", "px.scatter"),
+    ("AreaChart", "px.area"),
+    ("HeatmapChart", "px.heatmap"),
+    ("ContourChart", "px.contour"),
+    ("IsolineChart", "px.isoline"),
+    ("PieChart", "px.pie"),
+    ("donut()", "px.donut"),
+    ("BoxPlotChart", "px.boxplot"),
+    ("Treemap", "px.treemap"),
+    ("Surface3DChart", "px.surface3d"),
+];
+
+fn ui_kit_showcase_story_id(story_id: &str) -> bool {
+    UI_KIT_SHOWCASE_STORIES
+        .iter()
+        .any(|(id, _, _)| *id == story_id)
+}
+
+fn builtin_renderer_kind(story_id: &str) -> StoryRendererKind {
+    if story_id.starts_with("px.") {
+        StoryRendererKind::Chart
+    } else if story_id.starts_with("audio-kit.") {
+        StoryRendererKind::Audio
+    } else if ui_kit_showcase_story_id(story_id) {
+        StoryRendererKind::Showcase
+    } else {
+        StoryRendererKind::Component
+    }
+}
+
+pub fn builtin_story_renderer(story_id: &str) -> Option<StoryRenderer> {
+    StoryRenderer::for_builtin(story_id)
+}
+
+pub fn builtin_story_renderers() -> Result<StoryRendererRegistry> {
+    let mut registry = StoryRendererRegistry::new();
+    for story_id in BUILTIN_RENDERER_STORY_IDS {
+        if let Some(renderer) = builtin_story_renderer(story_id) {
+            registry.register(renderer)?;
+        }
+    }
+    Ok(registry)
+}
+
 pub fn builtin_story_has_renderer(story_id: &str) -> bool {
-    BUILTIN_RENDERER_STORY_IDS.contains(&story_id)
+    builtin_story_renderer(story_id).is_some()
 }
 
 /// One responsive preview cell.
@@ -746,6 +1157,7 @@ pub fn validate_component_lab_conformance(
     for story in registry.stories() {
         validate_story_conformance(story, &mut findings);
     }
+    validate_px_chart_conformance(registry, &mut findings);
 
     for document in documents {
         validate_document_conformance(registry, document, &mut findings);
@@ -810,6 +1222,98 @@ fn validate_story_conformance(
     validate_touch_target_conformance(story, findings);
     validate_focus_metadata_conformance(story, findings);
     validate_renderer_coverage(story, findings);
+}
+
+fn validate_px_chart_conformance(
+    registry: &StoryRegistry,
+    findings: &mut Vec<ComponentLabConformanceFinding>,
+) {
+    let renderers = builtin_story_renderers().ok();
+    let registered_px_ids = registry
+        .stories()
+        .filter(|story| story.crate_name == "gpui-px")
+        .map(|story| story.id.as_str())
+        .collect::<BTreeSet<_>>();
+
+    for (chart_type, story_id) in PX_CHART_STORY_TYPES {
+        let Some(story) = registry.story(story_id) else {
+            findings.push(ComponentLabConformanceFinding::new(
+                "px",
+                "px.story.missing",
+                Some(story_id),
+                format!("missing gpui-px story for {chart_type}"),
+            ));
+            continue;
+        };
+
+        if !story.props.iter().any(|prop| prop.name == "fill") {
+            findings.push(ComponentLabConformanceFinding::new(
+                "px",
+                "px.fill.missing",
+                Some(story_id),
+                format!("{chart_type} must expose fill/fixed responsive sizing"),
+            ));
+        }
+        if !story.conformance.responsive {
+            findings.push(ComponentLabConformanceFinding::new(
+                "px",
+                "px.responsive.disabled",
+                Some(story_id),
+                format!("{chart_type} must opt into responsive conformance"),
+            ));
+        }
+        if story.conformance.rendered.allow_scroll {
+            findings.push(ComponentLabConformanceFinding::new(
+                "px",
+                "px.rendered.scroll",
+                Some(story_id),
+                format!("{chart_type} chart preview must fit without scroll"),
+            ));
+        }
+        if story.conformance.rendered.min_width > 390.0
+            || story.conformance.rendered.min_height > 844.0
+        {
+            findings.push(ComponentLabConformanceFinding::new(
+                "px",
+                "px.rendered.mobile",
+                Some(story_id),
+                format!(
+                    "{chart_type} minimum {}x{} must fit the mobile preview viewport",
+                    story.conformance.rendered.min_width, story.conformance.rendered.min_height
+                ),
+            ));
+        }
+
+        match renderers
+            .as_ref()
+            .and_then(|renderers| renderers.renderer(story_id))
+        {
+            Some(renderer) if renderer.kind == StoryRendererKind::Chart => {}
+            Some(_) => findings.push(ComponentLabConformanceFinding::new(
+                "px",
+                "px.renderer.kind",
+                Some(story_id),
+                format!("{chart_type} renderer metadata must be Chart"),
+            )),
+            None => findings.push(ComponentLabConformanceFinding::new(
+                "px",
+                "px.renderer.missing",
+                Some(story_id),
+                format!("{chart_type} must have renderer metadata"),
+            )),
+        }
+    }
+
+    for story_id in registered_px_ids {
+        if !PX_CHART_STORY_IDS.contains(&story_id) {
+            findings.push(ComponentLabConformanceFinding::new(
+                "px",
+                "px.story.untracked",
+                Some(story_id),
+                "gpui-px story is not listed in PX_CHART_STORY_IDS",
+            ));
+        }
+    }
 }
 
 fn validate_story_metadata(
@@ -881,6 +1385,48 @@ fn validate_preview_conformance(
         ));
     }
 
+    if let Some(max_width) = rendered.max_width {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            findings.push(ComponentLabConformanceFinding::new(
+                "rendered",
+                "rendered.max_bounds",
+                Some(&story.id),
+                "observed rendered max width must be finite and positive",
+            ));
+        } else if max_width + f32::EPSILON < rendered.min_width {
+            findings.push(ComponentLabConformanceFinding::new(
+                "rendered",
+                "rendered.bounds_order",
+                Some(&story.id),
+                format!(
+                    "observed rendered max width {max_width}px is smaller than declared minimum {}px",
+                    rendered.min_width
+                ),
+            ));
+        }
+    }
+
+    if let Some(max_height) = rendered.max_height {
+        if !max_height.is_finite() || max_height <= 0.0 {
+            findings.push(ComponentLabConformanceFinding::new(
+                "rendered",
+                "rendered.max_bounds",
+                Some(&story.id),
+                "observed rendered max height must be finite and positive",
+            ));
+        } else if max_height + f32::EPSILON < rendered.min_height {
+            findings.push(ComponentLabConformanceFinding::new(
+                "rendered",
+                "rendered.bounds_order",
+                Some(&story.id),
+                format!(
+                    "observed rendered max height {max_height}px is smaller than declared minimum {}px",
+                    rendered.min_height
+                ),
+            ));
+        }
+    }
+
     if !story.conformance.responsive {
         findings.push(ComponentLabConformanceFinding::new(
             "responsive",
@@ -892,18 +1438,16 @@ fn validate_preview_conformance(
 
     if !rendered.allow_scroll {
         for viewport in &story.viewports {
-            if rendered.min_width > viewport.width || rendered.min_height > viewport.height {
+            let width = rendered.max_width.unwrap_or(rendered.min_width);
+            let height = rendered.max_height.unwrap_or(rendered.min_height);
+            if width > viewport.width || height > viewport.height {
                 findings.push(ComponentLabConformanceFinding::new(
                     "rendered",
                     "rendered.overflow",
                     Some(&story.id),
                     format!(
                         "rendered minimum {}x{} exceeds viewport '{}' {}x{} without scroll",
-                        rendered.min_width,
-                        rendered.min_height,
-                        viewport.id,
-                        viewport.width,
-                        viewport.height
+                        width, height, viewport.id, viewport.width, viewport.height
                     ),
                 ));
             }
@@ -915,6 +1459,15 @@ fn validate_touch_target_conformance(
     story: &ComponentStory,
     findings: &mut Vec<ComponentLabConformanceFinding>,
 ) {
+    if story.conformance.touch_target_count > 0 && story.conformance.min_touch_target.is_none() {
+        findings.push(ComponentLabConformanceFinding::new(
+            "accessibility",
+            "touch.target_missing",
+            Some(&story.id),
+            "stories with touch targets must declare minimum touch target metadata",
+        ));
+    }
+
     let Some(min_touch_target) = story.conformance.min_touch_target else {
         return;
     };
@@ -941,6 +1494,59 @@ fn validate_touch_target_conformance(
                 format!(
                     "minimum touch target {min_touch_target}px is smaller than '{}' design requirement {required}px",
                     theme.id
+                ),
+            ));
+        }
+    }
+
+    if story.conformance.touch_target_count == 0 && story.conformance.focusable_count > 0 {
+        findings.push(ComponentLabConformanceFinding::new(
+            "accessibility",
+            "touch.targets",
+            Some(&story.id),
+            "focusable stories must declare at least one touch target",
+        ));
+    }
+
+    if story.conformance.touch_target_count < story.conformance.focusable_count {
+        findings.push(ComponentLabConformanceFinding::new(
+            "accessibility",
+            "touch.targets",
+            Some(&story.id),
+            format!(
+                "story declares {} focus target(s) but only {} touch target(s)",
+                story.conformance.focusable_count, story.conformance.touch_target_count
+            ),
+        ));
+    }
+
+    if story.conformance.touch_target_count > 0 {
+        if story.conformance.rendered.min_width + f32::EPSILON < min_touch_target
+            || story.conformance.rendered.min_height + f32::EPSILON < min_touch_target
+        {
+            findings.push(ComponentLabConformanceFinding::new(
+                "accessibility",
+                "touch.rendered_bounds",
+                Some(&story.id),
+                format!(
+                    "rendered preview {}x{} cannot contain a {min_touch_target}px touch target",
+                    story.conformance.rendered.min_width, story.conformance.rendered.min_height
+                ),
+            ));
+        }
+
+        let rendered_area =
+            story.conformance.rendered.min_width * story.conformance.rendered.min_height;
+        let required_area =
+            min_touch_target * min_touch_target * story.conformance.touch_target_count as f32;
+        if rendered_area + f32::EPSILON < required_area {
+            findings.push(ComponentLabConformanceFinding::new(
+                "accessibility",
+                "touch.rendered_area",
+                Some(&story.id),
+                format!(
+                    "rendered preview area {rendered_area}px^2 is too small for {} touch target(s) at {min_touch_target}px",
+                    story.conformance.touch_target_count
                 ),
             ));
         }
@@ -977,6 +1583,19 @@ fn validate_focus_metadata_conformance(
         ));
     }
 
+    if story.conformance.focus_labels.len() > story.conformance.focusable_count {
+        findings.push(ComponentLabConformanceFinding::new(
+            "accessibility",
+            "focus.labels_extra",
+            Some(&story.id),
+            format!(
+                "focusable story declares {} focus target(s) but {} label(s)",
+                story.conformance.focusable_count,
+                story.conformance.focus_labels.len()
+            ),
+        ));
+    }
+
     if story
         .conformance
         .focus_labels
@@ -989,6 +1608,19 @@ fn validate_focus_metadata_conformance(
             Some(&story.id),
             "focus labels must not be empty",
         ));
+    }
+
+    let mut labels = BTreeSet::new();
+    for label in &story.conformance.focus_labels {
+        let normalized = label.trim();
+        if !normalized.is_empty() && !labels.insert(normalized) {
+            findings.push(ComponentLabConformanceFinding::new(
+                "accessibility",
+                "focus.labels_duplicate",
+                Some(&story.id),
+                format!("duplicate focus label '{normalized}'"),
+            ));
+        }
     }
 }
 
@@ -1622,7 +2254,230 @@ pub fn register_ui_kit_stories(registry: &mut StoryRegistry) -> Result<()> {
         ]),
     )?;
 
+    register_ui_kit_exported_component_stories(registry)?;
     register_ui_kit_showcase_stories(registry)
+}
+
+const UI_KIT_EXPORTED_COMPONENT_STORIES: &[(&str, &str, &str)] = &[
+    (
+        "ui-kit.button-set",
+        "ButtonSet",
+        "Segmented button selection",
+    ),
+    (
+        "ui-kit.icon-button",
+        "IconButton",
+        "Icon-only action button",
+    ),
+    ("ui-kit.alert", "Alert", "Dismissible alert surface"),
+    (
+        "ui-kit.inline-alert",
+        "InlineAlert",
+        "Inline feedback message",
+    ),
+    ("ui-kit.toast", "Toast", "Transient toast message"),
+    (
+        "ui-kit.toast-container",
+        "ToastContainer",
+        "Toast stack positioning",
+    ),
+    ("ui-kit.checkbox", "Checkbox", "Boolean form control"),
+    (
+        "ui-kit.color-picker",
+        "ColorPickerView",
+        "RGB/HSL color editor",
+    ),
+    ("ui-kit.input", "Input", "Text input field"),
+    ("ui-kit.number-input", "NumberInput", "Numeric input field"),
+    ("ui-kit.select", "Select", "Dropdown selection control"),
+    ("ui-kit.slider", "Slider", "Range slider control"),
+    ("ui-kit.toggle", "Toggle", "Switch/toggle control"),
+    ("ui-kit.avatar", "Avatar", "User avatar"),
+    ("ui-kit.avatar-group", "AvatarGroup", "Stacked avatar group"),
+    ("ui-kit.badge", "Badge", "Status badge"),
+    ("ui-kit.badge-dot", "BadgeDot", "Small status dot"),
+    (
+        "ui-kit.empty-state-component",
+        "EmptyState",
+        "Empty-state illustration block",
+    ),
+    (
+        "ui-kit.image-view-component",
+        "ImageView",
+        "Image placeholder and fitting frame",
+    ),
+    (
+        "ui-kit.keyboard-shortcut-label",
+        "KeyboardShortcutLabel",
+        "Keyboard shortcut token label",
+    ),
+    ("ui-kit.progress-bar", "Progress", "Linear progress bar"),
+    (
+        "ui-kit.circular-progress",
+        "CircularProgress",
+        "Circular progress indicator",
+    ),
+    ("ui-kit.qr-code-component", "QrCode", "QR code renderer"),
+    (
+        "ui-kit.animated-qr-code",
+        "AnimatedQrCode",
+        "Animated QR code renderer",
+    ),
+    ("ui-kit.spinner", "Spinner", "Loading spinner"),
+    (
+        "ui-kit.loading-dots",
+        "LoadingDots",
+        "Animated loading dots",
+    ),
+    (
+        "ui-kit.step-indicator-component",
+        "StepIndicator",
+        "Step progress indicator",
+    ),
+    ("ui-kit.text-component", "Text", "Body text component"),
+    ("ui-kit.heading", "Heading", "Heading text component"),
+    ("ui-kit.code", "Code", "Inline code component"),
+    ("ui-kit.link", "Link", "Clickable link text"),
+    (
+        "ui-kit.search-bar-component",
+        "SearchBar",
+        "Search field surface",
+    ),
+    (
+        "ui-kit.tooltip-component",
+        "Tooltip",
+        "Standalone tooltip bubble",
+    ),
+    ("ui-kit.with-tooltip", "WithTooltip", "Tooltip wrapper"),
+    (
+        "ui-kit.loading-overlay-component",
+        "LoadingOverlay",
+        "Blocking loading overlay",
+    ),
+    (
+        "ui-kit.pane-divider",
+        "PaneDivider",
+        "Collapsible pane divider",
+    ),
+    ("ui-kit.settings-row", "SettingsRow", "Settings form row"),
+    (
+        "ui-kit.settings-form-component",
+        "SettingsForm",
+        "Grouped settings form",
+    ),
+    (
+        "ui-kit.sidebar-component",
+        "Sidebar",
+        "Sidebar layout surface",
+    ),
+    (
+        "ui-kit.split-pane-component",
+        "SplitPane",
+        "Resizable split pane",
+    ),
+    ("ui-kit.vstack", "VStack", "Vertical stack layout"),
+    ("ui-kit.hstack", "HStack", "Horizontal stack layout"),
+    ("ui-kit.spacer", "Spacer", "Flexible stack spacer"),
+    ("ui-kit.divider", "Divider", "Stack divider"),
+    (
+        "ui-kit.status-bar-component",
+        "StatusBar",
+        "Application status bar",
+    ),
+    (
+        "ui-kit.accordion-component",
+        "Accordion",
+        "Disclosure accordion",
+    ),
+    (
+        "ui-kit.breadcrumbs-component",
+        "Breadcrumbs",
+        "Breadcrumb navigation",
+    ),
+    ("ui-kit.menu-component", "Menu", "Menu list"),
+    ("ui-kit.menu-bar", "MenuBar", "Menu bar"),
+    ("ui-kit.dialog-component", "Dialog", "Modal dialog"),
+    (
+        "ui-kit.confirm-dialog-component",
+        "ConfirmDialog",
+        "Confirmation dialog",
+    ),
+    ("ui-kit.popover-component", "Popover", "Popover panel"),
+    (
+        "ui-kit.context-menu-component",
+        "ContextMenu",
+        "Context menu list",
+    ),
+    ("ui-kit.tabs-component", "Tabs", "Tabs component"),
+    ("ui-kit.wizard-component", "Wizard", "Wizard component"),
+    ("ui-kit.wizard-header", "WizardHeader", "Wizard header"),
+    (
+        "ui-kit.wizard-navigation",
+        "WizardNavigation",
+        "Wizard navigation controls",
+    ),
+    (
+        "ui-kit.command-palette-component",
+        "CommandPalette",
+        "Command palette overlay",
+    ),
+    ("ui-kit.drag-list-component", "DragList", "Reorderable list"),
+    (
+        "ui-kit.notification-component",
+        "Notification",
+        "Persistent notification banner",
+    ),
+    ("ui-kit.tag-component", "Tag", "Tag/chip component"),
+    ("ui-kit.toolbar-component", "Toolbar", "Toolbar component"),
+    ("ui-kit.tree-view-component", "TreeView", "Tree view"),
+    ("ui-kit.table-component", "Table", "Table component"),
+    ("ui-kit.workflow-node", "WorkflowNode", "Workflow node"),
+    ("ui-kit.focus-group", "FocusGroup", "Focus-managed layout"),
+    ("ui-kit.workflow-port", "Port", "Workflow connection port"),
+    (
+        "ui-kit.workflow-canvas",
+        "WorkflowCanvas",
+        "Node workflow canvas",
+    ),
+    (
+        "ui-kit.showcase-component",
+        "Showcase",
+        "Embedded UI-kit showcase component",
+    ),
+];
+
+fn register_ui_kit_exported_component_stories(registry: &mut StoryRegistry) -> Result<()> {
+    for (id, title, description) in UI_KIT_EXPORTED_COMPONENT_STORIES {
+        if registry.story(id).is_some() {
+            continue;
+        }
+        registry.register(
+            ComponentStory::new(*id, "gpui-ui-kit", *title, *description).props([
+                StoryProp::new("label", "Label", StoryPropValue::Text((*title).into())),
+                StoryProp::new("value", "Value", StoryPropValue::Number(0.64)),
+                StoryProp::new(
+                    "variant",
+                    "Variant",
+                    StoryPropValue::Choice("default".into()),
+                )
+                .options([
+                    "default",
+                    "primary",
+                    "secondary",
+                    "success",
+                    "warning",
+                    "error",
+                    "info",
+                    "ghost",
+                    "outline",
+                ]),
+                StoryProp::new("disabled", "Disabled", StoryPropValue::Bool(false)),
+                StoryProp::new("selected", "Selected", StoryPropValue::Bool(true)),
+                StoryProp::new("open", "Open", StoryPropValue::Bool(true)),
+            ]),
+        )?;
+    }
+    Ok(())
 }
 
 const UI_KIT_SHOWCASE_STORIES: &[(&str, &str, &str)] = &[
@@ -1874,14 +2729,20 @@ pub fn register_px_stories(registry: &mut StoryRegistry) -> Result<()> {
         ]),
     )?;
     registry.register(
+        ComponentStory::new("px.pie", "gpui-px", "Pie Chart", "Responsive pie chart").props([
+            StoryProp::new("donut", "Donut", StoryPropValue::Bool(false)),
+            StoryProp::new("slices", "Slices", StoryPropValue::Number(5.0)),
+            StoryProp::new("fill", "Fill", StoryPropValue::Bool(true)),
+        ]),
+    )?;
+    registry.register(
         ComponentStory::new(
-            "px.pie",
+            "px.donut",
             "gpui-px",
-            "Pie Chart",
-            "Responsive pie and donut chart",
+            "Donut Chart",
+            "Responsive donut chart",
         )
         .props([
-            StoryProp::new("donut", "Donut", StoryPropValue::Bool(true)),
             StoryProp::new("slices", "Slices", StoryPropValue::Number(5.0)),
             StoryProp::new("fill", "Fill", StoryPropValue::Bool(true)),
         ]),
@@ -2122,12 +2983,68 @@ mod tests {
     }
 
     #[test]
+    fn builtin_renderer_registry_covers_story_ids() {
+        let renderers = builtin_story_renderers().unwrap();
+        assert_eq!(renderers.len(), BUILTIN_RENDERER_STORY_IDS.len());
+        for story_id in BUILTIN_RENDERER_STORY_IDS {
+            assert!(
+                renderers.renderer(story_id).is_some(),
+                "missing renderer metadata for {story_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn builtin_renderer_metadata_is_typed() {
+        let renderers = builtin_story_renderers().unwrap();
+        let button = renderers.renderer("ui-kit.button").unwrap();
+        assert_eq!(button.kind, StoryRendererKind::Component);
+        assert!(button.interactive);
+        assert!(button.matrix_preview);
+
+        let showcase = renderers.renderer("ui-kit.table").unwrap();
+        assert_eq!(showcase.kind, StoryRendererKind::Showcase);
+        assert!(!showcase.matrix_preview);
+
+        let chart = renderers.renderer("px.surface3d").unwrap();
+        assert_eq!(chart.kind, StoryRendererKind::Chart);
+        assert!(!chart.interactive);
+
+        let audio = renderers.renderer("audio-kit.volume-knob").unwrap();
+        assert_eq!(audio.kind, StoryRendererKind::Audio);
+        assert!(audio.interactive);
+    }
+
+    #[test]
+    fn exported_ui_kit_component_types_have_bespoke_stories() {
+        let registry = builtin_story_registry().unwrap();
+        let renderers = builtin_story_renderers().unwrap();
+        let mut story_ids_from_types = Vec::new();
+        for (component_type, story_id) in UI_KIT_EXPORTED_COMPONENT_STORY_TYPES {
+            story_ids_from_types.push(*story_id);
+            let story = registry
+                .story(story_id)
+                .unwrap_or_else(|| panic!("missing component story for {component_type}"));
+            assert_eq!(story.crate_name, "gpui-ui-kit");
+            assert!(
+                !story.props.is_empty(),
+                "{component_type} story {story_id} must expose editable prop metadata"
+            );
+            let renderer = renderers
+                .renderer(story_id)
+                .unwrap_or_else(|| panic!("missing component renderer for {component_type}"));
+            assert_eq!(renderer.kind, StoryRendererKind::Component);
+        }
+        assert_eq!(story_ids_from_types, UI_KIT_EXPORTED_COMPONENT_STORY_IDS);
+    }
+
+    #[test]
     fn px_stories_expose_responsive_fill_prop() {
         let registry = builtin_story_registry().unwrap();
-        for story in registry
-            .stories()
-            .filter(|story| story.crate_name == "gpui-px")
-        {
+        for story_id in PX_CHART_STORY_IDS {
+            let story = registry
+                .story(story_id)
+                .unwrap_or_else(|| panic!("missing px chart story {story_id}"));
             assert!(
                 story.props.iter().any(|prop| prop.name == "fill"),
                 "{} must expose the fill/fixed sizing toggle",
@@ -2139,12 +3056,13 @@ mod tests {
     #[test]
     fn px_stories_have_responsive_rendered_conformance() {
         let registry = builtin_story_registry().unwrap();
-        let px_stories = registry
-            .stories()
-            .filter(|story| story.crate_name == "gpui-px")
-            .collect::<Vec<_>>();
-        assert!(px_stories.len() >= 11);
-        for story in px_stories {
+        let renderers = builtin_story_renderers().unwrap();
+        let mut story_ids_from_types = Vec::new();
+        for (chart_type, story_id) in PX_CHART_STORY_TYPES {
+            story_ids_from_types.push(*story_id);
+            let story = registry
+                .story(story_id)
+                .unwrap_or_else(|| panic!("missing px chart story for {chart_type}"));
             assert!(story.conformance.responsive, "{}", story.id);
             assert!(!story.conformance.rendered.allow_scroll, "{}", story.id);
             assert!(
@@ -2157,7 +3075,21 @@ mod tests {
                 "{} must fit mobile height",
                 story.id
             );
+            let renderer = renderers
+                .renderer(story_id)
+                .unwrap_or_else(|| panic!("missing px chart renderer for {chart_type}"));
+            assert_eq!(renderer.kind, StoryRendererKind::Chart);
+            assert!(renderer.matrix_preview, "{}", story.id);
         }
+        assert_eq!(story_ids_from_types, PX_CHART_STORY_IDS);
+
+        let px_story_ids = registry
+            .stories()
+            .filter(|story| story.crate_name == "gpui-px")
+            .map(|story| story.id.as_str())
+            .collect::<BTreeSet<_>>();
+        let expected_ids = PX_CHART_STORY_IDS.iter().copied().collect::<BTreeSet<_>>();
+        assert_eq!(px_story_ids, expected_ids);
     }
 
     #[test]
@@ -2190,12 +3122,25 @@ mod tests {
         let story = registry.story("ui-kit.button").unwrap();
         assert!(story.metadata.iter().any(|item| item.id == "crate"));
         assert!(story.metadata.iter().any(|item| item.id == "story"));
-        assert!(story.metadata.iter().any(|item| item.id == "renderer"));
+        assert!(
+            story
+                .metadata
+                .iter()
+                .any(|item| item.id == "renderer" && item.value == "Component")
+        );
         assert!(
             story
                 .metadata
                 .iter()
                 .all(|item| !item.label.trim().is_empty() && !item.value.trim().is_empty())
+        );
+
+        let custom = ComponentStory::new("custom.story", "custom", "Custom", "Custom story");
+        assert!(
+            custom
+                .metadata
+                .iter()
+                .any(|item| item.id == "renderer" && item.value == "Metadata-only")
         );
     }
 
@@ -2354,6 +3299,52 @@ mod tests {
     }
 
     #[test]
+    fn component_lab_conformance_reports_observed_rendered_overflow() {
+        let mut registry = StoryRegistry::new();
+        let story = ComponentStory::new(
+            "test.observed",
+            "test",
+            "Observed",
+            "Observed rendered story",
+        )
+        .conformance(StoryConformance {
+            rendered: RenderedPreviewConformance::new(160.0, 120.0).observed_bounds(410.0, 180.0),
+            ..StoryConformance::display(160.0, 120.0)
+        });
+        registry.register(story).unwrap();
+
+        let report = validate_component_lab_conformance(&registry, &[], &passing_token_report());
+        assert!(!report.passed());
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.id == "rendered.overflow")
+        );
+    }
+
+    #[test]
+    fn component_lab_conformance_reports_rendered_bounds_order_failure() {
+        let mut registry = StoryRegistry::new();
+        let story = ComponentStory::new("test.bounds", "test", "Bounds", "Bounds story")
+            .conformance(StoryConformance {
+                rendered: RenderedPreviewConformance::new(200.0, 120.0)
+                    .observed_bounds(160.0, 120.0),
+                ..StoryConformance::display(200.0, 120.0)
+            });
+        registry.register(story).unwrap();
+
+        let report = validate_component_lab_conformance(&registry, &[], &passing_token_report());
+        assert!(!report.passed());
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.id == "rendered.bounds_order")
+        );
+    }
+
+    #[test]
     fn component_lab_conformance_reports_touch_target_failure() {
         let mut registry = StoryRegistry::new();
         let story = ComponentStory::new("test.touch", "test", "Touch", "Touch story").conformance(
@@ -2368,6 +3359,45 @@ mod tests {
                 .findings
                 .iter()
                 .any(|finding| finding.id == "touch.target")
+        );
+    }
+
+    #[test]
+    fn component_lab_conformance_reports_touch_target_count_failure() {
+        let mut registry = StoryRegistry::new();
+        let mut conformance =
+            StoryConformance::interactive(160.0, 120.0, 48.0, ["Primary", "Secondary"]);
+        conformance.touch_target_count = 1;
+        let story = ComponentStory::new("test.touch-count", "test", "Touch", "Touch story")
+            .conformance(conformance);
+        registry.register(story).unwrap();
+
+        let report = validate_component_lab_conformance(&registry, &[], &passing_token_report());
+        assert!(!report.passed());
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.id == "touch.targets")
+        );
+    }
+
+    #[test]
+    fn component_lab_conformance_reports_touch_rendered_area_failure() {
+        let mut registry = StoryRegistry::new();
+        let story =
+            ComponentStory::new("test.touch-area", "test", "Touch", "Touch story").conformance(
+                StoryConformance::interactive(60.0, 60.0, 48.0, ["Primary", "Secondary"]),
+            );
+        registry.register(story).unwrap();
+
+        let report = validate_component_lab_conformance(&registry, &[], &passing_token_report());
+        assert!(!report.passed());
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.id == "touch.rendered_area")
         );
     }
 
@@ -2393,6 +3423,25 @@ mod tests {
                 .iter()
                 .any(|finding| finding.id == "focus.touch_target")
         );
+    }
+
+    #[test]
+    fn component_lab_conformance_reports_focus_duplicate_and_extra_labels() {
+        let mut registry = StoryRegistry::new();
+        let mut story = ComponentStory::new("test.focus-extra", "test", "Focus", "Focus story");
+        story.conformance =
+            StoryConformance::interactive(180.0, 120.0, 48.0, ["Primary", "Primary", "Unused"]);
+        story.conformance.focusable_count = 2;
+        registry.register(story).unwrap();
+
+        let report = validate_component_lab_conformance(&registry, &[], &passing_token_report());
+        assert!(!report.passed());
+        for id in ["focus.labels_extra", "focus.labels_duplicate"] {
+            assert!(
+                report.findings.iter().any(|finding| finding.id == id),
+                "missing {id}"
+            );
+        }
     }
 
     #[test]
