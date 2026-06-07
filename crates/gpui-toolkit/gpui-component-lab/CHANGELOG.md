@@ -33,3 +33,5 @@
   layout fields.
 - Expanded WYSIWYG layout editing beyond size constraints with persisted
   horizontal/vertical alignment, overflow, surface, gap, and border controls.
+- Added public `StoryMetadataItem` support so stories carry inspector-visible,
+  conformance-checked metadata in story JSON.

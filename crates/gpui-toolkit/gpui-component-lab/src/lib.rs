@@ -50,6 +50,24 @@ impl StoryProp {
     }
 }
 
+/// One key/value metadata item shown in the story inspector and JSON output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoryMetadataItem {
+    pub id: String,
+    pub label: String,
+    pub value: String,
+}
+
+impl StoryMetadataItem {
+    pub fn new(id: impl Into<String>, label: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            value: value.into(),
+        }
+    }
+}
+
 /// Expected rendered preview behavior used by the conformance gate.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RenderedPreviewConformance {
@@ -253,6 +271,8 @@ pub struct ComponentStory {
     pub crate_name: String,
     pub title: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metadata: Vec<StoryMetadataItem>,
     #[serde(default)]
     pub props: Vec<StoryProp>,
     #[serde(default)]
@@ -275,11 +295,13 @@ impl ComponentStory {
         let id = id.into();
         let crate_name = crate_name.into();
         let conformance = StoryConformance::for_story(&id, &crate_name);
+        let metadata = default_story_metadata(&id, &crate_name);
         Self {
             id,
             crate_name,
             title: title.into(),
             description: description.into(),
+            metadata,
             props: Vec::new(),
             viewports: default_viewports(),
             themes: default_theme_presets(),
@@ -293,10 +315,33 @@ impl ComponentStory {
         self
     }
 
+    pub fn metadata(mut self, metadata: impl IntoIterator<Item = StoryMetadataItem>) -> Self {
+        self.metadata = metadata.into_iter().collect();
+        self
+    }
+
+    pub fn metadata_item(mut self, item: StoryMetadataItem) -> Self {
+        self.metadata.push(item);
+        self
+    }
+
     pub fn conformance(mut self, conformance: StoryConformance) -> Self {
         self.conformance = conformance;
         self
     }
+}
+
+fn default_story_metadata(story_id: &str, crate_name: &str) -> Vec<StoryMetadataItem> {
+    let renderer = if builtin_story_has_renderer(story_id) {
+        "Renderer-backed"
+    } else {
+        "Metadata-only"
+    };
+    vec![
+        StoryMetadataItem::new("crate", "Crate", crate_name),
+        StoryMetadataItem::new("story", "Story", story_id),
+        StoryMetadataItem::new("renderer", "Renderer", renderer),
+    ]
 }
 
 /// Registry of all stories shown by the lab.
@@ -759,11 +804,63 @@ fn validate_story_conformance(
     validate_viewports(story, findings);
     validate_theme_presets(story, findings);
     validate_motion_presets(story, findings);
+    validate_story_metadata(story, findings);
     validate_props(story, findings);
     validate_preview_conformance(story, findings);
     validate_touch_target_conformance(story, findings);
     validate_focus_metadata_conformance(story, findings);
     validate_renderer_coverage(story, findings);
+}
+
+fn validate_story_metadata(
+    story: &ComponentStory,
+    findings: &mut Vec<ComponentLabConformanceFinding>,
+) {
+    if story.metadata.is_empty() {
+        findings.push(ComponentLabConformanceFinding::new(
+            "metadata",
+            "metadata.empty",
+            Some(&story.id),
+            "stories must provide at least one metadata item for lab filtering and reports",
+        ));
+        return;
+    }
+
+    let mut ids = BTreeSet::new();
+    for item in &story.metadata {
+        if item.id.trim().is_empty() {
+            findings.push(ComponentLabConformanceFinding::new(
+                "metadata",
+                "metadata.id",
+                Some(&story.id),
+                "metadata item ids must not be empty",
+            ));
+        }
+        if !ids.insert(item.id.as_str()) {
+            findings.push(ComponentLabConformanceFinding::new(
+                "metadata",
+                "metadata.duplicate",
+                Some(&story.id),
+                format!("duplicate metadata item '{}'", item.id),
+            ));
+        }
+        if item.label.trim().is_empty() {
+            findings.push(ComponentLabConformanceFinding::new(
+                "metadata",
+                "metadata.label",
+                Some(&story.id),
+                format!("metadata item '{}' must have a visible label", item.id),
+            ));
+        }
+        if item.value.trim().is_empty() {
+            findings.push(ComponentLabConformanceFinding::new(
+                "metadata",
+                "metadata.value",
+                Some(&story.id),
+                format!("metadata item '{}' must have a value", item.id),
+            ));
+        }
+    }
 }
 
 fn validate_preview_conformance(
@@ -2088,6 +2185,21 @@ mod tests {
     }
 
     #[test]
+    fn stories_include_metadata_items() {
+        let registry = builtin_story_registry().unwrap();
+        let story = registry.story("ui-kit.button").unwrap();
+        assert!(story.metadata.iter().any(|item| item.id == "crate"));
+        assert!(story.metadata.iter().any(|item| item.id == "story"));
+        assert!(story.metadata.iter().any(|item| item.id == "renderer"));
+        assert!(
+            story
+                .metadata
+                .iter()
+                .all(|item| !item.label.trim().is_empty() && !item.value.trim().is_empty())
+        );
+    }
+
+    #[test]
     fn default_theme_presets_cover_design_languages() {
         let presets = default_theme_presets();
         for language in ["neutral", "apple_hig", "material3", "fluent"] {
@@ -2114,6 +2226,7 @@ mod tests {
             parsed.story.props[0].value,
             StoryPropValue::Text("Apply".into())
         );
+        assert!(parsed.story.metadata.iter().any(|item| item.id == "story"));
     }
 
     fn passing_token_report() -> DesignTokenValidationReport {
@@ -2181,6 +2294,29 @@ mod tests {
                 .iter()
                 .any(|finding| finding.id == "renderer.coverage")
         );
+    }
+
+    #[test]
+    fn component_lab_conformance_reports_bad_story_metadata() {
+        let mut registry = StoryRegistry::new();
+        registry
+            .register(
+                ComponentStory::new("test.metadata", "test", "Metadata", "Metadata story")
+                    .metadata([
+                        StoryMetadataItem::new("owner", "Owner", "Design Systems"),
+                        StoryMetadataItem::new("owner", "", ""),
+                    ]),
+            )
+            .unwrap();
+
+        let report = validate_component_lab_conformance(&registry, &[], &passing_token_report());
+        assert!(!report.passed());
+        for id in ["metadata.duplicate", "metadata.label", "metadata.value"] {
+            assert!(
+                report.findings.iter().any(|finding| finding.id == id),
+                "missing {id}"
+            );
+        }
     }
 
     #[test]

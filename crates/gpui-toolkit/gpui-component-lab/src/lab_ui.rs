@@ -903,6 +903,7 @@ impl ComponentLab {
             .bg(theme.surface)
             .border_l_1()
             .border_color(theme.border)
+            .child(self.render_story_metadata(story, cx))
             .child(
                 div()
                     .flex()
@@ -932,6 +933,44 @@ impl ComponentLab {
                         ),
                 )
             })
+            .into_any_element()
+    }
+
+    fn render_story_metadata(&self, story: &ComponentStory, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let mut rows = div().flex().flex_col().gap_2();
+        for item in &story.metadata {
+            rows = rows.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_3()
+                    .child(
+                        Text::new(item.label.clone())
+                            .size(TextSize::Xs)
+                            .color(theme.text_muted),
+                    )
+                    .child(
+                        Text::new(item.value.clone())
+                            .size(TextSize::Xs)
+                            .weight(TextWeight::Medium)
+                            .color(theme.text_secondary),
+                    ),
+            );
+        }
+
+        div()
+            .p_3()
+            .rounded_md()
+            .bg(theme.surface_hover)
+            .border_1()
+            .border_color(theme.border)
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(Heading::h3("Metadata"))
+            .child(rows)
             .into_any_element()
     }
 

@@ -4,9 +4,11 @@ Prop-driven story registry and component lab scaffolding for `gpui-toolkit`.
 
 ## What It Owns
 
-- `ComponentStory`, `StoryRegistry`, `StoryProp`, `StoryPropValue`
+- `ComponentStory`, `StoryRegistry`, `StoryMetadataItem`, `StoryProp`,
+  `StoryPropValue`
 - `ViewportPreset`, `ThemePreset`, `MotionPreset`, `ResponsivePreviewMatrix`
-- Built-in story metadata for `gpui-ui-kit`, `gpui-px`, and `gpui-audio-kit`
+- Built-in story metadata items for `gpui-ui-kit`, `gpui-px`, and
+  `gpui-audio-kit`, shown in the lab inspector and persisted in story JSON
 - Renderer-backed built-in stories:
   `ui-kit.button`, `ui-kit.form`, `ui-kit.status`, `ui-kit.navigation`,
   `ui-kit.feedback`, `ui-kit.card`, every public `gpui-ui-kit` showcase
