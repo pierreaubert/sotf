@@ -255,6 +255,7 @@ impl PlayerView {
                                 .variant(TabVariant::VerticalCard)
                                 .theme(tabs_theme.clone())
                                 .on_change(move |index, _window, cx| {
+                                    let mut left_search = false;
                                     state_for_tabs.update(cx, |state, _cx| {
                                         // Handle sort order tabs (0-5)
                                         if index <= 5 {
@@ -270,12 +271,22 @@ impl PlayerView {
                                             state.app.set_library_sort_order(sort_order);
                                             // Close filter/search modes when selecting sort tab
                                             state.app.ui_state.filter_menu_open = false;
+                                            if state.app.ui_state.input_mode
+                                                == crate::app::InputMode::Search
+                                            {
+                                                left_search = true;
+                                            }
                                             state.app.ui_state.input_mode =
                                                 crate::app::InputMode::Normal;
                                         } else if index == 6 {
                                             // Filter tab
                                             state.app.ui_state.filter_menu_open =
                                                 !state.app.ui_state.filter_menu_open;
+                                            if state.app.ui_state.input_mode
+                                                == crate::app::InputMode::Search
+                                            {
+                                                left_search = true;
+                                            }
                                             state.app.ui_state.input_mode =
                                                 crate::app::InputMode::Normal;
                                         } else if index == 7 {
@@ -286,6 +297,7 @@ impl PlayerView {
                                                 state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Normal;
                                                 state.app.library_state.search_query.clear();
+                                                left_search = true;
                                             } else {
                                                 state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Search;
@@ -293,6 +305,10 @@ impl PlayerView {
                                             }
                                         }
                                     });
+                                    if left_search {
+                                        #[cfg(any(target_os = "ios", target_os = "tvos"))]
+                                        gpui_ios::hide_keyboard();
+                                    }
                                 }),
                         )
                         .when(has_active_filters, |el| {
@@ -396,6 +412,14 @@ impl PlayerView {
                                     .text_color(theme.text_primary)
                                     .placeholder_color(theme.text_muted)
                                     .focus_handle(self.search_focus_handle.clone())
+                                    .on_edit_start(|_window, _cx| {
+                                        #[cfg(any(target_os = "ios", target_os = "tvos"))]
+                                        gpui_ios::show_keyboard();
+                                    })
+                                    .on_edit_end(|_value, _window, _cx| {
+                                        #[cfg(any(target_os = "ios", target_os = "tvos"))]
+                                        gpui_ios::hide_keyboard();
+                                    })
                                     .on_text_change({
                                         let app_state = self.state.clone();
                                         let view_handle = cx.entity().clone();
