@@ -2,7 +2,7 @@
 //!
 //! Contains the main App struct and AppState wrapper.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -536,12 +536,211 @@ pub struct RemoteState {
             Result<sotf_audio_player::sotf_api_client::SotfApiStreamEvent, String>,
         >,
     >,
+    /// Receiver for quiet remote cache refresh jobs.
+    pub cache_refresh_receiver: Option<
+        std::sync::mpsc::Receiver<Result<RemoteCacheRefreshResult, RemoteCacheRefreshError>>,
+    >,
+    /// Whether a quiet remote cache refresh job is currently running.
+    pub cache_refresh_in_progress: bool,
+    /// Consecutive quiet cache refresh failures for the selected remote.
+    pub cache_refresh_failures: u8,
+    /// Disable quiet cache refreshes after repeated network failures.
+    pub cache_updates_disabled: bool,
+    /// Last quiet cache refresh error, kept for diagnostics only.
+    pub cache_last_error: Option<String>,
     /// In-memory bearer token cache keyed by server ID.
     /// Tokens are never persisted to disk; secure storage is planned for Phase 2.
     pub server_tokens: HashMap<String, String>,
+    /// Bounded in-memory cache for remote album metadata and artwork.
+    /// This is a performance cache only, not a local library mirror.
+    pub album_cache: RemoteAlbumCache,
+    /// Latest remote state snapshot received from the selected server.
+    pub current_state: Option<sotf_audio_player::sotf_api_client::SotfApiState>,
+    /// Latest remote queue snapshot received from the selected server.
+    pub current_queue: Option<sotf_audio_player::sotf_api_client::SotfApiQueue>,
+    /// Visible remote album page, sourced from the server API.
+    pub current_album_page: Option<sotf_audio_player::sotf_api_client::SotfApiAlbumList>,
+    /// Server ID that produced the visible remote album page.
+    pub current_album_page_server_id: Option<String>,
+    /// Minimal refresh work requested by SSE events.
+    pub refresh_requests: RemoteRefreshRequests,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RemoteRefreshRequests {
+    pub state: bool,
+    pub queue: bool,
+    pub visible_album_page: bool,
+}
+
+impl RemoteRefreshRequests {
+    pub fn is_empty(&self) -> bool {
+        !self.state && !self.queue && !self.visible_album_page
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        self.state |= other.state;
+        self.queue |= other.queue;
+        self.visible_album_page |= other.visible_album_page;
+    }
+}
+
+#[derive(Debug)]
+pub struct RemoteCacheRefreshResult {
+    pub server_id: String,
+    pub state: Option<sotf_audio_player::sotf_api_client::SotfApiState>,
+    pub queue: Option<sotf_audio_player::sotf_api_client::SotfApiQueue>,
+    pub album_page: Option<sotf_audio_player::sotf_api_client::SotfApiAlbumList>,
+    pub artwork: Vec<(String, Vec<u8>)>,
+}
+
+#[derive(Debug)]
+pub struct RemoteCacheRefreshError {
+    pub requests: RemoteRefreshRequests,
+    pub message: String,
+}
+
+const DEFAULT_REMOTE_ALBUM_CACHE_LIMIT: usize = 250;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RemoteAlbumCacheKey {
+    server_id: String,
+    library_version: u64,
+    album_id: String,
+}
+
+#[derive(Debug)]
+pub struct RemoteAlbumCache {
+    max_albums: usize,
+    metadata: HashMap<RemoteAlbumCacheKey, sotf_audio_player::sotf_api_client::SotfApiAlbum>,
+    metadata_lru: VecDeque<RemoteAlbumCacheKey>,
+    artwork: HashMap<RemoteAlbumCacheKey, Vec<u8>>,
+    artwork_lru: VecDeque<RemoteAlbumCacheKey>,
+}
+
+impl Default for RemoteAlbumCache {
+    fn default() -> Self {
+        Self::with_limit(DEFAULT_REMOTE_ALBUM_CACHE_LIMIT)
+    }
+}
+
+impl RemoteAlbumCache {
+    pub fn with_limit(max_albums: usize) -> Self {
+        Self {
+            max_albums: max_albums.max(1),
+            metadata: HashMap::new(),
+            metadata_lru: VecDeque::new(),
+            artwork: HashMap::new(),
+            artwork_lru: VecDeque::new(),
+        }
+    }
+
+    pub fn max_albums(&self) -> usize {
+        self.max_albums
+    }
+
+    pub fn metadata_len(&self) -> usize {
+        self.metadata.len()
+    }
+
+    pub fn artwork_len(&self) -> usize {
+        self.artwork.len()
+    }
+
+    pub fn upsert_metadata_page(
+        &mut self,
+        server_id: &str,
+        library_version: u64,
+        albums: &[sotf_audio_player::sotf_api_client::SotfApiAlbum],
+    ) {
+        for album in albums {
+            let key = RemoteAlbumCacheKey {
+                server_id: server_id.to_string(),
+                library_version,
+                album_id: album.id.clone(),
+            };
+            self.metadata.insert(key.clone(), album.clone());
+            touch_lru(&mut self.metadata_lru, key);
+        }
+        evict_lru(&mut self.metadata, &mut self.metadata_lru, self.max_albums);
+    }
+
+    pub fn metadata(
+        &self,
+        server_id: &str,
+        library_version: u64,
+        album_id: &str,
+    ) -> Option<&sotf_audio_player::sotf_api_client::SotfApiAlbum> {
+        self.metadata.get(&RemoteAlbumCacheKey {
+            server_id: server_id.to_string(),
+            library_version,
+            album_id: album_id.to_string(),
+        })
+    }
+
+    pub fn upsert_artwork(
+        &mut self,
+        server_id: &str,
+        library_version: u64,
+        album_id: &str,
+        bytes: Vec<u8>,
+    ) {
+        let key = RemoteAlbumCacheKey {
+            server_id: server_id.to_string(),
+            library_version,
+            album_id: album_id.to_string(),
+        };
+        self.artwork.insert(key.clone(), bytes);
+        touch_lru(&mut self.artwork_lru, key);
+        evict_lru(&mut self.artwork, &mut self.artwork_lru, self.max_albums);
+    }
+
+    pub fn artwork(&self, server_id: &str, library_version: u64, album_id: &str) -> Option<&[u8]> {
+        self.artwork
+            .get(&RemoteAlbumCacheKey {
+                server_id: server_id.to_string(),
+                library_version,
+                album_id: album_id.to_string(),
+            })
+            .map(Vec::as_slice)
+    }
+
+    pub fn invalidate_server(&mut self, server_id: &str) {
+        self.metadata.retain(|key, _| key.server_id != server_id);
+        self.metadata_lru.retain(|key| key.server_id != server_id);
+        self.artwork.retain(|key, _| key.server_id != server_id);
+        self.artwork_lru.retain(|key| key.server_id != server_id);
+    }
+
+    pub fn invalidate_all(&mut self) {
+        self.metadata.clear();
+        self.metadata_lru.clear();
+        self.artwork.clear();
+        self.artwork_lru.clear();
+    }
+}
+
+fn touch_lru<T: Clone + Eq>(lru: &mut VecDeque<T>, key: T) {
+    lru.retain(|existing| existing != &key);
+    lru.push_back(key);
+}
+
+fn evict_lru<T: Clone + Eq + std::hash::Hash, V>(
+    values: &mut HashMap<T, V>,
+    lru: &mut VecDeque<T>,
+    max_len: usize,
+) {
+    while values.len() > max_len {
+        let Some(key) = lru.pop_front() else {
+            break;
+        };
+        values.remove(&key);
+    }
 }
 
 impl RemoteState {
+    pub const CACHE_REFRESH_FAILURE_DISABLE_THRESHOLD: u8 = 3;
+
     pub fn merge_discovered_servers(
         &mut self,
         servers: Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>,
@@ -604,6 +803,52 @@ impl RemoteState {
         self.manual_server_name.clear();
         self.manual_api_base_url.clear();
         Ok(id)
+    }
+
+    pub fn apply_remote_album_page(
+        &mut self,
+        server_id: impl Into<String>,
+        page: sotf_audio_player::sotf_api_client::SotfApiAlbumList,
+    ) {
+        let server_id = server_id.into();
+        self.album_cache
+            .upsert_metadata_page(&server_id, page.library_version, &page.albums);
+        self.current_album_page = Some(page);
+        self.current_album_page_server_id = Some(server_id);
+        self.refresh_requests.visible_album_page = false;
+    }
+
+    pub fn clear_remote_album_page(&mut self) {
+        self.current_album_page = None;
+        self.current_album_page_server_id = None;
+    }
+
+    pub fn reset_remote_cache_updater(&mut self) {
+        self.cache_refresh_receiver = None;
+        self.cache_refresh_in_progress = false;
+        self.cache_refresh_failures = 0;
+        self.cache_updates_disabled = false;
+        self.cache_last_error = None;
+    }
+
+    pub fn record_remote_cache_refresh_success(&mut self) {
+        self.cache_refresh_in_progress = false;
+        self.cache_refresh_receiver = None;
+        self.cache_refresh_failures = 0;
+        self.cache_last_error = None;
+    }
+
+    pub fn record_remote_cache_refresh_failure(&mut self, err: RemoteCacheRefreshError) {
+        self.cache_refresh_in_progress = false;
+        self.cache_refresh_receiver = None;
+        self.cache_last_error = Some(err.message);
+        self.cache_refresh_failures = self.cache_refresh_failures.saturating_add(1);
+        if self.cache_refresh_failures >= Self::CACHE_REFRESH_FAILURE_DISABLE_THRESHOLD {
+            self.cache_updates_disabled = true;
+            self.refresh_requests = RemoteRefreshRequests::default();
+        } else {
+            self.refresh_requests.merge(err.requests);
+        }
     }
 }
 

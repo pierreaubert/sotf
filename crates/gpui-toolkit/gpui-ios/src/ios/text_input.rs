@@ -71,12 +71,29 @@ pub fn modifier_flags_to_modifiers(flags: u32) -> Modifiers {
 }
 
 pub fn key_code_to_key_down(key_code: u32, modifier_flags: u32) -> PlatformInput {
+    key_code_to_key_down_with_characters(key_code, modifier_flags, None)
+}
+
+pub fn key_code_to_key_down_with_characters(
+    key_code: u32,
+    modifier_flags: u32,
+    characters: Option<String>,
+) -> PlatformInput {
     let modifiers = modifier_flags_to_modifiers(modifier_flags);
     let key = key_code_to_string(key_code);
+    let key_char = characters
+        .filter(|characters| !characters.is_empty() && key.len() == 1)
+        .or_else(|| {
+            if key.len() == 1 {
+                Some(key.clone())
+            } else {
+                None
+            }
+        });
     let keystroke = Keystroke {
         modifiers,
         key: key.clone(),
-        key_char: if key.len() == 1 { Some(key) } else { None },
+        key_char,
     };
     PlatformInput::KeyDown(KeyDownEvent {
         keystroke,

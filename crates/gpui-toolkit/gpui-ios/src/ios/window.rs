@@ -24,7 +24,7 @@ use gpui::{
 };
 use gpui_wgpu::{WgpuContext, WgpuRenderer, WgpuSurfaceConfig, wgpu};
 use objc::{
-    class,
+    Message, class,
     declare::ClassDecl,
     msg_send,
     runtime::{BOOL, Class, Object, Sel, YES},
@@ -211,9 +211,9 @@ fn register_metal_view_class() -> &'static Class {
             handle_touches(this, touches, event);
         }
 
-        // tvOS press handling — Siri Remote buttons (Select, Menu, Play/Pause,
-        // arrows). Maps hardware button presses to GPUI keyboard/mouse events.
-        #[cfg(target_os = "tvos")]
+        // iOS/tvOS press handling — hardware keyboards on iOS and Siri Remote
+        // buttons on tvOS. Maps button presses to GPUI keyboard/mouse events.
+        #[cfg(any(target_os = "ios", target_os = "tvos"))]
         extern "C" fn presses_began(
             this: &mut Object,
             _sel: Sel,
@@ -223,7 +223,7 @@ fn register_metal_view_class() -> &'static Class {
             handle_presses(this, presses, event, true);
         }
 
-        #[cfg(target_os = "tvos")]
+        #[cfg(any(target_os = "ios", target_os = "tvos"))]
         extern "C" fn presses_ended(
             this: &mut Object,
             _sel: Sel,
@@ -231,6 +231,14 @@ fn register_metal_view_class() -> &'static Class {
             event: *mut Object,
         ) {
             handle_presses(this, presses, event, false);
+        }
+
+        // iOS hardware keyboard events are delivered through the first
+        // responder chain, so the render view must be eligible when no text
+        // input is active.
+        #[cfg(any(target_os = "ios", target_os = "tvos"))]
+        extern "C" fn can_become_first_responder(_this: &Object, _sel: Sel) -> BOOL {
+            YES
         }
 
         // On tvOS the view must be focusable for UIPress events to arrive.
@@ -264,8 +272,8 @@ fn register_metal_view_class() -> &'static Class {
                 touches_cancelled as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
             );
 
-            // tvOS: press handling for Siri Remote buttons
-            #[cfg(target_os = "tvos")]
+            // iOS/tvOS: press handling for hardware keyboards and Siri Remote
+            #[cfg(any(target_os = "ios", target_os = "tvos"))]
             {
                 decl.add_method(
                     sel!(pressesBegan:withEvent:),
@@ -276,9 +284,16 @@ fn register_metal_view_class() -> &'static Class {
                     presses_ended as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
                 );
                 decl.add_method(
-                    sel!(canBecomeFocused),
-                    can_become_focused as extern "C" fn(&Object, Sel) -> BOOL,
+                    sel!(canBecomeFirstResponder),
+                    can_become_first_responder as extern "C" fn(&Object, Sel) -> BOOL,
                 );
+                #[cfg(target_os = "tvos")]
+                {
+                    decl.add_method(
+                        sel!(canBecomeFocused),
+                        can_become_focused as extern "C" fn(&Object, Sel) -> BOOL,
+                    );
+                }
             }
         }
 
@@ -426,6 +441,27 @@ fn register_text_input_view_class() -> &'static Class {
             YES
         }
 
+        // Hardware keyboard press handling for iOS simulator/devices.
+        #[cfg(any(target_os = "ios", target_os = "tvos"))]
+        extern "C" fn presses_began(
+            this: &mut Object,
+            _sel: Sel,
+            presses: *mut Object,
+            event: *mut Object,
+        ) {
+            handle_presses(this, presses, event, true);
+        }
+
+        #[cfg(any(target_os = "ios", target_os = "tvos"))]
+        extern "C" fn presses_ended(
+            this: &mut Object,
+            _sel: Sel,
+            presses: *mut Object,
+            event: *mut Object,
+        ) {
+            handle_presses(this, presses, event, false);
+        }
+
         // --- UITextInputTraits property accessors ---
         extern "C" fn get_keyboard_type(this: &Object, _sel: Sel) -> isize {
             unsafe { *this.get_ivar::<isize>("_keyboardType") }
@@ -469,6 +505,17 @@ fn register_text_input_view_class() -> &'static Class {
                 sel!(canBecomeFirstResponder),
                 can_become_first_responder as extern "C" fn(&Object, Sel) -> BOOL,
             );
+            #[cfg(any(target_os = "ios", target_os = "tvos"))]
+            {
+                decl.add_method(
+                    sel!(pressesBegan:withEvent:),
+                    presses_began as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+                );
+                decl.add_method(
+                    sel!(pressesEnded:withEvent:),
+                    presses_ended as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+                );
+            }
 
             // UITextInputTraits property methods
             decl.add_method(
@@ -503,12 +550,12 @@ fn register_text_input_view_class() -> &'static Class {
     class!(GPUITextInputView)
 }
 
-// ── tvOS press handling ──────────────────────────────────────────────────────
-// Maps Siri Remote button events to GPUI keyboard / mouse events.
-// UIPressType values: upArrow=0, downArrow=1, leftArrow=2, rightArrow=3,
-//                     select=4, menu=5, playPause=6
+// ── iOS/tvOS press handling ──────────────────────────────────────────────────
+// Maps external keyboard events to GPUI key events and tvOS Siri Remote button
+// events to GPUI keyboard / mouse events. UIPressType values: upArrow=0,
+// downArrow=1, leftArrow=2, rightArrow=3, select=4, menu=5, playPause=6.
 
-#[cfg(target_os = "tvos")]
+#[cfg(any(target_os = "ios", target_os = "tvos"))]
 fn handle_presses(view: &mut Object, presses: *mut Object, _event: *mut Object, is_down: bool) {
     unsafe {
         let window_ptr: *mut std::ffi::c_void = *view.get_ivar(GPUI_WINDOW_IVAR);
@@ -522,8 +569,25 @@ fn handle_presses(view: &mut Object, presses: *mut Object, _event: *mut Object, 
 
         for i in 0..count {
             let press: *mut Object = msg_send![all, objectAtIndex: i];
-            let press_type: i64 = msg_send![press, r#type];
-            window.handle_press(press_type, is_down);
+            let key: *mut Object = msg_send![press, key];
+            if !key.is_null() {
+                let key_code: usize = msg_send![key, keyCode];
+                let modifier_flags: usize = msg_send![key, modifierFlags];
+                let characters: *mut Object = msg_send![key, characters];
+                window.handle_key_event_with_characters(
+                    key_code as u32,
+                    modifier_flags as u32,
+                    ns_string_to_string(characters),
+                    is_down,
+                );
+                continue;
+            }
+
+            #[cfg(target_os = "tvos")]
+            {
+                let press_type: i64 = (&*press).send_message(Sel::register("type"), ()).unwrap();
+                window.handle_press(press_type, is_down);
+            }
         }
     }
 }
@@ -707,7 +771,7 @@ fn dynamic_type_from_name(name: &str) -> DynamicTypeCategory {
     }
 }
 
-unsafe fn ns_string_to_string(value: *mut Object) -> Option<String> {
+fn ns_string_to_string(value: *mut Object) -> Option<String> {
     if value.is_null() {
         return None;
     }
@@ -797,7 +861,7 @@ unsafe fn query_scene_metrics(view: *mut Object, fallback_scale: f32) -> Option<
         let vertical: i64 = unsafe { msg_send![trait_collection, verticalSizeClass] };
         let category: *mut Object =
             unsafe { msg_send![trait_collection, preferredContentSizeCategory] };
-        let dynamic_type = unsafe { ns_string_to_string(category) }
+        let dynamic_type = ns_string_to_string(category)
             .as_deref()
             .map(dynamic_type_from_name)
             .unwrap_or_default();
@@ -1021,6 +1085,10 @@ impl IosWindow {
                 renderer: Mutex::new(None),
                 platform_view_host: NativePlatformViewHost::new(view as *mut c_void),
             };
+
+            // Keep app-level hardware keyboard shortcuts alive when no text
+            // input is active.
+            ios_window.focus_hardware_keyboard_view();
 
             // Create the wgpu renderer using the Metal backend.
             //
@@ -1478,7 +1546,7 @@ impl IosWindow {
             // SAFETY: UIKit supplies a live UITouch pointer while processing the
             // touch callback on the main thread. Selectors used here are stable
             // UITouch APIs on the supported iOS deployment target.
-            let touch_type: i64 = msg_send![touch, r#type];
+            let touch_type: i64 = (&*touch).send_message(Sel::register("type"), ()).unwrap();
             let force: core_graphics::base::CGFloat = msg_send![touch, force];
             let max_force: core_graphics::base::CGFloat = msg_send![touch, maximumPossibleForce];
             let altitude_angle: core_graphics::base::CGFloat = msg_send![touch, altitudeAngle];
@@ -1545,6 +1613,7 @@ impl IosWindow {
             "attach_gpui_host_view",
         );
         self.handle_layout_change();
+        self.focus_hardware_keyboard_view();
     }
 
     pub fn detach_from_parent_view(&self) {
@@ -1873,6 +1942,31 @@ impl IosWindow {
                 afterDelay: 0.0_f64
             ];
         }
+        self.focus_hardware_keyboard_view();
+    }
+
+    /// Make the Metal view the first responder so attached iPad keyboards can
+    /// send app-level key events when no text field is active.
+    fn focus_hardware_keyboard_view(&self) {
+        if self.view.is_null() {
+            return;
+        }
+
+        unsafe {
+            if !self.text_input_view.is_null() {
+                let text_input_is_first_responder: BOOL =
+                    msg_send![self.text_input_view, isFirstResponder];
+                if text_input_is_first_responder == YES {
+                    return;
+                }
+            }
+
+            let _: () = msg_send![self.view,
+                performSelector: sel!(becomeFirstResponder)
+                withObject: ptr::null::<Object>()
+                afterDelay: 0.0_f64
+            ];
+        }
     }
 
     /// Handle text input from the software keyboard
@@ -1881,17 +1975,7 @@ impl IosWindow {
             return;
         }
 
-        unsafe {
-            // Convert NSString to Rust String
-            let utf8: *const i8 = msg_send![text, UTF8String];
-            if utf8.is_null() {
-                return;
-            }
-
-            let text_str = std::ffi::CStr::from_ptr(utf8)
-                .to_string_lossy()
-                .into_owned();
-
+        if let Some(text_str) = ns_string_to_string(text) {
             log::info!("GPUI iOS: Text input: {:?}", text_str);
 
             // Try the global text input callback (for our TextInput components).
@@ -1964,9 +2048,21 @@ impl IosWindow {
 
     /// Handle a key event from an external keyboard
     pub fn handle_key_event(&self, key_code: u32, modifier_flags: u32, is_key_down: bool) {
+        self.handle_key_event_with_characters(key_code, modifier_flags, None, is_key_down);
+    }
+
+    /// Handle a key event from an external keyboard, optionally using UIKit's
+    /// layout-aware character value for printable input.
+    fn handle_key_event_with_characters(
+        &self,
+        key_code: u32,
+        modifier_flags: u32,
+        characters: Option<String>,
+        is_key_down: bool,
+    ) {
         use super::text_input::{
-            key_code_to_key_down, key_code_to_key_up, key_code_to_string,
-            modifier_flags_to_modifiers,
+            key_code_to_key_down, key_code_to_key_down_with_characters, key_code_to_key_up,
+            key_code_to_string, modifier_flags_to_modifiers,
         };
 
         let key = key_code_to_string(key_code);
@@ -2000,7 +2096,11 @@ impl IosWindow {
         }
 
         let event = if is_key_down {
-            key_code_to_key_down(key_code, modifier_flags)
+            if characters.is_some() {
+                key_code_to_key_down_with_characters(key_code, modifier_flags, characters)
+            } else {
+                key_code_to_key_down(key_code, modifier_flags)
+            }
         } else {
             key_code_to_key_up(key_code, modifier_flags)
         };
@@ -2019,6 +2119,9 @@ impl IosWindow {
 
         if let Some(callback) = self.active_status_callback.borrow_mut().as_mut() {
             callback(is_active);
+        }
+        if is_active {
+            self.focus_hardware_keyboard_view();
         }
     }
 

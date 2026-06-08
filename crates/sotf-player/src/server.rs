@@ -27,6 +27,8 @@ use crate::sotf_server_event::{EventBroadcaster, SotfServerEvent};
 
 const API_MAX_REQUEST_BYTES: usize = 64 * 1024;
 const API_MAX_BODY_BYTES: usize = 32 * 1024;
+const API_LIBRARY_DEFAULT_LIMIT: usize = 50;
+const API_LIBRARY_MAX_LIMIT: usize = 250;
 
 /// Shared state for the headless server adapters.
 struct ServerState {
@@ -35,6 +37,8 @@ struct ServerState {
     queue: Mutex<Queue>,
     /// Playlist version counter — incremented on every queue mutation.
     playlist_version: std::sync::atomic::AtomicU32,
+    /// Library version counter for remote client cache invalidation.
+    library_version: std::sync::atomic::AtomicU64,
     /// Broadcast channel for server-sent events.
     events: EventBroadcaster,
     /// Whether pairing mode is currently open.
@@ -909,7 +913,10 @@ fn handle_sotf_api_request(
         }
         ("GET", "/api/v1/state") => api_json_response(200, api_state_json(state, &adapter)),
         ("GET", "/api/v1/queue") => api_json_response(200, api_queue_json(&adapter)),
-        ("GET", "/api/v1/library/albums") => api_json_response(200, api_library_albums_json(state)),
+        ("GET", "/api/v1/library/albums") => match api_library_albums_json(state, &request.path) {
+            Ok(body) => api_json_response(200, body),
+            Err(err) => api_error_response(400, &err),
+        },
         ("POST", "/api/v1/play") => api_command_response("play", adapter.play(None)),
         ("POST", "/api/v1/pause") => api_command_response("pause", adapter.pause(Some(true))),
         ("POST", "/api/v1/resume") => api_command_response("resume", adapter.pause(Some(false))),
@@ -962,12 +969,19 @@ fn handle_sotf_api_request(
             Ok(()) => api_json_response(200, json!({ "ok": true, "command": "volume" })),
             Err(err) => api_error_response(400, &err),
         },
-        ("GET", _) if route.starts_with("/api/v1/library/albums/") => {
-            match api_library_album_tracks_json(state, route) {
+        ("GET", _) if route.starts_with("/api/v1/library/albums/") => match route
+            .strip_prefix("/api/v1/library/albums/")
+            .and_then(|tail| tail.split('/').nth(1))
+        {
+            Some("artwork") => match api_library_album_artwork_response(state, route) {
+                Ok(response) => response,
+                Err(err) => api_error_response(404, &err),
+            },
+            _ => match api_library_album_tracks_json(state, route) {
                 Ok(body) => api_json_response(200, body),
                 Err(err) => api_error_response(404, &err),
-            }
-        }
+            },
+        },
         _ if route.starts_with("/api/v1/") => api_error_response(404, "unknown API route"),
         _ => api_error_response(404, "not found"),
     }
@@ -1189,6 +1203,7 @@ fn sse_event_name(event: &SotfServerEvent) -> &'static str {
         SotfServerEvent::VolumeChanged { .. } => "volume_changed",
         SotfServerEvent::StreamMetadataChanged { .. } => "stream_metadata_changed",
         SotfServerEvent::ScannerProgress { .. } => "scanner_progress",
+        SotfServerEvent::LibraryChanged { .. } => "library_changed",
         SotfServerEvent::Error { .. } => "error",
     }
 }
@@ -1259,7 +1274,7 @@ fn api_capabilities_json() -> Value {
             "playback_control": true,
             "queue_editing": true,
             "library_browse": true,
-            "library_search": false,
+            "library_search": true,
             "media_range": true,
             "events": true,
             "outputs": false,
@@ -1297,6 +1312,9 @@ fn api_state_json(state: &Arc<ServerState>, adapter: &MpdPlayerAdapter) -> Value
             .sum::<usize>();
         (library.albums.len(), track_count)
     };
+    let library_version = state
+        .library_version
+        .load(std::sync::atomic::Ordering::Relaxed);
 
     json!({
         "playback": {
@@ -1313,6 +1331,7 @@ fn api_state_json(state: &Arc<ServerState>, adapter: &MpdPlayerAdapter) -> Value
         "library": {
             "albums": album_count,
             "tracks": track_count,
+            "library_version": library_version,
         },
         "stream_metadata": stream_metadata,
     })
@@ -1327,10 +1346,133 @@ fn api_queue_json(adapter: &MpdPlayerAdapter) -> Value {
     json!({ "items": songs })
 }
 
-fn api_library_albums_json(state: &Arc<ServerState>) -> Value {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ApiLibraryAlbumQuery {
+    offset: usize,
+    limit: usize,
+    query: Option<String>,
+    sort: ApiLibraryAlbumSort,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ApiLibraryAlbumSort {
+    ArtistTitle,
+    Title,
+    Year,
+}
+
+impl Default for ApiLibraryAlbumQuery {
+    fn default() -> Self {
+        Self {
+            offset: 0,
+            limit: API_LIBRARY_DEFAULT_LIMIT,
+            query: None,
+            sort: ApiLibraryAlbumSort::ArtistTitle,
+        }
+    }
+}
+
+fn api_library_albums_json(state: &Arc<ServerState>, path: &str) -> Result<Value, String> {
+    let query = api_parse_library_album_query(path)?;
     let library = state.library.lock();
-    let albums: Vec<_> = library.albums.iter().map(api_album_json).collect();
-    json!({ "albums": albums })
+    let mut albums: Vec<_> = library.albums.iter().collect();
+
+    if let Some(search) = query.query.as_deref() {
+        let search = search.to_ascii_lowercase();
+        albums.retain(|album| {
+            album.title.to_ascii_lowercase().contains(&search)
+                || album.artist().to_ascii_lowercase().contains(&search)
+                || album
+                    .edition
+                    .as_deref()
+                    .is_some_and(|edition| edition.to_ascii_lowercase().contains(&search))
+        });
+    }
+
+    match query.sort {
+        ApiLibraryAlbumSort::ArtistTitle => albums.sort_by(|a, b| {
+            a.artist()
+                .to_ascii_lowercase()
+                .cmp(&b.artist().to_ascii_lowercase())
+                .then_with(|| {
+                    a.title
+                        .to_ascii_lowercase()
+                        .cmp(&b.title.to_ascii_lowercase())
+                })
+        }),
+        ApiLibraryAlbumSort::Title => {
+            albums.sort_by_key(|album| album.title.to_ascii_lowercase());
+        }
+        ApiLibraryAlbumSort::Year => {
+            albums.sort_by_key(|album| {
+                (
+                    album.year.unwrap_or(u32::MAX),
+                    album.title.to_ascii_lowercase(),
+                )
+            });
+        }
+    }
+
+    let total = albums.len();
+    let page: Vec<_> = albums
+        .into_iter()
+        .skip(query.offset)
+        .take(query.limit)
+        .map(api_album_json)
+        .collect();
+    let library_version = state
+        .library_version
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    Ok(json!({
+        "albums": page,
+        "total": total,
+        "offset": query.offset,
+        "limit": query.limit,
+        "library_version": library_version,
+    }))
+}
+
+fn api_parse_library_album_query(path: &str) -> Result<ApiLibraryAlbumQuery, String> {
+    let Some((_, raw_query)) = path.split_once('?') else {
+        return Ok(ApiLibraryAlbumQuery::default());
+    };
+
+    let mut query = ApiLibraryAlbumQuery::default();
+    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        match key.as_ref() {
+            "offset" => {
+                query.offset = value
+                    .parse::<usize>()
+                    .map_err(|_| "offset must be a non-negative integer".to_string())?;
+            }
+            "limit" => {
+                let limit = value
+                    .parse::<usize>()
+                    .map_err(|_| "limit must be a positive integer".to_string())?;
+                if limit == 0 {
+                    return Err("limit must be greater than zero".to_string());
+                }
+                query.limit = limit.min(API_LIBRARY_MAX_LIMIT);
+            }
+            "q" => {
+                let value = value.trim();
+                if !value.is_empty() {
+                    query.query = Some(value.to_string());
+                }
+            }
+            "sort" => {
+                query.sort = match value.as_ref() {
+                    "artist_title" | "artist" => ApiLibraryAlbumSort::ArtistTitle,
+                    "title" => ApiLibraryAlbumSort::Title,
+                    "year" => ApiLibraryAlbumSort::Year,
+                    _ => return Err(format!("unsupported album sort: {value}")),
+                };
+            }
+            _ => {}
+        }
+    }
+    Ok(query)
 }
 
 fn api_library_album_tracks_json(state: &Arc<ServerState>, route: &str) -> Result<Value, String> {
@@ -1351,6 +1493,27 @@ fn api_library_album_tracks_json(state: &Arc<ServerState>, route: &str) -> Resul
         .map(|(index, track)| api_track_json(track, album, index))
         .collect();
     Ok(json!({ "album": api_album_json(album), "tracks": tracks }))
+}
+
+fn api_library_album_artwork_response(
+    state: &Arc<ServerState>,
+    route: &str,
+) -> Result<Vec<u8>, String> {
+    let album_id = route
+        .strip_prefix("/api/v1/library/albums/")
+        .and_then(|tail| tail.strip_suffix("/artwork"))
+        .ok_or_else(|| "invalid album artwork route".to_string())?;
+    let library = state.library.lock();
+    let album = library
+        .albums
+        .iter()
+        .find(|album| api_album_id(album) == album_id)
+        .ok_or_else(|| "album not found".to_string())?;
+    let artwork = album
+        .album_art_thumbnail
+        .as_ref()
+        .ok_or_else(|| "album artwork not found".to_string())?;
+    Ok(api_binary_response(200, "image/png", artwork))
 }
 
 fn api_add_album_to_queue(state: &Arc<ServerState>, request: &ApiRequest) -> Result<Value, String> {
@@ -1564,23 +1727,31 @@ fn api_pairing_complete(state: &Arc<ServerState>, request: &ApiRequest) -> Resul
     Ok(json!({ "ok": true, "command": "pairing.complete" }))
 }
 
-fn normalize_certificate_fingerprint(fingerprint: &str) -> Result<String, String> {
-    let fingerprint = fingerprint.trim();
-    if fingerprint.len() != 95 || fingerprint.matches(':').count() != 31 {
-        return Err("invalid fingerprint format".to_string());
+pub fn normalize_certificate_fingerprint(fingerprint: &str) -> Result<String, String> {
+    let compact: String = fingerprint
+        .trim()
+        .chars()
+        .filter(|ch| *ch != ':' && *ch != '-' && !ch.is_ascii_whitespace())
+        .collect();
+
+    if compact.len() != 64 || !compact.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(
+            "invalid fingerprint format; expected a SHA-256 certificate fingerprint as 64 hex characters, with optional ':' separators"
+                .to_string(),
+        );
     }
 
-    for (index, byte) in fingerprint.bytes().enumerate() {
-        if (index + 1) % 3 == 0 {
-            if byte != b':' {
-                return Err("invalid fingerprint format".to_string());
-            }
-        } else if !byte.is_ascii_hexdigit() {
-            return Err("invalid fingerprint format".to_string());
+    let compact = compact.to_ascii_uppercase();
+    let mut normalized = String::with_capacity(95);
+    for (index, chunk) in compact.as_bytes().chunks(2).enumerate() {
+        if index > 0 {
+            normalized.push(':');
         }
+        normalized.push(char::from(chunk[0]));
+        normalized.push(char::from(chunk[1]));
     }
 
-    Ok(fingerprint.to_ascii_uppercase())
+    Ok(normalized)
 }
 
 fn sanitize_pairing_client_name(name: &str) -> String {
@@ -1727,6 +1898,19 @@ fn api_json_response(status: u16, body: Value) -> Vec<u8> {
     );
     let mut response = headers.into_bytes();
     response.extend_from_slice(&body);
+    response
+}
+
+fn api_binary_response(status: u16, content_type: &str, body: &[u8]) -> Vec<u8> {
+    let headers = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        status,
+        api_status_text(status),
+        content_type,
+        body.len()
+    );
+    let mut response = headers.into_bytes();
+    response.extend_from_slice(body);
     response
 }
 
@@ -1917,6 +2101,30 @@ fn flatten_queue_tracks(queue: &Queue) -> Vec<MpdSongInfo> {
     result
 }
 
+/// URL that local-network DLNA clients can use to reach the media server.
+#[must_use]
+pub fn dlna_server_url(port: u16) -> String {
+    dlna_server_url_for_bind("0.0.0.0", port)
+}
+
+/// URL that DLNA clients can use for a configured bind address.
+#[must_use]
+pub fn dlna_server_url_for_bind(bind_address: &str, port: u16) -> String {
+    let host = dlna_advertised_ipv4(bind_address);
+    format!("http://{host}:{port}/")
+}
+
+/// IPv4 address to advertise in DLNA URLs for a configured bind address.
+#[must_use]
+pub fn dlna_advertised_ipv4(bind_address: &str) -> Ipv4Addr {
+    bind_address
+        .trim()
+        .parse::<Ipv4Addr>()
+        .ok()
+        .filter(|ip| !ip.is_unspecified())
+        .unwrap_or_else(get_local_ipv4)
+}
+
 /// Detect a non-loopback local IPv4 address for DLNA announcements.
 fn get_local_ipv4() -> Ipv4Addr {
     // Try to find a non-loopback IPv4 address by connecting to a public DNS
@@ -1945,17 +2153,11 @@ fn get_local_ipv4() -> Ipv4Addr {
 /// Returns an error if no servers are enabled in the configuration.
 pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     let config = crate::config::load_server_config()?;
+    let config_dir =
+        crate::config::get_app_config_dir().ok_or("Could not determine config directory")?;
+    let trusted_clients = sotf_tls::TrustedClientStore::load(&config_dir)?;
 
-    if !config.mpd.enabled && !config.dlna.enabled && !config.api.enabled {
-        eprintln!(
-            "error: No servers are enabled in the configuration.\n\
-             \n\
-             Configure servers in ~/.config/sotf/servers.json or use the\n\
-             Configure > Servers screen in the UI to enable MPD, DLNA, and/or the SOTF API,\n\
-             then re-run with --server."
-        );
-        std::process::exit(1);
-    }
+    validate_server_mode_config(&config, &trusted_clients)?;
 
     // Load library from database
     let mut library = MusicLibrary::with_database()?;
@@ -1967,18 +2169,25 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     let player = Player::new();
     let event_broadcaster = crate::sotf_server_event::new_event_broadcaster(64);
 
-    let config_dir =
-        crate::config::get_app_config_dir().ok_or("Could not determine config directory")?;
-
     // Load or generate server certificate
     let cert_store = sotf_tls::CertStore::load_or_generate(&config_dir)?;
     let server_fingerprint = cert_store.server_fingerprint();
 
-    // Load trusted client store
-    let trusted_clients = sotf_tls::TrustedClientStore::load(&config_dir)?;
     log::info!("[server] Trusted clients loaded: {}", trusted_clients.len());
+    let initial_mpd_trusted_client_fingerprints =
+        initial_trusted_client_fingerprints(&config, &trusted_clients);
+    if config.mpd.enabled
+        && config.mpd.tls_enabled
+        && config.mpd.auth_mode == federation_config::MpdAuthMode::Certificate
+        && initial_mpd_trusted_client_fingerprints.is_empty()
+    {
+        eprintln!(
+            "MPD certificate auth has no trusted clients yet. MPD will listen, but clients must pair through the SOTF API before they can connect."
+        );
+        log::warn!("[server] MPD mTLS starting with no trusted client fingerprints");
+    }
     let trusted_client_fingerprints = Arc::new(std::sync::Mutex::new(
-        initial_trusted_client_fingerprints(&config, &trusted_clients),
+        initial_mpd_trusted_client_fingerprints,
     ));
 
     let state = Arc::new(ServerState {
@@ -1986,6 +2195,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
         library: Mutex::new(library),
         queue: Mutex::new(Queue::new()),
         playlist_version: std::sync::atomic::AtomicU32::new(1),
+        library_version: std::sync::atomic::AtomicU64::new(1),
         events: event_broadcaster,
         pairing_mode: std::sync::atomic::AtomicBool::new(false),
         pairing_nonce: parking_lot::Mutex::new(String::new()),
@@ -2057,15 +2267,17 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
             });
             let server = DlnaMediaServer::new(device, adapter);
             let cancel = shutdown_rx.clone();
-            let local_ip = get_local_ipv4();
+            let bind_address = config.dlna.bind_address.clone();
+            let local_ip = dlna_advertised_ipv4(&bind_address);
+            let dlna_url = dlna_server_url_for_bind(&bind_address, config.dlna.port);
 
             eprintln!(
-                "DLNA server '{}' on port {} (IP: {})",
-                config.dlna.friendly_name, config.dlna.port, local_ip
+                "DLNA server '{}' listening on {}:{} (URL: {})",
+                config.dlna.friendly_name, bind_address, config.dlna.port, dlna_url
             );
 
             handles.push(tokio::spawn(async move {
-                if let Err(e) = server.run(local_ip, cancel).await {
+                if let Err(e) = server.run(&bind_address, local_ip, cancel).await {
                     log::error!("[server] DLNA server error: {}", e);
                     eprintln!("DLNA server error: {}", e);
                 }
@@ -2148,6 +2360,73 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn validate_server_mode_config(
+    config: &ServerConfig,
+    _trusted_clients: &sotf_tls::TrustedClientStore,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !config.mpd.enabled && !config.dlna.enabled && !config.api.enabled {
+        return Err(
+            "No servers are enabled in the configuration. Enable MPD, DLNA, or the SOTF API in Configure > Servers or ~/.config/sotf/servers.json, then re-run with --server."
+                .into(),
+        );
+    }
+
+    if config.api.enabled {
+        validate_sotf_api_token(&config.api)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    }
+
+    if config.mpd.enabled && config.mpd.tls_enabled {
+        match config.mpd.auth_mode {
+            federation_config::MpdAuthMode::Certificate => {
+                let invalid_fingerprints =
+                    invalid_configured_client_fingerprints(&config.mpd.trusted_client_fingerprints);
+                if !invalid_fingerprints.is_empty() {
+                    let shown = invalid_fingerprints
+                        .iter()
+                        .take(3)
+                        .map(|fp| format!("'{fp}'"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let suffix = if invalid_fingerprints.len() > 3 {
+                        format!(" and {} more", invalid_fingerprints.len() - 3)
+                    } else {
+                        String::new()
+                    };
+                    return Err(format!(
+                        "MPD trusted client fingerprint configuration contains invalid fingerprint(s): {shown}{suffix}. Expected client certificate SHA-256 fingerprints as 64 hex characters, with optional ':' separators."
+                    )
+                    .into());
+                }
+            }
+            federation_config::MpdAuthMode::Password => {
+                if config
+                    .mpd
+                    .password
+                    .as_deref()
+                    .unwrap_or_default()
+                    .is_empty()
+                {
+                    return Err(
+                        "MPD is enabled with password authentication, but no password is configured. Set an MPD password in Configure > Servers or disable MPD."
+                            .into(),
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn invalid_configured_client_fingerprints(fingerprints: &[String]) -> Vec<String> {
+    fingerprints
+        .iter()
+        .filter(|fingerprint| normalize_certificate_fingerprint(fingerprint).is_err())
+        .cloned()
+        .collect()
+}
+
 /// Convert the persisted `MpdSettings` into the `MpdServerConfig` used by the server.
 fn mpd_settings_to_config(config: &ServerConfig, state: &Arc<ServerState>) -> MpdServerConfig {
     let settings = &config.mpd;
@@ -2190,16 +2469,6 @@ fn build_mpd_tls_acceptor(
     let tls_config = match config.mpd.auth_mode {
         federation_config::MpdAuthMode::Certificate => {
             let trusted = Arc::clone(&state.trusted_client_fingerprints);
-            if trusted
-                .lock()
-                .map_err(|e| format!("trusted fingerprint lock poisoned: {e}"))?
-                .is_empty()
-            {
-                return Err(
-                    "MPD certificate authentication requires at least one trusted client fingerprint"
-                        .into(),
-                );
-            }
             sotf_tls::build_server_tls_config_mtls(
                 cert_store.cert_clone(),
                 cert_store.key_clone(),
@@ -2252,6 +2521,124 @@ mod tests {
     }
 
     #[test]
+    fn dlna_server_url_includes_configured_port() {
+        let url = dlna_server_url(8200);
+
+        assert!(url.starts_with("http://"));
+        assert!(url.ends_with(":8200/"));
+    }
+
+    #[test]
+    fn dlna_server_url_uses_specific_bind_address() {
+        let url = dlna_server_url_for_bind("192.168.1.42", 8200);
+
+        assert_eq!(url, "http://192.168.1.42:8200/");
+    }
+
+    #[test]
+    fn dlna_advertised_ipv4_uses_specific_bind_address() {
+        assert_eq!(
+            dlna_advertised_ipv4("192.168.1.42"),
+            Ipv4Addr::new(192, 168, 1, 42)
+        );
+    }
+
+    fn empty_trusted_client_store() -> (tempfile::TempDir, sotf_tls::TrustedClientStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = sotf_tls::TrustedClientStore::load(dir.path()).unwrap();
+        (dir, store)
+    }
+
+    fn valid_fingerprint() -> String {
+        (0..32).map(|_| "AA").collect::<Vec<_>>().join(":")
+    }
+
+    #[test]
+    fn certificate_fingerprint_normalization_accepts_common_hex_formats() {
+        let compact = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899";
+        let colon = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99";
+        let expected = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99";
+
+        assert_eq!(
+            normalize_certificate_fingerprint(compact).unwrap(),
+            expected
+        );
+        assert_eq!(normalize_certificate_fingerprint(colon).unwrap(), expected);
+    }
+
+    #[test]
+    fn server_mode_preflight_accepts_mpd_certificate_auth_without_trusted_clients() {
+        let (_dir, trusted_clients) = empty_trusted_client_store();
+        let mut config = ServerConfig::default();
+        config.mpd.enabled = true;
+
+        validate_server_mode_config(&config, &trusted_clients).unwrap();
+    }
+
+    #[test]
+    fn mpd_tls_acceptor_allows_empty_certificate_trust_for_pairing_bootstrap() {
+        let dir = tempfile::tempdir().unwrap();
+        let cert_store = sotf_tls::CertStore::load_or_generate(dir.path()).unwrap();
+        let state = test_state();
+        let mut config = ServerConfig::default();
+        config.mpd.enabled = true;
+
+        build_mpd_tls_acceptor(&config, &cert_store, &state).unwrap();
+    }
+
+    #[test]
+    fn server_mode_preflight_reports_invalid_configured_client_fingerprints() {
+        let (_dir, trusted_clients) = empty_trusted_client_store();
+        let mut config = ServerConfig::default();
+        config.mpd.enabled = true;
+        config.mpd.trusted_client_fingerprints = vec!["AA:BB:CC".to_string()];
+
+        let err = validate_server_mode_config(&config, &trusted_clients)
+            .expect_err("invalid configured fingerprint should be reported")
+            .to_string();
+
+        assert!(err.contains("invalid fingerprint"));
+        assert!(err.contains("AA:BB:CC"));
+        assert!(!err.contains("no trusted client fingerprints"));
+    }
+
+    #[test]
+    fn server_mode_preflight_accepts_mpd_certificate_auth_with_configured_fingerprint() {
+        let (_dir, trusted_clients) = empty_trusted_client_store();
+        let mut config = ServerConfig::default();
+        config.mpd.enabled = true;
+        config.mpd.trusted_client_fingerprints = vec![valid_fingerprint()];
+
+        validate_server_mode_config(&config, &trusted_clients).unwrap();
+    }
+
+    #[test]
+    fn server_mode_preflight_accepts_mpd_certificate_auth_with_paired_client() {
+        let (_dir, mut trusted_clients) = empty_trusted_client_store();
+        trusted_clients
+            .add(&valid_fingerprint(), "Test Client")
+            .unwrap();
+        let mut config = ServerConfig::default();
+        config.mpd.enabled = true;
+
+        validate_server_mode_config(&config, &trusted_clients).unwrap();
+    }
+
+    #[test]
+    fn server_mode_preflight_rejects_mpd_password_auth_without_password() {
+        let (_dir, trusted_clients) = empty_trusted_client_store();
+        let mut config = ServerConfig::default();
+        config.mpd.enabled = true;
+        config.mpd.auth_mode = federation_config::MpdAuthMode::Password;
+
+        let err = validate_server_mode_config(&config, &trusted_clients)
+            .expect_err("password auth without password should be rejected")
+            .to_string();
+
+        assert!(err.contains("no password is configured"));
+    }
+
+    #[test]
     fn sotf_api_auth_accepts_only_bearer_token() {
         let headers = vec![("authorization".to_string(), "Bearer secret".to_string())];
         assert!(api_auth_valid(&headers, "secret"));
@@ -2286,6 +2673,7 @@ mod tests {
             library: Mutex::new(MusicLibrary::default()),
             queue: Mutex::new(Queue::new()),
             playlist_version: std::sync::atomic::AtomicU32::new(1),
+            library_version: std::sync::atomic::AtomicU64::new(1),
             events: crate::sotf_server_event::new_event_broadcaster(64),
             pairing_mode: std::sync::atomic::AtomicBool::new(false),
             pairing_nonce: parking_lot::Mutex::new(String::new()),
@@ -2331,6 +2719,7 @@ mod tests {
             library: Mutex::new(MusicLibrary::default()),
             queue: Mutex::new(Queue::new()),
             playlist_version: std::sync::atomic::AtomicU32::new(1),
+            library_version: std::sync::atomic::AtomicU64::new(1),
             events: crate::sotf_server_event::new_event_broadcaster(64),
             pairing_mode: std::sync::atomic::AtomicBool::new(false),
             pairing_nonce: parking_lot::Mutex::new(String::new()),
@@ -2360,6 +2749,7 @@ mod tests {
             library: Mutex::new(MusicLibrary::default()),
             queue: Mutex::new(Queue::new()),
             playlist_version: std::sync::atomic::AtomicU32::new(1),
+            library_version: std::sync::atomic::AtomicU64::new(1),
             events: crate::sotf_server_event::new_event_broadcaster(64),
             pairing_mode: std::sync::atomic::AtomicBool::new(false),
             pairing_nonce: parking_lot::Mutex::new(String::new()),
@@ -2389,6 +2779,7 @@ mod tests {
             library: Mutex::new(MusicLibrary::default()),
             queue: Mutex::new(Queue::new()),
             playlist_version: std::sync::atomic::AtomicU32::new(1),
+            library_version: std::sync::atomic::AtomicU64::new(1),
             events: crate::sotf_server_event::new_event_broadcaster(64),
             pairing_mode: std::sync::atomic::AtomicBool::new(false),
             pairing_nonce: parking_lot::Mutex::new(String::new()),
@@ -2402,6 +2793,240 @@ mod tests {
 
     fn auth_header() -> Vec<(String, String)> {
         vec![("authorization".to_string(), "Bearer secret".to_string())]
+    }
+
+    fn auth_get(path: &str) -> String {
+        format!(
+            "GET {path} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer secret\r\nConnection: close\r\n\r\n"
+        )
+    }
+
+    async fn read_http_response(addr: std::net::SocketAddr, request: String) -> String {
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            stream.read_to_end(&mut response),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        String::from_utf8(response).unwrap()
+    }
+
+    async fn read_until(stream: &mut TcpStream, needle: &str) -> String {
+        let mut response = Vec::new();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let mut buf = [0_u8; 1024];
+            loop {
+                let n = stream.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                response.extend_from_slice(&buf[..n]);
+                if String::from_utf8_lossy(&response).contains(needle) {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        String::from_utf8(response).unwrap()
+    }
+
+    async fn connect_sse_client(addr: std::net::SocketAddr) -> TcpStream {
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        stream
+            .write_all(auth_get("/api/v1/events").as_bytes())
+            .await
+            .unwrap();
+        let response = read_until(&mut stream, "event: state").await;
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(response.contains("Content-Type: text/event-stream"));
+        stream
+    }
+
+    async fn spawn_test_api_server(
+        state: Arc<ServerState>,
+    ) -> (
+        std::net::SocketAddr,
+        tokio::sync::watch::Sender<bool>,
+        tokio::task::JoinHandle<Result<(), String>>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let handle = tokio::spawn(run_sotf_api_server(
+            api_settings(Some("secret")),
+            state,
+            listener,
+            shutdown_rx,
+        ));
+        (addr, shutdown_tx, handle)
+    }
+
+    async fn stop_test_api_server(
+        shutdown_tx: tokio::sync::watch::Sender<bool>,
+        handle: tokio::task::JoinHandle<Result<(), String>>,
+    ) {
+        let _ = shutdown_tx.send(true);
+        tokio::time::timeout(std::time::Duration::from_secs(2), handle)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
+
+    fn album(title: &str, artist: &str, year: u32) -> crate::library::Album {
+        crate::library::Album {
+            title: title.to_string(),
+            year: Some(year),
+            tracks: vec![crate::library::Track {
+                title: Some(format!("{title} track")),
+                artist: Some(artist.to_string()),
+                album_artist: Some(artist.to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn album_list_body(state: &Arc<ServerState>, path: &str) -> Value {
+        api_library_albums_json(state, path).unwrap()
+    }
+
+    #[test]
+    fn api_library_albums_pages_empty_library() {
+        let state = test_state();
+        let body = album_list_body(&state, "/api/v1/library/albums?offset=0&limit=10");
+        assert_eq!(body["albums"].as_array().unwrap().len(), 0);
+        assert_eq!(body["total"], 0);
+        assert_eq!(body["offset"], 0);
+        assert_eq!(body["limit"], 10);
+        assert_eq!(body["library_version"], 1);
+    }
+
+    #[test]
+    fn api_library_albums_pages_small_library() {
+        let state = test_state();
+        state.library.lock().albums = vec![
+            album("Zebra", "Beta", 2020),
+            album("Alpha", "Alpha", 2010),
+            album("Moon", "Alpha", 2005),
+        ];
+
+        let body = album_list_body(&state, "/api/v1/library/albums?offset=1&limit=1");
+        let albums = body["albums"].as_array().unwrap();
+        assert_eq!(body["total"], 3);
+        assert_eq!(albums.len(), 1);
+        assert_eq!(albums[0]["title"], "Moon");
+    }
+
+    #[test]
+    fn api_library_albums_pages_large_library_and_clamps_limit() {
+        let state = test_state();
+        state.library.lock().albums = (0..300)
+            .map(|i| album(&format!("Album {i:03}"), "Artist", 2000 + (i % 20)))
+            .collect();
+
+        let body = album_list_body(&state, "/api/v1/library/albums?offset=250&limit=999");
+        assert_eq!(body["total"], 300);
+        assert_eq!(body["offset"], 250);
+        assert_eq!(body["limit"], API_LIBRARY_MAX_LIMIT);
+        assert_eq!(body["albums"].as_array().unwrap().len(), 50);
+    }
+
+    #[test]
+    fn api_library_albums_query_filters_and_sorts() {
+        let state = test_state();
+        state.library.lock().albums = vec![
+            album("Late", "Beta", 2020),
+            album("Early", "Beta", 1990),
+            album("Other", "Alpha", 2015),
+        ];
+
+        let body = album_list_body(&state, "/api/v1/library/albums?q=beta&sort=year&limit=10");
+        let albums = body["albums"].as_array().unwrap();
+        assert_eq!(body["total"], 2);
+        assert_eq!(albums[0]["title"], "Early");
+        assert_eq!(albums[1]["title"], "Late");
+    }
+
+    #[test]
+    fn api_library_albums_rejects_invalid_bounds_and_sort() {
+        assert!(api_parse_library_album_query("/api/v1/library/albums?limit=0").is_err());
+        assert!(api_parse_library_album_query("/api/v1/library/albums?offset=-1").is_err());
+        assert!(api_parse_library_album_query("/api/v1/library/albums?sort=random").is_err());
+    }
+
+    #[test]
+    fn api_library_album_artwork_returns_png_bytes() {
+        let state = test_state();
+        let mut album = album("Art", "Artist", 2024);
+        album.id = Some(42);
+        album.album_art_thumbnail = Some(vec![137, 80, 78, 71]);
+        state.library.lock().albums = vec![album];
+
+        let response =
+            api_library_album_artwork_response(&state, "/api/v1/library/albums/id:42/artwork")
+                .unwrap();
+        let response = String::from_utf8_lossy(&response);
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(response.contains("Content-Type: image/png"));
+    }
+
+    #[test]
+    fn sotf_api_serves_parallel_clients_while_sse_client_is_connected() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let state = test_state();
+            let (addr, shutdown_tx, server_handle) =
+                spawn_test_api_server(Arc::clone(&state)).await;
+
+            let sse_client = connect_sse_client(addr).await;
+            let mut handles = Vec::new();
+            for idx in 0..8 {
+                let path = if idx % 2 == 0 {
+                    "/api/v1/state"
+                } else {
+                    "/api/v1/queue"
+                };
+                handles.push(tokio::spawn(read_http_response(addr, auth_get(path))));
+            }
+
+            for handle in handles {
+                let response = handle.await.unwrap();
+                assert!(response.starts_with("HTTP/1.1 200 OK"));
+            }
+
+            drop(sse_client);
+            stop_test_api_server(shutdown_tx, server_handle).await;
+        });
+    }
+
+    #[test]
+    fn sotf_api_broadcasts_events_to_multiple_sse_clients() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let state = test_state();
+            let (addr, shutdown_tx, server_handle) =
+                spawn_test_api_server(Arc::clone(&state)).await;
+
+            let mut first = connect_sse_client(addr).await;
+            let mut second = connect_sse_client(addr).await;
+
+            state.broadcast(SotfServerEvent::VolumeChanged { volume: 77 });
+
+            let first_event = read_until(&mut first, "event: volume_changed").await;
+            let second_event = read_until(&mut second, "event: volume_changed").await;
+            assert!(first_event.contains("\"volume\":77"));
+            assert!(second_event.contains("\"volume\":77"));
+
+            drop(first);
+            drop(second);
+            stop_test_api_server(shutdown_tx, server_handle).await;
+        });
     }
 
     #[test]

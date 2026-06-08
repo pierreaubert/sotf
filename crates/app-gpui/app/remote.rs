@@ -4,10 +4,14 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use crate::app::App;
-use crate::app::state::app::RemoteServerProbeStatus;
+use crate::app::state::app::{
+    RemoteCacheRefreshError, RemoteCacheRefreshResult, RemoteRefreshRequests,
+    RemoteServerProbeStatus,
+};
 use crate::app::types::ToastMessage;
 
 const DEFAULT_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
+const DEFAULT_REMOTE_ALBUM_PAGE_LIMIT: usize = 50;
 
 impl App {
     pub fn start_remote_server_discovery(&mut self) {
@@ -191,6 +195,16 @@ impl App {
         }
         // Drop any existing event stream and start a new one for the selected server
         self.remote.event_stream_receiver = None;
+        self.remote.album_cache.invalidate_server(server_id);
+        self.remote.current_state = None;
+        self.remote.current_queue = None;
+        self.remote.clear_remote_album_page();
+        self.remote.reset_remote_cache_updater();
+        self.remote.refresh_requests = RemoteRefreshRequests {
+            state: true,
+            queue: true,
+            visible_album_page: true,
+        };
         self.start_remote_event_stream();
         self.save_remote_server_store("save selected SOTF server")
     }
@@ -203,6 +217,9 @@ impl App {
         self.remote.server_probe_statuses.remove(server_id);
         self.remote.server_tokens.remove(server_id);
         self.remote.event_stream_receiver = None;
+        self.remote.album_cache.invalidate_server(server_id);
+        self.remote.clear_remote_album_page();
+        self.remote.reset_remote_cache_updater();
         self.save_remote_server_store("remove SOTF server")
     }
 
@@ -215,6 +232,7 @@ impl App {
         self.remote
             .server_tokens
             .insert(server_id.into(), token.into());
+        self.remote.reset_remote_cache_updater();
     }
 
     /// Retrieve the cached bearer token for a remote server, if any.
@@ -316,13 +334,46 @@ impl App {
                             state.playback.volume,
                             state.library.albums
                         );
+                        self.remote.current_state = Some(state);
                     }
                     sotf_audio_player::sotf_api_client::SotfApiStreamEvent::Server(event) => {
                         match event {
-                            sotf_audio_player::sotf_server_event::SotfServerEvent::PlaybackChanged
-                            | sotf_audio_player::sotf_server_event::SotfServerEvent::QueueChanged { .. }
-                            | sotf_audio_player::sotf_server_event::SotfServerEvent::VolumeChanged { .. } => {
-                                // TODO: trigger remote state refresh or incremental UI update
+                            sotf_audio_player::sotf_server_event::SotfServerEvent::PlaybackChanged => {
+                                self.remote.refresh_requests.state = true;
+                            }
+                            sotf_audio_player::sotf_server_event::SotfServerEvent::QueueChanged {
+                                playlist_version,
+                            } => {
+                                let current_version = self
+                                    .remote
+                                    .current_state
+                                    .as_ref()
+                                    .map(|state| state.playback.playlist_version);
+                                if current_version != Some(playlist_version) {
+                                    self.remote.refresh_requests.queue = true;
+                                }
+                            }
+                            sotf_audio_player::sotf_server_event::SotfServerEvent::VolumeChanged {
+                                volume,
+                            } => {
+                                if let Some(state) = self.remote.current_state.as_mut() {
+                                    state.playback.volume = volume;
+                                } else {
+                                    self.remote.refresh_requests.state = true;
+                                }
+                            }
+                            sotf_audio_player::sotf_server_event::SotfServerEvent::LibraryChanged {
+                                library_version: _,
+                            } => {
+                                if let Some(server_id) =
+                                    self.remote.server_store.selected_server_id.as_deref()
+                                {
+                                    self.remote.album_cache.invalidate_server(server_id);
+                                } else {
+                                    self.remote.album_cache.invalidate_all();
+                                }
+                                self.remote.clear_remote_album_page();
+                                self.remote.refresh_requests.visible_album_page = true;
                             }
                             sotf_audio_player::sotf_server_event::SotfServerEvent::StreamMetadataChanged {
                                 title,
@@ -352,6 +403,120 @@ impl App {
                 self.ui_state.toast_message =
                     Some(ToastMessage::warning(format!("Remote events: {err}")));
                 self.remote.event_stream_receiver = None;
+            }
+        }
+    }
+
+    /// Poll and launch quiet remote cache refreshes requested by SSE events.
+    ///
+    /// This never emits user-visible toasts: it is a performance cache, and
+    /// unstable network conditions simply disable it until the remote is reset.
+    pub fn update_remote_cache_refresh(&mut self) {
+        if let Some(rx) = self.remote.cache_refresh_receiver.as_ref() {
+            match rx.try_recv() {
+                Ok(Ok(result)) => {
+                    self.apply_remote_cache_refresh_result(result);
+                    self.remote.record_remote_cache_refresh_success();
+                }
+                Ok(Err(err)) => {
+                    log::warn!("[remote] Quiet cache refresh failed: {}", err.message);
+                    self.remote.record_remote_cache_refresh_failure(err);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => return,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.remote
+                        .record_remote_cache_refresh_failure(RemoteCacheRefreshError {
+                            requests: RemoteRefreshRequests::default(),
+                            message: "remote cache refresh worker disconnected".to_string(),
+                        });
+                }
+            }
+        }
+
+        if self.remote.cache_updates_disabled
+            || self.remote.cache_refresh_in_progress
+            || self.remote.refresh_requests.is_empty()
+        {
+            return;
+        }
+
+        let Some(server) = self.remote.server_store.selected_server().cloned() else {
+            return;
+        };
+        let Some(token) = self.remote.server_tokens.get(&server.id).cloned() else {
+            return;
+        };
+
+        let requests = self.remote.refresh_requests;
+        self.remote.refresh_requests = RemoteRefreshRequests::default();
+        let page_request = if requests.visible_album_page {
+            let (offset, limit) = self
+                .remote
+                .current_album_page
+                .as_ref()
+                .map(|page| (page.offset, page.limit.max(1)))
+                .unwrap_or((0, DEFAULT_REMOTE_ALBUM_PAGE_LIMIT));
+            Some((offset, limit.min(self.remote.album_cache.max_albums())))
+        } else {
+            None
+        };
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.remote.cache_refresh_receiver = Some(rx);
+        self.remote.cache_refresh_in_progress = true;
+
+        std::thread::Builder::new()
+            .name("sotf-remote-cache".into())
+            .spawn(move || {
+                let result = refresh_remote_cache_worker(
+                    server.id,
+                    server.api_base_url,
+                    token,
+                    requests,
+                    page_request,
+                );
+                let _ = tx.send(result);
+            })
+            .expect("spawn SOTF remote cache refresh thread");
+    }
+
+    fn apply_remote_cache_refresh_result(&mut self, result: RemoteCacheRefreshResult) {
+        let selected_server = self.remote.server_store.selected_server_id.as_deref();
+        if selected_server != Some(result.server_id.as_str()) {
+            return;
+        }
+
+        if let Some(state) = result.state {
+            self.remote.current_state = Some(state);
+        }
+        if let Some(queue) = result.queue {
+            self.remote.current_queue = Some(queue);
+        }
+
+        let artwork_version = result
+            .album_page
+            .as_ref()
+            .map(|page| page.library_version)
+            .or_else(|| {
+                self.remote
+                    .current_album_page
+                    .as_ref()
+                    .map(|page| page.library_version)
+            });
+
+        if let Some(page) = result.album_page {
+            self.remote
+                .apply_remote_album_page(result.server_id.clone(), page);
+        }
+
+        if let Some(library_version) = artwork_version {
+            for (album_id, bytes) in result.artwork {
+                self.remote.album_cache.upsert_artwork(
+                    &result.server_id,
+                    library_version,
+                    &album_id,
+                    bytes,
+                );
             }
         }
     }
@@ -399,4 +564,68 @@ fn probe_remote_server_public(api_base_url: &str) -> RemoteServerProbeStatus {
         Ok(status) => status,
         Err(err) => RemoteServerProbeStatus::Failed(err),
     }
+}
+
+fn refresh_remote_cache_worker(
+    server_id: String,
+    api_base_url: String,
+    token: String,
+    requests: RemoteRefreshRequests,
+    page_request: Option<(usize, usize)>,
+) -> Result<RemoteCacheRefreshResult, RemoteCacheRefreshError> {
+    let worker_result = tokio::runtime::Runtime::new()
+        .map_err(|err| format!("Failed to start remote cache runtime: {err}"))
+        .and_then(|rt| {
+            rt.block_on(async move {
+                let client =
+                    sotf_audio_player::sotf_api_client::SotfApiClient::new(&api_base_url, &token)
+                        .map_err(|err| err.to_string())?;
+                let state = if requests.state {
+                    Some(client.state().await.map_err(|err| err.to_string())?)
+                } else {
+                    None
+                };
+                let queue = if requests.queue {
+                    Some(client.queue().await.map_err(|err| err.to_string())?)
+                } else {
+                    None
+                };
+                let album_page = if let Some((offset, limit)) = page_request {
+                    Some(
+                        client
+                            .library_albums_page(offset, limit, None, Some("artist_title"))
+                            .await
+                            .map_err(|err| err.to_string())?,
+                    )
+                } else {
+                    None
+                };
+
+                let mut artwork = Vec::new();
+                if let Some(page) = album_page.as_ref() {
+                    for album in &page.albums {
+                        match client.album_artwork(&album.id).await {
+                            Ok(bytes) => artwork.push((album.id.clone(), bytes)),
+                            Err(err) => {
+                                log::debug!(
+                                    "[remote] Album artwork skipped for {}: {}",
+                                    album.id,
+                                    err
+                                );
+                            }
+                        }
+                    }
+                }
+
+                Ok(RemoteCacheRefreshResult {
+                    server_id,
+                    state,
+                    queue,
+                    album_page,
+                    artwork,
+                })
+            })
+        });
+
+    worker_result.map_err(|message| RemoteCacheRefreshError { requests, message })
 }

@@ -3808,7 +3808,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-audio-kit"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "gpui",
  "gpui-design",
@@ -3888,7 +3888,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-design-tools"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3899,7 +3899,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ios"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "anyhow",
  "block2",
@@ -10503,7 +10503,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-ios"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "gpui",
@@ -11339,7 +11339,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tvos"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "gpui",

@@ -238,10 +238,6 @@ pub extern "C" fn gpui_ios_request_frame(window_ptr: *mut c_void) {
 
 #[inline(never)]
 fn request_frame_for_window(window: &super::window::IosWindow) {
-    crate::instrumentation::emit_signpost(
-        crate::instrumentation::IosSignpostCategory::Frame,
-        "request_frame",
-    );
     window.pump_momentum();
     let text_dirty = crate::TEXT_INPUT_DIRTY.swap(false, Ordering::AcqRel);
     let callback = window.request_frame_callback.borrow_mut().take();

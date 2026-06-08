@@ -148,6 +148,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         env_logger::init();
     }
 
+    // Parse CLI args before touching the terminal. Server mode and clap's
+    // help/error output must run in a normal terminal, not raw alt-screen mode.
+    let args: Args = clap::Parser::parse();
+
+    // Apply QA directory override before any config dir access
+    if let Some(qa_dir) = args.qa.clone() {
+        sotf_audio_player::config::set_config_dir_override(qa_dir);
+    }
+
+    // Headless server mode — skip UI entirely
+    if args.server {
+        match sotf_audio_player::server::run_server_mode() {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                eprintln!("Server error: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     // Install panic hook BEFORE entering alt screen so panics restore the terminal
     // and the backtrace remains visible after the app exits.
     let original_panic_hook = std::panic::take_hook();
@@ -172,24 +192,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // Initialize app state
-    let args: Args = clap::Parser::parse();
-
-    // Apply QA directory override before any config dir access
-    if let Some(qa_dir) = args.qa {
-        sotf_audio_player::config::set_config_dir_override(qa_dir);
-    }
-
-    // Headless server mode — skip UI entirely
-    if args.server {
-        match sotf_audio_player::server::run_server_mode() {
-            Ok(()) => std::process::exit(0),
-            Err(e) => {
-                eprintln!("Server error: {}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
     let t_startup = std::time::Instant::now();
     let theme = sotf_audio_player_tui::theme::Theme::default();
 

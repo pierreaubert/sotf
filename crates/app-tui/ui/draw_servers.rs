@@ -1,5 +1,7 @@
 use super::*;
 use crate::app::ServerSection;
+use sotf_audio_player::federation_config::MpdAuthMode;
+use sotf_audio_player::server::normalize_certificate_fingerprint;
 
 pub(crate) fn draw_servers_screen(f: &mut Frame, area: Rect, app: &App) {
     let state = &app.server_state;
@@ -32,6 +34,7 @@ pub(crate) fn draw_servers_screen(f: &mut Frame, area: Rect, app: &App) {
 
 fn draw_mpd_section(f: &mut Frame, area: Rect, app: &App) {
     let state = &app.server_state;
+    let mpd = &state.config.mpd;
     let is_active = state.selected_section == ServerSection::Mpd;
     let border_type = if is_active {
         BorderType::Double
@@ -47,18 +50,18 @@ fn draw_mpd_section(f: &mut Frame, area: Rect, app: &App) {
     let fields: Vec<(&str, String, bool)> = vec![
         (
             "Enabled",
-            if state.config.mpd.enabled {
+            if mpd.enabled {
                 "YES".to_string()
             } else {
                 "no".to_string()
             },
             true, // is toggle
         ),
-        ("Bind Address", state.config.mpd.bind_address.clone(), false),
-        ("Port", state.config.mpd.port.to_string(), false),
+        ("Bind Address", mpd.bind_address.clone(), false),
+        ("Port", mpd.port.to_string(), false),
         (
             "TLS",
-            if state.config.mpd.tls_enabled {
+            if mpd.tls_enabled {
                 "YES".to_string()
             } else {
                 "no".to_string()
@@ -66,13 +69,23 @@ fn draw_mpd_section(f: &mut Frame, area: Rect, app: &App) {
             true,
         ),
         (
+            "Auth Mode",
+            match mpd.auth_mode {
+                MpdAuthMode::Certificate => "Certificate".to_string(),
+                MpdAuthMode::Password => "Password".to_string(),
+            },
+            true,
+        ),
+        (
             "Password",
-            state
-                .config
-                .mpd
-                .password
+            mpd.password
                 .as_ref()
                 .map_or_else(|| "(none)".to_string(), |p| "*".repeat(p.len().min(8))),
+            false,
+        ),
+        (
+            "Trusted Clients",
+            trusted_fingerprints_summary(&mpd.trusted_client_fingerprints),
             false,
         ),
     ];
@@ -86,7 +99,57 @@ fn draw_mpd_section(f: &mut Frame, area: Rect, app: &App) {
         &state.edit_buffer,
     );
 
-    // TLS fingerprint
+    let invalid_fingerprints = invalid_trusted_fingerprint_count(&mpd.trusted_client_fingerprints);
+    if invalid_fingerprints > 0 {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!("  ! {invalid_fingerprints} trusted client fingerprint value(s) invalid."),
+            Style::default()
+                .fg(app.theme.accent_warning)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(Span::styled(
+            "    Use client certificate SHA-256 fingerprints.",
+            Style::default().fg(app.theme.fg_secondary),
+        )));
+    } else if mpd.enabled
+        && mpd.tls_enabled
+        && mpd.auth_mode == MpdAuthMode::Certificate
+        && mpd.trusted_client_fingerprints.is_empty()
+    {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  ! Certificate auth needs at least one trusted client",
+            Style::default()
+                .fg(app.theme.accent_warning)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(Span::styled(
+            "    fingerprint, or switch Auth Mode to Password.",
+            Style::default().fg(app.theme.fg_secondary),
+        )));
+    } else if mpd.enabled && mpd.auth_mode == MpdAuthMode::Password && mpd.password.is_none() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  ! Password auth needs a non-empty password.",
+            Style::default()
+                .fg(app.theme.accent_warning)
+                .add_modifier(Modifier::BOLD),
+        )));
+    }
+
+    if mpd.auth_mode == MpdAuthMode::Certificate {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Pairing clients can add trust automatically.",
+            Style::default().fg(app.theme.fg_secondary),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  Manual fingerprints: comma-separated SHA-256 values.",
+            Style::default().fg(app.theme.fg_secondary),
+        )));
+    }
+
     if let Some(ref fp) = state.tls_fingerprint {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
@@ -107,8 +170,36 @@ fn draw_mpd_section(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(para, area);
 }
 
+fn trusted_fingerprints_summary(fingerprints: &[String]) -> String {
+    match fingerprints {
+        [] => "(none)".to_string(),
+        [only] => abbreviate_fingerprint(only),
+        [first, ..] => format!(
+            "{} (+{} more)",
+            abbreviate_fingerprint(first),
+            fingerprints.len() - 1
+        ),
+    }
+}
+
+fn abbreviate_fingerprint(fingerprint: &str) -> String {
+    if fingerprint.len() <= 18 {
+        fingerprint.to_string()
+    } else {
+        format!("{}...", &fingerprint[..18])
+    }
+}
+
+fn invalid_trusted_fingerprint_count(fingerprints: &[String]) -> usize {
+    fingerprints
+        .iter()
+        .filter(|fingerprint| normalize_certificate_fingerprint(fingerprint).is_err())
+        .count()
+}
+
 fn draw_dlna_section(f: &mut Frame, area: Rect, app: &App) {
     let state = &app.server_state;
+    let dlna = &state.config.dlna;
     let is_active = state.selected_section == ServerSection::Dlna;
     let border_type = if is_active {
         BorderType::Double
@@ -124,19 +215,16 @@ fn draw_dlna_section(f: &mut Frame, area: Rect, app: &App) {
     let fields: Vec<(&str, String, bool)> = vec![
         (
             "Enabled",
-            if state.config.dlna.enabled {
+            if dlna.enabled {
                 "YES".to_string()
             } else {
                 "no".to_string()
             },
             true,
         ),
-        (
-            "Friendly Name",
-            state.config.dlna.friendly_name.clone(),
-            false,
-        ),
-        ("Port", state.config.dlna.port.to_string(), false),
+        ("Bind Address", dlna.bind_address.clone(), false),
+        ("Friendly Name", dlna.friendly_name.clone(), false),
+        ("Port", dlna.port.to_string(), false),
     ];
 
     let lines = render_field_lines(
@@ -149,6 +237,20 @@ fn draw_dlna_section(f: &mut Frame, area: Rect, app: &App) {
     );
 
     let mut note_lines = lines;
+    note_lines.push(Line::from(""));
+    note_lines.push(Line::from(Span::styled(
+        format!(
+            "  URL: {}",
+            sotf_audio_player::server::dlna_server_url_for_bind(&dlna.bind_address, dlna.port)
+        ),
+        Style::default()
+            .fg(app.theme.accent_primary)
+            .add_modifier(Modifier::BOLD),
+    )));
+    note_lines.push(Line::from(Span::styled(
+        "  Bind 0.0.0.0 listens on all interfaces.",
+        Style::default().fg(app.theme.fg_secondary),
+    )));
     note_lines.push(Line::from(""));
     note_lines.push(Line::from(Span::styled(
         "  (DLNA uses plain HTTP for",

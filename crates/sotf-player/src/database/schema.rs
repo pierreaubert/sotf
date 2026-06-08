@@ -1236,5 +1236,38 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                 },
             },
         );
+
+    // Migration 21: Persist ReplayGain extended stats for album gain computation
+    migrations.insert(
+        21,
+        Migration {
+            description: "Add ReplayGain gating stats for album gain computation",
+            apply: |db| {
+                let has_block_count = db
+                    .conn
+                    .prepare("SELECT replay_gain_block_count FROM tracks LIMIT 1")
+                    .is_ok();
+                if !has_block_count {
+                    db.conn.execute(
+                        "ALTER TABLE tracks ADD COLUMN replay_gain_block_count INTEGER",
+                        [],
+                    )?;
+                    log::info!("Added replay_gain_block_count column to tracks table");
+                }
+
+                let has_energy = db
+                    .conn
+                    .prepare("SELECT replay_gain_energy FROM tracks LIMIT 1")
+                    .is_ok();
+                if !has_energy {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN replay_gain_energy REAL", [])?;
+                    log::info!("Added replay_gain_energy column to tracks table");
+                }
+
+                Ok(())
+            },
+        },
+    );
     migrations
 }

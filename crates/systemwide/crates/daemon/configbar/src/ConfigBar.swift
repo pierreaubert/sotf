@@ -2,7 +2,7 @@
 // SotF Systemwide Menu Bar Application
 //
 // A macOS menu bar app that controls the SotF Systemwide audio engine with:
-// - Color-coded speaker icon (grey/green/red) based on audio activity
+// - Menu bar status icon with health tint, streaming background, and recording indicator
 // - Configuration window for audio interfaces and plugin chains
 // - Energy optimization (stops engine after 3s of silence)
 // - Integration with src-audio daemon via Unix socket
@@ -105,15 +105,17 @@ class AudioEngineClient {
 
         var iconColor: NSColor {
             switch self {
-            case .idle, .stopped, .paused:
-                return .systemGray
-            case .playing:
-                return .systemGreen
             case .recording:
-                return .systemRed
+                return .white
             case .error:
-                return .systemOrange
+                return .black
+            default:
+                return .white
             }
+        }
+
+        var isStreaming: Bool {
+            self == .playing || self == .recording
         }
     }
 
@@ -976,6 +978,7 @@ class StatusBarController: NSObject, ObservableObject {
     @Published var currentState: AudioEngineClient.AudioState = .idle
     @Published var showingWindow = false
     private var configWindow: NSWindow?
+    private static let recordingDotLayerName = "SotFRecordingDotLayer"
 
     private let client = AudioEngineClient()
     private var monitorTimer: Timer?
@@ -994,6 +997,7 @@ class StatusBarController: NSObject, ObservableObject {
             button.image = makeMenuBarIcon()
             button.imagePosition = .imageOnly
             button.toolTip = "SotF Audio Engine"
+            button.wantsLayer = true
         }
 
         // Create menu for the status item
@@ -1056,6 +1060,7 @@ class StatusBarController: NSObject, ObservableObject {
            let item = menu.item(withTag: 102) {
             item.title = daemonRunning ? "Daemon: ✓ Running" : "Daemon: ✗ Not Running"
         }
+        updateIcon()
     }
 
     @objc func openConfiguration() {
@@ -1174,14 +1179,45 @@ class StatusBarController: NSObject, ObservableObject {
     private func updateIcon() {
         guard let button = statusItem.button else { return }
 
-        // Keep startup/idle visually quiet and make active audio stand out.
-        switch currentState {
-        case .playing:
-            button.contentTintColor = .white
-        case .error:
-            button.contentTintColor = .systemRed
-        default:
-            button.contentTintColor = .black
+        let issue = !daemonRunning || currentState == .error
+        let streaming = currentState.isStreaming && !issue
+
+        button.contentTintColor = issue ? .black : .white
+        button.wantsLayer = true
+        if let layer = button.layer {
+            layer.cornerRadius = 5
+            layer.masksToBounds = false
+            layer.backgroundColor = streaming ? NSColor.systemGreen.cgColor : NSColor.clear.cgColor
+        }
+
+        setRecordingDotVisible(currentState == .recording && !issue, on: button)
+    }
+
+    private func setRecordingDotVisible(_ visible: Bool, on button: NSStatusBarButton) {
+        button.wantsLayer = true
+        guard let layer = button.layer else { return }
+
+        if !visible {
+            layer.sublayers?.removeAll { $0.name == Self.recordingDotLayerName }
+            return
+        }
+
+        let dotSize: CGFloat = 6
+        let margin: CGFloat = 2
+        let dot = layer.sublayers?.first { $0.name == Self.recordingDotLayerName } ?? CALayer()
+        dot.name = Self.recordingDotLayerName
+        dot.backgroundColor = NSColor.systemOrange.cgColor
+        dot.cornerRadius = dotSize / 2
+        dot.masksToBounds = true
+        dot.frame = CGRect(
+            x: max(margin, button.bounds.maxX - dotSize - margin),
+            y: margin,
+            width: dotSize,
+            height: dotSize
+        )
+
+        if dot.superlayer == nil {
+            layer.addSublayer(dot)
         }
     }
 

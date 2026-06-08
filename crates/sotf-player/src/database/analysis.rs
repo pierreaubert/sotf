@@ -5,6 +5,14 @@ use std::path::{Path, PathBuf};
 use super::MusicDatabase;
 use super::current_timestamp;
 
+#[derive(Debug, Clone)]
+pub struct ReplayGainAlbumTrackData {
+    pub path: PathBuf,
+    pub peak: f64,
+    pub gating_block_count: u64,
+    pub energy: f64,
+}
+
 impl MusicDatabase {
     /// Update ReplayGain values for a track
     pub fn update_replay_gain(&self, path: &Path, gain: f64, peak: f64) -> SqlResult<()> {
@@ -15,10 +23,37 @@ impl MusicDatabase {
         Ok(())
     }
 
+    /// Update ReplayGain values plus extended data needed for album gain.
+    pub fn update_replay_gain_analysis(
+        &self,
+        path: &Path,
+        gain: f64,
+        peak: f64,
+        gating_block_count: u64,
+        energy: f64,
+    ) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE tracks
+             SET replay_gain = ?1,
+                 replay_peak = ?2,
+                 replay_gain_block_count = ?3,
+                 replay_gain_energy = ?4
+             WHERE path = ?5",
+            params![
+                gain,
+                peak,
+                gating_block_count as i64,
+                energy,
+                path.to_str().unwrap()
+            ],
+        )?;
+        Ok(())
+    }
+
     /// Clear all ReplayGain data so a full rescan can be performed.
     pub fn clear_all_replay_gain(&self) -> SqlResult<()> {
         self.conn.execute(
-            "UPDATE tracks SET replay_gain = NULL, replay_peak = NULL, album_gain = NULL, album_peak = NULL, replay_gain_error = NULL",
+            "UPDATE tracks SET replay_gain = NULL, replay_peak = NULL, replay_gain_block_count = NULL, replay_gain_energy = NULL, album_gain = NULL, album_peak = NULL, replay_gain_error = NULL",
             [],
         )?;
         Ok(())
@@ -130,6 +165,44 @@ impl MusicDatabase {
         }
 
         Ok(result)
+    }
+
+    /// Return cached album ReplayGain inputs for all paths, or `None` if any are missing.
+    pub fn get_replay_gain_album_track_data(
+        &self,
+        paths: &[PathBuf],
+    ) -> SqlResult<Option<Vec<ReplayGainAlbumTrackData>>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT replay_peak, replay_gain_block_count, replay_gain_energy
+             FROM tracks
+             WHERE path = ?1",
+        )?;
+
+        let mut tracks = Vec::with_capacity(paths.len());
+        for path in paths {
+            let data = stmt.query_row(params![path.to_str().unwrap()], |row| {
+                let peak: Option<f64> = row.get(0)?;
+                let block_count: Option<i64> = row.get(1)?;
+                let energy: Option<f64> = row.get(2)?;
+                Ok((peak, block_count, energy))
+            })?;
+
+            let (Some(peak), Some(block_count), Some(energy)) = data else {
+                return Ok(None);
+            };
+            if block_count <= 0 {
+                return Ok(None);
+            }
+
+            tracks.push(ReplayGainAlbumTrackData {
+                path: path.clone(),
+                peak,
+                gating_block_count: block_count as u64,
+                energy,
+            });
+        }
+
+        Ok(Some(tracks))
     }
 
     /// Update waveform data for a track

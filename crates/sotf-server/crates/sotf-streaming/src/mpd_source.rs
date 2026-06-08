@@ -10,7 +10,7 @@
 
 use crate::http_source::{HttpMediaSource, StreamMetadata};
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::mpsc;
 use std::time::Duration;
 use symphonia_core::io::MediaSource;
@@ -141,13 +141,8 @@ fn prepare_mpd_playback(parsed: &MpdStreamUrl) -> Result<(), String> {
         reject_mpd_control_chars(pw, "password")?;
     }
     let addr = format!("{}:{}", parsed.host, parsed.control_port);
-    let stream = TcpStream::connect_timeout(
-        &addr
-            .parse()
-            .map_err(|e| format!("invalid address {addr}: {e}"))?,
-        Duration::from_secs(5),
-    )
-    .map_err(|e| format!("MPD connect failed ({addr}): {e}"))?;
+    let stream = connect_mpd_control(&parsed.host, parsed.control_port, Duration::from_secs(5))
+        .map_err(|e| format!("MPD connect failed ({addr}): {e}"))?;
 
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
     stream.set_write_timeout(Some(Duration::from_secs(5))).ok();
@@ -177,6 +172,33 @@ fn prepare_mpd_playback(parsed: &MpdStreamUrl) -> Result<(), String> {
     send_mpd(&mut reader, "play")?;
 
     Ok(())
+}
+
+fn resolve_mpd_control_addrs(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    let addrs = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| format!("resolve {host}:{port}: {e}"))?
+        .collect::<Vec<_>>();
+
+    if addrs.is_empty() {
+        Err(format!("resolve {host}:{port}: no addresses found"))
+    } else {
+        Ok(addrs)
+    }
+}
+
+fn connect_mpd_control(host: &str, port: u16, timeout: Duration) -> Result<TcpStream, String> {
+    let addrs = resolve_mpd_control_addrs(host, port)?;
+    let mut last_error = None;
+
+    for addr in addrs {
+        match TcpStream::connect_timeout(&addr, timeout) {
+            Ok(stream) => return Ok(stream),
+            Err(err) => last_error = Some(format!("{addr}: {err}")),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| format!("resolve {host}:{port}: no addresses found")))
 }
 
 /// Send a command and read until OK or ACK.
@@ -289,6 +311,13 @@ mod tests {
         let parsed = MpdStreamUrl::parse(url).unwrap();
         assert_eq!(parsed.host, "myserver");
         assert_eq!(parsed.password, Some("s3cret".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_mpd_control_addrs_accepts_localhost() {
+        let addrs = resolve_mpd_control_addrs("localhost", 6600).unwrap();
+
+        assert!(addrs.iter().any(|addr| addr.port() == 6600));
     }
 
     #[test]

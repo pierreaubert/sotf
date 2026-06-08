@@ -156,6 +156,8 @@ pub struct SotfApiPlayback {
 pub struct SotfApiLibrarySummary {
     pub albums: usize,
     pub tracks: usize,
+    #[serde(default)]
+    pub library_version: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -166,6 +168,14 @@ pub struct SotfApiQueue {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct SotfApiAlbumList {
     pub albums: Vec<SotfApiAlbum>,
+    #[serde(default)]
+    pub total: usize,
+    #[serde(default)]
+    pub offset: usize,
+    #[serde(default)]
+    pub limit: usize,
+    #[serde(default)]
+    pub library_version: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -332,9 +342,37 @@ impl SotfApiClient {
         self.get_auth("library/albums").await
     }
 
+    pub async fn library_albums_page(
+        &self,
+        offset: usize,
+        limit: usize,
+        query: Option<&str>,
+        sort: Option<&str>,
+    ) -> SotfApiResult<SotfApiAlbumList> {
+        let offset = offset.to_string();
+        let limit = limit.to_string();
+        let mut query_serializer = url::form_urlencoded::Serializer::new(String::new());
+        query_serializer.append_pair("offset", &offset);
+        query_serializer.append_pair("limit", &limit);
+        if let Some(query) = query.filter(|query| !query.trim().is_empty()) {
+            query_serializer.append_pair("q", query.trim());
+        }
+        if let Some(sort) = sort.filter(|sort| !sort.trim().is_empty()) {
+            query_serializer.append_pair("sort", sort.trim());
+        }
+        let query = query_serializer.finish();
+        self.get_auth(&format!("library/albums?{query}")).await
+    }
+
     pub async fn album_tracks(&self, album_id: &str) -> SotfApiResult<SotfApiAlbumTracks> {
         let album_id = validate_api_path_segment(album_id)?;
         self.get_auth(&format!("library/albums/{album_id}/tracks"))
+            .await
+    }
+
+    pub async fn album_artwork(&self, album_id: &str) -> SotfApiResult<Vec<u8>> {
+        let album_id = validate_api_path_segment(album_id)?;
+        self.get_auth_bytes(&format!("library/albums/{album_id}/artwork"))
             .await
     }
 
@@ -561,6 +599,16 @@ impl SotfApiClient {
         decode_response(response).await
     }
 
+    async fn get_auth_bytes(&self, path: &str) -> SotfApiResult<Vec<u8>> {
+        let response = self
+            .client
+            .get(self.endpoint_url(path))
+            .bearer_auth(&self.auth_token)
+            .send()
+            .await?;
+        decode_bytes_response(response).await
+    }
+
     async fn post_empty<T: DeserializeOwned>(&self, path: &str) -> SotfApiResult<T> {
         let response = self
             .client
@@ -645,6 +693,22 @@ async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> So
         });
     }
     Ok(serde_json::from_slice(&body)?)
+}
+
+async fn decode_bytes_response(response: reqwest::Response) -> SotfApiResult<Vec<u8>> {
+    let status = response.status();
+    let body = response.bytes().await?;
+    if !status.is_success() {
+        let message = serde_json::from_slice::<SotfApiErrorResponse>(&body)
+            .ok()
+            .and_then(|error| error.error)
+            .unwrap_or_else(|| String::from_utf8_lossy(&body).trim().to_string());
+        return Err(SotfApiClientError::Api {
+            status: status.as_u16(),
+            message,
+        });
+    }
+    Ok(body.to_vec())
 }
 
 fn normalize_base_url(base_url: String) -> SotfApiResult<String> {

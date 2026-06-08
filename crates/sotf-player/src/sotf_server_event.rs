@@ -36,6 +36,11 @@ pub enum SotfServerEvent {
         /// Total number of items to process.
         total: usize,
     },
+    /// Library metadata changed and clients should invalidate cached pages.
+    LibraryChanged {
+        /// Monotonically-increasing library version for cache keys.
+        library_version: u64,
+    },
     /// A playback or server error occurred.
     Error {
         /// Human-readable error message.

@@ -179,18 +179,12 @@ mod tests {
     }
 
     #[test]
-    fn esc_from_library_is_noop() {
-        // Esc in Normal mode is intentionally a no-op — quitting must
-        // be explicit (Ctrl-C / Ctrl-Q / Cmd-Q). A stray Esc on the
-        // Library screen used to quit without confirmation, which is
-        // hostile and inconsistent with the wizard screens.
+    fn esc_from_library_quits() {
         let mut app = app_on_library();
-        let prior_screen = app.current_screen;
-        let prior_mode = app.input_mode;
         send_keys(&mut app, &[KeyCode::Esc]);
-        assert!(!app.should_quit);
-        assert_eq!(app.current_screen, prior_screen);
-        assert_eq!(app.input_mode, prior_mode);
+        assert!(app.should_quit);
+        assert_eq!(app.current_screen, Screen::Library);
+        assert_eq!(app.input_mode, InputMode::Normal);
     }
 
     #[test]

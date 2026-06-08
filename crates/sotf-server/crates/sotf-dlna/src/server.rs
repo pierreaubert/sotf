@@ -91,12 +91,14 @@ impl DlnaMediaServer {
 
     pub async fn run(
         &self,
+        bind_address: &str,
         local_ip: Ipv4Addr,
         cancel: tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), String> {
-        let listener = TcpListener::bind(format!("0.0.0.0:{}", self.device.http_port))
+        let bind_label = format!("{bind_address}:{}", self.device.http_port);
+        let listener = TcpListener::bind((bind_address, self.device.http_port))
             .await
-            .map_err(|e| format!("Failed to bind server HTTP: {}", e))?;
+            .map_err(|e| format!("Failed to bind server HTTP on {bind_label}: {e}"))?;
 
         ssdp::send_alive(&self.device, local_ip).await?;
 
@@ -109,9 +111,9 @@ impl DlnaMediaServer {
         });
 
         log::info!(
-            "[DLNA Server] '{}' running on port {}",
+            "[DLNA Server] '{}' running on {}",
             self.device.friendly_name,
-            self.device.http_port,
+            bind_label,
         );
 
         loop {

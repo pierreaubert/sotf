@@ -341,22 +341,29 @@ fn configbar_hal_stream_status_wording_matches_signal_scope() {
 }
 
 #[test]
-fn configbar_menu_bar_icon_uses_active_light_idle_dark() {
+fn configbar_menu_bar_icon_uses_health_tint_streaming_background_and_recording_dot() {
     let configbar = include_str!("../configbar/src/ConfigBar.swift");
-    let playing_tint = configbar
-        .find("case .playing:\n            button.contentTintColor = .white")
-        .expect("playing toolbar icon should be explicitly light");
-    let idle_tint = configbar
-        .find("default:\n            button.contentTintColor = .black")
-        .expect("startup/idle toolbar icon should be explicitly dark");
 
     assert!(
-        playing_tint < idle_tint,
-        "toolbar icon tint mapping should keep playing active/light and startup idle/dark"
+        configbar.contains("let issue = !daemonRunning || currentState == .error")
+            && configbar.contains("button.contentTintColor = issue ? .black : .white"),
+        "healthy toolbar icon should be white and daemon/error issues should be black"
     );
     assert!(
-        !configbar.contains("button.contentTintColor = .systemGreen"),
-        "working toolbar icon should no longer turn green/black instead of white"
+        configbar.contains(
+            "layer.backgroundColor = streaming ? NSColor.systemGreen.cgColor : NSColor.clear.cgColor"
+        ),
+        "streaming audio should use a green menu bar icon background"
+    );
+    assert!(
+        configbar.contains("setRecordingDotVisible(currentState == .recording && !issue")
+            && configbar.contains("dot.backgroundColor = NSColor.systemOrange.cgColor"),
+        "recording should add an orange dot on top of the streaming status icon"
+    );
+    assert!(
+        !configbar.contains("button.contentTintColor = .systemRed")
+            && !configbar.contains("button.contentTintColor = .systemGreen"),
+        "status should not encode health by tinting the icon red or green"
     );
 }
 

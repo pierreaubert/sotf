@@ -116,11 +116,17 @@ impl ReplayGainScanner {
                     // Send started message
                     let _ = message_tx.send(ScanMessage::Started { path: path.clone() });
 
-                    // Analyze the file
-                    match replaygain::analyze_file(&path) {
+                    // Analyze once and keep the extended data needed for album gain.
+                    match replaygain::analyze_file_extended(&path) {
                         Ok(info) => {
                             // Update database (reuse connection)
-                            if let Err(e) = db.update_replay_gain(&path, info.gain, info.peak) {
+                            if let Err(e) = db.update_replay_gain_analysis(
+                                &path,
+                                info.gain,
+                                info.peak,
+                                info.gating_block_count,
+                                info.energy,
+                            ) {
                                 log::error!(
                                     "[ReplayGain Worker {}] Failed to update database for {}: {}",
                                     worker_id,
@@ -385,8 +391,9 @@ impl ReplayGainScanManager {
     }
 
     /// Start the album gain computation pass.
-    /// This analyzes all tracks in each album that's missing album_gain and computes
-    /// the combined album-level ReplayGain using EBU R128 gating block accumulation.
+    /// This computes album gain from per-track EBU R128 gating stats captured during
+    /// track analysis. Older databases without cached stats fall back to decoding the
+    /// affected album once and persist the stats for future runs.
     /// `start_scan` runs this pass automatically after the track ReplayGain pass.
     fn start_album_gain_scan(&mut self) {
         if self.album_gain_phase == AlbumGainPhase::Scanning {
@@ -458,26 +465,57 @@ impl ReplayGainScanManager {
                     return;
                 }
 
-                // Analyze each track in the album using the extended function
-                let mut track_data: Vec<(f64, u64, f64)> = Vec::new();
-                let mut album_failed = false;
+                let cached_track_data = match db.get_replay_gain_album_track_data(track_paths) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        log::warn!("[AlbumGain] Failed to load cached track data: {}", e);
+                        None
+                    }
+                };
 
-                for path in track_paths {
-                    if cancel.load(Ordering::Relaxed) {
-                        log::info!("[AlbumGain] Cancelled while analyzing {}", path.display());
-                        return;
-                    }
-                    match replaygain::analyze_file_extended(path) {
-                        Ok(data) => {
-                            track_data.push((data.peak, data.gating_block_count, data.energy));
+                let mut album_failed = false;
+                let track_data: Vec<(f64, u64, f64)> = if let Some(cached) = cached_track_data {
+                    cached
+                        .iter()
+                        .map(|data| (data.peak, data.gating_block_count, data.energy))
+                        .collect()
+                } else {
+                    let mut analyzed = Vec::new();
+                    for path in track_paths {
+                        if cancel.load(Ordering::Relaxed) {
+                            log::info!("[AlbumGain] Cancelled while analyzing {}", path.display());
+                            return;
                         }
-                        Err(e) => {
-                            log::warn!("[AlbumGain] Failed to analyze {}: {}", path.display(), e);
-                            album_failed = true;
-                            break;
+                        match replaygain::analyze_file_extended(path) {
+                            Ok(data) => {
+                                if let Err(e) = db.update_replay_gain_analysis(
+                                    path,
+                                    data.gain,
+                                    data.peak,
+                                    data.gating_block_count,
+                                    data.energy,
+                                ) {
+                                    log::warn!(
+                                        "[AlbumGain] Failed to cache analysis for {}: {}",
+                                        path.display(),
+                                        e
+                                    );
+                                }
+                                analyzed.push((data.peak, data.gating_block_count, data.energy));
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "[AlbumGain] Failed to analyze {}: {}",
+                                    path.display(),
+                                    e
+                                );
+                                album_failed = true;
+                                break;
+                            }
                         }
                     }
-                }
+                    analyzed
+                };
 
                 if album_failed {
                     failed += 1;

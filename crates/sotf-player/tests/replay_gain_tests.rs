@@ -134,6 +134,80 @@ fn test_update_replay_gain() {
 }
 
 #[test]
+fn test_replay_gain_album_analysis_cache_requires_extended_data() {
+    fixtures::ensure_demo_files_exist();
+
+    let (_temp_dir, db_path) = fixtures::temp_database();
+    let classical_file = fixtures::get_demo_file("classical.wav");
+
+    let album = sotf_audio_player::Album {
+        id: None,
+        title: "Test Album".to_string(),
+        year: Some(2024),
+        tracks: vec![sotf_audio_player::Track {
+            path: classical_file.clone(),
+            title: Some("Test Track".to_string()),
+            artist: Some("Test Artist".to_string()),
+            track_number: Some(1),
+            duration_secs: Some(5),
+            channels: Some(2),
+            sample_rate: Some(44100),
+            bit_depth: Some(16),
+            replay_gain: None,
+            replay_peak: None,
+            album_gain: None,
+            album_peak: None,
+            waveform: None,
+            genre: None,
+            composer: None,
+            disc_number: None,
+            conductor: None,
+            performer: None,
+            isrc: None,
+            album_artist: None,
+            ensemble: None,
+            edition: None,
+            is_favorite: false,
+            play_count: 0,
+            source: None,
+            uuid: None,
+        }],
+        album_art_path: None,
+        album_art_thumbnail: None,
+        play_count: 0,
+        edition: None,
+        dynamic_range: None,
+        is_favorite: false,
+        uuid: None,
+    };
+
+    let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();
+    db.save_albums(&[album]).expect("Failed to save album");
+
+    db.update_replay_gain(&classical_file, -8.5, 0.88)
+        .expect("Failed to update ReplayGain");
+    assert!(
+        db.get_replay_gain_album_track_data(std::slice::from_ref(&classical_file))
+            .unwrap()
+            .is_none(),
+        "plain track gain is not enough for exact album gain"
+    );
+
+    db.update_replay_gain_analysis(&classical_file, -8.5, 0.88, 12, 0.25)
+        .expect("Failed to update ReplayGain analysis");
+    let cached = db
+        .get_replay_gain_album_track_data(std::slice::from_ref(&classical_file))
+        .unwrap()
+        .expect("extended ReplayGain analysis should be cached");
+
+    assert_eq!(cached.len(), 1);
+    assert_eq!(cached[0].path, classical_file);
+    assert_eq!(cached[0].peak, 0.88);
+    assert_eq!(cached[0].gating_block_count, 12);
+    assert_eq!(cached[0].energy, 0.25);
+}
+
+#[test]
 fn test_replay_gain_values_persistence() {
     fixtures::ensure_demo_files_exist();
 

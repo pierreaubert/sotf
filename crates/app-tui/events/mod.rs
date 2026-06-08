@@ -211,10 +211,10 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     }
 
     match key.code {
-        // Esc in Normal mode is a no-op — quitting must be explicit
-        // (Ctrl-C, Ctrl-Q, Cmd-Q) so a stray Esc on the Library or
-        // Queue screen does not exit without confirmation.
-        KeyCode::Esc => None,
+        KeyCode::Esc => {
+            app.should_quit = true;
+            None
+        }
         // TAB to cycle through screens
         KeyCode::Tab => {
             app.current_screen = match app.current_screen {

@@ -251,12 +251,39 @@ impl SotfRemoteConnection {
     pub async fn refresh(&self) -> SotfApiResult<SotfRemoteSnapshot> {
         let state = self.client.state().await?;
         let queue = self.client.queue().await?;
-        let library = self.client.library_albums().await?;
+        let library = self
+            .client
+            .library_albums_page(0, 50, None, Some("artist_title"))
+            .await?;
         Ok(SotfRemoteSnapshot {
             state,
             queue,
             library,
         })
+    }
+
+    pub async fn refresh_state(&self) -> SotfApiResult<SotfApiState> {
+        self.client.state().await
+    }
+
+    pub async fn refresh_queue(&self) -> SotfApiResult<SotfApiQueue> {
+        self.client.queue().await
+    }
+
+    pub async fn refresh_album_page(
+        &self,
+        offset: usize,
+        limit: usize,
+        query: Option<&str>,
+        sort: Option<&str>,
+    ) -> SotfApiResult<SotfApiAlbumList> {
+        self.client
+            .library_albums_page(offset, limit, query, sort)
+            .await
+    }
+
+    pub async fn album_artwork(&self, album_id: &str) -> SotfApiResult<Vec<u8>> {
+        self.client.album_artwork(album_id).await
     }
 
     pub async fn transport(

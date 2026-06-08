@@ -1,6 +1,6 @@
 [package]
 name = "sotf-tvos"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2024"
 publish = false
 description = "tvOS (Apple TV) app shell for SOTF music player"
@@ -15,7 +15,7 @@ gpui-ios = { workspace = true }
 gpui-ui-kit = { workspace = true }
 sotf-gpui = { path = "../app-gpui" }
 sotf-player = { workspace = true }
-sotf-engine = { workspace = true }
+sotf-engine = { workspace = true, features = ["streaming"] }
 
 log = { workspace = true }
 parking_lot = { workspace = true }

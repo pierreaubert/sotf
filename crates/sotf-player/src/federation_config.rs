@@ -573,6 +573,8 @@ impl Default for MpdSettings {
 pub struct DlnaSettings {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default = "default_bind_address")]
+    pub bind_address: String,
     #[serde(default = "default_dlna_name")]
     pub friendly_name: String,
     #[serde(default = "default_dlna_port")]
@@ -583,6 +585,7 @@ impl Default for DlnaSettings {
     fn default() -> Self {
         Self {
             enabled: false,
+            bind_address: default_bind_address(),
             friendly_name: default_dlna_name(),
             port: default_dlna_port(),
         }
@@ -686,6 +689,7 @@ mod tests {
         assert!(config.mpd.tls_enabled);
         assert_eq!(config.mpd.port, 6600);
         assert!(!config.dlna.enabled);
+        assert_eq!(config.dlna.bind_address, "0.0.0.0");
         assert_eq!(config.dlna.port, 8200);
         assert!(!config.api.enabled);
         assert_eq!(config.api.bind_address, "0.0.0.0");

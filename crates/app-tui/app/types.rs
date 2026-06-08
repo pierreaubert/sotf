@@ -1143,6 +1143,15 @@ impl Default for ServersTuiState {
     }
 }
 
+impl ServersTuiState {
+    pub fn with_config(config: ServerConfig) -> Self {
+        Self {
+            config,
+            ..Self::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerSection {
     Mpd,
