@@ -502,7 +502,7 @@ pub fn render_vertical_slider_sized<H: PluginViewHost>(
     selected_param: usize,
     is_editing: bool,
     shortcut_key: Option<char>,
-    _height: Option<f32>,
+    height: Option<f32>,
     theme: &PluginViewTheme,
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
@@ -550,6 +550,9 @@ pub fn render_vertical_slider_sized<H: PluginViewHost>(
             }
         });
 
+    if let Some(height) = height {
+        slider = slider.height(height);
+    }
     if let Some(key) = shortcut_key {
         slider = slider.shortcut_key(key);
     }

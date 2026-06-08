@@ -8,6 +8,7 @@
 //! - Display tiers on the inspector panel (Full/Mini based on size)
 //! - Draggable dividers to resize panels
 //! - Real-time solver output in footer
+//! - Visual solved-tree inspector with live node highlighting
 //!
 //! Run: cargo run -p gpui-builder --features showcase --bin layout-showcase
 
@@ -46,7 +47,10 @@ struct ShowcaseView {
     inspector_ratio_v: f32,
     sidebar_collapsed: bool,
     inspector_collapsed: bool,
-    dragging: Option<DragTarget>,
+    dragging: Option<DragSession>,
+    drag_moved: bool,
+    suppress_next_divider_click: bool,
+    selected_node: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -80,6 +84,24 @@ enum DragTarget {
     Inspector,
 }
 
+#[derive(Clone, Copy)]
+struct DragSession {
+    target: DragTarget,
+    axis: Axis,
+    start_pos: f32,
+    start_ratio: f32,
+    extent: f32,
+}
+
+impl DragSession {
+    fn axis_position(&self, position: Point<Pixels>) -> f32 {
+        match self.axis {
+            Axis::Horizontal => position.x.into(),
+            Axis::Vertical => position.y.into(),
+        }
+    }
+}
+
 impl ShowcaseView {
     fn new() -> Self {
         Self {
@@ -90,6 +112,9 @@ impl ShowcaseView {
             sidebar_collapsed: false,
             inspector_collapsed: false,
             dragging: None,
+            drag_moved: false,
+            suppress_next_divider_click: false,
+            selected_node: Some("root".to_string()),
         }
     }
 
@@ -174,6 +199,62 @@ impl ShowcaseView {
 
         solve(&root, w, h, &prefs)
     }
+
+    fn begin_drag(&mut self, target: DragTarget, axis: Axis, start_pos: f32, extent: f32) {
+        let start_ratio = match (target, axis) {
+            (DragTarget::Sidebar, Axis::Horizontal) => self.sidebar_ratio_h,
+            (DragTarget::Sidebar, Axis::Vertical) => self.sidebar_ratio_v,
+            (DragTarget::Inspector, Axis::Horizontal) => self.inspector_ratio_h,
+            (DragTarget::Inspector, Axis::Vertical) => self.inspector_ratio_v,
+        };
+
+        self.dragging = Some(DragSession {
+            target,
+            axis,
+            start_pos,
+            start_ratio,
+            extent: extent.max(1.0),
+        });
+        self.drag_moved = false;
+        self.suppress_next_divider_click = false;
+    }
+
+    fn update_drag_from_position(&mut self, position: Point<Pixels>) -> bool {
+        let Some(drag) = self.dragging else {
+            return false;
+        };
+        let delta = (drag.axis_position(position) - drag.start_pos) / drag.extent;
+        let next = match drag.target {
+            DragTarget::Sidebar => drag.start_ratio + delta,
+            DragTarget::Inspector => drag.start_ratio - delta,
+        }
+        .clamp(0.08, 0.45);
+
+        let ratio = match (drag.target, drag.axis) {
+            (DragTarget::Sidebar, Axis::Horizontal) => &mut self.sidebar_ratio_h,
+            (DragTarget::Sidebar, Axis::Vertical) => &mut self.sidebar_ratio_v,
+            (DragTarget::Inspector, Axis::Horizontal) => &mut self.inspector_ratio_h,
+            (DragTarget::Inspector, Axis::Vertical) => &mut self.inspector_ratio_v,
+        };
+
+        if (*ratio - next).abs() <= 0.001 {
+            return false;
+        }
+
+        *ratio = next;
+        self.drag_moved = true;
+        true
+    }
+
+    fn finish_drag(&mut self, position: Point<Pixels>) -> bool {
+        let Some(drag) = self.dragging.take() else {
+            return false;
+        };
+        let moved = self.drag_moved || (drag.axis_position(position) - drag.start_pos).abs() > 3.0;
+        self.suppress_next_divider_click = moved;
+        self.drag_moved = false;
+        true
+    }
 }
 
 // ============================================================================
@@ -194,13 +275,18 @@ fn panel_box(
     size_info: &str,
     bg: Rgba,
     fg: Rgba,
+    selected: bool,
+    accent: Rgba,
     base_size: f32,
     small_size: f32,
     gap: f32,
 ) -> impl IntoElement {
     div()
         .size_full()
+        .min_w_0()
+        .min_h_0()
         .bg(bg)
+        .when(selected, |d| d.border_1().border_color(muted(accent, 0.8)))
         .flex()
         .flex_col()
         .items_center()
@@ -230,6 +316,41 @@ fn size_label(node: &SolvedNode) -> String {
     format!("{:.0} x {:.0}{tier}", node.width, node.height)
 }
 
+#[derive(Debug)]
+struct VisualTreeRow {
+    id: String,
+    depth: usize,
+    width: f32,
+    height: f32,
+    visible: bool,
+    resolved_axis: Option<Axis>,
+    active_tier: Option<String>,
+}
+
+fn collect_visual_tree_rows(node: &SolvedNode, depth: usize, rows: &mut Vec<VisualTreeRow>) {
+    rows.push(VisualTreeRow {
+        id: node.id.clone(),
+        depth,
+        width: node.width,
+        height: node.height,
+        visible: node.visible,
+        resolved_axis: node.resolved_axis,
+        active_tier: node.active_tier.clone(),
+    });
+
+    for child in &node.children {
+        collect_visual_tree_rows(child, depth + 1, rows);
+    }
+}
+
+fn axis_text(axis: Option<Axis>) -> &'static str {
+    match axis {
+        Some(Axis::Horizontal) => "H",
+        Some(Axis::Vertical) => "V",
+        None => "-",
+    }
+}
+
 // ============================================================================
 // Render
 // ============================================================================
@@ -243,6 +364,7 @@ impl Render for ShowcaseView {
         let h: f32 = bounds.size.height.into();
 
         let solved = self.solve_at(w, h);
+        let selected_id = self.selected_node.as_deref().unwrap_or("root");
 
         let content = solved.find("content").unwrap();
         let is_h = content.resolved_axis == Some(Axis::Horizontal);
@@ -287,12 +409,35 @@ impl Render for ShowcaseView {
             .text_color(fg)
             .flex()
             .flex_col()
+            .when(selected_id == "root", |d| {
+                d.border_1().border_color(muted(accent, 0.8))
+            })
+            .on_mouse_move(
+                cx.listener(move |view, event: &MouseMoveEvent, _window, cx| {
+                    if view.update_drag_from_position(event.position) {
+                        cx.notify();
+                    }
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, event: &MouseUpEvent, _, cx| {
+                    let changed = view.update_drag_from_position(event.position);
+                    let finished = view.finish_drag(event.position);
+                    if changed || finished {
+                        cx.notify();
+                    }
+                }),
+            )
             // ---- Header ----
             .child(
                 div()
                     .h(px(header_h))
                     .w_full()
                     .bg(header_bg)
+                    .when(selected_id == "header", |d| {
+                        d.border_1().border_color(muted(accent, 0.8))
+                    })
                     .flex()
                     .flex_row()
                     .items_center()
@@ -324,11 +469,13 @@ impl Render for ShowcaseView {
                         div()
                             .text_size(px(small_sz))
                             .text_color(theme.text_muted)
-                            .child("drag dividers | click to collapse | resize window"),
+                            .child("click tree rows | drag dividers | resize window"),
                     ),
             )
             // ---- Content ----
             .child(self.render_content(
+                &solved,
+                selected_id,
                 is_h,
                 content_w,
                 content_h,
@@ -354,6 +501,9 @@ impl Render for ShowcaseView {
                     .h(px(footer_h))
                     .w_full()
                     .bg(footer_bg)
+                    .when(selected_id == "footer", |d| {
+                        d.border_1().border_color(muted(accent, 0.8))
+                    })
                     .flex()
                     .flex_row()
                     .items_center()
@@ -385,8 +535,10 @@ impl ShowcaseView {
     #[allow(clippy::too_many_arguments)]
     fn render_content(
         &self,
+        solved: &SolvedNode,
+        selected_id: &str,
         is_h: bool,
-        _content_w: f32,
+        content_w: f32,
         content_h: f32,
         sidebar: &SolvedNode,
         main_n: &SolvedNode,
@@ -405,42 +557,14 @@ impl ShowcaseView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let ds = cx.design();
-        // Shared mouse handlers for divider dragging
         let base = div()
             .id("content-area")
             .overflow_hidden()
-            .on_mouse_move(
-                cx.listener(move |view, event: &MouseMoveEvent, window, _cx| {
-                    let Some(target) = view.dragging else { return };
-                    let ws = window.bounds().size;
-                    let mx: f32 = event.position.x.into();
-                    let my: f32 = event.position.y.into();
-                    let ww: f32 = ws.width.into();
-                    let wh: f32 = ws.height.into();
-                    if ww > 0.0 && wh > 0.0 {
-                        match (target, is_h) {
-                            (DragTarget::Sidebar, true) => {
-                                view.sidebar_ratio_h = (mx / ww).clamp(0.08, 0.45)
-                            }
-                            (DragTarget::Sidebar, false) => {
-                                view.sidebar_ratio_v = (my / wh).clamp(0.08, 0.45)
-                            }
-                            (DragTarget::Inspector, true) => {
-                                view.inspector_ratio_h = (1.0 - mx / ww).clamp(0.08, 0.45)
-                            }
-                            (DragTarget::Inspector, false) => {
-                                view.inspector_ratio_v = (1.0 - my / wh).clamp(0.08, 0.45)
-                            }
-                        }
-                    }
-                }),
-            )
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, _, _| {
-                    view.dragging = None;
-                }),
-            );
+            .min_w_0()
+            .min_h_0()
+            .when(selected_id == "content", |d| {
+                d.border_1().border_color(muted(accent, 0.8))
+            });
 
         if is_h {
             base.h(px(content_h))
@@ -453,12 +577,18 @@ impl ShowcaseView {
                         div()
                             .w(px(sidebar.width))
                             .h_full()
+                            .min_w_0()
                             .overflow_hidden()
+                            .when(selected_id == "sidebar", |d| {
+                                d.border_1().border_color(muted(accent, 0.8))
+                            })
                             .child(panel_box(
                                 "Sidebar",
                                 &size_label(sidebar),
                                 sidebar_bg,
                                 fg,
+                                false,
+                                accent,
                                 base_sz,
                                 small_sz,
                                 ds.spacing.grid_unit,
@@ -466,27 +596,49 @@ impl ShowcaseView {
                     )
                 })
                 // Sidebar divider
-                .child(self.divider_v("sidebar", divider_color, accent, cx))
+                .child(self.divider_v("sidebar", divider_color, accent, content_w, cx))
                 // Main
-                .child(div().flex_1().h_full().overflow_hidden().child(
-                    self.main_panel(main_n, main_bg, fg, tabs, theme, &ds, large_sz, small_sz),
-                ))
+                .child(
+                    div()
+                        .flex_1()
+                        .h_full()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .child(self.main_panel(
+                            main_n,
+                            main_bg,
+                            fg,
+                            tabs,
+                            theme,
+                            &ds,
+                            selected_id == "main",
+                            large_sz,
+                            small_sz,
+                        )),
+                )
                 // Inspector divider + panel
                 .when(inspector.visible, |d: Stateful<Div>| {
-                    d.child(self.divider_v("inspector", divider_color, accent, cx))
+                    d.child(self.divider_v("inspector", divider_color, accent, content_w, cx))
                         .child(
                             div()
                                 .w(px(inspector.width))
                                 .h_full()
+                                .min_w_0()
                                 .overflow_hidden()
-                                .child(panel_box(
-                                    "Inspector",
-                                    &size_label(inspector),
+                                .when(selected_id == "inspector", |d| {
+                                    d.border_1().border_color(muted(accent, 0.8))
+                                })
+                                .child(self.visual_tree_inspector(
+                                    solved,
+                                    inspector,
+                                    selected_id,
                                     inspector_bg,
                                     fg,
+                                    theme,
+                                    &ds,
                                     base_sz,
                                     small_sz,
-                                    ds.spacing.grid_unit,
+                                    cx,
                                 )),
                         )
                 })
@@ -501,37 +653,65 @@ impl ShowcaseView {
                         div()
                             .h(px(sidebar.height))
                             .w_full()
+                            .min_h_0()
                             .overflow_hidden()
+                            .when(selected_id == "sidebar", |d| {
+                                d.border_1().border_color(muted(accent, 0.8))
+                            })
                             .child(panel_box(
                                 "Sidebar",
                                 &size_label(sidebar),
                                 sidebar_bg,
                                 fg,
+                                false,
+                                accent,
                                 base_sz,
                                 small_sz,
                                 ds.spacing.grid_unit,
                             )),
                     )
                 })
-                .child(self.divider_h("sidebar", divider_color, accent, cx))
-                .child(div().flex_1().w_full().overflow_hidden().child(
-                    self.main_panel(main_n, main_bg, fg, tabs, theme, &ds, large_sz, small_sz),
-                ))
+                .child(self.divider_h("sidebar", divider_color, accent, content_h, cx))
+                .child(
+                    div()
+                        .flex_1()
+                        .w_full()
+                        .min_h_0()
+                        .overflow_hidden()
+                        .child(self.main_panel(
+                            main_n,
+                            main_bg,
+                            fg,
+                            tabs,
+                            theme,
+                            &ds,
+                            selected_id == "main",
+                            large_sz,
+                            small_sz,
+                        )),
+                )
                 .when(inspector.visible, |d: Stateful<Div>| {
-                    d.child(self.divider_h("inspector", divider_color, accent, cx))
+                    d.child(self.divider_h("inspector", divider_color, accent, content_h, cx))
                         .child(
                             div()
                                 .h(px(inspector.height))
                                 .w_full()
+                                .min_h_0()
                                 .overflow_hidden()
-                                .child(panel_box(
-                                    "Inspector",
-                                    &size_label(inspector),
+                                .when(selected_id == "inspector", |d| {
+                                    d.border_1().border_color(muted(accent, 0.8))
+                                })
+                                .child(self.visual_tree_inspector(
+                                    solved,
+                                    inspector,
+                                    selected_id,
                                     inspector_bg,
                                     fg,
+                                    theme,
+                                    &ds,
                                     base_sz,
                                     small_sz,
-                                    ds.spacing.grid_unit,
+                                    cx,
                                 )),
                         )
                 })
@@ -547,12 +727,18 @@ impl ShowcaseView {
         tabs: &[(&str, &str)],
         theme: &ShowcaseTheme,
         ds: &gpui_design::DesignSystem,
+        selected: bool,
         large_sz: f32,
         small_sz: f32,
     ) -> impl IntoElement {
         let mut el = div()
             .size_full()
+            .min_w_0()
+            .min_h_0()
             .bg(bg)
+            .when(selected, |d| {
+                d.border_1().border_color(muted(theme.accent, 0.8))
+            })
             .flex()
             .flex_col()
             .items_center()
@@ -600,11 +786,193 @@ impl ShowcaseView {
         el
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn visual_tree_inspector(
+        &self,
+        solved: &SolvedNode,
+        panel: &SolvedNode,
+        selected_id: &str,
+        bg: Rgba,
+        fg: Rgba,
+        theme: &ShowcaseTheme,
+        ds: &gpui_design::DesignSystem,
+        base_sz: f32,
+        small_sz: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let mut rows = Vec::new();
+        collect_visual_tree_rows(solved, 0, &mut rows);
+        let node_count = rows.len();
+        let selected_size = solved.find(selected_id).map(size_label).unwrap_or_default();
+        let tree_rows: Vec<AnyElement> = rows
+            .into_iter()
+            .map(|row| {
+                self.visual_tree_row(row, selected_id, theme, ds, small_sz, cx)
+                    .into_any_element()
+            })
+            .collect();
+
+        div()
+            .size_full()
+            .min_w_0()
+            .min_h_0()
+            .bg(bg)
+            .flex()
+            .flex_col()
+            .gap(px(ds.spacing.control_gap))
+            .p(px(ds.spacing.control_gap))
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.0))
+                            .child(
+                                div()
+                                    .text_size(px(base_sz))
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(fg)
+                                    .child("Visual Tree"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(small_sz))
+                                    .text_color(theme.text_muted)
+                                    .child(SharedString::from(format!(
+                                        "{node_count} solved nodes"
+                                    ))),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(small_sz))
+                            .text_color(muted(theme.accent, 0.9))
+                            .child(SharedString::from(size_label(panel))),
+                    ),
+            )
+            .child(
+                div()
+                    .rounded(px(ds.corners.sm))
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(muted(theme.background, 0.55))
+                    .px(px(ds.spacing.control_gap))
+                    .py(px(ds.spacing.control_padding_y * 0.75))
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .child(
+                        div()
+                            .text_size(px(small_sz))
+                            .text_color(theme.text_muted)
+                            .child("Selected"),
+                    )
+                    .child(div().text_size(px(base_sz)).text_color(theme.accent).child(
+                        SharedString::from(format!("{selected_id}  {selected_size}")),
+                    )),
+            )
+            .child(
+                div()
+                    .id("visual-tree-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .children(tree_rows),
+            )
+    }
+
+    fn visual_tree_row(
+        &self,
+        row: VisualTreeRow,
+        selected_id: &str,
+        theme: &ShowcaseTheme,
+        ds: &gpui_design::DesignSystem,
+        small_sz: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let is_selected = row.id == selected_id;
+        let row_id = row.id.clone();
+        let label = if row.visible {
+            row.id.clone()
+        } else {
+            format!("{} (collapsed)", row.id)
+        };
+        let meta = format!(
+            "{}x{}  axis={}{}",
+            row.width.round(),
+            row.height.round(),
+            axis_text(row.resolved_axis),
+            row.active_tier
+                .as_deref()
+                .map(|tier| format!("  tier={tier}"))
+                .unwrap_or_default()
+        );
+        let indent = row.depth as f32 * 14.0;
+
+        div()
+            .id(SharedString::from(format!("tree-row-{}", row.id)))
+            .rounded(px(ds.corners.sm))
+            .px(px(ds.spacing.control_padding_x * 0.75))
+            .py(px(ds.spacing.control_padding_y * 0.65))
+            .bg(if is_selected {
+                muted(theme.accent, 0.18)
+            } else {
+                rgba(0x00000000)
+            })
+            .border_1()
+            .border_color(if is_selected {
+                muted(theme.accent, 0.55)
+            } else {
+                rgba(0x00000000)
+            })
+            .hover(|s| {
+                s.bg(muted(theme.accent, 0.10))
+                    .border_color(muted(theme.accent, 0.25))
+                    .cursor_pointer()
+            })
+            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                view.selected_node = Some(row_id.clone());
+                cx.notify();
+            }))
+            .child(
+                div()
+                    .ml(px(indent))
+                    .flex()
+                    .flex_col()
+                    .gap(px(1.0))
+                    .child(
+                        div()
+                            .text_size(px(small_sz))
+                            .text_color(if row.visible {
+                                theme.text_primary
+                            } else {
+                                theme.text_muted
+                            })
+                            .child(SharedString::from(label)),
+                    )
+                    .child(
+                        div()
+                            .text_size(px((small_sz - 1.0).max(10.0)))
+                            .text_color(theme.text_muted)
+                            .child(SharedString::from(meta)),
+                    ),
+            )
+    }
+
     fn divider_v(
         &self,
         panel: &str,
         bg: Rgba,
         hover_bg: Rgba,
+        drag_extent: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let id = SharedString::from(format!("div-v-{panel}"));
@@ -626,16 +994,24 @@ impl ShowcaseView {
             .cursor_col_resize()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |view, _: &MouseDownEvent, _, _| {
-                    view.dragging = Some(target);
+                cx.listener(move |view, event: &MouseDownEvent, _, cx| {
+                    let start_pos: f32 = event.position.x.into();
+                    view.begin_drag(target, Axis::Horizontal, start_pos, drag_extent);
+                    cx.notify();
                 }),
             )
-            .on_click(cx.listener(move |view, _: &ClickEvent, _, _| {
+            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                if view.suppress_next_divider_click {
+                    view.suppress_next_divider_click = false;
+                    cx.notify();
+                    return;
+                }
                 if panel_owned == "sidebar" {
                     view.sidebar_collapsed = !view.sidebar_collapsed;
                 } else {
                     view.inspector_collapsed = !view.inspector_collapsed;
                 }
+                cx.notify();
             }))
     }
 
@@ -644,6 +1020,7 @@ impl ShowcaseView {
         panel: &str,
         bg: Rgba,
         hover_bg: Rgba,
+        drag_extent: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let id = SharedString::from(format!("div-h-{panel}"));
@@ -665,16 +1042,24 @@ impl ShowcaseView {
             .cursor_row_resize()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |view, _: &MouseDownEvent, _, _| {
-                    view.dragging = Some(target);
+                cx.listener(move |view, event: &MouseDownEvent, _, cx| {
+                    let start_pos: f32 = event.position.y.into();
+                    view.begin_drag(target, Axis::Vertical, start_pos, drag_extent);
+                    cx.notify();
                 }),
             )
-            .on_click(cx.listener(move |view, _: &ClickEvent, _, _| {
+            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                if view.suppress_next_divider_click {
+                    view.suppress_next_divider_click = false;
+                    cx.notify();
+                    return;
+                }
                 if panel_owned == "sidebar" {
                     view.sidebar_collapsed = !view.sidebar_collapsed;
                 } else {
                     view.inspector_collapsed = !view.inspector_collapsed;
                 }
+                cx.notify();
             }))
     }
 }

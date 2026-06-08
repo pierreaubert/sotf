@@ -292,6 +292,8 @@ cargo run -p gpui-builder --features showcase --bin layout-showcase
 ```
 
 Interactive demo with draggable dividers, collapsible panels, auto-axis switching, and display tiers.
+The right-hand inspector panel renders the solved visual tree. Click a tree row
+to select a node and highlight the matching region in the live layout.
 
 ## Testing
 
