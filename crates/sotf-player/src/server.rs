@@ -73,6 +73,31 @@ fn generate_pairing_nonce() -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+pub fn generate_api_auth_token() -> String {
+    let bytes: [u8; 32] = rand::random();
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn ensure_server_mode_api_config(config: &mut ServerConfig) -> bool {
+    let mut changed = false;
+    if !config.api.enabled {
+        config.api.enabled = true;
+        changed = true;
+    }
+    if config
+        .api
+        .auth_token
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
+    {
+        config.api.auth_token = Some(generate_api_auth_token());
+        changed = true;
+    }
+    changed
+}
+
 /// Adapter bridging MPD protocol commands to the SOTF player.
 struct MpdPlayerAdapter {
     state: Arc<ServerState>,
@@ -2114,6 +2139,13 @@ pub fn dlna_server_url_for_bind(bind_address: &str, port: u16) -> String {
     format!("http://{host}:{port}/")
 }
 
+/// URL that SOTF remote clients can use for a configured API bind address.
+#[must_use]
+pub fn sotf_api_server_url_for_bind(bind_address: &str, port: u16) -> String {
+    let host = dlna_advertised_ipv4(bind_address);
+    format!("http://{host}:{port}/api/v1")
+}
+
 /// IPv4 address to advertise in DLNA URLs for a configured bind address.
 #[must_use]
 pub fn dlna_advertised_ipv4(bind_address: &str) -> Ipv4Addr {
@@ -2147,12 +2179,26 @@ fn get_local_ipv4() -> Ipv4Addr {
 
 /// Run the app in headless server mode.
 ///
-/// Loads the music library from the database, starts any enabled servers
-/// (MPD, DLNA), and blocks until a shutdown signal (SIGINT/SIGTERM) is received.
-///
-/// Returns an error if no servers are enabled in the configuration.
+/// Loads the music library from the database, ensures the SOTF API is enabled,
+/// starts enabled servers (SOTF API, MPD, DLNA), and blocks until a shutdown
+/// signal (SIGINT/SIGTERM) is received.
 pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
-    let config = crate::config::load_server_config()?;
+    let mut config = crate::config::load_server_config()?;
+    if ensure_server_mode_api_config(&mut config) {
+        match crate::config::save_server_config(&config) {
+            Ok(()) => {
+                log::info!("[server] Enabled SOTF API defaults in server config");
+                eprintln!(
+                    "SOTF API enabled on {}:{}",
+                    config.api.bind_address, config.api.port
+                );
+            }
+            Err(err) => {
+                log::warn!("[server] Failed to persist SOTF API defaults: {}", err);
+                eprintln!("Warning: could not save SOTF API defaults: {err}");
+            }
+        }
+    }
     let config_dir =
         crate::config::get_app_config_dir().ok_or("Could not determine config directory")?;
     let trusted_clients = sotf_tls::TrustedClientStore::load(&config_dir)?;
@@ -2521,6 +2567,30 @@ mod tests {
     }
 
     #[test]
+    fn server_mode_api_defaults_enable_api_and_generate_token() {
+        let mut config = ServerConfig::default();
+
+        assert!(ensure_server_mode_api_config(&mut config));
+
+        assert!(config.api.enabled);
+        let token = config.api.auth_token.as_deref().unwrap();
+        assert_eq!(token.len(), 64);
+        assert!(token.chars().all(|ch| ch.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn server_mode_api_defaults_preserve_existing_enabled_token() {
+        let mut config = ServerConfig::default();
+        config.api.enabled = true;
+        config.api.auth_token = Some("existing-token".to_string());
+
+        assert!(!ensure_server_mode_api_config(&mut config));
+
+        assert!(config.api.enabled);
+        assert_eq!(config.api.auth_token.as_deref(), Some("existing-token"));
+    }
+
+    #[test]
     fn dlna_server_url_includes_configured_port() {
         let url = dlna_server_url(8200);
 
@@ -2533,6 +2603,13 @@ mod tests {
         let url = dlna_server_url_for_bind("192.168.1.42", 8200);
 
         assert_eq!(url, "http://192.168.1.42:8200/");
+    }
+
+    #[test]
+    fn sotf_api_server_url_includes_api_path() {
+        let url = sotf_api_server_url_for_bind("192.168.1.42", 8732);
+
+        assert_eq!(url, "http://192.168.1.42:8732/api/v1");
     }
 
     #[test]

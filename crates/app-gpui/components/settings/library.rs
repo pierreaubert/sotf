@@ -672,7 +672,7 @@ impl PlayerView {
                                             .on_click_event(cx.listener(
                                                 |view, _: &ClickEvent, _window, cx| {
                                                     view.state.update(cx, |state, _cx| {
-                                                        state.app.clean_database();
+                                                        state.app.clear_local_library();
                                                     });
                                                     cx.notify();
                                                 },

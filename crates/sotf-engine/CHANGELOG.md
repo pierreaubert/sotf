@@ -1,3 +1,14 @@
+# 1.0.29 (unreleased)
+
+## Playback device selection
+
+- Explicitly selected virtual/loopback output devices are now honored instead
+  of rejected before device lookup. Virtual-output detection remains a default
+  selection guard, but selecting the SOTF virtual output deliberately no longer
+  blocks playback.
+- The virtual-output diagnostic is now a debug hint rather than a user-visible
+  error when an explicit output selection reaches the playback sink.
+
 # 1.0.28
 
 ## Engine review regression hardening

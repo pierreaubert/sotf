@@ -524,6 +524,7 @@ pub struct RemoteState {
     pub discovery_error: Option<String>,
     pub manual_server_name: String,
     pub manual_api_base_url: String,
+    pub manual_auth_token: String,
     pub server_probe_receiver: Option<std::sync::mpsc::Receiver<(String, RemoteServerProbeStatus)>>,
     pub discovery_receiver: Option<
         std::sync::mpsc::Receiver<
@@ -792,16 +793,29 @@ impl RemoteState {
         self.manual_api_base_url = api_base_url.into();
     }
 
+    pub fn set_manual_auth_token(&mut self, token: impl Into<String>) {
+        self.manual_auth_token = token.into();
+    }
+
     pub fn add_manual_server_from_inputs(&mut self) -> Result<String, String> {
         let name = self.manual_server_name.trim().to_string();
-        let api_base_url = self.manual_api_base_url.trim().to_string();
+        let mut api_base_url = self.manual_api_base_url.trim().to_string();
+        let auth_token = self.manual_auth_token.trim().to_string();
         if api_base_url.is_empty() {
             return Err("remote server URL must not be empty".to_string());
         }
+        if auth_token.is_empty() {
+            return Err("remote API token must not be empty".to_string());
+        }
+        if !api_base_url.starts_with("http://") && !api_base_url.starts_with("https://") {
+            api_base_url = format!("http://{api_base_url}");
+        }
 
         let id = self.add_manual_server_record(name, api_base_url)?;
+        self.server_tokens.insert(id.clone(), auth_token);
         self.manual_server_name.clear();
         self.manual_api_base_url.clear();
+        self.manual_auth_token.clear();
         Ok(id)
     }
 
@@ -1870,6 +1884,7 @@ impl App {
         match sotf_audio_player::config::load_remote_server_store() {
             Ok(store) => {
                 self.remote.server_store = store;
+                self.load_persisted_remote_server_tokens();
             }
             Err(e) => {
                 log::warn!("Could not load remote server store: {e}");

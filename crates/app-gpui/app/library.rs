@@ -191,6 +191,27 @@ impl App {
         }
     }
 
+    /// Clear all local album/track data from the app database.
+    pub fn clear_local_library(&mut self) {
+        match self.library_state.clear_library_content() {
+            Ok(removed) => {
+                self.selected_directory_index = 0;
+                self.needs_rescan = false;
+                self.install_external_plugin_runtime_sandbox();
+                self.ui_state.toast_message = Some(ToastMessage::success(format!(
+                    "Cleared local library data ({} tracks removed)",
+                    removed
+                )));
+            }
+            Err(e) => {
+                self.ui_state.toast_message = Some(ToastMessage::error(format!(
+                    "Failed to clear local library data: {}",
+                    e
+                )));
+            }
+        }
+    }
+
     /// Remove the selected directory from the library
     pub fn remove_selected_directory(&mut self) {
         let tree_items = self.get_directory_tree_items();

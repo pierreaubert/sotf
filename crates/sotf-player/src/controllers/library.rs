@@ -768,4 +768,12 @@ impl LibraryController {
         }
         Ok(removed)
     }
+
+    /// Clear all local library albums/tracks from memory and persistent storage.
+    pub fn clear_library_content(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        let removed = self.library.clear_library_content()?;
+        self.selected_index = 0;
+        self.invalidate_cache();
+        Ok(removed)
+    }
 }

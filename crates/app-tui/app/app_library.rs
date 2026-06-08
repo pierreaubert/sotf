@@ -41,9 +41,17 @@ impl App {
         // Output devices
         if let Some(output_devices) = devices_map.get("output") {
             self.output_devices = output_devices.clone();
-            if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
-                self.selected_output_device_index = default_idx;
-                self.current_output_device_name = output_devices[default_idx].name.clone().into();
+            if !self.output_devices.is_empty() {
+                self.selected_output_device_index = self
+                    .output_devices
+                    .iter()
+                    .position(|d| d.is_default)
+                    .unwrap_or(0);
+                self.current_output_device_name = self.output_devices
+                    [self.selected_output_device_index]
+                    .name
+                    .clone()
+                    .into();
             }
 
             // Recording playback devices (reuse same output list)
@@ -90,10 +98,17 @@ impl App {
             && let Some(output_devices) = devices_map.get("output")
         {
             self.output_devices = output_devices.clone();
-            // Find the default device
-            if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
-                self.selected_output_device_index = default_idx;
-                self.current_output_device_name = output_devices[default_idx].name.clone().into();
+            if !self.output_devices.is_empty() {
+                self.selected_output_device_index = self
+                    .output_devices
+                    .iter()
+                    .position(|d| d.is_default)
+                    .unwrap_or(0);
+                self.current_output_device_name = self.output_devices
+                    [self.selected_output_device_index]
+                    .name
+                    .clone()
+                    .into();
             }
         }
     }

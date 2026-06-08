@@ -1250,6 +1250,21 @@ impl MusicLibrary {
         }
     }
 
+    /// Clear all persisted library albums/tracks and reset the in-memory view.
+    pub fn clear_library_content(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        let removed = if let Some(db) = &mut self.db {
+            db.clear_library_content()?
+        } else {
+            self.albums.iter().map(|album| album.tracks.len()).sum()
+        };
+
+        self.albums.clear();
+        self.directories.clear();
+        self.dir_stats_cache.clear();
+
+        Ok(removed)
+    }
+
     fn scan_directory(
         &self,
         dir: &Path,

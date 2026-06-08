@@ -124,6 +124,37 @@ fn test_save_and_load_empty_library() {
 }
 
 #[test]
+fn test_clear_library_content_removes_local_rows_but_keeps_sources() {
+    let (_temp_dir, db_path) = fixtures::temp_database();
+    let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();
+    let demo_file = fixtures::get_demo_file("classical.wav");
+    let album = test_album(
+        "Stale Local Album",
+        Some(2024),
+        vec![test_track(demo_file, "Stale Track", "Test Artist")],
+    );
+
+    db.save_albums(&[album]).expect("Failed to save album");
+    db.record_scan(&PathBuf::from("/music/stale"), 1, 1)
+        .expect("Failed to record scan");
+
+    let removed = db
+        .clear_library_content()
+        .expect("Failed to clear library content");
+
+    assert_eq!(removed, 1);
+    assert!(db.load_library().unwrap().is_empty());
+    assert!(db.get_scanned_directories().unwrap().is_empty());
+    assert!(
+        db.get_library_sources()
+            .unwrap()
+            .iter()
+            .any(|(_, source_id, _, _, _, _)| source_id == "local"),
+        "source registry should be preserved"
+    );
+}
+
+#[test]
 fn test_save_and_load_single_album() {
     let (_temp_dir, db_path) = fixtures::temp_database();
     let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();

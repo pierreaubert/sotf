@@ -34,17 +34,11 @@ pub(super) fn handle_server_keys(app: &mut App, key: KeyEvent) -> Option<PlayerC
             app.input_mode = InputMode::Configure;
         }
         KeyCode::Left | KeyCode::Right => {
-            state.selected_section = match state.selected_section {
-                ServerSection::Mpd => ServerSection::Dlna,
-                ServerSection::Dlna => ServerSection::Mpd,
-            };
+            state.selected_section = next_section(state.selected_section, key.code);
             state.selected_field = 0;
         }
         KeyCode::Tab => {
-            state.selected_section = match state.selected_section {
-                ServerSection::Mpd => ServerSection::Dlna,
-                ServerSection::Dlna => ServerSection::Mpd,
-            };
+            state.selected_section = next_section(state.selected_section, KeyCode::Right);
             state.selected_field = 0;
         }
         KeyCode::Up if state.selected_field > 0 => {
@@ -116,11 +110,57 @@ pub(super) fn handle_server_keys(app: &mut App, key: KeyEvent) -> Option<PlayerC
                     }
                     _ => {}
                 },
+                ServerSection::Api => match state.selected_field {
+                    0 => {
+                        state.config.api.enabled = !state.config.api.enabled;
+                        if state.config.api.enabled
+                            && state
+                                .config
+                                .api
+                                .auth_token
+                                .as_deref()
+                                .unwrap_or_default()
+                                .is_empty()
+                        {
+                            state.config.api.auth_token =
+                                Some(sotf_audio_player::server::generate_api_auth_token());
+                        }
+                        save_server_config(app);
+                    }
+                    1 => {
+                        state.edit_buffer = state.config.api.bind_address.clone();
+                        state.editing_value = true;
+                    }
+                    2 => {
+                        state.edit_buffer = state.config.api.port.to_string();
+                        state.editing_value = true;
+                    }
+                    3 => {
+                        state.edit_buffer = state.config.api.friendly_name.clone();
+                        state.editing_value = true;
+                    }
+                    4 => {
+                        state.edit_buffer = state.config.api.auth_token.clone().unwrap_or_default();
+                        state.editing_value = true;
+                    }
+                    _ => {}
+                },
             }
         }
         _ => {}
     }
     None
+}
+
+fn next_section(section: ServerSection, key: KeyCode) -> ServerSection {
+    match (section, key) {
+        (ServerSection::Mpd, KeyCode::Left) => ServerSection::Api,
+        (ServerSection::Mpd, _) => ServerSection::Dlna,
+        (ServerSection::Dlna, KeyCode::Left) => ServerSection::Mpd,
+        (ServerSection::Dlna, _) => ServerSection::Api,
+        (ServerSection::Api, KeyCode::Left) => ServerSection::Dlna,
+        (ServerSection::Api, _) => ServerSection::Mpd,
+    }
 }
 
 fn apply_edit(state: &mut crate::app::ServersTuiState) {
@@ -152,6 +192,23 @@ fn apply_edit(state: &mut crate::app::ServersTuiState) {
             }
             _ => {}
         },
+        ServerSection::Api => match state.selected_field {
+            1 => state.config.api.bind_address = value,
+            2 => {
+                if let Ok(p) = value.parse() {
+                    state.config.api.port = p;
+                }
+            }
+            3 => state.config.api.friendly_name = value,
+            4 => {
+                state.config.api.auth_token = if value.trim().is_empty() {
+                    None
+                } else {
+                    Some(value)
+                };
+            }
+            _ => {}
+        },
     }
 }
 
@@ -159,6 +216,7 @@ fn field_count(section: ServerSection) -> usize {
     match section {
         ServerSection::Mpd => 7, // enabled, bind, port, tls, auth, password, fingerprints
         ServerSection::Dlna => 4, // enabled, bind, name, port
+        ServerSection::Api => 5, // enabled, bind, port, name, token
     }
 }
 
@@ -249,5 +307,63 @@ mod tests {
         apply_edit(&mut state);
 
         assert_eq!(state.config.dlna.bind_address, "192.168.1.42");
+    }
+
+    #[test]
+    fn server_section_navigation_cycles_through_api_mpd_and_dlna() {
+        assert_eq!(
+            next_section(ServerSection::Api, KeyCode::Right),
+            ServerSection::Mpd
+        );
+        assert_eq!(
+            next_section(ServerSection::Mpd, KeyCode::Right),
+            ServerSection::Dlna
+        );
+        assert_eq!(
+            next_section(ServerSection::Dlna, KeyCode::Right),
+            ServerSection::Api
+        );
+        assert_eq!(
+            next_section(ServerSection::Api, KeyCode::Left),
+            ServerSection::Dlna
+        );
+        assert_eq!(
+            next_section(ServerSection::Dlna, KeyCode::Left),
+            ServerSection::Mpd
+        );
+        assert_eq!(
+            next_section(ServerSection::Mpd, KeyCode::Left),
+            ServerSection::Api
+        );
+    }
+
+    #[test]
+    fn api_edits_update_config() {
+        let mut state = ServersTuiState::default();
+        state.selected_section = ServerSection::Api;
+
+        state.selected_field = 1;
+        state.edit_buffer = "192.168.1.42".to_string();
+        apply_edit(&mut state);
+        assert_eq!(state.config.api.bind_address, "192.168.1.42");
+
+        state.selected_field = 2;
+        state.edit_buffer = "9876".to_string();
+        apply_edit(&mut state);
+        assert_eq!(state.config.api.port, 9876);
+
+        state.selected_field = 3;
+        state.edit_buffer = "Listening Room".to_string();
+        apply_edit(&mut state);
+        assert_eq!(state.config.api.friendly_name, "Listening Room");
+
+        state.selected_field = 4;
+        state.edit_buffer = "secret-token".to_string();
+        apply_edit(&mut state);
+        assert_eq!(state.config.api.auth_token.as_deref(), Some("secret-token"));
+
+        state.edit_buffer = "   ".to_string();
+        apply_edit(&mut state);
+        assert_eq!(state.config.api.auth_token, None);
     }
 }

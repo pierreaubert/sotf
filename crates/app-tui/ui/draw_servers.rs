@@ -22,14 +22,97 @@ pub(crate) fn draw_servers_screen(f: &mut Frame, area: Rect, app: &App) {
     let help = Paragraph::new(help_text).style(Style::default().fg(app.theme.fg_secondary));
     f.render_widget(help, chunks[0]);
 
-    // Split content into two columns: MPD | DLNA
+    // Split content into three columns: API | MPD | DLNA
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([
+            Constraint::Percentage(34),
+            Constraint::Percentage(33),
+            Constraint::Percentage(33),
+        ])
         .split(chunks[1]);
 
-    draw_mpd_section(f, cols[0], app);
-    draw_dlna_section(f, cols[1], app);
+    draw_api_section(f, cols[0], app);
+    draw_mpd_section(f, cols[1], app);
+    draw_dlna_section(f, cols[2], app);
+}
+
+fn draw_api_section(f: &mut Frame, area: Rect, app: &App) {
+    let state = &app.server_state;
+    let api = &state.config.api;
+    let is_active = state.selected_section == ServerSection::Api;
+    let border_type = if is_active {
+        BorderType::Double
+    } else {
+        BorderType::Rounded
+    };
+    let border_color = if is_active {
+        app.theme.accent_primary
+    } else {
+        app.theme.border_color
+    };
+
+    let token_summary = api
+        .auth_token
+        .as_deref()
+        .filter(|token| !token.trim().is_empty())
+        .map(|token| format!("{}...", token.chars().take(8).collect::<String>()))
+        .unwrap_or_else(|| "(auto on enable)".to_string());
+
+    let fields: Vec<(&str, String, bool)> = vec![
+        (
+            "Enabled",
+            if api.enabled {
+                "YES".to_string()
+            } else {
+                "no".to_string()
+            },
+            true,
+        ),
+        ("Bind Address", api.bind_address.clone(), false),
+        ("Port", api.port.to_string(), false),
+        ("Friendly Name", api.friendly_name.clone(), false),
+        ("Auth Token", token_summary, false),
+    ];
+
+    let mut lines = render_field_lines(
+        &fields,
+        app,
+        is_active,
+        state.selected_field,
+        state.editing_value,
+        &state.edit_buffer,
+    );
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        format!(
+            "  URL: {}",
+            sotf_audio_player::server::sotf_api_server_url_for_bind(&api.bind_address, api.port)
+        ),
+        Style::default()
+            .fg(app.theme.accent_primary)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        "  Remote apps use this API port.",
+        Style::default().fg(app.theme.fg_secondary),
+    )));
+    lines.push(Line::from(Span::styled(
+        "  MPD clients use the MPD port.",
+        Style::default().fg(app.theme.fg_secondary),
+    )));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(border_type)
+                .border_style(Style::default().fg(border_color))
+                .title(" SOTF API "),
+        )
+        .wrap(Wrap { trim: false });
+    f.render_widget(para, area);
 }
 
 fn draw_mpd_section(f: &mut Frame, area: Rect, app: &App) {

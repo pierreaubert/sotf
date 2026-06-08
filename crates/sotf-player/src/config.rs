@@ -564,6 +564,11 @@ pub fn get_remote_servers_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("remote_servers.json"))
 }
 
+/// Get the path to the internal native remote token store.
+pub fn get_remote_server_tokens_path() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| dir.join("remote_server_tokens.json"))
+}
+
 /// Load server configuration from disk.
 ///
 /// # Errors
@@ -603,7 +608,7 @@ pub fn save_server_config(
 /// Load native remote server records from disk.
 ///
 /// Bearer tokens are intentionally not stored in this file. Use the
-/// platform credential store keyed by `SotfRemoteServer::token_secret_key`.
+/// credential store keyed by `SotfRemoteServer::token_secret_key`.
 pub fn load_remote_server_store()
 -> Result<crate::sotf_remote::SotfRemoteServerStore, Box<dyn std::error::Error>> {
     if let Some(path) = get_remote_servers_path() {
@@ -621,12 +626,61 @@ pub fn load_remote_server_store()
 /// Save native remote server records to disk.
 ///
 /// Bearer tokens are intentionally not stored in this file. Use the
-/// platform credential store keyed by `SotfRemoteServer::token_secret_key`.
+/// credential store keyed by `SotfRemoteServer::token_secret_key`.
 pub fn save_remote_server_store(
     store: &crate::sotf_remote::SotfRemoteServerStore,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = get_remote_servers_path() {
         crate::security::validate_write_path(&path)?;
+        Ok(store.save_to_path(&path)?)
+    } else {
+        Err("Could not determine config directory".into())
+    }
+}
+
+/// Load a bearer token from the internal native remote token store.
+///
+/// This fallback is used on platforms without a system credential store.
+pub fn load_remote_server_token(key: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    if let Some(path) = get_remote_server_tokens_path() {
+        if path.exists() {
+            crate::security::validate_config_read_path(&path)?;
+        }
+        let store = crate::sotf_remote::SotfRemoteTokenStore::load_from_path(&path)?;
+        Ok(store.get(key).map(ToString::to_string))
+    } else {
+        Err("Could not determine config directory".into())
+    }
+}
+
+/// Save a bearer token to the internal native remote token store.
+///
+/// This fallback is used on platforms without a system credential store.
+pub fn save_remote_server_token(key: &str, token: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = get_remote_server_tokens_path() {
+        if path.exists() {
+            crate::security::validate_config_read_path(&path)?;
+        }
+        crate::security::validate_write_path(&path)?;
+        let mut store = crate::sotf_remote::SotfRemoteTokenStore::load_from_path(&path)?;
+        store.set(key, token);
+        Ok(store.save_to_path(&path)?)
+    } else {
+        Err("Could not determine config directory".into())
+    }
+}
+
+/// Delete a bearer token from the internal native remote token store.
+///
+/// This fallback is used on platforms without a system credential store.
+pub fn delete_remote_server_token(key: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = get_remote_server_tokens_path() {
+        if path.exists() {
+            crate::security::validate_config_read_path(&path)?;
+        }
+        crate::security::validate_write_path(&path)?;
+        let mut store = crate::sotf_remote::SotfRemoteTokenStore::load_from_path(&path)?;
+        store.remove(key);
         Ok(store.save_to_path(&path)?)
     } else {
         Err("Could not determine config directory".into())
@@ -716,6 +770,11 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
     }
 
+    fn remote_token_store_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
     fn plugin_sandbox_identity(id: &str) -> sotf_plugins::PluginSandboxIdentity {
         sotf_plugins::PluginSandboxIdentity {
             plugin_id: id.into(),
@@ -784,6 +843,38 @@ mod tests {
         if let Some(path) = path {
             assert!(path.to_string_lossy().ends_with("remote_servers.json"));
         }
+    }
+
+    #[test]
+    fn test_remote_server_tokens_path() {
+        let path = get_remote_server_tokens_path();
+        assert!(path.is_some());
+
+        if let Some(path) = path {
+            assert!(
+                path.to_string_lossy()
+                    .ends_with("remote_server_tokens.json")
+            );
+        }
+    }
+
+    #[test]
+    fn test_remote_server_token_internal_store_round_trip() {
+        let _guard = remote_token_store_test_lock();
+        let _config_dir = test_config_dir();
+        let key = "org.spinorama.sotf.remote.test.bearer-token";
+
+        delete_remote_server_token(key).unwrap();
+        assert_eq!(load_remote_server_token(key).unwrap(), None);
+
+        save_remote_server_token(key, " very-secret-token ").unwrap();
+        assert_eq!(
+            load_remote_server_token(key).unwrap().as_deref(),
+            Some("very-secret-token")
+        );
+
+        delete_remote_server_token(key).unwrap();
+        assert_eq!(load_remote_server_token(key).unwrap(), None);
     }
 
     #[test]

@@ -1,5 +1,21 @@
 # 0.6.6 (unreleased)
 
+## Remote SOTF connections and local-library cleanup
+
+- Remote SOTF Players now live under Settings > Connections, accept API URLs
+  with or without an explicit `http://` scheme, and require the SOTF API bearer
+  token shown by the server instead of trying to connect to MPD credentials.
+- Remote server API tokens are no longer only in memory: macOS stores them in
+  Keychain, iOS uses the existing Swift Keychain bridge, and Linux/Windows use
+  the internal remote-token store. Selecting a saved server reloads the token
+  before starting the SSE event stream, fixing reconnects after app restart.
+- Removing a remote server or clearing its token now deletes the persisted
+  credential as well as the in-memory cache; `remote_servers.json` remains
+  non-secret metadata only.
+- The Local Library settings page is explicitly labelled local-only, scrolls on
+  iPad-sized layouts, and includes a clear-local-library action for removing
+  stale local album/track rows without deleting saved remote server records.
+
 ## SOTF API pairing and trust controls
 
 - The Servers settings pairing toggle now calls the running authenticated SOTF

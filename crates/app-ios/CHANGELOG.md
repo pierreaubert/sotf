@@ -1,3 +1,14 @@
+# 0.5.3 (unreleased)
+
+## Remote SOTF connections
+
+- Remote SOTF API bearer tokens are now persisted through the iOS Keychain
+  bridge, so saved servers can reconnect after app restart without losing the
+  SSE event stream token.
+- The Connections settings flow now treats the SOTF API URL and bearer token as
+  separate from MPD port 6600 credentials, matching the server-mode setup shown
+  by the TUI.
+
 # 0.5.2
 
 ## New

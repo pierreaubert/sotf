@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Configure > Servers now includes a SOTF API section alongside MPD and DLNA,
+  with editable enabled state, bind address, port, friendly name, auth token,
+  and the URL remote SOTF apps should use.
+- Enabling the SOTF API from the TUI generates an auth token when none is
+  configured, matching server-mode startup behavior.
+
+### Changed
+- Server configuration navigation now cycles through API, MPD, and DLNA
+  sections, and the screen opens on the SOTF API section so the remote-app
+  connection details are immediately visible.
+- Output-device refresh and selection now tolerate output lists without a
+  default device and avoid emitting a device-change command when nothing is
+  selected.
+
 ## [0.5.206] - 2025-05-13
 
 ### Added

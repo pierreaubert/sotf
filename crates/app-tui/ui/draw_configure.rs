@@ -192,7 +192,7 @@ pub(crate) fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
         (
             ConfigureSubScreen::Servers,
             "7",
-            "Servers            – MPD and DLNA server settings",
+            "Servers            – SOTF API, MPD and DLNA settings",
         ),
     ];
 

@@ -253,10 +253,10 @@ fn select_playback_device(
         );
 
         if is_virtual_output_device_name(device_identifier) && !allow_virtual_output {
-            return Err(format!(
-                "Selected output device '{}' is virtual/loopback and cannot be used as speaker output",
+            log::info!(
+                "[Playback Thread] Explicit virtual output device '{}' requested; honoring selection",
                 device_identifier
-            ));
+            );
         }
 
         match crate::devices::find_device(host, device_identifier, false) {
@@ -865,10 +865,11 @@ fn run_playback_thread(
     // Record stream start time for rate measurement
     let stream_start_time = std::time::Instant::now();
 
-    // Warn if the device name looks like a virtual device (unless explicitly allowed)
+    // Explicit output selections are honored above. This diagnostic is only a
+    // hint for cases where a virtual-looking device still reaches this sink.
     if is_virtual_output_device_name(&device_name) && !allow_virtual_output {
-        log::error!(
-            "[Playback Thread] WARNING: Output device '{}' appears to be a virtual device! This will cause a feedback loop.",
+        log::debug!(
+            "[Playback Thread] Output device '{}' appears to be virtual/loopback.",
             device_name
         );
     }
@@ -2405,14 +2406,15 @@ mod tests {
     }
 
     #[test]
-    fn explicit_virtual_output_device_is_rejected_when_not_allowed() {
+    fn explicit_virtual_output_device_is_honored_when_selected() {
         let source = include_str!("playback_thread.rs");
 
         assert!(
             source.contains(
                 "is_virtual_output_device_name(device_identifier) && !allow_virtual_output"
-            ) && source.contains("is virtual/loopback and cannot be used as speaker output"),
-            "explicit virtual output selection must be rejected before device lookup"
+            ) && source.contains("Explicit virtual output device")
+                && source.contains("honoring selection"),
+            "explicit virtual output selection should be honored; only implicit defaults are guarded"
         );
     }
 

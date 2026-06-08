@@ -1134,7 +1134,7 @@ impl Default for ServersTuiState {
     fn default() -> Self {
         Self {
             config: ServerConfig::default(),
-            selected_section: ServerSection::Mpd,
+            selected_section: ServerSection::Api,
             selected_field: 0,
             editing_value: false,
             edit_buffer: String::new(),
@@ -1156,6 +1156,7 @@ impl ServersTuiState {
 pub enum ServerSection {
     Mpd,
     Dlna,
+    Api,
 }
 
 /// Source type names for the "Add Source" selection.

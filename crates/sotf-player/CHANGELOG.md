@@ -1,5 +1,28 @@
 # 0.5.123 (unreleased)
 
+## Remote connection credentials and server-mode defaults
+
+- Added a shared remote-token store for platforms without system Keychain
+  support. Linux and Windows clients persist SOTF remote API bearer tokens in
+  `remote_server_tokens.json`, keyed by `SotfRemoteServer::token_secret_key`,
+  while `remote_servers.json` remains non-secret server metadata.
+- Server mode now ensures the SOTF HTTP API is enabled and has an auth token
+  when launched with `--server`, then persists those defaults so remote apps can
+  connect to the API port without a separate manual bootstrap step.
+- Added helpers for generating API auth tokens and formatting the advertised
+  SOTF API URL for a configured bind address, matching the DLNA bind-address
+  display behavior.
+
+## Local library and audio-device handling
+
+- Added shared helpers to clear persisted local library albums/tracks,
+  playlists, FTS rows, and scan history while preserving source/connection
+  records. GPUI uses this to remove stale local data when operating as a remote
+  client.
+- Expanded virtual/loopback device detection so SOTF virtual outputs, generic
+  virtual devices, ZoomAudio, Background Music, Audio Bridge, and null outputs
+  are skipped as automatic defaults, while still allowing explicit selection.
+
 ## Native SOTF remote pairing and SSE hardening
 
 - SOTF API pairing now returns the command response shape expected by

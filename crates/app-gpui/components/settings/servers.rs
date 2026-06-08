@@ -8,6 +8,7 @@ use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Divider, HStack, Input, InputSize, QrCode, StackSpacing,
     Text, TextSize, TextWeight, VStack,
 };
+use std::rc::Rc;
 
 impl PlayerView {
     /// Render server settings content
@@ -30,22 +31,24 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                    .child("Server Settings"),
+                    .child("Connections"),
             )
             .child(
                 div()
                     .text_size(d.text_xs)
                     .text_color(theme.text_secondary)
-                    .child("Configure servers that expose your library to other players. MPD uses TLS for security. DLNA uses plain HTTP for device compatibility."),
+                    .child("Connect to other SOTF players and configure how this device is shared on your network."),
             )
+            .child(settings_section_label("Remote Devices", &theme, &d))
+            // Native SOTF remote control targets
+            .child(self.render_remote_sotf_section(&theme, &d, cx))
+            .child(settings_section_label("This Device as Server", &theme, &d))
             // MPD Server section
             .child(self.render_mpd_section(&server_config, &theme, &translations, &d, cx))
             // DLNA Server section
             .child(self.render_dlna_section(&server_config, &theme, &translations, &d, cx))
             // Pairing & mTLS trust section
             .child(self.render_pairing_section(&theme, &d, cx))
-            // Native SOTF remote control targets
-            .child(self.render_remote_sotf_section(&theme, &d, cx))
     }
 
     fn render_mpd_section(
@@ -650,6 +653,8 @@ impl PlayerView {
                 state.app.remote.discovery_error.clone(),
                 state.app.remote.manual_server_name.clone(),
                 state.app.remote.manual_api_base_url.clone(),
+                state.app.remote.manual_auth_token.clone(),
+                state.app.remote.server_tokens.clone(),
                 state.app.remote.server_probe_statuses.clone(),
             )
         };
@@ -660,12 +665,15 @@ impl PlayerView {
             discovery_error,
             manual_name,
             manual_url,
+            manual_token,
+            server_tokens,
             probe_statuses,
         ) = remote;
         let selected_id = store.selected_server_id.clone();
         let server_count = store.servers.len();
         let state_for_name = self.state.clone();
         let state_for_url = self.state.clone();
+        let state_for_token = self.state.clone();
 
         let mut section = div()
             .flex()
@@ -721,6 +729,18 @@ impl PlayerView {
                         "{server_count} saved, {discovered_count} found in the latest LAN scan."
                     )),
             )
+            .child(
+                div()
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_muted)
+                    .child("Use the SOTF API address, for example http://192.168.1.102:8732. This is separate from MPD port 6600."),
+            )
+            .child(
+                div()
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_muted)
+                    .child("Enter the API auth token shown in the server's SOTF API settings. This token is not saved in remote_servers.json."),
+            )
             .when(discovery_error.is_some(), {
                 let theme = theme.clone();
                 move |el| {
@@ -766,6 +786,20 @@ impl PlayerView {
                             });
                         },
                     ))
+                    .child(server_editable_field(
+                        "remote-sotf-token",
+                        "API Token",
+                        &manual_token,
+                        "Paste SOTF API token",
+                        theme,
+                        d,
+                        move |val, _window, cx| {
+                            let value = val.to_string();
+                            state_for_token.update(cx, |state, _cx| {
+                                state.app.update_manual_remote_server_token(value);
+                            });
+                        },
+                    ))
                     .child(
                         div().flex().justify_end().child(
                             Button::new("add-manual-sotf-remote", "Add Server")
@@ -775,11 +809,14 @@ impl PlayerView {
                                 .on_click_event(cx.listener(
                                     move |view, _: &ClickEvent, _window, cx| {
                                         view.state.update(cx, |state, _cx| {
-                                            if let Err(err) =
-                                                state.app.add_manual_remote_server_from_inputs()
-                                            {
-                                                state.app.ui_state.toast_message =
-                                                    Some(crate::app::ToastMessage::error(err));
+                                            match state.app.add_manual_remote_server_from_inputs() {
+                                                Ok(server_id) => {
+                                                    state.app.start_remote_server_probe(&server_id);
+                                                }
+                                                Err(err) => {
+                                                    state.app.ui_state.toast_message =
+                                                        Some(crate::app::ToastMessage::error(err));
+                                                }
                                             }
                                         });
                                         cx.notify();
@@ -804,9 +841,13 @@ impl PlayerView {
             for server in store.servers {
                 let is_selected = selected_id.as_deref() == Some(server.id.as_str());
                 let probe_status = probe_statuses.get(&server.id).cloned();
+                let has_token = server_tokens
+                    .get(&server.id)
+                    .is_some_and(|token| !token.trim().is_empty());
                 section = section.child(self.render_remote_sotf_server_row(
                     server,
                     is_selected,
+                    has_token,
                     probe_status,
                     theme,
                     d,
@@ -822,6 +863,7 @@ impl PlayerView {
         &self,
         server: sotf_audio_player::SotfRemoteServer,
         is_selected: bool,
+        has_token: bool,
         probe_status: Option<crate::app::state::app::RemoteServerProbeStatus>,
         theme: &crate::app::theme::Theme,
         d: &Ds,
@@ -911,7 +953,14 @@ impl PlayerView {
                         div()
                             .text_size(d.text_xs)
                             .text_color(theme.text_muted)
-                            .child(format!("Auth: {auth}")),
+                            .child(format!(
+                                "Auth: {auth} ({})",
+                                if has_token {
+                                    "token cached"
+                                } else {
+                                    "token missing"
+                                }
+                            )),
                     )
                     .child(
                         div()
@@ -981,6 +1030,19 @@ impl PlayerView {
     }
 }
 
+fn settings_section_label(
+    label: &'static str,
+    theme: &crate::app::theme::Theme,
+    d: &Ds,
+) -> impl IntoElement {
+    div()
+        .pt(d.pad_y)
+        .text_size(d.text_xs)
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(theme.text_secondary)
+        .child(label)
+}
+
 fn server_editable_field(
     id: &str,
     label: &str,
@@ -990,6 +1052,10 @@ fn server_editable_field(
     d: &Ds,
     on_change: impl Fn(&str, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
+    let on_change = Rc::new(on_change);
+    let on_confirm = on_change.clone();
+    let on_text_change = on_change.clone();
+
     div()
         .flex()
         .items_center()
@@ -1007,7 +1073,12 @@ fn server_editable_field(
                     .value(SharedString::from(value.to_string()))
                     .placeholder(SharedString::from(placeholder.to_string()))
                     .size(InputSize::Sm)
-                    .on_change(on_change),
+                    .on_text_change(move |value, window, cx| {
+                        on_text_change(&value, window, cx);
+                    })
+                    .on_change(move |value, window, cx| {
+                        on_confirm(value, window, cx);
+                    }),
             ),
         )
 }

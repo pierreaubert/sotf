@@ -177,7 +177,15 @@ impl App {
         if !self.save_remote_server_store("save manual SOTF server") {
             return Err("failed to save remote server store".to_string());
         }
-        self.ui_state.toast_message = Some(ToastMessage::success("SOTF server saved."));
+        let token_persisted = self.save_cached_remote_server_token(&id);
+        let _ = self.select_remote_server(&id);
+        self.ui_state.toast_message = if token_persisted {
+            Some(ToastMessage::success("SOTF server saved."))
+        } else {
+            Some(ToastMessage::warning(
+                "SOTF server saved, but the API token could not be stored in Keychain.",
+            ))
+        };
         Ok(id)
     }
 
@@ -187,6 +195,10 @@ impl App {
 
     pub fn update_manual_remote_server_url(&mut self, api_base_url: impl Into<String>) {
         self.remote.set_manual_api_base_url(api_base_url);
+    }
+
+    pub fn update_manual_remote_server_token(&mut self, token: impl Into<String>) {
+        self.remote.set_manual_auth_token(token);
     }
 
     pub fn select_remote_server(&mut self, server_id: &str) -> bool {
@@ -205,7 +217,19 @@ impl App {
             queue: true,
             visible_album_page: true,
         };
-        self.start_remote_event_stream();
+        self.load_persisted_remote_server_token(server_id);
+        if self
+            .remote
+            .server_tokens
+            .get(server_id)
+            .is_some_and(|token| !token.trim().is_empty())
+        {
+            self.start_remote_event_stream();
+        } else {
+            self.ui_state.toast_message = Some(ToastMessage::warning(
+                "SOTF API token required. Enter the token from the server settings.",
+            ));
+        }
         self.save_remote_server_store("save selected SOTF server")
     }
 
@@ -213,6 +237,9 @@ impl App {
         let removed = self.remote.server_store.remove(server_id);
         if removed.is_none() {
             return false;
+        }
+        if let Some(server) = removed.as_ref() {
+            delete_persisted_remote_server_token(server);
         }
         self.remote.server_probe_statuses.remove(server_id);
         self.remote.server_tokens.remove(server_id);
@@ -229,9 +256,16 @@ impl App {
         server_id: impl Into<String>,
         token: impl Into<String>,
     ) {
-        self.remote
-            .server_tokens
-            .insert(server_id.into(), token.into());
+        let server_id = server_id.into();
+        let token = token.into();
+        let token = token.trim();
+        if token.is_empty() {
+            self.remote.server_tokens.remove(&server_id);
+        } else {
+            self.remote
+                .server_tokens
+                .insert(server_id, token.to_string());
+        }
         self.remote.reset_remote_cache_updater();
     }
 
@@ -243,6 +277,15 @@ impl App {
 
     /// Remove the cached bearer token for a remote server.
     pub fn clear_remote_server_token(&mut self, server_id: &str) {
+        if let Some(server) = self
+            .remote
+            .server_store
+            .servers
+            .iter()
+            .find(|server| server.id == server_id)
+        {
+            delete_persisted_remote_server_token(server);
+        }
         self.remote.server_tokens.remove(server_id);
     }
 
@@ -530,6 +573,375 @@ impl App {
                 false
             }
         }
+    }
+
+    /// Load platform-persisted tokens for all saved remote servers.
+    pub fn load_persisted_remote_server_tokens(&mut self) {
+        let servers = self.remote.server_store.servers.clone();
+        for server in servers {
+            if let Some(token) = load_persisted_remote_server_token(&server) {
+                self.remote.server_tokens.insert(server.id, token);
+            }
+        }
+    }
+
+    fn load_persisted_remote_server_token(&mut self, server_id: &str) -> bool {
+        if self
+            .remote
+            .server_tokens
+            .get(server_id)
+            .is_some_and(|token| !token.trim().is_empty())
+        {
+            return true;
+        }
+
+        let Some(server) = self
+            .remote
+            .server_store
+            .servers
+            .iter()
+            .find(|server| server.id == server_id)
+            .cloned()
+        else {
+            return false;
+        };
+        let Some(token) = load_persisted_remote_server_token(&server) else {
+            return false;
+        };
+        self.remote.server_tokens.insert(server.id, token);
+        true
+    }
+
+    fn save_cached_remote_server_token(&self, server_id: &str) -> bool {
+        let Some(server) = self
+            .remote
+            .server_store
+            .servers
+            .iter()
+            .find(|server| server.id == server_id)
+        else {
+            return false;
+        };
+        let Some(token) = self.remote.server_tokens.get(server_id) else {
+            return false;
+        };
+        save_persisted_remote_server_token(server, token)
+    }
+}
+
+#[cfg(target_os = "ios")]
+unsafe extern "C" {
+    fn sotf_ios_keychain_save(key: *const std::ffi::c_char, token: *const std::ffi::c_char)
+    -> bool;
+    fn sotf_ios_keychain_load(key: *const std::ffi::c_char) -> *const std::ffi::c_char;
+    fn sotf_ios_keychain_delete(key: *const std::ffi::c_char) -> bool;
+}
+
+#[cfg(target_os = "ios")]
+fn cstring_for_keychain(value: &str, field: &str) -> Option<std::ffi::CString> {
+    match std::ffi::CString::new(value) {
+        Ok(value) => Some(value),
+        Err(_) => {
+            log::warn!("[iOS] interior NUL in remote {field}; refusing Keychain operation");
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn save_persisted_remote_server_token(
+    server: &sotf_audio_player::SotfRemoteServer,
+    token: &str,
+) -> bool {
+    let Some(key) = cstring_for_keychain(&server.token_secret_key(), "token key") else {
+        return false;
+    };
+    let Some(token) = cstring_for_keychain(token, "token") else {
+        return false;
+    };
+    // SAFETY: `key` and `token` are valid NUL-terminated strings for the
+    // duration of the call. The Swift bridge copies the token into Keychain.
+    unsafe { sotf_ios_keychain_save(key.as_ptr(), token.as_ptr()) }
+}
+
+#[cfg(target_os = "macos")]
+fn save_persisted_remote_server_token(
+    server: &sotf_audio_player::SotfRemoteServer,
+    token: &str,
+) -> bool {
+    macos_keychain::save_token(&server.token_secret_key(), token)
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn save_persisted_remote_server_token(
+    server: &sotf_audio_player::SotfRemoteServer,
+    token: &str,
+) -> bool {
+    match sotf_audio_player::config::save_remote_server_token(&server.token_secret_key(), token) {
+        Ok(()) => true,
+        Err(err) => {
+            log::warn!("Failed to save remote server token to internal store: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows"
+)))]
+fn save_persisted_remote_server_token(
+    _server: &sotf_audio_player::SotfRemoteServer,
+    _token: &str,
+) -> bool {
+    false
+}
+
+#[cfg(target_os = "ios")]
+fn load_persisted_remote_server_token(
+    server: &sotf_audio_player::SotfRemoteServer,
+) -> Option<String> {
+    let key = cstring_for_keychain(&server.token_secret_key(), "token key")?;
+    // SAFETY: `key` is a valid NUL-terminated string for the duration of the
+    // call. The Swift bridge returns either NULL or a pointer to a static
+    // UTF-8 buffer that remains valid until the next load call.
+    let token = unsafe { sotf_ios_keychain_load(key.as_ptr()) };
+    if token.is_null() {
+        return None;
+    }
+    // SAFETY: non-null pointer returned by the Swift bridge points at a
+    // NUL-terminated UTF-8 string.
+    let token = unsafe { std::ffi::CStr::from_ptr(token) }.to_str().ok()?;
+    let token = token.trim();
+    if token.is_empty() {
+        None
+    } else {
+        Some(token.to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn load_persisted_remote_server_token(
+    server: &sotf_audio_player::SotfRemoteServer,
+) -> Option<String> {
+    macos_keychain::load_token(&server.token_secret_key())
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn load_persisted_remote_server_token(
+    server: &sotf_audio_player::SotfRemoteServer,
+) -> Option<String> {
+    match sotf_audio_player::config::load_remote_server_token(&server.token_secret_key()) {
+        Ok(token) => token,
+        Err(err) => {
+            log::warn!("Failed to load remote server token from internal store: {err}");
+            None
+        }
+    }
+}
+
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows"
+)))]
+fn load_persisted_remote_server_token(
+    _server: &sotf_audio_player::SotfRemoteServer,
+) -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "ios")]
+fn delete_persisted_remote_server_token(server: &sotf_audio_player::SotfRemoteServer) -> bool {
+    let Some(key) = cstring_for_keychain(&server.token_secret_key(), "token key") else {
+        return false;
+    };
+    // SAFETY: `key` is a valid NUL-terminated string for the duration of the
+    // call. The Swift bridge does not retain the pointer.
+    unsafe { sotf_ios_keychain_delete(key.as_ptr()) }
+}
+
+#[cfg(target_os = "macos")]
+fn delete_persisted_remote_server_token(server: &sotf_audio_player::SotfRemoteServer) -> bool {
+    macos_keychain::delete_token(&server.token_secret_key())
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn delete_persisted_remote_server_token(server: &sotf_audio_player::SotfRemoteServer) -> bool {
+    match sotf_audio_player::config::delete_remote_server_token(&server.token_secret_key()) {
+        Ok(()) => true,
+        Err(err) => {
+            log::warn!("Failed to delete remote server token from internal store: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows"
+)))]
+fn delete_persisted_remote_server_token(_server: &sotf_audio_player::SotfRemoteServer) -> bool {
+    false
+}
+
+#[cfg(target_os = "macos")]
+mod macos_keychain {
+    use core_foundation::base::{CFType, CFTypeRef, TCFType};
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::data::CFData;
+    use core_foundation::dictionary::CFMutableDictionary;
+    use core_foundation::string::CFString;
+    use core_foundation_sys::base::OSStatus;
+    use core_foundation_sys::dictionary::CFDictionaryRef;
+    use core_foundation_sys::string::CFStringRef;
+
+    const ERR_SEC_SUCCESS: OSStatus = 0;
+    const ERR_SEC_USER_CANCELED: OSStatus = -128;
+    const ERR_SEC_ITEM_NOT_FOUND: OSStatus = -25300;
+
+    pub fn save_token(key: &str, token: &str) -> bool {
+        match save_token_result(key, token) {
+            Ok(()) => true,
+            Err(err) => {
+                log::warn!("Failed to save remote server token to macOS Keychain: {err}");
+                false
+            }
+        }
+    }
+
+    pub fn load_token(key: &str) -> Option<String> {
+        match load_token_result(key) {
+            Ok(token) => token,
+            Err(err) => {
+                log::warn!("Failed to load remote server token from macOS Keychain: {err}");
+                None
+            }
+        }
+    }
+
+    pub fn delete_token(key: &str) -> bool {
+        match delete_token_result(key) {
+            Ok(()) => true,
+            Err(err) => {
+                log::warn!("Failed to delete remote server token from macOS Keychain: {err}");
+                false
+            }
+        }
+    }
+
+    fn save_token_result(key: &str, token: &str) -> Result<(), String> {
+        let service = CFString::from(sotf_audio_player::config::APP_BUNDLE_ID);
+        let account = CFString::from(key);
+        let token = CFData::from_buffer(token.trim().as_bytes());
+
+        // SAFETY: Security.framework is called with CoreFoundation objects that
+        // stay alive for the duration of the call. SecItem* retains/copies data.
+        unsafe {
+            let query = keychain_query(&service, &account);
+            let mut attrs = CFMutableDictionary::with_capacity(1);
+            attrs.set(kSecValueData as *const _, token.as_CFTypeRef());
+
+            let mut status =
+                SecItemUpdate(query.as_concrete_TypeRef(), attrs.as_concrete_TypeRef());
+            if status == ERR_SEC_ITEM_NOT_FOUND {
+                let mut add_attrs = keychain_query(&service, &account);
+                add_attrs.set(kSecValueData as *const _, token.as_CFTypeRef());
+                status = SecItemAdd(add_attrs.as_concrete_TypeRef(), std::ptr::null_mut());
+            }
+
+            if status == ERR_SEC_SUCCESS {
+                Ok(())
+            } else {
+                Err(format!("SecItem save failed: {status}"))
+            }
+        }
+    }
+
+    fn load_token_result(key: &str) -> Result<Option<String>, String> {
+        let service = CFString::from(sotf_audio_player::config::APP_BUNDLE_ID);
+        let account = CFString::from(key);
+
+        // SAFETY: Security.framework writes either NULL or a retained CFData
+        // object into `result`; wrap_under_create_rule takes ownership.
+        unsafe {
+            let mut query = keychain_query(&service, &account);
+            query.set(
+                kSecReturnData as *const _,
+                CFBoolean::true_value().as_CFTypeRef(),
+            );
+
+            let mut result = CFTypeRef::from(std::ptr::null());
+            let status = SecItemCopyMatching(query.as_concrete_TypeRef(), &mut result);
+            match status {
+                ERR_SEC_SUCCESS => {}
+                ERR_SEC_ITEM_NOT_FOUND | ERR_SEC_USER_CANCELED => return Ok(None),
+                _ => return Err(format!("SecItem load failed: {status}")),
+            }
+
+            let data = CFType::wrap_under_create_rule(result)
+                .downcast::<CFData>()
+                .ok_or_else(|| "Keychain item data was not CFData".to_string())?;
+            let token = std::str::from_utf8(data.bytes())
+                .map_err(|err| format!("Keychain token was not UTF-8: {err}"))?
+                .trim()
+                .to_string();
+            if token.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(token))
+            }
+        }
+    }
+
+    fn delete_token_result(key: &str) -> Result<(), String> {
+        let service = CFString::from(sotf_audio_player::config::APP_BUNDLE_ID);
+        let account = CFString::from(key);
+
+        // SAFETY: Security.framework is called with CoreFoundation objects that
+        // stay alive for the duration of the call.
+        unsafe {
+            let query = keychain_query(&service, &account);
+            match SecItemDelete(query.as_concrete_TypeRef()) {
+                ERR_SEC_SUCCESS | ERR_SEC_ITEM_NOT_FOUND => Ok(()),
+                status => Err(format!("SecItem delete failed: {status}")),
+            }
+        }
+    }
+
+    fn keychain_query(
+        service: &CFString,
+        account: &CFString,
+    ) -> CFMutableDictionary<*const std::ffi::c_void, *const std::ffi::c_void> {
+        let mut query = CFMutableDictionary::with_capacity(3);
+        // SAFETY: Security.framework exports these immutable CoreFoundation
+        // string constants for process-wide use.
+        unsafe {
+            query.set(kSecClass as *const _, kSecClassGenericPassword as *const _);
+            query.set(kSecAttrService as *const _, service.as_CFTypeRef());
+            query.set(kSecAttrAccount as *const _, account.as_CFTypeRef());
+        }
+        query
+    }
+
+    #[link(name = "Security", kind = "framework")]
+    unsafe extern "C" {
+        static kSecClass: CFStringRef;
+        static kSecClassGenericPassword: CFStringRef;
+        static kSecAttrService: CFStringRef;
+        static kSecAttrAccount: CFStringRef;
+        static kSecValueData: CFStringRef;
+        static kSecReturnData: CFStringRef;
+
+        fn SecItemAdd(attributes: CFDictionaryRef, result: *mut CFTypeRef) -> OSStatus;
+        fn SecItemUpdate(query: CFDictionaryRef, attributes: CFDictionaryRef) -> OSStatus;
+        fn SecItemDelete(query: CFDictionaryRef) -> OSStatus;
+        fn SecItemCopyMatching(query: CFDictionaryRef, result: *mut CFTypeRef) -> OSStatus;
     }
 }
 

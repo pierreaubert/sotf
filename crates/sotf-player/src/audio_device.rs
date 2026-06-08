@@ -124,8 +124,52 @@ impl AudioOutputDeviceState {
 /// Check if a device name is a virtual/passthrough device that shouldn't be default.
 pub fn is_virtual_device(name: &str) -> bool {
     let lower_name = name.to_lowercase();
-    lower_name.contains("hal")
+    lower_name.contains("sotf")
+        || lower_name.contains("hal")
         || lower_name.contains("blackhole")
+        || lower_name.contains("zoomaudio")
         || lower_name.contains("soundflower")
         || lower_name.contains("loopback")
+        || lower_name.contains("virtual")
+        || lower_name.contains("background music")
+        || lower_name.contains("audio bridge")
+        || name.trim().eq_ignore_ascii_case("null")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(name: &str, is_default: bool) -> AudioDevice {
+        AudioDevice {
+            device_id: Some(name.to_string()),
+            name: name.to_string(),
+            display_info: None,
+            is_input: false,
+            is_default,
+            supported_configs: Vec::new(),
+            default_config: None,
+            available_sample_rates: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn virtual_device_detector_matches_systemwide_virtual_output() {
+        assert!(is_virtual_device("SotF Virtual Device"));
+        assert!(is_virtual_device("SotF Virtual Output"));
+        assert!(is_virtual_device("BlackHole 2ch"));
+        assert!(is_virtual_device("Loopback Audio"));
+        assert!(is_virtual_device("Generic Virtual Device"));
+    }
+
+    #[test]
+    fn smart_default_skips_virtual_system_default() {
+        let mut state = AudioOutputDeviceState::new();
+        state.set_devices(vec![
+            device("SotF Virtual Device", true),
+            device("Built-in Output", false),
+        ]);
+
+        assert_eq!(state.find_best_default_index(), 1);
+    }
 }

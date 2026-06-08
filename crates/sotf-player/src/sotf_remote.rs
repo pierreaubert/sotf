@@ -1,5 +1,6 @@
 //! Native SOTF remote connection state for mobile and desktop clients.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
@@ -14,6 +15,78 @@ use crate::sotf_api_client::{
 };
 
 const REMOTE_SERVER_STORE_VERSION: u32 = 1;
+const REMOTE_TOKEN_STORE_VERSION: u32 = 1;
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SotfRemoteTokenStore {
+    #[serde(default = "default_remote_token_store_version")]
+    pub version: u32,
+    #[serde(default)]
+    tokens: BTreeMap<String, String>,
+}
+
+impl Default for SotfRemoteTokenStore {
+    fn default() -> Self {
+        Self {
+            version: REMOTE_TOKEN_STORE_VERSION,
+            tokens: BTreeMap::new(),
+        }
+    }
+}
+
+impl fmt::Debug for SotfRemoteTokenStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SotfRemoteTokenStore")
+            .field("version", &self.version)
+            .field("tokens", &format_args!("<{} redacted>", self.tokens.len()))
+            .finish()
+    }
+}
+
+impl SotfRemoteTokenStore {
+    pub fn load_from_path(path: impl AsRef<Path>) -> SotfApiResult<Self> {
+        let path = path.as_ref();
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let json = std::fs::read_to_string(path)
+            .map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))?;
+        serde_json::from_str(&json).map_err(SotfApiClientError::Json)
+    }
+
+    pub fn save_to_path(&self, path: impl AsRef<Path>) -> SotfApiResult<()> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))?;
+        }
+        let json = serde_json::to_string_pretty(self).map_err(SotfApiClientError::Json)?;
+        std::fs::write(path, json).map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))
+    }
+
+    pub fn set(&mut self, key: impl Into<String>, token: impl Into<String>) {
+        let key = key.into();
+        let token = token.into();
+        let token = token.trim();
+        if key.trim().is_empty() || token.is_empty() {
+            return;
+        }
+        self.tokens.insert(key, token.to_string());
+    }
+
+    pub fn remove(&mut self, key: &str) -> Option<String> {
+        self.tokens.remove(key)
+    }
+
+    #[must_use]
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.tokens.get(key).map(String::as_str)
+    }
+}
+
+fn default_remote_token_store_version() -> u32 {
+    REMOTE_TOKEN_STORE_VERSION
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SotfRemoteServerStore {
@@ -487,6 +560,39 @@ mod tests {
             loaded.selected_token_secret_key().as_deref(),
             Some(key.as_str())
         );
+    }
+
+    #[test]
+    fn token_store_round_trips_to_json_file_and_redacts_debug() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("remote_server_tokens.json");
+        let mut store = SotfRemoteTokenStore::default();
+        store.set("remote-key", " very-secret-token ");
+        store.set("empty-token", " ");
+        store.set("", "ignored");
+
+        store.save_to_path(&path).unwrap();
+        let json = std::fs::read_to_string(&path).unwrap();
+        assert!(json.contains("remote-key"));
+        assert!(json.contains("very-secret-token"));
+        assert!(!json.contains("empty-token"));
+        assert!(!json.contains("ignored"));
+
+        let loaded = SotfRemoteTokenStore::load_from_path(&path).unwrap();
+        assert_eq!(loaded.get("remote-key"), Some("very-secret-token"));
+        assert_eq!(loaded.get("missing"), None);
+
+        let debug = format!("{loaded:?}");
+        assert!(debug.contains("<1 redacted>"));
+        assert!(!debug.contains("very-secret-token"));
+    }
+
+    #[test]
+    fn token_store_deserializes_missing_version_as_current() {
+        let store: SotfRemoteTokenStore =
+            serde_json::from_str(r#"{"tokens":{"remote-key":"secret"}}"#).unwrap();
+        assert_eq!(store.version, REMOTE_TOKEN_STORE_VERSION);
+        assert_eq!(store.get("remote-key"), Some("secret"));
     }
 
     #[test]

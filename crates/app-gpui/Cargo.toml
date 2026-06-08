@@ -130,6 +130,8 @@ signal-hook = { workspace = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 gpui_macos = { workspace = true }
 driver-hal = { workspace = true, optional = true }
+core-foundation = { workspace = true }
+core-foundation-sys = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gpui_linux = { workspace = true }

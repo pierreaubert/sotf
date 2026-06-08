@@ -595,6 +595,34 @@ impl MusicDatabase {
         Ok(count)
     }
 
+    /// Clear all local library content while preserving app configuration and
+    /// saved connection/source records.
+    pub fn clear_library_content(&mut self) -> SqlResult<usize> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))?;
+
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        tx.execute("DELETE FROM playlist_tracks", [])?;
+        tx.execute("DELETE FROM track_genres", [])?;
+        tx.execute("DELETE FROM track_composers", [])?;
+        tx.execute("DELETE FROM track_conductors", [])?;
+        tx.execute("DELETE FROM track_performers", [])?;
+        tx.execute("DELETE FROM track_ensembles", [])?;
+        tx.execute("DELETE FROM track_sources", [])?;
+        tx.execute("DELETE FROM album_sources", [])?;
+        tx.execute("DELETE FROM tracks", [])?;
+        tx.execute("DELETE FROM albums", [])?;
+        tx.execute("DELETE FROM library_fts", [])?;
+        tx.execute("DELETE FROM scan_history", [])?;
+
+        tx.commit()?;
+        Ok(count as usize)
+    }
+
     /// Remove all tracks from a specific directory path (and its subdirectories)
     /// This is used when removing a directory from the library
     /// Returns the number of tracks removed

@@ -292,6 +292,7 @@ impl PlayerView {
                     .id("settings-content-scroll")
                     .overflow_y_scroll()
                     .flex_1()
+                    .min_h_0()
                     .p(d.card)
                     .child(div().w_full().max_w(rems(78.0)).child(content)),
             )

@@ -66,6 +66,7 @@ fn manual_input_add_clears_fields_and_keeps_json_non_secret() {
     let mut state = RemoteState::default();
     state.set_manual_server_name(" Desk ");
     state.set_manual_api_base_url(" http://desk.local:8732 ");
+    state.set_manual_auth_token(" very-secret-token ");
 
     let id = state.add_manual_server_from_inputs().unwrap();
 
@@ -75,11 +76,42 @@ fn manual_input_add_clears_fields_and_keeps_json_non_secret() {
     );
     assert!(state.manual_server_name.is_empty());
     assert!(state.manual_api_base_url.is_empty());
+    assert!(state.manual_auth_token.is_empty());
+    assert_eq!(
+        state.server_tokens.get(&id).map(String::as_str),
+        Some("very-secret-token")
+    );
 
     let json = serde_json::to_string(&state.server_store).unwrap();
     assert!(json.contains("Desk"));
     assert!(!json.contains("auth_token"));
     assert!(!json.contains("bearer-token"));
+    assert!(!json.contains("very-secret-token"));
+}
+
+#[test]
+fn manual_input_add_accepts_host_port_without_scheme() {
+    let mut state = RemoteState::default();
+    state.set_manual_api_base_url("192.168.1.102:8732");
+    state.set_manual_auth_token("secret");
+
+    state.add_manual_server_from_inputs().unwrap();
+
+    assert_eq!(
+        state.server_store.selected_server().unwrap().api_base_url,
+        "http://192.168.1.102:8732/api/v1"
+    );
+}
+
+#[test]
+fn manual_input_add_requires_auth_token() {
+    let mut state = RemoteState::default();
+    state.set_manual_api_base_url("192.168.1.102:8732");
+
+    let err = state.add_manual_server_from_inputs().unwrap_err();
+
+    assert_eq!(err, "remote API token must not be empty");
+    assert!(state.server_store.servers.is_empty());
 }
 
 #[test]

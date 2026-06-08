@@ -792,7 +792,8 @@ impl PlayerView {
     }
 
     fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
-        let was_search = self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Search;
+        let was_search =
+            self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Search;
         self.state.update(cx, |state, _cx| {
             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
             state.app.library_state.search_query.clear();
