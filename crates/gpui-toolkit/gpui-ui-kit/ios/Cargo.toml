@@ -6,7 +6,11 @@ publish = false
 
 [lib]
 name = "showcase_ios"
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "cdylib"]
+
+[features]
+default = []
+hot-reload = []
 
 [dependencies]
 gpui = { workspace = true }

@@ -8,9 +8,14 @@
 
 pub use gpui;
 
+pub mod accessibility;
+pub mod hot_reload;
+pub mod instrumentation;
 pub mod momentum;
 pub mod native;
+pub mod pencil;
 pub mod platform_view;
+pub mod widget;
 
 // ── System chrome styling ────────────────────────────────────────────────────
 
@@ -132,6 +137,35 @@ pub fn safe_area_insets() -> (f32, f32, f32, f32) {
         }
     }
     (0.0, 0.0, 0.0, 0.0)
+}
+
+// ── Scene metrics ───────────────────────────────────────────────────────────
+
+pub fn scene_metrics() -> Option<native::IosSceneMetrics> {
+    #[cfg(any(target_os = "ios", target_os = "tvos"))]
+    {
+        if let Some(wrapper) = ios::ffi::IOS_WINDOW_LIST.get() {
+            unsafe {
+                let windows = &*wrapper.0.get();
+                if let Some(&window) = windows.last() {
+                    return (*window).scene_metrics();
+                }
+            }
+        }
+    }
+    None
+}
+
+pub fn native_bridge_report() -> native::NativeBridgeReport {
+    native::NativeBridgeReport::current()
+}
+
+pub fn begin_metal_capture(label: &str) -> bool {
+    instrumentation::begin_metal_capture(label)
+}
+
+pub fn end_metal_capture() {
+    instrumentation::end_metal_capture();
 }
 
 // ── iOS / tvOS platform module ───────────────────────────────────────────────

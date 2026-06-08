@@ -191,6 +191,43 @@ let (top, left, bottom, right) = gpui_ios::safe_area_insets();
 // Apply as padding to root view
 ```
 
+### Scene metrics
+
+```rust
+if let Some(metrics) = gpui_ios::scene_metrics() {
+    let (content_width, content_height) = metrics.content_size();
+    let landscape_like = metrics.is_landscape_like();
+    let split_view_like = metrics.is_split_view_like();
+    let scene_class = metrics.scene_class();
+}
+```
+
+Use scene metrics for iPad layout decisions. They are derived from the actual
+UIKit view bounds, not physical device orientation, so they also work in Split
+View and Stage Manager.
+
+### Native bridge completion APIs
+
+`gpui-ios` exposes platform bridge surfaces for production iOS shells:
+
+- `gpui_ios::platform_view` registers Swift/UIKit factories and tracks native
+  view bounds, visibility, z-order, hit testing, and disposal.
+- `gpui_ios::accessibility::set_accessibility_snapshot(...)` publishes a GPUI
+  accessibility snapshot for the UIKit bridge to mirror into VoiceOver.
+- `gpui_ios::pencil::{set_pencil_event_callback, set_hover_event_callback}`
+  exposes Apple Pencil pressure/tilt and hover side-channel data while the
+  normal GPUI mouse/touch compatibility events continue to fire.
+- `gpui_ios::widget::render_widget_snapshot(...)` writes WidgetKit/Live
+  Activity snapshot image bytes plus timeline metadata to an App Group folder.
+- `gpui_ios::{begin_metal_capture, end_metal_capture}` and
+  `gpui_ios::instrumentation::emit_signpost(...)` expose debug hooks for
+  Instruments-oriented tracing.
+- `gpui_ios::hot_reload::HotReloadManifest` defines the simulator debug dylib
+  reload manifest consumed by Swift shells.
+
+Swift-facing C FFI is provided for host-view attachment, native platform-view
+factory registration, Pencil hover forwarding, and Metal capture control.
+
 ### Software keyboard
 
 ```rust

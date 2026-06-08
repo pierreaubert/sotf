@@ -47,3 +47,6 @@ core-text = { workspace = true }
 block2 = { workspace = true }
 # font-kit (same pin as gpui upstream)
 font-kit = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

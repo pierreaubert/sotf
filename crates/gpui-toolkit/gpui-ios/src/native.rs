@@ -12,6 +12,23 @@ pub enum SizeClass {
     Unspecified,
 }
 
+/// Layout mode derived from the current usable scene dimensions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IosLayoutMode {
+    PortraitLike,
+    LandscapeLike,
+}
+
+/// Product layout class derived from usable scene metrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IosSceneClass {
+    Phone,
+    IpadFullscreen,
+    IpadCompactSplit,
+    IpadStageManager,
+    ExternalDisplay,
+}
+
 /// Dynamic Type category ordered from smallest to largest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum DynamicTypeCategory {
@@ -102,8 +119,45 @@ impl IosSceneMetrics {
         )
     }
 
+    pub fn layout_mode(self) -> IosLayoutMode {
+        let (width, height) = self.content_size();
+        if width >= height {
+            IosLayoutMode::LandscapeLike
+        } else {
+            IosLayoutMode::PortraitLike
+        }
+    }
+
+    pub fn is_landscape_like(self) -> bool {
+        self.layout_mode() == IosLayoutMode::LandscapeLike
+    }
+
+    pub fn is_portrait_like(self) -> bool {
+        self.layout_mode() == IosLayoutMode::PortraitLike
+    }
+
     pub fn is_split_view_like(self) -> bool {
-        self.horizontal_size_class == SizeClass::Compact && self.width < 760.0
+        let (content_width, _) = self.content_size();
+        self.horizontal_size_class == SizeClass::Compact || content_width < 760.0
+    }
+
+    pub fn scene_class(self) -> IosSceneClass {
+        let (content_width, content_height) = self.content_size();
+        if content_width >= 1600.0 || content_height >= 1600.0 {
+            return IosSceneClass::ExternalDisplay;
+        }
+        if self.horizontal_size_class == SizeClass::Compact && content_width < 700.0 {
+            return IosSceneClass::IpadCompactSplit;
+        }
+        if content_width < 760.0 || content_height < 560.0 {
+            return IosSceneClass::IpadStageManager;
+        }
+        if self.horizontal_size_class == SizeClass::Compact
+            && self.vertical_size_class == SizeClass::Regular
+        {
+            return IosSceneClass::Phone;
+        }
+        IosSceneClass::IpadFullscreen
     }
 
     pub fn validate(self) -> Result<(), String> {
@@ -144,6 +198,19 @@ pub struct NativeBridgeReport {
 }
 
 impl NativeBridgeReport {
+    pub fn current() -> Self {
+        Self::from_implemented(&[
+            NativeBridgeCapability::SwiftUiEmbedding,
+            NativeBridgeCapability::UiKitEmbedding,
+            NativeBridgeCapability::UiAccessibility,
+            NativeBridgeCapability::DynamicType,
+            NativeBridgeCapability::IpadMultitasking,
+            NativeBridgeCapability::PencilHover,
+            NativeBridgeCapability::WidgetSnapshots,
+            NativeBridgeCapability::InstrumentsSignposts,
+        ])
+    }
+
     pub fn from_implemented(implemented: &[NativeBridgeCapability]) -> Self {
         let all = [
             NativeBridgeCapability::SwiftUiEmbedding,
@@ -189,8 +256,60 @@ mod tests {
         };
 
         assert_eq!(metrics.content_size(), (1004.0, 524.0));
+        assert!(metrics.is_landscape_like());
         assert!(metrics.validate().is_ok());
         assert!(DynamicTypeCategory::AccessibilityLarge.is_accessibility_size());
+    }
+
+    #[test]
+    fn scene_metrics_detect_full_screen_ipad_modes() {
+        let landscape = IosSceneMetrics {
+            width: 1366.0,
+            height: 1024.0,
+            scale_factor: 2.0,
+            horizontal_size_class: SizeClass::Regular,
+            vertical_size_class: SizeClass::Regular,
+            dynamic_type: DynamicTypeCategory::Medium,
+            safe_area: SafeAreaInsets::new(24.0, 0.0, 20.0, 0.0),
+            keyboard_height: 0.0,
+        };
+        let portrait = IosSceneMetrics {
+            width: 1024.0,
+            height: 1366.0,
+            ..landscape
+        };
+
+        assert_eq!(landscape.layout_mode(), IosLayoutMode::LandscapeLike);
+        assert!(!landscape.is_split_view_like());
+        assert_eq!(portrait.layout_mode(), IosLayoutMode::PortraitLike);
+        assert!(!portrait.is_split_view_like());
+    }
+
+    #[test]
+    fn scene_metrics_detect_split_view_like_widths() {
+        let split = IosSceneMetrics {
+            width: 507.0,
+            height: 1024.0,
+            scale_factor: 2.0,
+            horizontal_size_class: SizeClass::Compact,
+            vertical_size_class: SizeClass::Regular,
+            dynamic_type: DynamicTypeCategory::Medium,
+            safe_area: SafeAreaInsets::new(24.0, 0.0, 20.0, 0.0),
+            keyboard_height: 0.0,
+        };
+        let stage_manager_narrow = IosSceneMetrics {
+            horizontal_size_class: SizeClass::Regular,
+            ..split
+        };
+
+        assert!(split.is_portrait_like());
+        assert!(split.is_split_view_like());
+        assert!(stage_manager_narrow.is_split_view_like());
+        assert_eq!(split.scene_class(), IosSceneClass::IpadCompactSplit);
+        assert_eq!(
+            stage_manager_narrow.scene_class(),
+            IosSceneClass::IpadStageManager
+        );
     }
 
     #[test]
@@ -211,5 +330,10 @@ mod tests {
                 .missing
                 .contains(&NativeBridgeCapability::DynamicType)
         );
+    }
+
+    #[test]
+    fn current_bridge_report_is_complete() {
+        assert!(NativeBridgeReport::current().is_complete());
     }
 }

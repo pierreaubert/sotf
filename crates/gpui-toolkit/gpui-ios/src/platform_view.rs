@@ -2,7 +2,8 @@
 //! Stripped-down version for initial iOS experiment (no video/camera/webview).
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::ffi::{CStr, CString, c_char, c_void};
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PlatformViewId(pub u64);
@@ -130,6 +131,190 @@ pub trait PlatformViewFactory: Send + Sync {
     }
 }
 
+pub type SwiftPlatformViewCreateCallback =
+    extern "C" fn(view_type: *const c_char, creation_params: *const c_char) -> *mut c_void;
+pub type SwiftPlatformViewUpdateBoundsCallback =
+    extern "C" fn(view: *mut c_void, x: f32, y: f32, width: f32, height: f32);
+pub type SwiftPlatformViewSetBoolCallback = extern "C" fn(view: *mut c_void, value: bool);
+pub type SwiftPlatformViewSetZIndexCallback = extern "C" fn(view: *mut c_void, z_index: i32);
+pub type SwiftPlatformViewDisposeCallback = extern "C" fn(view: *mut c_void);
+
+#[derive(Clone, Copy)]
+pub struct SwiftPlatformViewCallbacks {
+    pub create: SwiftPlatformViewCreateCallback,
+    pub update_bounds: Option<SwiftPlatformViewUpdateBoundsCallback>,
+    pub set_visible: Option<SwiftPlatformViewSetBoolCallback>,
+    pub set_z_index: Option<SwiftPlatformViewSetZIndexCallback>,
+    pub dispose: Option<SwiftPlatformViewDisposeCallback>,
+}
+
+struct SwiftPlatformViewFactory {
+    view_type: String,
+    kind: PlatformViewKind,
+    callbacks: SwiftPlatformViewCallbacks,
+}
+
+impl SwiftPlatformViewFactory {
+    fn new(
+        view_type: impl Into<String>,
+        kind: PlatformViewKind,
+        callbacks: SwiftPlatformViewCallbacks,
+    ) -> Self {
+        Self {
+            view_type: view_type.into(),
+            kind,
+            callbacks,
+        }
+    }
+}
+
+impl PlatformViewFactory for SwiftPlatformViewFactory {
+    fn create(&self, params: &PlatformViewParams) -> Result<Box<dyn PlatformView>, String> {
+        let view_type = CString::new(self.view_type.as_str())
+            .map_err(|_| "platform view type contains interior nul".to_string())?;
+        let encoded_params = CString::new(encode_creation_params(&params.creation_params))
+            .map_err(|_| "platform view params contain interior nul".to_string())?;
+        let native_view = (self.callbacks.create)(view_type.as_ptr(), encoded_params.as_ptr());
+        if native_view.is_null() {
+            return Err(format!(
+                "Swift platform view factory {:?} returned null",
+                self.view_type
+            ));
+        }
+
+        Ok(Box::new(SwiftPlatformView {
+            id: PlatformViewId::next(),
+            view_type: self.view_type.clone(),
+            native_view: native_view as usize,
+            callbacks: self.callbacks,
+            disposed: Mutex::new(false),
+        }))
+    }
+
+    fn view_type(&self) -> &str {
+        &self.view_type
+    }
+
+    fn kind(&self) -> PlatformViewKind {
+        self.kind
+    }
+}
+
+struct SwiftPlatformView {
+    id: PlatformViewId,
+    view_type: String,
+    native_view: usize,
+    callbacks: SwiftPlatformViewCallbacks,
+    disposed: Mutex<bool>,
+}
+
+impl SwiftPlatformView {
+    fn native_view(&self) -> *mut c_void {
+        self.native_view as *mut c_void
+    }
+}
+
+impl PlatformView for SwiftPlatformView {
+    fn id(&self) -> PlatformViewId {
+        self.id
+    }
+
+    fn view_type(&self) -> &str {
+        &self.view_type
+    }
+
+    fn set_bounds(&self, bounds: PlatformViewBounds) {
+        if let Some(callback) = self.callbacks.update_bounds {
+            callback(
+                self.native_view(),
+                bounds.x,
+                bounds.y,
+                bounds.width,
+                bounds.height,
+            );
+        }
+        PlatformViewRegistry::global().update_view_bounds(self.id, bounds);
+    }
+
+    fn set_visible(&self, visible: bool) {
+        if let Some(callback) = self.callbacks.set_visible {
+            callback(self.native_view(), visible);
+        }
+        PlatformViewRegistry::global().update_view_visibility(self.id, visible);
+    }
+
+    fn set_z_index(&self, z_index: i32) {
+        if let Some(callback) = self.callbacks.set_z_index {
+            callback(self.native_view(), z_index);
+        }
+        PlatformViewRegistry::global().update_view_z_index(self.id, z_index);
+    }
+
+    fn dispose(&self) {
+        let mut disposed = self.disposed.lock().unwrap();
+        if *disposed {
+            return;
+        }
+        if let Some(callback) = self.callbacks.dispose {
+            callback(self.native_view());
+        }
+        PlatformViewRegistry::global().remove_view(self.id);
+        *disposed = true;
+    }
+
+    fn is_disposed(&self) -> bool {
+        *self.disposed.lock().unwrap()
+    }
+}
+
+#[derive(Default)]
+pub struct NativePlatformViewHost {
+    parent_view: Mutex<usize>,
+    views: Mutex<HashMap<PlatformViewId, Arc<dyn PlatformView>>>,
+}
+
+impl NativePlatformViewHost {
+    pub fn new(parent_view: *mut c_void) -> Self {
+        Self {
+            parent_view: Mutex::new(parent_view as usize),
+            views: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn set_parent_view(&self, parent_view: *mut c_void) {
+        *self.parent_view.lock().unwrap() = parent_view as usize;
+    }
+
+    pub fn parent_view(&self) -> *mut c_void {
+        *self.parent_view.lock().unwrap() as *mut c_void
+    }
+
+    pub fn insert(&self, view: Arc<dyn PlatformView>) {
+        self.views.lock().unwrap().insert(view.id(), view);
+    }
+
+    pub fn remove(&self, id: PlatformViewId) {
+        if let Some(view) = self.views.lock().unwrap().remove(&id) {
+            view.dispose();
+        }
+    }
+
+    pub fn clear(&self) {
+        let views = std::mem::take(&mut *self.views.lock().unwrap());
+        for (_, view) in views {
+            view.dispose();
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.views.lock().unwrap().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 /// Renderer-facing state for a live native view.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlatformViewRecord {
@@ -175,6 +360,17 @@ impl PlatformViewRegistry {
             .lock()
             .unwrap()
             .insert(factory.view_type().to_string(), factory);
+    }
+
+    pub fn register_swift_factory(
+        &self,
+        view_type: impl Into<String>,
+        kind: PlatformViewKind,
+        callbacks: SwiftPlatformViewCallbacks,
+    ) {
+        self.register_factory(Box::new(SwiftPlatformViewFactory::new(
+            view_type, kind, callbacks,
+        )));
     }
 
     pub fn create_view(
@@ -245,6 +441,39 @@ impl PlatformViewRegistry {
         }
         false
     }
+}
+
+fn encode_creation_params(params: &HashMap<String, String>) -> String {
+    let mut entries: Vec<_> = params.iter().collect();
+    entries.sort_by_key(|(left, _)| *left);
+    entries
+        .into_iter()
+        .map(|(key, value)| format!("{}={}", escape_param(key), escape_param(value)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn escape_param(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('=', "\\=")
+}
+
+/// # Safety
+///
+/// `value` must be a valid NUL-terminated C string pointer for the duration of
+/// this call.
+pub unsafe fn c_str_to_string(value: *const c_char) -> Option<String> {
+    if value.is_null() {
+        return None;
+    }
+    // SAFETY: The caller guarantees that `value` is valid and NUL-terminated.
+    // Invalid UTF-8 is rejected with `None`.
+    unsafe { CStr::from_ptr(value) }
+        .to_str()
+        .ok()
+        .map(str::to_string)
 }
 
 impl Default for PlatformViewRegistry {

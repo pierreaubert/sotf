@@ -14,8 +14,36 @@ void gpui_ios_request_frame(void *window_ptr);
 // Get the active GPUI window pointer
 void *gpui_ios_get_window(void);
 
+// GPUI-in-SwiftUI hosting
+void *gpui_ios_attach_to_view(void *parent);
+void gpui_ios_detach_view(void *window_ptr);
+
+// Native platform views
+typedef void *(*GPUIPlatformViewCreateCallback)(const char *view_type,
+                                                const char *creation_params);
+typedef void (*GPUIPlatformViewUpdateBoundsCallback)(void *view, float x,
+                                                     float y, float width,
+                                                     float height);
+typedef void (*GPUIPlatformViewSetBoolCallback)(void *view, bool value);
+typedef void (*GPUIPlatformViewSetZIndexCallback)(void *view, int z_index);
+typedef void (*GPUIPlatformViewDisposeCallback)(void *view);
+
+bool gpui_ios_register_platform_view_factory(
+    const char *view_type, int kind, GPUIPlatformViewCreateCallback create,
+    GPUIPlatformViewUpdateBoundsCallback update_bounds,
+    GPUIPlatformViewSetBoolCallback set_visible,
+    GPUIPlatformViewSetZIndexCallback set_z_index,
+    GPUIPlatformViewDisposeCallback dispose);
+
+// Debug instrumentation
+bool gpui_ios_begin_metal_capture(const char *label);
+void gpui_ios_end_metal_capture(void);
+
 // Touch event forwarding
 void gpui_ios_handle_touch(void *window_ptr, void *touch_ptr, void *event_ptr);
+bool gpui_ios_handle_pencil_hover(float x, float y, float altitude_angle,
+                                  float azimuth_angle, float distance,
+                                  double timestamp_seconds);
 
 // Lifecycle
 void gpui_ios_will_enter_foreground(void *app_ptr);

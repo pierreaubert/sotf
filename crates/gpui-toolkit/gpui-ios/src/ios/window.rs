@@ -13,6 +13,8 @@
 use super::IosDisplay;
 use super::events::*;
 use crate::momentum::{MomentumScroller, VelocityTracker};
+use crate::native::{DynamicTypeCategory, IosSceneMetrics, SafeAreaInsets, SizeClass};
+use crate::platform_view::NativePlatformViewHost;
 use gpui::{
     AnyWindowHandle, AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile, Bounds, Capslock,
     DevicePixels, DispatchEventResult, GpuSpecs, Modifiers, Pixels, PlatformAtlas, PlatformDisplay,
@@ -33,7 +35,7 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle, UiKitDisplayHandle, U
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
-    ffi::c_void,
+    ffi::{CStr, c_void},
     ptr::{self, NonNull},
     rc::Rc,
     sync::Arc,
@@ -44,6 +46,26 @@ const GPUI_WINDOW_IVAR: &str = "gpui_window_ptr";
 static METAL_VIEW_CLASS_REGISTERED: std::sync::Once = std::sync::Once::new();
 static VC_CLASS_REGISTERED: std::sync::Once = std::sync::Once::new();
 static TEXT_INPUT_VIEW_CLASS_REGISTERED: std::sync::Once = std::sync::Once::new();
+static ACCESSIBILITY_ELEMENT_CLASS_REGISTERED: std::sync::Once = std::sync::Once::new();
+
+#[link(name = "UIKit", kind = "framework")]
+unsafe extern "C" {
+    static UIAccessibilityTraitButton: u64;
+    static UIAccessibilityTraitLink: u64;
+    static UIAccessibilityTraitHeader: u64;
+    static UIAccessibilityTraitSearchField: u64;
+    static UIAccessibilityTraitImage: u64;
+    static UIAccessibilityTraitSelected: u64;
+    static UIAccessibilityTraitStaticText: u64;
+    static UIAccessibilityTraitNotEnabled: u64;
+    static UIAccessibilityTraitUpdatesFrequently: u64;
+    static UIAccessibilityTraitAdjustable: u64;
+
+    static UIAccessibilityLayoutChangedNotification: u32;
+    static UIAccessibilityAnnouncementNotification: u32;
+
+    fn UIAccessibilityPostNotification(notification: u32, argument: *mut Object);
+}
 
 /// Global storage for the current status bar style.
 /// 0 = default (dark content), 1 = light content.
@@ -264,6 +286,77 @@ fn register_metal_view_class() -> &'static Class {
     });
 
     class!(GPUIMetalView)
+}
+
+/// Register a `UIAccessibilityElement` subclass that can route VoiceOver
+/// actions back into GPUI's accessibility action callback.
+fn register_accessibility_element_class() -> &'static Class {
+    ACCESSIBILITY_ELEMENT_CLASS_REGISTERED.call_once(|| {
+        let superclass = class!(UIAccessibilityElement);
+        let mut decl = ClassDecl::new("GPUIAccessibilityElement", superclass).unwrap();
+
+        extern "C" fn accessibility_activate(this: &Object, _sel: Sel) -> BOOL {
+            dispatch_accessibility_element_action(
+                this,
+                crate::accessibility::IosAccessibilityAction::Activate,
+            ) as BOOL
+        }
+
+        extern "C" fn accessibility_increment(this: &Object, _sel: Sel) {
+            let _ = dispatch_accessibility_element_action(
+                this,
+                crate::accessibility::IosAccessibilityAction::Increment,
+            );
+        }
+
+        extern "C" fn accessibility_decrement(this: &Object, _sel: Sel) {
+            let _ = dispatch_accessibility_element_action(
+                this,
+                crate::accessibility::IosAccessibilityAction::Decrement,
+            );
+        }
+
+        extern "C" fn accessibility_perform_escape(this: &Object, _sel: Sel) -> BOOL {
+            dispatch_accessibility_element_action(
+                this,
+                crate::accessibility::IosAccessibilityAction::Escape,
+            ) as BOOL
+        }
+
+        extern "C" fn accessibility_perform_magic_tap(this: &Object, _sel: Sel) -> BOOL {
+            dispatch_accessibility_element_action(
+                this,
+                crate::accessibility::IosAccessibilityAction::MagicTap,
+            ) as BOOL
+        }
+
+        unsafe {
+            decl.add_method(
+                sel!(accessibilityActivate),
+                accessibility_activate as extern "C" fn(&Object, Sel) -> BOOL,
+            );
+            decl.add_method(
+                sel!(accessibilityIncrement),
+                accessibility_increment as extern "C" fn(&Object, Sel),
+            );
+            decl.add_method(
+                sel!(accessibilityDecrement),
+                accessibility_decrement as extern "C" fn(&Object, Sel),
+            );
+            decl.add_method(
+                sel!(accessibilityPerformEscape),
+                accessibility_perform_escape as extern "C" fn(&Object, Sel) -> BOOL,
+            );
+            decl.add_method(
+                sel!(accessibilityPerformMagicTap),
+                accessibility_perform_magic_tap as extern "C" fn(&Object, Sel) -> BOOL,
+            );
+        }
+
+        decl.register();
+    });
+
+    class!(GPUIAccessibilityElement)
 }
 
 /// Register a custom UIView subclass that implements UIKeyInput protocol.
@@ -538,6 +631,8 @@ pub(crate) struct IosWindow {
     /// `request_frame` callback) can acquire a mutable reference without
     /// conflicting with the outer `&self` borrow.
     renderer: Mutex<Option<WgpuRenderer>>,
+    /// Native UIKit/SwiftUI views overlaid with GPUI-managed bounds.
+    platform_view_host: NativePlatformViewHost,
 }
 
 // Required for raw_window_handle.
@@ -566,6 +661,230 @@ impl Drop for IosWindow {
     }
 }
 
+fn size_class_from_uikit(value: i64) -> SizeClass {
+    match value {
+        1 => SizeClass::Compact,
+        2 => SizeClass::Regular,
+        _ => SizeClass::Unspecified,
+    }
+}
+
+fn dynamic_type_from_name(name: &str) -> DynamicTypeCategory {
+    match name {
+        "UICTContentSizeCategoryXS" | "UIContentSizeCategoryExtraSmall" => {
+            DynamicTypeCategory::ExtraSmall
+        }
+        "UICTContentSizeCategoryS" | "UIContentSizeCategorySmall" => DynamicTypeCategory::Small,
+        "UICTContentSizeCategoryL" | "UIContentSizeCategoryLarge" => DynamicTypeCategory::Large,
+        "UICTContentSizeCategoryXL" | "UIContentSizeCategoryExtraLarge" => {
+            DynamicTypeCategory::ExtraLarge
+        }
+        "UICTContentSizeCategoryXXL" | "UIContentSizeCategoryExtraExtraLarge" => {
+            DynamicTypeCategory::ExtraExtraLarge
+        }
+        "UICTContentSizeCategoryXXXL" | "UIContentSizeCategoryExtraExtraExtraLarge" => {
+            DynamicTypeCategory::ExtraExtraExtraLarge
+        }
+        "UICTContentSizeCategoryAccessibilityM" | "UIContentSizeCategoryAccessibilityMedium" => {
+            DynamicTypeCategory::AccessibilityMedium
+        }
+        "UICTContentSizeCategoryAccessibilityL" | "UIContentSizeCategoryAccessibilityLarge" => {
+            DynamicTypeCategory::AccessibilityLarge
+        }
+        "UICTContentSizeCategoryAccessibilityXL"
+        | "UIContentSizeCategoryAccessibilityExtraLarge" => {
+            DynamicTypeCategory::AccessibilityExtraLarge
+        }
+        "UICTContentSizeCategoryAccessibilityXXL"
+        | "UIContentSizeCategoryAccessibilityExtraExtraLarge" => {
+            DynamicTypeCategory::AccessibilityExtraExtraLarge
+        }
+        "UICTContentSizeCategoryAccessibilityXXXL"
+        | "UIContentSizeCategoryAccessibilityExtraExtraExtraLarge" => {
+            DynamicTypeCategory::AccessibilityExtraExtraExtraLarge
+        }
+        _ => DynamicTypeCategory::Medium,
+    }
+}
+
+unsafe fn ns_string_to_string(value: *mut Object) -> Option<String> {
+    if value.is_null() {
+        return None;
+    }
+    let utf8: *const i8 = unsafe { msg_send![value, UTF8String] };
+    if utf8.is_null() {
+        return None;
+    }
+    unsafe { CStr::from_ptr(utf8) }
+        .to_str()
+        .ok()
+        .map(str::to_string)
+}
+
+fn dispatch_accessibility_element_action(
+    element: &Object,
+    action: crate::accessibility::IosAccessibilityAction,
+) -> bool {
+    unsafe {
+        // SAFETY: UIKit invokes these methods on a live GPUIAccessibilityElement.
+        // `accessibilityIdentifier` is an NSString set by `refresh_accessibility`
+        // when the element is rebuilt from the current snapshot.
+        let identifier: *mut Object = msg_send![element, accessibilityIdentifier];
+        let Some(id) = ns_string_to_string(identifier) else {
+            return false;
+        };
+        crate::accessibility::dispatch_accessibility_action(&id, action)
+    }
+}
+
+unsafe fn view_safe_area_insets(view: *mut Object) -> SafeAreaInsets {
+    if view.is_null() {
+        return SafeAreaInsets::default();
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    struct UIEdgeInsets {
+        top: f64,
+        left: f64,
+        bottom: f64,
+        right: f64,
+    }
+
+    let insets: UIEdgeInsets = unsafe { msg_send![view, safeAreaInsets] };
+    SafeAreaInsets::new(
+        insets.top as f32,
+        insets.left as f32,
+        insets.bottom as f32,
+        insets.right as f32,
+    )
+}
+
+unsafe fn query_scene_metrics(view: *mut Object, fallback_scale: f32) -> Option<IosSceneMetrics> {
+    if view.is_null() {
+        return None;
+    }
+
+    let bounds: core_graphics::geometry::CGRect = unsafe { msg_send![view, bounds] };
+    let width = bounds.size.width as f32;
+    let height = bounds.size.height as f32;
+    if !width.is_finite() || width <= 0.0 || !height.is_finite() || height <= 0.0 {
+        return None;
+    }
+
+    let window: *mut Object = unsafe { msg_send![view, window] };
+    let screen: *mut Object = if window.is_null() {
+        unsafe { msg_send![class!(UIScreen), mainScreen] }
+    } else {
+        unsafe { msg_send![window, screen] }
+    };
+    let scale_factor = if screen.is_null() {
+        fallback_scale
+    } else {
+        let scale: core_graphics::base::CGFloat = unsafe { msg_send![screen, scale] };
+        scale as f32
+    };
+
+    let trait_collection: *mut Object = unsafe { msg_send![view, traitCollection] };
+    let (horizontal_size_class, vertical_size_class, dynamic_type) = if trait_collection.is_null() {
+        (
+            SizeClass::Unspecified,
+            SizeClass::Unspecified,
+            DynamicTypeCategory::Medium,
+        )
+    } else {
+        let horizontal: i64 = unsafe { msg_send![trait_collection, horizontalSizeClass] };
+        let vertical: i64 = unsafe { msg_send![trait_collection, verticalSizeClass] };
+        let category: *mut Object =
+            unsafe { msg_send![trait_collection, preferredContentSizeCategory] };
+        let dynamic_type = unsafe { ns_string_to_string(category) }
+            .as_deref()
+            .map(dynamic_type_from_name)
+            .unwrap_or_default();
+        (
+            size_class_from_uikit(horizontal),
+            size_class_from_uikit(vertical),
+            dynamic_type,
+        )
+    };
+
+    let metrics = IosSceneMetrics {
+        width,
+        height,
+        scale_factor,
+        horizontal_size_class,
+        vertical_size_class,
+        dynamic_type,
+        safe_area: unsafe { view_safe_area_insets(view) },
+        keyboard_height: crate::keyboard_height(),
+    };
+
+    metrics.validate().ok()?;
+    Some(metrics)
+}
+
+fn accessibility_traits_for_node(node: &crate::accessibility::IosAccessibilityNode) -> u64 {
+    use crate::accessibility::{IosAccessibilityAction, IosAccessibilityRole};
+
+    let mut traits = 0_u64;
+    unsafe {
+        // SAFETY: These UIKit constants are process-lifetime globals exported
+        // by the UIKit framework linked into iOS/tvOS binaries.
+        traits |= match node.role {
+            IosAccessibilityRole::Button
+            | IosAccessibilityRole::Checkbox
+            | IosAccessibilityRole::Switch
+            | IosAccessibilityRole::Tab => UIAccessibilityTraitButton,
+            IosAccessibilityRole::Link => UIAccessibilityTraitLink,
+            IosAccessibilityRole::Header => UIAccessibilityTraitHeader,
+            IosAccessibilityRole::Image => UIAccessibilityTraitImage,
+            IosAccessibilityRole::SearchField => UIAccessibilityTraitSearchField,
+            IosAccessibilityRole::Slider | IosAccessibilityRole::Adjustable => {
+                UIAccessibilityTraitAdjustable
+            }
+            IosAccessibilityRole::StaticText => UIAccessibilityTraitStaticText,
+            IosAccessibilityRole::TextField
+            | IosAccessibilityRole::Container
+            | IosAccessibilityRole::None => 0,
+        };
+
+        if node.selected {
+            traits |= UIAccessibilityTraitSelected;
+        }
+        if !node.enabled {
+            traits |= UIAccessibilityTraitNotEnabled;
+        }
+        if node.actions.iter().any(|action| {
+            matches!(
+                action,
+                IosAccessibilityAction::Increment | IosAccessibilityAction::Decrement
+            )
+        }) {
+            traits |= UIAccessibilityTraitAdjustable;
+        }
+        if node.value.as_ref().is_some_and(|value| value.len() > 16)
+            && matches!(node.role, IosAccessibilityRole::StaticText)
+        {
+            traits |= UIAccessibilityTraitUpdatesFrequently;
+        }
+    }
+
+    traits
+}
+
+fn accessibility_value_for_node(
+    node: &crate::accessibility::IosAccessibilityNode,
+) -> Option<String> {
+    match (node.value.as_deref(), node.expanded) {
+        (Some(value), Some(true)) if !value.is_empty() => Some(format!("{value}, expanded")),
+        (Some(value), Some(false)) if !value.is_empty() => Some(format!("{value}, collapsed")),
+        (Some(value), _) if !value.is_empty() => Some(value.to_string()),
+        (_, Some(true)) => Some("expanded".to_string()),
+        (_, Some(false)) => Some("collapsed".to_string()),
+        _ => None,
+    }
+}
+
 impl IosWindow {
     pub fn new(handle: AnyWindowHandle, _params: WindowParams) -> anyhow::Result<Self> {
         #[cfg(debug_assertions)]
@@ -579,7 +898,6 @@ impl IosWindow {
 
         // Create the window on the main screen
         let screen = IosDisplay::main();
-        let screen_bounds = screen.bounds();
         let scale_factor = screen.scale();
 
         unsafe {
@@ -641,9 +959,38 @@ impl IosWindow {
             let _: () = msg_send![text_input_view, setUserInteractionEnabled: YES];
             let _: () = msg_send![view, addSubview: text_input_view];
 
+            // UIKit may resolve the actual scene size only after the window is
+            // visible, especially on iPad in Split View or Stage Manager. Force
+            // a layout pass now so the first GPUI render uses the current view
+            // bounds instead of the full screen bounds.
+            let _: () = msg_send![window, layoutIfNeeded];
+            let _: () = msg_send![view, layoutIfNeeded];
+
+            let initial_metrics =
+                query_scene_metrics(view, scale_factor).unwrap_or_else(|| IosSceneMetrics {
+                    width: screen_bounds_cg.size.width as f32,
+                    height: screen_bounds_cg.size.height as f32,
+                    scale_factor,
+                    horizontal_size_class: SizeClass::Unspecified,
+                    vertical_size_class: SizeClass::Unspecified,
+                    dynamic_type: DynamicTypeCategory::Medium,
+                    safe_area: view_safe_area_insets(view),
+                    keyboard_height: crate::keyboard_height(),
+                });
+            let initial_bounds = Bounds {
+                origin: Default::default(),
+                size: size(px(initial_metrics.width), px(initial_metrics.height)),
+            };
+            let initial_scale = initial_metrics.scale_factor as core_graphics::base::CGFloat;
+            let _: () = msg_send![layer, setContentsScale: initial_scale];
+
             // --- Initialise the wgpu renderer (Metal backend) ---------------
-            let pixel_w = (screen_bounds_cg.size.width * scale) as i32;
-            let pixel_h = (screen_bounds_cg.size.height * scale) as i32;
+            let pixel_w = (initial_metrics.width * initial_metrics.scale_factor)
+                .round()
+                .max(1.0) as i32;
+            let pixel_h = (initial_metrics.height * initial_metrics.scale_factor)
+                .round()
+                .max(1.0) as i32;
 
             let _handle = handle; // consumed but not stored
             let ios_window = Self {
@@ -651,8 +998,8 @@ impl IosWindow {
                 view_controller,
                 view,
                 text_input_view,
-                bounds: Cell::new(screen_bounds),
-                scale_factor: Cell::new(scale_factor),
+                bounds: Cell::new(initial_bounds),
+                scale_factor: Cell::new(initial_metrics.scale_factor),
                 input_handler: RefCell::new(None),
                 request_frame_callback: RefCell::new(None),
                 input_callback: RefCell::new(None),
@@ -672,6 +1019,7 @@ impl IosWindow {
                 momentum_scroller: RefCell::new(MomentumScroller::new()),
                 keyboard_observers: RefCell::new(Vec::new()),
                 renderer: Mutex::new(None),
+                platform_view_host: NativePlatformViewHost::new(view as *mut c_void),
             };
 
             // Create the wgpu renderer using the Metal backend.
@@ -894,6 +1242,7 @@ impl IosWindow {
         let logical_y: f32 = position.y.into();
 
         self.mouse_position.set(position);
+        self.dispatch_pointer_sample(touch, logical_x, logical_y);
 
         let touch_id = touch as usize;
         let mut states = self.touch_states.borrow_mut();
@@ -1121,6 +1470,45 @@ impl IosWindow {
         states.insert(touch_id, ts);
     }
 
+    fn dispatch_pointer_sample(&self, touch: *mut Object, logical_x: f32, logical_y: f32) {
+        if touch.is_null() {
+            return;
+        }
+        unsafe {
+            // SAFETY: UIKit supplies a live UITouch pointer while processing the
+            // touch callback on the main thread. Selectors used here are stable
+            // UITouch APIs on the supported iOS deployment target.
+            let touch_type: i64 = msg_send![touch, r#type];
+            let force: core_graphics::base::CGFloat = msg_send![touch, force];
+            let max_force: core_graphics::base::CGFloat = msg_send![touch, maximumPossibleForce];
+            let altitude_angle: core_graphics::base::CGFloat = msg_send![touch, altitudeAngle];
+            let azimuth_angle: core_graphics::base::CGFloat =
+                msg_send![touch, azimuthAngleInView: self.view];
+            let timestamp: f64 = msg_send![touch, timestamp];
+            let device = match touch_type {
+                0 => crate::pencil::IosPointerDevice::Touch,
+                1 => crate::pencil::IosPointerDevice::IndirectPointer,
+                2 => crate::pencil::IosPointerDevice::Pencil,
+                3 => crate::pencil::IosPointerDevice::IndirectPointer,
+                _ => crate::pencil::IosPointerDevice::Unknown,
+            };
+            let pressure = if max_force > 0.0 {
+                (force / max_force) as f32
+            } else {
+                0.0
+            };
+            crate::pencil::dispatch_pencil_sample(crate::pencil::IosPencilSample {
+                x: logical_x,
+                y: logical_y,
+                pressure,
+                altitude_angle: altitude_angle as f32,
+                azimuth_angle: azimuth_angle as f32,
+                timestamp_seconds: timestamp,
+                device,
+            });
+        }
+    }
+
     /// Query the safe area insets from the UIView.
     ///
     /// Returns `(top, left, bottom, right)` in logical points (matching
@@ -1128,27 +1516,148 @@ impl IosWindow {
     /// represent the areas occupied by system UI (status bar, home
     /// indicator, camera notch) that content should avoid.
     pub fn safe_area_insets(&self) -> (f32, f32, f32, f32) {
+        let insets = unsafe { view_safe_area_insets(self.view) };
+        (insets.top, insets.left, insets.bottom, insets.right)
+    }
+
+    /// Query current scene metrics from the actual UIKit view.
+    pub fn scene_metrics(&self) -> Option<IosSceneMetrics> {
+        unsafe { query_scene_metrics(self.view, self.scale_factor.get()) }
+    }
+
+    pub fn attach_to_parent_view(&self, parent: *mut c_void) {
+        if parent.is_null() || self.view.is_null() {
+            return;
+        }
+        self.platform_view_host.set_parent_view(parent);
+        unsafe {
+            // SAFETY: `parent` is supplied by Swift as a live UIView pointer for
+            // the duration of this call, and `self.view` is the retained GPUI
+            // Metal UIView owned by this window on the main thread.
+            let parent = parent as *mut Object;
+            let _: () = msg_send![parent, addSubview: self.view];
+            let bounds: core_graphics::geometry::CGRect = msg_send![parent, bounds];
+            let _: () = msg_send![self.view, setFrame: bounds];
+            let _: () = msg_send![self.view, setAutoresizingMask: 18_usize];
+        }
+        crate::instrumentation::emit_signpost(
+            crate::instrumentation::IosSignpostCategory::PlatformView,
+            "attach_gpui_host_view",
+        );
+        self.handle_layout_change();
+    }
+
+    pub fn detach_from_parent_view(&self) {
         if self.view.is_null() {
-            return (0.0, 0.0, 0.0, 0.0);
+            return;
         }
         unsafe {
-            // UIEdgeInsets { top, left, bottom, right } — all CGFloat
-            #[repr(C)]
-            #[derive(Debug, Clone, Copy)]
-            struct UIEdgeInsets {
-                top: f64,
-                left: f64,
-                bottom: f64,
-                right: f64,
+            // SAFETY: `self.view` is a live UIView owned by this window. UIKit
+            // permits `removeFromSuperview` even when there is no superview.
+            let _: () = msg_send![self.view, removeFromSuperview];
+        }
+        crate::instrumentation::emit_signpost(
+            crate::instrumentation::IosSignpostCategory::PlatformView,
+            "detach_gpui_host_view",
+        );
+    }
+
+    pub fn refresh_accessibility(&self) {
+        let snapshot = crate::accessibility::accessibility_snapshot();
+        let element_count = snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.flattened_nodes().len())
+            .unwrap_or_default();
+        crate::instrumentation::emit_signpost(
+            crate::instrumentation::IosSignpostCategory::Accessibility,
+            format!("accessibility_nodes={element_count}"),
+        );
+
+        unsafe {
+            // SAFETY: All UIKit accessibility objects are created and assigned
+            // on the main thread while `self.view` is a live UIView owned by
+            // this IosWindow. UIKit retains the array assigned through the
+            // `accessibilityElements` property.
+            if self.view.is_null() {
+                return;
             }
 
-            let insets: UIEdgeInsets = msg_send![self.view, safeAreaInsets];
-            (
-                insets.top as f32,
-                insets.left as f32,
-                insets.bottom as f32,
-                insets.right as f32,
-            )
+            let _: () = msg_send![self.view, setIsAccessibilityElement: false];
+
+            let Some(snapshot) = snapshot else {
+                let _: () = msg_send![
+                    self.view,
+                    setAccessibilityElements: std::ptr::null_mut::<Object>()
+                ];
+                return;
+            };
+
+            let nodes = snapshot.flattened_nodes();
+            let elements: *mut Object =
+                msg_send![class!(NSMutableArray), arrayWithCapacity: nodes.len()];
+            let element_class = register_accessibility_element_class();
+
+            for node in nodes {
+                let element: *mut Object = msg_send![element_class, alloc];
+                let element: *mut Object = msg_send![
+                    element,
+                    initWithAccessibilityContainer: self.view
+                ];
+                if element.is_null() {
+                    continue;
+                }
+
+                let id = super::ns_string_from_str(&node.id);
+                let _: () = msg_send![element, setAccessibilityIdentifier: id];
+
+                if let Some(label) = node.label.as_deref() {
+                    let label = super::ns_string_from_str(label);
+                    let _: () = msg_send![element, setAccessibilityLabel: label];
+                }
+                if let Some(hint) = node.hint.as_deref() {
+                    let hint = super::ns_string_from_str(hint);
+                    let _: () = msg_send![element, setAccessibilityHint: hint];
+                }
+                if let Some(value) = accessibility_value_for_node(node) {
+                    let value = super::ns_string_from_str(&value);
+                    let _: () = msg_send![element, setAccessibilityValue: value];
+                }
+
+                let frame = core_graphics::geometry::CGRect {
+                    origin: core_graphics::geometry::CGPoint {
+                        x: node.frame.x as core_graphics::base::CGFloat,
+                        y: node.frame.y as core_graphics::base::CGFloat,
+                    },
+                    size: core_graphics::geometry::CGSize {
+                        width: node.frame.width as core_graphics::base::CGFloat,
+                        height: node.frame.height as core_graphics::base::CGFloat,
+                    },
+                };
+                let _: () = msg_send![element, setAccessibilityFrameInContainerSpace: frame];
+
+                let traits = accessibility_traits_for_node(node);
+                let _: () = msg_send![element, setAccessibilityTraits: traits];
+                let _: () = msg_send![elements, addObject: element];
+                let _: () = msg_send![element, release];
+            }
+
+            let _: () = msg_send![self.view, setAccessibilityElements: elements];
+
+            if element_count > 0 {
+                let first_element: *mut Object = msg_send![elements, firstObject];
+                UIAccessibilityPostNotification(
+                    UIAccessibilityLayoutChangedNotification,
+                    first_element,
+                );
+            }
+
+            for announcement in snapshot.announcements {
+                let announcement = super::ns_string_from_str(&announcement);
+                UIAccessibilityPostNotification(
+                    UIAccessibilityAnnouncementNotification,
+                    announcement,
+                );
+            }
         }
     }
 
@@ -1519,66 +2028,66 @@ impl IosWindow {
     /// Queries the current UIView bounds, updates the stored bounds/scale,
     /// reconfigures the Metal layer + wgpu surface, and fires the resize callback.
     pub fn handle_layout_change(&self) {
+        let Some(metrics) = self.scene_metrics() else {
+            return;
+        };
+
+        let new_w = metrics.width;
+        let new_h = metrics.height;
+        let new_scale = metrics.scale_factor;
+
+        let old_bounds = self.bounds.get();
+        let old_scale = self.scale_factor.get();
+
+        let new_size = size(px(new_w), px(new_h));
+
+        // Only process if something actually changed.
+        if old_bounds.size == new_size && (old_scale - new_scale).abs() < 0.01 {
+            return;
+        }
+
+        log::info!(
+            "GPUI iOS: Layout changed — {:?} @{:.1}x → {:?} @{:.1}x ({:?})",
+            old_bounds.size,
+            old_scale,
+            new_size,
+            new_scale,
+            metrics.layout_mode(),
+        );
+
+        // Update stored bounds (in logical pixels, matching GPUI convention).
+        let new_bounds = Bounds {
+            origin: Default::default(),
+            size: new_size,
+        };
+        self.bounds.set(new_bounds);
+        self.scale_factor.set(new_scale);
+
         unsafe {
-            let view_bounds: core_graphics::geometry::CGRect = msg_send![self.view, bounds];
-            let screen: *mut Object = msg_send![class!(UIScreen), mainScreen];
-            let scale: core_graphics::base::CGFloat = msg_send![screen, scale];
-
-            let new_w = view_bounds.size.width as f32;
-            let new_h = view_bounds.size.height as f32;
-            let new_scale = scale as f32;
-
-            let old_bounds = self.bounds.get();
-            let old_scale = self.scale_factor.get();
-
-            let new_size = size(px(new_w), px(new_h));
-
-            // Only process if something actually changed.
-            if old_bounds.size == new_size && (old_scale - new_scale).abs() < 0.01 {
-                return;
-            }
-
-            log::info!(
-                "GPUI iOS: Layout changed — {:?} @{:.1}x → {:?} @{:.1}x",
-                old_bounds.size,
-                old_scale,
-                new_size,
-                new_scale,
-            );
-
-            // Update stored bounds (in logical pixels, matching GPUI convention).
-            let new_bounds = Bounds {
-                origin: Default::default(),
-                size: new_size,
-            };
-            self.bounds.set(new_bounds);
-            self.scale_factor.set(new_scale);
-
-            // Update the Metal layer's contentsScale so the drawable has the
-            // correct pixel dimensions.
+            // Update the Metal layer's contentsScale so the drawable has the correct pixel dimensions.
             let layer: *mut Object = msg_send![self.view, layer];
+            let scale = new_scale as core_graphics::base::CGFloat;
             let _: () = msg_send![layer, setContentsScale: scale];
+        }
 
-            // Update the wgpu renderer's surface configuration.
-            let pixel_w = (new_w * new_scale) as i32;
-            let pixel_h = (new_h * new_scale) as i32;
-            {
-                let mut guard = self.renderer.lock();
-                if let Some(renderer) = guard.as_mut() {
-                    renderer
-                        .update_drawable_size(size(DevicePixels(pixel_w), DevicePixels(pixel_h)));
-                }
+        // Update the wgpu renderer's surface configuration.
+        let pixel_w = (new_w * new_scale).round().max(1.0) as i32;
+        let pixel_h = (new_h * new_scale).round().max(1.0) as i32;
+        {
+            let mut guard = self.renderer.lock();
+            if let Some(renderer) = guard.as_mut() {
+                renderer.update_drawable_size(size(DevicePixels(pixel_w), DevicePixels(pixel_h)));
             }
+        }
 
-            // Fire the resize callback so GPUI re-layouts at the new size.
-            let cb = self.resize_callback.borrow_mut().take();
-            if let Some(mut cb) = cb {
-                cb(new_size, new_scale);
-                // Restore the callback for future resize events.
-                let mut slot = self.resize_callback.borrow_mut();
-                if slot.is_none() {
-                    *slot = Some(cb);
-                }
+        // Fire the resize callback so GPUI re-layouts at the new size.
+        let cb = self.resize_callback.borrow_mut().take();
+        if let Some(mut cb) = cb {
+            cb(new_size, new_scale);
+            // Restore the callback for future resize events.
+            let mut slot = self.resize_callback.borrow_mut();
+            if slot.is_none() {
+                *slot = Some(cb);
             }
         }
     }
