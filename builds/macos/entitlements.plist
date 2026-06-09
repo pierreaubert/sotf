@@ -24,6 +24,10 @@
     <key>com.apple.security.device.audio-input</key>
     <true/>
 
+    <!-- Camera (SOTF API QR-code server setup) -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+
     <!-- File Access (NSOpenPanel-driven user-selected dirs and files) -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
@@ -31,10 +35,5 @@
     <!-- Network (api.spinorama.org metadata, headphone-EQ database) -->
     <key>com.apple.security.network.client</key>
     <true/>
-
-    <!-- Camera entitlement removed 2026-05-08: SotF doesn't yet exercise
-         the camera path. Re-enable (with NSCameraUsageDescription in
-         org.spinorama.sotf.plist) when head-tracking lands. App Review
-         on the MAS path rejects entitlements without matching code. -->
 </dict>
 </plist>

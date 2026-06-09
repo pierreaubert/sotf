@@ -59,12 +59,14 @@ impl PlayerView {
             .flex()
             .flex_col()
             .size_full()
+            .min_h_0()
             .bg(theme.background)
             .child(self.render_recording_header(cx))
             .child(
                 div()
                     .id("recording-content")
                     .flex_1()
+                    .min_h_0()
                     .overflow_y_scroll()
                     .p(d.card)
                     .child(step_content),

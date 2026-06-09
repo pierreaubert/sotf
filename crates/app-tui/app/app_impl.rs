@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(state.config.mpd.port, 6601);
         assert!(state.config.dlna.enabled);
         assert_eq!(state.config.dlna.friendly_name, "SOTF Test Server");
-        assert_eq!(state.selected_section, ServerSection::Mpd);
+        assert_eq!(state.selected_section, ServerSection::Api);
         assert_eq!(state.selected_field, 0);
         assert!(!state.editing_value);
     }
@@ -296,7 +296,7 @@ mod tests {
 
         assert!(!state.config.mpd.enabled);
         assert!(!state.config.dlna.enabled);
-        assert_eq!(state.selected_section, ServerSection::Mpd);
+        assert_eq!(state.selected_section, ServerSection::Api);
         assert_eq!(state.selected_field, 0);
         assert!(!state.editing_value);
     }

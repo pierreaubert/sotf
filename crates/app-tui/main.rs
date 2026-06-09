@@ -5,6 +5,8 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
+use qrcode::QrCode;
+use qrcode::render::unicode;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use sotf_audio_player::Player;
@@ -128,12 +130,26 @@ struct Args {
     /// Run in headless server mode (MPD/DLNA) without UI
     #[arg(long)]
     server: bool,
+
+    /// Print a terminal QR code containing SOTF API URL and bearer token, then exit
+    #[arg(long)]
+    qr: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Setup logging to file (stderr is invisible in a TUI)
-    if let Some(log_path) = sotf_audio_player::config::get_tui_log_path() {
-        let log_result = OpenOptions::new().create(true).append(true).open(&log_path);
+    // Parse CLI args before touching the terminal. Server mode and clap's
+    // help/error output must run in a normal terminal, not raw alt-screen mode.
+    let args: Args = clap::Parser::parse();
+
+    // Apply QA directory override before any config dir access, including logs.
+    if let Some(qa_dir) = args.qa.clone() {
+        sotf_audio_player::config::set_config_dir_override(qa_dir);
+    }
+
+    // Setup logging to file (stderr is invisible in a TUI).
+    let tui_log_path = sotf_audio_player::config::get_tui_log_path();
+    if let Some(log_path) = &tui_log_path {
+        let log_result = OpenOptions::new().create(true).append(true).open(log_path);
 
         if let Ok(log_file) = log_result {
             env_logger::Builder::from_default_env()
@@ -148,17 +164,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         env_logger::init();
     }
 
-    // Parse CLI args before touching the terminal. Server mode and clap's
-    // help/error output must run in a normal terminal, not raw alt-screen mode.
-    let args: Args = clap::Parser::parse();
-
-    // Apply QA directory override before any config dir access
-    if let Some(qa_dir) = args.qa.clone() {
-        sotf_audio_player::config::set_config_dir_override(qa_dir);
+    if args.qr {
+        print_sotf_api_connection_qr()?;
+        std::process::exit(0);
     }
 
     // Headless server mode — skip UI entirely
     if args.server {
+        if let Some(log_path) = tui_log_path {
+            eprintln!("TUI log file: {}", log_path.display());
+        }
         match sotf_audio_player::server::run_server_mode() {
             Ok(()) => std::process::exit(0),
             Err(e) => {
@@ -816,6 +831,32 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
             break;
         }
     }
+
+    Ok(())
+}
+
+fn print_sotf_api_connection_qr() -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = sotf_audio_player::config::load_server_config()?;
+    if sotf_audio_player::server::ensure_sotf_api_connection_config(&mut config) {
+        sotf_audio_player::config::save_server_config(&config)?;
+    }
+
+    let payload = sotf_audio_player::server::sotf_api_connection_qr_payload(&config.api)?;
+    let url = sotf_audio_player::server::sotf_api_server_url_for_bind(
+        &config.api.bind_address,
+        config.api.port,
+    );
+    let token = config.api.auth_token.as_deref().unwrap_or_default();
+    let code = QrCode::new(payload.as_bytes())?;
+    let qr = code.render::<unicode::Dense1x2>().quiet_zone(true).build();
+
+    println!("SOTF API connection QR");
+    println!("Name: {}", config.api.friendly_name);
+    println!("URL: {url}");
+    println!("Token: {token}");
+    println!("Payload: {payload}");
+    println!();
+    println!("{qr}");
 
     Ok(())
 }

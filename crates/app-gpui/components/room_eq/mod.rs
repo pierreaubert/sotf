@@ -62,6 +62,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .size_full()
+            .min_h_0()
             .bg(theme.background)
             .child(self.render_room_eq_header(cx))
             // Contextual hint banner (only Room EQ hints)
@@ -96,6 +97,7 @@ impl PlayerView {
                 div()
                     .id("room-eq-content")
                     .flex_1()
+                    .min_h_0()
                     .overflow_y_scroll()
                     .p(d.card)
                     .child(content),

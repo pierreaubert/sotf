@@ -7,6 +7,7 @@ use sotf_audio_player_gpui::app::state::app::{
     RemoteAlbumCache, RemoteCacheRefreshError, RemoteRefreshRequests, RemoteServerProbeStatus,
     RemoteState,
 };
+use sotf_audio_player_gpui::config::RemoteLibraryIdentity;
 
 fn discovered_server() -> DiscoveredSotfApiServer {
     DiscoveredSotfApiServer {
@@ -135,6 +136,31 @@ fn remote_probe_status_labels_are_user_readable() {
     );
 }
 
+#[test]
+fn remote_probe_revision_tracks_visible_status_changes() {
+    let mut state = RemoteState::default();
+    assert_eq!(state.server_probe_revision, 0);
+
+    state.set_server_probe_status("server-a", RemoteServerProbeStatus::Testing);
+    assert_eq!(state.server_probe_revision, 1);
+    assert_eq!(
+        state.server_probe_statuses.get("server-a"),
+        Some(&RemoteServerProbeStatus::Testing)
+    );
+
+    state.set_server_probe_status(
+        "server-a",
+        RemoteServerProbeStatus::Failed("timeout".to_string()),
+    );
+    assert_eq!(state.server_probe_revision, 2);
+
+    state.remove_server_probe_status("server-a");
+    assert_eq!(state.server_probe_revision, 3);
+
+    state.remove_server_probe_status("server-a");
+    assert_eq!(state.server_probe_revision, 3);
+}
+
 fn remote_album(id: &str, title: &str) -> SotfApiAlbum {
     SotfApiAlbum {
         id: id.to_string(),
@@ -221,6 +247,7 @@ fn remote_state_applies_visible_album_page_without_local_db() {
             limit: 50,
             library_version: 7,
         },
+        "beatles",
     );
 
     assert_eq!(state.current_album_page.as_ref().unwrap().total, 1);
@@ -228,8 +255,54 @@ fn remote_state_applies_visible_album_page_without_local_db() {
         state.current_album_page_server_id.as_deref(),
         Some("server-a")
     );
+    assert_eq!(state.current_album_page_query, "beatles");
+    assert_eq!(state.remote_album_page_revision, 1);
     assert!(state.album_cache.metadata("server-a", 7, "one").is_some());
     assert!(state.server_store.servers.is_empty());
+
+    state.clear_remote_album_page();
+    assert!(state.current_album_page.is_none());
+    assert_eq!(state.current_album_page_query, "");
+    assert_eq!(state.remote_album_page_revision, 2);
+}
+
+#[test]
+fn remote_library_identity_change_invalidates_disposable_cache() {
+    let mut state = RemoteState::default();
+    let identity = RemoteLibraryIdentity {
+        server_id: "server-a".to_string(),
+        library_version: 7,
+    };
+
+    assert!(state.update_local_library_identity(identity.clone()));
+    state.apply_remote_album_page(
+        "server-a",
+        SotfApiAlbumList {
+            albums: vec![remote_album("one", "One")],
+            total: 1,
+            offset: 0,
+            limit: 50,
+            library_version: 7,
+        },
+        "",
+    );
+    state
+        .album_cache
+        .upsert_artwork("server-a", 7, "one", vec![1]);
+
+    assert!(!state.update_local_library_identity(identity));
+    assert!(state.current_album_page.is_some());
+    assert!(state.album_cache.metadata("server-a", 7, "one").is_some());
+    assert!(state.album_cache.artwork("server-a", 7, "one").is_some());
+
+    assert!(state.update_local_library_identity(RemoteLibraryIdentity {
+        server_id: "server-b".to_string(),
+        library_version: 1,
+    }));
+    assert!(state.current_album_page.is_none());
+    assert!(state.current_album_page_server_id.is_none());
+    assert!(state.album_cache.metadata("server-a", 7, "one").is_none());
+    assert!(state.album_cache.artwork("server-a", 7, "one").is_none());
 }
 
 #[test]

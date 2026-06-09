@@ -290,9 +290,6 @@ plutil -replace CFBundleShortVersionString -string "$VERSION" \
     "$APP_BUNDLE/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$BUILD_NUMBER" \
     "$APP_BUNDLE/Contents/Info.plist"
-# Camera entitlement removed 2026-05-08; no NSCameraUsageDescription
-# injected here. Re-add (along with the entitlement in entitlements-mas.plist)
-# when head-tracking ships.
 # App Store requires an export-compliance answer. SotF only uses Apple-provided
 # HTTPS via system networking, which is exempt under standard rules.
 plutil -replace ITSAppUsesNonExemptEncryption -bool NO \

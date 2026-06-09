@@ -15,6 +15,8 @@ pub(crate) struct TickSnapshot {
     has_toast: bool,
     federation_scan_active: bool,
     library_stats_computing: bool,
+    remote_server_probe_revision: u64,
+    remote_album_page_revision: u64,
 }
 
 /// Screens where rack analyzer data is visible. Library/Queue only show rack
@@ -56,6 +58,8 @@ impl PlayerView {
             has_toast: state.app.ui_state.toast_message.is_some(),
             federation_scan_active: state.app.federation.scan_progress.is_some(),
             library_stats_computing: state.app.library_stats_computing,
+            remote_server_probe_revision: state.app.remote.server_probe_revision,
+            remote_album_page_revision: state.app.remote.remote_album_page_revision,
         }
     }
 

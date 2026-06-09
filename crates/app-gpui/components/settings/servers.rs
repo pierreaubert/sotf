@@ -43,12 +43,150 @@ impl PlayerView {
             // Native SOTF remote control targets
             .child(self.render_remote_sotf_section(&theme, &d, cx))
             .child(settings_section_label("This Device as Server", &theme, &d))
+            // SOTF API section
+            .child(self.render_sotf_api_section(&server_config, &theme, &d, cx))
             // MPD Server section
             .child(self.render_mpd_section(&server_config, &theme, &translations, &d, cx))
             // DLNA Server section
             .child(self.render_dlna_section(&server_config, &theme, &translations, &d, cx))
             // Pairing & mTLS trust section
             .child(self.render_pairing_section(&theme, &d, cx))
+    }
+
+    fn render_sotf_api_section(
+        &self,
+        server_config: &sotf_audio_player::federation_config::ServerConfig,
+        theme: &crate::app::theme::Theme,
+        d: &Ds,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let api = &server_config.api;
+        let url =
+            sotf_audio_player::server::sotf_api_server_url_for_bind(&api.bind_address, api.port);
+        let has_token = api
+            .auth_token
+            .as_deref()
+            .is_some_and(|token| !token.trim().is_empty());
+        let (show_qr, qr_data) = {
+            let state = self.state.read(cx);
+            (
+                state.app.ui_state.show_sotf_api_connection_qr,
+                state.app.sotf_api_connection_qr_data(),
+            )
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(d.gap_md)
+            .p(d.card)
+            .bg(theme.background_secondary)
+            .rounded(d.r_md)
+            .border_1()
+            .border_color(if api.enabled {
+                theme.accent
+            } else {
+                theme.border
+            })
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .child(
+                        Text::new("SOTF API")
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        Button::new(
+                            "toggle-sotf-api-connection-qr",
+                            if show_qr { "Hide QR" } else { "Show QR" },
+                        )
+                        .variant(if show_qr {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Secondary
+                        })
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                if let Err(err) = state.app.toggle_sotf_api_connection_qr() {
+                                    state.app.ui_state.toast_message =
+                                        Some(crate::app::ToastMessage::error(err));
+                                }
+                            });
+                            cx.notify();
+                        })),
+                    )
+                    .build(),
+            )
+            .child(Divider::new().color(theme.border))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(d.gap)
+                    .child(
+                        div()
+                            .w(rems(7.5))
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_secondary)
+                            .child("URL"),
+                    )
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_primary)
+                            .child(url),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(d.gap)
+                    .child(
+                        div()
+                            .w(rems(7.5))
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_secondary)
+                            .child("Token"),
+                    )
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(if has_token {
+                                theme.success
+                            } else {
+                                theme.warning
+                            })
+                            .child(if has_token {
+                                "Configured"
+                            } else {
+                                "Generated when QR is shown"
+                            }),
+                    ),
+            )
+            .when(show_qr, |section| {
+                section.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(d.gap_md)
+                        .py(d.pad_y)
+                        .when_some(qr_data, |el, data| {
+                            el.child(QrCode::new(data).size(px(220.0))).child(
+                                div()
+                                    .text_size(d.text_xs)
+                                    .text_color(theme.text_muted)
+                                    .child("Scan to add this SOTF API server. The bearer token is included."),
+                            )
+                        }),
+                )
+            })
     }
 
     fn render_mpd_section(
@@ -694,6 +832,7 @@ impl PlayerView {
                             .color(theme.text_primary),
                     )
                     .child(div().flex_1())
+                    .child(self.render_scan_sotf_qr_button(theme, d, cx))
                     .child(
                         Button::new(
                             "discover-sotf-remotes",
@@ -857,6 +996,36 @@ impl PlayerView {
         }
 
         section
+    }
+
+    fn render_scan_sotf_qr_button(
+        &self,
+        theme: &crate::app::theme::Theme,
+        _d: &Ds,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        #[cfg(target_os = "ios")]
+        {
+            Button::new("scan-sotf-remote-qr", "Scan QR")
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(|_view, _: &ClickEvent, _window, _cx| {
+                    unsafe extern "C" {
+                        fn sotf_ios_show_qr_scanner();
+                    }
+                    // SAFETY: implemented by app-ios in the final iOS binary.
+                    // It presents UIKit UI on the main queue and retains no
+                    // Rust references across the FFI boundary.
+                    unsafe { sotf_ios_show_qr_scanner() };
+                }))
+                .into_any_element()
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            let _ = (theme, _d, cx);
+            div().into_any_element()
+        }
     }
 
     fn render_remote_sotf_server_row(

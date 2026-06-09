@@ -157,6 +157,32 @@ impl App {
         self.save_server_config();
     }
 
+    /// Toggle the local SOTF API connection QR. When showing the QR, make sure
+    /// the API is enabled and has a bearer token so the encoded payload is
+    /// immediately usable by remote clients.
+    pub fn toggle_sotf_api_connection_qr(&mut self) -> Result<(), String> {
+        if self.ui_state.show_sotf_api_connection_qr {
+            self.ui_state.show_sotf_api_connection_qr = false;
+            return Ok(());
+        }
+
+        if sotf_audio_player::server::ensure_sotf_api_connection_config(
+            &mut self.federation.server_config,
+        ) {
+            self.save_server_config();
+        }
+        self.ui_state.show_sotf_api_connection_qr = true;
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn sotf_api_connection_qr_data(&self) -> Option<String> {
+        sotf_audio_player::server::sotf_api_connection_qr_payload(
+            &self.federation.server_config.api,
+        )
+        .ok()
+    }
+
     /// Update an MPD server field and persist.
     pub fn update_mpd_field(&mut self, field: &str, value: &str) {
         match field {

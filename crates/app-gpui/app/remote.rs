@@ -11,6 +11,7 @@ use crate::app::state::app::{
 use crate::app::types::ToastMessage;
 
 const DEFAULT_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
+const DEFAULT_REMOTE_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_REMOTE_ALBUM_PAGE_LIMIT: usize = 50;
 
 impl App {
@@ -105,8 +106,7 @@ impl App {
         let api_base_url = server.api_base_url.clone();
         let (tx, rx) = mpsc::channel();
         self.remote
-            .server_probe_statuses
-            .insert(server_id.clone(), RemoteServerProbeStatus::Testing);
+            .set_server_probe_status(server_id.clone(), RemoteServerProbeStatus::Testing);
         self.remote.server_probe_receiver = Some(rx);
 
         std::thread::Builder::new()
@@ -138,8 +138,7 @@ impl App {
         let (server_id, status) = result;
         if !server_id.is_empty() {
             self.remote
-                .server_probe_statuses
-                .insert(server_id, status.clone());
+                .set_server_probe_status(server_id, status.clone());
         }
 
         match status {
@@ -184,6 +183,28 @@ impl App {
         } else {
             Some(ToastMessage::warning(
                 "SOTF server saved, but the API token could not be stored in Keychain.",
+            ))
+        };
+        Ok(id)
+    }
+
+    pub fn add_remote_server_from_qr_payload(&mut self, payload: &str) -> Result<String, String> {
+        let parsed = sotf_audio_player::server::parse_sotf_api_connection_qr_payload(payload)?;
+        let id = self
+            .remote
+            .add_manual_server_record(parsed.name, parsed.url)?;
+        self.remote.server_tokens.insert(id.clone(), parsed.token);
+        if !self.save_remote_server_store("save QR SOTF server") {
+            return Err("failed to save remote server store".to_string());
+        }
+        let token_persisted = self.save_cached_remote_server_token(&id);
+        let _ = self.select_remote_server(&id);
+        let _ = self.start_remote_server_probe(&id);
+        self.ui_state.toast_message = if token_persisted {
+            Some(ToastMessage::success("SOTF server added from QR code."))
+        } else {
+            Some(ToastMessage::warning(
+                "SOTF server added from QR code, but the API token could not be stored.",
             ))
         };
         Ok(id)
@@ -241,7 +262,7 @@ impl App {
         if let Some(server) = removed.as_ref() {
             delete_persisted_remote_server_token(server);
         }
-        self.remote.server_probe_statuses.remove(server_id);
+        self.remote.remove_server_probe_status(server_id);
         self.remote.server_tokens.remove(server_id);
         self.remote.event_stream_receiver = None;
         self.remote.album_cache.invalidate_server(server_id);
@@ -493,13 +514,19 @@ impl App {
         let requests = self.remote.refresh_requests;
         self.remote.refresh_requests = RemoteRefreshRequests::default();
         let page_request = if requests.visible_album_page {
+            let query = self.library_state.search_query.trim().to_string();
             let (offset, limit) = self
                 .remote
                 .current_album_page
                 .as_ref()
+                .filter(|_| self.remote.current_album_page_query == query)
                 .map(|page| (page.offset, page.limit.max(1)))
                 .unwrap_or((0, DEFAULT_REMOTE_ALBUM_PAGE_LIMIT));
-            Some((offset, limit.min(self.remote.album_cache.max_albums())))
+            Some((
+                offset,
+                limit.min(self.remote.album_cache.max_albums()),
+                query,
+            ))
         } else {
             None
         };
@@ -548,8 +575,17 @@ impl App {
             });
 
         if let Some(page) = result.album_page {
-            self.remote
-                .apply_remote_album_page(result.server_id.clone(), page);
+            if self.library_state.search_query.trim() != result.album_query.as_deref().unwrap_or("")
+            {
+                self.remote.refresh_requests.visible_album_page = true;
+                return;
+            }
+            self.reconcile_ios_remote_library_identity(&result.server_id, page.library_version);
+            self.remote.apply_remote_album_page(
+                result.server_id.clone(),
+                page,
+                result.album_query.unwrap_or_default(),
+            );
         }
 
         if let Some(library_version) = artwork_version {
@@ -626,6 +662,52 @@ impl App {
             return false;
         };
         save_persisted_remote_server_token(server, token)
+    }
+
+    fn reconcile_ios_remote_library_identity(&mut self, server_id: &str, library_version: u64) {
+        #[cfg(target_os = "ios")]
+        {
+            let identity = crate::config::RemoteLibraryIdentity {
+                server_id: server_id.to_string(),
+                library_version,
+            };
+            if self.remote.update_local_library_identity(identity.clone()) {
+                match self.library_state.clear_library_content() {
+                    Ok(removed) => {
+                        log::info!(
+                            "[remote] Cleared stale iOS local library for remote {}@{} ({} tracks removed)",
+                            server_id,
+                            library_version,
+                            removed
+                        );
+                    }
+                    Err(err) => {
+                        log::warn!("[remote] Failed to clear stale iOS local library: {err}");
+                    }
+                }
+                persist_remote_library_identity(identity);
+            }
+        }
+
+        #[cfg(not(target_os = "ios"))]
+        {
+            let _ = (server_id, library_version);
+        }
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn persist_remote_library_identity(identity: crate::config::RemoteLibraryIdentity) {
+    match crate::config::Config::load() {
+        Ok(mut config) => {
+            config.remote_library_identity = Some(identity);
+            if let Err(err) = config.save() {
+                log::warn!("[remote] Failed to persist remote library identity: {err}");
+            }
+        }
+        Err(err) => {
+            log::warn!("[remote] Failed to load config for remote library identity: {err}");
+        }
     }
 }
 
@@ -950,25 +1032,35 @@ fn probe_remote_server_public(api_base_url: &str) -> RemoteServerProbeStatus {
         .map_err(|err| format!("Failed to start probe runtime: {err}"))
         .and_then(|rt| {
             rt.block_on(async move {
-                let client = sotf_audio_player::sotf_api_client::SotfApiClient::new(
-                    api_base_url,
-                    "public-probe",
-                )
-                .map_err(|err| err.to_string())?;
-                let health = client.health().await.map_err(|err| err.to_string())?;
-                if !health.ok {
-                    return Err("health endpoint reported not-ok".to_string());
-                }
-                let discovery = client.discovery().await.map_err(|err| err.to_string())?;
-                let capabilities = client.capabilities().await.map_err(|err| err.to_string())?;
-                Ok(RemoteServerProbeStatus::Reachable {
-                    friendly_name: discovery.friendly_name,
-                    version: discovery.version,
-                    auth_required: discovery.auth_required,
-                    api_version: capabilities.api_version,
-                    media_range: capabilities.features.media_range,
-                    events: capabilities.features.events,
+                tokio::time::timeout(DEFAULT_REMOTE_PROBE_TIMEOUT, async move {
+                    let client = sotf_audio_player::sotf_api_client::SotfApiClient::new(
+                        api_base_url,
+                        "public-probe",
+                    )
+                    .map_err(|err| err.to_string())?;
+                    let health = client.health().await.map_err(|err| err.to_string())?;
+                    if !health.ok {
+                        return Err("health endpoint reported not-ok".to_string());
+                    }
+                    let discovery = client.discovery().await.map_err(|err| err.to_string())?;
+                    let capabilities =
+                        client.capabilities().await.map_err(|err| err.to_string())?;
+                    Ok(RemoteServerProbeStatus::Reachable {
+                        friendly_name: discovery.friendly_name,
+                        version: discovery.version,
+                        auth_required: discovery.auth_required,
+                        api_version: capabilities.api_version,
+                        media_range: capabilities.features.media_range,
+                        events: capabilities.features.events,
+                    })
                 })
+                .await
+                .map_err(|_| {
+                    format!(
+                        "SOTF server test timed out after {} seconds",
+                        DEFAULT_REMOTE_PROBE_TIMEOUT.as_secs()
+                    )
+                })?
             })
         });
 
@@ -983,7 +1075,7 @@ fn refresh_remote_cache_worker(
     api_base_url: String,
     token: String,
     requests: RemoteRefreshRequests,
-    page_request: Option<(usize, usize)>,
+    page_request: Option<(usize, usize, String)>,
 ) -> Result<RemoteCacheRefreshResult, RemoteCacheRefreshError> {
     let worker_result = tokio::runtime::Runtime::new()
         .map_err(|err| format!("Failed to start remote cache runtime: {err}"))
@@ -1002,15 +1094,15 @@ fn refresh_remote_cache_worker(
                 } else {
                     None
                 };
-                let album_page = if let Some((offset, limit)) = page_request {
-                    Some(
-                        client
-                            .library_albums_page(offset, limit, None, Some("artist_title"))
-                            .await
-                            .map_err(|err| err.to_string())?,
-                    )
+                let (album_page, album_query) = if let Some((offset, limit, query)) = page_request {
+                    let query_arg = (!query.is_empty()).then_some(query.as_str());
+                    let page = client
+                        .library_albums_page(offset, limit, query_arg, Some("artist_title"))
+                        .await
+                        .map_err(|err| err.to_string())?;
+                    (Some(page), Some(query))
                 } else {
-                    None
+                    (None, None)
                 };
 
                 let mut artwork = Vec::new();
@@ -1034,6 +1126,7 @@ fn refresh_remote_cache_worker(
                     state,
                     queue,
                     album_page,
+                    album_query,
                     artwork,
                 })
             })

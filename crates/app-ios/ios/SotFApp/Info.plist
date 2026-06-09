@@ -29,6 +29,8 @@
 		<string>_raop._tcp</string>
 		<string>_googlecast._tcp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>SotF uses the camera to scan server QR codes and add remote players.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>SotF discovers and controls your music servers, speakers, and players on the local network.</string>
 	<key>UIBackgroundModes</key>

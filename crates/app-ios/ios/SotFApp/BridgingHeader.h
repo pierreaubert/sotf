@@ -62,6 +62,9 @@ void gpui_ios_handle_key_event(void *window_ptr, unsigned int key_code,
 // File import — called by Swift DocumentPicker → Rust
 void sotf_ios_files_imported(const char *paths_json);
 
+// QR import — called by Swift QRScanner → Rust
+void sotf_ios_qr_scanned(const char *payload);
+
 // Music directory — called by Rust to get the iOS sandbox music path
 const char *sotf_ios_get_music_directory(void);
 

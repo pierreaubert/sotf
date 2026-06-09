@@ -11312,6 +11312,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "parking_lot",
+ "qrcode",
  "ratatui",
  "ratatui-image",
  "rusqlite",

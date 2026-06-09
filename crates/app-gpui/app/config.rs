@@ -333,6 +333,17 @@ pub struct Config {
     /// from `theme` (which controls the global app palette).
     #[serde(default)]
     pub rack_theme_state: RackThemeState,
+    /// Remote library identity currently associated with the local database.
+    /// iOS uses this to clear stale local data when switching remote servers or
+    /// when the connected server's library version changes.
+    #[serde(default)]
+    pub remote_library_identity: Option<RemoteLibraryIdentity>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteLibraryIdentity {
+    pub server_id: String,
+    pub library_version: u64,
 }
 
 fn default_font_scale() -> f32 {
@@ -376,6 +387,7 @@ impl Config {
                 seen_hints: Vec::new(),
                 design_language: None,
                 rack_theme_state: RackThemeState::default(),
+                remote_library_identity: None,
             });
         }
 

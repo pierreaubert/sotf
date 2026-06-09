@@ -6,7 +6,7 @@ use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::ui;
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::panic::{AssertUnwindSafe, UnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,11 +48,14 @@ pub enum RemoteCommand {
     /// File paths imported from the iOS document picker. The consumer should
     /// either add them to the library or push them onto the playback queue.
     ImportFiles(Vec<PathBuf>),
+    /// A QR code payload was scanned by the native camera view.
+    QrPayloadScanned,
 }
 
 static PENDING_REMOTE_COMMANDS: OnceLock<parking_lot::Mutex<VecDeque<RemoteCommand>>> =
     OnceLock::new();
 static PENDING_IMPORTED_FILES: OnceLock<parking_lot::Mutex<Vec<PathBuf>>> = OnceLock::new();
+static PENDING_QR_PAYLOADS: OnceLock<parking_lot::Mutex<VecDeque<String>>> = OnceLock::new();
 
 fn pending_queue() -> &'static parking_lot::Mutex<VecDeque<RemoteCommand>> {
     PENDING_REMOTE_COMMANDS.get_or_init(|| parking_lot::Mutex::new(VecDeque::new()))
@@ -60,6 +63,10 @@ fn pending_queue() -> &'static parking_lot::Mutex<VecDeque<RemoteCommand>> {
 
 fn pending_imports() -> &'static parking_lot::Mutex<Vec<PathBuf>> {
     PENDING_IMPORTED_FILES.get_or_init(|| parking_lot::Mutex::new(Vec::new()))
+}
+
+fn pending_qr_payloads() -> &'static parking_lot::Mutex<VecDeque<String>> {
+    PENDING_QR_PAYLOADS.get_or_init(|| parking_lot::Mutex::new(VecDeque::new()))
 }
 
 /// Push a remote command for the GPUI loop to drain.
@@ -77,7 +84,8 @@ pub fn drain_pending_remote_commands() -> Vec<RemoteCommand> {
 ///
 /// Return codes are intentionally scalar so `app-gpui` can consume remote
 /// commands without depending on this crate and creating a cycle:
-/// 0 = none, 1 = next track, 2 = previous track, 3 = imported files noticed.
+/// 0 = none, 1 = next track, 2 = previous track, 3 = imported files noticed,
+/// 4 = QR payload scanned.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_pop_remote_command() -> i32 {
     ffi_guard(|| match pending_queue().lock().pop_front() {
@@ -91,6 +99,7 @@ pub extern "C" fn sotf_ios_pop_remote_command() -> i32 {
             );
             3
         }
+        Some(RemoteCommand::QrPayloadScanned) => 4,
     })
 }
 
@@ -113,6 +122,25 @@ pub extern "C" fn sotf_ios_take_imported_files_json() -> *mut std::ffi::c_char {
             Ok(value) => value.into_raw(),
             Err(_) => {
                 log::error!("[iOS] imported file JSON contained interior NUL");
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Return the next scanned QR payload for GPUI to consume.
+///
+/// The returned pointer must be released with `sotf_ios_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_take_scanned_qr_payload() -> *mut std::ffi::c_char {
+    ffi_guard(|| {
+        let Some(payload) = pending_qr_payloads().lock().pop_front() else {
+            return std::ptr::null_mut();
+        };
+        match CString::new(payload) {
+            Ok(value) => value.into_raw(),
+            Err(_) => {
+                log::error!("[iOS] scanned QR payload contained interior NUL");
                 std::ptr::null_mut()
             }
         }
@@ -356,6 +384,32 @@ pub extern "C" fn sotf_ios_files_imported(paths_json: *const std::ffi::c_char) {
         // Also enqueue for the GPUI library-import consumer.
         pending_imports().lock().extend(path_bufs.iter().cloned());
         push_remote_command(RemoteCommand::ImportFiles(path_bufs));
+    }))
+}
+
+/// Called from Swift when the native QR scanner reads a SOTF connection code.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_qr_scanned(payload: *const std::ffi::c_char) {
+    ffi_guard(AssertUnwindSafe(|| {
+        if payload.is_null() {
+            return;
+        }
+
+        // SAFETY: caller (Swift) keeps `payload` valid for the duration of
+        // this call. We immediately copy it into an owned Rust string.
+        let payload = match unsafe { CStr::from_ptr(payload) }.to_str() {
+            Ok(value) => value.to_string(),
+            Err(err) => {
+                log::error!("[iOS] Invalid UTF-8 in scanned QR payload: {err}");
+                return;
+            }
+        };
+        if payload.trim().is_empty() {
+            return;
+        }
+
+        pending_qr_payloads().lock().push_back(payload);
+        push_remote_command(RemoteCommand::QrPayloadScanned);
     }))
 }
 

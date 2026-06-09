@@ -199,6 +199,7 @@ fn test_config_serialization() {
         max_font_size_px: None,
         design_language: None,
         rack_theme_state: Default::default(),
+        remote_library_identity: None,
     };
     let json = serde_json::to_string(&config).unwrap();
     let deserialized: Config = serde_json::from_str(&json).unwrap();

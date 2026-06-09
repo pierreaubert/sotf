@@ -70,6 +70,7 @@ symphonia-format-isomp4 = { workspace = true }
 
 # CLI
 clap = { workspace = true }
+qrcode = { workspace = true }
 
 # Logging
 log = { workspace = true }

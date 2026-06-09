@@ -22,10 +22,10 @@
     <!-- Hardware capabilities the app actually uses. Each must also have
          a user-facing usage-description string in Info.plist:
            NSMicrophoneUsageDescription
-         Re-add `com.apple.security.device.camera` (with NSCameraUsageDescription)
-         when head-tracking ships. App Review rejects entitlements that
-         don't have matching functionality in the binary. -->
+           NSCameraUsageDescription -->
     <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.device.camera</key>
     <true/>
 
     <!-- Outbound HTTPS only (api.spinorama.org metadata, headphone-EQ

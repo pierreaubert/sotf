@@ -15,6 +15,25 @@
 - The Local Library settings page is explicitly labelled local-only, scrolls on
   iPad-sized layouts, and includes a clear-local-library action for removing
   stale local album/track rows without deleting saved remote server records.
+- iOS no longer shows the local-only Library or Keybindings settings tabs; when
+  the connected remote server/library identity changes, the app clears stale
+  local library rows plus the disposable remote album/artwork cache.
+- Remote server tests in Connections now redraw when the probe finishes and
+  time out promptly instead of leaving the row stuck on `Status: testing`.
+- Connected remote players now show server-backed album pages in the Library
+  screen, repaint when the background page cache completes, and send Library
+  search text to the server-side paged album API instead of searching the
+  cleared local database.
+- GPUI wizard screens now keep their content panes height-constrained above the
+  player footer, restoring vertical scrolling on iOS and other app targets.
+- Connections settings now include a SOTF API card with a Show QR button that
+  displays a scannable connection payload containing the API URL and bearer
+  token.
+- On iOS, Connections now includes a Scan QR button that opens the native camera
+  scanner and adds the scanned SOTF API server through the same Keychain-backed
+  remote connection path as manual entry.
+- macOS direct and MAS packaging templates now include camera access entitlement
+  plus `NSCameraUsageDescription` for QR-code server setup.
 
 ## SOTF API pairing and trust controls
 

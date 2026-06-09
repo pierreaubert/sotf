@@ -34,9 +34,28 @@ impl PlayerView {
         let state = self.state.read(cx);
         let stats = &state.app.library_stats;
 
-        let albums_count = state.app.library_state.library.albums.len();
+        let remote_library_active = state.app.remote.server_store.selected_server_id.is_some();
+        let remote_library_summary = state.app.remote.current_state.as_ref().map(|s| &s.library);
+        let albums_count = if remote_library_active {
+            state
+                .app
+                .remote
+                .current_album_page
+                .as_ref()
+                .map(|page| page.total)
+                .or_else(|| remote_library_summary.map(|summary| summary.albums))
+                .unwrap_or(0)
+        } else {
+            state.app.library_state.library.albums.len()
+        };
         let artists_count = stats.artists_count;
-        let tracks_count = stats.total_tracks;
+        let tracks_count = if remote_library_active {
+            remote_library_summary
+                .map(|summary| summary.tracks)
+                .unwrap_or(stats.total_tracks)
+        } else {
+            stats.total_tracks
+        };
         let composers_count = stats.composers_count;
         let search_query = state.app.library_state.search_query.clone();
         let input_mode = state.app.ui_state.input_mode;
@@ -426,6 +445,20 @@ impl PlayerView {
                                         move |text, _window, cx| {
                                             app_state.update(cx, |state, _| {
                                                 state.app.library_state.set_search_query(text);
+                                                if state
+                                                    .app
+                                                    .remote
+                                                    .server_store
+                                                    .selected_server_id
+                                                    .is_some()
+                                                {
+                                                    state.app.remote.clear_remote_album_page();
+                                                    state
+                                                        .app
+                                                        .remote
+                                                        .refresh_requests
+                                                        .visible_album_page = true;
+                                                }
                                                 if state.app.ui_state.input_mode
                                                     != crate::app::InputMode::Search
                                                 {
@@ -454,33 +487,198 @@ impl PlayerView {
                         .flex_1()
                         .min_h_0()
                         .overflow_hidden()
-                        .child(self.render_library_content(
-                            sort_order,
-                            theme.clone(),
-                            // Selection states
-                            selected_genre,
-                            selected_decade,
-                            selected_year,
-                            selected_artist_letter,
-                            selected_artist,
-                            selected_composer_letter,
-                            selected_composer,
-                            selected_album_letter,
-                            selected_track_range,
-                            // Count maps
-                            genre_counts,
-                            decade_counts,
-                            year_counts,
-                            artist_counts,
-                            artist_letter_counts,
-                            composer_counts,
-                            composer_letter_counts,
-                            album_letter_counts,
-                            track_range_counts,
-                            cx,
-                        )),
+                        .child(if remote_library_active {
+                            self.render_remote_library_content(cx).into_any_element()
+                        } else {
+                            self.render_library_content(
+                                sort_order,
+                                theme.clone(),
+                                // Selection states
+                                selected_genre,
+                                selected_decade,
+                                selected_year,
+                                selected_artist_letter,
+                                selected_artist,
+                                selected_composer_letter,
+                                selected_composer,
+                                selected_album_letter,
+                                selected_track_range,
+                                // Count maps
+                                genre_counts,
+                                decade_counts,
+                                year_counts,
+                                artist_counts,
+                                artist_letter_counts,
+                                composer_counts,
+                                composer_letter_counts,
+                                album_letter_counts,
+                                track_range_counts,
+                                cx,
+                            )
+                            .into_any_element()
+                        }),
                 )
             })
+    }
+
+    fn render_remote_library_content(&self, cx: &mut Context<Self>) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let (page, selected_album_index, theme, is_loading, query, server_name) = {
+            let state = self.state.read(cx);
+            let selected = state.app.remote.server_store.selected_server();
+            (
+                state.app.remote.current_album_page.clone(),
+                state.app.library_state.selected_index,
+                state.app.ui_state.theme.clone(),
+                state.app.remote.cache_refresh_in_progress
+                    || state.app.remote.refresh_requests.visible_album_page,
+                state.app.library_state.search_query.clone(),
+                selected
+                    .map(|server| server.friendly_name.clone())
+                    .unwrap_or_else(|| "Remote SOTF Player".to_string()),
+            )
+        };
+
+        let Some(page) = page else {
+            return div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap(d.gap)
+                .text_color(theme.text_muted)
+                .child(if is_loading {
+                    Spinner::new().size(SpinnerSize::Md).into_any_element()
+                } else {
+                    div().into_any_element()
+                })
+                .child(if is_loading {
+                    format!("Loading albums from {server_name}...")
+                } else {
+                    format!("No album page loaded from {server_name}.")
+                })
+                .into_any_element();
+        };
+
+        if page.albums.is_empty() {
+            let message = if query.trim().is_empty() {
+                format!("{server_name} has no albums to show.")
+            } else {
+                format!("No albums match \"{}\" on {server_name}.", query.trim())
+            };
+            return div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_color(theme.text_muted)
+                .child(message)
+                .into_any_element();
+        }
+
+        let mut cards: Vec<AnyElement> = Vec::new();
+        for (idx, album) in page.albums.iter().enumerate() {
+            let is_selected = selected_album_index == idx;
+            let title = album.title.clone();
+            let artist = album.artist.clone();
+            let year = album.year.map(|year| year.to_string()).unwrap_or_default();
+            let track_count = album.track_count;
+            let dynamic_range = album.dynamic_range.map(|dr| format!("DR{dr}"));
+            let theme_for_card = theme.clone();
+
+            cards.push(
+                div()
+                    .id(("remote-album-wrapper", idx))
+                    .w(px(180.0))
+                    .min_h(px(132.0))
+                    .p(d.pad_y)
+                    .rounded(d.r_sm)
+                    .border_1()
+                    .border_color(if is_selected {
+                        theme.accent
+                    } else {
+                        theme.border
+                    })
+                    .bg(if is_selected {
+                        theme.surface_selected
+                    } else {
+                        theme.surface
+                    })
+                    .hover(|style| style.bg(theme_for_card.surface_hover))
+                    .on_click(cx.listener(move |view, _event: &ClickEvent, _window, cx| {
+                        view.state.update(cx, |state, _cx| {
+                            state.app.library_state.selected_index = idx;
+                        });
+                        cx.notify();
+                    }))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(d.grid)
+                            .child(
+                                div()
+                                    .text_size(d.text_sm)
+                                    .text_color(theme.text_primary)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .line_height(relative(1.15))
+                                    .child(title),
+                            )
+                            .child(
+                                div()
+                                    .text_size(d.text_xs)
+                                    .text_color(theme.text_secondary)
+                                    .child(artist),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap(d.grid)
+                                    .text_size(d.text_xs)
+                                    .text_color(theme.text_muted)
+                                    .child(format!("{track_count} tracks"))
+                                    .when(!year.is_empty(), |el| el.child(year))
+                                    .when_some(dynamic_range, |el, dr| el.child(dr)),
+                            ),
+                    )
+                    .into_any_element(),
+            );
+        }
+
+        div()
+            .id("remote-album-grid")
+            .flex()
+            .flex_col()
+            .size_full()
+            .child(
+                div()
+                    .px(d.pad_y)
+                    .py(d.grid)
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_muted)
+                    .child(format!(
+                        "Showing {} of {} albums from {server_name}",
+                        page.albums.len(),
+                        page.total
+                    )),
+            )
+            .child(
+                div().flex_1().min_h_0().child(
+                    div()
+                        .id("remote-album-scroll")
+                        .size_full()
+                        .overflow_y_scroll()
+                        .track_scroll(&self.grid_scroll_handle)
+                        .flex()
+                        .flex_wrap()
+                        .content_start()
+                        .gap(d.section)
+                        .p(d.pad_y)
+                        .children(cards),
+                ),
+            )
+            .into_any_element()
     }
 
     /// Render library content - either selection UI or album grid based on sort order

@@ -95,7 +95,7 @@ fn test_settings_tabs_use_product_labels() {
 
     assert_eq!(
         settings_tab_label(SettingsTab::Library, &translations),
-        "Library"
+        "Local Library"
     );
     assert_eq!(
         settings_tab_label(SettingsTab::Theme, &translations),
@@ -109,6 +109,19 @@ fn test_settings_tabs_use_product_labels() {
         settings_tab_label(SettingsTab::ReleaseChannel, &translations),
         "Features"
     );
+}
+
+#[test]
+fn test_ios_settings_tabs_hide_local_library_and_keybindings() {
+    let ios_tabs = SettingsTab::visible_tabs_for_ios(true);
+    assert!(!ios_tabs.contains(&SettingsTab::Library));
+    assert!(!ios_tabs.contains(&SettingsTab::Keybindings));
+    assert!(ios_tabs.contains(&SettingsTab::Servers));
+    assert!(ios_tabs.contains(&SettingsTab::AudioDevice));
+
+    let desktop_tabs = SettingsTab::visible_tabs_for_ios(false);
+    assert!(desktop_tabs.contains(&SettingsTab::Library));
+    assert!(desktop_tabs.contains(&SettingsTab::Keybindings));
 }
 
 // ============================================================================

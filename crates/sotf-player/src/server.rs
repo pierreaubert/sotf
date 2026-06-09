@@ -4,8 +4,9 @@
 //! directly, allowing remote clients to browse the library and control playback.
 
 use std::collections::HashSet;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::Instant;
 
 use parking_lot::Mutex;
 use serde_json::{Value, json};
@@ -78,7 +79,7 @@ pub fn generate_api_auth_token() -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn ensure_server_mode_api_config(config: &mut ServerConfig) -> bool {
+pub fn ensure_sotf_api_connection_config(config: &mut ServerConfig) -> bool {
     let mut changed = false;
     if !config.api.enabled {
         config.api.enabled = true;
@@ -645,12 +646,13 @@ async fn run_sotf_api_server(
                 }
             }
             accepted = listener.accept() => {
-                let (stream, _) = accepted.map_err(|e| format!("accept: {e}"))?;
+                let (stream, peer_addr) = accepted.map_err(|e| format!("accept: {e}"))?;
                 let state = Arc::clone(&state);
                 let settings = settings.clone();
                 let auth_token = auth_token.clone();
                 tokio::spawn(async move {
-                    handle_sotf_api_connection(stream, state, settings, auth_token).await;
+                    handle_sotf_api_connection(stream, peer_addr, state, settings, auth_token)
+                        .await;
                 });
             }
         }
@@ -661,20 +663,26 @@ async fn run_sotf_api_server(
 
 async fn handle_sotf_api_connection(
     mut stream: TcpStream,
+    peer_addr: SocketAddr,
     state: Arc<ServerState>,
     settings: SotfApiSettings,
     auth_token: String,
 ) {
+    let started = Instant::now();
     match read_api_request(&mut stream).await {
         Ok(request) => {
+            let method = request.method.clone();
+            let path = request.path.clone();
             if let Err(err) =
                 write_sotf_api_response(&mut stream, request, &state, &settings, &auth_token).await
             {
+                log_sotf_api_request(&method, &path, peer_addr, 500, started.elapsed());
                 let response = api_error_response(500, &err);
                 let _ = stream.write_all(&response).await;
             }
         }
         Err(err) => {
+            log_sotf_api_request("BAD", &err, peer_addr, 400, started.elapsed());
             let response = api_error_response(400, &err);
             let _ = stream.write_all(&response).await;
         }
@@ -690,10 +698,17 @@ async fn write_sotf_api_response(
     settings: &SotfApiSettings,
     auth_token: &str,
 ) -> Result<(), String> {
+    let started = Instant::now();
+    let method = request.method.clone();
+    let path = request.path.clone();
+    let peer_addr = stream
+        .peer_addr()
+        .map_err(|err| format!("api peer addr: {err}"))?;
     let route = request.path.split('?').next().unwrap_or(&request.path);
     if route.starts_with("/api/v1/media/") {
         if request.method != "GET" && request.method != "HEAD" {
             let response = api_error_response(405, "method not allowed");
+            log_sotf_api_request(&method, &path, peer_addr, 405, started.elapsed());
             return stream
                 .write_all(&response)
                 .await
@@ -701,28 +716,41 @@ async fn write_sotf_api_response(
         }
         if !api_auth_valid(&request.headers, auth_token) {
             let response = api_error_response(401, "missing or invalid bearer token");
+            log_sotf_api_request(&method, &path, peer_addr, 401, started.elapsed());
             return stream
                 .write_all(&response)
                 .await
                 .map_err(|err| err.to_string());
         }
         let range = api_header(&request.headers, "range");
-        return stream_api_media(stream, &request.method, route, range, state).await;
+        let result = stream_api_media(stream, &request.method, route, range, state).await;
+        log_sotf_api_request(
+            &method,
+            &path,
+            peer_addr,
+            if result.is_ok() { 200 } else { 500 },
+            started.elapsed(),
+        );
+        return result;
     }
 
     // Long-lived SSE stream for /api/v1/events
     if route == "/api/v1/events" && request.method == "GET" {
         if !api_auth_valid(&request.headers, auth_token) {
             let response = api_error_response(401, "missing or invalid bearer token");
+            log_sotf_api_request(&method, &path, peer_addr, 401, started.elapsed());
             return stream
                 .write_all(&response)
                 .await
                 .map_err(|err| err.to_string());
         }
+        log_sotf_api_request(&method, &path, peer_addr, 200, started.elapsed());
         return stream_api_events(stream, state).await;
     }
 
     let response = handle_sotf_api_request(request, state, settings, auth_token);
+    let status = api_response_status(&response).unwrap_or(0);
+    log_sotf_api_request(&method, &path, peer_addr, status, started.elapsed());
     stream
         .write_all(&response)
         .await
@@ -1943,6 +1971,29 @@ fn api_error_response(status: u16, error: &str) -> Vec<u8> {
     api_json_response(status, json!({ "ok": false, "error": error }))
 }
 
+fn api_response_status(response: &[u8]) -> Option<u16> {
+    let header = std::str::from_utf8(response.get(..response.len().min(32))?).ok()?;
+    let mut parts = header.split_whitespace();
+    match (parts.next(), parts.next()) {
+        (Some(version), Some(status)) if version.starts_with("HTTP/") => status.parse().ok(),
+        _ => None,
+    }
+}
+
+fn log_sotf_api_request(
+    method: &str,
+    path: &str,
+    peer_addr: SocketAddr,
+    status: u16,
+    elapsed: std::time::Duration,
+) {
+    let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
+    let line =
+        format!("SOTF API {method} {path} -> {status} from {peer_addr} ({elapsed_ms:.1} ms)");
+    log::info!("[server] {line}");
+    eprintln!("{line}");
+}
+
 fn api_status_text(status: u16) -> &'static str {
     match status {
         200 => "OK",
@@ -2146,6 +2197,87 @@ pub fn sotf_api_server_url_for_bind(bind_address: &str, port: u16) -> String {
     format!("http://{host}:{port}/api/v1")
 }
 
+pub fn sotf_api_connection_qr_payload(settings: &SotfApiSettings) -> Result<String, String> {
+    let token = settings
+        .auth_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| "SOTF API auth token is not configured".to_string())?;
+    let url = sotf_api_server_url_for_bind(&settings.bind_address, settings.port);
+    Ok(json!({
+        "kind": "sotf-api-connection",
+        "version": 1,
+        "name": settings.friendly_name.clone(),
+        "url": url,
+        "auth": "bearer",
+        "token": token,
+    })
+    .to_string())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SotfApiConnectionQrPayload {
+    pub name: String,
+    pub url: String,
+    pub token: String,
+}
+
+pub fn parse_sotf_api_connection_qr_payload(
+    payload: &str,
+) -> Result<SotfApiConnectionQrPayload, String> {
+    let value: Value = serde_json::from_str(payload)
+        .map_err(|err| format!("invalid SOTF API QR payload JSON: {err}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| "SOTF API QR payload must be a JSON object".to_string())?;
+
+    let kind = object
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if kind != "sotf-api-connection" {
+        return Err("QR code is not a SOTF API connection".to_string());
+    }
+
+    let version = object.get("version").and_then(Value::as_u64).unwrap_or(0);
+    if version != 1 {
+        return Err(format!("unsupported SOTF API QR version: {version}"));
+    }
+
+    let auth = object
+        .get("auth")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !auth.eq_ignore_ascii_case("bearer") {
+        return Err("SOTF API QR code does not contain bearer authentication".to_string());
+    }
+
+    let url = object
+        .get("url")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| "SOTF API QR code is missing the server URL".to_string())?
+        .to_string();
+    let token = object
+        .get("token")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| "SOTF API QR code is missing the API token".to_string())?
+        .to_string();
+    let name = object
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("SOTF Player")
+        .to_string();
+
+    Ok(SotfApiConnectionQrPayload { name, url, token })
+}
+
 /// IPv4 address to advertise in DLNA URLs for a configured bind address.
 #[must_use]
 pub fn dlna_advertised_ipv4(bind_address: &str) -> Ipv4Addr {
@@ -2184,7 +2316,7 @@ fn get_local_ipv4() -> Ipv4Addr {
 /// signal (SIGINT/SIGTERM) is received.
 pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = crate::config::load_server_config()?;
-    if ensure_server_mode_api_config(&mut config) {
+    if ensure_sotf_api_connection_config(&mut config) {
         match crate::config::save_server_config(&config) {
             Ok(()) => {
                 log::info!("[server] Enabled SOTF API defaults in server config");
@@ -2570,7 +2702,7 @@ mod tests {
     fn server_mode_api_defaults_enable_api_and_generate_token() {
         let mut config = ServerConfig::default();
 
-        assert!(ensure_server_mode_api_config(&mut config));
+        assert!(ensure_sotf_api_connection_config(&mut config));
 
         assert!(config.api.enabled);
         let token = config.api.auth_token.as_deref().unwrap();
@@ -2584,7 +2716,7 @@ mod tests {
         config.api.enabled = true;
         config.api.auth_token = Some("existing-token".to_string());
 
-        assert!(!ensure_server_mode_api_config(&mut config));
+        assert!(!ensure_sotf_api_connection_config(&mut config));
 
         assert!(config.api.enabled);
         assert_eq!(config.api.auth_token.as_deref(), Some("existing-token"));
@@ -2610,6 +2742,65 @@ mod tests {
         let url = sotf_api_server_url_for_bind("192.168.1.42", 8732);
 
         assert_eq!(url, "http://192.168.1.42:8732/api/v1");
+    }
+
+    #[test]
+    fn sotf_api_connection_qr_payload_includes_url_and_token() {
+        let settings = SotfApiSettings {
+            enabled: true,
+            bind_address: "192.168.1.42".to_string(),
+            port: 8732,
+            friendly_name: "Listening Room".to_string(),
+            auth_token: Some("secret-token".to_string()),
+        };
+
+        let payload = sotf_api_connection_qr_payload(&settings).unwrap();
+        let json: Value = serde_json::from_str(&payload).unwrap();
+
+        assert_eq!(json["kind"], "sotf-api-connection");
+        assert_eq!(json["version"], 1);
+        assert_eq!(json["name"], "Listening Room");
+        assert_eq!(json["url"], "http://192.168.1.42:8732/api/v1");
+        assert_eq!(json["auth"], "bearer");
+        assert_eq!(json["token"], "secret-token");
+    }
+
+    #[test]
+    fn sotf_api_connection_qr_payload_round_trips() {
+        let settings = SotfApiSettings {
+            enabled: true,
+            bind_address: "192.168.1.42".to_string(),
+            port: 8732,
+            friendly_name: "Listening Room".to_string(),
+            auth_token: Some("secret-token".to_string()),
+        };
+
+        let payload = sotf_api_connection_qr_payload(&settings).unwrap();
+        let parsed = parse_sotf_api_connection_qr_payload(&payload).unwrap();
+
+        assert_eq!(parsed.name, "Listening Room");
+        assert_eq!(parsed.url, "http://192.168.1.42:8732/api/v1");
+        assert_eq!(parsed.token, "secret-token");
+    }
+
+    #[test]
+    fn sotf_api_connection_qr_payload_rejects_wrong_kind() {
+        let err = parse_sotf_api_connection_qr_payload(
+            r#"{"kind":"not-sotf","version":1,"auth":"bearer","url":"http://host:8732/api/v1","token":"secret"}"#,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("not a SOTF API connection"));
+    }
+
+    #[test]
+    fn sotf_api_connection_qr_payload_requires_token() {
+        let err = parse_sotf_api_connection_qr_payload(
+            r#"{"kind":"sotf-api-connection","version":1,"auth":"bearer","url":"http://host:8732/api/v1","token":""}"#,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("missing the API token"));
     }
 
     #[test]
@@ -2735,6 +2926,13 @@ mod tests {
         assert_eq!(request.path, "/api/v1/volume");
         assert_eq!(api_header(&request.headers, "host"), Some("localhost"));
         assert_eq!(request.body, br#"{"volume":42}"#);
+    }
+
+    #[test]
+    fn sotf_api_response_status_parser_reads_status_line() {
+        let response = api_json_response(401, json!({ "ok": false }));
+        assert_eq!(api_response_status(&response), Some(401));
+        assert_eq!(api_response_status(b"not http"), None);
     }
 
     #[test]

@@ -15,6 +15,7 @@ use std::time::Duration;
 unsafe extern "C" {
     fn sotf_ios_pop_remote_command() -> i32;
     fn sotf_ios_take_imported_files_json() -> *mut std::ffi::c_char;
+    fn sotf_ios_take_scanned_qr_payload() -> *mut std::ffi::c_char;
     fn sotf_ios_string_free(value: *mut std::ffi::c_char);
 }
 
@@ -485,6 +486,9 @@ impl PlayerView {
                 3 => {
                     Self::handle_ios_imported_files(state);
                 }
+                4 => {
+                    Self::handle_ios_scanned_qr(state);
+                }
                 other => {
                     log::warn!("[iOS] unknown remote command code: {other}");
                     break;
@@ -554,6 +558,37 @@ impl PlayerView {
                         format!("Imported files added, but scan could not start: {err}"),
                     ));
                 }
+            }
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    fn handle_ios_scanned_qr(state: &mut AppState) {
+        // SAFETY: implemented by app-ios in the final binary. It returns an
+        // owned C string allocated by Rust, or NULL if no QR payload is queued.
+        let raw = unsafe { sotf_ios_take_scanned_qr_payload() };
+        if raw.is_null() {
+            return;
+        }
+        let payload = {
+            // SAFETY: `raw` is non-null and points to a NUL-terminated string
+            // until we release it below.
+            unsafe { std::ffi::CStr::from_ptr(raw) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        // SAFETY: release the string returned by `sotf_ios_take_scanned_qr_payload`.
+        unsafe {
+            sotf_ios_string_free(raw);
+        }
+
+        match state.app.add_remote_server_from_qr_payload(&payload) {
+            Ok(server_id) => {
+                log::info!("[iOS] Added SOTF remote server from QR code: {server_id}");
+            }
+            Err(err) => {
+                log::warn!("[iOS] Failed to add SOTF server from QR code: {err}");
+                state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(err));
             }
         }
     }

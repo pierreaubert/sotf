@@ -520,6 +520,8 @@ pub struct RemoteState {
     pub server_store: sotf_audio_player::SotfRemoteServerStore,
     pub discovered_servers: Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>,
     pub server_probe_statuses: HashMap<String, RemoteServerProbeStatus>,
+    /// Monotonic marker for probe-status changes observed by the UI tick.
+    pub server_probe_revision: u64,
     pub discovery_running: bool,
     pub discovery_error: Option<String>,
     pub manual_server_name: String,
@@ -549,8 +551,8 @@ pub struct RemoteState {
     pub cache_updates_disabled: bool,
     /// Last quiet cache refresh error, kept for diagnostics only.
     pub cache_last_error: Option<String>,
-    /// In-memory bearer token cache keyed by server ID.
-    /// Tokens are never persisted to disk; secure storage is planned for Phase 2.
+    /// In-memory bearer token cache keyed by server ID. Persisted credentials
+    /// live in platform storage or the shared internal token store.
     pub server_tokens: HashMap<String, String>,
     /// Bounded in-memory cache for remote album metadata and artwork.
     /// This is a performance cache only, not a local library mirror.
@@ -563,6 +565,12 @@ pub struct RemoteState {
     pub current_album_page: Option<sotf_audio_player::sotf_api_client::SotfApiAlbumList>,
     /// Server ID that produced the visible remote album page.
     pub current_album_page_server_id: Option<String>,
+    /// Search query used to produce the visible remote album page.
+    pub current_album_page_query: String,
+    /// Monotonic marker for remote album-page changes observed by the UI tick.
+    pub remote_album_page_revision: u64,
+    /// Remote library identity currently associated with the local database.
+    pub local_library_identity: Option<crate::config::RemoteLibraryIdentity>,
     /// Minimal refresh work requested by SSE events.
     pub refresh_requests: RemoteRefreshRequests,
 }
@@ -592,6 +600,7 @@ pub struct RemoteCacheRefreshResult {
     pub state: Option<sotf_audio_player::sotf_api_client::SotfApiState>,
     pub queue: Option<sotf_audio_player::sotf_api_client::SotfApiQueue>,
     pub album_page: Option<sotf_audio_player::sotf_api_client::SotfApiAlbumList>,
+    pub album_query: Option<String>,
     pub artwork: Vec<(String, Vec<u8>)>,
 }
 
@@ -742,6 +751,21 @@ fn evict_lru<T: Clone + Eq + std::hash::Hash, V>(
 impl RemoteState {
     pub const CACHE_REFRESH_FAILURE_DISABLE_THRESHOLD: u8 = 3;
 
+    pub fn set_server_probe_status(
+        &mut self,
+        server_id: impl Into<String>,
+        status: RemoteServerProbeStatus,
+    ) {
+        self.server_probe_statuses.insert(server_id.into(), status);
+        self.server_probe_revision = self.server_probe_revision.wrapping_add(1);
+    }
+
+    pub fn remove_server_probe_status(&mut self, server_id: &str) {
+        if self.server_probe_statuses.remove(server_id).is_some() {
+            self.server_probe_revision = self.server_probe_revision.wrapping_add(1);
+        }
+    }
+
     pub fn merge_discovered_servers(
         &mut self,
         servers: Vec<sotf_audio_player::lan_discovery::DiscoveredSotfApiServer>,
@@ -823,18 +847,42 @@ impl RemoteState {
         &mut self,
         server_id: impl Into<String>,
         page: sotf_audio_player::sotf_api_client::SotfApiAlbumList,
+        query: impl Into<String>,
     ) {
         let server_id = server_id.into();
         self.album_cache
             .upsert_metadata_page(&server_id, page.library_version, &page.albums);
         self.current_album_page = Some(page);
         self.current_album_page_server_id = Some(server_id);
+        self.current_album_page_query = query.into();
+        self.remote_album_page_revision = self.remote_album_page_revision.wrapping_add(1);
         self.refresh_requests.visible_album_page = false;
     }
 
+    pub fn update_local_library_identity(
+        &mut self,
+        identity: crate::config::RemoteLibraryIdentity,
+    ) -> bool {
+        if self.local_library_identity.as_ref() == Some(&identity) {
+            return false;
+        }
+
+        self.album_cache.invalidate_all();
+        self.clear_remote_album_page();
+        self.local_library_identity = Some(identity);
+        true
+    }
+
     pub fn clear_remote_album_page(&mut self) {
+        if self.current_album_page.is_some()
+            || self.current_album_page_server_id.is_some()
+            || !self.current_album_page_query.is_empty()
+        {
+            self.remote_album_page_revision = self.remote_album_page_revision.wrapping_add(1);
+        }
         self.current_album_page = None;
         self.current_album_page_server_id = None;
+        self.current_album_page_query.clear();
     }
 
     pub fn reset_remote_cache_updater(&mut self) {
@@ -1879,6 +1927,10 @@ impl App {
         // Restore max CPU cores
         self.ui_state.max_cpu_cores = config.max_cpu_cores;
 
+        // Restore the remote library identity associated with any local
+        // database/cache content.
+        self.remote.local_library_identity = config.remote_library_identity;
+
         // Restore non-secret native remote server records. Bearer tokens live
         // in platform credential stores keyed by each server's token key.
         match sotf_audio_player::config::load_remote_server_store() {
@@ -1983,6 +2035,7 @@ impl App {
             seen_hints: self.seen_hints.clone(),
             design_language: self.ui_state.design_language.clone(),
             rack_theme_state: self.plugin_state.rack_theme_state.clone(),
+            remote_library_identity: self.remote.local_library_identity.clone(),
         };
         config.save()?;
         Ok(())

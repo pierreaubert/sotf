@@ -106,7 +106,13 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let active_tab = state.app.ui_state.active_settings_tab;
+        let visible_tabs = SettingsTab::visible_tabs();
+        let stored_active_tab = state.app.ui_state.active_settings_tab;
+        let active_tab = if visible_tabs.contains(&stored_active_tab) {
+            stored_active_tab
+        } else {
+            SettingsTab::fallback_for_platform()
+        };
         let translations = state.app.ui_state.translations.clone();
 
         // Content area based on active tab
@@ -195,17 +201,7 @@ impl PlayerView {
                     .child(div().flex_1().min_w_0().child({
                         // Custom tab rendering to avoid context issues
                         let state_entity = self.state.clone();
-                        let tab_data = [
-                            SettingsTab::Library,
-                            SettingsTab::Theme,
-                            SettingsTab::Language,
-                            SettingsTab::Keybindings,
-                            SettingsTab::AudioDevice,
-                            SettingsTab::Misc,
-                            SettingsTab::Federation,
-                            SettingsTab::Servers,
-                            SettingsTab::ReleaseChannel,
-                        ];
+                        let tab_data = visible_tabs;
 
                         let mut tabs_container = div()
                             .flex()

@@ -12,6 +12,12 @@
 - Added helpers for generating API auth tokens and formatting the advertised
   SOTF API URL for a configured bind address, matching the DLNA bind-address
   display behavior.
+- Server-mode SOTF API connections now log compact request diagnostics with the
+  method, path, peer address, response status, and elapsed time.
+- Added shared helpers for generating a SOTF API connection QR payload that
+  includes the advertised API URL and bearer token.
+- Added shared validation for SOTF API connection QR payloads so mobile clients
+  can reject non-SOTF QR codes before storing server credentials.
 
 ## Local library and audio-device handling
 

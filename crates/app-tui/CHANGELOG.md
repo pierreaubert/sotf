@@ -13,11 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the URL remote SOTF apps should use.
 - Enabling the SOTF API from the TUI generates an auth token when none is
   configured, matching server-mode startup behavior.
+- `--server` startup now prints the active TUI log file path, and `--qa`
+  applies before logging so QA runs write logs inside the selected QA directory.
+- Added `--qr` to print a terminal QR code containing the SOTF API URL and
+  bearer token for pairing remote SOTF apps.
 
 ### Changed
 - Server configuration navigation now cycles through API, MPD, and DLNA
   sections, and the screen opens on the SOTF API section so the remote-app
   connection details are immediately visible.
+- Server mode prints compact SOTF API request lines to the terminal so remote
+  client library/cache traffic can be inspected while the server is running.
 - Output-device refresh and selection now tolerate output lists without a
   default device and avoid emitting a device-change command when nothing is
   selected.

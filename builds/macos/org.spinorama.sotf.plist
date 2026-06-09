@@ -39,6 +39,9 @@
     <key>NSMicrophoneUsageDescription</key>
     <string>SotF Player needs microphone access for audio recording and room EQ calibration.</string>
 
+    <key>NSCameraUsageDescription</key>
+    <string>SotF Player uses the camera to scan SOTF server QR codes.</string>
+
     <key>NSAppleEventsUsageDescription</key>
     <string>SotF Player uses AppleEvents for system automation.</string>
 

@@ -51,12 +51,14 @@ impl PlayerView {
             .flex()
             .flex_col()
             .size_full()
+            .min_h_0()
             .bg(theme.background)
             .child(self.render_headphone_eq_header(cx))
             .child(
                 div()
                     .id("headphone-eq-content")
                     .flex_1()
+                    .min_h_0()
                     .overflow_y_scroll()
                     .p(d.card)
                     .child(content),
