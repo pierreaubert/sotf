@@ -234,7 +234,7 @@ impl CrossoverPlugin {
         for &f in extra_frequencies {
             all_freqs.push(f as f32);
         }
-        all_freqs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        all_freqs.sort_by(|a, b| a.total_cmp(b));
         all_freqs.dedup();
 
         let num_bands = all_freqs.len() + 1;
@@ -554,8 +554,7 @@ impl Plugin for CrossoverPlugin {
                 // sorted order. MultibandLr4Crossover requires sorted frequencies.
                 if !self.all_frequencies.is_empty() {
                     self.all_frequencies[0] = val;
-                    self.all_frequencies
-                        .sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    self.all_frequencies.sort_by(|a, b| a.total_cmp(b));
                     self.all_frequencies.dedup();
                 }
                 self.rebuild_fir_crossovers();
@@ -575,8 +574,7 @@ impl Plugin for CrossoverPlugin {
                 let freq_idx = smoother_idx + 1; // offset: extra smoothers start at freq index 1
                 if freq_idx < self.all_frequencies.len() {
                     self.all_frequencies[freq_idx] = val;
-                    self.all_frequencies
-                        .sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    self.all_frequencies.sort_by(|a, b| a.total_cmp(b));
                     self.all_frequencies.dedup();
                 }
                 self.rebuild_fir_crossovers();
@@ -1352,7 +1350,7 @@ mod tests {
         // Verify the vector is still in ascending order.
         let freqs = p.all_frequencies.clone();
         let mut sorted = freqs.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.total_cmp(b));
         assert_eq!(
             freqs, sorted,
             "all_frequencies must remain sorted after primary frequency change; got {:?}",
@@ -1387,7 +1385,7 @@ mod tests {
 
         let freqs = p.all_frequencies.clone();
         let mut sorted = freqs.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.total_cmp(b));
         assert_eq!(
             freqs, sorted,
             "all_frequencies must remain sorted after frequency_2 change; got {:?}",

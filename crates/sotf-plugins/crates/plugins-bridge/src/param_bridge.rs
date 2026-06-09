@@ -397,6 +397,22 @@ mod tests {
     }
 
     #[test]
+    fn test_choice_normalize_degenerate_labels() {
+        let empty = ParamSpec::choice("Mode", "mode", 0, &[], "General");
+        let single = ParamSpec::choice("Mode", "mode", 0, &["Only"], "General");
+        let bridge = ParamBridge::new(&[empty, single]);
+
+        for index in [0, 1] {
+            let normalized = bridge.normalize(index, 1.0).unwrap();
+            assert!(
+                normalized.is_finite(),
+                "degenerate choice normalization must stay finite"
+            );
+            assert_eq!(normalized, 0.0);
+        }
+    }
+
+    #[test]
     fn test_info() {
         let spec = make_float_spec(-24.0, 24.0);
         let bridge = ParamBridge::new(&[spec]);

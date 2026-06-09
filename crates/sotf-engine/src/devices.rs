@@ -314,16 +314,16 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
 
                     // Report what we detected
                     if let Some(ref cfg) = default_config {
-                        let rate_range = if available_sample_rates.is_empty() {
-                            "unknown".to_string()
-                        } else if available_sample_rates.len() == 1 {
-                            format!("{} Hz", available_sample_rates[0])
-                        } else {
-                            format!(
-                                "{}-{} Hz",
-                                available_sample_rates.first().unwrap(),
-                                available_sample_rates.last().unwrap()
-                            )
+                        let rate_range = match (
+                            available_sample_rates.first(),
+                            available_sample_rates.last(),
+                        ) {
+                            (None, _) => "unknown".to_string(),
+                            (Some(rate), Some(_)) if available_sample_rates.len() == 1 => {
+                                format!("{} Hz", rate)
+                            }
+                            (Some(first), Some(last)) => format!("{}-{} Hz", first, last),
+                            _ => "unknown".to_string(),
                         };
                         format!(
                             "{} ch, {} (current: {} Hz)",
@@ -484,16 +484,16 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
 
                     // Report what we detected - don't make assumptions
                     if let Some(ref cfg) = default_config {
-                        let rate_range = if available_sample_rates.is_empty() {
-                            "unknown".to_string()
-                        } else if available_sample_rates.len() == 1 {
-                            format!("{} Hz", available_sample_rates[0])
-                        } else {
-                            format!(
-                                "{}-{} Hz",
-                                available_sample_rates.first().unwrap(),
-                                available_sample_rates.last().unwrap()
-                            )
+                        let rate_range = match (
+                            available_sample_rates.first(),
+                            available_sample_rates.last(),
+                        ) {
+                            (None, _) => "unknown".to_string(),
+                            (Some(rate), Some(_)) if available_sample_rates.len() == 1 => {
+                                format!("{} Hz", rate)
+                            }
+                            (Some(first), Some(last)) => format!("{}-{} Hz", first, last),
+                            _ => "unknown".to_string(),
                         };
                         format!(
                             "{} ch, {} (current: {} Hz)",

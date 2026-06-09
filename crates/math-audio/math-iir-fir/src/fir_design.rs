@@ -710,7 +710,7 @@ pub fn suppress_pre_ringing(ir: &mut [f64], config: &PreRingingConfig, sample_ra
     let main_tap_idx = ir
         .iter()
         .enumerate()
-        .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+        .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
         .map(|(i, _)| i)
         .unwrap_or(0);
 
@@ -765,7 +765,7 @@ pub fn analyze_pre_ringing(ir: &[f64], sample_rate: f64) -> PreRingingAnalysis {
     let main_tap_idx = ir
         .iter()
         .enumerate()
-        .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+        .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
         .map(|(i, _)| i)
         .unwrap_or(0);
 

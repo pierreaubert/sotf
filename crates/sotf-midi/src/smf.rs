@@ -254,6 +254,21 @@ fn parse_track(data: &[u8], pos: &mut usize) -> Result<ParsedTrack, String> {
             continue;
         }
 
+        // System real-time bytes may be interleaved in MIDI streams and do not
+        // affect running status. SMF files should not need them, but skipping
+        // them makes the parser robust to captured live streams.
+        if (0xF8..=0xFE).contains(&status_byte) {
+            *pos += 1;
+            continue;
+        }
+
+        if (0xF1..=0xF6).contains(&status_byte) {
+            return Err(format!(
+                "Unsupported system MIDI status 0x{:02X} at pos {}",
+                status_byte, *pos
+            ));
+        }
+
         // Channel message. Running status persists across channel-voice messages:
         // a new status byte updates it; data-only bytes reuse the previous status.
         let (status, data_start) = if status_byte & 0x80 != 0 {
@@ -788,6 +803,55 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn test_system_realtime_does_not_clear_running_status() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+
+        let track_data = vec![
+            0x00, 0x90, 60, 100, // establish Note On running status
+            0x00, 0xF8, // interleaved timing clock, skipped
+            0x00, 62, 90, // data-only Note On still uses running status
+            0x00, 0xFF, 0x2F, 0x00,
+        ];
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(track_data.len() as u32).to_be_bytes());
+        data.extend_from_slice(&track_data);
+
+        let clips = parse_smf(&data, 48000).unwrap();
+        assert_eq!(clips[0].events.len(), 2);
+        assert!(matches!(
+            clips[0].events[1].message,
+            MidiMessage::NoteOn {
+                note: 62,
+                velocity: 90,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_undefined_system_status_is_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+
+        let track_data = vec![0x00, 0x90, 60, 100, 0x00, 0xF4];
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(track_data.len() as u32).to_be_bytes());
+        data.extend_from_slice(&track_data);
+
+        let err = parse_smf(&data, 48000).unwrap_err();
+        assert!(err.contains("Unsupported system MIDI status 0xF4"), "{err}");
     }
 
     /// Build an SMF where a meta event sits between two channel events.

@@ -436,7 +436,7 @@ fn generate_plots_for_multi_drivers(
         }
 
         // We expect N gains and N-1 crossover frequencies (duplicates removed)
-        crossover_freqs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        crossover_freqs.sort_by(|a, b| a.total_cmp(b));
         crossover_freqs.dedup_by(|a, b| (*a - *b).abs() < 1.0);
 
         if crossover_freqs.len() != group.measurement_sources.len() - 1 {

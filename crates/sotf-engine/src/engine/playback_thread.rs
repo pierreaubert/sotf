@@ -184,7 +184,8 @@ impl PlaybackState {
 }
 
 fn playback_buffer_capacity(sample_rate: u32, channels: usize, buffer_ms: u32) -> usize {
-    (((sample_rate as u64 * buffer_ms as u64) / 1000) as usize) * channels
+    let samples = sample_rate as u128 * buffer_ms as u128 * channels as u128;
+    samples.div_ceil(1000).min(usize::MAX as u128) as usize
 }
 
 /// Push `samples` zeros into the producer to give the cpal callback a cushion
@@ -2517,6 +2518,11 @@ mod tests {
     fn playback_buffer_capacity_scales_with_latency_budget() {
         assert_eq!(playback_buffer_capacity(48_000, 2, 100), 9_600);
         assert_eq!(playback_buffer_capacity(48_000, 2, 250), 24_000);
+    }
+
+    #[test]
+    fn playback_buffer_capacity_rounds_up_after_channel_scaling() {
+        assert_eq!(playback_buffer_capacity(44_100, 6, 1), 265);
     }
 
     #[test]

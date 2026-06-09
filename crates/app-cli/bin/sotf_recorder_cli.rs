@@ -191,17 +191,7 @@ fn list_audio_devices() {
             let default_marker = if device.is_default { " (Default)" } else { "" };
 
             if let Some(config) = &device.default_config {
-                let rate_range = if device.available_sample_rates.is_empty() {
-                    "unknown".to_string()
-                } else if device.available_sample_rates.len() == 1 {
-                    format!("{} Hz", device.available_sample_rates[0])
-                } else {
-                    format!(
-                        "{}-{} Hz",
-                        device.available_sample_rates.first().unwrap(),
-                        device.available_sample_rates.last().unwrap()
-                    )
-                };
+                let rate_range = format_sample_rate_range(&device.available_sample_rates);
 
                 println!(
                     "  [{}] {}{} - {} ch, {} (current: {} Hz), {}",
@@ -227,17 +217,7 @@ fn list_audio_devices() {
             let default_marker = if device.is_default { " (Default)" } else { "" };
 
             if let Some(config) = &device.default_config {
-                let rate_range = if device.available_sample_rates.is_empty() {
-                    "unknown".to_string()
-                } else if device.available_sample_rates.len() == 1 {
-                    format!("{} Hz", device.available_sample_rates[0])
-                } else {
-                    format!(
-                        "{}-{} Hz",
-                        device.available_sample_rates.first().unwrap(),
-                        device.available_sample_rates.last().unwrap()
-                    )
-                };
+                let rate_range = format_sample_rate_range(&device.available_sample_rates);
 
                 println!(
                     "  [{}] {}{} - {} ch, {} (current: {} Hz), {}",
@@ -258,6 +238,30 @@ fn list_audio_devices() {
     println!("\n{}", "=".repeat(80));
     println!("💡 Usage: Use --device \"Device Name\" to select a device");
     println!("{}", "=".repeat(80));
+}
+
+fn format_sample_rate_range(rates: &[u32]) -> String {
+    match (rates.first(), rates.last()) {
+        (None, _) => "unknown".to_string(),
+        (Some(rate), Some(_)) if rates.len() == 1 => format!("{} Hz", rate),
+        (Some(first), Some(last)) => format!("{}-{} Hz", first, last),
+        _ => "unknown".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_sample_rate_range;
+
+    #[test]
+    fn sample_rate_range_handles_empty_single_and_multiple_rates() {
+        assert_eq!(format_sample_rate_range(&[]), "unknown");
+        assert_eq!(format_sample_rate_range(&[48_000]), "48000 Hz");
+        assert_eq!(
+            format_sample_rate_range(&[44_100, 48_000, 96_000]),
+            "44100-96000 Hz"
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

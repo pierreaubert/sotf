@@ -544,7 +544,8 @@ impl Drop for PlaybackThread {
 // ============================================================================
 
 fn playback_buffer_capacity(sample_rate: u32, channels: usize, buffer_ms: u32) -> usize {
-    (((sample_rate as u64 * buffer_ms as u64) / 1000) as usize) * channels
+    let samples = sample_rate as u128 * buffer_ms as u128 * channels as u128;
+    samples.div_ceil(1000).min(usize::MAX as u128) as usize
 }
 
 fn run_playback_ios(

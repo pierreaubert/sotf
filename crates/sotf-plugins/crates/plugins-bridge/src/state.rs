@@ -35,39 +35,67 @@ pub fn save_state(plugin: &dyn Plugin) -> Vec<u8> {
 pub fn load_state(plugin: &mut dyn Plugin, data: &[u8]) -> Result<(), String> {
     let map: serde_json::Map<String, serde_json::Value> =
         serde_json::from_slice(data).map_err(|e| format!("Failed to parse state: {e}"))?;
+    let params = plugin.parameters();
 
     for (key, json_val) in &map {
-        let value = match json_val {
-            serde_json::Value::Number(n) => {
-                if let Some(f) = n.as_f64() {
-                    // Check if this is an integer parameter
-                    if f == f.floor() && f.abs() < i32::MAX as f64 {
-                        // Try float first — the plugin's set_parameter will accept it
-                        ParameterValue::Float(f as f32)
-                    } else {
-                        ParameterValue::Float(f as f32)
-                    }
-                } else {
-                    continue;
-                }
-            }
-            serde_json::Value::Bool(b) => ParameterValue::Bool(*b),
-            serde_json::Value::String(s) => ParameterValue::String(s.clone()),
-            _ => continue,
+        let Some(param) = params.iter().find(|param| param.id.0 == *key) else {
+            continue;
         };
+        let value = value_from_json(key, json_val, &param.default_value)?;
 
-        let id = ParameterId(key.clone());
-        // Ignore errors for unknown parameters (forward compatibility)
-        let _ = plugin.set_parameter(id, value);
+        plugin
+            .set_parameter(ParameterId(key.clone()), value)
+            .map_err(|e| format!("Failed to load parameter '{key}': {e}"))?;
     }
 
     Ok(())
+}
+
+fn value_from_json(
+    key: &str,
+    json_val: &serde_json::Value,
+    default_value: &ParameterValue,
+) -> Result<ParameterValue, String> {
+    match (json_val, default_value) {
+        (serde_json::Value::Number(n), ParameterValue::Float(_)) => n
+            .as_f64()
+            .map(|f| ParameterValue::Float(f as f32))
+            .ok_or_else(|| format!("Invalid numeric value for parameter '{key}'")),
+        (serde_json::Value::Number(n), ParameterValue::Int(_)) => {
+            let i = n
+                .as_i64()
+                .ok_or_else(|| format!("Invalid integer value for parameter '{key}'"))?;
+            let i = i32::try_from(i)
+                .map_err(|_| format!("Integer value out of range for parameter '{key}'"))?;
+            Ok(ParameterValue::Int(i))
+        }
+        (serde_json::Value::Bool(b), ParameterValue::Bool(_)) => Ok(ParameterValue::Bool(*b)),
+        (serde_json::Value::String(s), ParameterValue::String(_)) => {
+            Ok(ParameterValue::String(s.clone()))
+        }
+        (_, expected) => Err(format!(
+            "Invalid state value for parameter '{key}': expected {}",
+            parameter_type_name(expected)
+        )),
+    }
+}
+
+fn parameter_type_name(value: &ParameterValue) -> &'static str {
+    match value {
+        ParameterValue::Float(_) => "float",
+        ParameterValue::Int(_) => "integer",
+        ParameterValue::Bool(_) => "bool",
+        ParameterValue::String(_) => "string",
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::factory::create_plugin;
+    use sotf_host::parameters::Parameter;
+    use sotf_host::plugin::{PluginInfo, ProcessContext};
+    use std::collections::HashMap;
 
     #[test]
     fn test_save_load_roundtrip() {
@@ -112,5 +140,94 @@ mod tests {
         let data = br#"{"unknown_param": 42.0, "gain_db": 5.0}"#;
         let result = load_state(&mut *plugin, data);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_load_unknown_param_does_not_call_setter() {
+        let mut plugin = RecordingPlugin::default();
+        let data = br#"{"unknown_param": 42.0, "known": 0.5}"#;
+
+        load_state(&mut plugin, data).unwrap();
+
+        assert_eq!(
+            plugin.values.get("known"),
+            Some(&ParameterValue::Float(0.5))
+        );
+        assert!(plugin.set_calls.contains(&"known".to_string()));
+        assert!(!plugin.set_calls.contains(&"unknown_param".to_string()));
+    }
+
+    #[test]
+    fn test_load_reports_known_parameter_error() {
+        let mut plugin = RecordingPlugin::default();
+        let data = br#"{"known": 2.0}"#;
+
+        let err = load_state(&mut plugin, data).unwrap_err();
+
+        assert!(
+            err.contains("known"),
+            "error should identify the failing parameter: {err}"
+        );
+        assert!(
+            err.contains("invalid known value"),
+            "setter error should be preserved: {err}"
+        );
+    }
+
+    struct RecordingPlugin {
+        values: HashMap<String, ParameterValue>,
+        set_calls: Vec<String>,
+    }
+
+    impl Default for RecordingPlugin {
+        fn default() -> Self {
+            Self {
+                values: HashMap::new(),
+                set_calls: Vec::new(),
+            }
+        }
+    }
+
+    impl Plugin for RecordingPlugin {
+        fn info(&self) -> PluginInfo {
+            PluginInfo::new("Recording", "0.0.0", "SOTF")
+        }
+
+        fn input_channels(&self) -> usize {
+            2
+        }
+
+        fn output_channels(&self) -> usize {
+            2
+        }
+
+        fn parameters(&self) -> Vec<Parameter> {
+            vec![Parameter::new_float("known", "Known", 0.0, -1.0, 1.0)]
+        }
+
+        fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> Result<(), String> {
+            self.set_calls.push(id.0.clone());
+            match (&id.0[..], value) {
+                ("known", ParameterValue::Float(v)) if (-1.0..=1.0).contains(&v) => {
+                    self.values.insert(id.0, ParameterValue::Float(v));
+                    Ok(())
+                }
+                ("known", _) => Err("invalid known value".to_string()),
+                _ => Err(format!("Unknown parameter: {id}")),
+            }
+        }
+
+        fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+            self.values.get(&id.0).cloned()
+        }
+
+        fn process(
+            &mut self,
+            _input: &[f32],
+            _output: &mut [f32],
+            context: &ProcessContext,
+        ) -> Result<usize, String> {
+            Ok(context.num_frames)
+        }
     }
 }

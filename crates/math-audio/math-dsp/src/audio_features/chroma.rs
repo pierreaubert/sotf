@@ -294,7 +294,7 @@ fn estimate_tuning(
 
     // Compute median of magnitudes
     let mut sorted_mags = filtered_mag.clone();
-    sorted_mags.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted_mags.sort_by(|a, b| a.total_cmp(b));
     let threshold = if sorted_mags.len() % 2 == 0 {
         (sorted_mags[sorted_mags.len() / 2 - 1] + sorted_mags[sorted_mags.len() / 2]) / 2.0
     } else {

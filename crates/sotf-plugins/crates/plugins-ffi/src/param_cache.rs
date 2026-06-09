@@ -209,7 +209,25 @@ pub extern "C" fn au_param_cache_set_meta(
 pub extern "C" fn au_param_cache_destroy(cache: *mut AtomicParamCache) {
     if !cache.is_null() {
         unsafe {
-            drop(Box::from_raw(cache));
+            // SAFETY: au_param_cache_create returns Arc::into_raw, so destroy must
+            // reconstruct the same Arc allocation shape before dropping it.
+            drop(std::sync::Arc::from_raw(cache));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_au_param_cache_destroy_matches_arc_allocation() {
+        let cache = au_param_cache_create(2);
+        assert!(!cache.is_null());
+
+        au_param_cache_write(cache, 1, 0.75);
+        assert_eq!(au_param_cache_read(cache, 1), 0.75);
+
+        au_param_cache_destroy(cache);
     }
 }

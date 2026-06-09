@@ -67,6 +67,8 @@ pub struct PluginHandle {
 const SOTF_PLUGIN_FFI_ABI_VERSION: u32 = 3;
 const MAX_FFI_MIDI_EVENTS_PER_BLOCK: usize = 256;
 const MAX_FFI_OUTPUT_EVENTS_PER_BLOCK: usize = 256;
+const MAX_PRESET_JSON_IMPORT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PRESET_STATE_BYTES: usize = 4 * 1024 * 1024;
 
 const PRESET_UT_TYPE: &[u8] = b"org.spinorama.sotf.plugin-preset\0";
 const PRESET_FILE_EXTENSION: &[u8] = b"sotfpreset\0";
@@ -1368,6 +1370,13 @@ pub extern "C" fn plugin_import_preset_json(
         set_last_error("NULL pointer in plugin_import_preset_json");
         return PluginError::NullPointer.into();
     }
+    if len > MAX_PRESET_JSON_IMPORT_BYTES {
+        set_last_error(&format!(
+            "Preset JSON exceeds {} byte import limit",
+            MAX_PRESET_JSON_IMPORT_BYTES
+        ));
+        return PluginError::InvalidConfig.into();
+    }
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
         let handle_ref = &mut *handle;
@@ -1384,6 +1393,13 @@ pub extern "C" fn plugin_import_preset_json(
             set_last_error("Preset JSON is missing a state byte array");
             return PluginError::InvalidConfig;
         };
+        if state_values.len() > MAX_PRESET_STATE_BYTES {
+            set_last_error(&format!(
+                "Preset state exceeds {} byte limit",
+                MAX_PRESET_STATE_BYTES
+            ));
+            return PluginError::InvalidConfig;
+        }
 
         let mut state = Vec::with_capacity(state_values.len());
         for value in state_values {
@@ -1624,6 +1640,14 @@ mod tests {
     use super::*;
     use std::ffi::CString;
 
+    fn last_error_string() -> String {
+        let error = plugin_get_last_error();
+        assert!(!error.is_null());
+        unsafe { CStr::from_ptr(error) }
+            .to_string_lossy()
+            .into_owned()
+    }
+
     #[test]
     fn test_plugin_lifecycle() {
         let plugin_type = CString::new("EQ").unwrap();
@@ -1848,6 +1872,43 @@ mod tests {
         let filename_str = unsafe { CStr::from_ptr(filename) }.to_str().unwrap();
         assert_eq!(filename_str, "EQ-Warm-Room-A.sotfpreset");
         plugin_free_string(filename);
+
+        plugin_destroy(handle);
+    }
+
+    #[test]
+    fn test_preset_json_import_rejects_oversized_input_len_before_reading() {
+        let plugin_type = CString::new("EQ").unwrap();
+        let config = CString::new(r#"{"filters": []}"#).unwrap();
+        let handle = plugin_create(plugin_type.as_ptr(), config.as_ptr(), 48000, 2, 2);
+        assert!(!handle.is_null());
+
+        let document = br#"{"state":[]}"#;
+        assert_eq!(
+            plugin_import_preset_json(handle, document.as_ptr(), MAX_PRESET_JSON_IMPORT_BYTES + 1,),
+            PluginError::InvalidConfig as c_int
+        );
+        assert!(last_error_string().contains("Preset JSON exceeds"));
+
+        plugin_destroy(handle);
+    }
+
+    #[test]
+    fn test_preset_json_import_rejects_oversized_state_array() {
+        let plugin_type = CString::new("EQ").unwrap();
+        let config = CString::new(r#"{"filters": []}"#).unwrap();
+        let handle = plugin_create(plugin_type.as_ptr(), config.as_ptr(), 48000, 2, 2);
+        assert!(!handle.is_null());
+
+        let mut document = String::from("{\"state\":[");
+        document.extend(std::iter::repeat_n("0,", MAX_PRESET_STATE_BYTES));
+        document.push_str("0]}");
+
+        assert_eq!(
+            plugin_import_preset_json(handle, document.as_ptr(), document.len()),
+            PluginError::InvalidConfig as c_int
+        );
+        assert!(last_error_string().contains("Preset state exceeds"));
 
         plugin_destroy(handle);
     }

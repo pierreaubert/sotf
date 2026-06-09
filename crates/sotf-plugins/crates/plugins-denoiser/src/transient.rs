@@ -101,8 +101,16 @@ impl TransientSuppressor {
         }
 
         let num_frames = buffer.len() / self.channels;
-        if self.work.len() < buffer.len() {
-            self.work.resize(buffer.len(), 0.0);
+        let max_chunk_frames = self.work.len() / self.channels;
+        if num_frames > max_chunk_frames {
+            if max_chunk_frames == 0 {
+                return;
+            }
+            let chunk_samples = max_chunk_frames * self.channels;
+            for chunk in buffer.chunks_mut(chunk_samples) {
+                self.process(chunk);
+            }
+            return;
         }
 
         // Deinterleave into planar scratch so each channel can be processed
@@ -457,5 +465,17 @@ mod tests {
             (one_minus - 1.0).abs() < 1e-6,
             "decay coefficients should be complementary"
         );
+    }
+
+    #[test]
+    fn multichannel_oversized_blocks_do_not_resize_work_buffer() {
+        let mut suppressor = TransientSuppressor::new(2);
+        let initial_len = suppressor.work.len();
+        let mut buffer = vec![0.1f32; initial_len * 2];
+
+        suppressor.process(&mut buffer);
+
+        assert_eq!(suppressor.work.len(), initial_len);
+        assert!(buffer.iter().all(|sample| sample.is_finite()));
     }
 }

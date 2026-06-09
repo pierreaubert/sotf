@@ -102,6 +102,12 @@ impl RnnoiseBackend {
         if self.denoisers.is_empty() || channels == 0 {
             return num_frames;
         }
+        let Some(required_samples) = num_frames.checked_mul(channels) else {
+            return 0;
+        };
+        if required_samples > buffer.len() {
+            return 0;
+        }
 
         let ch_count = channels.min(self.channels);
 
@@ -138,11 +144,7 @@ impl RnnoiseBackend {
                             let mono_in =
                                 (self.accum_buffers[0][i] + self.accum_buffers[1][i]) * 0.5;
                             let mono_out = self.scratch_output[0][i] / 32768.0;
-                            let gain = if mono_in.abs() > 1e-10 {
-                                mono_out / mono_in
-                            } else {
-                                1.0
-                            };
+                            let gain = linked_stereo_gain(mono_in, mono_out);
                             let ring_size = self.output_buffers[0].len();
                             let left = self.accum_buffers[0][i] * gain;
                             let right = self.accum_buffers[1][i] * gain;
@@ -272,6 +274,18 @@ impl RnnoiseBackend {
     }
 }
 
+fn linked_stereo_gain(mono_in: f32, mono_out: f32) -> f32 {
+    if mono_in.abs() <= 1e-5 {
+        return 1.0;
+    }
+    let gain = mono_out / mono_in;
+    if gain.is_finite() {
+        gain.clamp(0.0, 2.0)
+    } else {
+        1.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,6 +368,23 @@ mod tests {
             energy > 0.0,
             "Second frame should have non-zero output after warm-up"
         );
+    }
+
+    #[test]
+    fn process_rejects_undersized_buffer() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 2).unwrap();
+        let mut buffer = vec![0.0f32; 3];
+
+        assert_eq!(backend.process(&mut buffer, 2, 2, false), 0);
+    }
+
+    #[test]
+    fn linked_stereo_gain_is_finite_and_bounded() {
+        assert_eq!(linked_stereo_gain(1e-6, 1.0), 1.0);
+        assert_eq!(linked_stereo_gain(0.1, 10.0), 2.0);
+        assert_eq!(linked_stereo_gain(0.1, -10.0), 0.0);
+        assert_eq!(linked_stereo_gain(0.1, f32::INFINITY), 1.0);
     }
 
     #[test]

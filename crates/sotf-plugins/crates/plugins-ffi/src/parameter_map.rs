@@ -10,6 +10,21 @@ use sotf_host::plugin::Plugin;
 use std::ffi::CString;
 use std::os::raw::c_char;
 
+fn ffi_cstring(value: impl AsRef<str>) -> CString {
+    match CString::new(value.as_ref()) {
+        Ok(value) => value,
+        Err(err) => {
+            let mut bytes = err.into_vec();
+            bytes.retain(|byte| *byte != 0);
+            CString::new(bytes).unwrap_or_default()
+        }
+    }
+}
+
+fn ffi_cstring_ptr(value: impl AsRef<str>) -> *const c_char {
+    ffi_cstring(value).into_raw() as *const c_char
+}
+
 /// Parameter information exposed to AU host
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -50,9 +65,9 @@ impl ParameterMap {
         let mut cached_infos = Vec::with_capacity(bridge.count());
         for i in 0..bridge.count() {
             if let Some(info) = bridge.info(i) {
-                let id = CString::new(info.id).unwrap().into_raw() as *const c_char;
-                let name = CString::new(info.name).unwrap().into_raw() as *const c_char;
-                let unit = CString::new(info.unit).unwrap().into_raw() as *const c_char;
+                let id = ffi_cstring_ptr(info.id);
+                let name = ffi_cstring_ptr(info.name);
+                let unit = ffi_cstring_ptr(info.unit);
 
                 cached_infos.push(ParameterInfo {
                     id,
@@ -92,9 +107,9 @@ impl ParameterMap {
                         _ => (0.0, 1.0, 0.0),
                     };
 
-                let id = CString::new(param.id.0.clone()).unwrap().into_raw() as *const c_char;
-                let name = CString::new(param.name.clone()).unwrap().into_raw() as *const c_char;
-                let unit = CString::new(param.unit.clone()).unwrap().into_raw() as *const c_char;
+                let id = ffi_cstring_ptr(&param.id.0);
+                let name = ffi_cstring_ptr(&param.name);
+                let unit = ffi_cstring_ptr(&param.unit);
 
                 cached_infos.push(ParameterInfo {
                     id,
@@ -355,9 +370,9 @@ fn expand_band_params(
                 ParamType::FilePath => continue, // skip file paths for AU
             };
 
-            let id = CString::new(band_id).unwrap().into_raw() as *const c_char;
-            let name = CString::new(band_name).unwrap().into_raw() as *const c_char;
-            let unit = CString::new(spec.unit).unwrap().into_raw() as *const c_char;
+            let id = ffi_cstring_ptr(&band_id);
+            let name = ffi_cstring_ptr(&band_name);
+            let unit = ffi_cstring_ptr(spec.unit);
 
             cached_infos.push(ParameterInfo {
                 id,
@@ -446,6 +461,12 @@ pub fn band_template_info(plugin_type: &str) -> Option<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ffi_cstring_strips_interior_nul_without_panicking() {
+        let value = ffi_cstring("gain\0db");
+        assert_eq!(value.to_str().unwrap(), "gaindb");
+    }
 
     #[test]
     fn test_parameter_map_eq() {

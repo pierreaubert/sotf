@@ -33,6 +33,18 @@ fn test_audio_frame_creation() {
 }
 
 #[test]
+fn test_audio_frame_try_new_reports_overflow() {
+    let err = AudioFrame::try_new(Vec::new(), usize::MAX, 2, 48000).unwrap_err();
+    assert!(err.contains("overflow usize"), "{err}");
+}
+
+#[test]
+fn test_audio_frame_try_silent_reports_overflow() {
+    let err = AudioFrame::try_silent(usize::MAX, 2, 48000).unwrap_err();
+    assert!(err.contains("overflow usize"), "{err}");
+}
+
+#[test]
 fn test_audio_frame_num_samples() {
     let frame = AudioFrame::new(vec![0.0; 100], 50, 2, 48000);
     assert_eq!(frame.num_samples(), 100);

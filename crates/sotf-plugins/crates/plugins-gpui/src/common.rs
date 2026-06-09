@@ -419,20 +419,51 @@ pub fn render_colored_value(
 pub fn format_shortcut_label(label: &str, shortcut_key: Option<char>) -> String {
     match shortcut_key {
         Some(key) => {
-            let key_lower = key.to_ascii_lowercase();
-            let label_lower = label.to_lowercase();
-            if let Some(pos) = label_lower.find(key_lower) {
-                format!(
-                    "{}[{}]{}",
-                    &label[..pos],
-                    label.chars().nth(pos).unwrap().to_ascii_uppercase(),
-                    &label[pos + 1..]
-                )
+            let key_lower = key.to_lowercase().to_string();
+            if let Some((pos, label_char)) = label
+                .char_indices()
+                .find(|(_, label_char)| label_char.to_lowercase().to_string() == key_lower)
+            {
+                let end = pos + label_char.len_utf8();
+                let highlighted_char = label_char.to_uppercase().to_string();
+                format!("{}[{}]{}", &label[..pos], highlighted_char, &label[end..])
             } else {
                 format!("[{}] {}", key.to_ascii_uppercase(), label)
             }
         }
         None => label.to_string(),
+    }
+}
+
+fn curve_endpoints(curve_points: &[(f32, f32)]) -> Option<((f32, f32), (f32, f32))> {
+    Some((*curve_points.first()?, *curve_points.last()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{curve_endpoints, format_shortcut_label};
+
+    #[test]
+    fn format_shortcut_label_highlights_after_utf8_prefix() {
+        assert_eq!(format_shortcut_label("Étage", Some('t')), "É[T]age");
+    }
+
+    #[test]
+    fn format_shortcut_label_highlights_unicode_key() {
+        assert_eq!(format_shortcut_label("éclair", Some('é')), "[É]clair");
+    }
+
+    #[test]
+    fn curve_endpoints_returns_none_for_empty_points() {
+        assert_eq!(curve_endpoints(&[]), None);
+    }
+
+    #[test]
+    fn curve_endpoints_returns_first_and_last_points() {
+        assert_eq!(
+            curve_endpoints(&[(1.0, 2.0), (3.0, 4.0)]),
+            Some(((1.0, 2.0), (3.0, 4.0)))
+        );
     }
 }
 
@@ -924,6 +955,9 @@ impl Element for TransferCurveElement {
             );
             curve_points.push((db_to_x(input_db), db_to_y(output_db)));
         }
+        let Some(((first_x, first_y), (last_x, _))) = curve_endpoints(&curve_points) else {
+            return;
+        };
 
         // Filled area under curve (accent color at low opacity)
         {
@@ -935,19 +969,15 @@ impl Element for TransferCurveElement {
             };
             let mut builder = PathBuilder::fill();
             // Start at bottom-left
-            builder.move_to(point(ox + px(curve_points[0].0), oy + px(h - pad)));
+            builder.move_to(point(ox + px(first_x), oy + px(h - pad)));
             // Up to curve start
-            builder.line_to(point(
-                ox + px(curve_points[0].0),
-                oy + px(curve_points[0].1),
-            ));
+            builder.line_to(point(ox + px(first_x), oy + px(first_y)));
             // Along the curve
             for &(cx_pt, cy_pt) in &curve_points[1..] {
                 builder.line_to(point(ox + px(cx_pt), oy + px(cy_pt)));
             }
             // Down to bottom-right
-            let last = curve_points.last().unwrap();
-            builder.line_to(point(ox + px(last.0), oy + px(h - pad)));
+            builder.line_to(point(ox + px(last_x), oy + px(h - pad)));
             if let Ok(path) = builder.build() {
                 window.paint_path(path, fill_color);
             }
@@ -961,8 +991,8 @@ impl Element for TransferCurveElement {
 
             // Forward pass (top edge of the band)
             builder.move_to(point(
-                ox + px(curve_points[0].0),
-                oy + px(curve_points[0].1 - stroke_width / 2.0),
+                ox + px(first_x),
+                oy + px(first_y - stroke_width / 2.0),
             ));
             for &(cx_pt, cy_pt) in &curve_points[1..] {
                 builder.line_to(point(ox + px(cx_pt), oy + px(cy_pt - stroke_width / 2.0)));

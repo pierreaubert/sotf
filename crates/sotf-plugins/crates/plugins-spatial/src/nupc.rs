@@ -197,7 +197,7 @@ impl PartitionLevel {
         self.fdl[self.fdl_head].copy_from_slice(&self.fft_spectrum);
 
         // Convolve: Y = Σ IR[p] ⊙ FDL[p]
-        self.fft_sum.fill(Complex::new(0.0, 0.0));
+        self.fft_sum.fill(Complex::default());
         for p in 0..num_parts {
             let fdl_idx = (self.fdl_head + p) % num_parts;
             complex_mul_add_simd(

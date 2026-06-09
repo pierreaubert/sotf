@@ -21,6 +21,39 @@ pub struct AudioFrame {
 }
 
 impl AudioFrame {
+    fn expected_samples(num_frames: usize, num_channels: usize) -> Result<usize, String> {
+        num_frames.checked_mul(num_channels).ok_or_else(|| {
+            format!(
+                "AudioFrame dimensions overflow usize: num_frames ({}) * num_channels ({})",
+                num_frames, num_channels
+            )
+        })
+    }
+
+    /// Try to create a new audio frame.
+    pub fn try_new(
+        data: Vec<f32>,
+        num_frames: usize,
+        num_channels: usize,
+        sample_rate: u32,
+    ) -> Result<Self, String> {
+        let expected = Self::expected_samples(num_frames, num_channels)?;
+        if data.len() != expected {
+            return Err(format!(
+                "AudioFrame data length {} != num_frames ({}) * num_channels ({})",
+                data.len(),
+                num_frames,
+                num_channels
+            ));
+        }
+        Ok(Self {
+            data,
+            num_frames,
+            num_channels,
+            sample_rate,
+        })
+    }
+
     /// Create a new audio frame.
     ///
     /// # Panics
@@ -30,33 +63,29 @@ impl AudioFrame {
     /// audio in release builds, so we assert unconditionally (not just under
     /// debug_assertions).
     pub fn new(data: Vec<f32>, num_frames: usize, num_channels: usize, sample_rate: u32) -> Self {
-        let expected = num_frames
-            .checked_mul(num_channels)
-            .expect("AudioFrame::new: num_frames * num_channels overflowed usize");
-        assert_eq!(
-            data.len(),
-            expected,
-            "AudioFrame::new: data length {} != num_frames ({}) * num_channels ({})",
-            data.len(),
-            num_frames,
-            num_channels
-        );
-        Self {
-            data,
+        Self::try_new(data, num_frames, num_channels, sample_rate)
+            .unwrap_or_else(|err| panic!("AudioFrame::new: {err}"))
+    }
+
+    /// Try to create an empty (silent) audio frame.
+    pub fn try_silent(
+        num_frames: usize,
+        num_channels: usize,
+        sample_rate: u32,
+    ) -> Result<Self, String> {
+        let samples = Self::expected_samples(num_frames, num_channels)?;
+        Ok(Self {
+            data: vec![0.0; samples],
             num_frames,
             num_channels,
             sample_rate,
-        }
+        })
     }
 
     /// Create an empty (silent) audio frame
     pub fn silent(num_frames: usize, num_channels: usize, sample_rate: u32) -> Self {
-        Self {
-            data: vec![0.0; num_frames * num_channels],
-            num_frames,
-            num_channels,
-            sample_rate,
-        }
+        Self::try_silent(num_frames, num_channels, sample_rate)
+            .unwrap_or_else(|err| panic!("AudioFrame::silent: {err}"))
     }
 
     /// Total number of samples (frames x channels)
