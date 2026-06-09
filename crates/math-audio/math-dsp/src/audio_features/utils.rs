@@ -242,3 +242,63 @@ mod tests {
         assert_eq!(&output[103..106], &[98.0, 97.0, 96.0]);
     }
 }
+
+#[test]
+fn test_mean_empty() {
+    assert_eq!(mean(&[]), 0.0);
+}
+
+#[test]
+fn test_std_deviation_empty_and_single() {
+    assert_eq!(std_deviation(&[]), 0.0);
+    assert_eq!(std_deviation(&[5.0]), 0.0);
+}
+
+#[test]
+fn test_number_crossings_empty_and_no_cross() {
+    assert_eq!(number_crossings(&[]), 0);
+    assert_eq!(number_crossings(&[0.0, 0.0, 0.0]), 0);
+    assert_eq!(number_crossings(&[-1.0, -0.5, -0.1]), 0);
+}
+
+#[test]
+fn test_reflect_pad_small() {
+    let array = vec![0.0f32, 1.0, 2.0];
+    let out = reflect_pad(&array, 1);
+    assert_eq!(out, vec![1.0, 0.0, 1.0, 2.0, 1.0]);
+}
+
+#[test]
+#[should_panic]
+fn test_reflect_pad_too_large_panics() {
+    reflect_pad(&[0.0, 1.0], 2);
+}
+
+#[test]
+fn test_stft_basic_shape() {
+    let signal: Vec<f32> = (0..1024)
+        .map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 22050.0).sin())
+        .collect();
+    let spec = stft(&signal, 512, 128);
+    assert_eq!(spec.dim().0, 512 / 2 + 1);
+    assert_eq!(spec.dim().1, (1024_f32 / 128.0).ceil() as usize);
+}
+
+#[test]
+fn test_hz_to_octs_inplace() {
+    let mut freqs = ndarray::arr1(&[220.0, 440.0, 880.0]);
+    hz_to_octs_inplace(&mut freqs, 0.0, 12);
+    // Reference is A440/16 = A27.5, so A220=8=2^3, A440=16=2^4, A880=32=2^5.
+    assert!((freqs[0] - 3.0).abs() < 1e-6, "got {}", freqs[0]);
+    assert!((freqs[1] - 4.0).abs() < 1e-6, "got {}", freqs[1]);
+    assert!((freqs[2] - 5.0).abs() < 1e-6, "got {}", freqs[2]);
+}
+
+#[test]
+fn test_convolve_delta() {
+    let input = ndarray::arr1(&[0.0, 0.0, 1.0, 0.0, 0.0]);
+    let kernel = ndarray::arr1(&[1.0, 2.0, 3.0]);
+    let out = convolve(&input, &kernel);
+    assert_eq!(out.len(), input.len());
+    assert!((out[2] - 2.0).abs() < 1e-6, "got {}", out[2]);
+}

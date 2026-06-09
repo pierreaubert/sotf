@@ -185,4 +185,55 @@ mod tests {
         let samples = decoder.decode_frame(&neg_one).unwrap();
         assert!((samples[0] - (-1.0 / 32768.0)).abs() < 1e-4);
     }
+
+    #[test]
+    fn test_lpcm_unsupported_bit_depth_errors() {
+        let mut decoder = LpcmDecoder::new(1, 12, 48000);
+        let result = decoder.decode_frame(&[0u8; 4]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_substream_decoder_lpcm() {
+        let decoder = create_substream_decoder(CodecId::Lpcm, 2, 16, 48000, &[]);
+        assert!(decoder.is_ok());
+        assert_eq!(decoder.unwrap().channels(), 2);
+    }
+
+    #[test]
+    fn test_create_substream_decoder_opus_errors() {
+        let decoder = create_substream_decoder(CodecId::Opus, 2, 32, 48000, &[]);
+        assert!(decoder.is_err());
+    }
+
+    #[test]
+    fn test_create_substream_decoder_aac_errors() {
+        let decoder = create_substream_decoder(CodecId::AacLc, 2, 16, 48000, &[]);
+        assert!(decoder.is_err());
+    }
+
+    #[test]
+    fn test_lpcm_empty_payload() {
+        let mut decoder = LpcmDecoder::new(1, 16, 48000);
+        let samples = decoder.decode_frame(&[]).unwrap();
+        assert!(samples.is_empty());
+    }
+
+    #[test]
+    fn test_lpcm_reset_is_noop() {
+        let mut decoder = LpcmDecoder::new(1, 16, 48000);
+        decoder.reset(); // should not panic
+        let samples = decoder.decode_frame(&[0x7F, 0xFF]).unwrap();
+        assert_eq!(samples.len(), 1);
+    }
+
+    #[test]
+    fn test_lpcm_24bit_negative_sign_extend() {
+        let mut decoder = LpcmDecoder::new(1, 24, 48000);
+
+        // -1 as 24-bit big-endian: 0xFFFFFF
+        let neg_one = [0xFF, 0xFF, 0xFF];
+        let samples = decoder.decode_frame(&neg_one).unwrap();
+        assert!((samples[0] - (-1.0 / 8_388_608.0)).abs() < 1e-4);
+    }
 }

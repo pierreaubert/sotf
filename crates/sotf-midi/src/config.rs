@@ -241,6 +241,7 @@ impl ConfigPaths {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MidiError;
 
     #[test]
     fn test_device_profile_creation() {
@@ -279,5 +280,114 @@ mod tests {
         assert_eq!(config.manufacturer, Some("ACME".to_string()));
         assert_eq!(config.model, Some("MK-1000".to_string()));
         assert!(config.sysex_enabled);
+    }
+
+    #[test]
+    fn test_load_missing_file_is_io_error() {
+        let result = MidiConfig::load("/definitely/does/not/exist.json");
+        assert!(matches!(result, Err(MidiError::IoError(_))));
+    }
+
+    #[test]
+    fn test_load_invalid_json_is_json_error() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "not json").unwrap();
+        let result = MidiConfig::load(file.path());
+        assert!(matches!(result, Err(MidiError::JsonError(_))));
+    }
+
+    #[test]
+    fn test_save_and_load_round_trip() {
+        use tempfile::NamedTempFile;
+
+        let mut config = MidiConfig::default();
+        config.default_input = Some("input-1".to_string());
+        config.default_output = Some("output-1".to_string());
+        config.learn_mode = true;
+        config.listen_channel = Some(5);
+
+        let mut profile = DeviceProfile::new("foo".to_string());
+        profile.description = Some("desc".to_string());
+        profile.input_device = Some("dev-in".to_string());
+        profile.output_device = Some("dev-out".to_string());
+        profile.add_mapping(7, "volume".to_string());
+        profile.add_init_message(vec![0xF0, 0x7D, 0x01, 0xF7]);
+        profile
+            .device_config
+            .add_setting("sensitivity".to_string(), serde_json::json!(0.5));
+
+        config.add_profile("foo".to_string(), profile);
+        config.set_active_profile("foo".to_string());
+
+        let file = NamedTempFile::new().unwrap();
+        config.save(file.path()).unwrap();
+        let loaded = MidiConfig::load(file.path()).unwrap();
+
+        assert_eq!(loaded.active_profile, Some("foo".to_string()));
+        assert_eq!(loaded.default_input, Some("input-1".to_string()));
+        assert_eq!(loaded.default_output, Some("output-1".to_string()));
+        assert!(loaded.learn_mode);
+        assert_eq!(loaded.listen_channel, Some(5));
+        let p = loaded.get_profile("foo").unwrap();
+        assert_eq!(p.name, "foo");
+        assert_eq!(p.description, Some("desc".to_string()));
+        assert_eq!(p.get_mapping(7), Some(&"volume".to_string()));
+        assert_eq!(p.init_messages, vec![vec![0xF0, 0x7D, 0x01, 0xF7]]);
+        assert_eq!(
+            p.device_config.get_setting("sensitivity"),
+            Some(&serde_json::json!(0.5))
+        );
+    }
+
+    #[test]
+    fn test_active_profile_missing_returns_none() {
+        let mut config = MidiConfig::default();
+        config.set_active_profile("missing".to_string());
+        assert!(config.active_profile().is_none());
+    }
+
+    #[test]
+    fn test_add_profile_overwrites_existing() {
+        let mut config = MidiConfig::default();
+        let first = DeviceProfile::new("p".to_string());
+        let mut second = DeviceProfile::new("p".to_string());
+        second.description = Some("second".to_string());
+        config.add_profile("p".to_string(), first);
+        config.add_profile("p".to_string(), second);
+        assert_eq!(
+            config.get_profile("p").unwrap().description,
+            Some("second".to_string())
+        );
+    }
+
+    #[test]
+    fn test_device_profile_init_messages() {
+        let mut profile = DeviceProfile::new("test".to_string());
+        profile.add_init_message(vec![0x90, 60, 100]);
+        profile.add_init_message(vec![0x80, 60, 0]);
+        assert_eq!(profile.init_messages.len(), 2);
+        assert_eq!(profile.init_messages[1], vec![0x80, 60, 0]);
+    }
+
+    #[test]
+    fn test_device_config_custom_settings() {
+        let mut cfg = DeviceConfig::new();
+        cfg.add_setting("key".to_string(), serde_json::json!(42));
+        assert_eq!(cfg.get_setting("key"), Some(&serde_json::json!(42)));
+        assert_eq!(cfg.get_setting("missing"), None);
+    }
+
+    #[test]
+    fn test_midi_config_default_values() {
+        let config = MidiConfig::default();
+        assert!(config.profiles.is_empty());
+        assert!(config.active_profile.is_none());
+        assert!(config.default_input.is_none());
+        assert!(config.default_output.is_none());
+        assert!(!config.learn_mode);
+        assert_eq!(config.listen_channel, None);
     }
 }

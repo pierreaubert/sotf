@@ -75,6 +75,16 @@ typedef struct AtomicParamCache AtomicParamCache;
 typedef struct PluginHandle PluginHandle;
 
 /**
+ * C function pointer type for parameter writes.
+ */
+typedef void (*SetParamCallback)(void*, size_t, double);
+
+/**
+ * C function pointer type for parameter reset (to default).
+ */
+typedef void (*ResetParamCallback)(void*, size_t);
+
+/**
  * Runtime-advertised FFI capabilities.
  */
 typedef struct PluginFfiCapabilities {
@@ -195,14 +205,70 @@ typedef struct ParameterInfo {
 } ParameterInfo;
 
 /**
- * C function pointer type for parameter writes.
+ * Create a new atomic parameter cache.
+ *
+ * The returned pointer is `Arc`-allocated. Consumers that reconstruct an `Arc`
+ * (e.g. `gpui_au_create_with_plugin`) MUST use `Arc::from_raw`.
+ * FFI read/write/destroy functions work with raw pointer dereference and are
+ * compatible with both `Box` and `Arc` layout since they never free the header.
  */
-typedef void (*SetParamCallback)(void*, size_t, double);
+struct AtomicParamCache *au_param_cache_create(size_t count);
 
 /**
- * C function pointer type for parameter reset (to default).
+ * Write a denormalized parameter value into the cache.
+ *
+ * Called from Swift's `implementorValueObserver` on the AU main thread
+ * whenever a parameter changes (from host automation, MIDI, or UI).
  */
-typedef void (*ResetParamCallback)(void*, size_t);
+void au_param_cache_write(struct AtomicParamCache *cache, size_t index, double value);
+
+/**
+ * Read a denormalized parameter value from the cache.
+ */
+double au_param_cache_read(const struct AtomicParamCache *cache, size_t index);
+
+/**
+ * Set metadata for a parameter in the cache.
+ *
+ * Called from Swift during initialization to populate parameter names,
+ * units, and ranges from the AUParameterTree.
+ */
+void au_param_cache_set_meta(struct AtomicParamCache *cache,
+                             size_t index,
+                             const char *name,
+                             const char *unit,
+                             double min_value,
+                             double max_value,
+                             double default_value);
+
+/**
+ * Destroy a parameter cache.
+ */
+void au_param_cache_destroy(struct AtomicParamCache *cache);
+
+/**
+ * Create a GPUI AU context with a real plugin UI.
+ *
+ * Unlike `gpui_au_create` (which shows a placeholder), this function creates
+ * an `AuHostState` that reads parameters from an `AtomicParamCache` and writes
+ * them through callbacks to the AU `AUParameterTree` — fully thread-safe.
+ *
+ * # Safety
+ * - `ns_view` must be a valid NSView pointer
+ * - `plugin_type` must be a valid C string
+ * - `param_cache` must be a valid pointer from `au_param_cache_create()`
+ * - `set_param_cb` / `reset_param_cb` must be valid function pointers
+ * - `cb_userdata` must remain valid for the lifetime of the returned context
+ */
+void *gpui_au_create_with_plugin(void *ns_view,
+                                 float width,
+                                 float height,
+                                 float scale,
+                                 const char *plugin_type,
+                                 struct AtomicParamCache *param_cache,
+                                 SetParamCallback set_param_cb,
+                                 ResetParamCallback reset_param_cb,
+                                 void *cb_userdata);
 
 /**
  * Get the last error message
@@ -489,71 +555,5 @@ char *plugin_suggest_preset_filename(const struct PluginHandle *handle, const ch
  * * NULL on error
  */
 char *plugin_available_types(void);
-
-/**
- * Create a GPUI AU context with a real plugin UI.
- *
- * Unlike `gpui_au_create` (which shows a placeholder), this function creates
- * an `AuHostState` that reads parameters from an `AtomicParamCache` and writes
- * them through callbacks to the AU `AUParameterTree` — fully thread-safe.
- *
- * # Safety
- * - `ns_view` must be a valid NSView pointer
- * - `plugin_type` must be a valid C string
- * - `param_cache` must be a valid pointer from `au_param_cache_create()`
- * - `set_param_cb` / `reset_param_cb` must be valid function pointers
- * - `cb_userdata` must remain valid for the lifetime of the returned context
- */
-void *gpui_au_create_with_plugin(void *ns_view,
-                                 float width,
-                                 float height,
-                                 float scale,
-                                 const char *plugin_type,
-                                 struct AtomicParamCache *param_cache,
-                                 SetParamCallback set_param_cb,
-                                 ResetParamCallback reset_param_cb,
-                                 void *cb_userdata);
-
-/**
- * Create a new atomic parameter cache.
- *
- * The returned pointer is `Arc`-allocated. Consumers that reconstruct an `Arc`
- * (e.g. `gpui_au_create_with_plugin`) MUST use `Arc::from_raw`.
- * FFI read/write/destroy functions work with raw pointer dereference and are
- * compatible with both `Box` and `Arc` layout since they never free the header.
- */
-struct AtomicParamCache *au_param_cache_create(size_t count);
-
-/**
- * Write a denormalized parameter value into the cache.
- *
- * Called from Swift's `implementorValueObserver` on the AU main thread
- * whenever a parameter changes (from host automation, MIDI, or UI).
- */
-void au_param_cache_write(struct AtomicParamCache *cache, size_t index, double value);
-
-/**
- * Read a denormalized parameter value from the cache.
- */
-double au_param_cache_read(const struct AtomicParamCache *cache, size_t index);
-
-/**
- * Set metadata for a parameter in the cache.
- *
- * Called from Swift during initialization to populate parameter names,
- * units, and ranges from the AUParameterTree.
- */
-void au_param_cache_set_meta(struct AtomicParamCache *cache,
-                             size_t index,
-                             const char *name,
-                             const char *unit,
-                             double min_value,
-                             double max_value,
-                             double default_value);
-
-/**
- * Destroy a parameter cache.
- */
-void au_param_cache_destroy(struct AtomicParamCache *cache);
 
 #endif  /* SOTF_AUDIO_FFI_H */

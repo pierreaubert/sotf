@@ -148,4 +148,69 @@ mod tests {
         // bits 4..12 = 0b0010_1100 = 0x2C
         assert_eq!(br.read_bits(8).unwrap(), 0x2C);
     }
+
+    #[test]
+    fn read_bits_zero_returns_zero() {
+        let data = [0xFF];
+        let mut br = BitReader::new(&data);
+        assert_eq!(br.read_bits(0).unwrap(), 0);
+        // Cursor should not advance.
+        assert_eq!(br.byte_pos(), 0);
+    }
+
+    #[test]
+    fn read_bits_too_many_errors() {
+        let data = [0xFF];
+        let mut br = BitReader::new(&data);
+        assert!(br.read_bits(33).is_err());
+    }
+
+    #[test]
+    fn skip_bits_zero_ok() {
+        let data = [0xFF];
+        let mut br = BitReader::new(&data);
+        assert!(br.skip_bits(0).is_ok());
+        assert_eq!(br.byte_pos(), 0);
+    }
+
+    #[test]
+    fn skip_past_end_errors() {
+        let data = [0xFF];
+        let mut br = BitReader::new(&data);
+        assert!(br.skip_bits(9).is_err());
+    }
+
+    #[test]
+    fn empty_reader_byte_pos_is_zero() {
+        let br = BitReader::new(&[]);
+        assert_eq!(br.byte_pos(), 0);
+        assert!(br.is_byte_aligned());
+    }
+
+    #[test]
+    fn read_bool_false() {
+        // bits: 1 0 1 1 ...
+        let data = [0b1011_0000];
+        let mut br = BitReader::new(&data);
+        assert!(br.read_bool().unwrap());
+        assert!(!br.read_bool().unwrap());
+    }
+
+    #[test]
+    fn byte_pos_exact_after_aligned_reads() {
+        let data = [0xFF, 0xFF];
+        let mut br = BitReader::new(&data);
+        br.read_bits(8).unwrap();
+        assert!(br.is_byte_aligned());
+        assert_eq!(br.byte_pos(), 1);
+        br.read_bits(8).unwrap();
+        assert_eq!(br.byte_pos(), 2);
+    }
+
+    #[test]
+    fn read_all_32_bits() {
+        let data = [0x12, 0x34, 0x56, 0x78];
+        let mut br = BitReader::new(&data);
+        assert_eq!(br.read_bits(32).unwrap(), 0x12345678);
+    }
 }

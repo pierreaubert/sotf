@@ -68,3 +68,11 @@ mod tests {
         assert!((1.0 - values[0]).abs() < 1e-6);
     }
 }
+
+#[test]
+fn test_loudness_empty() {
+    let values = compute_loudness(&[]);
+    assert_eq!(values.len(), 2);
+    assert!((values[0] - (-1.0)).abs() < 1e-6);
+    assert!((values[1] - (-1.0)).abs() < 1e-6);
+}

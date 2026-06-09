@@ -321,4 +321,15 @@ mod tests {
         );
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64());
     }
+
+    #[test]
+    fn test_set_param_value_roundtrip() {
+        let mut p = Params::default();
+        p.set_param_value(0, 2.0);
+        assert_eq!(p.param_value(0), Some(2.0));
+        p.set_param_value(1, -30.0);
+        assert_eq!(p.param_value(1), Some(-30.0));
+        p.set_param_value(8, 1.0); // target_mode -> Tonal
+        assert_eq!(p.param_value(8), Some(1.0));
+    }
 }

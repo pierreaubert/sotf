@@ -332,4 +332,117 @@ mod tests {
         let map = build_channel_map(IamfChannelLayout::Stereo, target);
         assert_eq!(map, vec![0, 1]);
     }
+
+    #[test]
+    fn iamf_label_to_sotf_unknown_returns_none() {
+        assert!(iamf_label_to_sotf("Unknown").is_none());
+        assert!(iamf_label_to_sotf("X").is_none());
+    }
+
+    #[test]
+    fn channel_map_drops_unknown_labels() {
+        // A layout with known + unknown channels would map unknown to MAX,
+        // but all current layouts use only known labels. Test via Binaural
+        // which is Stereo-equivalent.
+        let target = get_speaker_config("2.0").unwrap();
+        let map = build_channel_map(IamfChannelLayout::Binaural, target);
+        assert_eq!(map, vec![0, 1]);
+    }
+
+    #[test]
+    fn channel_renderer_empty_layers_errors() {
+        let config = ScalableChannelConfig {
+            num_layers: 0,
+            layers: vec![],
+        };
+        let target = get_speaker_config("5.1").unwrap();
+        assert!(ChannelRenderer::new(&config, target).is_err());
+    }
+
+    #[test]
+    fn channel_renderer_mono_to_stereo() {
+        let config = ScalableChannelConfig {
+            num_layers: 1,
+            layers: vec![ChannelLayer {
+                loudspeaker_layout: IamfChannelLayout::Mono,
+                output_gain_is_present: false,
+                recon_gain_is_present: false,
+                substream_count: 1,
+                coupled_substream_count: 0,
+                output_gain_db: 0.0,
+            }],
+        };
+
+        let target = get_speaker_config("2.0").unwrap();
+        let mut renderer = ChannelRenderer::new(&config, target).unwrap();
+        // Mono substream: 1 channel, 1 frame at amplitude 0.75
+        let substream_pcm = vec![vec![0.75_f32]];
+        let mut output = vec![0.0_f32; 2];
+        renderer.render(&substream_pcm, &mut output, 1).unwrap();
+
+        // Mono maps to L (front-left alias) in stereo target.
+        assert!((output[0] - 0.75).abs() < 1e-6);
+        assert!(output[1].abs() < 1e-6);
+    }
+
+    #[test]
+    fn channel_renderer_scalable_picks_best_layer() {
+        // Two layers: stereo base + 5.1 enhancement. Target is 5.1 so we
+        // should select the 5.1 layer.
+        let config = ScalableChannelConfig {
+            num_layers: 2,
+            layers: vec![
+                ChannelLayer {
+                    loudspeaker_layout: IamfChannelLayout::Stereo,
+                    output_gain_is_present: false,
+                    recon_gain_is_present: false,
+                    substream_count: 1,
+                    coupled_substream_count: 1,
+                    output_gain_db: 0.0,
+                },
+                ChannelLayer {
+                    loudspeaker_layout: IamfChannelLayout::Layout5_1,
+                    output_gain_is_present: false,
+                    recon_gain_is_present: false,
+                    substream_count: 4,
+                    coupled_substream_count: 2,
+                    output_gain_db: 0.0,
+                },
+            ],
+        };
+
+        let target = get_speaker_config("5.1").unwrap();
+        let renderer = ChannelRenderer::new(&config, target).unwrap();
+        assert_eq!(renderer.output_channels(), 6);
+    }
+
+    #[test]
+    fn channel_renderer_downgrades_layer_for_small_target() {
+        // 5.1 layer available but target is stereo: should pick stereo.
+        let config = ScalableChannelConfig {
+            num_layers: 2,
+            layers: vec![
+                ChannelLayer {
+                    loudspeaker_layout: IamfChannelLayout::Stereo,
+                    output_gain_is_present: false,
+                    recon_gain_is_present: false,
+                    substream_count: 1,
+                    coupled_substream_count: 1,
+                    output_gain_db: 0.0,
+                },
+                ChannelLayer {
+                    loudspeaker_layout: IamfChannelLayout::Layout5_1,
+                    output_gain_is_present: false,
+                    recon_gain_is_present: false,
+                    substream_count: 4,
+                    coupled_substream_count: 2,
+                    output_gain_db: 0.0,
+                },
+            ],
+        };
+
+        let target = get_speaker_config("2.0").unwrap();
+        let renderer = ChannelRenderer::new(&config, target).unwrap();
+        assert_eq!(renderer.output_channels(), 2);
+    }
 }

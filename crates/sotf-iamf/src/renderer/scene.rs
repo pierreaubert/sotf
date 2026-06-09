@@ -264,4 +264,104 @@ mod tests {
             assert!(level.abs() > 0.01, "Expected non-zero output, got {level}");
         }
     }
+
+    #[test]
+    fn test_scene_renderer_invalid_channel_count() {
+        // 5 is not a perfect square -> invalid.
+        let config = AmbisonicsConfig {
+            ambisonics_mode: AmbisonicsMode::Mono,
+            output_channel_count: 5,
+            substream_count: 5,
+            coupled_substream_count: 0,
+            channel_mapping: vec![0, 1, 2, 3, 4],
+            demixing_matrix: Vec::new(),
+        };
+
+        let target = get_speaker_config("5.1").unwrap();
+        assert!(SceneRenderer::new(&config, target).is_err());
+    }
+
+    #[test]
+    fn test_scene_renderer_projection_smoke() {
+        // 1st-order projection: 4 ACN channels from 4 substream channels.
+        let config = AmbisonicsConfig {
+            ambisonics_mode: AmbisonicsMode::Projection,
+            output_channel_count: 4,
+            substream_count: 4,
+            coupled_substream_count: 0,
+            channel_mapping: vec![0, 1, 2, 3],
+            // Identity demixing matrix: 4 x 4
+            demixing_matrix: vec![
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+        };
+
+        let target = get_speaker_config("5.1").unwrap();
+        let mut renderer = SceneRenderer::new(&config, target).unwrap();
+        assert_eq!(renderer.output_channels(), 6);
+
+        // W=1, others 0 -> same omni behavior as mono mode with identity matrix.
+        let substream_pcm: Vec<Vec<f32>> = vec![vec![1.0], vec![0.0], vec![0.0], vec![0.0]];
+        let mut output = vec![0.0_f32; 6];
+        renderer.render(&substream_pcm, &mut output, 1).unwrap();
+
+        let non_lfe: Vec<f32> = target
+            .speakers
+            .iter()
+            .filter(|s| !s.is_lfe)
+            .map(|s| output[s.channel])
+            .collect();
+        for &level in &non_lfe {
+            assert!(level.abs() > 0.01, "Expected non-zero output, got {level}");
+        }
+    }
+
+    #[test]
+    fn test_scene_renderer_output_channels() {
+        let config = AmbisonicsConfig {
+            ambisonics_mode: AmbisonicsMode::Mono,
+            output_channel_count: 4,
+            substream_count: 4,
+            coupled_substream_count: 0,
+            channel_mapping: vec![0, 1, 2, 3],
+            demixing_matrix: Vec::new(),
+        };
+
+        let target = get_speaker_config("5.1").unwrap();
+        let renderer = SceneRenderer::new(&config, target).unwrap();
+        assert_eq!(renderer.output_channels(), 6);
+    }
+
+    #[test]
+    fn test_reassemble_ambisonics_mono_coupled() {
+        // Two coupled substreams = 4 channels, mapped to ACN 0..3.
+        let config = AmbisonicsConfig {
+            ambisonics_mode: AmbisonicsMode::Mono,
+            output_channel_count: 4,
+            substream_count: 2,
+            coupled_substream_count: 2,
+            channel_mapping: vec![0, 1, 2, 3],
+            demixing_matrix: Vec::new(),
+        };
+
+        let target = get_speaker_config("5.1").unwrap();
+        let mut renderer = SceneRenderer::new(&config, target).unwrap();
+
+        // Coupled substreams are interleaved: [W,Y, Z,X] for one frame.
+        let ss0 = vec![1.0_f32, 0.0]; // W, Y
+        let ss1 = vec![0.0_f32, 1.0]; // Z, X
+        let mut output = vec![0.0_f32; 6];
+        renderer.render(&[ss0, ss1], &mut output, 1).unwrap();
+
+        // All four ACN channels are populated; W dominates omnidirectional.
+        let non_lfe: Vec<f32> = target
+            .speakers
+            .iter()
+            .filter(|s| !s.is_lfe)
+            .map(|s| output[s.channel])
+            .collect();
+        for &level in &non_lfe {
+            assert!(level.abs() > 0.01, "Expected non-zero output, got {level}");
+        }
+    }
 }

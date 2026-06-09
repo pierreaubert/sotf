@@ -193,4 +193,200 @@ mod tests {
         assert!((output[0] - 0.501187).abs() < 1e-3);
         assert!((output[1] - (-0.501187)).abs() < 1e-3);
     }
+
+    #[test]
+    fn test_apply_parameter_block_element_gain() {
+        let sub_mix = SubMix {
+            num_audio_elements: 1,
+            element_mix_configs: vec![ElementMixConfig {
+                audio_element_id: 0,
+                mix_gain: MixGainConfig {
+                    parameter_id: 42,
+                    default_mix_gain_db: 0.0,
+                },
+            }],
+            output_mix_gain: MixGainConfig {
+                parameter_id: 99,
+                default_mix_gain_db: 0.0,
+            },
+            output_layout: IamfChannelLayout::Stereo,
+            loudness: LoudnessInfo {
+                info_type: 0,
+                integrated_loudness: -23.0,
+                digital_peak: -1.0,
+                true_peak: None,
+            },
+        };
+
+        let mut state = MixState::from_sub_mix(&sub_mix);
+        // 6 dB ≈ 1.995 linear
+        let pb = ParameterBlock {
+            parameter_id: 42,
+            duration: 10,
+            constant_subblock_duration: 10,
+            subblocks: vec![ParameterSubblock {
+                subblock_duration: 10,
+                param_data: ParameterData::MixGain {
+                    animation_type: AnimationType::Step,
+                    start_point_value: 6.0,
+                    end_point_value: 6.0,
+                    control_point_value: 0.0,
+                    control_point_relative_time: 0.0,
+                },
+            }],
+        };
+        state.apply_parameter_block(&pb, &sub_mix);
+        assert!((state.element_gains[0] - 1.995262).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_apply_parameter_block_output_gain() {
+        let sub_mix = SubMix {
+            num_audio_elements: 0,
+            element_mix_configs: vec![],
+            output_mix_gain: MixGainConfig {
+                parameter_id: 7,
+                default_mix_gain_db: 0.0,
+            },
+            output_layout: IamfChannelLayout::Stereo,
+            loudness: LoudnessInfo {
+                info_type: 0,
+                integrated_loudness: -23.0,
+                digital_peak: -1.0,
+                true_peak: None,
+            },
+        };
+
+        let mut state = MixState::from_sub_mix(&sub_mix);
+        let pb = ParameterBlock {
+            parameter_id: 7,
+            duration: 10,
+            constant_subblock_duration: 10,
+            subblocks: vec![ParameterSubblock {
+                subblock_duration: 10,
+                param_data: ParameterData::MixGain {
+                    animation_type: AnimationType::Step,
+                    start_point_value: -6.0,
+                    end_point_value: -6.0,
+                    control_point_value: 0.0,
+                    control_point_relative_time: 0.0,
+                },
+            }],
+        };
+        state.apply_parameter_block(&pb, &sub_mix);
+        assert!((state.output_gain - 0.501187).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_mix_multiple_elements() {
+        let sub_mix = SubMix {
+            num_audio_elements: 2,
+            element_mix_configs: vec![
+                ElementMixConfig {
+                    audio_element_id: 0,
+                    mix_gain: MixGainConfig {
+                        parameter_id: 0,
+                        default_mix_gain_db: 0.0,
+                    },
+                },
+                ElementMixConfig {
+                    audio_element_id: 1,
+                    mix_gain: MixGainConfig {
+                        parameter_id: 1,
+                        default_mix_gain_db: 0.0,
+                    },
+                },
+            ],
+            output_mix_gain: MixGainConfig {
+                parameter_id: 2,
+                default_mix_gain_db: 0.0,
+            },
+            output_layout: IamfChannelLayout::Stereo,
+            loudness: LoudnessInfo {
+                info_type: 0,
+                integrated_loudness: -23.0,
+                digital_peak: -1.0,
+                true_peak: None,
+            },
+        };
+
+        let state = MixState::from_sub_mix(&sub_mix);
+        let elem_a = vec![1.0_f32, 0.0];
+        let elem_b = vec![0.0_f32, 1.0];
+        let mut output = vec![0.0_f32; 2];
+        state.mix_from_bufs(&[elem_a, elem_b], &mut output, 1).unwrap();
+
+        assert!((output[0] - 1.0).abs() < 1e-6);
+        assert!((output[1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_mix_with_output_gain() {
+        let sub_mix = SubMix {
+            num_audio_elements: 1,
+            element_mix_configs: vec![ElementMixConfig {
+                audio_element_id: 0,
+                mix_gain: MixGainConfig {
+                    parameter_id: 0,
+                    default_mix_gain_db: 0.0,
+                },
+            }],
+            output_mix_gain: MixGainConfig {
+                parameter_id: 1,
+                default_mix_gain_db: -6.0,
+            },
+            output_layout: IamfChannelLayout::Stereo,
+            loudness: LoudnessInfo {
+                info_type: 0,
+                integrated_loudness: -23.0,
+                digital_peak: -1.0,
+                true_peak: None,
+            },
+        };
+
+        let state = MixState::from_sub_mix(&sub_mix);
+        let elem = vec![1.0_f32, 1.0];
+        let mut output = vec![0.0_f32; 2];
+        state.mix_from_bufs(&[elem], &mut output, 1).unwrap();
+
+        assert!((output[0] - 0.501187).abs() < 1e-3);
+        assert!((output[1] - 0.501187).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_mix_missing_gain_defaults_to_unity() {
+        // Element buffer present but no matching gain entry.
+        let sub_mix = SubMix {
+            num_audio_elements: 1,
+            element_mix_configs: vec![ElementMixConfig {
+                audio_element_id: 0,
+                mix_gain: MixGainConfig {
+                    parameter_id: 0,
+                    default_mix_gain_db: 0.0,
+                },
+            }],
+            output_mix_gain: MixGainConfig {
+                parameter_id: 1,
+                default_mix_gain_db: 0.0,
+            },
+            output_layout: IamfChannelLayout::Stereo,
+            loudness: LoudnessInfo {
+                info_type: 0,
+                integrated_loudness: -23.0,
+                digital_peak: -1.0,
+                true_peak: None,
+            },
+        };
+
+        let state = MixState::from_sub_mix(&sub_mix);
+        // Provide an extra element buffer with no corresponding gain.
+        let elem_a = vec![0.5_f32, 0.5];
+        let elem_b = vec![0.25_f32, -0.25];
+        let mut output = vec![0.0_f32; 2];
+        state.mix_from_bufs(&[elem_a, elem_b], &mut output, 1).unwrap();
+
+        // elem_a at unity + elem_b at default unity.
+        assert!((output[0] - 0.75).abs() < 1e-6);
+        assert!((output[1] - 0.25).abs() < 1e-6);
+    }
 }

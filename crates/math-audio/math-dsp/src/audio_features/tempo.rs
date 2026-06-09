@@ -163,3 +163,10 @@ mod tests {
         assert!(tempo > -0.8 && tempo < 0.0, "tempo = {tempo}");
     }
 }
+
+#[test]
+fn test_tempo_too_short() {
+    let short = vec![0.0f32; 10];
+    let tempo = compute_tempo(&short, 22050);
+    assert_eq!(tempo, -1.0);
+}

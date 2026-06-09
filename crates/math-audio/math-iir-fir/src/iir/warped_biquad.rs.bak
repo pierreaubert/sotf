@@ -181,10 +181,21 @@ fn compute_implicit_consts<T: FilterFloat>(a1: T, a2: T, lambda: T) -> (T, T) {
     let lambda_sq = lambda * lambda;
     let one_minus_lam_sq = T::one() - lambda_sq;
     let raw_denom = T::one() + a1 * lambda + a2 * lambda_sq;
-    let inv_denom = if raw_denom.abs() > lit(1e-15) {
+
+    // Issue #3: use a type-aware threshold based on the coefficient scale
+    // rather than an absolute 1e-15 that is below f32::EPSILON.
+    let coeff_scale = (T::one() + a1.abs() + a2.abs()).max(T::one());
+    let eps = T::epsilon() * lit(1000.0) * coeff_scale;
+    let inv_denom = if raw_denom.abs() > eps {
         T::one() / raw_denom
     } else {
-        T::one() // degenerate: pass through
+        // Sign-preserving clamped fallback instead of pass-through.
+        let sign = if raw_denom >= T::zero() {
+            T::one()
+        } else {
+            -T::one()
+        };
+        T::one() / (sign * eps)
     };
     (inv_denom, one_minus_lam_sq)
 }
@@ -611,7 +622,6 @@ mod tests {
             );
         }
     }
-}
 
     #[test]
     fn test_small_denom_clamped_f32() {

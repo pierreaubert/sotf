@@ -322,3 +322,72 @@ impl Default for AudioEngineState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EPSILON: f32 = 1e-6;
+
+    #[test]
+    fn audio_frame_try_new_valid() {
+        let frame = AudioFrame::try_new(vec![0.1, 0.2, 0.3, 0.4], 2, 2, 48_000).unwrap();
+        assert_eq!(frame.num_frames, 2);
+        assert_eq!(frame.num_channels, 2);
+        assert_eq!(frame.sample_rate, 48_000);
+        assert_eq!(frame.data.len(), 4);
+        assert!((frame.data[0] - 0.1).abs() < EPSILON);
+    }
+
+    #[test]
+    fn audio_frame_try_new_wrong_length() {
+        let err = AudioFrame::try_new(vec![0.0; 3], 2, 2, 48_000).unwrap_err();
+        assert!(err.contains("data length"));
+        assert!(err.contains('3'));
+    }
+
+    #[test]
+    fn audio_frame_try_new_overflow() {
+        let err = AudioFrame::try_new(vec![], usize::MAX, 2, 48_000).unwrap_err();
+        assert!(err.contains("overflow"));
+    }
+
+    #[test]
+    fn audio_frame_new_panics_on_mismatch() {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            AudioFrame::new(vec![0.0; 3], 2, 2, 48_000);
+        }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn audio_frame_silent_creates_zeros() {
+        let frame = AudioFrame::silent(3, 2, 96_000);
+        assert_eq!(frame.num_frames, 3);
+        assert_eq!(frame.num_channels, 2);
+        assert_eq!(frame.sample_rate, 96_000);
+        assert_eq!(frame.data.len(), 6);
+        assert!(frame.data.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn audio_frame_try_silent_overflow() {
+        let err = AudioFrame::try_silent(usize::MAX, 2, 48_000).unwrap_err();
+        assert!(err.contains("overflow"));
+    }
+
+    #[test]
+    fn audio_frame_clear_zeros_data() {
+        let mut frame = AudioFrame::new(vec![1.0, 2.0, 3.0, 4.0], 2, 2, 48_000);
+        frame.clear();
+        assert!(frame.data.iter().all(|&s| s == 0.0));
+        assert_eq!(frame.num_frames, 2);
+        assert_eq!(frame.num_channels, 2);
+    }
+
+    #[test]
+    fn audio_frame_num_samples() {
+        let frame = AudioFrame::new(vec![0.0; 12], 3, 4, 48_000);
+        assert_eq!(frame.num_samples(), 12);
+    }
+}

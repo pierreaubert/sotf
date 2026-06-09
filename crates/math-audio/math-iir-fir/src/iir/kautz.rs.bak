@@ -16,10 +16,9 @@
 //!
 //! Given a measured room response and a flat target, [`KautzFilter::optimize_gains`]
 //! solves the linear least-squares problem `Φ g = t` where `Φ[i][j]` is section j's
-//! dB response at frequency i and `t` is the correction needed. The pseudoinverse
-//! `g = (ΦᵀΦ)⁻¹ Φᵀ t` is computed via Cholesky factorization of the
-//! (n_sections × n_sections) normal equations — cheap for the small systems typical
-//! of room correction (5–10 modes).
+//! dB response at frequency i and `t` is the correction needed. The regularized
+//! system is solved with modified Gram-Schmidt QR on `[Φ; sqrt(λ) I]`, avoiding
+//! the condition-number squaring of normal equations for closely spaced poles.
 
 use ndarray::Array1;
 use num_complex::Complex;
@@ -237,9 +236,10 @@ impl KautzFilter<f64> {
     /// - `Φ[i][j]` = section j's basis function dB response at `freqs[i]`
     /// - `t[i]` = `target_spl[i] - measured_spl[i]` (correction needed in dB)
     ///
-    /// Uses the normal equations `(ΦᵀΦ) g = Φᵀ t` solved via Cholesky factorization.
-    /// This is numerically stable for the small systems (5–10 sections) typical of
-    /// room mode correction.
+    /// Uses modified Gram-Schmidt QR on the augmented regularized system
+    /// `[Φ; sqrt(λ) I]`. This is more robust than normal equations for
+    /// closely spaced room-mode poles because it does not square the condition
+    /// number of `Φ`.
     pub fn optimize_gains(&mut self, freqs: &[f64], measured_spl: &[f64], target_spl: &[f64]) {
         let n = freqs.len();
         let m = self.sections.len();
@@ -286,30 +286,16 @@ impl KautzFilter<f64> {
             }
         }
 
-        // Normal equations: A = ΦᵀΦ (m×m), b = Φᵀt (m)
-        let mut a_mat = vec![0.0f64; m * m];
-        let mut b_vec = vec![0.0f64; m];
+        // Regularization strength: λ = 1e-6 * max column norm prevents
+        // division by near-zero values when sections have very similar responses.
+        let max_col_norm_sq = (0..m)
+            .map(|j| (0..n).map(|i| phi[i * m + j] * phi[i * m + j]).sum::<f64>())
+            .fold(0.0f64, f64::max);
+        let lambda = 1.0e-4 * max_col_norm_sq.max(1.0);
 
-        for i in 0..n {
-            for j in 0..m {
-                b_vec[j] += phi[i * m + j] * t[i];
-                for k in 0..m {
-                    a_mat[j * m + k] += phi[i * m + j] * phi[i * m + k];
-                }
-            }
-        }
-
-        // Regularization: add a small ridge to ensure numerical stability.
-        // λ = 1e-6 * max diagonal element prevents division by near-zero values
-        // when sections have very similar responses.
-        let max_diag = (0..m).map(|i| a_mat[i * m + i]).fold(0.0f64, f64::max);
-        let lambda = 1.0e-6 * max_diag.max(1.0);
-        for i in 0..m {
-            a_mat[i * m + i] += lambda;
-        }
-
-        // Solve A·g = b with Cholesky: A = LLᵀ, then Ly = b, Lᵀg = y
-        if let Some(gains) = cholesky_solve(m, &a_mat, &b_vec) {
+        // Issue #4: solve via QR on the augmented system instead of normal
+        // equations + Cholesky.  QR avoids squaring the condition number of Φ.
+        if let Some(gains) = qr_least_squares(n, m, &phi, &t, lambda) {
             for (section, &g) in self.sections.iter_mut().zip(gains.iter()) {
                 section.gain = g;
             }
@@ -375,56 +361,86 @@ impl KautzFilter<f64> {
 }
 
 // ---------------------------------------------------------------------------
-// Cholesky solver (small dense systems, no external dependency)
+// QR least-squares solver (replaces normal equations + Cholesky for stability)
 // ---------------------------------------------------------------------------
 
-/// Solve `A x = b` for symmetric positive-definite `A` using Cholesky LLᵀ decomposition.
+/// Solve the regularized least-squares problem `min ||Φ·g − t||² + λ·||g||²`
+/// using modified Gram–Schmidt QR on the augmented system `[Φ; √λ·I]`.
 ///
-/// `n` is the matrix dimension; `a` is stored row-major (length `n*n`); `b` has length `n`.
-/// Returns `None` if the decomposition fails (non-positive-definite matrix).
-fn cholesky_solve(n: usize, a: &[f64], b: &[f64]) -> Option<Vec<f64>> {
-    // Cholesky–Banachiewicz: compute lower-triangular L such that A = LLᵀ
-    let mut l = vec![0.0f64; n * n];
+/// The augmented matrix has `n + m` rows and `m` columns.  Regularization
+/// rows prevent rank-deficiency when basis functions are nearly linearly
+/// dependent (closely-spaced poles).
+fn qr_least_squares(n: usize, m: usize, phi: &[f64], t: &[f64], lambda: f64) -> Option<Vec<f64>> {
+    let aug_n = n + m;
+    let mut q = vec![0.0f64; aug_n * m];
+    let mut r = vec![0.0f64; m * m];
 
+    // Copy Φ into the top of the augmented matrix.
     for i in 0..n {
-        for j in 0..=i {
-            let mut sum = 0.0;
-            for k in 0..j {
-                sum += l[i * n + k] * l[j * n + k];
+        for j in 0..m {
+            q[i * m + j] = phi[i * m + j];
+        }
+    }
+    // Append √(λ)·I at the bottom.
+    let sqrt_lambda = lambda.sqrt();
+    for j in 0..m {
+        q[(n + j) * m + j] = sqrt_lambda;
+    }
+
+    // Augmented target vector: [t; 0].
+    let mut aug_t = vec![0.0f64; aug_n];
+    aug_t[..n].copy_from_slice(&t[..n]);
+
+    // Modified Gram–Schmidt.
+    for k in 0..m {
+        let mut norm_sq = 0.0;
+        for i in 0..aug_n {
+            norm_sq += q[i * m + k] * q[i * m + k];
+        }
+        let norm = norm_sq.sqrt();
+        if norm < 1e-20 {
+            return None;
+        }
+        r[k * m + k] = norm;
+        for i in 0..aug_n {
+            q[i * m + k] /= norm;
+        }
+        for j in (k + 1)..m {
+            let mut dot = 0.0;
+            for i in 0..aug_n {
+                dot += q[i * m + k] * q[i * m + j];
             }
-            if i == j {
-                let diag = a[i * n + i] - sum;
-                if diag <= 0.0 {
-                    return None; // not positive definite
-                }
-                l[i * n + j] = diag.sqrt();
-            } else {
-                l[i * n + j] = (a[i * n + j] - sum) / l[j * n + j];
+            r[k * m + j] = dot;
+            for i in 0..aug_n {
+                q[i * m + j] -= dot * q[i * m + k];
             }
         }
     }
 
-    // Forward substitution: L y = b
-    let mut y = vec![0.0f64; n];
-    for i in 0..n {
+    // Qᵀ · aug_t  (m-dimensional).
+    let mut qt = vec![0.0f64; m];
+    for j in 0..m {
         let mut sum = 0.0;
-        for k in 0..i {
-            sum += l[i * n + k] * y[k];
+        for i in 0..aug_n {
+            sum += q[i * m + j] * aug_t[i];
         }
-        y[i] = (b[i] - sum) / l[i * n + i];
+        qt[j] = sum;
     }
 
-    // Back substitution: Lᵀ x = y
-    let mut x = vec![0.0f64; n];
-    for i in (0..n).rev() {
-        let mut sum = 0.0;
-        for k in (i + 1)..n {
-            sum += l[k * n + i] * x[k]; // l[k*n+i] = Lᵀ[i*n+k] = L[k*n+i]
+    // Back-substitution: R·g = Qᵀ·aug_t.
+    let mut g = vec![0.0f64; m];
+    for i in (0..m).rev() {
+        let mut sum = qt[i];
+        for j in (i + 1)..m {
+            sum -= r[i * m + j] * g[j];
         }
-        x[i] = (y[i] - sum) / l[i * n + i];
+        if r[i * m + i].abs() < 1e-20 {
+            return None;
+        }
+        g[i] = sum / r[i * m + i];
     }
 
-    Some(x)
+    Some(g)
 }
 
 // ---------------------------------------------------------------------------
@@ -526,28 +542,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cholesky_solve_identity() {
-        // A = I, b = [1, 2, 3] => x = [1, 2, 3]
-        let a = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let b = vec![1.0, 2.0, 3.0];
-        let x = cholesky_solve(3, &a, &b).expect("solve should succeed");
-        for (xi, bi) in x.iter().zip(b.iter()) {
-            assert!((xi - bi).abs() < 1e-12, "x={xi} != b={bi}");
-        }
-    }
-
-    #[test]
-    fn test_cholesky_solve_2x2() {
-        // A = [[4, 2], [2, 3]], b = [8, 9]
-        // System: 4x + 2y = 8, 2x + 3y = 9  =>  x = 0.75, y = 2.5
-        let a = vec![4.0, 2.0, 2.0, 3.0];
-        let b = vec![8.0, 9.0];
-        let x = cholesky_solve(2, &a, &b).expect("solve should succeed");
-        assert!((x[0] - 0.75).abs() < 1e-10, "x[0]={}", x[0]);
-        assert!((x[1] - 2.5).abs() < 1e-10, "x[1]={}", x[1]);
-    }
-
-    #[test]
     fn test_np_log_result() {
         let modes = vec![(100.0, 5.0)];
         let mut filter = KautzFilter::from_room_modes(&modes, 48000.0);
@@ -603,8 +597,6 @@ mod tests {
             ratio
         );
     }
-}
-
 
     #[test]
     fn test_kautz_ill_conditioned_poles() {
@@ -618,9 +610,7 @@ mod tests {
         let freqs: Vec<f64> = (20..500).map(|f| f as f64).collect();
         let measured: Vec<f64> = freqs
             .iter()
-            .map(|&f| {
-                10.0 / (1.0 + ((f - 100.0) / 1.0).powi(2))
-            })
+            .map(|&f| 10.0 / (1.0 + ((f - 100.0) / 1.0).powi(2)))
             .collect();
         let target: Vec<f64> = vec![0.0; freqs.len()];
 

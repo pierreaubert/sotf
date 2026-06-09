@@ -380,3 +380,10 @@ mod tests {
         );
     }
 }
+
+#[test]
+fn test_pitch_tuning_empty_returns_zero() {
+    let mut freqs = ndarray::Array1::zeros((0,));
+    let tuning = pitch_tuning(&mut freqs, 0.01, 12).unwrap();
+    assert_eq!(tuning, 0.0);
+}

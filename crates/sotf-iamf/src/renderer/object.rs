@@ -363,4 +363,74 @@ mod tests {
             assert!(r < 0.1, "Frame {frame}: expected R near zero, got R={r:.3}");
         }
     }
+
+    #[test]
+    fn test_stereo_object_render() {
+        // Stereo object at front center: L and R summed equally to center image.
+        let config = get_speaker_config("5.1").unwrap();
+        let mut renderer = ObjectRenderer::new(config, 2);
+
+        // One frame of interleaved stereo: L=1.0, R=1.0
+        let substream_pcm = vec![vec![1.0_f32, 1.0]];
+        let mut output = vec![0.0_f32; 6];
+        renderer.render(&substream_pcm, &mut output, 1).unwrap();
+
+        // Center should dominate (az=0, el=0).
+        let center = output[2];
+        assert!(
+            center > 0.9,
+            "Expected center speaker to dominate stereo object at front, got {center:.3}"
+        );
+
+        // LFE silent
+        assert_eq!(output[3], 0.0, "LFE should be silent");
+    }
+
+    #[test]
+    fn test_empty_substream_pcm_is_silence() {
+        let config = get_speaker_config("5.1").unwrap();
+        let mut renderer = ObjectRenderer::new(config, 1);
+
+        let substream_pcm: Vec<Vec<f32>> = vec![];
+        let mut output = vec![0.5_f32; 6]; // pre-fill with non-zero
+        renderer.render(&substream_pcm, &mut output, 1).unwrap();
+
+        // Output should have been cleared and left silent.
+        for &s in &output {
+            assert_eq!(s, 0.0, "Empty input should produce silence");
+        }
+    }
+
+    #[test]
+    fn test_position_roundtrip() {
+        let config = get_speaker_config("5.1").unwrap();
+        let mut renderer = ObjectRenderer::new(config, 1);
+
+        let pos = ObjectPosition {
+            azimuth_deg: 45.0,
+            elevation_deg: 10.0,
+            gain: 0.75,
+        };
+        renderer.set_position(pos);
+        let retrieved = renderer.position();
+
+        assert!((retrieved.azimuth_deg - 45.0).abs() < 1e-6);
+        assert!((retrieved.elevation_deg - 10.0).abs() < 1e-6);
+        assert!((retrieved.gain - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_short_input_zero_pads() {
+        // Request more frames than provided: missing samples treated as 0.
+        let config = get_speaker_config("5.1").unwrap();
+        let mut renderer = ObjectRenderer::new(config, 1);
+
+        let substream_pcm = vec![vec![1.0_f32]]; // only 1 frame
+        let mut output = vec![0.0_f32; 12];      // request 2 frames
+        renderer.render(&substream_pcm, &mut output, 2).unwrap();
+
+        // First frame should have non-zero center, second frame silent.
+        assert!(output[2].abs() > 0.9, "First frame center should be active");
+        assert!(output[2 + 6].abs() < 1e-6, "Second frame should be zero-padded");
+    }
 }

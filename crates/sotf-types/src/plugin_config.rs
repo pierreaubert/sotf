@@ -260,4 +260,90 @@ mod tests {
         let error = PluginGraphConfig::try_new(vec![invalid], vec![]).unwrap_err();
         assert!(error.contains("input_channels"));
     }
+
+    #[test]
+    fn plugin_config_accepts_valid() {
+        let config = PluginConfig::try_new("eq", json!({"freq": 1000.0})).unwrap();
+        assert_eq!(config.plugin_type, "eq");
+    }
+
+    #[test]
+    fn plugin_config_validate_accepts_non_empty_type() {
+        let config = PluginConfig::new("gain", json!({}));
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn plugin_graph_accepts_empty_graph() {
+        let graph = PluginGraphConfig::try_new(vec![], vec![]).unwrap();
+        assert!(graph.nodes.is_empty());
+        assert!(graph.edges.is_empty());
+    }
+
+    #[test]
+    fn plugin_graph_accepts_disconnected_nodes() {
+        let graph = PluginGraphConfig::try_new(vec![node(0), node(1)], vec![]).unwrap();
+        assert_eq!(graph.nodes.len(), 2);
+    }
+
+    #[test]
+    fn plugin_graph_rejects_self_loop() {
+        let error = PluginGraphConfig::try_new(
+            vec![node(0)],
+            vec![PluginGraphEdgeConfig::new(0, 0)],
+        )
+        .unwrap_err();
+        assert!(error.contains("acyclic"));
+    }
+
+    #[test]
+    fn plugin_graph_rejects_missing_from_node() {
+        let error = PluginGraphConfig::try_new(
+            vec![node(1)],
+            vec![PluginGraphEdgeConfig::new(0, 1)],
+        )
+        .unwrap_err();
+        assert!(error.contains("from_node"));
+    }
+
+    #[test]
+    fn plugin_graph_accepts_multiple_edges() {
+        let graph = PluginGraphConfig::try_new(
+            vec![node(0), node(1)],
+            vec![
+                PluginGraphEdgeConfig::new(0, 1),
+                PluginGraphEdgeConfig::new(0, 1),
+            ],
+        )
+        .unwrap();
+        assert_eq!(graph.edges.len(), 2);
+    }
+
+    #[test]
+    fn plugin_graph_rejects_large_cycle() {
+        let error = PluginGraphConfig::try_new(
+            vec![node(0), node(1), node(2), node(3)],
+            vec![
+                PluginGraphEdgeConfig::new(0, 1),
+                PluginGraphEdgeConfig::new(1, 2),
+                PluginGraphEdgeConfig::new(2, 3),
+                PluginGraphEdgeConfig::new(3, 0),
+            ],
+        )
+        .unwrap_err();
+        assert!(error.contains("acyclic"));
+    }
+
+    #[test]
+    fn plugin_graph_node_try_new_valid_and_invalid() {
+        let valid = PluginGraphNodeConfig::try_new(7, "delay", json!({"ms": 100}), 6).unwrap();
+        assert_eq!(valid.id, 7);
+        assert_eq!(valid.input_channels, 6);
+
+        let err = PluginGraphNodeConfig::try_new(8, "   ", json!({}), 2).unwrap_err();
+        assert!(err.contains("plugin_type"));
+
+        let err = PluginGraphNodeConfig::try_new(9, "mixer", json!({}), 0).unwrap_err();
+        assert!(err.contains("input_channels"));
+    }
 }

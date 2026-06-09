@@ -373,4 +373,38 @@ mod tests {
         assert_eq!(AnimationType::from_u8(2), Some(AnimationType::Bezier));
         assert_eq!(AnimationType::from_u8(3), None);
     }
+
+    #[test]
+    fn test_codec_id_as_str() {
+        assert_eq!(CodecId::Opus.as_str(), "Opus");
+        assert_eq!(CodecId::AacLc.as_str(), "AAC-LC");
+        assert_eq!(CodecId::Flac.as_str(), "FLAC");
+        assert_eq!(CodecId::Lpcm.as_str(), "LPCM");
+    }
+
+    #[test]
+    fn test_parameter_data_kind_from_u32() {
+        assert_eq!(ParameterDataKind::from_u32(0), Some(ParameterDataKind::MixGain));
+        assert_eq!(ParameterDataKind::from_u32(1), Some(ParameterDataKind::DemixingInfo));
+        assert_eq!(ParameterDataKind::from_u32(2), Some(ParameterDataKind::ReconGain));
+        assert_eq!(ParameterDataKind::from_u32(3), None);
+    }
+
+    #[test]
+    fn test_channel_layout_from_index_all() {
+        assert_eq!(IamfChannelLayout::from_layout_index(0), Some(IamfChannelLayout::Mono));
+        assert_eq!(IamfChannelLayout::from_layout_index(1), Some(IamfChannelLayout::Stereo));
+        assert_eq!(IamfChannelLayout::from_layout_index(9), Some(IamfChannelLayout::Binaural));
+        assert_eq!(IamfChannelLayout::from_layout_index(10), None);
+    }
+
+    #[test]
+    fn test_channel_layout_counts_all() {
+        assert_eq!(IamfChannelLayout::Layout3_1_2.channel_count(), 6);
+        assert_eq!(IamfChannelLayout::Layout5_1_2.channel_count(), 8);
+        assert_eq!(IamfChannelLayout::Layout5_1_4.channel_count(), 10);
+        assert_eq!(IamfChannelLayout::Layout7_1_2.channel_count(), 10);
+        assert_eq!(IamfChannelLayout::Layout7_1_4.channel_count(), 12);
+        assert_eq!(IamfChannelLayout::Binaural.channel_count(), 2);
+    }
 }

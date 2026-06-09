@@ -38,3 +38,8 @@ mod tests {
         assert!((0.9980469 - val).abs() < 0.001);
     }
 }
+
+#[test]
+fn test_zcr_empty() {
+    assert_eq!(compute_zcr(&[]), -1.0);
+}

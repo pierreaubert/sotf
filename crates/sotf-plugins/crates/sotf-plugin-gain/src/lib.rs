@@ -477,4 +477,129 @@ mod tests {
         GainPlugin::apply_frame_channel_gains(&mut quad, &[1.0, 0.5, -1.0, 2.0]);
         assert_eq!(quad, vec![1.0, 1.0, -3.0, 8.0]);
     }
+
+    /// process_in_place smoke test with a known scalar global gain.
+    #[test]
+    fn test_process_in_place_global_gain_known_output() {
+        let mut p = GainPlugin::with_smoothing(2, 6.0, 0.0); // no smoothing
+        p.initialize(48000).unwrap();
+
+        let input = vec![0.1f32, 0.2, 0.3, 0.4];
+        let mut buffer = input.clone();
+        let context = ProcessContext::new(48000, 2);
+
+        p.process_in_place(&mut buffer, &context).unwrap();
+
+        let expected_linear = 10.0_f32.powf(6.0 / 20.0);
+        for (i, (&out, &inp)) in buffer.iter().zip(input.iter()).enumerate() {
+            assert!(
+                (out - inp * expected_linear).abs() < 1e-5,
+                "sample {i}: expected {}, got {}",
+                inp * expected_linear,
+                out
+            );
+        }
+    }
+
+    /// process_in_place smoke test with known per-channel gains.
+    #[test]
+    fn test_process_in_place_per_channel_known_output() {
+        let mut p = GainPlugin::new_per_channel(vec![0.0f32, -6.0]).unwrap();
+        p.initialize(48000).unwrap();
+
+        // interleaved stereo: [L0, R0, L1, R1]
+        let input = vec![1.0f32, 1.0, 1.0, 1.0];
+        let mut buffer = input.clone();
+        let context = ProcessContext::new(48000, 2);
+
+        p.process_in_place(&mut buffer, &context).unwrap();
+
+        let ch0_gain = 1.0; // 0 dB -> linear 1.0
+        let ch1_gain = 10.0_f32.powf(-6.0 / 20.0);
+        assert!((buffer[0] - ch0_gain).abs() < 1e-4);
+        assert!((buffer[1] - ch1_gain).abs() < 1e-4);
+        assert!((buffer[2] - ch0_gain).abs() < 1e-4);
+        assert!((buffer[3] - ch1_gain).abs() < 1e-4);
+    }
+
+    /// set_parameter smoke tests for gain, smoothing_ms, and per-channel gains.
+    #[test]
+    fn test_set_parameter_smoke_known_values() {
+        let mut p = GainPlugin::new(2, 0.0);
+
+        // gain_db
+        p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-12.0))
+            .unwrap();
+        assert!((p.gain_db() - (-12.0)).abs() < 1e-5);
+
+        // smoothing_ms
+        p.set_parameter(ParameterId::from("smoothing_ms"), ParameterValue::Float(50.0))
+            .unwrap();
+        assert!((p.smoothing_ms - 50.0).abs() < 1e-5);
+
+        // per-channel gain
+        p.set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(3.0))
+            .unwrap();
+        assert!((p.channel_gain_db(0).unwrap() - 3.0).abs() < 1e-5);
+
+        p.set_parameter(ParameterId::from("gain_db_1"), ParameterValue::Float(-3.0))
+            .unwrap();
+        assert!((p.channel_gain_db(1).unwrap() - (-3.0)).abs() < 1e-5);
+    }
+
+    /// set_parameter must reject NaN and infinite values.
+    #[test]
+    fn test_set_parameter_rejects_non_finite() {
+        let mut p = GainPlugin::new(2, 0.0);
+        assert!(
+            p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(f32::NAN))
+                .is_err()
+        );
+        assert!(
+            p.set_parameter(
+                ParameterId::from("gain_db"),
+                ParameterValue::Float(f32::INFINITY)
+            )
+            .is_err()
+        );
+    }
+
+    /// process_in_place with zero frames must return 0 and leave the buffer untouched.
+    #[test]
+    fn test_process_in_place_zero_frames() {
+        let mut p = GainPlugin::new(2, 6.0);
+        p.initialize(48000).unwrap();
+        let mut buffer = vec![0.5, 0.6, 0.7, 0.8];
+        let processed = p
+            .process_in_place(&mut buffer, &ProcessContext::new(48000, 0))
+            .unwrap();
+        assert_eq!(processed, 0);
+        assert_eq!(buffer, vec![0.5, 0.6, 0.7, 0.8]);
+    }
+
+    /// get_parameter must round-trip the values set by set_parameter.
+    #[test]
+    fn test_get_parameter_round_trip() {
+        let mut p = GainPlugin::new(2, 0.0);
+        p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-10.0))
+            .unwrap();
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("gain_db")),
+            Some(ParameterValue::Float(-10.0))
+        );
+
+        p.set_parameter(ParameterId::from("smoothing_ms"), ParameterValue::Float(42.0))
+            .unwrap();
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("smoothing_ms")),
+            Some(ParameterValue::Float(42.0))
+        );
+
+        p.set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(5.0))
+            .unwrap();
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("gain_db_0")),
+            Some(ParameterValue::Float(5.0))
+        );
+    }
 }

@@ -325,4 +325,78 @@ mod tests {
         assert!(MpdStreamUrl::parse("http://example.com").is_err());
         assert!(MpdStreamUrl::parse("mpd-stream://host:6600/file").is_err()); // missing httpd port
     }
+
+    #[test]
+    fn test_parse_mpd_stream_url_encoded_password() {
+        let url = "mpd-stream://myserver:6600:6601/path/file.mp3?password=p%40ss%2Bw0rd";
+        let parsed = MpdStreamUrl::parse(url).unwrap();
+        assert_eq!(parsed.password, Some("p@ss+w0rd".to_string()));
+    }
+
+    #[test]
+    fn test_parse_mpd_stream_url_missing_path() {
+        // No slash at all means missing file path.
+        assert!(MpdStreamUrl::parse("mpd-stream://host:6600:6601").is_err());
+        // Trailing slash yields an empty file path, which is accepted.
+        let parsed = MpdStreamUrl::parse("mpd-stream://host:6600:6601/").unwrap();
+        assert_eq!(parsed.file_path, "");
+    }
+
+    #[test]
+    fn test_parse_mpd_stream_url_invalid_ports() {
+        assert!(MpdStreamUrl::parse("mpd-stream://host:abc:6601/file").is_err());
+        assert!(MpdStreamUrl::parse("mpd-stream://host:6600:xyz/file").is_err());
+        assert!(MpdStreamUrl::parse("mpd-stream://host:99999:6601/file").is_err());
+    }
+
+    #[test]
+    fn test_parse_mpd_stream_url_control_chars_rejected() {
+        // Newline in file_path would allow command injection against MPD.
+        let url = "mpd-stream://host:6600:6601/Music/track\ncommand.flac";
+        assert!(MpdStreamUrl::parse(url).is_err());
+
+        let url2 = "mpd-stream://host:6600:6601/file.flac?password=sec%0Aret";
+        assert!(MpdStreamUrl::parse(url2).is_err());
+    }
+
+    #[test]
+    fn test_urlencoding_decode_basic() {
+        assert_eq!(urlencoding_decode("hello%20world"), "hello world");
+        assert_eq!(urlencoding_decode("p%40ss"), "p@ss");
+        // Invalid percent-escape is silently dropped along with the two bytes
+        // that follow the '%'.
+        assert_eq!(urlencoding_decode("no%encoding"), "nocoding");
+    }
+
+    #[test]
+    fn test_urlencoding_decode_plus() {
+        assert_eq!(urlencoding_decode("hello+world"), "hello world");
+    }
+
+    #[test]
+    fn test_urlencoding_decode_incomplete() {
+        // Trailing '%' with no hex digits is skipped (no panic).
+        assert_eq!(urlencoding_decode("abc%"), "abc");
+        // Invalid hex after '%' is dropped as well.
+        assert_eq!(urlencoding_decode("abc%Z"), "abc");
+    }
+
+    #[test]
+    fn test_reject_mpd_control_chars() {
+        assert!(reject_mpd_control_chars("safe/path.flac", "file_path").is_ok());
+        assert!(reject_mpd_control_chars("\n", "file_path").is_err());
+        assert!(reject_mpd_control_chars("\x7F", "password").is_err());
+        assert!(reject_mpd_control_chars("\x00hidden", "file_path").is_err());
+    }
+
+    #[test]
+    fn test_mpd_quote() {
+        assert_eq!(mpd_quote("plain"), "\"plain\"");
+        assert_eq!(mpd_quote("has\\backslash"), "\"has\\\\backslash\"");
+        assert_eq!(mpd_quote("has\"quote"), "\"has\\\"quote\"");
+        assert_eq!(
+            mpd_quote("both\\and\""),
+            "\"both\\\\and\\\"\""
+        );
+    }
 }
