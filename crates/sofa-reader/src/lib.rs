@@ -223,7 +223,42 @@ mod tests {
             Ok(_) => panic!("strict_load should reject missing Conventions"),
             Err(error) => error,
         };
-        assert!(error.to_string().contains("Conventions"));
+        assert!(matches!(
+            error,
+            SofaError::MissingAttribute(name) if name == "Conventions"
+        ));
+    }
+
+    #[test]
+    fn test_strict_load_rejects_non_sofa_conventions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad-conventions.sofa");
+
+        let mut w = SofaWriter::new();
+        w.add_attribute_str("Conventions", "NETCDF4");
+        w.add_attribute_str("SOFAConventions", "SimpleFreeFieldHRIR");
+        w.add_attribute_str("SOFAConventionsVersion", "1.0");
+        w.add_attribute_str("Version", "2.1");
+        w.add_attribute_str("DataType", "FIR");
+        w.add_dimension("M", 1);
+        w.add_dimension("R", 2);
+        w.add_dimension("N", 2);
+        w.add_dimension("C", 3);
+        w.add_variable_f32("Data.SamplingRate", &[]);
+        w.write_scalar_f32("Data.SamplingRate", 48000.0).unwrap();
+        w.add_variable_f32("SourcePosition", &["M", "C"]);
+        w.write_f32("SourcePosition", &[0.0, 0.0, 1.0]).unwrap();
+        w.add_variable_f32("Data.IR", &["M", "R", "N"]);
+        w.write_f32("Data.IR", &[0.0; 4]).unwrap();
+        w.finish(&path).unwrap();
+
+        let error = match SofaFile::strict_load(&path) {
+            Ok(_) => panic!("strict_load should reject non-SOFA Conventions"),
+            Err(error) => error,
+        };
+        assert!(
+            matches!(error, SofaError::InvalidStructure(message) if message.contains("Conventions"))
+        );
     }
 
     #[test]

@@ -24,6 +24,9 @@
   screen, repaint when the background page cache completes, and send Library
   search text to the server-side paged album API instead of searching the
   cleared local database.
+- Remote album cards now queue/play albums through the SOTF API, including
+  touch-friendly Add and Play controls, and Home renders server-backed album
+  shelves when connected to a remote player.
 - GPUI wizard screens now keep their content panes height-constrained above the
   player footer, restoring vertical scrolling on iOS and other app targets.
 - Connections settings now include a SOTF API card with a Show QR button that

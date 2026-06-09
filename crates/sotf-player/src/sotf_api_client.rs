@@ -447,6 +447,13 @@ impl SotfApiClient {
         Ok(self.endpoint_url(&format!("media/{track_id}")))
     }
 
+    pub fn authenticated_media_url(&self, track_id: &str) -> SotfApiResult<String> {
+        let base_url = self.media_url(track_id)?;
+        let mut query_serializer = url::form_urlencoded::Serializer::new(String::new());
+        query_serializer.append_pair("token", &self.auth_token);
+        Ok(format!("{base_url}?{}", query_serializer.finish()))
+    }
+
     #[must_use]
     pub fn events_url(&self) -> String {
         self.endpoint_url("events")
@@ -884,6 +891,10 @@ mod tests {
         assert_eq!(
             client.media_url("track-abc_123").unwrap(),
             "http://host:8732/api/v1/media/track-abc_123"
+        );
+        assert_eq!(
+            client.authenticated_media_url("track-abc_123").unwrap(),
+            "http://host:8732/api/v1/media/track-abc_123?token=secret"
         );
         assert_eq!(client.events_url(), "http://host:8732/api/v1/events");
         assert!(client.media_url("../secret").is_err());

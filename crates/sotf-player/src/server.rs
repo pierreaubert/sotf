@@ -714,7 +714,7 @@ async fn write_sotf_api_response(
                 .await
                 .map_err(|err| err.to_string());
         }
-        if !api_auth_valid(&request.headers, auth_token) {
+        if !api_media_auth_valid(&request, auth_token) {
             let response = api_error_response(401, "missing or invalid bearer token");
             log_sotf_api_request(&method, &path, peer_addr, 401, started.elapsed());
             return stream
@@ -1988,6 +1988,7 @@ fn log_sotf_api_request(
     elapsed: std::time::Duration,
 ) {
     let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
+    let path = redact_api_path_secrets(path);
     let line =
         format!("SOTF API {method} {path} -> {status} from {peer_addr} ({elapsed_ms:.1} ms)");
     log::info!("[server] {line}");
@@ -2012,6 +2013,42 @@ fn api_auth_valid(headers: &[(String, String)], auth_token: &str) -> bool {
         return false;
     };
     value.trim() == format!("Bearer {auth_token}")
+}
+
+fn api_media_auth_valid(request: &ApiRequest, auth_token: &str) -> bool {
+    api_auth_valid(&request.headers, auth_token)
+        || api_query_param(&request.path, "token").is_some_and(|token| token == auth_token)
+}
+
+fn api_query_param(path: &str, name: &str) -> Option<String> {
+    let (_, query) = path.split_once('?')?;
+    url::form_urlencoded::parse(query.as_bytes())
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.into_owned())
+}
+
+fn redact_api_path_secrets(path: &str) -> String {
+    let Some((route, query)) = path.split_once('?') else {
+        return path.to_string();
+    };
+    let redacted = url::form_urlencoded::parse(query.as_bytes())
+        .map(|(key, value)| {
+            let value = if matches!(key.as_ref(), "token" | "auth_token" | "access_token") {
+                "<redacted>".into()
+            } else {
+                value
+            };
+            (key, value)
+        })
+        .fold(
+            url::form_urlencoded::Serializer::new(String::new()),
+            |mut serializer, (key, value)| {
+                serializer.append_pair(&key, &value);
+                serializer
+            },
+        )
+        .finish();
+    format!("{route}?{redacted}")
 }
 
 fn api_header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
@@ -2914,6 +2951,26 @@ mod tests {
 
         let headers = vec![("authorization".to_string(), "Basic secret".to_string())];
         assert!(!api_auth_valid(&headers, "secret"));
+    }
+
+    #[test]
+    fn sotf_api_media_auth_accepts_query_token() {
+        let request = ApiRequest {
+            method: "GET".to_string(),
+            path: "/api/v1/media/track-1?token=secret".to_string(),
+            headers: vec![],
+            body: vec![],
+        };
+        assert!(api_media_auth_valid(&request, "secret"));
+        assert!(!api_media_auth_valid(&request, "other"));
+    }
+
+    #[test]
+    fn sotf_api_log_path_redacts_tokens() {
+        assert_eq!(
+            redact_api_path_secrets("/api/v1/media/track-1?token=secret&foo=bar"),
+            "/api/v1/media/track-1?token=%3Credacted%3E&foo=bar"
+        );
     }
 
     #[test]

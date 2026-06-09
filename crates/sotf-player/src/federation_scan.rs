@@ -7,9 +7,11 @@ use crate::federation_config::{
     ConnectionDiagnostic, ConnectionStatus, FederationSourceEntry, SourceConnectionConfig,
     StepResult,
 };
+use crate::sotf_api_client::{SotfApiAlbum, SotfApiAlbumTracks, SotfApiClient, SotfApiClientError};
+use sotf_audio::decoder::AudioSource;
 use sotf_federation::{
     DlnaProvider, DlnaProviderConfig, LibraryProvider, MpdProvider, MpdProviderConfig,
-    ProviderAlbum, SourceId,
+    ProviderAlbum, ProviderTrack, SourceId,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -84,6 +86,38 @@ pub async fn fetch_source_albums(
                     albums: 0,
                     tracks: 0,
                     error: Some(format!("failed to fetch albums: {e}")),
+                })
+        }
+        SourceConnectionConfig::Peer {
+            host,
+            port,
+            auth_token,
+            ..
+        } => {
+            let token = auth_token
+                .as_deref()
+                .map(str::trim)
+                .filter(|token| !token.is_empty())
+                .ok_or_else(|| FederationScanResult {
+                    source_id: source_id_str.clone(),
+                    albums: 0,
+                    tracks: 0,
+                    error: Some("SOTF API token is required for Peer sources".to_string()),
+                })?;
+            let client =
+                sotf_peer_client(host, *port, token).map_err(|e| FederationScanResult {
+                    source_id: source_id_str.clone(),
+                    albums: 0,
+                    tracks: 0,
+                    error: Some(format!("invalid SOTF API peer config: {e}")),
+                })?;
+            fetch_sotf_peer_albums(&client)
+                .await
+                .map_err(|e| FederationScanResult {
+                    source_id: source_id_str,
+                    albums: 0,
+                    tracks: 0,
+                    error: Some(format!("failed to fetch SOTF peer albums: {e}")),
                 })
         }
         other => Err(FederationScanResult {
@@ -219,8 +253,19 @@ pub fn run_connection_diagnostic(source: &FederationSourceEntry) -> ConnectionSt
                     ConnectionStatus::Error("No DLNA location configured".to_string())
                 }
             }
-            SourceConnectionConfig::Peer { host, port, .. } => {
-                let diag = diagnose_tcp_simple(host, *port).await;
+            SourceConnectionConfig::Peer {
+                host,
+                port,
+                accepted_fingerprint,
+                auth_token,
+            } => {
+                let diag = diagnose_sotf_peer(
+                    host,
+                    *port,
+                    accepted_fingerprint.as_deref(),
+                    auth_token.as_deref(),
+                )
+                .await;
                 ConnectionStatus::Diagnostic(diag)
             }
             SourceConnectionConfig::Tidal { .. } => {
@@ -241,6 +286,216 @@ pub fn run_connection_diagnostic(source: &FederationSourceEntry) -> ConnectionSt
             }
         }
     })
+}
+
+async fn fetch_sotf_peer_albums(
+    client: &SotfApiClient,
+) -> Result<Vec<ProviderAlbum>, SotfApiClientError> {
+    const PAGE_LIMIT: usize = 250;
+    let mut offset = 0;
+    let mut albums = Vec::new();
+
+    loop {
+        let page = client
+            .library_albums_page(offset, PAGE_LIMIT, None, Some("artist_title"))
+            .await?;
+        let page_len = page.albums.len();
+        for album in page.albums {
+            let tracks = client.album_tracks(&album.id).await?;
+            albums.push(sotf_api_album_to_provider_album(client, album, tracks)?);
+        }
+        offset = offset.saturating_add(page_len);
+        if page_len == 0 || offset >= page.total {
+            break;
+        }
+    }
+
+    Ok(albums)
+}
+
+fn sotf_api_album_to_provider_album(
+    client: &SotfApiClient,
+    album: SotfApiAlbum,
+    tracks: SotfApiAlbumTracks,
+) -> Result<ProviderAlbum, SotfApiClientError> {
+    let provider_tracks = tracks
+        .tracks
+        .into_iter()
+        .map(|track| {
+            let media_url = client.authenticated_media_url(&track.id)?;
+            Ok(ProviderTrack {
+                external_id: track.id,
+                title: track.title.unwrap_or_else(|| "Unknown Track".to_string()),
+                artist: track.artist,
+                album_artist: Some(album.artist.clone()),
+                track_number: track.track,
+                disc_number: track.disc_number,
+                duration_secs: track.duration_secs.map(|duration| duration as f64),
+                genre: track.genre,
+                composer: track.composer,
+                channels: track.channels,
+                sample_rate: track.sample_rate,
+                bit_depth: track.bit_depth,
+                audio_source: AudioSource::Url {
+                    url: media_url,
+                    format_hint: None,
+                    seekable: true,
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, SotfApiClientError>>()?;
+
+    Ok(ProviderAlbum {
+        external_id: album.id,
+        title: album.title,
+        artist: album.artist,
+        year: album.year,
+        album_art_url: None,
+        tracks: provider_tracks,
+    })
+}
+
+fn sotf_peer_client(
+    host: &str,
+    port: u16,
+    token: &str,
+) -> Result<SotfApiClient, SotfApiClientError> {
+    let base_url = sotf_peer_base_url(host, port);
+    SotfApiClient::new(base_url, token)
+}
+
+fn sotf_peer_base_url(host: &str, port: u16) -> String {
+    let trimmed = host.trim().trim_end_matches('/');
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{trimmed}:{port}")
+    }
+}
+
+async fn diagnose_sotf_peer(
+    host: &str,
+    port: u16,
+    accepted_fingerprint: Option<&str>,
+    auth_token: Option<&str>,
+) -> ConnectionDiagnostic {
+    let timeout = std::time::Duration::from_secs(5);
+
+    let dns_resolve = match resolve_dns(host, port, timeout).await {
+        Ok(r) => r,
+        Err(diag) => return diag,
+    };
+
+    let tcp_connect = match tokio::time::timeout(
+        timeout,
+        tokio::net::TcpStream::connect(format!("{host}:{port}")),
+    )
+    .await
+    {
+        Ok(Ok(_)) => StepResult::Ok(format!("port {port} open")),
+        Ok(Err(e)) => StepResult::Fail(format!("{e}")),
+        Err(_) => StepResult::Fail("connection timed out".to_string()),
+    };
+
+    if !tcp_connect.is_ok() {
+        return ConnectionDiagnostic {
+            host: host.to_string(),
+            port,
+            dns_resolve,
+            tcp_connect,
+            tls_handshake: StepResult::Skipped("TCP failed".to_string()),
+            protocol_hello: StepResult::Skipped("TCP failed".to_string()),
+        };
+    }
+
+    let tls_handshake = StepResult::Skipped("SOTF API uses HTTP bearer auth".to_string());
+    let protocol_hello =
+        diagnose_sotf_peer_protocol(host, port, accepted_fingerprint, auth_token).await;
+
+    ConnectionDiagnostic {
+        host: host.to_string(),
+        port,
+        dns_resolve,
+        tcp_connect,
+        tls_handshake,
+        protocol_hello,
+    }
+}
+
+async fn diagnose_sotf_peer_protocol(
+    host: &str,
+    port: u16,
+    accepted_fingerprint: Option<&str>,
+    auth_token: Option<&str>,
+) -> StepResult {
+    let token = auth_token.unwrap_or("").trim();
+    let client = match sotf_peer_client(
+        host,
+        port,
+        if token.is_empty() {
+            "diagnostic"
+        } else {
+            token
+        },
+    ) {
+        Ok(client) => client,
+        Err(e) => return StepResult::Fail(format!("invalid SOTF API URL: {e}")),
+    };
+
+    let discovery = match client.discovery().await {
+        Ok(discovery) if discovery.service == "sotf" => discovery,
+        Ok(discovery) => {
+            return StepResult::Fail(format!(
+                "unexpected service '{}' at SOTF API endpoint",
+                discovery.service
+            ));
+        }
+        Err(e) => return StepResult::Fail(format!("SOTF API discovery failed: {e}")),
+    };
+
+    if let Some(expected) = accepted_fingerprint
+        .map(str::trim)
+        .filter(|fingerprint| !fingerprint.is_empty())
+    {
+        match client.pairing_status().await {
+            Ok(status) if peer_fingerprints_match(expected, &status.server_fingerprint) => {}
+            Ok(status) => {
+                return StepResult::Fail(format!(
+                    "server fingerprint mismatch: expected {expected}, got {}",
+                    status.server_fingerprint
+                ));
+            }
+            Err(e) => return StepResult::Fail(format!("fingerprint check failed: {e}")),
+        }
+    }
+
+    if token.is_empty() {
+        return StepResult::Fail(format!(
+            "SOTF API {} reachable; API token required",
+            discovery.version
+        ));
+    }
+
+    match client.state().await {
+        Ok(state) => StepResult::Ok(format!(
+            "SOTF API {} — {} albums, {} tracks",
+            discovery.version, state.library.albums, state.library.tracks
+        )),
+        Err(e) => StepResult::Fail(format!("SOTF API auth failed: {e}")),
+    }
+}
+
+fn peer_fingerprints_match(expected: &str, actual: &str) -> bool {
+    fn compact(value: &str) -> String {
+        value
+            .chars()
+            .filter(|ch| ch.is_ascii_hexdigit())
+            .flat_map(char::to_lowercase)
+            .collect()
+    }
+    let expected = compact(expected);
+    let actual = compact(actual);
+    !expected.is_empty() && expected == actual
 }
 
 /// Diagnose an MPD connection: DNS -> TCP -> MPD greeting + optional auth.

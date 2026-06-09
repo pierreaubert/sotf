@@ -210,7 +210,7 @@ pub use sotf_host::smoothing;
 pub use sotf_host::sofa;
 pub use sotf_host::speaker_config;
 pub use sotf_host::stft_common;
-#[cfg(any(feature = "qa", test, debug_assertions))]
+#[cfg(any(feature = "qa", debug_assertions))]
 pub use sotf_host::test_utils;
 
 // Re-export all plugin crates
@@ -356,7 +356,7 @@ pub use sotf_host::plugin::{
 
 #[cfg(feature = "qa")]
 pub use sotf_host::test_utils::benchmark_plugin_full;
-#[cfg(any(feature = "qa", test, debug_assertions))]
+#[cfg(any(feature = "qa", debug_assertions))]
 pub use sotf_host::test_utils::{
     BufferComparison, CountingAlloc, PerformanceProfiler, SignalGen, assert_no_allocs,
     detect_latency, generate_dc, measure_peak_db, measure_rms_db, run_standard_tests,

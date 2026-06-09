@@ -580,12 +580,19 @@ impl PlayerView {
         let mut cards: Vec<AnyElement> = Vec::new();
         for (idx, album) in page.albums.iter().enumerate() {
             let is_selected = selected_album_index == idx;
+            let album_id = album.id.clone();
             let title = album.title.clone();
+            let title_for_click = title.clone();
+            let title_for_add = title.clone();
+            let title_for_play = title.clone();
             let artist = album.artist.clone();
             let year = album.year.map(|year| year.to_string()).unwrap_or_default();
             let track_count = album.track_count;
             let dynamic_range = album.dynamic_range.map(|dr| format!("DR{dr}"));
             let theme_for_card = theme.clone();
+            let album_id_for_click = album_id.clone();
+            let album_id_for_add = album_id.clone();
+            let album_id_for_play = album_id.clone();
 
             cards.push(
                 div()
@@ -606,9 +613,16 @@ impl PlayerView {
                         theme.surface
                     })
                     .hover(|style| style.bg(theme_for_card.surface_hover))
-                    .on_click(cx.listener(move |view, _event: &ClickEvent, _window, cx| {
+                    .on_click(cx.listener(move |view, event: &ClickEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
                             state.app.library_state.selected_index = idx;
+                            if event.click_count() >= 2 {
+                                state.app.start_remote_add_album_to_queue(
+                                    album_id_for_click.clone(),
+                                    title_for_click.clone(),
+                                    false,
+                                );
+                            }
                         });
                         cx.notify();
                     }))
@@ -642,6 +656,50 @@ impl PlayerView {
                                     .when_some(dynamic_range, |el, dr| el.child(dr)),
                             ),
                     )
+                    .when(is_selected, |el| {
+                        el.child(
+                            div()
+                                .flex()
+                                .gap(d.grid)
+                                .mt(d.grid)
+                                .child(
+                                    Button::new(("remote-album-add", idx), "Add")
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Xs)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(cx.listener(
+                                            move |view, _: &ClickEvent, _window, cx| {
+                                                let album_id = album_id_for_add.clone();
+                                                let title = title_for_add.clone();
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.start_remote_add_album_to_queue(
+                                                        album_id, title, false,
+                                                    );
+                                                });
+                                                cx.notify();
+                                            },
+                                        )),
+                                )
+                                .child(
+                                    Button::new(("remote-album-play", idx), "Play")
+                                        .variant(ButtonVariant::Primary)
+                                        .size(ButtonSize::Xs)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(cx.listener(
+                                            move |view, _: &ClickEvent, _window, cx| {
+                                                let album_id = album_id_for_play.clone();
+                                                let title = title_for_play.clone();
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.start_remote_add_album_to_queue(
+                                                        album_id, title, true,
+                                                    );
+                                                });
+                                                cx.notify();
+                                            },
+                                        )),
+                                ),
+                        )
+                    })
                     .into_any_element(),
             );
         }

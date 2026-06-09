@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use crate::app::App;
 use crate::app::state::app::{
-    RemoteCacheRefreshError, RemoteCacheRefreshResult, RemoteRefreshRequests,
-    RemoteServerProbeStatus,
+    RemoteAlbumQueueCommandResult, RemoteCacheRefreshError, RemoteCacheRefreshResult,
+    RemoteRefreshRequests, RemoteServerProbeStatus,
 };
 use crate::app::types::ToastMessage;
 
@@ -467,6 +467,113 @@ impl App {
                 self.ui_state.toast_message =
                     Some(ToastMessage::warning(format!("Remote events: {err}")));
                 self.remote.event_stream_receiver = None;
+            }
+        }
+    }
+
+    pub fn start_remote_add_album_to_queue(
+        &mut self,
+        album_id: impl Into<String>,
+        album_title: impl Into<String>,
+        play_now: bool,
+    ) -> bool {
+        if self.remote.album_queue_command_receiver.is_some() {
+            self.ui_state.toast_message = Some(ToastMessage::warning(
+                "A remote queue command is already running.",
+            ));
+            return false;
+        }
+
+        let Some(server) = self.remote.server_store.selected_server().cloned() else {
+            self.ui_state.toast_message =
+                Some(ToastMessage::warning("Select a SOTF remote player first."));
+            return false;
+        };
+        let Some(token) = self.remote.server_tokens.get(&server.id).cloned() else {
+            self.ui_state.toast_message = Some(ToastMessage::warning(
+                "SOTF API token required for this server.",
+            ));
+            return false;
+        };
+
+        let album_id = album_id.into();
+        if album_id.trim().is_empty() {
+            self.ui_state.toast_message = Some(ToastMessage::error("Remote album ID is missing."));
+            return false;
+        }
+        let album_title = album_title.into();
+        let server_id = server.id.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.remote.album_queue_command_receiver = Some(rx);
+
+        std::thread::Builder::new()
+            .name("sotf-remote-queue-album".into())
+            .spawn(move || {
+                let result = remote_add_album_to_queue_worker(
+                    &server.api_base_url,
+                    &token,
+                    &album_id,
+                    play_now,
+                );
+                let _ = tx.send(RemoteAlbumQueueCommandResult {
+                    server_id,
+                    album_title,
+                    play_now,
+                    result,
+                });
+            })
+            .expect("spawn SOTF remote album queue worker");
+
+        true
+    }
+
+    pub fn update_remote_album_queue_command(&mut self) {
+        let Some(rx) = self.remote.album_queue_command_receiver.as_ref() else {
+            return;
+        };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.remote.album_queue_command_receiver = None;
+                self.ui_state.toast_message = Some(ToastMessage::error(
+                    "Remote queue command worker disconnected.",
+                ));
+                return;
+            }
+        };
+        self.remote.album_queue_command_receiver = None;
+
+        if self.remote.server_store.selected_server_id.as_deref() != Some(result.server_id.as_str())
+        {
+            return;
+        }
+
+        match result.result {
+            Ok(response) => {
+                log::info!(
+                    "[remote] Added album '{}' to server queue at index {:?} (playlist_version={:?})",
+                    result.album_title,
+                    response.index,
+                    response.playlist_version
+                );
+                self.remote.refresh_requests.queue = true;
+                if result.play_now {
+                    self.remote.refresh_requests.state = true;
+                }
+                self.ui_state.toast_message = Some(ToastMessage::success(if result.play_now {
+                    format!("Playing {} on remote server.", result.album_title)
+                } else {
+                    format!("Added {} to remote queue.", result.album_title)
+                }));
+            }
+            Err(err) => {
+                log::warn!(
+                    "[remote] Failed to add album '{}' to server queue: {err}",
+                    result.album_title
+                );
+                self.ui_state.toast_message =
+                    Some(ToastMessage::error(format!("Remote queue: {err}")));
             }
         }
     }
@@ -1133,4 +1240,25 @@ fn refresh_remote_cache_worker(
         });
 
     worker_result.map_err(|message| RemoteCacheRefreshError { requests, message })
+}
+
+fn remote_add_album_to_queue_worker(
+    api_base_url: &str,
+    token: &str,
+    album_id: &str,
+    play_now: bool,
+) -> Result<sotf_audio_player::sotf_api_client::SotfApiQueueEditResponse, String> {
+    tokio::runtime::Runtime::new()
+        .map_err(|err| format!("Failed to start remote queue runtime: {err}"))
+        .and_then(|rt| {
+            rt.block_on(async move {
+                let client =
+                    sotf_audio_player::sotf_api_client::SotfApiClient::new(api_base_url, token)
+                        .map_err(|err| err.to_string())?;
+                client
+                    .queue_add_album(album_id, play_now)
+                    .await
+                    .map_err(|err| err.to_string())
+            })
+        })
 }

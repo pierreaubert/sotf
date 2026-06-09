@@ -33,9 +33,11 @@ pub enum SourceConnectionConfig {
     },
     Peer {
         host: String,
-        #[serde(default = "default_mpd_port")]
+        #[serde(default = "default_sotf_api_port")]
         port: u16,
         accepted_fingerprint: Option<String>,
+        #[serde(default)]
+        auth_token: Option<String>,
     },
     Tidal {
         #[serde(default)]
@@ -133,8 +135,9 @@ impl SourceConnectionConfig {
             },
             "peer" => Self::Peer {
                 host: String::new(),
-                port: 6600,
+                port: default_sotf_api_port(),
                 accepted_fingerprint: None,
+                auth_token: None,
             },
             "tidal" => Self::Tidal {
                 access_token: String::new(),
@@ -167,7 +170,7 @@ impl SourceConnectionConfig {
             Self::Subsonic { .. } => vec!["URL", "Username", "Password", "Legacy Auth"],
             Self::Mpd { .. } => vec!["Host", "Port", "Auth Mode", "Password", "HTTP Stream Port"],
             Self::Dlna { .. } => vec!["Location URL", "Friendly Name"],
-            Self::Peer { .. } => vec!["Host", "Port", "Fingerprint"],
+            Self::Peer { .. } => vec!["Host", "Port", "Fingerprint", "API Token"],
             Self::Tidal { .. } => vec!["Access Token", "Quality", "Country Code"],
             Self::Spotify { .. } => vec!["Username", "Password", "Quality"],
             Self::IcyRadio { .. } => vec!["Stream URL", "Station Name"],
@@ -218,10 +221,14 @@ impl SourceConnectionConfig {
                 host,
                 port,
                 accepted_fingerprint,
+                auth_token,
             } => match index {
                 0 => host.clone(),
                 1 => port.to_string(),
                 2 => accepted_fingerprint.clone().unwrap_or_default(),
+                3 => auth_token
+                    .as_ref()
+                    .map_or_else(String::new, |token| "*".repeat(token.len().min(8))),
                 _ => String::new(),
             },
             Self::Tidal {
@@ -325,6 +332,7 @@ impl SourceConnectionConfig {
                 host,
                 port,
                 accepted_fingerprint,
+                auth_token,
             } => match index {
                 0 => *host = value.trim().to_string(),
                 1 => {
@@ -334,6 +342,13 @@ impl SourceConnectionConfig {
                 }
                 2 => {
                     *accepted_fingerprint = if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.trim().to_string())
+                    };
+                }
+                3 => {
+                    *auth_token = if value.trim().is_empty() {
                         None
                     } else {
                         Some(value.trim().to_string())
@@ -669,8 +684,9 @@ mod tests {
             },
             SourceConnectionConfig::Peer {
                 host: "10.0.0.5".to_string(),
-                port: 6600,
+                port: 8732,
                 accepted_fingerprint: Some("AA:BB:CC".to_string()),
+                auth_token: Some("secret-token".to_string()),
             },
         ];
 
@@ -727,6 +743,11 @@ mod tests {
 
         let peer = SourceConnectionConfig::default_for_type("peer");
         assert_eq!(peer.type_name(), "Peer");
+        assert_eq!(
+            peer.field_names(),
+            vec!["Host", "Port", "Fingerprint", "API Token"]
+        );
+        assert_eq!(peer.field_value(1), "8732");
 
         let tidal = SourceConnectionConfig::default_for_type("tidal");
         assert_eq!(tidal.type_name(), "Tidal");

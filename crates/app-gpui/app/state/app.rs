@@ -543,6 +543,9 @@ pub struct RemoteState {
     pub cache_refresh_receiver: Option<
         std::sync::mpsc::Receiver<Result<RemoteCacheRefreshResult, RemoteCacheRefreshError>>,
     >,
+    /// Receiver for remote album queue mutation jobs.
+    pub album_queue_command_receiver:
+        Option<std::sync::mpsc::Receiver<RemoteAlbumQueueCommandResult>>,
     /// Whether a quiet remote cache refresh job is currently running.
     pub cache_refresh_in_progress: bool,
     /// Consecutive quiet cache refresh failures for the selected remote.
@@ -608,6 +611,14 @@ pub struct RemoteCacheRefreshResult {
 pub struct RemoteCacheRefreshError {
     pub requests: RemoteRefreshRequests,
     pub message: String,
+}
+
+#[derive(Debug)]
+pub struct RemoteAlbumQueueCommandResult {
+    pub server_id: String,
+    pub album_title: String,
+    pub play_now: bool,
+    pub result: Result<sotf_audio_player::sotf_api_client::SotfApiQueueEditResponse, String>,
 }
 
 const DEFAULT_REMOTE_ALBUM_CACHE_LIMIT: usize = 250;

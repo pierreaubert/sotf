@@ -521,7 +521,7 @@ impl SofaFile {
     }
 
     fn validate_required_global_attributes(reader: &crate::SofaReader) -> Result<()> {
-        let conventions = reader.attribute_string("Conventions")?;
+        let conventions = Self::required_global_attribute_string(reader, "Conventions")?;
         if conventions != "SOFA" {
             return Err(SofaError::InvalidStructure(format!(
                 "Conventions must be 'SOFA', got '{}'",
@@ -535,10 +535,16 @@ impl SofaFile {
             "SOFAConventionsVersion",
             "DataType",
         ] {
-            reader.attribute_string(name)?;
+            Self::required_global_attribute_string(reader, name)?;
         }
 
         Ok(())
+    }
+
+    fn required_global_attribute_string(reader: &crate::SofaReader, name: &str) -> Result<String> {
+        reader
+            .attribute_string(name)
+            .map_err(|_| SofaError::MissingAttribute(name.to_string()))
     }
 
     /// Get HRTF data for a measurement index.
