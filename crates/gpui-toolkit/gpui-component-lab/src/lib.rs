@@ -2011,17 +2011,15 @@ fn validate_layout_constraints(
             .viewports
             .iter()
             .find(|viewport| viewport.id.as_str() == viewport_id)
+        && (min_width.is_some_and(|value| value > viewport.width as f64)
+            || min_height.is_some_and(|value| value > viewport.height as f64))
     {
-        if min_width.is_some_and(|value| value > viewport.width as f64)
-            || min_height.is_some_and(|value| value > viewport.height as f64)
-        {
-            findings.push(ComponentLabConformanceFinding::new(
-                "responsive",
-                "layout.overflow",
-                Some(story_id),
-                format!("fixed layout overflows selected viewport '{viewport_id}'"),
-            ));
-        }
+        findings.push(ComponentLabConformanceFinding::new(
+            "responsive",
+            "layout.overflow",
+            Some(story_id),
+            format!("fixed layout overflows selected viewport '{viewport_id}'"),
+        ));
     }
 }
 

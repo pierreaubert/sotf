@@ -582,7 +582,9 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
         return (fmt, config.channels);
     }
 
-    // Second try: find the best alternative channel count
+    // Second try: if the device has any compatible config at or above the
+    // requested width, keep the requested channel count. A 94ch interface can
+    // prove that 10ch is within capability, but must not force SOTF to open 94ch.
     let mut available_channels: Vec<u16> = supported
         .iter()
         .filter(|c| {
@@ -593,11 +595,23 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
     available_channels.sort();
     available_channels.dedup();
 
+    if available_channels.iter().any(|&ch| ch >= config.channels)
+        && let Some(fmt) = pick_format_any_channels(&candidates, config.sample_rate)
+    {
+        log::info!(
+            "[CpalSink] No exact {}ch config; using requested count with {:?} format (device supports {:?}ch)",
+            config.channels,
+            fmt,
+            available_channels
+        );
+        return (fmt, config.channels);
+    }
+
+    // Third try: downmix — pick highest channel count <= requested.
     let alt_ch = available_channels
         .iter()
         .rev()
         .find(|&&ch| ch <= config.channels)
-        .or(available_channels.first())
         .copied();
 
     if let Some(ch) = alt_ch
@@ -641,6 +655,26 @@ fn pick_preferred_output_format(
                 && candidate.2 <= sample_rate
                 && candidate.3 >= sample_rate
         })
+    })
+}
+
+/// Pick preferred format from any channel count config that supports the sample rate.
+fn pick_format_any_channels(
+    candidates: &[(SampleFormat, u16, cpal::SampleRate, cpal::SampleRate)],
+    sample_rate: cpal::SampleRate,
+) -> Option<SampleFormat> {
+    [
+        SampleFormat::F32,
+        SampleFormat::I32,
+        SampleFormat::I16,
+        SampleFormat::U32,
+        SampleFormat::U16,
+    ]
+    .into_iter()
+    .find(|fmt| {
+        candidates
+            .iter()
+            .any(|c| c.0 == *fmt && c.2 <= sample_rate && c.3 >= sample_rate)
     })
 }
 
@@ -924,6 +958,19 @@ mod tests {
         assert_eq!(
             pick_preferred_output_format(&candidates, 2, 48_000),
             Some(SampleFormat::I16)
+        );
+    }
+
+    #[test]
+    fn pick_format_any_channels_prefers_float_without_inflating_channels() {
+        let candidates = vec![
+            (SampleFormat::I16, 5, 44_100, 96_000),
+            (SampleFormat::F32, 94, 44_100, 96_000),
+        ];
+
+        assert_eq!(
+            pick_format_any_channels(&candidates, 48_000),
+            Some(SampleFormat::F32)
         );
     }
 

@@ -1604,6 +1604,7 @@ fn create_probe() -> Probe {
     probe.register_format::<symphonia_format_ogg::OggReader>();
     probe.register_format::<symphonia_format_isomp4::IsoMp4Reader>();
     probe.register_format::<symphonia_codec_aac::AdtsReader>();
+    probe.register_format::<symphonia_codec_wavpack::WavPackReader>();
 
     probe
 }
@@ -2536,12 +2537,51 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
+    fn write_minimal_wavpack_10ch(path: &Path) {
+        const WAVPACK_MIN_CK_SIZE: u32 = 24;
+        const FLOAT_DATA: u32 = 0x80;
+        const INITIAL_BLOCK: u32 = 0x800;
+        const FINAL_BLOCK: u32 = 0x1000;
+        const SRATE_LSB: u32 = 23;
+        const ID_CHANNEL_INFO: u8 = 0x0d;
+        const ID_ODD_SIZE: u8 = 0x40;
+
+        let body = [ID_CHANNEL_INFO | ID_ODD_SIZE, 3, 10, 0xff, 0x03, 0, 0, 0];
+        let ck_size = WAVPACK_MIN_CK_SIZE + body.len() as u32;
+        let flags = FLOAT_DATA | 3 | INITIAL_BLOCK | FINAL_BLOCK | (10 << SRATE_LSB);
+
+        let mut file = std::fs::File::create(path).expect("create wavpack fixture");
+        file.write_all(b"wvpk").unwrap();
+        file.write_all(&ck_size.to_le_bytes()).unwrap();
+        file.write_all(&0x410u16.to_le_bytes()).unwrap();
+        file.write_all(&[0, 0]).unwrap();
+        file.write_all(&1u32.to_le_bytes()).unwrap();
+        file.write_all(&0u32.to_le_bytes()).unwrap();
+        file.write_all(&1u32.to_le_bytes()).unwrap();
+        file.write_all(&flags.to_le_bytes()).unwrap();
+        file.write_all(&0u32.to_le_bytes()).unwrap();
+        file.write_all(&body).unwrap();
+    }
 
     #[test]
     fn test_library_creation() {
         let lib = MusicLibrary::new();
         assert_eq!(lib.directories.len(), 0);
         assert_eq!(lib.albums.len(), 0);
+    }
+
+    #[test]
+    fn test_extract_wavpack_metadata_reports_multichannel_layout() {
+        let temp = tempfile::NamedTempFile::with_suffix(".wv").unwrap();
+        write_minimal_wavpack_10ch(temp.path());
+
+        let metadata = extract_metadata(temp.path()).unwrap();
+
+        assert_eq!(metadata.channels, Some(10));
+        assert_eq!(metadata.sample_rate, Some(48_000));
+        assert_eq!(metadata.bit_depth, Some(32));
     }
 
     #[test]

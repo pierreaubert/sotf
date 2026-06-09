@@ -89,8 +89,7 @@ impl SavedStreamStore {
         } else {
             self.streams.push(stream);
         }
-        self.streams
-            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        self.streams.sort_by_key(|a| a.name.to_lowercase());
     }
 
     pub fn remove_by_url(&mut self, url: &str) -> bool {

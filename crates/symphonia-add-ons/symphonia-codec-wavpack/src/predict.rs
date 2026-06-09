@@ -56,4 +56,3 @@ pub(super) fn preview_corrected_stereo_sample(
 
     (left, right)
 }
-

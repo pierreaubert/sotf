@@ -240,4 +240,3 @@ pub(super) fn decorr_stereo_pass(pass: &mut DecorrPass, samples: &mut [i32]) {
         }
     }
 }
-

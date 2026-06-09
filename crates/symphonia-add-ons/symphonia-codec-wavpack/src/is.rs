@@ -10,4 +10,3 @@ pub(super) fn is_trailing_metadata_marker(marker: [u8; 4]) -> bool {
 pub(super) fn is_mono(flags: u32) -> bool {
     flags & (MONO_FLAG | FALSE_STEREO) != 0
 }
-

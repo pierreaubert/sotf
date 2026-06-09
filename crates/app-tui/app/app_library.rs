@@ -255,9 +255,19 @@ impl App {
 
     /// Get the maximum output channels supported by the selected device
     pub fn get_device_max_channels(&self) -> Option<usize> {
-        self.get_selected_output_device()
-            .and_then(|device| device.default_config.as_ref())
-            .map(|config| config.channels as usize)
+        self.get_selected_output_device().and_then(|device| {
+            device
+                .supported_configs
+                .iter()
+                .map(|config| config.channels as usize)
+                .max()
+                .or_else(|| {
+                    device
+                        .default_config
+                        .as_ref()
+                        .map(|config| config.channels as usize)
+                })
+        })
     }
 
     /// Get current device sample rate or fallback to 48kHz

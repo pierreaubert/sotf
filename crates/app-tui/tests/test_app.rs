@@ -2,7 +2,7 @@
 mod tests {
     use crate::app::*;
     use crate::theme::Theme;
-    use sotf_audio::devices::AudioDevice;
+    use sotf_audio::devices::{AudioConfig, AudioDevice};
     use sotf_audio_player::{Album, DirectoryInfo, Track};
     use sotf_audio_player::{PluginSettings, PluginType};
     use std::path::PathBuf;
@@ -1698,6 +1698,56 @@ mod tests {
 
         let device = app.get_selected_output_device().unwrap();
         assert_eq!(device.name, "Test Device");
+    }
+
+    #[test]
+    fn test_get_device_max_channels_uses_supported_configs() {
+        let mut app = App::new(Theme::default(), false);
+        let mut device = create_test_audio_device("Multichannel Device", true);
+
+        device.default_config = Some(AudioConfig {
+            sample_rate: 48000,
+            channels: 5,
+            buffer_size: None,
+            sample_format: "f32".to_string(),
+        });
+        device.supported_configs = vec![
+            AudioConfig {
+                sample_rate: 48000,
+                channels: 2,
+                buffer_size: None,
+                sample_format: "f32".to_string(),
+            },
+            AudioConfig {
+                sample_rate: 48000,
+                channels: 94,
+                buffer_size: None,
+                sample_format: "f32".to_string(),
+            },
+        ];
+
+        app.output_devices = vec![device];
+        app.selected_output_device_index = 0;
+
+        assert_eq!(app.get_device_max_channels(), Some(94));
+    }
+
+    #[test]
+    fn test_get_device_max_channels_falls_back_to_default_config() {
+        let mut app = App::new(Theme::default(), false);
+        let mut device = create_test_audio_device("Default Only Device", true);
+
+        device.default_config = Some(AudioConfig {
+            sample_rate: 48000,
+            channels: 6,
+            buffer_size: None,
+            sample_format: "f32".to_string(),
+        });
+
+        app.output_devices = vec![device];
+        app.selected_output_device_index = 0;
+
+        assert_eq!(app.get_device_max_channels(), Some(6));
     }
 
     #[test]

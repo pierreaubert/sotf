@@ -14,11 +14,8 @@ pub(super) fn handle_devices_keys(app: &mut App, key: KeyEvent) -> Option<Player
         }
         KeyCode::Enter | KeyCode::Char(' ') => {
             // Apply device change
-            if let Some(device) = app.get_selected_output_device() {
-                Some(PlayerCommand::SetOutputDevice(device.name.clone()))
-            } else {
-                None
-            }
+            app.get_selected_output_device()
+                .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
         }
         KeyCode::Char('r') | KeyCode::Char('R') => {
             // Rescan local output devices and re-trigger Cast (AirPlay /

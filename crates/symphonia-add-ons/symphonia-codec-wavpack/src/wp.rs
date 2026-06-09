@@ -33,4 +33,3 @@ pub(super) fn wp_log2(mut value: u32) -> i32 {
         (dbits << 8) as i32 + i32::from(LOG2_TABLE[((value >> (dbits - 9)) & 0xff) as usize])
     }
 }
-

@@ -74,6 +74,7 @@ symphonia-metadata = { workspace = true }
 symphonia-bundle-flac = { workspace = true }
 symphonia-bundle-mp3 = { workspace = true }
 symphonia-codec-aac = { workspace = true }
+symphonia-codec-wavpack = { workspace = true }
 symphonia-format-riff = { workspace = true }
 symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }

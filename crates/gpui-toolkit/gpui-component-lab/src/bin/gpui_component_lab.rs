@@ -168,10 +168,10 @@ fn supervise_rust_source(root: &Path, child_command: Option<&str>) -> Result<()>
 
     loop {
         std::thread::sleep(Duration::from_millis(1000));
-        if let Some(running) = child.as_mut() {
-            if running.try_wait()?.is_some() {
-                child = None;
-            }
+        if let Some(running) = child.as_mut()
+            && running.try_wait()?.is_some()
+        {
+            child = None;
         }
 
         let next = latest_rust_source_modified(root)?;

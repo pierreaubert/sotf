@@ -10680,6 +10680,7 @@ dependencies = [
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",
  "symphonia-codec-aac",
+ "symphonia-codec-wavpack",
  "symphonia-core 0.6.0",
  "symphonia-format-isomp4",
  "symphonia-format-ogg 0.6.0",
@@ -11366,7 +11367,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.206"
+version = "0.5.207"
 dependencies = [
  "anyhow",
  "autoeq",

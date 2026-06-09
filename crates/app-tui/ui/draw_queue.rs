@@ -269,13 +269,7 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
                 .map(|e| e.to_uppercase())
                 .unwrap_or_else(|| "Unknown".to_string());
             let sr_khz = sample_rate as f64 / 1000.0;
-            let ch_str = match channels {
-                1 => "Mono",
-                2 => "Stereo",
-                6 => "5.1",
-                8 => "7.1",
-                _ => "Multi",
-            };
+            let ch_str = format_channel_count(channels);
             format!("{} {}-bit/{:.1}kHz {}", ext, bit_depth, sr_khz, ch_str)
         } else {
             "Unknown".to_string()

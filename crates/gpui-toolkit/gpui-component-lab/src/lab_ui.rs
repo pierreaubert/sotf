@@ -332,8 +332,8 @@ impl PreviewLayoutConstraints {
     }
 
     fn frame_dimensions(self, viewport: &ViewportPreset) -> (f32, f32) {
-        let viewport_width = viewport.width.min(980.0).max(240.0);
-        let viewport_height = viewport.height.min(620.0).max(180.0);
+        let viewport_width = viewport.width.clamp(240.0, 980.0);
+        let viewport_height = viewport.height.clamp(180.0, 620.0);
         match self.sizing {
             PreviewSizing::Fixed => (self.min_width, self.min_height),
             PreviewSizing::Fit => {
@@ -611,10 +611,10 @@ impl ComponentLab {
     }
 
     fn set_prop(&mut self, story_id: &str, prop_name: &str, value: StoryPropValue) {
-        if let Some(doc) = self.documents.get_mut(story_id) {
-            if doc.set_prop_value(prop_name, value).is_ok() {
-                self.save_status = Some("Unsaved changes".into());
-            }
+        if let Some(doc) = self.documents.get_mut(story_id)
+            && doc.set_prop_value(prop_name, value).is_ok()
+        {
+            self.save_status = Some("Unsaved changes".into());
         }
     }
 

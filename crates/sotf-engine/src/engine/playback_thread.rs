@@ -754,12 +754,6 @@ fn run_playback_thread(
         config.channels = hw_channels;
     }
 
-    // Query device's native (maximum) channel count for retry fallback.
-    let device_native_channels: Option<u16> = device
-        .supported_output_configs()
-        .ok()
-        .and_then(|configs| configs.map(|c| c.channels()).max());
-
     // Create shared state (ring buffer with ~500ms capacity)
     let mut buffer_capacity = playback_buffer_capacity(sample_rate, channels, buffer_ms);
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
@@ -778,8 +772,9 @@ fn run_playback_thread(
     // Pre-allocate buffer for channel conversions (fallback downmix/upmix)
     let mut conversion_buffer = Vec::with_capacity(4096);
 
-    // Build cpal stream — retry with device native channel count if the requested
-    // count is rejected (some pro interfaces only accept their max channel count).
+    // Build cpal stream at the requested channel count. A device may advertise a
+    // larger maximum channel count, but SOTF must not silently inflate a 10ch
+    // stream into the device-native width.
     let mut stream = match build_output_stream(
         &device,
         &config,
@@ -789,34 +784,7 @@ fn run_playback_thread(
         output_format,
     ) {
         Ok(s) => s,
-        Err(e) => {
-            let native_ch = device_native_channels.unwrap_or(channels as u16);
-            if native_ch != channels as u16 {
-                log::warn!(
-                    "[Playback Thread] Stream build failed with {}ch ({}) — retrying with device native {}ch",
-                    channels,
-                    e,
-                    native_ch
-                );
-                channels = native_ch as usize;
-                config.channels = native_ch;
-                buffer_capacity = playback_buffer_capacity(sample_rate, channels, buffer_ms);
-                let (mut new_producer, new_consumer) = RingBuffer::<f32>::new(buffer_capacity);
-                state = Arc::new(PlaybackState::new(buffer_capacity));
-                prefill_silence(&mut new_producer, buffer_capacity / 2);
-                producer = new_producer;
-                build_output_stream(
-                    &device,
-                    &config,
-                    Arc::clone(&state),
-                    event_tx.clone(),
-                    new_consumer,
-                    output_format,
-                )?
-            } else {
-                return Err(e);
-            }
-        }
+        Err(e) => return Err(e),
     };
 
     // Start stream
@@ -2335,6 +2303,17 @@ mod tests {
         assert!(
             source.contains("if crate::rate_limit::allow(&EVENT_GATE, 5_000_000_000)"),
             "playback stream-error callbacks must rate-limit event formatting/sending"
+        );
+    }
+
+    #[test]
+    fn playback_does_not_retry_with_device_native_channel_count() {
+        let source = include_str!("playback_thread.rs");
+        let forbidden = ["retrying", "with", "device", "native"].join(" ");
+
+        assert!(
+            !source.contains(&forbidden),
+            "playback must not silently inflate requested stream width to device-native channels"
         );
     }
 

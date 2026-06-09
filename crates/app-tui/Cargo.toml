@@ -1,6 +1,6 @@
 [package]
 name = "sotf-tui"
-version = "0.5.206"
+version = "0.5.207"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
