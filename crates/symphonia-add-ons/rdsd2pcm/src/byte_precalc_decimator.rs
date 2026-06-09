@@ -170,6 +170,65 @@ impl BytePrecalcDecimator {
         }
         produced
     }
+
+    /// Feed one channel from an interleaved DSD byte stream without first
+    /// deinterleaving it into a temporary channel buffer.
+    pub fn process_interleaved_bytes(
+        &mut self,
+        bytes: &[u8],
+        channel: usize,
+        channels: usize,
+        reverse_bits: bool,
+        out: &mut [f64],
+    ) -> usize {
+        if self.num_tables == 0 || self.bytes_per_out == 0 || channels == 0
+        {
+            return 0;
+        }
+        let mask = self.fifo.len() - 1;
+        let mut byte_count_in_frame = 0u32;
+        let mut produced = 0usize;
+
+        let mut pos = channel;
+        while pos < bytes.len() {
+            let mut b = bytes[pos];
+            if reverse_bits {
+                b = b.reverse_bits();
+            }
+            self.fifo[self.fifo_pos & mask] = b;
+            self.fifo_pos = (self.fifo_pos + 1) & mask;
+            byte_count_in_frame += 1;
+
+            if byte_count_in_frame == self.bytes_per_out {
+                byte_count_in_frame = 0;
+
+                if produced < out.len() {
+                    out[produced] =
+                        (0..self.num_tables).fold(0.0f64, |acc, i| {
+                            let idx1 =
+                                self.fifo_pos.wrapping_sub(1 + i) & mask;
+                            let idx2 = self
+                                .fifo_pos
+                                .wrapping_sub(1 + (self.table_span - i))
+                                & mask;
+                            let byte1 = self.fifo[idx1];
+                            let byte2 = self.fifo[idx2];
+                            acc + self.tables[i][byte1 as usize]
+                                + self.tables[i]
+                                    [byte2.reverse_bits() as usize]
+                        });
+                    produced += 1;
+                }
+                if produced == out.len() {
+                    break;
+                }
+            }
+
+            pos += channels;
+        }
+
+        produced
+    }
 }
 
 // Central mapping from (filter type, dsd_rate, decimation ratio) to half-tap tables.

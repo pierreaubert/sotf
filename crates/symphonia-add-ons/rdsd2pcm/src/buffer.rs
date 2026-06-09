@@ -10,6 +10,39 @@ pub enum DsdBitOrder {
     MsbFirst,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PcmOutputEncoding {
+    Pcm24Le,
+    Float32Le,
+}
+
+impl PcmOutputEncoding {
+    pub fn bytes_per_sample(self) -> usize {
+        match self {
+            Self::Pcm24Le => 3,
+            Self::Float32Le => size_of::<f32>(),
+        }
+    }
+
+    fn write_sample(self, sample: f32, out: &mut Vec<u8>) {
+        let sample = sample.clamp(-1.0, 1.0);
+        match self {
+            Self::Pcm24Le => {
+                let scaled = if sample >= 0.0 {
+                    sample * 8_388_607.0
+                } else {
+                    sample * 8_388_608.0
+                };
+                let value = scaled.round() as i32;
+                out.extend_from_slice(&value.to_le_bytes()[..3]);
+            }
+            Self::Float32Le => {
+                out.extend_from_slice(&sample.to_le_bytes())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct DsdPcmOptions {
     pub input_sample_rate: u32,
@@ -238,6 +271,73 @@ impl DsdPcmConverter {
 
         Ok(&self.pcm)
     }
+
+    pub fn convert_interleaved_to_bytes(
+        &mut self,
+        input: &[u8],
+        encoding: PcmOutputEncoding,
+        output: &mut Vec<u8>,
+    ) -> Result<usize, DsdPcmError> {
+        if input.len() % self.opts.channels != 0 {
+            return Err(DsdPcmError::InvalidInputLength);
+        }
+
+        let max_frames = self.max_output_frames(input.len());
+        self.pcm_f64.resize(max_frames, 0.0);
+        let mut produced_frames = None;
+        let scale = self.upsample_ratio as f64;
+        let reverse_bits = self.opts.bit_order == DsdBitOrder::MsbFirst;
+        let channels = self.opts.channels;
+
+        for channel in 0..channels {
+            self.pcm_f64.fill(0.0);
+            let frames = match &mut self.processors[channel] {
+                ChannelProcessor::Integer(decimator) => decimator
+                    .process_interleaved_bytes(
+                        input,
+                        channel,
+                        channels,
+                        reverse_bits,
+                        &mut self.pcm_f64,
+                    ),
+                ChannelProcessor::Rational(resampler) => resampler
+                    .process_interleaved_bytes_lm(
+                        input,
+                        channel,
+                        channels,
+                        reverse_bits,
+                        &mut self.pcm_f64,
+                    ),
+            };
+
+            if let Some(expected) = produced_frames {
+                if frames != expected {
+                    return Err(DsdPcmError::InvalidInputLength);
+                }
+            } else {
+                produced_frames = Some(frames);
+            }
+
+            self.pcm[channel].resize(frames, 0.0);
+            for (dst, src) in self.pcm[channel]
+                .iter_mut()
+                .zip(self.pcm_f64.iter().take(frames))
+            {
+                *dst = (*src * scale) as f32;
+            }
+        }
+
+        let frames = produced_frames.unwrap_or(0);
+        output.clear();
+        output.reserve(frames * channels * encoding.bytes_per_sample());
+        for frame in 0..frames {
+            for channel in 0..channels {
+                encoding.write_sample(self.pcm[channel][frame], output);
+            }
+        }
+
+        Ok(frames)
+    }
 }
 
 fn dsd_rate_multiplier(sample_rate: u32) -> Result<i32, DsdPcmError> {
@@ -275,5 +375,91 @@ mod tests {
             converter.convert_interleaved(&[0, 1, 2]).unwrap_err(),
             DsdPcmError::InvalidInputLength
         );
+    }
+
+    #[test]
+    fn direct_float_bytes_match_planar_conversion() {
+        let input = (0..2 * 4704)
+            .map(|idx| (idx as u8).wrapping_mul(37))
+            .collect::<Vec<_>>();
+        let mut planar_converter =
+            DsdPcmConverter::new(DsdPcmOptions::sacd(2)).unwrap();
+        let planar = planar_converter.convert_interleaved(&input).unwrap();
+
+        let mut direct_converter =
+            DsdPcmConverter::new(DsdPcmOptions::sacd(2)).unwrap();
+        let mut bytes = Vec::new();
+        let frames = direct_converter
+            .convert_interleaved_to_bytes(
+                &input,
+                PcmOutputEncoding::Float32Le,
+                &mut bytes,
+            )
+            .unwrap();
+
+        assert_eq!(frames, planar[0].len());
+        assert_eq!(bytes.len(), frames * 2 * size_of::<f32>());
+        for frame in 0..frames {
+            for channel in 0..2 {
+                let offset = (frame * 2 + channel) * size_of::<f32>();
+                assert_eq!(
+                    &bytes[offset..offset + size_of::<f32>()],
+                    &planar[channel][frame].to_le_bytes()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn direct_pcm24_emits_interleaved_bytes() {
+        let mut converter =
+            DsdPcmConverter::new(DsdPcmOptions::sacd(2)).unwrap();
+        let input = vec![0x69; 2 * 4704];
+        let mut bytes = Vec::new();
+        let frames = converter
+            .convert_interleaved_to_bytes(
+                &input,
+                PcmOutputEncoding::Pcm24Le,
+                &mut bytes,
+            )
+            .unwrap();
+
+        assert_eq!(frames, 2352);
+        assert_eq!(bytes.len(), frames * 2 * 3);
+    }
+
+    #[test]
+    fn direct_float_bytes_match_rational_planar_conversion() {
+        let input = (0..2 * 4704)
+            .map(|idx| (idx as u8).wrapping_mul(19))
+            .collect::<Vec<_>>();
+        let opts = DsdPcmOptions {
+            output_sample_rate: 96_000,
+            ..DsdPcmOptions::sacd(2)
+        };
+        let mut planar_converter = DsdPcmConverter::new(opts).unwrap();
+        let planar = planar_converter.convert_interleaved(&input).unwrap();
+
+        let mut direct_converter = DsdPcmConverter::new(opts).unwrap();
+        let mut bytes = Vec::new();
+        let frames = direct_converter
+            .convert_interleaved_to_bytes(
+                &input,
+                PcmOutputEncoding::Float32Le,
+                &mut bytes,
+            )
+            .unwrap();
+
+        assert_eq!(frames, planar[0].len());
+        assert_eq!(bytes.len(), frames * 2 * size_of::<f32>());
+        for frame in 0..frames {
+            for channel in 0..2 {
+                let offset = (frame * 2 + channel) * size_of::<f32>();
+                assert_eq!(
+                    &bytes[offset..offset + size_of::<f32>()],
+                    &planar[channel][frame].to_le_bytes()
+                );
+            }
+        }
     }
 }

@@ -372,6 +372,111 @@ impl LMResampler {
         }
         produced_total
     }
+
+    #[inline(always)]
+    pub fn process_interleaved_bytes_lm(
+        &mut self,
+        bytes: &[u8],
+        channel: usize,
+        channels: usize,
+        reverse_bits: bool,
+        out: &mut [f64],
+    ) -> usize {
+        let s1 = match self.stage1_poly.as_mut() {
+            Some(x) => x,
+            None => return 0,
+        };
+        let p2 = match self.stage2_decim.as_mut() {
+            Some(x) => x,
+            None => return 0,
+        };
+        if channels == 0 || channel >= bytes.len() {
+            return 0;
+        }
+        let mut p3_opt = self.stage3_decim.as_mut();
+
+        let mut produced_total = 0usize;
+        let mut consumed_total = 0usize;
+        let total_bytes = (bytes.len() - channel).div_ceil(channels);
+        let mut pos = channel;
+        let y1_per_byte_ub =
+            ((8 * s1.l as usize) + (s1.m as usize) - 1) / (s1.m as usize);
+        let y1_per_byte_ub = y1_per_byte_ub.max(1);
+
+        let push_byte =
+            |b: u8, s1: &mut Stage1Poly, dst: &mut Vec<f64>| {
+                for bit in 0..8 {
+                    s1.push_all((b >> bit) & 1, |y1| dst.push(y1));
+                }
+            };
+
+        while consumed_total < total_bytes && produced_total < out.len() {
+            let out_budget = out.len() - produced_total;
+            let (need_s2_in, need_s1_out) = if let Some(ref p3) = p3_opt {
+                let s2 = out_budget.saturating_mul(p3.decim);
+                (s2, s2.saturating_mul(p2.decim))
+            } else {
+                (out_budget, out_budget.saturating_mul(p2.decim))
+            };
+
+            let mut take_bytes = if need_s1_out == 0 {
+                0
+            } else {
+                need_s1_out.div_ceil(y1_per_byte_ub)
+            };
+            take_bytes = take_bytes.min(total_bytes - consumed_total);
+            if take_bytes == 0 {
+                break;
+            }
+
+            self.s1_scratch.clear();
+            let reserve = take_bytes.saturating_mul(y1_per_byte_ub);
+            if self.s1_scratch.capacity() < reserve {
+                self.s1_scratch
+                    .reserve(reserve - self.s1_scratch.capacity());
+            }
+            let mut consumed_bytes = 0usize;
+            for _ in 0..take_bytes {
+                let mut byte = bytes[pos];
+                if reverse_bits {
+                    byte = byte.reverse_bits();
+                }
+                push_byte(byte, s1, &mut self.s1_scratch);
+                consumed_bytes += 1;
+                pos += channels;
+                if self.s1_scratch.len() >= need_s1_out {
+                    break;
+                }
+            }
+
+            let used_s1 =
+                core::cmp::min(self.s1_scratch.len(), need_s1_out);
+            if let Some(ref mut p3) = p3_opt {
+                let cap_s2 = need_s2_in.max(1);
+                if self.s2_scratch.len() < cap_s2 {
+                    self.s2_scratch.resize(cap_s2, 0.0);
+                }
+                let n2 = p2.process_block(
+                    &self.s1_scratch[..used_s1],
+                    &mut self.s2_scratch[..cap_s2],
+                );
+                let n3 = p3.process_block(
+                    &self.s2_scratch[..n2],
+                    &mut out[produced_total..],
+                );
+                produced_total += n3;
+            } else {
+                let n2 = p2.process_block(
+                    &self.s1_scratch[..used_s1],
+                    &mut out[produced_total..],
+                );
+                produced_total += n2;
+            }
+
+            consumed_total += consumed_bytes;
+        }
+        produced_total
+    }
 }
 
 #[derive(Debug)]

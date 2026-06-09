@@ -42,6 +42,7 @@ use crate::{
 };
 pub use buffer::{
     DsdBitOrder, DsdPcmConverter, DsdPcmError, DsdPcmOptions,
+    PcmOutputEncoding,
 };
 
 pub use dsd_reader::DsdRate;
