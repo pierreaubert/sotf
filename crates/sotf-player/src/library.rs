@@ -23,7 +23,7 @@ use crate::database::MusicDatabase;
 /// parse Ogg/MP4 Opus containers, but this build does not include an Opus
 /// decoder, so `.opus` is intentionally absent here.
 pub const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &[
-    "flac", "mp3", "m4a", "mp4", "aac", "ogg", "oga", "wav", "aiff", "aif",
+    "flac", "mp3", "m4a", "mp4", "aac", "ogg", "oga", "wav", "aiff", "aif", "wv", "wvp", "wavpack",
 ];
 
 pub fn is_supported_audio_extension(ext: &str) -> bool {

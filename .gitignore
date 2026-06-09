@@ -41,6 +41,8 @@ __pycache__
 /*.json.bz2
 /todos.md
 /reviews
+.r2factor
+*.bak
 
 # node
 /site/node_modules

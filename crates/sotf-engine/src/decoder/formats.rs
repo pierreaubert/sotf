@@ -28,6 +28,7 @@ static PROBE: LazyLock<Probe> = LazyLock::new(|| {
     probe.register_format::<symphonia_format_ogg::OggReader>();
     probe.register_format::<symphonia_format_isomp4::IsoMp4Reader>();
     probe.register_format::<symphonia_codec_aac::AdtsReader>();
+    probe.register_format::<symphonia_codec_wavpack::WavPackReader>();
     probe
 });
 
@@ -40,6 +41,7 @@ static CODEC_REGISTRY: LazyLock<CodecRegistry> = LazyLock::new(|| {
     registry.register_audio_decoder::<symphonia_codec_aac::AacDecoder>();
     registry.register_audio_decoder::<symphonia_codec_alac::AlacDecoder>();
     registry.register_audio_decoder::<symphonia_codec_vorbis::VorbisDecoder>();
+    registry.register_audio_decoder::<symphonia_codec_wavpack::WavPackDecoder>();
     registry
 });
 
@@ -207,6 +209,7 @@ impl SymphoniaDecoder {
             well_known::CODEC_ID_MP3 => AudioFormat::Mp3,
             well_known::CODEC_ID_AAC => AudioFormat::Aac,
             well_known::CODEC_ID_VORBIS => AudioFormat::Vorbis,
+            well_known::CODEC_ID_WAVPACK => AudioFormat::WavPack,
             well_known::CODEC_ID_ALAC => AudioFormat::Alac,
             well_known::CODEC_ID_PCM_S16LE
             | well_known::CODEC_ID_PCM_S24LE
@@ -827,6 +830,7 @@ pub enum AudioFormat {
     Alac,
     Wav,
     Vorbis,
+    WavPack,
     Aiff,
     DsdDsf,
     DsdDff,
@@ -880,6 +884,7 @@ impl AudioFormat {
             "aac" | "m4a" | "mp4" => Ok(AudioFormat::Aac),
             "wav" => Ok(AudioFormat::Wav),
             "ogg" | "oga" => Ok(AudioFormat::Vorbis),
+            "wv" | "wvp" | "wavpack" => Ok(AudioFormat::WavPack),
             "aiff" | "aif" => Ok(AudioFormat::Aiff),
             "dsf" => Ok(AudioFormat::DsdDsf),
             "dff" => Ok(AudioFormat::DsdDff),
@@ -902,6 +907,7 @@ impl AudioFormat {
             AudioFormat::Alac => "ALAC",
             AudioFormat::Wav => "WAV",
             AudioFormat::Vorbis => "Vorbis",
+            AudioFormat::WavPack => "WavPack",
             AudioFormat::Aiff => "AIFF",
             AudioFormat::DsdDsf => "DSD DSF",
             AudioFormat::DsdDff => "DSD DFF",
@@ -920,6 +926,7 @@ impl AudioFormat {
             AudioFormat::Alac => "m4a",
             AudioFormat::Wav => "wav",
             AudioFormat::Vorbis => "ogg",
+            AudioFormat::WavPack => "wv",
             AudioFormat::Aiff => "aiff",
             AudioFormat::DsdDsf => "dsf",
             AudioFormat::DsdDff => "dff",
@@ -938,6 +945,7 @@ impl AudioFormat {
             AudioFormat::Alac => true,
             AudioFormat::Wav => true,
             AudioFormat::Vorbis => false,
+            AudioFormat::WavPack => true,
             AudioFormat::Aiff => true,
             AudioFormat::DsdDsf => true,
             AudioFormat::DsdDff => true,
@@ -975,6 +983,7 @@ impl AudioFormat {
             AudioFormat::Alac,
             AudioFormat::Wav,
             AudioFormat::Vorbis,
+            AudioFormat::WavPack,
             AudioFormat::Aiff,
         ];
         #[cfg(feature = "iamf")]
@@ -1079,6 +1088,16 @@ mod tests {
             AudioFormat::Vorbis
         );
 
+        // Test WavPack
+        assert_eq!(
+            AudioFormat::from_path("test.wv").unwrap(),
+            AudioFormat::WavPack
+        );
+        assert_eq!(
+            AudioFormat::from_path("test.wvp").unwrap(),
+            AudioFormat::WavPack
+        );
+
         // Test AIFF
         assert_eq!(
             AudioFormat::from_path("test.aiff").unwrap(),
@@ -1112,7 +1131,6 @@ mod tests {
         // Test unsupported format
         assert!(AudioFormat::from_path("test.xyz").is_err());
         assert!(AudioFormat::from_path("test.opus").is_err());
-        assert!(AudioFormat::from_path("test.wv").is_err());
         assert!(AudioFormat::from_path("test").is_err());
     }
 
@@ -1153,6 +1171,12 @@ mod tests {
         assert_eq!(vorbis.extension(), "ogg");
         assert!(!vorbis.is_lossless());
 
+        // Test WavPack
+        let wavpack = AudioFormat::WavPack;
+        assert_eq!(wavpack.as_str(), "WavPack");
+        assert_eq!(wavpack.extension(), "wv");
+        assert!(wavpack.is_lossless());
+
         // Test AIFF
         let aiff = AudioFormat::Aiff;
         assert_eq!(aiff.as_str(), "AIFF");
@@ -1169,7 +1193,7 @@ mod tests {
     #[test]
     fn test_supported_formats() {
         let formats = AudioFormat::supported_formats();
-        let expected_count = if cfg!(feature = "iamf") { 8 } else { 7 };
+        let expected_count = if cfg!(feature = "iamf") { 9 } else { 8 };
         assert_eq!(formats.len(), expected_count);
         assert!(formats.contains(&AudioFormat::Flac));
         assert!(formats.contains(&AudioFormat::Mp3));
@@ -1177,6 +1201,7 @@ mod tests {
         assert!(formats.contains(&AudioFormat::Alac));
         assert!(formats.contains(&AudioFormat::Wav));
         assert!(formats.contains(&AudioFormat::Vorbis));
+        assert!(formats.contains(&AudioFormat::WavPack));
         assert!(formats.contains(&AudioFormat::Aiff));
         assert!(!formats.contains(&AudioFormat::DsdDsf));
 
@@ -1187,6 +1212,7 @@ mod tests {
         assert!(formats_string.contains("ALAC"));
         assert!(formats_string.contains("WAV"));
         assert!(formats_string.contains("Vorbis"));
+        assert!(formats_string.contains("WavPack"));
         assert!(formats_string.contains("AIFF"));
         assert!(!formats_string.contains("DSD DSF"));
     }

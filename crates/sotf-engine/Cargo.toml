@@ -66,6 +66,7 @@ symphonia-codec-aac = { workspace = true }
 symphonia-codec-alac = { workspace = true }
 symphonia-codec-pcm = { workspace = true }
 symphonia-codec-vorbis = { workspace = true }
+symphonia-codec-wavpack = { workspace = true }
 symphonia-format-riff = { workspace = true }
 symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }

@@ -143,8 +143,11 @@ fn test_library_scan_supported_extensions_match_playable_formats() {
     assert!(!sotf_audio_player::library::is_supported_audio_extension(
         "opus"
     ));
-    assert!(!sotf_audio_player::library::is_supported_audio_extension(
+    assert!(sotf_audio_player::library::is_supported_audio_extension(
         "wv"
+    ));
+    assert!(sotf_audio_player::library::is_supported_audio_extension(
+        "wvp"
     ));
 }
 

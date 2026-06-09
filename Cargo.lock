@@ -10435,6 +10435,7 @@ dependencies = [
  "symphonia-codec-alac",
  "symphonia-codec-pcm",
  "symphonia-codec-vorbis 0.6.0",
+ "symphonia-codec-wavpack",
  "symphonia-core 0.6.0",
  "symphonia-format-isomp4",
  "symphonia-format-ogg 0.6.0",
@@ -11804,7 +11805,7 @@ dependencies = [
 
 [[package]]
 name = "symphonia-codec-dsd"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rdsd2pcm",
  "symphonia-core 0.6.0",
@@ -11813,7 +11814,7 @@ dependencies = [
 
 [[package]]
 name = "symphonia-codec-dst"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dst-decoder",
  "rdsd2pcm",
@@ -11949,7 +11950,7 @@ dependencies = [
 
 [[package]]
 name = "symphonia-format-sacd"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "encoding_rs",
  "rayon",
