@@ -3,6 +3,7 @@ use super::types::{
     ArtistNode, CastDeviceInfo, ChannelFilter, LibrarySortOrder, LibraryViewMode, QueueEntry,
     QueueItem, TreeItem,
 };
+use sotf_audio::decoder::AudioSource;
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{Album, QueuePlaybackEffect};
 use std::path::PathBuf;
@@ -307,8 +308,14 @@ impl App {
             None => return Ok(None),
         };
 
-        // Validate at least one track file exists on disk
-        if !album.tracks.is_empty() && !album.tracks.iter().any(|t| t.path.exists()) {
+        // Validate at least one track has a playable source. Remote federation
+        // tracks use URL sources and intentionally do not have local paths.
+        if !album.tracks.is_empty()
+            && !album
+                .tracks
+                .iter()
+                .any(|t| !matches!(t.audio_source(), AudioSource::File(_)) || t.path.exists())
+        {
             return Err(format!(
                 "None of the files for \"{}\" exist on disk",
                 album.title,

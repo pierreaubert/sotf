@@ -70,7 +70,13 @@ members = [
     "crates/math-audio/math-rir",
     "crates/autoeq",
     "crates/sotf-iamf",
-    "crates/sotf-sacd",
+    "crates/symphonia-add-ons/dst-decoder",
+    "crates/symphonia-add-ons/rdsd2pcm",
+    "crates/symphonia-add-ons/rdsd2pcm/src/dsd_reader",
+    "crates/symphonia-add-ons/symphonia-codec-dsd",
+    "crates/symphonia-add-ons/symphonia-codec-dst",
+    "crates/symphonia-add-ons/symphonia-codec-wavpack",
+    "crates/symphonia-add-ons/symphonia-format-sacd",
     "crates/sotf-server/crates/sotf-streaming",
     "crates/sotf-server/crates/sotf-mpd",
     "crates/sotf-server/crates/sotf-services",
@@ -277,7 +283,10 @@ sotf-plugin-transient-shaper = { path = "crates/sotf-plugins/crates/sotf-plugin-
 sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer", default-features = false }
 sotf-plugin-xtc = { path = "crates/sotf-plugins/crates/sotf-plugin-xtc" }
 sotf-iamf = { path = "crates/sotf-iamf" }
-sotf-sacd = { path = "crates/sotf-sacd" }
+symphonia-codec-dsd = { path = "crates/symphonia-add-ons/symphonia-codec-dsd" }
+symphonia-codec-dst = { path = "crates/symphonia-add-ons/symphonia-codec-dst" }
+symphonia-codec-wavpack = { path = "crates/symphonia-add-ons/symphonia-codec-wavpack" }
+symphonia-format-sacd = { path = "crates/symphonia-add-ons/symphonia-format-sacd" }
 sotf-streaming = { path = "crates/sotf-server/crates/sotf-streaming" }
 sotf-mpd = { path = "crates/sotf-server/crates/sotf-mpd" }
 sotf-services = { path = "crates/sotf-server/crates/sotf-services", default-features = false }
@@ -314,6 +323,8 @@ symphonia-codec-vorbis = "0.6"
 symphonia-format-riff = "0.6"
 symphonia-format-ogg = "0.6"
 symphonia-format-isomp4 = "0.6"
+dst-decoder = { path = "crates/symphonia-add-ons/dst-decoder", version = "0.1.1" }
+rdsd2pcm = { path = "crates/symphonia-add-ons/rdsd2pcm", version = "0.3.0" }
 encoding_rs = "0.8"
 rtrb = "0.3"
 midir = "0.10"

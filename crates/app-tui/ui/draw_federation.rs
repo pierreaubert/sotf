@@ -31,7 +31,7 @@ pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
 
     let help_text = match state.mode {
         FederationMode::List => {
-            " a=Add  e/Enter=Edit  d=Delete  t=Test  s=Scan  Space=Toggle  Esc=Back"
+            " a=Add  e/Enter=Edit  d=Delete  t=Test+Scan  s=Scan  Space=Toggle  Esc=Back"
         }
         FederationMode::EditSource => " Up/Down=Navigate  Enter=Edit field  s/Tab=Save  Esc=Cancel",
         FederationMode::AddSource => " Up/Down=Select type  Enter=Confirm  Esc=Cancel",

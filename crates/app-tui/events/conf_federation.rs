@@ -334,6 +334,8 @@ pub fn poll_federation_scan(app: &mut App) -> bool {
                 match db.load_library() {
                     Ok(albums) => {
                         app.library.albums = albums;
+                        app.request_filter_update();
+                        app.rebuild_artist_tree();
                     }
                     Err(e) => {
                         log::error!("Failed to reload library after federation scan: {e}");
@@ -376,7 +378,21 @@ pub fn poll_federation_test(app: &mut App) -> bool {
                 let _ = db.set_source_availability(&sid, available);
             }
 
+            let should_scan_peer = available
+                && app.federation_scan_receiver.is_none()
+                && app
+                    .federation_state
+                    .sources
+                    .get(app.federation_state.selected_idx)
+                    .is_some_and(|source| {
+                        source.source_id == sid
+                            && matches!(source.connection, SourceConnectionConfig::Peer { .. })
+                    });
+
             app.federation_state.statuses.insert(sid, status);
+            if should_scan_peer {
+                scan_federation_source(app);
+            }
             true
         }
         Err(std::sync::mpsc::TryRecvError::Empty) => false,
