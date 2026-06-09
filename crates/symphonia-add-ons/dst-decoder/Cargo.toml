@@ -1,0 +1,18 @@
+[package]
+name = "dst-decoder"
+description = "A Rust implementation of the MPEG-4 Part 3 Subpart 10 Direct Stream Transfer (DST) Audio compression format."
+version = "0.1.1"
+edition.workspace = true
+readme = "README.md"
+license = "Apache-2.0"
+repository = "https://github.com/bleggett/dst-decoder"
+
+[lib]
+name = "dst_decoder"
+path = "src/lib.rs"
+
+[features]
+fixture-tests = []
+
+[dependencies]
+anyhow = { workspace = true }

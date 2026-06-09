@@ -1,0 +1,15 @@
+[package]
+name = "symphonia-codec-wavpack"
+description = "Pure Rust WavPack decoder (a part of project Symphonia)."
+authors = ["Philip Deljanov <philip.deljanov@gmail.com>"]
+readme = "README.md"
+categories = ["multimedia", "multimedia::audio", "multimedia::encoding"]
+keywords = ["audio", "codec", "decoder", "wavpack"]
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+log = { workspace = true }
+symphonia-core = { workspace = true }

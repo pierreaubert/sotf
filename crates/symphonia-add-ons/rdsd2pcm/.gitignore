@@ -1,0 +1,28 @@
+# Rust build directory
+/target/
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS specific files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Object files and libraries
+*.o
+*.a
+*.so
+*.dylib
+
+# Debug files
+*.dSYM/
+
+# Generated test coverage
+*.profraw
+coverage/
+
+*.pcm

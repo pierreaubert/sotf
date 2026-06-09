@@ -1,0 +1,13 @@
+[package]
+name = "rdsd2pcm"
+version = "0.3.0"
+edition = "2024"
+
+[dependencies]
+rand = "0.8"
+flac-codec = "1.2.0"
+dsf-meta = "0.2.5"
+dff-meta = "0.1.2"
+dsd-reader = { path = "src/dsd_reader" }
+id3 = "1.16.3"
+log = { version = "0.4.28", features = ["std"] }

@@ -1,0 +1,718 @@
+/*
+ Copyright (c) 2023 clone206
+
+ This file is part of rdsd2pcm
+
+ rdsd2pcm is free software: you can redistribute it and/or modify it
+ under the terms of the GNU General Public License as published by the
+ Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ rdsd2pcm is distributed in the hope that it will be useful, but
+ WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+ You should have received a copy of the GNU General Public License
+ along with rdsd2pcm. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+use crate::FilterType;
+use crate::ONE_HUNDRED_PERCENT;
+use crate::OutputType;
+use crate::byte_precalc_decimator::BytePrecalcDecimator;
+use crate::byte_precalc_decimator::select_precalc_taps;
+use crate::lm_resampler::LMResampler;
+use crate::pcm_writer::PcmWriter;
+use dsd_reader::DsdReader;
+use dsd_reader::dsd_file::DSD_64_RATE;
+use id3::TagLike;
+use log::error;
+use log::warn;
+use log::{debug, info, trace};
+use std::error::Error;
+use std::ffi::OsString;
+use std::io;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+use std::time::Instant;
+
+const RETRIES: usize = 1; // Max retries for progress send
+
+pub struct ProgressUpdate {
+    pub in_path: String,
+    pub file_name: String,
+    pub percent: f32,
+}
+
+pub struct ConversionContext {
+    dsd_reader: DsdReader,
+    pcm_writer: PcmWriter,
+    filt_type: FilterType,
+    append_rate_suffix: bool,
+    precalc_decims: Option<Vec<BytePrecalcDecimator>>,
+    eq_lm_resamplers: Option<Vec<LMResampler>>,
+    upsample_ratio: u32,
+    decim_ratio: i32,
+    diag_expected_frames_floor: u64,
+    diag_frames_out: u64,
+    base_dir: PathBuf,
+    bytes_read: u64,
+    chan_bits_read: u64,
+    file_name_lossy: String,
+    in_path_lossy: String,
+    out_filename_path: PathBuf,
+}
+impl ConversionContext {
+    pub fn new(
+        dsd_reader: DsdReader,
+        pcm_writer: PcmWriter,
+        filt_type: FilterType,
+        append_rate_suffix: bool,
+        base_dir: PathBuf,
+        decim_ratio: i32,
+        upsample_ratio: u32,
+    ) -> Result<Self, Box<dyn Error>> {
+        let file_name_lossy =
+            dsd_reader.file_name().to_string_lossy().into_owned();
+        let in_path_lossy = if let Some(in_path) = dsd_reader.in_path() {
+            in_path.to_string_lossy().into_owned()
+        } else {
+            String::from("stdin")
+        };
+        let mut ctx = Self {
+            dsd_reader,
+            pcm_writer,
+            filt_type,
+            append_rate_suffix,
+            precalc_decims: None,
+            eq_lm_resamplers: None,
+            upsample_ratio,
+            decim_ratio,
+            diag_expected_frames_floor: 0,
+            diag_frames_out: 0,
+            base_dir,
+            bytes_read: 0,
+            chan_bits_read: 0,
+            file_name_lossy,
+            in_path_lossy,
+            out_filename_path: PathBuf::new(),
+        };
+
+        ctx.setup_resamplers()?;
+
+        ctx.out_filename_path = ctx.get_out_filename_path();
+
+        Ok(ctx)
+    }
+
+    /// Get input file name for display purposes (potentially lossy)
+    pub fn file_name_lossy(&self) -> String {
+        self.file_name_lossy.clone()
+    }
+
+    fn setup_resamplers(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.upsample_ratio > 1 {
+            let mut resamplers =
+                Vec::with_capacity(self.dsd_reader.channels_num());
+            for _ in 0..self.dsd_reader.channels_num() {
+                resamplers.push(LMResampler::new(
+                    self.upsample_ratio,
+                    self.decim_ratio,
+                    self.pcm_writer.rate() as u32,
+                )?);
+            }
+            self.eq_lm_resamplers = Some(resamplers);
+            trace!(
+                "L/M path makeup gain: ×{} (scale_factor now {:.6})",
+                self.upsample_ratio,
+                self.pcm_writer.scale_factor()
+            );
+        } else if let Some(taps) = select_precalc_taps(
+            self.filt_type,
+            self.dsd_reader.dsd_rate(),
+            self.decim_ratio,
+        ) {
+            self.precalc_decims = Some(
+                (0..self.dsd_reader.channels_num())
+                    .map(|_| {
+                        BytePrecalcDecimator::new(
+                            taps,
+                            self.decim_ratio as u32,
+                        )
+                        .expect("Precalc BytePrecalcDecimator init failed")
+                    })
+                    .collect(),
+            );
+            debug!(
+                "Precalc decimator enabled (ratio {}:1, filter '{:#?}', dsd_rate {}).",
+                self.decim_ratio,
+                self.filt_type,
+                self.dsd_reader.dsd_rate()
+            );
+        } else {
+            return Err(format!(
+                "Taps not found for decimation ratio {} / filter '{:#?}' (dsd_rate {}). ",
+                self.decim_ratio,
+                self.filt_type,
+                self.dsd_reader.dsd_rate()
+            )
+            .into());
+        }
+        Ok(())
+    }
+
+    /// Increment bytes and bits read counters
+    fn inc_bytes_read(&mut self, read_size: usize) {
+        self.bytes_read += read_size as u64;
+        self.chan_bits_read +=
+            (read_size / self.dsd_reader.channels_num()) as u64 * 8;
+    }
+
+    // Send a > 100% progress update to signal we're in output file write phase
+    fn send_output_percent(
+        &self,
+        percent: f32,
+        sender: &Option<mpsc::Sender<ProgressUpdate>>,
+    ) {
+        if let Some(sender) = sender {
+            sender
+                .send(ProgressUpdate {
+                    in_path: self.in_path_lossy.clone(),
+                    file_name: self
+                        .out_filename_path
+                        .to_string_lossy()
+                        .into_owned(),
+                    percent,
+                })
+                .ok();
+        }
+    }
+
+    /// Only check peak level without writing output file
+    /// * `cancel_flag` - atomic flag to signal cancellation
+    /// * `sender` - optional progress update sender
+    /// returns peak level in dBFS
+    pub fn check_level(
+        &mut self,
+        cancel_flag: &AtomicBool,
+        sender: Option<mpsc::Sender<ProgressUpdate>>,
+    ) -> Result<f32, Box<dyn Error>> {
+        let peak = self.process_levels(cancel_flag, &sender)?;
+        self.send_output_percent(101.0, &sender);
+        self.send_output_percent(101.0, &sender);
+        Ok(peak)
+    }
+
+    fn process_levels(
+        &mut self,
+        cancel_flag: &AtomicBool,
+        sender: &Option<mpsc::Sender<ProgressUpdate>>,
+    ) -> Result<f32, Box<dyn Error>> {
+        let channels_num = self.dsd_reader.channels_num();
+        let reader = self.dsd_reader.dsd_iter()?;
+        let scale_factor = self.pcm_writer.scale_factor();
+
+        // Convert internal float buffer units to normalized PCM units (±1.0 full scale).
+        let mut peak_abs: f64 = 0.0;
+
+        for (read_size, chan_bufs) in reader {
+            if cancel_flag.load(Ordering::Relaxed) {
+                return Err("Level check cancelled by user"
+                    .to_string()
+                    .into());
+            }
+            let mut samples_used_per_chan = 0usize;
+            for chan in 0..channels_num {
+                samples_used_per_chan =
+                    self.process_channel(chan, &chan_bufs[chan])?;
+
+                // Scan peak from the samples produced for this channel.
+                // Note: `process_channel` writes into `pcm_writer.float_data`.
+                let float_data = self.pcm_writer.float_data_mut();
+                for &s in &float_data[..samples_used_per_chan] {
+                    let a = s.abs() * scale_factor;
+                    if a > peak_abs {
+                        peak_abs = a;
+                    }
+                }
+            }
+
+            // Progress accounting (also updates internal bytes/bits counters).
+            let _ =
+                self.track_io(read_size, samples_used_per_chan, sender);
+        }
+
+        self.send_output_percent(ONE_HUNDRED_PERCENT, sender);
+
+        let peak_dbfs = if peak_abs <= 0.0 {
+            f32::NEG_INFINITY
+        } else {
+            (20.0 * peak_abs.log10()) as f32
+        };
+
+        Ok(peak_dbfs)
+    }
+
+    /// Main conversion driver code with optional percentage progress sender
+    pub fn do_conversion(
+        &mut self,
+        cancel_flag: &AtomicBool,
+        sender: Option<mpsc::Sender<ProgressUpdate>>,
+    ) -> Result<(), Box<dyn Error>> {
+        self.check_conv()?;
+        let wall_start = Instant::now();
+
+        self.process_blocks(cancel_flag, &sender)?;
+        self.send_output_percent(101.0, &sender);
+
+        let dsp_elapsed = wall_start.elapsed();
+
+        info!(
+            "{} clipped {} times.",
+            self.file_name_lossy(),
+            self.pcm_writer.clips()
+        );
+
+        if self.pcm_writer.output() != OutputType::Stdout
+            && let Err(e) = self.write_file()
+        {
+            error!("Error writing file: {e}");
+        }
+
+        self.send_output_percent(101.0, &sender);
+
+        self.diag_expected_frames_floor = (self.chan_bits_read
+            * self.upsample_ratio as u64)
+            / self.decim_ratio as u64;
+        let total_elapsed = wall_start.elapsed();
+
+        self.report_timing(dsp_elapsed, total_elapsed);
+        self.report_in_out();
+
+        Ok(())
+    }
+
+    /// Main conversion loop with optional percentage progress sender
+    fn process_blocks(
+        &mut self,
+        cancel_flag: &AtomicBool,
+        sender: &Option<mpsc::Sender<ProgressUpdate>>,
+    ) -> Result<(), Box<dyn Error>> {
+        let channels_num = self.dsd_reader.channels_num();
+        let reader = self.dsd_reader.dsd_iter()?;
+
+        for (read_size, chan_bufs) in reader {
+            if cancel_flag.load(Ordering::Relaxed) {
+                return Err("Conversion cancelled by user"
+                    .to_string()
+                    .into());
+            }
+            let mut samples_used_per_chan = 0usize;
+            for chan in 0..channels_num {
+                samples_used_per_chan =
+                    self.process_channel(chan, &chan_bufs[chan])?;
+                self.pcm_writer
+                    .write_to_buffer(samples_used_per_chan, chan);
+            }
+            let pcm_frame_bytes =
+                self.track_io(read_size, samples_used_per_chan, sender);
+            if self.pcm_writer.output() == OutputType::Stdout
+                && pcm_frame_bytes > 0
+            {
+                self.pcm_writer.write_stdout(pcm_frame_bytes)?;
+            }
+        }
+
+        self.send_output_percent(ONE_HUNDRED_PERCENT, sender);
+
+        Ok(())
+    }
+
+    /// Collect and send diagnostic info about input/output progress
+    fn track_io(
+        &mut self,
+        read_size: usize,
+        samples_used_per_chan: usize,
+        sender: &Option<mpsc::Sender<ProgressUpdate>>,
+    ) -> usize {
+        self.inc_bytes_read(read_size);
+        self.diag_frames_out += samples_used_per_chan as u64;
+
+        if let Some(sender) = sender {
+            for i in 0..=RETRIES {
+                match sender.send({
+                    ProgressUpdate {
+                        percent: (self.bytes_read as f32
+                            / self.dsd_reader.audio_length() as f32)
+                            * ONE_HUNDRED_PERCENT,
+                        in_path: self.in_path_lossy.clone(),
+                        file_name: self.file_name_lossy.clone(),
+                    }
+                }) {
+                    Ok(_) => break,
+                    Err(_) => {
+                        if i == RETRIES {
+                            trace!(
+                                "Progress channel blocked after {} retries.",
+                                RETRIES
+                            );
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        return samples_used_per_chan
+            * self.pcm_writer.channels_num()
+            * self.pcm_writer.bytes_per_sample();
+    }
+
+    // Unified per-channel processing: handles both LM (rational) and integer paths.
+    // Returns the number of frames produced into buffers for this channel.
+    #[inline(always)]
+    fn process_channel(
+        &mut self,
+        chan: usize,
+        chan_bytes: &[u8],
+    ) -> Result<usize, Box<dyn Error>> {
+        if let Some(resamps) = self.eq_lm_resamplers.as_mut() {
+            // LM path: use rational resampler, honor actual produced count
+            let rs = &mut resamps[chan];
+            return Ok(rs.process_bytes_lm(
+                &chan_bytes,
+                self.pcm_writer.float_data_mut(),
+            ));
+        } else if let Some(ref mut v) = self.precalc_decims {
+            // Integer path: use precalc decimator; conventionally return the estimate
+            let dec = &mut v[chan];
+            return Ok(dec.process_bytes(
+                &chan_bytes,
+                self.pcm_writer.float_data_mut(),
+            ));
+        } else {
+            return Err("No resampler or decimator initialized.".into());
+        }
+    }
+
+    fn get_out_filename_path(&self) -> PathBuf {
+        let ext = match self.pcm_writer.output() {
+            OutputType::Wav => "wav",
+            OutputType::Aiff => "aif",
+            OutputType::Aifc => "aifc",
+            OutputType::Flac => "flac",
+            _ => "out",
+        };
+        let suffix = if let Some((uscore, _dot)) =
+            self.abbrev_rate_pair(self.pcm_writer.rate() as u32)
+        {
+            format!("_{}", uscore)
+        } else {
+            "".to_string()
+        };
+
+        let mut filename: OsString = OsString::new();
+
+        if self.dsd_reader.std_in() {
+            filename.push("output");
+            if !suffix.is_empty() {
+                filename.push(suffix);
+            }
+            filename.push(format!(".{}", ext));
+            return PathBuf::from(filename);
+        }
+
+        filename.push(
+            self.dsd_reader
+                .in_path()
+                .clone()
+                .and_then(|p| {
+                    p.file_stem().map(|stem| stem.to_os_string())
+                })
+                .unwrap_or_else(|| OsString::from("output")),
+        );
+
+        debug!("Derived base filename: {}", filename.to_string_lossy());
+
+        if !suffix.is_empty() {
+            filename.push(suffix);
+        }
+        filename.push(format!(".{}", ext));
+        let file_path = PathBuf::from(&filename);
+        file_path
+    }
+
+    fn derive_output_dir(
+        &self,
+        parent: &Path,
+    ) -> Result<PathBuf, Box<dyn Error>> {
+        if let Some(out_dir) = self.pcm_writer.path() {
+            trace!("Out dir present: {}", out_dir.display());
+            if self.dsd_reader.std_in() {
+                return Ok(out_dir.clone());
+            }
+            let base_dir = self.base_dir.canonicalize()?;
+            let rel = parent.strip_prefix(&base_dir).unwrap_or(parent);
+
+            trace!(
+                "Relative path from base dir '{}' to input parent '{}' is '{}'",
+                base_dir.display(),
+                parent.display(),
+                rel.display()
+            );
+            let full_dir = Path::new(out_dir).join(rel);
+
+            if !full_dir.exists() {
+                std::fs::create_dir_all(&full_dir)?;
+            }
+            Ok(full_dir)
+        } else if self.dsd_reader.std_in() {
+            Ok(PathBuf::from(""))
+        } else {
+            trace!("No Out dir present. Same as input.");
+            Ok(parent.to_path_buf())
+        }
+    }
+
+    fn copy_artwork(
+        &self,
+        source_dir: &Path,
+        destination_dir: &Path,
+    ) -> Result<(u32, u32), Box<dyn std::error::Error>> {
+        if self.pcm_writer.path().is_none() || self.dsd_reader.std_in() {
+            return Ok((0, 0));
+        }
+        let mut copied: u32 = 0;
+        let mut total: u32 = 0;
+
+        for entry in std::fs::read_dir(source_dir)? {
+            let entry = entry?;
+            let source_path = entry.path();
+
+            if !source_path.is_file() {
+                continue;
+            } else if let Some(ext) = source_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|s| s.to_ascii_lowercase())
+                && (ext == "jpg" || ext == "png" || ext == "jpeg")
+            {
+                total += 1;
+                let file_name =
+                    source_path.file_name().ok_or("Invalid file name")?;
+                let destination_path = destination_dir.join(file_name);
+
+                // Should be atomic, avoiding TOCTOU issues, and only copy if the file doesn't exist
+                match std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(destination_path)
+                {
+                    Ok(mut dest_file) => {
+                        // If the file was successfully created (meaning it didn't exist),
+                        // copy the contents from the source file.
+                        let mut source_file =
+                            std::fs::File::open(source_path)?;
+                        io::copy(&mut source_file, &mut dest_file)?;
+                        copied += 1;
+                        continue;
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                        continue;
+                    }
+                    Err(e) => {
+                        // Handle other potential errors during file creation.
+                        return Err(Box::new(e));
+                    }
+                }
+            }
+        }
+        Ok((copied, total))
+    }
+
+    fn write_file(&mut self) -> Result<(), Box<dyn Error>> {
+        debug!("Saving to file...");
+
+        let parent = self
+            .dsd_reader
+            .parent_path()
+            .as_ref()
+            .map(|p| p.as_path())
+            .unwrap_or(Path::new(""));
+
+        let out_dir = self.derive_output_dir(parent)?;
+        let out_path = out_dir.join(&self.out_filename_path);
+
+        debug!("Derived output path: {}", out_path.display());
+
+        match self.copy_artwork(parent, &out_dir) {
+            Ok((_, total)) if total == 0 => {
+                debug!("No artwork files to copy.");
+            }
+            Ok((copied, total)) => {
+                debug!(
+                    "Copied {} artwork file(s) out of {}.",
+                    copied, total
+                );
+            }
+            Err(e) => {
+                warn!("Failed to copy artwork to output directory: {}", e);
+            }
+        }
+
+        if let Some(mut tag) = self.dsd_reader.tag().as_ref().cloned() {
+            // If -a/--append was requested and an album tag exists, append " [<Sample Rate>]" (dot-delimited) to album
+            if self.append_rate_suffix {
+                self.append_album_suffix(&mut tag);
+            }
+
+            if self.pcm_writer.output() == OutputType::Flac {
+                debug!("Preparing Vorbis Comment for FLAC...");
+                self.pcm_writer.id3_to_flac_meta(&tag);
+            }
+            self.pcm_writer.save_file(&out_path)?;
+
+            if self.pcm_writer.output() != OutputType::Flac {
+                // Write ID3 tags directly
+                debug!("Writing ID3 tags to file.");
+                tag.write_to_path(&out_path, tag.version())?;
+            }
+        } else {
+            debug!("Input file has no tag; skipping tag copy.");
+            self.pcm_writer.save_file(&out_path)?;
+        }
+
+        Ok(())
+    }
+
+    fn append_album_suffix(&self, tag: &mut id3::Tag) {
+        if let Some(album) = tag.album() {
+            if let Some((_uscore, dot)) =
+                self.abbrev_rate_pair(self.pcm_writer.rate() as u32)
+            {
+                let mut new_album = String::from(album);
+                new_album.push_str(&format!(" [{}]", dot));
+                tag.set_album(new_album);
+            }
+        }
+    }
+
+    /// Returns both underscore and dot-delimited abbreviated sample rates, e.g. ("88_2K", "88.2K")
+    fn abbrev_rate_pair(
+        &self,
+        rate: u32,
+    ) -> Option<(&'static str, &'static str)> {
+        if !self.append_rate_suffix {
+            return None;
+        }
+        match rate {
+            88_200 => Some(("88_2K", "88.2K")),
+            96_000 => Some(("96K", "96K")),
+            176_400 => Some(("176_4K", "176.4K")),
+            192_000 => Some(("192K", "192K")),
+            352_800 => Some(("352_8K", "352.8K")),
+            384_000 => Some(("384K", "384K")),
+            705_600 => Some(("705_6K", "705.6K")),
+            1411_200 => Some(("1411_2K", "1411.2K")),
+            _ => None,
+        }
+    }
+
+    fn check_conv(&self) -> Result<(), Box<dyn Error>> {
+        if let Some(path) = &self.dsd_reader.in_path()
+            && !path
+                .canonicalize()?
+                .starts_with(&self.base_dir.canonicalize()?)
+        {
+            return Err(format!(
+                "Input file '{}' is outside the base directory of '{}'.",
+                path.display(),
+                self.base_dir.display()
+            )
+            .into());
+        }
+
+        Ok(())
+    }
+
+    // Report timing & speed
+    fn report_timing(
+        &self,
+        dsp_elapsed: std::time::Duration,
+        total_elapsed: std::time::Duration,
+    ) {
+        if self.bytes_read == 0 {
+            return;
+        }
+        let channels = self.dsd_reader.channels_num() as u64;
+        // Bytes per channel
+        let bytes_per_chan = self.bytes_read / channels;
+        let bits_per_chan = bytes_per_chan * 8;
+        let dsd_base_rate =
+            (DSD_64_RATE as u64) * (self.dsd_reader.dsd_rate() as u64); // samples/sec per channel
+        let audio_seconds = if dsd_base_rate > 0 {
+            (bits_per_chan as f64) / (dsd_base_rate as f64)
+        } else {
+            0.0
+        };
+        let dsp_sec = dsp_elapsed.as_secs_f64().max(1e-9);
+        let total_sec = total_elapsed.as_secs_f64().max(1e-9);
+        let speed_dsp = audio_seconds / dsp_sec;
+        let speed_total = audio_seconds / total_sec;
+        // Format H:MM:SS for elapsed
+        let total_secs = total_elapsed.as_secs();
+        let h = total_secs / 3600;
+        let m = (total_secs % 3600) / 60;
+        let s = total_secs % 60;
+        debug!(
+            "{} bytes processed in {:02}:{:02}:{:02}",
+            self.bytes_read, h, m, s,
+        );
+        info!(
+            "DSP speed for {}: {:.2}x, End-to-end: {:.2}x",
+            self.file_name_lossy(),
+            speed_dsp,
+            speed_total
+        );
+    }
+
+    // ---- Diagnostics: expected vs actual output length (verbose only) ----
+    fn report_in_out(&self) {
+        trace!("Detailed output length diagnostics:");
+        let ch = self.dsd_reader.channels_num().max(1) as u64;
+        let bps = self.pcm_writer.bytes_per_sample() as u64;
+        let expected_frames = self.diag_expected_frames_floor;
+        let actual_frames = self.diag_frames_out;
+        // Estimate latency (frames not emitted at start) for rational path
+        let expected_bytes = expected_frames * ch * bps;
+        let actual_bytes = actual_frames * ch * bps;
+        let diff_frames = expected_frames as i64 - actual_frames as i64;
+        let diff_bytes = expected_bytes as i64 - actual_bytes as i64;
+        let pct = if expected_frames > 0 {
+            (diff_frames as f32) * ONE_HUNDRED_PERCENT
+                / (expected_frames as f32)
+        } else {
+            0.0
+        };
+        trace!("Output length accounting:");
+        trace!(
+            "DSD bits in per channel: {}  L={}  M={}",
+            self.chan_bits_read, self.upsample_ratio, self.decim_ratio
+        );
+        trace!(
+            "Expected frames (floor): {}  Actual frames: {}  Diff: {} ({:.5}%)",
+            expected_frames, actual_frames, diff_frames, pct
+        );
+        trace!(
+            "Expected bytes: {}  Actual bytes: {}  Diff bytes: {}",
+            expected_bytes, actual_bytes, diff_bytes
+        );
+        trace!(
+            "Reason for shortfall: FIR group delay (startup) plus unflushed tail at end. \
+No data is lost due to buffer resizing; resizing only adjusts capacity."
+        );
+    }
+}

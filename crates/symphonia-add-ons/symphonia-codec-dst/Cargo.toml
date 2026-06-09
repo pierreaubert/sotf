@@ -1,0 +1,20 @@
+[package]
+name = "symphonia-codec-dst"
+description = "Symphonia decoder for SACD Direct Stream Transfer packets"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../../../README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "symphonia_codec_dst"
+path = "src/lib.rs"
+
+[dependencies]
+dst-decoder = { workspace = true }
+rdsd2pcm = { workspace = true }
+symphonia-core = { workspace = true }
+thiserror = { workspace = true }
