@@ -6014,6 +6014,7 @@ dependencies = [
  "ndarray 0.17.2",
  "num-complex 0.4.6",
  "oxiblas-ndarray",
+ "proptest 1.11.0",
  "rand 0.9.4",
  "rayon",
  "realfft",
@@ -6033,6 +6034,7 @@ dependencies = [
  "ndarray 0.17.2",
  "num-complex 0.4.6",
  "num-traits",
+ "proptest 1.11.0",
  "rustfft 6.4.1",
  "serde",
  "thiserror 2.0.18",
@@ -10314,6 +10316,7 @@ dependencies = [
  "bincode",
  "flate2",
  "log",
+ "proptest 1.11.0",
  "rusqlite",
  "serde",
  "tempfile",
@@ -10551,6 +10554,7 @@ dependencies = [
  "math-dsp",
  "math-iir-fir",
  "memmap2",
+ "proptest 1.11.0",
  "rand 0.9.4",
  "rayon",
  "realfft",
@@ -10571,6 +10575,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "log",
+ "proptest 1.11.0",
  "sotf-host",
  "sotf-plugin-ambisonics",
  "thiserror 2.0.18",
@@ -10620,6 +10625,7 @@ dependencies = [
  "log",
  "midir",
  "parking_lot",
+ "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10635,6 +10641,7 @@ version = "0.5.1"
 dependencies = [
  "env_logger",
  "log",
+ "proptest 1.11.0",
  "sotf-tls",
  "tokio",
  "tokio-rustls 0.26.4",
@@ -10752,6 +10759,7 @@ name = "sotf-plugin-band-merge"
 version = "0.5.2"
 dependencies = [
  "log",
+ "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10761,9 +10769,11 @@ dependencies = [
 name = "sotf-plugin-band-split"
 version = "0.5.2"
 dependencies = [
+ "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-host",
+ "sotf-plugin-band-merge",
 ]
 
 [[package]]
@@ -10845,6 +10855,7 @@ dependencies = [
 name = "sotf-plugin-crossover"
 version = "0.5.25"
 dependencies = [
+ "proptest 1.11.0",
  "serde",
  "sotf-host",
 ]
@@ -10875,6 +10886,7 @@ dependencies = [
 name = "sotf-plugin-delay"
 version = "0.5.6"
 dependencies = [
+ "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10937,6 +10949,7 @@ dependencies = [
  "gpui-ui-kit",
  "math-iir-fir",
  "plugins-gpui",
+ "proptest 1.11.0",
  "serde",
  "sotf-host",
  "sotf-midi",
@@ -10948,6 +10961,7 @@ version = "0.5.3"
 dependencies = [
  "math-iir-fir",
  "num-complex 0.4.6",
+ "proptest 1.11.0",
  "realfft",
  "serde",
  "serde_json",
@@ -10958,6 +10972,7 @@ dependencies = [
 name = "sotf-plugin-gain"
 version = "0.5.4"
 dependencies = [
+ "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10969,6 +10984,7 @@ version = "0.5.5"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
+ "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11012,6 +11028,7 @@ name = "sotf-plugin-limiter"
 version = "0.5.9"
 dependencies = [
  "math-dsp",
+ "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11023,6 +11040,7 @@ version = "0.5.3"
 dependencies = [
  "math-iir-fir",
  "num-complex 0.4.6",
+ "proptest 1.11.0",
  "realfft",
  "serde",
  "serde_json",
@@ -11045,6 +11063,7 @@ name = "sotf-plugin-matrix"
 version = "0.5.89"
 dependencies = [
  "log",
+ "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11152,6 +11171,7 @@ dependencies = [
 name = "sotf-plugin-transient-shaper"
 version = "0.5.5"
 dependencies = [
+ "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11321,6 +11341,7 @@ dependencies = [
  "env_logger",
  "log",
  "m3u8-rs",
+ "proptest 1.11.0",
  "reqwest 0.13.3",
  "symphonia-core 0.6.0",
  "url",
@@ -11437,6 +11458,7 @@ name = "sotf-types"
 version = "0.6.8"
 dependencies = [
  "log",
+ "proptest 1.11.0",
  "serde",
  "serde_json",
 ]

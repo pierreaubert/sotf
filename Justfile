@@ -65,15 +65,17 @@ test:
 
 [group('test')]
 test-negative:
-	cargo test -p sotf-gpui --test negative --release --features="onnx, hal, gpu-2d, gpu-3d, iamf"
+	cargo test --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 
 [group('test')]
 test-proptest:
-	PROPTEST_CASES=10000 cargo test -p sotf-gpui --test proptest_tests  --release --features="onnx, hal, gpu-2d, gpu-3d, iamf"
+	PROPTEST_CASES=10000 cargo test --test proptest_tests --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
 
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
-ntest: test-negative test-proptest
+ntest:
+	RUST_MIN_STACK=16777216 cargo test --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
+	PROPTEST_CASES=10000 cargo test --test proptest_tests --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
 	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --test-threads=1 --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
 
 # ----------------------------------------------------------------------

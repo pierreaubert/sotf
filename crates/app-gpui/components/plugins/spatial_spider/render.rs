@@ -46,6 +46,8 @@ mod tests;
 pub use misc::*;
 pub use spider_colors::*;
 pub use spider_disc2_d::*;
+#[cfg(feature = "gpu-3d")]
+pub use spider_view3_d::SpiderView3D;
 
 use build::build_body;
 use build::build_header;
@@ -120,4 +122,3 @@ pub fn render_spatial_spider_graph(
         theme,
     )
 }
-

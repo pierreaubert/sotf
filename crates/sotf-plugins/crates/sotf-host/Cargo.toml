@@ -59,6 +59,7 @@ libloading = { workspace = true, optional = true }
 [dev-dependencies]
 insta = { workspace = true }
 tempfile = { workspace = true }
+proptest = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

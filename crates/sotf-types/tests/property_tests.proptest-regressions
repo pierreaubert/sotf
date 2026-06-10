@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 06afb1409cf71ca3cf4797520b8bc642157a09d86fe1cc2be743fd08acc0ac4e # shrinks to graph = PluginGraphConfig { nodes: [PluginGraphNodeConfig { id: 0, plugin_type: "l_eEQ8PyycKnwVPvEw1vsh_p_r9qy", parameters: Object {}, input_channels: 9 }, PluginGraphNodeConfig { id: 1, plugin_type: "Gb8_iilI", parameters: Object {}, input_channels: 11 }], edges: [] }, from_idx = 1, to_idx = 0

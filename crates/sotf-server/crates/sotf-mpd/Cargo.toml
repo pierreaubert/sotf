@@ -20,4 +20,5 @@ tls = ["dep:sotf-tls", "dep:tokio-rustls"]
 
 [dev-dependencies]
 env_logger = { workspace = true }
+proptest = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

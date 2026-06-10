@@ -33,3 +33,4 @@ midir = { workspace = true }
 tempfile = { workspace = true }
 env_logger = { workspace = true }
 sotf-plugin-multiband-compressor = { workspace = true }
+proptest = { workspace = true }

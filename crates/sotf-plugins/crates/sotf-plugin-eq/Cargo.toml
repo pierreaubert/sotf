@@ -33,3 +33,6 @@ gpui-px = { workspace = true, features = ["gpui"], optional = true }
 gpui-audio-kit = { workspace = true, optional = true }
 gpui-ui-kit = { workspace = true, optional = true }
 sotf-midi = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

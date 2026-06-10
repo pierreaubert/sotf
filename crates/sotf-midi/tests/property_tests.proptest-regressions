@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ae8791347d33b26020696bd01ce18165c81bc6f17c7c839bf08631c22240df72 # shrinks to config = MidiConfig { profiles: {"A": DeviceProfile { name: "0", description: None, input_device: None, output_device: None, device_config: DeviceConfig { manufacturer: None, model: None, channel: None, sysex_enabled: false, active_sensing: false, custom_settings: {"": Array [Number(1.2603871711673197e+61)]} }, mappings: {}, init_messages: [] }}, active_profile: None, default_input: None, default_output: None, learn_mode: false, listen_channel: None }

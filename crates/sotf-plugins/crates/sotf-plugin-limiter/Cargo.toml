@@ -25,3 +25,6 @@ sotf-host = { workspace = true }
 math-dsp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

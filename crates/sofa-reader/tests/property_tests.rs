@@ -168,8 +168,8 @@ proptest! {
         let a = SourcePosition::new(a_az, a_el, a_dist);
         let b = SourcePosition::new(b_az, b_el, b_dist);
 
-        let sf_a = sofa_file_with_positions(vec![a.clone(), b.clone()]);
-        let sf_b = sofa_file_with_positions(vec![b.clone(), a.clone()]);
+        let sf_a = sofa_file_with_positions(vec![a, b]);
+        let sf_b = sofa_file_with_positions(vec![b, a]);
 
         let (_, d_ab) = sf_a.find_nearest(&a);
         let (_, d_ba) = sf_b.find_nearest(&b);

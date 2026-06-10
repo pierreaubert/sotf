@@ -23,3 +23,6 @@ required-features = ["qa"]
 [dependencies]
 sotf-host = { workspace = true }
 serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

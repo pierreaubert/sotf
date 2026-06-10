@@ -630,3 +630,323 @@ use super::types::kv;
             })
         ));
     }
+
+// ============================================================================
+// Property-Based Tests
+// ============================================================================
+
+mod property_tests {
+    use proptest::prelude::*;
+    use super::super::command_tokenizer::CommandTokenizer;
+    use super::super::parse_command;
+    use super::super::types::{FilterExpr, MpdCommand, SingleMode};
+
+    fn simple_token_strategy() -> BoxedStrategy<String> {
+        proptest::string::string_regex("[a-zA-Z0-9_.:/@-]+").unwrap().boxed()
+    }
+
+    fn simple_path_strategy() -> BoxedStrategy<String> {
+        proptest::string::string_regex("[a-zA-Z0-9_/.@-]+").unwrap().boxed()
+    }
+
+    fn tag_strategy() -> BoxedStrategy<String> {
+        proptest::string::string_regex("[a-z]+").unwrap().boxed()
+    }
+
+    fn mpd_command_strategy() -> BoxedStrategy<MpdCommand> {
+        let path = simple_path_strategy();
+        let tag = tag_strategy();
+
+        prop_oneof![
+            Just(MpdCommand::Ping),
+            Just(MpdCommand::Stop),
+            Just(MpdCommand::Next),
+            Just(MpdCommand::Previous),
+            Just(MpdCommand::Status),
+            Just(MpdCommand::Stats),
+            Just(MpdCommand::CurrentSong),
+            Just(MpdCommand::Clear),
+            Just(MpdCommand::Shuffle),
+            Just(MpdCommand::Outputs),
+            Just(MpdCommand::Commands),
+            Just(MpdCommand::NotCommands),
+            Just(MpdCommand::TagTypes),
+            Just(MpdCommand::UrlHandlers),
+            Just(MpdCommand::Decoders),
+            Just(MpdCommand::CommandListBegin),
+            Just(MpdCommand::CommandListOkBegin),
+            Just(MpdCommand::CommandListEnd),
+            Just(MpdCommand::NoIdle),
+            prop::option::of(0u32..16u32).prop_map(MpdCommand::Play),
+            prop::option::of(0u32..16u32).prop_map(MpdCommand::PlayId),
+            prop::option::of(prop::bool::ANY).prop_map(MpdCommand::Pause),
+            (0u32..101u32).prop_map(|v| MpdCommand::SetVol(v as u8)),
+            (-100i32..=100i32).prop_map(|v| MpdCommand::Volume(v as i8)),
+            prop::bool::ANY.prop_map(MpdCommand::Random),
+            prop::bool::ANY.prop_map(MpdCommand::Repeat),
+            prop::bool::ANY.prop_map(MpdCommand::Consume),
+            prop_oneof![Just(SingleMode::Off), Just(SingleMode::On), Just(SingleMode::OneShot)]
+                .prop_map(MpdCommand::Single),
+            (0u32..16u32, 0u32..1000u32)
+                .prop_map(|(pos, time)| MpdCommand::Seek(pos, time as f64)),
+            (0u32..16u32, 0u32..1000u32)
+                .prop_map(|(id, time)| MpdCommand::SeekId(id, time as f64)),
+            (0u32..1000u32).prop_map(|time| MpdCommand::SeekCur(time as f64)),
+            prop::option::of(0u32..16u32).prop_map(MpdCommand::PlaylistId),
+            (0u32..16u32, prop::option::of(0u32..32u32))
+                .prop_map(|(start, end)| MpdCommand::PlaylistInfo(Some((start, end)))),
+            Just(MpdCommand::PlaylistInfo(None)),
+            path.clone().prop_map(MpdCommand::Add),
+            (path.clone(), prop::option::of(0u32..16u32))
+                .prop_map(|(uri, pos)| MpdCommand::AddId(uri, pos)),
+            (0u32..16u32).prop_map(MpdCommand::Delete),
+            (0u32..16u32).prop_map(MpdCommand::DeleteId),
+            (0u32..16u32, 0u32..16u32).prop_map(|(a, b)| MpdCommand::Move(a, b)),
+            (0u32..16u32, 0u32..16u32).prop_map(|(a, b)| MpdCommand::Swap(a, b)),
+            prop::option::of(path.clone()).prop_map(MpdCommand::ListAll),
+            prop::option::of(path.clone()).prop_map(MpdCommand::LsInfo),
+            prop::option::of(path.clone()).prop_map(MpdCommand::Update),
+            (tag.clone(), path.clone())
+                .prop_map(|(t, v)| MpdCommand::Find(vec![FilterExpr { tag: t, value: v }])),
+            (tag.clone(), path.clone())
+                .prop_map(|(t, v)| MpdCommand::Search(vec![FilterExpr { tag: t, value: v }])),
+            (tag.clone(), tag.clone(), path.clone()).prop_map(|(t, ft, fv)| {
+                MpdCommand::List(t, vec![FilterExpr { tag: ft, value: fv }])
+            }),
+            (tag.clone(), path.clone())
+                .prop_map(|(t, v)| MpdCommand::Count(vec![FilterExpr { tag: t, value: v }])),
+            (0u32..16u32).prop_map(MpdCommand::EnableOutput),
+            (0u32..16u32).prop_map(MpdCommand::DisableOutput),
+            (0u32..16u32).prop_map(MpdCommand::ToggleOutput),
+            prop::collection::vec(proptest::string::string_regex("[a-z]+").unwrap(), 0..8)
+                .prop_map(MpdCommand::Idle),
+        ]
+        .boxed()
+    }
+
+    fn format_command(cmd: &MpdCommand) -> String {
+        match cmd {
+            MpdCommand::Ping => "ping".into(),
+            MpdCommand::Close => "close".into(),
+            MpdCommand::Password(s) => format!("password {}", s),
+            MpdCommand::Play(None) => "play".into(),
+            MpdCommand::Play(Some(p)) => format!("play {}", p),
+            MpdCommand::PlayId(None) => "playid".into(),
+            MpdCommand::PlayId(Some(p)) => format!("playid {}", p),
+            MpdCommand::Pause(None) => "pause".into(),
+            MpdCommand::Pause(Some(true)) => "pause 1".into(),
+            MpdCommand::Pause(Some(false)) => "pause 0".into(),
+            MpdCommand::Stop => "stop".into(),
+            MpdCommand::Next => "next".into(),
+            MpdCommand::Previous => "previous".into(),
+            MpdCommand::Seek(pos, time) => format!("seek {} {}", pos, *time as u64),
+            MpdCommand::SeekId(id, time) => format!("seekid {} {}", id, *time as u64),
+            MpdCommand::SeekCur(time) => format!("seekcur {}", *time as u64),
+            MpdCommand::SetVol(vol) => format!("setvol {}", vol),
+            MpdCommand::Volume(delta) => format!("volume {}", delta),
+            MpdCommand::Random(b) => format!("random {}", if *b { 1 } else { 0 }),
+            MpdCommand::Repeat(b) => format!("repeat {}", if *b { 1 } else { 0 }),
+            MpdCommand::Single(mode) => match mode {
+                SingleMode::Off => "single 0".into(),
+                SingleMode::On => "single 1".into(),
+                SingleMode::OneShot => "single oneshot".into(),
+            },
+            MpdCommand::Consume(b) => format!("consume {}", if *b { 1 } else { 0 }),
+            MpdCommand::Status => "status".into(),
+            MpdCommand::Stats => "stats".into(),
+            MpdCommand::CurrentSong => "currentsong".into(),
+            MpdCommand::PlaylistInfo(None) => "playlistinfo".into(),
+            MpdCommand::PlaylistInfo(Some((start, None))) => format!("playlistinfo {}:", start),
+            MpdCommand::PlaylistInfo(Some((start, Some(end)))) => {
+                format!("playlistinfo {}:{}", start, end)
+            }
+            MpdCommand::PlaylistId(None) => "playlistid".into(),
+            MpdCommand::PlaylistId(Some(id)) => format!("playlistid {}", id),
+            MpdCommand::Add(uri) => format!("add {}", uri),
+            MpdCommand::AddId(uri, None) => format!("addid {}", uri),
+            MpdCommand::AddId(uri, Some(pos)) => format!("addid {} {}", uri, pos),
+            MpdCommand::Delete(pos) => format!("delete {}", pos),
+            MpdCommand::DeleteId(id) => format!("deleteid {}", id),
+            MpdCommand::Clear => "clear".into(),
+            MpdCommand::Shuffle => "shuffle".into(),
+            MpdCommand::Move(from, to) => format!("move {} {}", from, to),
+            MpdCommand::Swap(a, b) => format!("swap {} {}", a, b),
+            MpdCommand::ListAll(None) => "listall".into(),
+            MpdCommand::ListAll(Some(p)) => format!("listall {}", p),
+            MpdCommand::LsInfo(None) => "lsinfo".into(),
+            MpdCommand::LsInfo(Some(p)) => format!("lsinfo {}", p),
+            MpdCommand::Find(filters) => {
+                let mut s = "find".to_string();
+                for f in filters {
+                    s.push_str(&format!(" {} {}", f.tag, f.value));
+                }
+                s
+            }
+            MpdCommand::Search(filters) => {
+                let mut s = "search".to_string();
+                for f in filters {
+                    s.push_str(&format!(" {} {}", f.tag, f.value));
+                }
+                s
+            }
+            MpdCommand::List(tag, filters) => {
+                let mut s = format!("list {}", tag);
+                for f in filters {
+                    s.push_str(&format!(" {} {}", f.tag, f.value));
+                }
+                s
+            }
+            MpdCommand::Count(filters) => {
+                let mut s = "count".to_string();
+                for f in filters {
+                    s.push_str(&format!(" {} {}", f.tag, f.value));
+                }
+                s
+            }
+            MpdCommand::Update(None) => "update".into(),
+            MpdCommand::Update(Some(p)) => format!("update {}", p),
+            MpdCommand::Outputs => "outputs".into(),
+            MpdCommand::EnableOutput(id) => format!("enableoutput {}", id),
+            MpdCommand::DisableOutput(id) => format!("disableoutput {}", id),
+            MpdCommand::ToggleOutput(id) => format!("toggleoutput {}", id),
+            MpdCommand::Commands => "commands".into(),
+            MpdCommand::NotCommands => "notcommands".into(),
+            MpdCommand::TagTypes => "tagtypes".into(),
+            MpdCommand::UrlHandlers => "urlhandlers".into(),
+            MpdCommand::Decoders => "decoders".into(),
+            MpdCommand::CommandListBegin => "command_list_begin".into(),
+            MpdCommand::CommandListOkBegin => "command_list_ok_begin".into(),
+            MpdCommand::CommandListEnd => "command_list_end".into(),
+            MpdCommand::Idle(subsystems) => {
+                let mut s = "idle".to_string();
+                for sub in subsystems {
+                    s.push(' ');
+                    s.push_str(sub);
+                }
+                s
+            }
+            MpdCommand::NoIdle => "noidle".into(),
+        }
+    }
+
+    fn filter_exprs_eq(a: &[FilterExpr], b: &[FilterExpr]) -> bool {
+        a.len() == b.len()
+            && a.iter()
+                .zip(b.iter())
+                .all(|(x, y)| x.tag == y.tag && x.value == y.value)
+    }
+
+    fn commands_eq(a: &MpdCommand, b: &MpdCommand) -> bool {
+        match (a, b) {
+            (MpdCommand::Ping, MpdCommand::Ping) => true,
+            (MpdCommand::Close, MpdCommand::Close) => true,
+            (MpdCommand::Password(a), MpdCommand::Password(b)) => a == b,
+            (MpdCommand::Play(a), MpdCommand::Play(b)) => a == b,
+            (MpdCommand::PlayId(a), MpdCommand::PlayId(b)) => a == b,
+            (MpdCommand::Pause(a), MpdCommand::Pause(b)) => a == b,
+            (MpdCommand::Stop, MpdCommand::Stop) => true,
+            (MpdCommand::Next, MpdCommand::Next) => true,
+            (MpdCommand::Previous, MpdCommand::Previous) => true,
+            (MpdCommand::Seek(a1, a2), MpdCommand::Seek(b1, b2)) => {
+                a1 == b1 && a2.to_bits() == b2.to_bits()
+            }
+            (MpdCommand::SeekId(a1, a2), MpdCommand::SeekId(b1, b2)) => {
+                a1 == b1 && a2.to_bits() == b2.to_bits()
+            }
+            (MpdCommand::SeekCur(a), MpdCommand::SeekCur(b)) => a.to_bits() == b.to_bits(),
+            (MpdCommand::SetVol(a), MpdCommand::SetVol(b)) => a == b,
+            (MpdCommand::Volume(a), MpdCommand::Volume(b)) => a == b,
+            (MpdCommand::Random(a), MpdCommand::Random(b)) => a == b,
+            (MpdCommand::Repeat(a), MpdCommand::Repeat(b)) => a == b,
+            (MpdCommand::Single(a), MpdCommand::Single(b)) => {
+                matches!((a, b), (SingleMode::Off, SingleMode::Off)
+                    | (SingleMode::On, SingleMode::On)
+                    | (SingleMode::OneShot, SingleMode::OneShot))
+            }
+            (MpdCommand::Consume(a), MpdCommand::Consume(b)) => a == b,
+            (MpdCommand::Status, MpdCommand::Status) => true,
+            (MpdCommand::Stats, MpdCommand::Stats) => true,
+            (MpdCommand::CurrentSong, MpdCommand::CurrentSong) => true,
+            (MpdCommand::PlaylistInfo(a), MpdCommand::PlaylistInfo(b)) => a == b,
+            (MpdCommand::PlaylistId(a), MpdCommand::PlaylistId(b)) => a == b,
+            (MpdCommand::Add(a), MpdCommand::Add(b)) => a == b,
+            (MpdCommand::AddId(a1, a2), MpdCommand::AddId(b1, b2)) => a1 == b1 && a2 == b2,
+            (MpdCommand::Delete(a), MpdCommand::Delete(b)) => a == b,
+            (MpdCommand::DeleteId(a), MpdCommand::DeleteId(b)) => a == b,
+            (MpdCommand::Clear, MpdCommand::Clear) => true,
+            (MpdCommand::Shuffle, MpdCommand::Shuffle) => true,
+            (MpdCommand::Move(a1, a2), MpdCommand::Move(b1, b2)) => a1 == b1 && a2 == b2,
+            (MpdCommand::Swap(a1, a2), MpdCommand::Swap(b1, b2)) => a1 == b1 && a2 == b2,
+            (MpdCommand::ListAll(a), MpdCommand::ListAll(b)) => a == b,
+            (MpdCommand::LsInfo(a), MpdCommand::LsInfo(b)) => a == b,
+            (MpdCommand::Find(a), MpdCommand::Find(b)) => filter_exprs_eq(a, b),
+            (MpdCommand::Search(a), MpdCommand::Search(b)) => filter_exprs_eq(a, b),
+            (MpdCommand::List(a1, a2), MpdCommand::List(b1, b2)) => {
+                a1 == b1 && filter_exprs_eq(a2, b2)
+            }
+            (MpdCommand::Count(a), MpdCommand::Count(b)) => filter_exprs_eq(a, b),
+            (MpdCommand::Update(a), MpdCommand::Update(b)) => a == b,
+            (MpdCommand::Outputs, MpdCommand::Outputs) => true,
+            (MpdCommand::EnableOutput(a), MpdCommand::EnableOutput(b)) => a == b,
+            (MpdCommand::DisableOutput(a), MpdCommand::DisableOutput(b)) => a == b,
+            (MpdCommand::ToggleOutput(a), MpdCommand::ToggleOutput(b)) => a == b,
+            (MpdCommand::Commands, MpdCommand::Commands) => true,
+            (MpdCommand::NotCommands, MpdCommand::NotCommands) => true,
+            (MpdCommand::TagTypes, MpdCommand::TagTypes) => true,
+            (MpdCommand::UrlHandlers, MpdCommand::UrlHandlers) => true,
+            (MpdCommand::Decoders, MpdCommand::Decoders) => true,
+            (MpdCommand::CommandListBegin, MpdCommand::CommandListBegin) => true,
+            (MpdCommand::CommandListOkBegin, MpdCommand::CommandListOkBegin) => true,
+            (MpdCommand::CommandListEnd, MpdCommand::CommandListEnd) => true,
+            (MpdCommand::Idle(a), MpdCommand::Idle(b)) => a == b,
+            (MpdCommand::NoIdle, MpdCommand::NoIdle) => true,
+            _ => false,
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+        /// INVARIANT: simple whitespace-separated tokens round-trip through the
+        /// command tokenizer.
+        #[test]
+        fn command_tokenizer_roundtrip(tokens in prop::collection::vec(simple_token_strategy(), 0..8)) {
+            let line = tokens.join(" ");
+            let mut tokenizer = CommandTokenizer::new(&line);
+            let mut out = Vec::new();
+            while let Some(t) = tokenizer.next_token() {
+                out.push(t);
+            }
+            prop_assert_eq!(out, tokens);
+        }
+
+        /// INVARIANT: the tokenizer never panics on arbitrary UTF-8 input.
+        #[test]
+        fn random_text_tokenizer_never_panics(input in prop::collection::vec(0u8..255, 0..64)) {
+            let line = String::from_utf8_lossy(&input).to_string();
+            let line_for_closure = line.clone();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                let mut tokenizer = CommandTokenizer::new(&line_for_closure);
+                while tokenizer.next_token().is_some() {}
+            }));
+            prop_assert!(result.is_ok(), "tokenizer panicked on input: {:?}", line);
+        }
+
+        /// INVARIANT: a syntactically valid command line parses to the expected
+        /// `MpdCommand` and re-parses to an equal value.
+        #[test]
+        fn valid_command_roundtrip(cmd in mpd_command_strategy()) {
+            let line = format_command(&cmd);
+            match parse_command(&line) {
+                Ok(parsed) => prop_assert!(
+                    commands_eq(&cmd, &parsed),
+                    "round-trip failed for line {:?}: expected {:?}, got {:?}",
+                    line,
+                    cmd,
+                    parsed
+                ),
+                Err(e) => prop_assert!(false, "parse failed for {:?}: {:?}", line, e),
+            }
+        }
+    }
+}
