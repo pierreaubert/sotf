@@ -13,7 +13,6 @@ use super::misc::create_kautz_filter_config;
 use super::misc::determine_optimization_bands;
 
     use super::*;
-    use ndarray::Array1;
     use std::collections::HashMap;
 
     fn flat_curve() -> Curve {

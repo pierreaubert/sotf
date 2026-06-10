@@ -431,9 +431,9 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
     // (hw:0, plughw:0, default, sysdefault, front:*, surround*:*, etc.).
     // Group them by hardware name so the user sees one entry per physical device.
     #[cfg(target_os = "linux")]
-    let input_devices = deduplicate_linux_devices(input_devices);
+    let input_devices = deduplicate_linux_devices(input_devices)?;
     #[cfg(target_os = "linux")]
-    let output_devices = deduplicate_linux_devices(output_devices);
+    let output_devices = deduplicate_linux_devices(output_devices)?;
 
     // On Windows, WASAPI reports names like "Speakers (RME Fireface UCX)".
     // When multiple devices share the same prefix, strip it so only the

@@ -558,6 +558,12 @@ use super::types::kv;
     }
 
     #[test]
+    fn test_parse_range_u32_max_no_overflow() {
+        let mut parts = super::command_tokenizer::CommandTokenizer::new("4294967295");
+        assert_eq!(super::parse::parse_range(&mut parts), None);
+    }
+
+    #[test]
     fn test_parse_range_formats() {
         // Open range
         match parse_command("playlistinfo 5:") {
@@ -580,6 +586,15 @@ use super::types::kv;
             parse_command("playlistinfo abc"),
             Ok(MpdCommand::PlaylistInfo(None))
         ));
+    }
+
+    #[test]
+    fn test_parse_range_u32_max_via_command() {
+        // u32::MAX (4294967295) + 1 would overflow; parse_range must return None
+        match parse_command("playlistinfo 4294967295") {
+            Ok(MpdCommand::PlaylistInfo(None)) => {}
+            other => panic!("expected PlaylistInfo(None) for u32::MAX, got {other:?}"),
+        }
     }
 
     #[test]
@@ -629,6 +644,29 @@ use super::types::kv;
                 ..
             })
         ));
+    }
+
+    // ----- Regression: trailing tokens must be rejected -----
+
+    #[test]
+    fn test_parse_trailing_tokens_rejected() {
+        for input in ["play 1 extra", "stop extra", "pause 1 extra", "next extra"] {
+            match parse_command(input) {
+                Err(MpdError {
+                    code: MpdErrorCode::Arg,
+                    ..
+                }) => {}
+                other => panic!("expected Arg error for trailing tokens in {input:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_no_trailing_tokens_ok() {
+        assert!(matches!(parse_command("play 1"), Ok(MpdCommand::Play(Some(1)))));
+        assert!(matches!(parse_command("stop"), Ok(MpdCommand::Stop)));
+        assert!(matches!(parse_command("pause"), Ok(MpdCommand::Pause(None))));
+        assert!(matches!(parse_command("pause 1"), Ok(MpdCommand::Pause(Some(true)))));
     }
 
 // ============================================================================

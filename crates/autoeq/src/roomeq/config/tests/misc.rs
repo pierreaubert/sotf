@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use super::super::validate::validate_room_config;
     use super::super::*;
     use crate::roomeq::types::*;
-    use crate::{MeasurementRef, MeasurementSingle, MeasurementSource};
     use std::path::PathBuf;
 
     /// Helper to create a minimal valid RoomConfig with a given algorithm

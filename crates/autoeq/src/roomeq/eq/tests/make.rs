@@ -10,7 +10,6 @@ use super::super::multi_eq_auto_optimizer_context::MultiEqAutoOptimizerContext;
 use super::super::multi_eq_auto_optimizer_context::resolve_multi_measurement_auto_optimizer_config;
 use super::super::optimize::optimize_channel_eq;
     use super::super::*;
-    use ndarray::Array1;
 
     fn make_synthetic_room_curve() -> Curve {
         // 500-point log-spaced curve 20-20kHz with room modes

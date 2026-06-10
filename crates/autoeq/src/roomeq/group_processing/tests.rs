@@ -15,7 +15,6 @@ use super::process::process_multisub_group;
     use super::*;
     use crate::MeasurementSource;
     use ndarray::array;
-    use std::collections::HashMap;
 
     fn flat_curve_without_phase() -> Curve {
         Curve {

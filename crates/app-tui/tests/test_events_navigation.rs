@@ -22,6 +22,3 @@ mod misc;
 #[path = "test_events_navigation/tests.rs"]
 mod tests;
 
-# [cfg (test)]
-use tests::tests;
-

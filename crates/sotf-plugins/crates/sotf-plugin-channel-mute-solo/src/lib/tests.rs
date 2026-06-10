@@ -201,7 +201,7 @@ mod misc;
         // Mutate via the direct method (not set_parameter, which requires per-channel params to be
         // registered — see companion test below). Then call parameters() and verify the JSON blob
         // reflects the change, proving rebuild_cached_parameters ran.
-        plugin.set_channel_state(0, true, false, false);
+        plugin.set_channel_state(0, true, false, false).unwrap();
 
         let params = plugin.parameters();
         let cs_param = params.iter().find(|p| p.id.0 == "channel_states").unwrap();
@@ -259,7 +259,7 @@ mod misc;
     fn test_process_mute_attenuates_channel() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
         plugin.set_fade_ms(0.0);
-        plugin.set_channel_state(0, true, false, false);
+        plugin.set_channel_state(0, true, false, false).unwrap();
         let mut buffer = vec![1.0, 2.0, 3.0, 4.0]; // 2 frames, 2 channels
         plugin.process_in_place(&mut buffer, &ProcessContext::new(48000, 2))
             .unwrap();
@@ -273,7 +273,7 @@ mod misc;
     fn test_process_solo_mutes_non_soloed() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
         plugin.set_fade_ms(0.0);
-        plugin.set_channel_state(0, false, true, false);
+        plugin.set_channel_state(0, false, true, false).unwrap();
         let mut buffer = vec![1.0, 2.0, 3.0, 4.0];
         plugin.process_in_place(&mut buffer, &ProcessContext::new(48000, 2))
             .unwrap();
@@ -288,7 +288,7 @@ mod misc;
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
         plugin.set_fade_ms(0.0);
         plugin.set_dim_gain_db(-20.0);
-        plugin.set_channel_state(0, false, false, true);
+        plugin.set_channel_state(0, false, false, true).unwrap();
         let mut buffer = vec![1.0, 2.0, 3.0, 4.0];
         plugin.process_in_place(&mut buffer, &ProcessContext::new(48000, 2))
             .unwrap();
@@ -381,7 +381,7 @@ mod misc;
     fn test_block_smoothing_converges_to_target() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
         plugin.set_fade_ms(50.0);
-        plugin.set_channel_state(0, true, false, false);
+        plugin.set_channel_state(0, true, false, false).unwrap();
         let mut buffer = vec![1.0f32; 48000 * 2];
         plugin.process_in_place(&mut buffer, &ProcessContext::new(48000, 48000))
             .unwrap();
@@ -389,5 +389,18 @@ mod misc;
         assert!(
             final_gain.abs() < 1e-3,
             "smoother should converge near zero, got {final_gain}"
+        );
+    }
+
+    /// Bug fix: set_channel_state must return an error for out-of-bounds channel.
+    #[test]
+    fn test_set_channel_state_oob_returns_error() {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        let result = plugin.set_channel_state(2, true, false, false);
+        assert!(result.is_err(), "set_channel_state(2) on 2-channel plugin must error");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("out of bounds"),
+            "error message should mention out of bounds: {err}"
         );
     }

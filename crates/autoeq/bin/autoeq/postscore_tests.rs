@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::postscore::{PostOptMetrics, compute_post_optimization_metrics};
+    use crate::postscore::{PostOptMetrics, compute_peq_cached, compute_post_optimization_metrics};
     use autoeq::Curve;
     use autoeq::cli::Args;
     use autoeq::cli::PeqModel;
@@ -107,5 +107,22 @@ mod tests {
 
         // Should not panic
         crate::postscore::print_optimization_scores(&args, &metrics, Some(0.5), Some(0.3));
+    }
+
+    /// Cache key must include actual param values, not just length.
+    /// Two different param vectors of the same length must not collide.
+    #[test]
+    fn test_compute_peq_cached_no_collision() {
+        let freq = Array1::from_vec(vec![100.0, 500.0, 1000.0, 5000.0, 10000.0]);
+        let params_a = vec![100.0, 1.0, 3.0];
+        let params_b = vec![1000.0, 1.0, -3.0];
+
+        let result_a = compute_peq_cached(&freq, &params_a, 48000.0, PeqModel::Pk);
+        let result_b = compute_peq_cached(&freq, &params_b, 48000.0, PeqModel::Pk);
+
+        assert_ne!(
+            result_a, result_b,
+            "Cache collision: different params of same length returned identical PEQ responses"
+        );
     }
 }

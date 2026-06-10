@@ -432,3 +432,29 @@ use super::types::cobyla_native;
         assert!(!Status::InvalidArgs.is_success());
     }
 
+    /// Regression: degenerate inputs with NaN should not panic inside cobylb.
+    #[test]
+    fn test_cobyla_native_degenerate_nan_returns_failure() {
+        let f = |x: &[f64]| x[0].powi(2);
+        let cons: Vec<TestConstraint> = Vec::new();
+        let mut x = vec![f64::NAN];
+        let result = cobyla_native(
+            1,
+            f,
+            &cons,
+            &[(0.0, 1.0)],
+            &mut x,
+            &[0.5],
+            &StopCriteria {
+                stopval: f64::NEG_INFINITY,
+                ftol_rel: 1e-12,
+                maxeval: 10,
+                ..Default::default()
+            },
+        );
+        assert!(
+            result.is_err() || !result.unwrap().success,
+            "degenerate/NaN input should not panic and should return non-success"
+        );
+    }
+

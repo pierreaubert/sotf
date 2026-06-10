@@ -33,7 +33,6 @@ use super::pipewire::pipewire_filter_label;
     use super::*;
     use crate::roomeq::types::*;
     use serde_json::json;
-    use std::collections::HashMap;
 
 mod make;
 

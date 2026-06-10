@@ -31,6 +31,7 @@ pub const MIN_SAMPLES: usize = 8192;
 pub enum AnalysisError {
     TooShort,
     ChromaError(String),
+    ThreadPanic(String),
 }
 
 impl std::fmt::Display for AnalysisError {
@@ -41,6 +42,7 @@ impl std::fmt::Display for AnalysisError {
                 "audio too short for analysis (need >= {MIN_SAMPLES} samples)"
             ),
             AnalysisError::ChromaError(s) => write!(f, "chroma analysis error: {s}"),
+            AnalysisError::ThreadPanic(s) => write!(f, "thread panic: {s}"),
         }
     }
 }
@@ -71,13 +73,21 @@ pub fn analyze_audio_features(
 
         let child_chroma = s.spawn(|| chroma::compute_chroma_features(samples, sample_rate));
 
-        let tempo_val = child_tempo.join().unwrap();
-        let zcr_val = child_zcr.join().unwrap();
-        let spectral_vals = child_spectral.join().unwrap();
-        let loudness_vals = child_loudness.join().unwrap();
+        let tempo_val = child_tempo
+            .join()
+            .map_err(|e| AnalysisError::ThreadPanic(format!("{e:?}")))?;
+        let zcr_val = child_zcr
+            .join()
+            .map_err(|e| AnalysisError::ThreadPanic(format!("{e:?}")))?;
+        let spectral_vals = child_spectral
+            .join()
+            .map_err(|e| AnalysisError::ThreadPanic(format!("{e:?}")))?;
+        let loudness_vals = child_loudness
+            .join()
+            .map_err(|e| AnalysisError::ThreadPanic(format!("{e:?}")))?;
         let chroma_vals = child_chroma
             .join()
-            .unwrap()
+            .map_err(|e| AnalysisError::ThreadPanic(format!("{e:?}")))?
             .map_err(|e| AnalysisError::ChromaError(e.0))?;
 
         // Assemble in bliss order:
@@ -130,5 +140,18 @@ mod tests {
         let samples = vec![0.0; 22050 * 3];
         let features = analyze_audio_features(&samples, 22050).unwrap();
         assert_eq!(features.len(), FEATURES_COUNT);
+    }
+
+    #[test]
+    fn test_thread_panic_error_format() {
+        let err = AnalysisError::ThreadPanic("worker crashed".to_string());
+        assert_eq!(format!("{err}"), "thread panic: worker crashed");
+    }
+
+    #[test]
+    fn test_join_result_maps_panic_to_thread_panic() {
+        let result: std::thread::Result<i32> = std::panic::catch_unwind(|| panic!("boom"));
+        let mapped = result.map_err(|e| AnalysisError::ThreadPanic(format!("{e:?}")));
+        assert!(matches!(mapped, Err(AnalysisError::ThreadPanic(_))));
     }
 }

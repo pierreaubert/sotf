@@ -14,7 +14,7 @@ use super::types::ThemeConfig;
 
     use super::*;
     use serde_json::json;
-    use sotf_audio_player_gpui::theme::{Theme, ThemeId};
+    use sotf_audio_player_gpui::theme::Theme;
 
     #[test]
     fn parse_hex_rrggbb() {

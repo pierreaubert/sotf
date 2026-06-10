@@ -12,7 +12,7 @@ fn get_peq_cache() -> &'static Mutex<HashMap<String, Array1<f64>>> {
     PEQ_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn compute_peq_cached(
+pub(crate) fn compute_peq_cached(
     freq: &Array1<f64>,
     params: &[f64],
     sample_rate: f64,
@@ -20,11 +20,12 @@ fn compute_peq_cached(
 ) -> Array1<f64> {
     let cache = get_peq_cache();
     let key = format!(
-        "{:?}-{:?}-{:?}-{:?}",
-        params.len(),
+        "{:?}-{:?}-{:?}-{:?}-{:?}",
+        params,
         sample_rate,
         model,
-        freq.len()
+        freq.len(),
+        freq
     );
 
     {

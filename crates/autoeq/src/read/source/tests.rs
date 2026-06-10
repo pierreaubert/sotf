@@ -4,9 +4,6 @@ use std::path::{Path, PathBuf};
 use super::measurement_ref::MeasurementRef;
 use super::measurement_source::MeasurementSource;
 
-    use super::{MeasurementRef, MeasurementSource};
-    use std::path::PathBuf;
-
     #[test]
     fn measurement_source_object_with_measurements_deserializes_as_multiple() {
         let source: MeasurementSource = serde_json::from_value(serde_json::json!({

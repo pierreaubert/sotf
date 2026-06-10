@@ -15,9 +15,6 @@ use super::tests::headphone_eq_step_next;
 # [cfg (test)]
 use super::tests::headphone_eq_step_prev;
 
-#[cfg(test)]
-mod tests;
-
 fn headphone_eq_step_prev_wrap(s: crate::app::HeadphoneEqStep) -> crate::app::HeadphoneEqStep {
     use crate::app::HeadphoneEqStep;
     match s {

@@ -72,9 +72,8 @@ impl PluginGraphConfig {
             }
         }
 
-        let mut incoming_counts: HashMap<usize, usize> =
+        let incoming_counts: HashMap<usize, usize> =
             self.nodes.iter().map(|node| (node.id, 0)).collect();
-        let mut outgoing_edges: HashMap<usize, Vec<usize>> = HashMap::new();
 
         for edge in &self.edges {
             if !node_ids.contains(&edge.from_node) {
@@ -89,43 +88,67 @@ impl PluginGraphConfig {
                     edge.to_node
                 ));
             }
+        }
 
-            *incoming_counts
-                .get_mut(&edge.to_node)
-                .expect("edge endpoint existence checked above") += 1;
+        let mut outgoing_edges: HashMap<usize, Vec<usize>> = HashMap::new();
+        for edge in &self.edges {
             outgoing_edges
                 .entry(edge.from_node)
                 .or_default()
                 .push(edge.to_node);
         }
 
-        let mut ready: VecDeque<usize> = incoming_counts
-            .iter()
-            .filter_map(|(&node_id, &count)| (count == 0).then_some(node_id))
-            .collect();
-        let mut visited = 0;
+        validate_graph_topology(&self.edges, &outgoing_edges, incoming_counts, self.nodes.len())
+    }
+}
 
-        while let Some(node_id) = ready.pop_front() {
-            visited += 1;
-            if let Some(targets) = outgoing_edges.get(&node_id) {
-                for &target in targets {
-                    let count = incoming_counts
-                        .get_mut(&target)
-                        .expect("edge endpoint existence checked above");
+fn validate_graph_topology(
+    edges: &[PluginGraphEdgeConfig],
+    outgoing_edges: &HashMap<usize, Vec<usize>>,
+    mut incoming_counts: HashMap<usize, usize>,
+    num_nodes: usize,
+) -> Result<(), String> {
+    for edge in edges {
+        if let Some(count) = incoming_counts.get_mut(&edge.to_node) {
+            *count += 1;
+        } else {
+            return Err(format!(
+                "internal error: incoming count missing for node {}",
+                edge.to_node
+            ));
+        }
+    }
+
+    let mut ready: VecDeque<usize> = incoming_counts
+        .iter()
+        .filter_map(|(&node_id, &count)| (count == 0).then_some(node_id))
+        .collect();
+    let mut visited = 0;
+
+    while let Some(node_id) = ready.pop_front() {
+        visited += 1;
+        if let Some(targets) = outgoing_edges.get(&node_id) {
+            for &target in targets {
+                if let Some(count) = incoming_counts.get_mut(&target) {
                     *count -= 1;
                     if *count == 0 {
                         ready.push_back(target);
                     }
+                } else {
+                    return Err(format!(
+                        "internal error: incoming count missing for node {}",
+                        target
+                    ));
                 }
             }
         }
-
-        if visited != self.nodes.len() {
-            return Err("plugin graph must be acyclic".to_string());
-        }
-
-        Ok(())
     }
+
+    if visited != num_nodes {
+        return Err("plugin graph must be acyclic".to_string());
+    }
+
+    Ok(())
 }
 
 /// A node in the plugin graph
@@ -345,5 +368,28 @@ mod tests {
 
         let err = PluginGraphNodeConfig::try_new(9, "mixer", json!({}), 0).unwrap_err();
         assert!(err.contains("input_channels"));
+    }
+
+    #[test]
+    fn validate_graph_topology_rejects_missing_incoming_count_increment() {
+        let edges = vec![PluginGraphEdgeConfig::new(0, 1)];
+        let outgoing_edges = std::collections::HashMap::new();
+        let mut incoming_counts = std::collections::HashMap::new();
+        incoming_counts.insert(0, 0);
+        let result = validate_graph_topology(&edges, &outgoing_edges, incoming_counts, 2);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("incoming count missing for node 1"));
+    }
+
+    #[test]
+    fn validate_graph_topology_rejects_missing_incoming_count_decrement() {
+        let edges = vec![];
+        let mut outgoing_edges = std::collections::HashMap::new();
+        outgoing_edges.insert(0, vec![1]);
+        let mut incoming_counts = std::collections::HashMap::new();
+        incoming_counts.insert(0, 0);
+        let result = validate_graph_topology(&edges, &outgoing_edges, incoming_counts, 2);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("incoming count missing for node 1"));
     }
 }

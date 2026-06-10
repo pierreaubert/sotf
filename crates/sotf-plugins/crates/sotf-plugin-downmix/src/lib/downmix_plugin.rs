@@ -808,6 +808,7 @@ impl Plugin for DownmixPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let num_frames = context.num_frames;
+        output.fill(0.0);
         if !self.phase_coherence {
             self.process_simple(input, output, num_frames);
             return Ok(num_frames);

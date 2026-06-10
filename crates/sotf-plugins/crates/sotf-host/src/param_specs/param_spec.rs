@@ -297,12 +297,18 @@ impl ParamSpec {
         }
     }
 
+    /// Get the default value as bool, returning `None` if not a Bool param.
+    pub fn try_default_bool(&self) -> Option<bool> {
+        match self.param_type {
+            ParamType::Bool { default, .. } => Some(default),
+            _ => None,
+        }
+    }
+
     /// Get the default value as bool (panics if not a Bool param).
     pub fn default_bool(&self) -> bool {
-        match self.param_type {
-            ParamType::Bool { default, .. } => default,
-            _ => panic!("default_bool() called on non-Bool param '{}'", self.name),
-        }
+        self.try_default_bool()
+            .unwrap_or_else(|| panic!("default_bool() called on non-Bool param '{}'", self.name))
     }
 
     /// Get the default value as usize.
@@ -498,6 +504,23 @@ pub fn find_by_key<'a>(params: &'a [ParamSpec], key: &str) -> &'a ParamSpec {
         .iter()
         .find(|s| s.engine_key == key)
         .unwrap_or_else(|| panic!("no ParamSpec with engine_key '{}'", key))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ParamSpec;
+
+    #[test]
+    fn test_try_default_bool_on_float_returns_none() {
+        let spec = ParamSpec::float("Gain", "gain_db", 0.0, -24.0, 24.0, 0.1, "dB", "EQ");
+        assert_eq!(spec.try_default_bool(), None);
+    }
+
+    #[test]
+    fn test_try_default_bool_on_bool_returns_some() {
+        let spec = ParamSpec::bool_param("Bypass", "bypass", true, "General");
+        assert_eq!(spec.try_default_bool(), Some(true));
+    }
 }
 
 pub mod spectrum {

@@ -17,7 +17,7 @@ pub fn parse_command(line: &str) -> Result<MpdCommand, MpdError> {
     let mut parts = CommandTokenizer::new(line);
     let cmd = parts.next_token().unwrap_or_default().to_lowercase();
 
-    match cmd.as_str() {
+    let result = match cmd.as_str() {
         // Connection
         "ping" => Ok(MpdCommand::Ping),
         "close" => Ok(MpdCommand::Close),
@@ -166,10 +166,21 @@ pub fn parse_command(line: &str) -> Result<MpdCommand, MpdError> {
         "noidle" => Ok(MpdCommand::NoIdle),
 
         _ => Err(MpdError::unknown_command(&cmd)),
+    };
+
+    // Reject any trailing tokens after the command has been parsed.
+    if parts.next_token().is_some() {
+        return Err(MpdError::new(
+            MpdErrorCode::Arg,
+            &cmd,
+            "trailing tokens",
+        ));
     }
+
+    result
 }
 
-fn parse_range(parts: &mut CommandTokenizer) -> Option<(u32, Option<u32>)> {
+pub(super) fn parse_range(parts: &mut CommandTokenizer) -> Option<(u32, Option<u32>)> {
     let token = parts.next_token()?;
     if let Some((start, end)) = token.split_once(':') {
         let start = start.parse().ok()?;
@@ -181,7 +192,7 @@ fn parse_range(parts: &mut CommandTokenizer) -> Option<(u32, Option<u32>)> {
         Some((start, end))
     } else {
         let pos = token.parse().ok()?;
-        Some((pos, Some(pos + 1)))
+        Some((pos, Some(pos.checked_add(1)?)))
     }
 }
 

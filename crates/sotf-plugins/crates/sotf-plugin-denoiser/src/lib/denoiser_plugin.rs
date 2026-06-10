@@ -519,7 +519,7 @@ impl DenoiserPlugin {
     }
 
     /// Process one FFT block
-    pub(super) fn process_fft_block(&mut self) {
+    pub(super) fn process_fft_block(&mut self) -> Result<(), String> {
         // Extract block from input buffer (fft_size * channels samples)
         let block_samples = self.fft_size * self.channels;
 
@@ -534,7 +534,7 @@ impl DenoiserPlugin {
         // read while `self` is borrowed mutably for this FFT call.
         let input_ptr = self.temp_input_block.as_ptr();
         let input_block = unsafe { std::slice::from_raw_parts(input_ptr, block_samples) };
-        self.apply_window_and_forward_fft(input_block);
+        self.apply_window_and_forward_fft(input_block)?;
 
         // Shift input buffer (remove processed samples, keeping hop_size overlap)
         let shift_samples = self.hop_size * self.channels;
@@ -566,7 +566,7 @@ impl DenoiserPlugin {
         }
 
         // Phase 4: Apply gains and inverse FFT
-        self.apply_gains_and_inverse_fft();
+        self.apply_gains_and_inverse_fft()?;
 
         // Phase 5: Overlap-add to output accumulator
         self.overlap_add_to_accumulator();
@@ -577,6 +577,7 @@ impl DenoiserPlugin {
             self.data_update_counter = 0;
             self.update_cached_data();
         }
+        Ok(())
     }
 
     /// Update the cached DenoiserData for UI polling.
@@ -866,13 +867,13 @@ impl InPlacePlugin for DenoiserPlugin {
 
             // Process FFT blocks to free input buffer space
             while self.input_buffer_fill >= block_samples {
-                self.process_fft_block();
+                self.process_fft_block()?;
             }
         }
 
         // Phase 2: Process any remaining complete FFT blocks
         while self.input_buffer_fill >= block_samples {
-            self.process_fft_block();
+            self.process_fft_block()?;
         }
 
         // Phase 3: Drain output to buffer

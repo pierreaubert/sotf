@@ -10,6 +10,7 @@ use super::lt_rt_allpass::LtRtAllpass;
 use super::types::DownmixPluginParams;
     use crate::*;
 
+#[path = "tests/misc.rs"]
 mod misc;
 
     #[test]
@@ -416,6 +417,42 @@ mod misc;
             mean_power > 1e-4,
             "STFT output has near-zero amplitude: mean_power={mean_power:.6}. Signal lost."
         );
+    }
+
+    /// Bug fix: STFT path with small buffer must zero output before writing.
+    /// When phase_coherence=true and num_frames < FFT_SIZE, the while loop can
+    /// break early leaving tail elements of output uninitialized.
+    #[test]
+    fn test_process_phase_coherence_small_buffer_zeros_output() {
+        let mut p = DownmixPlugin::from_params(DownmixPluginParams {
+            input_channels: 2,
+            center_gain_db: 0.0,
+            surround_gain_db: 0.0,
+            height_gain_db: 0.0,
+            lfe_gain_db: 0.0,
+            phase_coherence: true,
+            phase_blend_low_hz: 200.0,
+            phase_blend_high_hz: 5000.0,
+            itu_mode: false,
+            matrix_ltrt: false,
+        });
+        p.initialize(48000).unwrap();
+
+        let num_frames = 64; // smaller than FFT_SIZE
+        let input = vec![0.0f32; num_frames * 2];
+        let mut output = vec![f32::NAN; num_frames * 2];
+
+        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
+
+        for (i, &v) in output.iter().enumerate() {
+            assert!(
+                v == 0.0,
+                "output[{}] should be 0.0, got {} (possible uninitialized memory)",
+                i,
+                v
+            );
+        }
     }
 
     /// Verify that the LtRtAllpass network provides a broadband ~90° phase shift.

@@ -128,7 +128,7 @@ pub fn hz_to_octs_inplace(
 }
 
 /// FFT-based convolution (same-size output).
-pub fn convolve(input: &Array1<f64>, kernel: &Array1<f64>) -> Array1<f64> {
+pub fn convolve(input: &Array1<f64>, kernel: &Array1<f64>) -> Result<Array1<f64>, String> {
     let mut common_length = input.len() + kernel.len();
     if !common_length.is_multiple_of(2) {
         common_length -= 1;
@@ -156,13 +156,22 @@ pub fn convolve(input: &Array1<f64>, kernel: &Array1<f64>) -> Array1<f64> {
 
     let mut planner = FftPlanner::new();
     let forward = planner.plan_fft_forward(common_length);
-    forward.process(padded_input.as_slice_mut().unwrap());
-    forward.process(padded_kernel.as_slice_mut().unwrap());
+    let padded_input_slice = padded_input
+        .as_slice_mut()
+        .ok_or("FFT buffer must be contiguous")?;
+    forward.process(padded_input_slice);
+    let padded_kernel_slice = padded_kernel
+        .as_slice_mut()
+        .ok_or("FFT buffer must be contiguous")?;
+    forward.process(padded_kernel_slice);
 
     let mut multiplication = padded_input * padded_kernel;
 
     let back = planner.plan_fft_inverse(common_length);
-    back.process(multiplication.as_slice_mut().unwrap());
+    let multiplication_slice = multiplication
+        .as_slice_mut()
+        .ok_or("FFT buffer must be contiguous")?;
+    back.process(multiplication_slice);
 
     let multiplication_length = multiplication.len() as f64;
     let multiplication = multiplication
@@ -170,7 +179,7 @@ pub fn convolve(input: &Array1<f64>, kernel: &Array1<f64>) -> Array1<f64> {
             (kernel.len() - 1) / 2..(kernel.len() - 1) / 2 + input.len()
         ])
         .mapv(|x| x.re);
-    multiplication / multiplication_length
+    Ok(multiplication / multiplication_length)
 }
 
 /// Standard deviation of a slice of f32 values.
@@ -298,7 +307,7 @@ fn test_hz_to_octs_inplace() {
 fn test_convolve_delta() {
     let input = ndarray::arr1(&[0.0, 0.0, 1.0, 0.0, 0.0]);
     let kernel = ndarray::arr1(&[1.0, 2.0, 3.0]);
-    let out = convolve(&input, &kernel);
+    let out = convolve(&input, &kernel).unwrap();
     assert_eq!(out.len(), input.len());
     assert!((out[2] - 2.0).abs() < 1e-6, "got {}", out[2]);
 }

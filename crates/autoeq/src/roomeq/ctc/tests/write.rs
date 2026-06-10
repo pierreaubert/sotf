@@ -8,10 +8,8 @@ use super::super::misc::CTC_ARTIFACT_VERSION;
 use super::super::types::maybe_generate_recommended_xtc;
     use super::super::*;
     use crate::roomeq::types::{
-        CtcConfig, CtcMeasurementConfig, CtcMeasurementFileConfig, CtcRegularizationConfig,
-        CtcWindowConfig, SystemConfig, SystemModel,
+        CtcMeasurementFileConfig, CtcRegularizationConfig, SystemModel,
     };
-    use std::collections::HashMap;
     use tempfile::tempdir;
 
     #[test]

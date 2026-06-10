@@ -8,7 +8,7 @@ use super::types::setup_de_common;
     use super::*;
     use crate::LossType;
     use crate::cli::PeqModel;
-    use ndarray::{Array1, array};
+    use ndarray::array;
 
     fn test_objective_data() -> ObjectiveData {
         ObjectiveData {

@@ -11,7 +11,6 @@ use super::generate::generate_fir_correction;
 
     use super::*;
     use crate::roomeq::types::FirConfig;
-    use ndarray::Array1;
 
     /// Assert that two floats are approximately equal
     fn assert_approx_eq(a: f64, b: f64, epsilon: f64) {

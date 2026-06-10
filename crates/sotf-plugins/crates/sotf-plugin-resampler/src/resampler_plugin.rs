@@ -308,14 +308,15 @@ impl ResamplerPlugin {
     ///
     /// `output` must be at least `output_frames_for_input(0) * num_channels` samples long
     /// (i.e., large enough for one chunk's maximum output).
-    pub fn flush(&mut self, output: &mut [f32]) -> Result<usize, String> {
+    pub fn flush(&mut self, output: &mut [f32]) -> Result<(usize, usize), String> {
         if self.residual_frames == 0 {
-            return Ok(0);
+            return Ok((0, 0));
         }
 
         let resampler = self.resampler.as_mut().ok_or("Resampler not initialized")?;
         let chunk_size = self.chunk_size;
         let max_output_frames = resampler.output_frames_max();
+        let residual = self.residual_frames;
 
         // Zero-pad residual input to a full chunk.
         // residual_input already contains the valid frames at [0..residual_frames];
@@ -356,7 +357,11 @@ impl ResamplerPlugin {
             output_frames,
             self.num_channels,
         );
-        Ok(output_frames)
+
+        // Compute how many trailing output frames are garbage from zero-padding.
+        let valid_output_estimate = (residual as f64 * self.current_ratio).ceil() as usize;
+        let discard = output_frames.saturating_sub(valid_output_estimate);
+        Ok((output_frames, discard))
     }
 
     /// Set the resampling ratio relative to the current ratio (only works when dynamic_ratio is enabled).
@@ -637,10 +642,11 @@ fn test_flush_produces_trailing_output() {
     let produced = resampler.process(&input, &mut output, &ctx).unwrap();
     assert_eq!(produced, 0, "Partial chunk should produce no output yet");
 
-    // Flush should produce output for the buffered partial chunk
+    // Flush should produce output for the buffered partial chunk, with discard > 0
     let mut flush_buf = vec![0.0_f32; max_output * 2];
-    let flush_output = resampler.flush(&mut flush_buf).unwrap();
+    let (flush_output, discard) = resampler.flush(&mut flush_buf).unwrap();
     assert!(flush_output > 0, "Flush should produce trailing output");
+    assert!(discard > 0, "Flushing a partial chunk should report discard frames > 0");
 }
 
 #[test]

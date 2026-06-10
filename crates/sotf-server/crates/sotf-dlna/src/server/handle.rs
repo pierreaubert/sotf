@@ -88,6 +88,14 @@ pub(super) async fn handle_server_request(
     Ok(())
 }
 
+pub(super) fn compute_body_len(file_len: u64, start: u64, end: u64) -> u64 {
+    if file_len == 0 {
+        0
+    } else {
+        end.saturating_sub(start).saturating_add(1)
+    }
+}
+
 pub(super) async fn handle_media(
     writer: &mut tokio::net::tcp::OwnedWriteHalf,
     method: &str,
@@ -173,7 +181,7 @@ pub(super) async fn handle_media(
             }
         }
     };
-    let body_len = if file_len == 0 { 0 } else { end - start + 1 };
+    let body_len = compute_body_len(file_len, start, end);
 
     let content_range = if status == 206 {
         format!("Content-Range: bytes {}-{}/{}\r\n", start, end, file_len)

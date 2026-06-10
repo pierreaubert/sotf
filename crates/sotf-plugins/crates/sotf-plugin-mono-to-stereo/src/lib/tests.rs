@@ -536,6 +536,19 @@ use super::mono_to_stereo_plugin::MonoToStereoPlugin;
     }
 
     #[test]
+    fn test_process_returns_num_frames() {
+        let mut p = MonoToStereoPlugin::new();
+        p.initialize(48000).unwrap();
+        let num_frames = 1024;
+        let input = vec![0.5_f32; num_frames];
+        let mut output = vec![0.0_f32; num_frames * 2];
+        let produced = p
+            .process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+            .unwrap();
+        assert_eq!(produced, num_frames);
+    }
+
+    #[test]
     fn test_channel_configuration() {
         let p = MonoToStereoPlugin::new();
         assert_eq!(p.input_channels(), 1);
@@ -573,4 +586,18 @@ use super::mono_to_stereo_plugin::MonoToStereoPlugin;
                 "bin {i} real should be 1.0 below low_hz"
             );
         }
+    }
+
+    /// Happy-path regression: process() must return Ok(num_frames) for normal input.
+    /// This verifies the refactor of process_stft() to return Result does not break
+    /// the common case.
+    #[test]
+    fn test_process_returns_ok_num_frames() {
+        let mut p = MonoToStereoPlugin::new();
+        p.initialize(48000).unwrap();
+        let num_frames = 1024;
+        let input: Vec<f32> = (0..num_frames).map(|i| (i as f32 * 0.1).sin()).collect();
+        let mut output = vec![0.0_f32; num_frames * 2];
+        let result = p.process(&input, &mut output, &ProcessContext::new(48000, num_frames));
+        assert_eq!(result, Ok(num_frames), "process() should return Ok(num_frames)");
     }

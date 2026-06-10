@@ -357,17 +357,8 @@ impl CrossfeedPlugin {
         let wet_norm = self.mb_wet_norm;
         let has_itd = self.params.itd_delay_ms > 0.0;
 
-        // Resize band buffers if needed (normally pre-allocated in initialize())
-        for b in &mut self.mb_bands_l {
-            if b.len() < nf {
-                b.resize(nf, 0.0);
-            }
-        }
-        for b in &mut self.mb_bands_r {
-            if b.len() < nf {
-                b.resize(nf, 0.0);
-            }
-        }
+        // Band buffers are pre-allocated in initialize() to a safe capacity.
+        // process_in_place already rejects blocks that exceed this capacity.
 
         // Process each sample through the crossover using the pre-allocated band buffers.
         // We call process_frame one sample at a time but write into pre-allocated slices,
@@ -530,7 +521,7 @@ impl InPlacePlugin for CrossfeedPlugin {
         if let Some(ag) = &mut self.auto_gain {
             ag.set_sample_rate(sr).map_err(|e| e.to_string())?;
         }
-        let cap = 4096;
+        let cap = 16384;
         self.dry_l.resize(cap, 0.0);
         self.dry_r.resize(cap, 0.0);
         self.wet_l.resize(cap, 0.0);
@@ -572,10 +563,11 @@ impl InPlacePlugin for CrossfeedPlugin {
         enable_ftz_daz();
         let nf = context.num_frames;
         if nf > self.dry_l.len() {
-            self.dry_l.resize(nf, 0.0);
-            self.dry_r.resize(nf, 0.0);
-            self.wet_l.resize(nf, 0.0);
-            self.wet_r.resize(nf, 0.0);
+            return Err(format!(
+                "Block size {} exceeds pre-allocated capacity {}",
+                nf,
+                self.dry_l.len()
+            ));
         }
 
         if let Some(ag) = &mut self.auto_gain {

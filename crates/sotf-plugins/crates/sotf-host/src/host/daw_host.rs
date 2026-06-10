@@ -419,8 +419,8 @@ impl DawHost {
             self.bypassed[id] = node.bypassed;
         }
         // Compute per-node cumulative latency from inputs and compensation delays
-        let compensation_delays = self.compute_compensation_delays::<f32>(num_slots);
-        let compensation_delays_f64 = self.compute_compensation_delays::<f64>(num_slots);
+        let compensation_delays = self.compute_compensation_delays::<f32>(num_slots)?;
+        let compensation_delays_f64 = self.compute_compensation_delays::<f64>(num_slots)?;
 
         self.process_buffers = Some(ProcessBuffers {
             node_buffers,
@@ -2415,7 +2415,7 @@ impl DawHost {
     pub(super) fn compute_compensation_delays<T: AudioSample>(
         &mut self,
         num_slots: usize,
-    ) -> CompensationDelays<T> {
+    ) -> Result<CompensationDelays<T>, String> {
         // Step 1: Compute cumulative latency from inputs to each node using topological order.
         // For each node, the cumulative latency is:
         //   node's own latency + max(cumulative latency of predecessors)
@@ -2493,7 +2493,7 @@ impl DawHost {
                         if delay_channels == 0 {
                             continue;
                         }
-                        delays.set(edge.id, DelayBuffer::new(compensation, delay_channels));
+                        delays.set(edge.id, DelayBuffer::new(compensation, delay_channels))?;
                     } else if edge.edge_type == EdgeType::Sidechain {
                         let pred_channels = self
                             .nodes
@@ -2512,7 +2512,7 @@ impl DawHost {
             }
         }
 
-        delays
+        Ok(delays)
     }
 
     pub(super) fn routed_channel_count(

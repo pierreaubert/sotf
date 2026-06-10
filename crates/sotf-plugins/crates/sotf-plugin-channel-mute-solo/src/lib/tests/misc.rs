@@ -28,7 +28,7 @@ use super::super::types::ChannelState;
     #[test]
     fn test_mute_single_channel() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
-        plugin.set_channel_state(0, true, false, false); // Mute channel 0
+        plugin.set_channel_state(0, true, false, false).unwrap(); // Mute channel 0
 
         let last_frame = process_converged(&mut plugin, 2);
         assert!(
@@ -44,7 +44,7 @@ use super::super::types::ChannelState;
     #[test]
     fn test_solo_single_channel() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
-        plugin.set_channel_state(0, false, true, false); // Solo channel 0
+        plugin.set_channel_state(0, false, true, false).unwrap(); // Solo channel 0
 
         let last_frame = process_converged(&mut plugin, 2);
         assert!(
@@ -60,8 +60,8 @@ use super::super::types::ChannelState;
     #[test]
     fn test_solo_takes_priority_over_mute() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
-        plugin.set_channel_state(0, true, true, false); // Both muted AND soloed
-        plugin.set_channel_state(1, false, false, false);
+        plugin.set_channel_state(0, true, true, false).unwrap(); // Both muted AND soloed
+        plugin.set_channel_state(1, false, false, false).unwrap();
 
         let last_frame = process_converged(&mut plugin, 2);
         assert!(
@@ -77,8 +77,8 @@ use super::super::types::ChannelState;
     #[test]
     fn test_multichannel() {
         let mut plugin = ChannelMuteSoloPlugin::new(4, true);
-        plugin.set_channel_state(1, true, false, false); // Mute channel 1
-        plugin.set_channel_state(2, true, false, false); // Mute channel 2
+        plugin.set_channel_state(1, true, false, false).unwrap(); // Mute channel 1
+        plugin.set_channel_state(2, true, false, false).unwrap(); // Mute channel 2
 
         let last_frame = process_converged(&mut plugin, 4);
         assert!(
@@ -102,7 +102,7 @@ use super::super::types::ChannelState;
     #[test]
     fn test_dim_single_channel() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
-        plugin.set_channel_state(0, false, false, true); // Dim channel 0
+        plugin.set_channel_state(0, false, false, true).unwrap(); // Dim channel 0
 
         let last_frame = process_converged(&mut plugin, 2);
         assert!(
@@ -118,7 +118,7 @@ use super::super::types::ChannelState;
     #[test]
     fn test_mute_takes_priority_over_dim() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
-        plugin.set_channel_state(0, true, false, true); // Both muted AND dimmed
+        plugin.set_channel_state(0, true, false, true).unwrap(); // Both muted AND dimmed
 
         let last_frame = process_converged(&mut plugin, 2);
         assert!(
@@ -181,7 +181,7 @@ use super::super::types::ChannelState;
         assert!((buffer[0] - 1.0).abs() < TOLERANCE);
 
         // Now mute channel 0 — the first sample after shouldn't jump to 0.0
-        plugin.set_channel_state(0, true, false, false);
+        plugin.set_channel_state(0, true, false, false).unwrap();
         let mut buffer = vec![1.0, 1.0];
         plugin.process_in_place(&mut buffer, &context).unwrap();
         // Should be less than 1.0 but not yet 0.0 (fading)
@@ -194,7 +194,7 @@ use super::super::types::ChannelState;
         // Use -10dB dim instead of default -20dB
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
         plugin.set_dim_gain_db(-10.0);
-        plugin.set_channel_state(0, false, false, true); // Dim channel 0
+        plugin.set_channel_state(0, false, false, true).unwrap(); // Dim channel 0
 
         let expected_linear = 10.0_f32.powf(-10.0 / 20.0); // ~0.316
 
@@ -219,7 +219,7 @@ use super::super::types::ChannelState;
                 ParameterValue::Float(-6.0),
             )
             .unwrap();
-        plugin.set_channel_state(0, false, false, true); // Dim channel 0
+        plugin.set_channel_state(0, false, false, true).unwrap(); // Dim channel 0
 
         let expected_linear = 10.0_f32.powf(-6.0 / 20.0); // ~0.501
 
@@ -305,7 +305,7 @@ use super::super::types::ChannelState;
     #[test]
     fn test_block_smoothing_converges_to_correct_gain() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
-        plugin.set_channel_state(0, true, false, false); // mute ch0
+        plugin.set_channel_state(0, true, false, false).unwrap(); // mute ch0
 
         // Process 4096 frames — should converge to 0.0 for ch0, 1.0 for ch1
         let context = ProcessContext::new(48000, 4096);

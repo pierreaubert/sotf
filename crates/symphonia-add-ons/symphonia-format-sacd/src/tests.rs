@@ -28,11 +28,17 @@ use super::write::write_track_as_dsf;
 
     use symphonia_core::audio::{Audio, GenericAudioBufferRef};
     use symphonia_core::codecs::audio::AudioDecoderOptions;
-    use symphonia_core::codecs::registry::CodecRegistry;
     use symphonia_core::formats::probe::Hint;
-    use symphonia_core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
+    use symphonia_core::io::{MediaSource, MediaSourceStreamOptions};
 
     use super::*;
+
+    #[test]
+    fn read_track_text_overflow_returns_default() {
+        let data = vec![0u8; 16];
+        let result = read::read_track_text(&data, usize::MAX - 1, 0).unwrap();
+        assert_eq!(result, super::SacdTrackMetadata::default());
+    }
 
     #[test]
     fn rejects_bad_master_magic() {

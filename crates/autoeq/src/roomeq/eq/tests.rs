@@ -19,9 +19,10 @@ use super::prepared_single_channel_eq::prepare_single_channel_eq;
 use super::representative::representative_bass_rt60;
 use super::representative::representative_multi_measurement_curve;
     use super::*;
-    use ndarray::Array1;
 
+#[path = "tests/make.rs"]
 mod make;
+#[path = "tests/misc.rs"]
 mod misc;
 
 use make::make_exponential_decay;

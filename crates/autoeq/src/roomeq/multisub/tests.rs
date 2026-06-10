@@ -12,7 +12,6 @@ use super::allpass::allpass_frequency_bounds;
 use super::allpass::compute_combined_with_allpass;
 
     use super::*;
-    use ndarray::Array1;
 
     fn make_driver(freq: Vec<f64>, spl: Vec<f64>, phase: Option<Vec<f64>>) -> DriverMeasurement {
         DriverMeasurement {

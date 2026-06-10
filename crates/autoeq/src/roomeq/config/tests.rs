@@ -8,7 +8,6 @@ use super::validate::validate_room_config;
 use super::validation_result::ValidationResult;
     use super::*;
     use crate::roomeq::types::*;
-    use crate::{MeasurementRef, MeasurementSingle, MeasurementSource};
     use std::path::PathBuf;
 
 mod misc;

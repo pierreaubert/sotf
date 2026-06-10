@@ -3,7 +3,7 @@
 use qrcode::QrCode;
 use qrcode::render::unicode;
 use sotf_audio_player::Player;
-use sotf_audio_player_tui::app::{App, InputMode};
+use sotf_audio_player_tui::app::{App, InputMode, Screen};
 #[cfg(feature = "dev-api")]
 use sotf_audio_player_tui::dev_api::{DevCommand, DevQueryReply, DevReply};
 use sotf_audio_player_tui :: events :: PlayerCommand ;

@@ -330,3 +330,28 @@ fn test_list_asio_devices_returns_vec() {
     assert!(devices.is_empty());
     let _ = devices;
 }
+
+#[cfg(target_os = "linux")]
+use super::types::merge_linux_device_groups;
+
+#[cfg(target_os = "linux")]
+#[test]
+fn merge_linux_device_groups_rejects_missing_key() {
+    let mut groups = std::collections::BTreeMap::new();
+    groups.insert("card0".to_string(), vec![make_device("hw:0,0")]);
+    let key_order = vec!["card0".to_string(), "missing".to_string()];
+    let result = merge_linux_device_groups(&key_order, groups);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("group key missing"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn merge_linux_device_groups_rejects_empty_group() {
+    let mut groups = std::collections::BTreeMap::new();
+    groups.insert("card0".to_string(), vec![]);
+    let key_order = vec!["card0".to_string()];
+    let result = merge_linux_device_groups(&key_order, groups);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("empty group"));
+}

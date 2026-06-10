@@ -6,7 +6,6 @@ use hound;
 use super::super::consts::decide_schroeder_override;
 use super::super::misc::trim_ir_length_to_noise_floor;
     use super::super::*;
-    use ndarray::Array1;
 
     pub(super) fn write_mono_wav(samples: &[f32], sample_rate: u32) -> tempfile::NamedTempFile {
         let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();

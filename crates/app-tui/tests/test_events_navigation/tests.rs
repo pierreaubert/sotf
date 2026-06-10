@@ -15,6 +15,7 @@ use super::app::app_on_spinorama_select;
 use super::misc::send_keys;
     use super::*;
 
+#[path = "tests/app_mod.rs"]
 mod app_mod;
 
     #[test]

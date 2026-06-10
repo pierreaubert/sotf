@@ -311,10 +311,6 @@ impl InPlacePlugin for StereoImagerPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
 
-        if self.sample_rate != context.sample_rate {
-            self.initialize(context.sample_rate)?;
-        }
-
         let nf = context.num_frames;
 
         // Stereo only -- pass through unchanged for non-stereo

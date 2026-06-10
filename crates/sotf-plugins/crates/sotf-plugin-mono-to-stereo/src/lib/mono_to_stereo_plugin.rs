@@ -256,7 +256,7 @@ impl MonoToStereoPlugin {
         }
     }
 
-    pub(super) fn process_stft(&mut self) {
+    pub(super) fn process_stft(&mut self) -> Result<(), String> {
         let n = FFT_SIZE;
         let mask = self.output_accumulator_mask;
         let scale = self.output_scale;
@@ -268,13 +268,13 @@ impl MonoToStereoPlugin {
         );
         self.fft_forward
             .process(&mut self.fft_input_buf, &mut self.fft_output_buf)
-            .unwrap();
+            .map_err(|e| format!("FFT forward failed: {:?}", e))?;
 
         // Left channel: latent mono
         self.ifft_input_buf.copy_from_slice(&self.fft_output_buf);
         self.fft_inverse
             .process(&mut self.ifft_input_buf, &mut self.ifft_output_buf)
-            .unwrap();
+            .map_err(|e| format!("FFT inverse failed (left): {:?}", e))?;
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
             let s = self.ifft_output_buf[i] * self.analysis_window[i] * scale;
@@ -311,7 +311,7 @@ impl MonoToStereoPlugin {
         }
         self.fft_inverse
             .process(&mut self.ifft_input_buf, &mut self.ifft_output_buf)
-            .unwrap();
+            .map_err(|e| format!("FFT inverse failed (right): {:?}", e))?;
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
             let s = self.ifft_output_buf[i] * self.analysis_window[i] * scale;
@@ -321,6 +321,7 @@ impl MonoToStereoPlugin {
         self.next_add_position = (self.next_add_position + HOP_SIZE) & mask;
         self.output_accumulator_fill += HOP_SIZE;
         self.latency_filled += HOP_SIZE;
+        Ok(())
     }
 }
 
@@ -394,7 +395,7 @@ impl Plugin for MonoToStereoPlugin {
             }
 
             while self.input_fill >= FFT_SIZE {
-                self.process_stft();
+                self.process_stft()?;
                 self.input_buffer.copy_within(HOP_SIZE..FFT_SIZE, 0);
                 self.input_fill = FFT_SIZE - HOP_SIZE;
             }

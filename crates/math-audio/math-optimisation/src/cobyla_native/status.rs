@@ -386,7 +386,10 @@ where
                         }
                     }
                 }
-                let jd = local_jdrop.expect("at least one vertex must be droppable");
+                let jd = match local_jdrop {
+                    Some(jd) => jd,
+                    None => return Status::Failure,
+                };
                 jdrop = jd;
 
                 // Step direction toward new vertex.

@@ -557,3 +557,12 @@ fn test_analyze_wav_buffer_empty_errors() {
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("empty"));
 }
+
+#[test]
+fn align_signals_rejects_lag_overflow() {
+    let reference = vec![0.0_f32; 10];
+    let recorded = vec![0.0_f32; 10];
+    let result = super::analyze::align_signals(isize::MIN, &reference, &recorded);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("overflow"));
+}

@@ -27,9 +27,16 @@ impl<T: AudioSample> CompensationDelays<T> {
         }
     }
 
-    pub(super) fn set(&mut self, edge_id: usize, delay: DelayBuffer<T>) {
+    pub(super) fn set(&mut self, edge_id: usize, delay: DelayBuffer<T>) -> Result<(), String> {
         if edge_id < self.delays.len() {
             self.delays[edge_id] = Some(delay);
+            Ok(())
+        } else {
+            Err(format!(
+                "edge_id {} out of bounds ({} delays)",
+                edge_id,
+                self.delays.len()
+            ))
         }
     }
 

@@ -175,11 +175,13 @@ pub fn set_audio_device(
 /// We group by the CARD name and keep the best representative (highest channel count,
 /// widest sample rate range), merging supported configs and sample rates.
 #[cfg(target_os = "linux")]
-pub(super) fn deduplicate_linux_devices(devices: Vec<AudioDevice>) -> Vec<AudioDevice> {
+pub(super) fn deduplicate_linux_devices(
+    devices: Vec<AudioDevice>,
+) -> Result<Vec<AudioDevice>, String> {
     use std::collections::BTreeMap;
 
     if devices.is_empty() {
-        return devices;
+        return Ok(devices);
     }
 
     // Extract the CARD name from ALSA device IDs/names like "front:CARD=PCH,DEV=0"
@@ -226,13 +228,27 @@ pub(super) fn deduplicate_linux_devices(devices: Vec<AudioDevice>) -> Vec<AudioD
         groups.entry(key).or_default().push(device);
     }
 
+    merge_linux_device_groups(&key_order, groups)
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn merge_linux_device_groups(
+    key_order: &[String],
+    mut groups: std::collections::BTreeMap<String, Vec<AudioDevice>>,
+) -> Result<Vec<AudioDevice>, String> {
     let mut result = Vec::new();
 
-    for key in &key_order {
-        let group = groups.remove(key).unwrap();
+    for key in key_order {
+        let group = groups
+            .remove(key)
+            .ok_or("internal error: group key missing")?;
 
-        if group.len() == 1 {
-            result.push(group.into_iter().next().unwrap());
+        if group.len() <= 1 {
+            if let Some(device) = group.into_iter().next() {
+                result.push(device);
+            } else {
+                return Err("internal error: empty group".to_string());
+            }
             continue;
         }
 
@@ -313,5 +329,5 @@ pub(super) fn deduplicate_linux_devices(devices: Vec<AudioDevice>) -> Vec<AudioD
         result.push(merged);
     }
 
-    result
+    Ok(result)
 }

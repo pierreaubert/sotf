@@ -27,11 +27,8 @@ use super::types::CtcArtifact;
 use super::types::maybe_generate_recommended_xtc;
     use super::*;
     use crate::roomeq::types::{
-        CtcConfig, CtcMeasurementConfig, CtcMeasurementFileConfig, CtcRegularizationConfig,
-        CtcWindowConfig, SystemConfig, SystemModel,
+        CtcMeasurementFileConfig, CtcRegularizationConfig, SystemModel,
     };
-    use std::collections::HashMap;
-    use std::f64::consts::PI;
     use tempfile::tempdir;
 
 mod misc;

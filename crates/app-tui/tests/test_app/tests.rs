@@ -8,6 +8,7 @@
     use sotf_audio_player::{PluginSettings, PluginType};
     use std::path::PathBuf;
 
+#[path = "tests/create.rs"]
 mod create;
 
     #[test]

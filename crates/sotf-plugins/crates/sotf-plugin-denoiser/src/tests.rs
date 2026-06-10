@@ -3,14 +3,20 @@
 
 #[allow(unused_imports)]
 use super::*;
+use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::plugin::{InPlacePlugin, ProcessContext};
 
+#[path = "tests/current.rs"]
 mod current;
+#[path = "tests/make.rs"]
 mod make;
-mod misc;
+#[path = "tests/misc.rs"]
+mod test_misc;
+use test_misc as misc;
 
-# [cfg (target_arch = "aarch64")]
+#[cfg(target_arch = "aarch64")]
 use current::current_fpu_control;
-# [cfg (target_arch = "x86_64")]
+#[cfg(target_arch = "x86_64")]
 use current::current_fpu_control;
 use make::make_noisy_signal;
 use make::make_test_signal;
@@ -1004,5 +1010,20 @@ fn test_pnd_fed_block_not_sample_by_sample() {
         sum > 0.0,
         "Polyphonic mode with block-fed PND should produce non-zero output after latency period"
     );
+}
+
+/// FFT functions must return Result instead of panicking with .expect().
+#[test]
+fn test_fft_returns_result() {
+    let mut plugin = DenoiserPlugin::new(2, false);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let input = vec![0.5f32; plugin.fft_size * plugin.channels];
+
+    let fwd = plugin.apply_window_and_forward_fft(&input);
+    assert!(fwd.is_ok(), "FFT forward should return Ok on valid input");
+
+    let inv = plugin.apply_gains_and_inverse_fft();
+    assert!(inv.is_ok(), "FFT inverse should return Ok");
 }
 

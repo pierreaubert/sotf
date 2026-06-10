@@ -11,6 +11,7 @@ use super::compensation_delays;
 use super::buffer_guard::BufferGuard;
 use super::compensation_delays::CompensationDelays;
 use super::daw_host::DawHost;
+use super::delay_buffer::DelayBuffer;
 use super::graph_edge::GraphEdge;
 use super::misc::PARAMETER_EVENT_QUEUE_CAPACITY;
 use super::node_buffer::NodeBuffer;
@@ -252,5 +253,19 @@ use variable_frame_plugin::VariableFramePlugin;
             slot.is_some(),
             "Slot must be restored even after error return"
         );
+    }
+
+    #[test]
+    fn test_compensation_delays_set_oob_returns_error() {
+        let edges = vec![GraphEdge::new(0, 1)];
+        let mut delays = CompensationDelays::<f32>::new(&edges);
+        let delay = DelayBuffer::new(10, 2);
+        let result = delays.set(1, delay);
+        assert!(
+            result.is_err(),
+            "set() with out-of-bounds edge_id should return an error"
+        );
+        let err = result.unwrap_err();
+        assert!(err.contains("out of bounds"), "error should mention out of bounds: {err}");
     }
 

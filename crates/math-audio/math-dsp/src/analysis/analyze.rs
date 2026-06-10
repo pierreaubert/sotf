@@ -100,6 +100,27 @@ pub fn analyze_wav_file(
     analyze_wav_buffer(&samples, sample_rate, config)
 }
 
+/// Time-align recorded and reference signals given an estimated lag.
+pub(crate) fn align_signals<'a>(
+    lag: isize,
+    reference: &'a [f32],
+    recorded: &'a [f32],
+) -> Result<(&'a [f32], &'a [f32]), String> {
+    if lag >= 0 {
+        let lag_usize = lag as usize;
+        if lag_usize >= recorded.len() {
+            return Err("Lag is larger than recorded signal length".to_string());
+        }
+        Ok((reference, &recorded[lag_usize..]))
+    } else {
+        let lag_usize = lag.checked_abs().ok_or("lag overflow")? as usize;
+        if lag_usize >= reference.len() {
+            return Err("Negative lag is larger than reference signal length".to_string());
+        }
+        Ok((&reference[lag_usize..], recorded))
+    }
+}
+
 /// Analyze a recorded WAV file against a reference signal
 ///
 /// # Arguments
@@ -200,23 +221,7 @@ pub fn analyze_recording(
     );
 
     // Time-align the signals before FFT
-    // If recorded is delayed (positive lag), skip the lag samples in recorded
-    let (aligned_ref, aligned_rec) = if lag >= 0 {
-        let lag_usize = lag as usize;
-        if lag_usize >= recorded.len() {
-            return Err("Lag is larger than recorded signal length".to_string());
-        }
-        // Capture full tail
-        (reference, &recorded[lag_usize..])
-    } else {
-        // Recorded leads reference - rare
-        let lag_usize = (-lag) as usize;
-        if lag_usize >= reference.len() {
-            return Err("Negative lag is larger than reference signal length".to_string());
-        }
-        // Pad reference start? No, just slice reference
-        (&reference[lag_usize..], recorded)
-    };
+    let (aligned_ref, aligned_rec) = align_signals(lag, reference, recorded)?;
 
     log::debug!(
         "[FFT Analysis] Aligned lengths: ref={}, rec={} (tail included)",

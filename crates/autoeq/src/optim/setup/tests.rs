@@ -3,7 +3,6 @@
 use super::setup_bounds;
 use super::misc::initial_guess;
 
-    use super::{initial_guess, setup_bounds};
     use crate::OptimParams;
     use crate::roomeq::OptimizerConfig;
 

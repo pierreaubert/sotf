@@ -7,7 +7,7 @@ impl DenoiserPlugin {
     /// Apply window and forward FFT for all channels
     /// Input: interleaved audio [L0, R0, L1, R1, ...]
     /// Output: freq_domain buffers are filled with complex spectrum
-    pub(super) fn apply_window_and_forward_fft(&mut self, input: &[f32]) {
+    pub(super) fn apply_window_and_forward_fft(&mut self, input: &[f32]) -> Result<(), String> {
         // Optimization: De-interleave and window in a cache-friendly order
         // We iterate time (i) then channels (ch) to read 'input' linearly
         for i in 0..self.fft_size {
@@ -22,13 +22,14 @@ impl DenoiserPlugin {
         for ch in 0..self.channels {
             self.fft_forward
                 .process(&mut self.time_domain[ch], &mut self.freq_domain[ch])
-                .expect("FFT forward failed");
+                .map_err(|e| format!("FFT forward failed: {:?}", e))?;
         }
+        Ok(())
     }
 
     /// Apply Wiener gains and perform inverse FFT for all channels
     /// Output: time_out_channels buffers are filled with processed samples
-    pub(super) fn apply_gains_and_inverse_fft(&mut self) {
+    pub(super) fn apply_gains_and_inverse_fft(&mut self) -> Result<(), String> {
         for ch in 0..self.channels {
             // Apply smoothed Wiener gains to frequency domain
             for k in 0..self.spectrum_size {
@@ -39,8 +40,9 @@ impl DenoiserPlugin {
             // Inverse FFT (Complex -> Real)
             self.fft_inverse
                 .process(&mut self.freq_domain[ch], &mut self.time_out_channels[ch])
-                .expect("FFT inverse failed");
+                .map_err(|e| format!("FFT inverse failed: {:?}", e))?;
         }
+        Ok(())
     }
 
     /// Get power spectrum for a specific channel (avoids allocation)

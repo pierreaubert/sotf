@@ -116,16 +116,27 @@ impl ChannelMuteSoloPlugin {
     }
 
     /// Set the state for a specific channel
-    pub fn set_channel_state(&mut self, channel: usize, muted: bool, soloed: bool, dimmed: bool) {
-        if channel < self.channels {
-            self.channel_states[channel] = ChannelState {
-                muted,
-                soloed,
-                dimmed,
-            };
-            self.update_smoother_targets();
-            self.mark_params_dirty();
+    pub fn set_channel_state(
+        &mut self,
+        channel: usize,
+        muted: bool,
+        soloed: bool,
+        dimmed: bool,
+    ) -> Result<(), String> {
+        if channel >= self.channels {
+            return Err(format!(
+                "channel {} out of bounds ({})",
+                channel, self.channels
+            ));
         }
+        self.channel_states[channel] = ChannelState {
+            muted,
+            soloed,
+            dimmed,
+        };
+        self.update_smoother_targets();
+        self.mark_params_dirty();
+        Ok(())
     }
 
     /// Set all channel states at once

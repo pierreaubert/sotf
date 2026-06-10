@@ -483,7 +483,7 @@ use super::resampler_quality::ResamplerQuality;
 
         let max_out = resampler.output_frames_for_input(0);
         let mut flush_out = vec![0.0_f32; (max_out + 64) * 2];
-        let flushed = resampler.flush(&mut flush_out).unwrap();
+        let (flushed, _) = resampler.flush(&mut flush_out).unwrap();
         assert_eq!(flushed, 0, "flush on empty residual should return 0");
     }
 
@@ -512,7 +512,7 @@ use super::resampler_quality::ResamplerQuality;
         // Now flush — should produce output for the buffered frames.
         let max_flush_out = resampler.output_frames_for_input(0);
         let mut flush_out = vec![0.0_f32; (max_flush_out + 64) * 2];
-        let flushed = resampler.flush(&mut flush_out).unwrap();
+        let (flushed, _) = resampler.flush(&mut flush_out).unwrap();
         assert!(
             flushed > 0,
             "flush() should produce output for the {block_size} buffered frames, got 0"
@@ -520,7 +520,7 @@ use super::resampler_quality::ResamplerQuality;
 
         // Subsequent flush with no residual should be 0.
         let mut flush_out2 = vec![0.0_f32; (max_flush_out + 64) * 2];
-        let flushed2 = resampler.flush(&mut flush_out2).unwrap();
+        let (flushed2, _) = resampler.flush(&mut flush_out2).unwrap();
         assert_eq!(flushed2, 0, "second flush with no residual should return 0");
     }
 
@@ -579,7 +579,7 @@ use super::resampler_quality::ResamplerQuality;
         // Flush the remaining 476 residual frames.
         let max_flush = resampler.output_frames_for_input(0);
         let mut flush_out = vec![0.0_f32; (max_flush + 64) * 2];
-        let flushed = resampler.flush(&mut flush_out).unwrap();
+        let (flushed, _) = resampler.flush(&mut flush_out).unwrap();
         assert!(flushed > 0, "flush should recover the 476 residual frames");
     }
 
@@ -749,7 +749,7 @@ use super::resampler_quality::ResamplerQuality;
 
         let max_flush = resampler.output_frames_for_input(0);
         let mut flush_out = vec![0.0_f32; max_flush];
-        let flushed = resampler.flush(&mut flush_out).unwrap();
+        let (flushed, _) = resampler.flush(&mut flush_out).unwrap();
 
         let total_out = produced + flushed;
         let all_output: Vec<f32> = output[..produced]
@@ -823,7 +823,7 @@ fn test_flush_after_full_chunk_returns_zero() {
         .unwrap();
     assert!(produced > 0);
     let mut flush_out = vec![0.0_f32; max_out * 2];
-    let flushed = resampler.flush(&mut flush_out).unwrap();
+    let (flushed, _) = resampler.flush(&mut flush_out).unwrap();
     assert_eq!(flushed, 0, "flush after full chunk should have no residual");
 }
 
@@ -854,7 +854,7 @@ fn test_flush_after_reset_returns_zero() {
         .unwrap();
     resampler.reset();
     let mut flush_out = vec![0.0_f32; max_out * 2];
-    let flushed = resampler.flush(&mut flush_out).unwrap();
+    let (flushed, _) = resampler.flush(&mut flush_out).unwrap();
     assert_eq!(flushed, 0, "flush after reset should return 0");
 }
 
@@ -893,7 +893,7 @@ fn test_flush_produces_signal_not_silence() {
         .unwrap();
     assert_eq!(produced, 0);
     let mut flush_out = vec![0.0_f32; (max_out + 64) * 2];
-    let flushed = resampler.flush(&mut flush_out).unwrap();
+    let (flushed, _) = resampler.flush(&mut flush_out).unwrap();
     assert!(flushed > 0);
     let rms: f32 = (flush_out[..flushed * 2]
         .iter()
@@ -934,6 +934,6 @@ fn test_zero_frame_process_then_flush_returns_zero() {
         .unwrap();
     assert_eq!(produced, 0);
     let mut flush_out = vec![0.0_f32; 64 * 2];
-    let flushed = resampler.flush(&mut flush_out).unwrap();
+    let (flushed, _) = resampler.flush(&mut flush_out).unwrap();
     assert_eq!(flushed, 0);
 }

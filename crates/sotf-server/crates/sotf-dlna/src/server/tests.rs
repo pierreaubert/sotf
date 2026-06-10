@@ -122,6 +122,11 @@ use super::types::MediaTrack;
     }
 
     #[test]
+    fn compute_body_len_u64_max_no_panic() {
+        assert_eq!(super::handle::compute_body_len(100, 0, u64::MAX), u64::MAX);
+    }
+
+    #[test]
     fn rejects_invalid_byte_ranges() {
         assert!(parse_range_header(Some("items=0-9"), 100).is_err());
         assert!(parse_range_header(Some("bytes=50-40"), 100).is_err());

@@ -2,7 +2,7 @@
 
 use sotf_audio_player :: { EQFilter , PluginGraph , PluginSettings , PluginType , room_eq_types :: { parse_eq_filters_from_json } } ;
 use std::collections::HashMap;
-use sotf_audio_player :: room_eq_types :: { DriverDspChain } ;
+use sotf_audio_player :: room_eq_types :: { DriverDspChain , DspChainOutputExt } ;
 use sotf_audio_player_gpui :: { ChannelDspChain , DspChainOutput , DspPluginConfig } ;
 
 /// Build a `ChannelDspChain` with no optional curves / impulse responses

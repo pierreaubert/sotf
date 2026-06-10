@@ -19,7 +19,6 @@ use super::super::package::package_convolution_sidecars;
     use super::super::*;
     use crate::roomeq::types::*;
     use serde_json::json;
-    use std::collections::HashMap;
 
     /// Build a test DspChainOutput with 2 channels, each having gain + 3 PEQ + delay
     fn make_test_output() -> DspChainOutput {

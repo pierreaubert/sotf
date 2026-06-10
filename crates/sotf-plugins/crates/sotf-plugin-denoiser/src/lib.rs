@@ -21,7 +21,7 @@ mod denoiser_plugin;
 #[path = "lib/misc.rs"]
 mod misc;
 #[cfg(test)]
-#[path = "lib/tests.rs"]
+#[path = "tests.rs"]
 mod tests;
 
 pub use denoiser_data::*;

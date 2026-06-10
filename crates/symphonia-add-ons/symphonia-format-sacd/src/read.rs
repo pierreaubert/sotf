@@ -212,7 +212,12 @@ pub(super) fn read_track_text(
     chunk_offset: usize,
     track_idx: usize,
 ) -> SacdResult<SacdTrackMetadata> {
-    let pos_off = chunk_offset + 8 + track_idx * 2;
+    let Some(pos_off) = chunk_offset
+        .checked_add(8)
+        .and_then(|x| x.checked_add(track_idx.checked_mul(2)?))
+    else {
+        return Ok(SacdTrackMetadata::default());
+    };
     if pos_off + 2 > data.len() {
         return Ok(SacdTrackMetadata::default());
     }
@@ -220,7 +225,9 @@ pub(super) fn read_track_text(
     if rel == 0 {
         return Ok(SacdTrackMetadata::default());
     }
-    let mut cursor = chunk_offset + rel;
+    let Some(mut cursor) = chunk_offset.checked_add(rel) else {
+        return Ok(SacdTrackMetadata::default());
+    };
     if cursor + 4 > data.len() {
         return Ok(SacdTrackMetadata::default());
     }

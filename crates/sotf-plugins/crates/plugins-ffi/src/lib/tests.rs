@@ -32,7 +32,6 @@ use super::plugin::plugin_swift_package_info;
 use super::plugin::plugin_vst3_ffi_descriptor;
 
     use super::*;
-    use std::ffi::CString;
 
     fn last_error_string() -> String {
         let error = plugin_get_last_error();
