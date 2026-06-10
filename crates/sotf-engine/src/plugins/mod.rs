@@ -9,10 +9,7 @@ pub use matrix::{
     apply_matrix_preset, available_matrix_presets, detect_matrix_preset, resize_matrix,
     upmixer_output_channels,
 };
-pub use utility::{
-    db_to_linear, get_channel_label, get_channel_label_from_config, linear_to_db_string,
-    plugins_to_path_config_json, preset_file_to_path_config_json,
-};
+use sotf_plugins::param_specs::aae as aae_specs;
 use sotf_plugins::param_specs::ab_compare as ab_compare_specs;
 use sotf_plugins::param_specs::aec as aec_specs;
 use sotf_plugins::param_specs::ambisonics as ambisonics_specs;
@@ -31,10 +28,9 @@ use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
 use sotf_plugins::param_specs::fir_designer as fir_designer_specs;
-use sotf_plugins::param_specs::hiss_reducer as hiss_reducer_specs;
-use sotf_plugins::param_specs::speech_denoiser as speech_denoiser_specs;
 use sotf_plugins::param_specs::gain as gain_specs;
 use sotf_plugins::param_specs::gate as gate_specs;
+use sotf_plugins::param_specs::hiss_reducer as hiss_reducer_specs;
 use sotf_plugins::param_specs::limiter as limiter_specs;
 use sotf_plugins::param_specs::linear_phase_eq as linear_phase_eq_specs;
 use sotf_plugins::param_specs::loudness_compensation as lc_specs;
@@ -45,11 +41,15 @@ use sotf_plugins::param_specs::pnd as pnd_specs;
 use sotf_plugins::param_specs::saturation as saturation_specs;
 use sotf_plugins::param_specs::spectral_compressor as spectral_compressor_specs;
 use sotf_plugins::param_specs::spectrum as spectrum_specs;
+use sotf_plugins::param_specs::speech_denoiser as speech_denoiser_specs;
 use sotf_plugins::param_specs::stereo_imager as stereo_imager_specs;
 use sotf_plugins::param_specs::transient_shaper as transient_shaper_specs;
 use sotf_plugins::param_specs::upmixer as upmixer_specs;
 use sotf_plugins::param_specs::xtc as xtc_specs;
-use sotf_plugins::param_specs::aae as aae_specs;
+pub use utility::{
+    db_to_linear, get_channel_label, get_channel_label_from_config, linear_to_db_string,
+    plugins_to_path_config_json, preset_file_to_path_config_json,
+};
 
 sotf_plugins::serde_param_default! {
     upmixer_specs::PARAMS;
@@ -459,13 +459,12 @@ mod plugin;
 mod plugin_settings;
 mod plugin_type;
 mod release_channel;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use plugin::*;
 pub use plugin_settings::*;
 pub use plugin_type::*;
 pub use release_channel::*;
 pub use types::*;
-

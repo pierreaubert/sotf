@@ -37,6 +37,9 @@ pub use cpal_sink::CpalSink;
 mod playback_thread;
 #[cfg(not(target_os = "ios"))]
 pub use playback_thread::PlaybackThread;
+#[cfg(not(target_os = "ios"))]
+#[doc(hidden)]
+pub mod playback_runtime_harness;
 
 #[cfg(target_os = "ios")]
 mod playback_thread_stub;

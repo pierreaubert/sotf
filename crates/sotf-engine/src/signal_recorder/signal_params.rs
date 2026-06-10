@@ -135,4 +135,3 @@ pub fn validate_signal_params(
 
     Ok(())
 }
-

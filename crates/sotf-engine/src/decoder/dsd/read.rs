@@ -36,4 +36,3 @@ pub(super) fn read_u64_le(bytes: &[u8], offset: usize) -> AudioDecoderResult<u64
         .ok_or_else(|| AudioDecoderError::InvalidFile("Unexpected end of DSF file".to_string()))?;
     Ok(u64::from_le_bytes(slice.try_into().unwrap()))
 }
-

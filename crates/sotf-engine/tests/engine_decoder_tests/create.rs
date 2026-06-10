@@ -56,7 +56,11 @@ fn create_test_wav(duration_secs: f32, sample_rate: u32) -> NamedTempFile {
 }
 
 /// Helper to create a stereo WAV with an exact frame count.
-pub(super) fn create_test_wav_frames(num_frames: usize, sample_rate: u32, channels: u16) -> NamedTempFile {
+pub(super) fn create_test_wav_frames(
+    num_frames: usize,
+    sample_rate: u32,
+    channels: u16,
+) -> NamedTempFile {
     let spec = WavSpec {
         channels,
         sample_rate,
@@ -552,4 +556,3 @@ fn test_decoder_frame_size_consistency() {
         frames.len()
     );
 }
-

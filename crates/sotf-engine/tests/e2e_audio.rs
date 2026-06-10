@@ -34,9 +34,8 @@ mod device;
 mod get;
 #[path = "e2e_audio/misc.rs"]
 mod misc;
-#[path = "e2e_audio/types.rs"]
-mod types;
 #[cfg(test)]
 #[path = "e2e_audio/tests.rs"]
 mod tests;
-
+#[path = "e2e_audio/types.rs"]
+mod types;

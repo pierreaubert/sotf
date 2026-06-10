@@ -13,4 +13,3 @@ pub struct ChannelConflict {
     pub required_channels: usize,
     pub actual_channels: usize,
 }
-

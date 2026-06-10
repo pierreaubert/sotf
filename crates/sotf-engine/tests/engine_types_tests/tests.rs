@@ -542,4 +542,3 @@ fn test_plugin_config_various_types() {
         let _: PluginConfig = serde_json::from_str(&json).unwrap();
     }
 }
-

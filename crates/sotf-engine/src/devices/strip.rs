@@ -73,4 +73,3 @@ pub(super) fn strip_duplicate_prefixes_windows(devices: Vec<AudioDevice>) -> Vec
         })
         .collect()
 }
-

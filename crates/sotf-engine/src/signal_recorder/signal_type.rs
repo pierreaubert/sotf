@@ -50,4 +50,3 @@ impl FromStr for SignalType {
         }
     }
 }
-

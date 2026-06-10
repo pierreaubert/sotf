@@ -5,12 +5,12 @@ use super::super::{
     ChannelConflict, Plugin, PluginSettings, PluginType,
     matrix::{resize_matrix, upmixer_output_channels},
 };
-use crate::engine::PluginConfig;
 use super::misc::default_plugin_preset_version;
 use super::misc::plugin_type_from_raw;
 use super::misc::upmixer_settings_output_channels;
 use super::types::PluginPreset;
 use super::types::PluginPresetRaw;
+use crate::engine::PluginConfig;
 
 #[derive(Debug, Clone)]
 pub struct PluginChain {
@@ -1262,8 +1262,8 @@ impl PluginChain {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::*;
+    use super::*;
     use crate::plugins::matrix::{
         apply_matrix_preset, available_matrix_presets, detect_matrix_preset,
     };
@@ -2156,4 +2156,3 @@ mod tests {
         }
     }
 }
-

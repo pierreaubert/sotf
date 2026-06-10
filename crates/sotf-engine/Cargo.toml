@@ -93,3 +93,7 @@ rand = { workspace = true }
 criterion = { workspace = true }
 serial_test = { workspace = true }
 sofa-reader = { workspace = true }
+
+[[bench]]
+name = "playback_runtime_benchmark"
+harness = false

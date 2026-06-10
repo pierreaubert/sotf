@@ -9,16 +9,21 @@ mod apply;
 mod build;
 mod core_audio_exclusive_mode_guard;
 mod coreaudio_mod;
+mod frame_writer;
 mod misc;
 mod pick;
 mod playback;
 mod playback_state;
-mod types;
+mod runtime;
 #[cfg(test)]
 mod tests;
+mod types;
 
-use core_audio_exclusive_mode_guard::run_playback_thread;
+pub(in crate::engine) use frame_writer::{
+    FrameWriteOutcome, required_conversion_capacity, write_frame_to_ring,
+};
 use misc::send_playback_event;
+use runtime::run_playback_thread;
 
 /// Playback thread handle
 pub struct PlaybackThread {
@@ -100,4 +105,3 @@ impl Drop for PlaybackThread {
         self.shutdown();
     }
 }
-

@@ -39,4 +39,3 @@ pub(super) fn guard_hal_input_block(samples: &mut [f32]) -> Option<HalInputGuard
     samples.fill(0.0);
     Some(trip)
 }
-

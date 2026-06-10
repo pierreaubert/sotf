@@ -2,7 +2,7 @@
 
 use std::sync::LazyLock;
 use symphonia::core::codecs::registry::CodecRegistry;
-use symphonia :: core :: formats :: probe :: { Probe } ;
+use symphonia::core::formats::probe::Probe;
 
 /// Shared probe with all supported format readers (initialized once)
 pub(super) static PROBE: LazyLock<Probe> = LazyLock::new(|| {
@@ -30,4 +30,3 @@ pub(super) static CODEC_REGISTRY: LazyLock<CodecRegistry> = LazyLock::new(|| {
     registry.register_audio_decoder::<symphonia_codec_wavpack::WavPackDecoder>();
     registry
 });
-

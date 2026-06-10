@@ -21,4 +21,3 @@ mod create;
 #[cfg(test)]
 #[path = "decoder_integration_tests/tests.rs"]
 mod tests;
-

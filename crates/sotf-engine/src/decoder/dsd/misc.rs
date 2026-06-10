@@ -7,4 +7,3 @@ pub(super) fn checked_chunk_size(size: u64) -> AudioDecoderResult<usize> {
         AudioDecoderError::InvalidFile(format!("DSF chunk size {} is too large", size))
     })
 }
-

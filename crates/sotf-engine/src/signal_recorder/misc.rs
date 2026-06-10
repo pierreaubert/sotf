@@ -3,7 +3,11 @@
 use crate::signals::*;
 
 #[cfg(not(target_os = "ios"))]
-pub(super) fn capture_capacity(sample_rate: u32, duration_secs: f64, extra_tail_secs: f64) -> usize {
+pub(super) fn capture_capacity(
+    sample_rate: u32,
+    duration_secs: f64,
+    extra_tail_secs: f64,
+) -> usize {
     ((duration_secs + extra_tail_secs).max(1.0) * sample_rate as f64).ceil() as usize
 }
 
@@ -71,4 +75,3 @@ pub fn parse_channel_list(s: &str) -> Result<Vec<u16>, String> {
 
     Ok(channels)
 }
-

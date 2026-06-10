@@ -3,7 +3,9 @@
 use super::error::ConfigError;
 
 /// Validate plugin configurations before applying
-pub(super) fn validate_plugin_configs(configs: &[super::super::PluginConfig]) -> Result<(), ConfigError> {
+pub(super) fn validate_plugin_configs(
+    configs: &[super::super::PluginConfig],
+) -> Result<(), ConfigError> {
     log::debug!(
         "[Manager Thread] Starting validation of {} plugins",
         configs.len()
@@ -153,4 +155,3 @@ pub(super) fn validate_gapless_source_compatible(
 
     Ok(())
 }
-

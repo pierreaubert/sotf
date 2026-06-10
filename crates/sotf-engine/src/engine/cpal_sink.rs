@@ -16,9 +16,9 @@ mod cpal_playback_state;
 mod misc;
 mod pick;
 mod stall_check_state;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub(crate) use cpal_playback_state::*;
 pub use types::*;
@@ -458,4 +458,3 @@ impl CpalSink {
         })
     }
 }
-
