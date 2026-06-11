@@ -75,6 +75,77 @@ docker-base-win-x86:
 # LINUX (AppImage + tarball via Docker)
 # ----------------------------------------------------------------------
 
+[group('docker')]
+docker-linux-x86-distros: docker-linux-x86-ubuntu-24-04 docker-linux-x86-ubuntu-26-04 docker-linux-x86-debian-latest docker-linux-x86-alpine-latest
+
+[group('docker')]
+docker-linux-x86-ubuntu-24-04:
+	just _docker-linux-x86-debian-distro ubuntu-24-04 ubuntu:24.04
+
+[group('docker')]
+docker-linux-x86-ubuntu-26-04:
+	just _docker-linux-x86-debian-distro ubuntu-26-04 ubuntu:26.04
+
+[group('docker')]
+docker-linux-x86-debian-latest:
+	just _docker-linux-x86-debian-distro debian-latest debian:latest
+
+[group('docker')]
+docker-linux-x86-alpine-latest:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	image="sotf-linux-x86-alpine-latest"
+	volume="sotf-target-linux-x86-alpine-latest"
+	version=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+	out_dir="dist/linux-distros/alpine-latest"
+	echo "Building Docker image for Alpine latest..."
+	docker build --platform linux/amd64 -t "$image" \
+		-f ./builds/linux-distros/Dockerfile.alpine-x86_64 .
+	echo "Building TUI in Docker container..."
+	docker run --rm --platform linux/amd64 \
+		-v "$(pwd)":/project \
+		-v "$volume":/build-target \
+		-w /project \
+		-e CARGO_TARGET_DIR=/build-target \
+		"$image" ./scripts/build-linux.sh --tui-only
+	mkdir -p "$out_dir"
+	for artifact in \
+		"dist/sotf-desktop-${version}-linux-x86_64.tar.gz"; do
+		[ -f "$artifact" ] && cp "$artifact" "$out_dir/"
+	done
+	echo "Copied distro outputs to: $out_dir"
+	echo "Done! Output in: dist/"
+
+[group('docker')]
+_docker-linux-x86-debian-distro distro base_image:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	image="sotf-linux-x86-{{distro}}"
+	volume="sotf-target-linux-x86-{{distro}}"
+	version=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+	out_dir="dist/linux-distros/{{distro}}"
+	echo "Building Docker image for {{base_image}}..."
+	docker build --platform linux/amd64 \
+		--build-arg BASE_IMAGE="{{base_image}}" \
+		-t "$image" \
+		-f ./builds/linux-distros/Dockerfile.debian-x86_64-gnu .
+	echo "Building AppImage, .deb, and tarball in Docker container..."
+	docker run --rm --platform linux/amd64 \
+		-v "$(pwd)":/project \
+		-v "$volume":/build-target \
+		-w /project \
+		-e CARGO_TARGET_DIR=/build-target \
+		"$image" ./scripts/build-linux.sh --appimage --deb
+	mkdir -p "$out_dir"
+	for artifact in \
+		"dist/sotf-desktop-${version}-linux-x86_64.tar.gz" \
+		"dist/sotf-desktop-${version}-linux-x86_64.AppImage" \
+		"dist/sotf-desktop_${version}_amd64.deb"; do
+		[ -f "$artifact" ] && cp "$artifact" "$out_dir/"
+	done
+	echo "Copied distro outputs to: $out_dir"
+	echo "Done! Output in: dist/"
+
 # Linux ARM64: AppImage + tarball → dist/
 # Use the GNU/Linux image for release packaging. The static musl image cannot
 # provide the ALSA pkg-config metadata needed by cpal/alsa-sys.

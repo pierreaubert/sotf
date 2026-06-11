@@ -1,0 +1,41 @@
+# Native x86_64 Alpine/musl build environment.
+# Alpine does not build Debian packages, and AppImage tooling expects glibc, so
+# the matching just recipe runs the existing Linux script in --tui-only mode.
+FROM --platform=linux/amd64 alpine:latest AS builder
+
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+ENV CARGO_TARGET_DIR=/build-target
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN apk add --no-cache \
+        alsa-lib-dev \
+        bash \
+        build-base \
+        ca-certificates \
+        clang-dev \
+        cmake \
+        curl \
+        file \
+        g++ \
+        gcc \
+        gfortran \
+        git \
+        linux-headers \
+        ninja \
+        openblas-dev \
+        openssl-dev \
+        patchelf \
+        perl \
+        pkgconf \
+        sqlite-dev \
+        tar \
+        xz
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain stable --profile minimal && \
+    rustup component add clippy llvm-tools-preview rust-analyzer rust-src rustc-dev rustfmt && \
+    cargo install just --locked && \
+    mkdir -p /build-target && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
+WORKDIR /project

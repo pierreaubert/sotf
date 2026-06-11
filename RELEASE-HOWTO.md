@@ -13,7 +13,7 @@ is your friend, it will list a long list of commands to get stuff done.
 just ntest
 ```
 
-need to work cleanly.
+needs to work cleanly.
 
 ## QA
 
@@ -56,6 +56,28 @@ just docker-linux-x86
 just docker-windows-86
 ```
 All the files land in `./dist`.
+
+## Building Linux distro variants
+
+To check the x86_64 Linux build against specific Docker base images:
+
+```
+just docker-linux-x86-ubuntu-24-04
+just docker-linux-x86-ubuntu-26-04
+just docker-linux-x86-debian-latest
+just docker-linux-x86-alpine-latest
+```
+
+Run all of the distro checks with:
+
+```
+just docker-linux-x86-distros
+```
+
+The Ubuntu and Debian recipes build the AppImage, `.deb`, and tarball. The
+Alpine recipe runs the TUI-only path because `.deb` packaging and AppImage
+tooling are Debian/glibc-oriented. Each recipe also copies its artifacts to
+`dist/linux-distros/<distro>/` so aggregate runs keep per-distro outputs.
 
 ## Building on Windows X86
 

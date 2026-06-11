@@ -1,0 +1,54 @@
+# Native x86_64 GNU/Linux build environment for Debian-family distro checks.
+# Pass BASE_IMAGE=ubuntu:26.04, debian:latest, etc. from the just recipes.
+ARG BASE_IMAGE=ubuntu:24.04
+FROM --platform=linux/amd64 ${BASE_IMAGE} AS builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+ENV CARGO_TARGET_DIR=/build-target
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        clang \
+        cmake \
+        curl \
+        dpkg-dev \
+        fakeroot \
+        file \
+        g++ \
+        gcc \
+        gfortran \
+        git \
+        libasound2-dev \
+        libayatana-appindicator3-dev \
+        libclang-dev \
+        libglib2.0-dev \
+        libgtk-3-dev \
+        libnetcdf-dev \
+        libopenblas-dev \
+        libopencv-dev \
+        librsvg2-dev \
+        libsqlite3-dev \
+        libssl-dev \
+        libwebkit2gtk-4.1-dev \
+        libxkbcommon-x11-dev \
+        ninja-build \
+        patchelf \
+        perl \
+        pkg-config \
+        python3-venv \
+        xz-utils \
+        && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain stable --profile minimal && \
+    rustup component add clippy llvm-tools-preview rust-analyzer rust-src rustc-dev rustfmt && \
+    cargo install just --locked && \
+    mkdir -p /build-target && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
+
+WORKDIR /project
