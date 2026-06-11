@@ -127,4 +127,3 @@ impl<const D: usize> Prior<D> {
         }
     }
 }
-

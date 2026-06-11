@@ -21,4 +21,3 @@ impl Position {
         (dx * dx + dy * dy).sqrt()
     }
 }
-

@@ -15,7 +15,7 @@ use crate::button::{Button, ButtonSize, ButtonVariant};
 use crate::progress::{Progress, ProgressSize, ProgressVariant};
 use crate::theme::ThemeExt;
 use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{SharedString, Window, App, Div, div, px, FontWeight};
+use gpui::{App, Div, FontWeight, SharedString, Window, div, px};
 
 mod types;
 mod wizard_header;
@@ -24,9 +24,9 @@ mod wizard_step;
 mod wizard_step_indicator_density;
 
 pub use types::{StepStatus, WizardTheme, WizardVariant};
-pub use wizard_header::{WizardHeader};
-pub use wizard_navigation::{WizardNavigation};
-pub use wizard_step::{WizardStep};
+pub use wizard_header::WizardHeader;
+pub use wizard_navigation::WizardNavigation;
+pub use wizard_step::WizardStep;
 use wizard_step_indicator_density::WizardStepIndicatorDensity;
 
 /// A wizard component for multi-step workflows
@@ -493,4 +493,3 @@ impl IntoElement for Wizard {
         gpui::Component::new(self)
     }
 }
-

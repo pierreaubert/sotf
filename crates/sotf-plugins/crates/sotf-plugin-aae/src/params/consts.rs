@@ -287,4 +287,3 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     ],
     dynamic_sections: &[],
 };
-

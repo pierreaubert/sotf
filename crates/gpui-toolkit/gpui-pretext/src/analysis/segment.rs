@@ -14,4 +14,3 @@ pub(super) fn segment_is_word_like(segment: &str) -> bool {
 pub(super) fn segment_contains_decimal_digit(text: &str) -> bool {
     text.chars().any(is_decimal_digit)
 }
-

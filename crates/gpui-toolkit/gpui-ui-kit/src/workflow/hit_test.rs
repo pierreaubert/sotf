@@ -307,8 +307,8 @@ fn point_to_segment_distance(point: &Position, seg_start: &Position, seg_end: &P
 
 #[cfg(test)]
 mod tests {
-    use super::{HitTestResult, HitTester};
     use super::super::{Position, ViewportState, WorkflowGraph, WorkflowNodeData};
+    use super::{HitTestResult, HitTester};
 
     fn create_test_graph() -> WorkflowGraph {
         let mut graph = WorkflowGraph::new();

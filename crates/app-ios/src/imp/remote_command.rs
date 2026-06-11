@@ -13,4 +13,3 @@ pub(super) fn push_remote_command(cmd: RemoteCommand) {
 pub fn drain_pending_remote_commands() -> Vec<RemoteCommand> {
     pending_queue().lock().drain(..).collect()
 }
-

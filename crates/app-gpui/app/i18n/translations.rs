@@ -2424,4 +2424,3 @@ impl Translations {
         }
     }
 }
-

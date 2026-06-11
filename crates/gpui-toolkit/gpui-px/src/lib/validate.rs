@@ -119,4 +119,3 @@ pub(crate) fn validate_range_log(
     }
     Ok(())
 }
-

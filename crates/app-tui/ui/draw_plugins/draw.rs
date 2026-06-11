@@ -1006,4 +1006,3 @@ pub(crate) fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
         render_autocomplete_dropdown(f, ac_area, app);
     }
 }
-

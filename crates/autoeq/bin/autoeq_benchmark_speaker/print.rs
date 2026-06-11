@@ -46,4 +46,3 @@ pub(super) fn print_pairwise_stats(name: &str, data: &[f64]) {
         }
     }
 }
-

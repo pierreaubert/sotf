@@ -24,4 +24,3 @@ pub fn parse_dsv(text: &str, delimiter: char) -> DsvResult<Vec<DsvRow>> {
 pub fn parse_dsv_lossy(text: &str, delimiter: char) -> Vec<DsvRow> {
     DsvParser::new(delimiter).parse_lossy(text)
 }
-

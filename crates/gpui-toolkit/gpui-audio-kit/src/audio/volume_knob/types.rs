@@ -19,4 +19,3 @@ pub struct VolumeKnobTheme {
     #[theme(default = 0xe6e6e6ff, from = text_primary)]
     pub text: Rgba,
 }
-

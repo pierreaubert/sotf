@@ -3,10 +3,10 @@
 use qrcode::QrCode;
 use qrcode::render::unicode;
 use sotf_audio_player::Player;
-use sotf_audio_player_tui::app::{App, InputMode, Screen};
+use sotf_audio_player_tui::app::{App, InputMode};
 #[cfg(feature = "dev-api")]
 use sotf_audio_player_tui::dev_api::{DevCommand, DevQueryReply, DevReply};
-use sotf_audio_player_tui :: events :: PlayerCommand ;
+use sotf_audio_player_tui::events::PlayerCommand;
 use sotf_audio_player_tui::media_controls::TuiMediaControls;
 use sotf_media_controls::{MediaPlayback, MediaPosition};
 use std::time::Duration;
@@ -390,6 +390,8 @@ pub(super) fn process_dev_command(
 
 #[cfg(feature = "dev-api")]
 pub(super) fn dispatch_tui_action(app: &mut App, name: &str) -> anyhow::Result<()> {
+    use sotf_audio_player_tui::app::Screen;
+
     match name {
         "PlayPause" => {
             app.is_playing = !app.is_playing;
@@ -489,4 +491,3 @@ pub(super) fn parse_keystroke(s: &str) -> anyhow::Result<crossterm::event::KeyEv
 
     Ok(KeyEvent::new(code, modifiers))
 }
-

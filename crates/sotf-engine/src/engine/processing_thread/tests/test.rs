@@ -3,12 +3,12 @@
 use super::super::super::{ProcessingCommand, ProcessingResponse, ThreadEvent};
 use super::super::processing_state::ProcessingState;
 use super::super::processing_state::handle_processing_command;
+use sotf_plugins::PluginHost;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_plugins::{
     ExternalPluginWorkerCommand, IsolatedExternalPlugin, IsolatedExternalPluginConfig,
     PluginDescriptor, PluginFormat,
 };
-use sotf_plugins::{Host, PluginHost};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_types::IsolatedExternalPluginWorkerEvent;
 use std::time::Duration;

@@ -68,4 +68,3 @@ impl LtRtAllpass {
         self.x_prev = 0.0;
     }
 }
-

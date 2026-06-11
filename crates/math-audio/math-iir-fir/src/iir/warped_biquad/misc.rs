@@ -100,4 +100,3 @@ pub(super) fn compute_implicit_consts<T: FilterFloat>(a1: T, a2: T, lambda: T) -
     };
     (inv_denom, one_minus_lam_sq)
 }
-

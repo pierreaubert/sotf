@@ -142,4 +142,3 @@ impl From<u32> for ColorToken {
         Self::from_hex(hex)
     }
 }
-

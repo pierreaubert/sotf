@@ -108,4 +108,3 @@ pub(super) fn rgba_from_u32(color: u32) -> Rgba {
     let b = (color & 0xff) as f32 / 255.0;
     Rgba { r, g, b, a: 1.0 }
 }
-

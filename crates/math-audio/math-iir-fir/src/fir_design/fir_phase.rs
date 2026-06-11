@@ -80,4 +80,3 @@ pub(super) fn finalize_impulse_response(
 
     final_ir
 }
-

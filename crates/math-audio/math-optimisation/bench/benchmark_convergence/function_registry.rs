@@ -325,4 +325,3 @@ impl FunctionRegistry {
 
 pub(super) static FUNCTION_REGISTRY: std::sync::LazyLock<FunctionRegistry> =
     std::sync::LazyLock::new(FunctionRegistry::new);
-

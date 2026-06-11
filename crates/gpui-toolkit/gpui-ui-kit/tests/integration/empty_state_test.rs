@@ -7,7 +7,7 @@
 //! - With action button
 //! - Full configuration
 
-use gpui::{Context, TestAppContext, Window, div, prelude::*};
+use gpui::{Context, IntoElement, ParentElement, Render, TestAppContext, Window, div};
 use gpui_ui_kit::Button;
 use gpui_ui_kit::empty_state::EmptyState;
 

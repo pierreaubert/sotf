@@ -262,4 +262,3 @@ impl MicrophoneCompensation {
         s0 + t * (s1 - s0)
     }
 }
-

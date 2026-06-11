@@ -12,8 +12,6 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use sotf_audio_player::Player;
 use sotf_audio_player_tui::app::{App, Screen};
-#[cfg(feature = "dev-api")]
-use sotf_audio_player_tui::dev_api::{DevCommand, DevQueryReply, DevReply};
 use sotf_audio_player_tui::media_controls::TuiMediaControls;
 use sotf_audio_player_tui::ui;
 use std::fs::OpenOptions;
@@ -29,16 +27,14 @@ mod try_;
 mod types;
 
 use misc::print_sotf_api_connection_qr;
-# [cfg (not (any (unix , windows)))]
+#[cfg(not(any(unix, windows)))]
 use try_::try_acquire_lock;
-# [cfg (unix)]
+#[cfg(unix)]
 use try_::try_acquire_lock;
-# [cfg (windows)]
+#[cfg(windows)]
 use try_::try_acquire_lock;
 use types::Args;
-# [cfg (feature = "dev-api")]
-use types::DevApiRx;
-# [cfg (not (feature = "dev-api"))]
+#[cfg(not(feature = "dev-api"))]
 use types::DevApiRx;
 use types::run_app;
 
@@ -320,4 +316,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // clean up all threads. Config is already saved and terminal is restored above.
     std::process::exit(if result.is_ok() { 0 } else { 1 });
 }
-

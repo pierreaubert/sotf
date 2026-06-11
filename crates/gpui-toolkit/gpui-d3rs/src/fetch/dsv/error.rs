@@ -36,4 +36,3 @@ impl std::fmt::Display for DsvParseError {
 }
 
 impl std::error::Error for DsvParseError {}
-

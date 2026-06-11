@@ -33,4 +33,3 @@ pub(super) fn interpolate_axis_value(v0: f64, v1: f64, t: f64, log_space: bool) 
         v0 + (v1 - v0) * t
     }
 }
-

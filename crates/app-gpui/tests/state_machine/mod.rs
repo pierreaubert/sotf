@@ -84,11 +84,10 @@
 
 mod input_state_machine;
 mod playback_state_machine;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use input_state_machine::*;
 pub use playback_state_machine::*;
 pub use types::*;
-

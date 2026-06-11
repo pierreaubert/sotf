@@ -80,4 +80,3 @@ pub(super) fn relative_luminance(color: Color) -> f32 {
 
     0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
 }
-

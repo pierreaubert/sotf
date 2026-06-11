@@ -28,4 +28,3 @@ impl GraphNode {
         self.output_channels
     }
 }
-

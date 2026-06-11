@@ -165,6 +165,10 @@ pub use bar::{BarChart, BarTheme, bar};
 pub use boxplot::{BoxPlotChart, boxplot};
 pub use color_scale::ColorScale;
 pub use contour::{ContourChart, contour};
+pub use d3rs::color::D3Color;
+#[cfg(feature = "gpu-3d")]
+pub use d3rs::gpu3d::{Colormap, Surface3DState};
+pub use d3rs::shape::{CurveType, StrokeDashArray};
 pub use error::ChartError;
 pub use heatmap::{HeatmapChart, heatmap};
 pub use isoline::{IsolineChart, isoline};
@@ -174,10 +178,6 @@ pub use scatter::{ScatterChart, ScatterTheme, scatter};
 #[cfg(feature = "gpu-3d")]
 pub use surface3d::{Surface3DChart, surface3d};
 pub use treemap::{TilingMethod, Treemap, TreemapNode, treemap};
-pub use d3rs::color::D3Color;
-#[cfg(feature = "gpu-3d")]
-pub use d3rs::gpu3d::{Colormap, Surface3DState};
-pub use d3rs::shape::{CurveType, StrokeDashArray};
 
 mod area;
 mod bar;
@@ -201,17 +201,16 @@ mod chart_size;
 mod consts;
 #[path = "lib/misc.rs"]
 mod misc;
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;
 #[path = "lib/types.rs"]
 mod types;
 #[path = "lib/validate.rs"]
 mod validate;
-#[cfg(test)]
-#[path = "lib/tests.rs"]
-mod tests;
 
 pub use chart_size::*;
 pub(crate) use consts::*;
 pub(crate) use misc::*;
 pub use types::*;
 pub use validate::*;
-

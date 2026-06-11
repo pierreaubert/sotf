@@ -25,4 +25,3 @@ mod types;
 pub(crate) use au_window::*;
 pub(crate) use au_window_ptr::*;
 pub use types::*;
-

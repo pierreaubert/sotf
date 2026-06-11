@@ -5,7 +5,12 @@ use super::types::LayoutIssue;
 use super::types::LayoutIssueKind;
 use super::types::ValidationState;
 
-pub(super) fn push_invalid_sizing(state: &mut ValidationState, node_id: &str, path: &str, message: String) {
+pub(super) fn push_invalid_sizing(
+    state: &mut ValidationState,
+    node_id: &str,
+    path: &str,
+    message: String,
+) {
     push_issue(
         state,
         LayoutIssueSeverity::Error,
@@ -32,4 +37,3 @@ pub(super) fn push_issue(
         message: message.into(),
     });
 }
-

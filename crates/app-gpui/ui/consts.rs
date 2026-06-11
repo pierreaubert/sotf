@@ -63,4 +63,3 @@ pub fn combined_scale_bounds(min_px: Option<f32>, max_px: Option<f32>) -> (f32, 
     let max = max_px.unwrap_or(DEFAULT_MAX_FONT_SIZE_PX) / 16.0;
     (min, max)
 }
-

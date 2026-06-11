@@ -14,4 +14,3 @@ pub(super) fn default_freq_dependent() -> bool {
 pub(super) fn default_haas_delay_ms() -> f32 {
     pk(MS, "haas_delay_ms").default_f64() as f32
 }
-

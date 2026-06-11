@@ -8,17 +8,20 @@
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{SharedString, Window, App, Div, div, Stateful, MouseButton, px, FontWeight, canvas, TransformationMatrix, Hsla, ElementId};
+use gpui::{
+    App, Div, ElementId, FontWeight, Hsla, MouseButton, SharedString, Stateful,
+    TransformationMatrix, Window, canvas, div, px,
+};
 
 mod accordion_item;
 mod misc;
 mod types;
 
-pub use accordion_item::{AccordionItem};
-pub use types::{AccordionTheme, AccordionMode, AccordionOrientation};
+pub use accordion_item::AccordionItem;
 use misc::rotated_side_label_svg;
 use misc::side_label_height;
 use types::AccordionChangeHandler;
+pub use types::{AccordionMode, AccordionOrientation, AccordionTheme};
 
 /// An accordion component
 pub struct Accordion {
@@ -618,4 +621,3 @@ impl IntoElement for Accordion {
         gpui::Component::new(self)
     }
 }
-

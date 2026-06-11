@@ -41,4 +41,3 @@ pub(super) fn spl_major_ticks(data: &SurfaceData) -> (Vec<f64>, f64) {
     };
     (linear_step_ticks(data.z_min, data.z_max, step), step)
 }
-

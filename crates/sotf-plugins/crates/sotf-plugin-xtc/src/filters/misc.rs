@@ -105,4 +105,3 @@ pub(super) fn condition_number_2x2(
 pub(super) fn sigmoid_smooth(x: f32, width: f32) -> f32 {
     1.0 / (1.0 + (-x / width).exp())
 }
-

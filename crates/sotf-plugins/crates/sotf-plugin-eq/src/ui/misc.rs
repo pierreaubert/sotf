@@ -11,4 +11,3 @@ pub fn drag_delta_to_q_change(delta_px: f32) -> f64 {
     let scale = (pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64()) / 60.0;
     delta_px as f64 * scale
 }
-

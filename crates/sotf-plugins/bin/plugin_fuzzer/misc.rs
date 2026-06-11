@@ -224,7 +224,12 @@ pub(super) fn load_audio_file(path: &PathBuf) -> Result<(Vec<f32>, usize, u32), 
 }
 
 /// Simple linear resampler for fuzzing purposes
-pub(super) fn resample_audio(audio_data: &[f32], channels: usize, from_rate: u32, to_rate: u32) -> Vec<f32> {
+pub(super) fn resample_audio(
+    audio_data: &[f32],
+    channels: usize,
+    from_rate: u32,
+    to_rate: u32,
+) -> Vec<f32> {
     if from_rate == to_rate {
         return audio_data.to_vec();
     }
@@ -256,4 +261,3 @@ pub(super) fn resample_audio(audio_data: &[f32], channels: usize, from_rate: u32
 
     resampled
 }
-

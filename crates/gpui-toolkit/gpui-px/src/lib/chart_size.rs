@@ -155,4 +155,3 @@ pub(crate) fn assert_fill_chart_size(
         }
     );
 }
-

@@ -5,7 +5,9 @@
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Rgba, Pixels, px, SharedString, Div, div, relative, Window, App, ElementId, FontWeight};
+use gpui::{
+    App, Div, ElementId, FontWeight, Pixels, Rgba, SharedString, Window, div, px, relative,
+};
 
 /// Progress variant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

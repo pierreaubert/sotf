@@ -3,7 +3,12 @@
 use super::misc::ensure_below_nyquist;
 use sotf_audio::signals::{gen_log_sweep, gen_tone, gen_two_tone};
 
-pub(super) fn gen_tone_checked(freq: f32, amp: f32, sr: u32, duration: f32) -> Result<Vec<f32>, String> {
+pub(super) fn gen_tone_checked(
+    freq: f32,
+    amp: f32,
+    sr: u32,
+    duration: f32,
+) -> Result<Vec<f32>, String> {
     ensure_below_nyquist(freq, sr, "tone")?;
     Ok(gen_tone(freq, amp, sr, duration))
 }

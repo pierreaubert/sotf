@@ -16,10 +16,12 @@ pub(super) fn mean_level(spl: &[f64]) -> f64 {
     spl.iter().sum::<f64>() / spl.len().max(1) as f64
 }
 
-pub(super) fn mean_output_loss_penalty(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
+pub(super) fn mean_output_loss_penalty(
+    responses: &[Vec<f64>],
+    context: &MsoObjectiveContext,
+) -> f64 {
     let avg_spl = mean_response_curve(responses);
     let candidate_mean = mean_level(&avg_spl);
     let mean_loss = context.baseline_mean_level_db - candidate_mean;
     (mean_loss - MSO_MAX_MEAN_OUTPUT_LOSS_DB).max(0.0) * MSO_OUTPUT_LOSS_WEIGHT
 }
-

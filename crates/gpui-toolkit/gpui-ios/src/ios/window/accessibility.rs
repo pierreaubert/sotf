@@ -2,7 +2,9 @@
 
 use super::super::events::*;
 
-pub(super) fn accessibility_traits_for_node(node: &crate::accessibility::IosAccessibilityNode) -> u64 {
+pub(super) fn accessibility_traits_for_node(
+    node: &crate::accessibility::IosAccessibilityNode,
+) -> u64 {
     use crate::accessibility::{IosAccessibilityAction, IosAccessibilityRole};
 
     let mut traits = 0_u64;
@@ -63,4 +65,3 @@ pub(super) fn accessibility_value_for_node(
         _ => None,
     }
 }
-

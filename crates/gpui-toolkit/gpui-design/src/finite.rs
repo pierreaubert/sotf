@@ -29,4 +29,3 @@ pub(super) fn finite_non_negative(
         });
     }
 }
-

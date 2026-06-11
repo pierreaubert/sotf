@@ -89,4 +89,3 @@ fn test_load_peaked_response_fixture() {
         "Peak should be higher than neighbors"
     );
 }
-

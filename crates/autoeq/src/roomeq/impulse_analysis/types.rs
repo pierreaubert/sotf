@@ -70,4 +70,3 @@ pub struct NarrowNull {
     /// Index into the frequency array
     pub index: usize,
 }
-

@@ -48,4 +48,3 @@ pub(super) struct Individual {
     pub(super) rank: usize,
     pub(super) crowding_distance: f64,
 }
-

@@ -36,4 +36,3 @@ pub struct MediaSource {
     /// MIME type to advertise.
     pub mime_type: String,
 }
-

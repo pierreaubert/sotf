@@ -30,4 +30,3 @@ impl ParamSectionStyle for Div {
         self.param_section_base(theme).p_4()
     }
 }
-

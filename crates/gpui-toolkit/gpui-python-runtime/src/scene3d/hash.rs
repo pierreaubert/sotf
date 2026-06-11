@@ -15,4 +15,3 @@ pub(super) fn hash_optional_f64_slice(values: &Option<Vec<f64>>, h: &mut impl Ha
         hash_f64_slice(values, h);
     }
 }
-

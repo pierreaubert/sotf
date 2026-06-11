@@ -6,7 +6,7 @@
 //! - Custom colors
 //! - Edge cases (empty string)
 
-use gpui::{Context, TestAppContext, Window, div, prelude::*, px, rgba};
+use gpui::{Context, IntoElement, ParentElement, Render, TestAppContext, Window, div, px, rgba};
 use gpui_ui_kit::qr::QrCode;
 
 // ============================================================================

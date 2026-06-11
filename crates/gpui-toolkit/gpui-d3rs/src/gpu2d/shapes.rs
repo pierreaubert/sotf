@@ -25,4 +25,3 @@ mod types;
 pub use gpu_axis_theme::*;
 pub use gpu_grid_config::*;
 pub use render::*;
-

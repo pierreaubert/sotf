@@ -13,4 +13,3 @@ pub struct MultiSubAllPassResult {
     /// Combined frequency response after optimization
     pub combined_curve: Curve,
 }
-

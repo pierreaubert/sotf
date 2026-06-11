@@ -124,4 +124,3 @@ pub(super) fn estimate_dip_q(freq: &Array1<f64>, spl: &Array1<f64>, dip_idx: usi
         0.0
     }
 }
-

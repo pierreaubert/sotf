@@ -24,4 +24,3 @@ pub(super) fn parse_size(s: &str) -> Result<(f32, f32), String> {
     }
     Ok((w, h))
 }
-

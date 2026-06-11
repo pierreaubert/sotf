@@ -108,4 +108,3 @@ pub(super) fn smooth_octave(freqs: &[f64], values: &[f64], smoothing_octaves: f6
         })
         .collect()
 }
-

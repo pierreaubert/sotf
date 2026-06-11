@@ -2,17 +2,17 @@
 
 use super::super::de::optimize_filters_autoeq_with_callback;
 use super::super::{ObjectiveData, optimize_filters_with_algo_override};
+use super::misc::initial_guess;
+use super::misc::resolves_to_backend;
+use super::progress_callback_config::ProgressCallbackConfig;
+use super::setup_bounds;
+use super::types::OptimizationOutput;
+use super::types::ProgressUpdate;
 use crate::iir::Biquad;
 use crate::read;
 use crate::x2peq;
 use ndarray::Array1;
 use std::error::Error;
-use super::setup_bounds;
-use super::misc::initial_guess;
-use super::misc::resolves_to_backend;
-use super::progress_callback_config::ProgressCallbackConfig;
-use super::types::OptimizationOutput;
-use super::types::ProgressUpdate;
 
 /// Run global (and optional local refine) optimization and return the parameter vector.
 pub fn perform_optimization(
@@ -230,4 +230,3 @@ where
         history: final_history,
     })
 }
-

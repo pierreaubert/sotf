@@ -17,4 +17,3 @@ mod types;
 
 pub use ambisonics_decoder_plugin::*;
 pub use types::*;
-

@@ -500,4 +500,3 @@ impl Default for SurfaceData {
         Self::new()
     }
 }
-

@@ -1,6 +1,6 @@
 //! Integration tests for LoadingOverlay component
 
-use gpui::{Context, TestAppContext, Window, div, prelude::*};
+use gpui::{Context, IntoElement, ParentElement, Render, Styled, TestAppContext, Window, div};
 use gpui_ui_kit::loading_overlay::LoadingOverlay;
 use gpui_ui_kit::spinner::SpinnerSize;
 

@@ -3,7 +3,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
-pub(super) fn stream_queue_album(stream: &sotf_audio_player::SavedStream) -> sotf_audio_player::Album {
+pub(super) fn stream_queue_album(
+    stream: &sotf_audio_player::SavedStream,
+) -> sotf_audio_player::Album {
     sotf_audio_player::Album {
         title: stream.name.clone(),
         tracks: vec![sotf_audio_player::Track {
@@ -42,4 +44,3 @@ pub(super) fn current_minutes_after_midnight() -> u16 {
     let now = chrono::Local::now();
     (now.hour() * 60 + now.minute()) as u16
 }
-

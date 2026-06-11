@@ -394,9 +394,6 @@ mod tests {
         assert_eq!(mpd_quote("plain"), "\"plain\"");
         assert_eq!(mpd_quote("has\\backslash"), "\"has\\\\backslash\"");
         assert_eq!(mpd_quote("has\"quote"), "\"has\\\"quote\"");
-        assert_eq!(
-            mpd_quote("both\\and\""),
-            "\"both\\\\and\\\"\""
-        );
+        assert_eq!(mpd_quote("both\\and\""), "\"both\\\\and\\\"\"");
     }
 }

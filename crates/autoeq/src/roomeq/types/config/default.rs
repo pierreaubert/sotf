@@ -604,4 +604,3 @@ pub(super) fn default_ctc_harmonic_window_ms() -> f64 {
 pub(super) fn default_ctc_minimax_iterations() -> usize {
     8
 }
-

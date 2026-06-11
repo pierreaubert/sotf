@@ -3,7 +3,7 @@
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, HasDisplayHandle, HasWindowHandle,
 };
-use std :: { ffi :: c_void , ptr :: NonNull } ;
+use std::{ffi::c_void, ptr::NonNull};
 
 /// Lightweight handle struct passed to `WgpuRenderer::new()`.
 ///
@@ -44,4 +44,3 @@ impl HasDisplayHandle for AuRawWindow {
         Ok(unsafe { raw_window_handle::DisplayHandle::borrow_raw(handle.into()) })
     }
 }
-

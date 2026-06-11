@@ -18,4 +18,3 @@ impl ProcessingStage {
         self.nodes.is_empty()
     }
 }
-

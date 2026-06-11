@@ -143,4 +143,3 @@ pub fn detect_latency(plugin: &mut dyn Plugin, sample_rate: f64) -> usize {
 
     0
 }
-

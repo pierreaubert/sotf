@@ -55,4 +55,3 @@ pub fn default_motion_presets() -> Vec<MotionPreset> {
         MotionPreset::new("reduced", "Reduced", true),
     ]
 }
-

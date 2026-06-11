@@ -576,4 +576,3 @@ impl PlayerView {
             })
     }
 }
-

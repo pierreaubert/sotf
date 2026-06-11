@@ -18,4 +18,3 @@ pub(super) struct PreparedSingleChannelEq {
     /// constraint is applied.
     pub(super) schroeder_hz: Option<f64>,
 }
-

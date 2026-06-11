@@ -108,4 +108,3 @@ const _: () = assert!(std::mem::align_of::<SharedAudioHeader>() == 8);
 pub(super) fn pre_alloc_capacity_samples() -> usize {
     MAX_HAL_BUFFER_FRAMES as usize * MAX_HAL_CHANNEL_COUNT as usize
 }
-

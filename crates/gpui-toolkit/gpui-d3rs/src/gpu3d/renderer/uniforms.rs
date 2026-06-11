@@ -2,11 +2,15 @@
 
 use super::super::camera::Camera3D;
 use super::super::config::Surface3DConfig;
-use glam::Mat4;
 use super::Uniforms;
+use glam::Mat4;
 
 impl Uniforms {
-    pub(super) fn new(camera: &Camera3D, config: &Surface3DConfig, log_settings: Option<(f32, f32)>) -> Self {
+    pub(super) fn new(
+        camera: &Camera3D,
+        config: &Surface3DConfig,
+        log_settings: Option<(f32, f32)>,
+    ) -> Self {
         let view_proj = camera.view_projection_matrix();
         let model = Mat4::IDENTITY;
         let light_dir = config.normalized_light_direction();
@@ -47,4 +51,3 @@ impl Uniforms {
         }
     }
 }
-

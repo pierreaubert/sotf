@@ -50,4 +50,3 @@ pub(super) fn default_reference_level_db() -> f32 {
 pub(super) fn default_fm_compat_reference() -> f32 {
     -14.0
 }
-

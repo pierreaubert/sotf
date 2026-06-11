@@ -49,9 +49,9 @@ use crate::ebur128::{EbuR128, Mode};
 mod binaural_channel;
 mod binaural_downmix;
 mod measure;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use binaural_channel::*;
 pub use binaural_downmix::*;
@@ -232,4 +232,3 @@ impl BinauralLoudness {
         self.cum_true_peak = [0.0; 2];
     }
 }
-

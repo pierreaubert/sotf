@@ -4,7 +4,10 @@ use rustfft::{FftPlanner, num_complex::Complex};
 
 pub(super) const MAX_PROCESS_FRAMES: usize = 16_384;
 
-pub(super) fn fir_taps_to_half_spectrum(taps: &[f64], num_bins: usize) -> Result<Vec<Complex<f32>>, String> {
+pub(super) fn fir_taps_to_half_spectrum(
+    taps: &[f64],
+    num_bins: usize,
+) -> Result<Vec<Complex<f32>>, String> {
     if num_bins < 2 {
         return Err("num_bins must contain at least DC and Nyquist".to_string());
     }
@@ -20,4 +23,3 @@ pub(super) fn fir_taps_to_half_spectrum(taps: &[f64], num_bins: usize) -> Result
     buffer.truncate(num_bins);
     Ok(buffer)
 }
-

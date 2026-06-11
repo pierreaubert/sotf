@@ -17,11 +17,10 @@ pub mod room;
 
 #[path = "lib/binaural_decoder_plugin.rs"]
 mod binaural_decoder_plugin;
-#[path = "lib/types.rs"]
-mod types;
 #[cfg(test)]
 #[path = "lib/tests.rs"]
 mod tests;
+#[path = "lib/types.rs"]
+mod types;
 
 pub use binaural_decoder_plugin::*;
-

@@ -57,7 +57,10 @@ impl Default for GdOptConfig {
 }
 
 /// Encode a `GroupDelayOptResult` back into a parameter vector for evaluation.
-pub(super) fn encode_result_as_params(result: &GroupDelayOptResult, config: &GdOptConfig) -> Vec<f64> {
+pub(super) fn encode_result_as_params(
+    result: &GroupDelayOptResult,
+    config: &GdOptConfig,
+) -> Vec<f64> {
     let n_ch = result.per_channel.len();
     let per_ch = 1 + config.ap_per_channel * 2 + if config.optimize_polarity { 1 } else { 0 };
     let mut params = vec![0.0; n_ch * per_ch];
@@ -91,4 +94,3 @@ pub(super) fn param_count(n_ch: usize, config: &GdOptConfig) -> usize {
     let per_ch = 1 + config.ap_per_channel * 2 + if config.optimize_polarity { 1 } else { 0 };
     n_ch * per_ch
 }
-

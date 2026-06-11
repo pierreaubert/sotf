@@ -94,7 +94,7 @@ pub(super) fn audibility_deadband_threshold(
 
 #[cfg(test)]
 mod audibility_deadband_tests {
-    use super::*;
+
     use crate::optim::misc::apply_audibility_deadband;
     use crate::roomeq::AudibilityDeadbandConfig;
     use ndarray::array;
@@ -119,4 +119,3 @@ mod audibility_deadband_tests {
         assert!(out[2] < 0.0 && out[2].abs() < error[2].abs());
     }
 }
-

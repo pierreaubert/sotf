@@ -98,7 +98,12 @@ impl PluginGraphConfig {
                 .push(edge.to_node);
         }
 
-        validate_graph_topology(&self.edges, &outgoing_edges, incoming_counts, self.nodes.len())
+        validate_graph_topology(
+            &self.edges,
+            &outgoing_edges,
+            incoming_counts,
+            self.nodes.len(),
+        )
     }
 }
 
@@ -311,21 +316,17 @@ mod tests {
 
     #[test]
     fn plugin_graph_rejects_self_loop() {
-        let error = PluginGraphConfig::try_new(
-            vec![node(0)],
-            vec![PluginGraphEdgeConfig::new(0, 0)],
-        )
-        .unwrap_err();
+        let error =
+            PluginGraphConfig::try_new(vec![node(0)], vec![PluginGraphEdgeConfig::new(0, 0)])
+                .unwrap_err();
         assert!(error.contains("acyclic"));
     }
 
     #[test]
     fn plugin_graph_rejects_missing_from_node() {
-        let error = PluginGraphConfig::try_new(
-            vec![node(1)],
-            vec![PluginGraphEdgeConfig::new(0, 1)],
-        )
-        .unwrap_err();
+        let error =
+            PluginGraphConfig::try_new(vec![node(1)], vec![PluginGraphEdgeConfig::new(0, 1)])
+                .unwrap_err();
         assert!(error.contains("from_node"));
     }
 
@@ -378,7 +379,11 @@ mod tests {
         incoming_counts.insert(0, 0);
         let result = validate_graph_topology(&edges, &outgoing_edges, incoming_counts, 2);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("incoming count missing for node 1"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("incoming count missing for node 1")
+        );
     }
 
     #[test]
@@ -390,6 +395,10 @@ mod tests {
         incoming_counts.insert(0, 0);
         let result = validate_graph_topology(&edges, &outgoing_edges, incoming_counts, 2);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("incoming count missing for node 1"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("incoming count missing for node 1")
+        );
     }
 }

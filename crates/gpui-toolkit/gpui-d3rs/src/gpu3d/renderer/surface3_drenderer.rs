@@ -3,15 +3,15 @@
 
 use super::super::camera::Camera3D;
 use super::super::config::Surface3DConfig;
+use super::super::config::SurfacePlotType;
 use super::super::mesh::{GpuVertex, SurfaceMesh};
 use super::super::shaders;
-use wgpu::util::DeviceExt;
-use std::sync::Arc;
-use super::super::config::SurfacePlotType;
 use super::Uniforms;
 use super::misc::background_surface_clear_color;
 use super::transparent::transparent_surface_clear_color;
 use super::unpremultiply::unpremultiply_rgba;
+use std::sync::Arc;
+use wgpu::util::DeviceExt;
 
 /// GPU-accelerated 3D surface renderer
 pub struct Surface3DRenderer {

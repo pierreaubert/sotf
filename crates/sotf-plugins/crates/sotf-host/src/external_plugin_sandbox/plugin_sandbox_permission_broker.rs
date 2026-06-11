@@ -9,4 +9,3 @@ pub trait PluginSandboxPermissionBroker {
         request: PluginSandboxPermissionRequest,
     ) -> PluginSandboxPermissionDecision;
 }
-

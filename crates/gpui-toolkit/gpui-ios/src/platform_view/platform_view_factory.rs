@@ -11,4 +11,3 @@ pub trait PlatformViewFactory: Send + Sync {
         PlatformViewKind::Custom
     }
 }
-

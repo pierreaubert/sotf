@@ -3,7 +3,7 @@
 use crate::components::design::Ds;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit :: { HStack , StackSpacing , Text , TextSize , TextWeight } ;
+use gpui_ui_kit::{HStack, StackSpacing, Text, TextSize, TextWeight};
 
 /// Render the pipeline-step strip: one chip per `PipelineStepId::ALL`
 /// in canonical execution order. Status colors:
@@ -143,4 +143,3 @@ pub(super) fn render_pipeline_phase_readout(
                 .color(theme.text_secondary),
         )
 }
-

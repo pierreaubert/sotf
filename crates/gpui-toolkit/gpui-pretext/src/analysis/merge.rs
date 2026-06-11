@@ -267,4 +267,3 @@ pub(super) fn merge_glue_connected_text_runs(seg: MergedSegmentation) -> MergedS
         starts,
     }
 }
-

@@ -96,4 +96,3 @@ impl Projection for Albers {
         self.lower48.config.rotate = (lambda, phi, gamma);
     }
 }
-

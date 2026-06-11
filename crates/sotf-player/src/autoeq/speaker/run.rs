@@ -110,4 +110,3 @@ pub fn run_speaker_optimization(
 
     run_speaker_optimization_with_callback(&config, None)
 }
-

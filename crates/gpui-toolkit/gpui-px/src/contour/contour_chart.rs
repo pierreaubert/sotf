@@ -593,7 +593,6 @@ pub fn contour(z: &[f64], grid_width: usize, grid_height: usize) -> ContourChart
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::*;
 
     #[test]
     fn test_contour_empty_z() {
@@ -724,4 +723,3 @@ mod tests {
         );
     }
 }
-

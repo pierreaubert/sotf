@@ -83,4 +83,3 @@ pub(super) fn sanitize_path_component(value: &str) -> String {
         sanitized.to_string()
     }
 }
-

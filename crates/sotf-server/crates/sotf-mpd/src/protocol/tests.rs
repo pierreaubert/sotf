@@ -7,684 +7,708 @@ use super::types::MpdCommand;
 use super::types::MpdErrorCode;
 use super::types::kv;
 
-    use super::*;
+use super::*;
 
-    #[test]
-    fn test_parse_simple_commands() {
-        assert!(matches!(parse_command("ping"), Ok(MpdCommand::Ping)));
-        assert!(matches!(parse_command("stop"), Ok(MpdCommand::Stop)));
-        assert!(matches!(parse_command("next"), Ok(MpdCommand::Next)));
-        assert!(matches!(
-            parse_command("previous"),
-            Ok(MpdCommand::Previous)
-        ));
-        assert!(matches!(parse_command("status"), Ok(MpdCommand::Status)));
-        assert!(matches!(
-            parse_command("currentsong"),
-            Ok(MpdCommand::CurrentSong)
-        ));
-        assert!(matches!(parse_command("clear"), Ok(MpdCommand::Clear)));
-        assert!(matches!(parse_command("close"), Ok(MpdCommand::Close)));
+#[test]
+fn test_parse_simple_commands() {
+    assert!(matches!(parse_command("ping"), Ok(MpdCommand::Ping)));
+    assert!(matches!(parse_command("stop"), Ok(MpdCommand::Stop)));
+    assert!(matches!(parse_command("next"), Ok(MpdCommand::Next)));
+    assert!(matches!(
+        parse_command("previous"),
+        Ok(MpdCommand::Previous)
+    ));
+    assert!(matches!(parse_command("status"), Ok(MpdCommand::Status)));
+    assert!(matches!(
+        parse_command("currentsong"),
+        Ok(MpdCommand::CurrentSong)
+    ));
+    assert!(matches!(parse_command("clear"), Ok(MpdCommand::Clear)));
+    assert!(matches!(parse_command("close"), Ok(MpdCommand::Close)));
+}
+
+#[test]
+fn test_parse_play() {
+    assert!(matches!(parse_command("play"), Ok(MpdCommand::Play(None))));
+    assert!(matches!(
+        parse_command("play 5"),
+        Ok(MpdCommand::Play(Some(5)))
+    ));
+}
+
+#[test]
+fn test_parse_pause() {
+    assert!(matches!(
+        parse_command("pause"),
+        Ok(MpdCommand::Pause(None))
+    ));
+    assert!(matches!(
+        parse_command("pause 1"),
+        Ok(MpdCommand::Pause(Some(true)))
+    ));
+    assert!(matches!(
+        parse_command("pause 0"),
+        Ok(MpdCommand::Pause(Some(false)))
+    ));
+}
+
+#[test]
+fn test_parse_setvol() {
+    match parse_command("setvol 75") {
+        Ok(MpdCommand::SetVol(vol)) => assert_eq!(vol, 75),
+        other => panic!("unexpected: {:?}", other),
     }
+}
 
-    #[test]
-    fn test_parse_play() {
-        assert!(matches!(parse_command("play"), Ok(MpdCommand::Play(None))));
-        assert!(matches!(
-            parse_command("play 5"),
-            Ok(MpdCommand::Play(Some(5)))
-        ));
-    }
-
-    #[test]
-    fn test_parse_pause() {
-        assert!(matches!(
-            parse_command("pause"),
-            Ok(MpdCommand::Pause(None))
-        ));
-        assert!(matches!(
-            parse_command("pause 1"),
-            Ok(MpdCommand::Pause(Some(true)))
-        ));
-        assert!(matches!(
-            parse_command("pause 0"),
-            Ok(MpdCommand::Pause(Some(false)))
-        ));
-    }
-
-    #[test]
-    fn test_parse_setvol() {
-        match parse_command("setvol 75") {
-            Ok(MpdCommand::SetVol(vol)) => assert_eq!(vol, 75),
-            other => panic!("unexpected: {:?}", other),
+#[test]
+fn test_parse_seek() {
+    match parse_command("seek 3 120.5") {
+        Ok(MpdCommand::Seek(pos, time)) => {
+            assert_eq!(pos, 3);
+            assert!((time - 120.5).abs() < 0.01);
         }
+        other => panic!("unexpected: {:?}", other),
     }
+}
 
-    #[test]
-    fn test_parse_seek() {
-        match parse_command("seek 3 120.5") {
-            Ok(MpdCommand::Seek(pos, time)) => {
-                assert_eq!(pos, 3);
-                assert!((time - 120.5).abs() < 0.01);
-            }
-            other => panic!("unexpected: {:?}", other),
+#[test]
+fn test_parse_seekcur() {
+    match parse_command("seekcur 45.2") {
+        Ok(MpdCommand::SeekCur(time)) => assert!((time - 45.2).abs() < 0.01),
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn test_parse_add_quoted() {
+    match parse_command(r#"add "path/to/song.flac""#) {
+        Ok(MpdCommand::Add(uri)) => assert_eq!(uri, "path/to/song.flac"),
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn test_parse_add_unquoted() {
+    match parse_command("add path/to/song.flac") {
+        Ok(MpdCommand::Add(uri)) => assert_eq!(uri, "path/to/song.flac"),
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn test_parse_search() {
+    match parse_command(r#"search artist "Pink Floyd""#) {
+        Ok(MpdCommand::Search(filters)) => {
+            assert_eq!(filters.len(), 1);
+            assert_eq!(filters[0].tag, "artist");
+            assert_eq!(filters[0].value, "Pink Floyd");
         }
+        other => panic!("unexpected: {:?}", other),
     }
+}
 
-    #[test]
-    fn test_parse_seekcur() {
-        match parse_command("seekcur 45.2") {
-            Ok(MpdCommand::SeekCur(time)) => assert!((time - 45.2).abs() < 0.01),
-            other => panic!("unexpected: {:?}", other),
+#[test]
+fn test_parse_list() {
+    match parse_command("list album") {
+        Ok(MpdCommand::List(tag, filters)) => {
+            assert_eq!(tag, "album");
+            assert!(filters.is_empty());
         }
+        other => panic!("unexpected: {:?}", other),
     }
+}
 
-    #[test]
-    fn test_parse_add_quoted() {
-        match parse_command(r#"add "path/to/song.flac""#) {
-            Ok(MpdCommand::Add(uri)) => assert_eq!(uri, "path/to/song.flac"),
-            other => panic!("unexpected: {:?}", other),
+#[test]
+fn test_parse_unknown_command() {
+    assert!(matches!(
+        parse_command("foobar"),
+        Err(MpdError {
+            code: MpdErrorCode::UnknownCmd,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn test_parse_case_insensitive() {
+    assert!(matches!(parse_command("PLAY"), Ok(MpdCommand::Play(None))));
+    assert!(matches!(parse_command("Status"), Ok(MpdCommand::Status)));
+}
+
+#[test]
+fn test_mpd_error_format() {
+    let err = MpdError::new(MpdErrorCode::Arg, "seek", "invalid argument");
+    assert_eq!(err.format(), "ACK [2@0] {seek} invalid argument\n");
+}
+
+#[test]
+fn test_mpd_response_format() {
+    let resp = MpdResponse::ok_with(vec![kv("volume", 75), kv("state", "play")]);
+    let formatted = resp.format();
+    assert!(formatted.contains("volume: 75\n"));
+    assert!(formatted.contains("state: play\n"));
+    assert!(formatted.ends_with("OK\n"));
+}
+
+#[test]
+fn test_parse_command_list() {
+    assert!(matches!(
+        parse_command("command_list_begin"),
+        Ok(MpdCommand::CommandListBegin)
+    ));
+    assert!(matches!(
+        parse_command("command_list_ok_begin"),
+        Ok(MpdCommand::CommandListOkBegin)
+    ));
+    assert!(matches!(
+        parse_command("command_list_end"),
+        Ok(MpdCommand::CommandListEnd)
+    ));
+}
+
+#[test]
+fn test_parse_idle() {
+    match parse_command("idle player mixer") {
+        Ok(MpdCommand::Idle(subsystems)) => {
+            assert_eq!(subsystems, vec!["player", "mixer"]);
         }
+        other => panic!("unexpected: {:?}", other),
     }
+}
 
-    #[test]
-    fn test_parse_add_unquoted() {
-        match parse_command("add path/to/song.flac") {
-            Ok(MpdCommand::Add(uri)) => assert_eq!(uri, "path/to/song.flac"),
-            other => panic!("unexpected: {:?}", other),
-        }
+#[test]
+fn test_parse_playlistinfo_range() {
+    match parse_command("playlistinfo 5:10") {
+        Ok(MpdCommand::PlaylistInfo(Some((5, Some(10))))) => {}
+        other => panic!("unexpected: {:?}", other),
     }
+}
 
-    #[test]
-    fn test_parse_search() {
-        match parse_command(r#"search artist "Pink Floyd""#) {
-            Ok(MpdCommand::Search(filters)) => {
-                assert_eq!(filters.len(), 1);
-                assert_eq!(filters[0].tag, "artist");
-                assert_eq!(filters[0].value, "Pink Floyd");
-            }
-            other => panic!("unexpected: {:?}", other),
-        }
+#[test]
+fn test_parse_random_repeat() {
+    assert!(matches!(
+        parse_command("random 1"),
+        Ok(MpdCommand::Random(true))
+    ));
+    assert!(matches!(
+        parse_command("repeat 0"),
+        Ok(MpdCommand::Repeat(false))
+    ));
+}
+
+// ----- Regression: `volume` no longer silently wraps via `as i8` -----
+
+#[test]
+fn test_parse_volume_in_range() {
+    match parse_command("volume -50") {
+        Ok(MpdCommand::Volume(d)) => assert_eq!(d, -50),
+        other => panic!("unexpected: {:?}", other),
     }
-
-    #[test]
-    fn test_parse_list() {
-        match parse_command("list album") {
-            Ok(MpdCommand::List(tag, filters)) => {
-                assert_eq!(tag, "album");
-                assert!(filters.is_empty());
-            }
-            other => panic!("unexpected: {:?}", other),
-        }
+    match parse_command("volume 100") {
+        Ok(MpdCommand::Volume(d)) => assert_eq!(d, 100),
+        other => panic!("unexpected: {:?}", other),
     }
+}
 
-    #[test]
-    fn test_parse_unknown_command() {
-        assert!(matches!(
-            parse_command("foobar"),
-            Err(MpdError {
-                code: MpdErrorCode::UnknownCmd,
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn test_parse_case_insensitive() {
-        assert!(matches!(parse_command("PLAY"), Ok(MpdCommand::Play(None))));
-        assert!(matches!(parse_command("Status"), Ok(MpdCommand::Status)));
-    }
-
-    #[test]
-    fn test_mpd_error_format() {
-        let err = MpdError::new(MpdErrorCode::Arg, "seek", "invalid argument");
-        assert_eq!(err.format(), "ACK [2@0] {seek} invalid argument\n");
-    }
-
-    #[test]
-    fn test_mpd_response_format() {
-        let resp = MpdResponse::ok_with(vec![kv("volume", 75), kv("state", "play")]);
-        let formatted = resp.format();
-        assert!(formatted.contains("volume: 75\n"));
-        assert!(formatted.contains("state: play\n"));
-        assert!(formatted.ends_with("OK\n"));
-    }
-
-    #[test]
-    fn test_parse_command_list() {
-        assert!(matches!(
-            parse_command("command_list_begin"),
-            Ok(MpdCommand::CommandListBegin)
-        ));
-        assert!(matches!(
-            parse_command("command_list_ok_begin"),
-            Ok(MpdCommand::CommandListOkBegin)
-        ));
-        assert!(matches!(
-            parse_command("command_list_end"),
-            Ok(MpdCommand::CommandListEnd)
-        ));
-    }
-
-    #[test]
-    fn test_parse_idle() {
-        match parse_command("idle player mixer") {
-            Ok(MpdCommand::Idle(subsystems)) => {
-                assert_eq!(subsystems, vec!["player", "mixer"]);
-            }
-            other => panic!("unexpected: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_parse_playlistinfo_range() {
-        match parse_command("playlistinfo 5:10") {
-            Ok(MpdCommand::PlaylistInfo(Some((5, Some(10))))) => {}
-            other => panic!("unexpected: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_parse_random_repeat() {
-        assert!(matches!(
-            parse_command("random 1"),
-            Ok(MpdCommand::Random(true))
-        ));
-        assert!(matches!(
-            parse_command("repeat 0"),
-            Ok(MpdCommand::Repeat(false))
-        ));
-    }
-
-    // ----- Regression: `volume` no longer silently wraps via `as i8` -----
-
-    #[test]
-    fn test_parse_volume_in_range() {
-        match parse_command("volume -50") {
-            Ok(MpdCommand::Volume(d)) => assert_eq!(d, -50),
-            other => panic!("unexpected: {:?}", other),
-        }
-        match parse_command("volume 100") {
-            Ok(MpdCommand::Volume(d)) => assert_eq!(d, 100),
-            other => panic!("unexpected: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_parse_volume_out_of_range_rejected() {
-        // `volume 200` used to silently wrap to -56 because of `as i8`.
-        // It must now be rejected with ACK_ERROR_ARG instead.
-        for input in ["volume 200", "volume -200", "volume 101", "volume -101"] {
-            match parse_command(input) {
-                Err(MpdError {
-                    code: MpdErrorCode::Arg,
-                    ..
-                }) => {}
-                other => panic!("expected Arg error for {input:?}, got {other:?}"),
-            }
-        }
-    }
-
-    // ----- Regression: `pause` polarity matches the MPD spec -----
-    // https://mpd.readthedocs.io/en/latest/protocol.html#command-pause
-    //   - `pause`   → toggle (None)
-    //   - `pause 1` → pause   (Some(true))
-    //   - `pause 0` → resume  (Some(false))
-    #[test]
-    fn test_parse_pause_polarity_spec() {
-        assert!(matches!(
-            parse_command("pause"),
-            Ok(MpdCommand::Pause(None))
-        ));
-        assert!(matches!(
-            parse_command("pause 1"),
-            Ok(MpdCommand::Pause(Some(true)))
-        ));
-        assert!(matches!(
-            parse_command("pause 0"),
-            Ok(MpdCommand::Pause(Some(false)))
-        ));
-    }
-
-    // ----- Regression: quoted-token UTF-8 preservation -----
-
-    #[test]
-    fn test_parse_quoted_token_multibyte_utf8() {
-        // A multibyte codepoint inside a quoted string must round-trip
-        // exactly; the leading byte of a UTF-8 sequence used to be cast
-        // through `as char` after an escape, corrupting the codepoint.
-        match parse_command("add \"caf\u{00e9}\"") {
-            Ok(MpdCommand::Add(uri)) => assert_eq!(uri, "café"),
-            other => panic!("unexpected: {:?}", other),
-        }
-        // Escape immediately before multibyte content.
-        match parse_command("add \"a\\\"\u{1f3b5}b\"") {
-            Ok(MpdCommand::Add(uri)) => assert_eq!(uri, "a\"\u{1f3b5}b"),
-            other => panic!("unexpected: {:?}", other),
-        }
-        // Multiple escapes — `\"...\"` used to lose every escape after the
-        // first because the second branch fell through to `collect_until_quote`.
-        match parse_command(r#"add "a\"b\"c""#) {
-            Ok(MpdCommand::Add(uri)) => assert_eq!(uri, r#"a"b"c"#),
-            other => panic!("unexpected: {:?}", other),
-        }
-        // Escaped backslash.
-        match parse_command(r#"add "a\\b""#) {
-            Ok(MpdCommand::Add(uri)) => assert_eq!(uri, r"a\b"),
-            other => panic!("unexpected: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_parse_unterminated_quote_is_arg_error() {
-        // Previously returned `Ok` with the dangling tail; clients would
-        // desync silently. Now must be ACK_ERROR_ARG.
-        match parse_command(r#"add "unterminated"#) {
+#[test]
+fn test_parse_volume_out_of_range_rejected() {
+    // `volume 200` used to silently wrap to -56 because of `as i8`.
+    // It must now be rejected with ACK_ERROR_ARG instead.
+    for input in ["volume 200", "volume -200", "volume 101", "volume -101"] {
+        match parse_command(input) {
             Err(MpdError {
                 code: MpdErrorCode::Arg,
                 ..
             }) => {}
-            other => panic!("expected Arg error, got {other:?}"),
+            other => panic!("expected Arg error for {input:?}, got {other:?}"),
         }
     }
+}
 
-    #[test]
-    fn test_parse_single_rejects_unknown_value() {
-        // `single 2` is outside the documented {0,1,oneshot} set.
-        // Project rule: crash hard for unknown values rather than coerce.
-        match parse_command("single 2") {
+// ----- Regression: `pause` polarity matches the MPD spec -----
+// https://mpd.readthedocs.io/en/latest/protocol.html#command-pause
+//   - `pause`   → toggle (None)
+//   - `pause 1` → pause   (Some(true))
+//   - `pause 0` → resume  (Some(false))
+#[test]
+fn test_parse_pause_polarity_spec() {
+    assert!(matches!(
+        parse_command("pause"),
+        Ok(MpdCommand::Pause(None))
+    ));
+    assert!(matches!(
+        parse_command("pause 1"),
+        Ok(MpdCommand::Pause(Some(true)))
+    ));
+    assert!(matches!(
+        parse_command("pause 0"),
+        Ok(MpdCommand::Pause(Some(false)))
+    ));
+}
+
+// ----- Regression: quoted-token UTF-8 preservation -----
+
+#[test]
+fn test_parse_quoted_token_multibyte_utf8() {
+    // A multibyte codepoint inside a quoted string must round-trip
+    // exactly; the leading byte of a UTF-8 sequence used to be cast
+    // through `as char` after an escape, corrupting the codepoint.
+    match parse_command("add \"caf\u{00e9}\"") {
+        Ok(MpdCommand::Add(uri)) => assert_eq!(uri, "café"),
+        other => panic!("unexpected: {:?}", other),
+    }
+    // Escape immediately before multibyte content.
+    match parse_command("add \"a\\\"\u{1f3b5}b\"") {
+        Ok(MpdCommand::Add(uri)) => assert_eq!(uri, "a\"\u{1f3b5}b"),
+        other => panic!("unexpected: {:?}", other),
+    }
+    // Multiple escapes — `\"...\"` used to lose every escape after the
+    // first because the second branch fell through to `collect_until_quote`.
+    match parse_command(r#"add "a\"b\"c""#) {
+        Ok(MpdCommand::Add(uri)) => assert_eq!(uri, r#"a"b"c"#),
+        other => panic!("unexpected: {:?}", other),
+    }
+    // Escaped backslash.
+    match parse_command(r#"add "a\\b""#) {
+        Ok(MpdCommand::Add(uri)) => assert_eq!(uri, r"a\b"),
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn test_parse_unterminated_quote_is_arg_error() {
+    // Previously returned `Ok` with the dangling tail; clients would
+    // desync silently. Now must be ACK_ERROR_ARG.
+    match parse_command(r#"add "unterminated"#) {
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        }) => {}
+        other => panic!("expected Arg error, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_single_rejects_unknown_value() {
+    // `single 2` is outside the documented {0,1,oneshot} set.
+    // Project rule: crash hard for unknown values rather than coerce.
+    match parse_command("single 2") {
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        }) => {}
+        other => panic!("expected Arg error, got {other:?}"),
+    }
+}
+
+// ----- Additional command coverage -----
+
+#[test]
+fn test_parse_empty_command() {
+    match parse_command("") {
+        Err(MpdError {
+            code: MpdErrorCode::UnknownCmd,
+            ..
+        }) => {}
+        other => panic!("expected UnknownCmd error, got {other:?}"),
+    }
+    match parse_command("   ") {
+        Err(MpdError {
+            code: MpdErrorCode::UnknownCmd,
+            ..
+        }) => {}
+        other => panic!("expected UnknownCmd error for whitespace, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_playid() {
+    assert!(matches!(
+        parse_command("playid"),
+        Ok(MpdCommand::PlayId(None))
+    ));
+    assert!(matches!(
+        parse_command("playid 7"),
+        Ok(MpdCommand::PlayId(Some(7)))
+    ));
+}
+
+#[test]
+fn test_parse_seekid() {
+    match parse_command("seekid 42 88.5") {
+        Ok(MpdCommand::SeekId(id, time)) => {
+            assert_eq!(id, 42);
+            assert!((time - 88.5).abs() < 0.01);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_setvol_bounds() {
+    match parse_command("setvol 0") {
+        Ok(MpdCommand::SetVol(v)) => assert_eq!(v, 0),
+        other => panic!("unexpected: {other:?}"),
+    }
+    match parse_command("setvol 100") {
+        Ok(MpdCommand::SetVol(v)) => assert_eq!(v, 100),
+        other => panic!("unexpected: {other:?}"),
+    }
+    match parse_command("setvol 101") {
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        }) => {}
+        other => panic!("expected Arg error for setvol 101, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_single_modes() {
+    assert!(matches!(
+        parse_command("single 0"),
+        Ok(MpdCommand::Single(SingleMode::Off))
+    ));
+    assert!(matches!(
+        parse_command("single 1"),
+        Ok(MpdCommand::Single(SingleMode::On))
+    ));
+    assert!(matches!(
+        parse_command("single oneshot"),
+        Ok(MpdCommand::Single(SingleMode::OneShot))
+    ));
+}
+
+#[test]
+fn test_parse_consume_repeat_random() {
+    assert!(matches!(
+        parse_command("consume 1"),
+        Ok(MpdCommand::Consume(true))
+    ));
+    assert!(matches!(
+        parse_command("consume 0"),
+        Ok(MpdCommand::Consume(false))
+    ));
+    assert!(matches!(
+        parse_command("repeat 1"),
+        Ok(MpdCommand::Repeat(true))
+    ));
+    assert!(matches!(
+        parse_command("random 0"),
+        Ok(MpdCommand::Random(false))
+    ));
+}
+
+#[test]
+fn test_parse_playlistid() {
+    assert!(matches!(
+        parse_command("playlistid"),
+        Ok(MpdCommand::PlaylistId(None))
+    ));
+    assert!(matches!(
+        parse_command("playlistid 12"),
+        Ok(MpdCommand::PlaylistId(Some(12)))
+    ));
+}
+
+#[test]
+fn test_parse_delete_and_deleteid() {
+    match parse_command("delete 3") {
+        Ok(MpdCommand::Delete(pos)) => assert_eq!(pos, 3),
+        other => panic!("unexpected: {other:?}"),
+    }
+    match parse_command("deleteid 99") {
+        Ok(MpdCommand::DeleteId(id)) => assert_eq!(id, 99),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_move_and_swap() {
+    match parse_command("move 2 5") {
+        Ok(MpdCommand::Move(from, to)) => {
+            assert_eq!(from, 2);
+            assert_eq!(to, 5);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+    match parse_command("swap 1 4") {
+        Ok(MpdCommand::Swap(p1, p2)) => {
+            assert_eq!(p1, 1);
+            assert_eq!(p2, 4);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_addid() {
+    match parse_command("addid \"library/song.flac\"") {
+        Ok(MpdCommand::AddId(uri, pos)) => {
+            assert_eq!(uri, "library/song.flac");
+            assert_eq!(pos, None);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+    match parse_command("addid \"library/song.flac\" 3") {
+        Ok(MpdCommand::AddId(uri, pos)) => {
+            assert_eq!(uri, "library/song.flac");
+            assert_eq!(pos, Some(3));
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_listall_lsinfo_update() {
+    assert!(matches!(
+        parse_command("listall"),
+        Ok(MpdCommand::ListAll(None))
+    ));
+    assert!(matches!(
+        parse_command("listall Music/Rock"),
+        Ok(MpdCommand::ListAll(Some(p))) if p == "Music/Rock"
+    ));
+    assert!(matches!(
+        parse_command("lsinfo"),
+        Ok(MpdCommand::LsInfo(None))
+    ));
+    assert!(matches!(
+        parse_command("lsinfo Music"),
+        Ok(MpdCommand::LsInfo(Some(p))) if p == "Music"
+    ));
+    assert!(matches!(
+        parse_command("update"),
+        Ok(MpdCommand::Update(None))
+    ));
+    assert!(matches!(
+        parse_command("update Music"),
+        Ok(MpdCommand::Update(Some(p))) if p == "Music"
+    ));
+}
+
+#[test]
+fn test_parse_find_search_count() {
+    match parse_command(r#"find artist "Radiohead""#) {
+        Ok(MpdCommand::Find(filters)) => {
+            assert_eq!(filters.len(), 1);
+            assert_eq!(filters[0].tag, "artist");
+            assert_eq!(filters[0].value, "Radiohead");
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+    match parse_command(r#"count album "OK Computer" artist "Radiohead""#) {
+        Ok(MpdCommand::Count(filters)) => {
+            assert_eq!(filters.len(), 2);
+            assert_eq!(filters[0].tag, "album");
+            assert_eq!(filters[0].value, "OK Computer");
+            assert_eq!(filters[1].tag, "artist");
+            assert_eq!(filters[1].value, "Radiohead");
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_list_with_filters() {
+    match parse_command(r#"list album artist "Radiohead""#) {
+        Ok(MpdCommand::List(tag, filters)) => {
+            assert_eq!(tag, "album");
+            assert_eq!(filters.len(), 1);
+            assert_eq!(filters[0].tag, "artist");
+            assert_eq!(filters[0].value, "Radiohead");
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_outputs_and_toggle() {
+    assert!(matches!(parse_command("outputs"), Ok(MpdCommand::Outputs)));
+    match parse_command("enableoutput 0") {
+        Ok(MpdCommand::EnableOutput(id)) => assert_eq!(id, 0),
+        other => panic!("unexpected: {other:?}"),
+    }
+    match parse_command("disableoutput 1") {
+        Ok(MpdCommand::DisableOutput(id)) => assert_eq!(id, 1),
+        other => panic!("unexpected: {other:?}"),
+    }
+    match parse_command("toggleoutput 2") {
+        Ok(MpdCommand::ToggleOutput(id)) => assert_eq!(id, 2),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_reflection_commands() {
+    assert!(matches!(
+        parse_command("commands"),
+        Ok(MpdCommand::Commands)
+    ));
+    assert!(matches!(
+        parse_command("notcommands"),
+        Ok(MpdCommand::NotCommands)
+    ));
+    assert!(matches!(
+        parse_command("tagtypes"),
+        Ok(MpdCommand::TagTypes)
+    ));
+    assert!(matches!(
+        parse_command("urlhandlers"),
+        Ok(MpdCommand::UrlHandlers)
+    ));
+    assert!(matches!(
+        parse_command("decoders"),
+        Ok(MpdCommand::Decoders)
+    ));
+}
+
+#[test]
+fn test_parse_noidle() {
+    assert!(matches!(parse_command("noidle"), Ok(MpdCommand::NoIdle)));
+}
+
+#[test]
+fn test_parse_range_u32_max_no_overflow() {
+    let mut parts = super::command_tokenizer::CommandTokenizer::new("4294967295");
+    assert_eq!(super::parse::parse_range(&mut parts), None);
+}
+
+#[test]
+fn test_parse_range_formats() {
+    // Open range
+    match parse_command("playlistinfo 5:") {
+        Ok(MpdCommand::PlaylistInfo(Some((start, end)))) => {
+            assert_eq!(start, 5);
+            assert_eq!(end, None);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+    // Single position becomes (pos, Some(pos+1))
+    match parse_command("playlistinfo 7") {
+        Ok(MpdCommand::PlaylistInfo(Some((start, end)))) => {
+            assert_eq!(start, 7);
+            assert_eq!(end, Some(8));
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+    // Invalid range token is treated as no range
+    assert!(matches!(
+        parse_command("playlistinfo abc"),
+        Ok(MpdCommand::PlaylistInfo(None))
+    ));
+}
+
+#[test]
+fn test_parse_range_u32_max_via_command() {
+    // u32::MAX (4294967295) + 1 would overflow; parse_range must return None
+    match parse_command("playlistinfo 4294967295") {
+        Ok(MpdCommand::PlaylistInfo(None)) => {}
+        other => panic!("expected PlaylistInfo(None) for u32::MAX, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_response_list_ok_format() {
+    let resp = MpdResponse::ListOk;
+    assert_eq!(resp.format(), "list_OK\n");
+}
+
+#[test]
+fn test_response_error_format() {
+    let err = MpdError::new(MpdErrorCode::NoExist, "playid", "No such song");
+    let resp = MpdResponse::Error(err);
+    assert_eq!(resp.format(), "ACK [50@0] {playid} No such song\n");
+}
+
+#[test]
+fn test_tokenizer_require_types_reject_invalid() {
+    // Missing argument
+    assert!(matches!(
+        parse_command("seek 3"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // Bad integer
+    assert!(matches!(
+        parse_command("delete abc"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // Bad boolean
+    assert!(matches!(
+        parse_command("random maybe"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // Bad f64
+    assert!(matches!(
+        parse_command("seekcur abc"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+}
+
+// ----- Regression: trailing tokens must be rejected -----
+
+#[test]
+fn test_parse_trailing_tokens_rejected() {
+    for input in ["play 1 extra", "stop extra", "pause 1 extra", "next extra"] {
+        match parse_command(input) {
             Err(MpdError {
                 code: MpdErrorCode::Arg,
                 ..
             }) => {}
-            other => panic!("expected Arg error, got {other:?}"),
+            other => panic!("expected Arg error for trailing tokens in {input:?}, got {other:?}"),
         }
     }
+}
 
-
-    // ----- Additional command coverage -----
-
-    #[test]
-    fn test_parse_empty_command() {
-        match parse_command("") {
-            Err(MpdError {
-                code: MpdErrorCode::UnknownCmd,
-                ..
-            }) => {}
-            other => panic!("expected UnknownCmd error, got {other:?}"),
-        }
-        match parse_command("   ") {
-            Err(MpdError {
-                code: MpdErrorCode::UnknownCmd,
-                ..
-            }) => {}
-            other => panic!("expected UnknownCmd error for whitespace, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_playid() {
-        assert!(matches!(parse_command("playid"), Ok(MpdCommand::PlayId(None))));
-        assert!(matches!(
-            parse_command("playid 7"),
-            Ok(MpdCommand::PlayId(Some(7)))
-        ));
-    }
-
-    #[test]
-    fn test_parse_seekid() {
-        match parse_command("seekid 42 88.5") {
-            Ok(MpdCommand::SeekId(id, time)) => {
-                assert_eq!(id, 42);
-                assert!((time - 88.5).abs() < 0.01);
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_setvol_bounds() {
-        match parse_command("setvol 0") {
-            Ok(MpdCommand::SetVol(v)) => assert_eq!(v, 0),
-            other => panic!("unexpected: {other:?}"),
-        }
-        match parse_command("setvol 100") {
-            Ok(MpdCommand::SetVol(v)) => assert_eq!(v, 100),
-            other => panic!("unexpected: {other:?}"),
-        }
-        match parse_command("setvol 101") {
-            Err(MpdError {
-                code: MpdErrorCode::Arg,
-                ..
-            }) => {}
-            other => panic!("expected Arg error for setvol 101, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_single_modes() {
-        assert!(matches!(
-            parse_command("single 0"),
-            Ok(MpdCommand::Single(SingleMode::Off))
-        ));
-        assert!(matches!(
-            parse_command("single 1"),
-            Ok(MpdCommand::Single(SingleMode::On))
-        ));
-        assert!(matches!(
-            parse_command("single oneshot"),
-            Ok(MpdCommand::Single(SingleMode::OneShot))
-        ));
-    }
-
-    #[test]
-    fn test_parse_consume_repeat_random() {
-        assert!(matches!(
-            parse_command("consume 1"),
-            Ok(MpdCommand::Consume(true))
-        ));
-        assert!(matches!(
-            parse_command("consume 0"),
-            Ok(MpdCommand::Consume(false))
-        ));
-        assert!(matches!(
-            parse_command("repeat 1"),
-            Ok(MpdCommand::Repeat(true))
-        ));
-        assert!(matches!(
-            parse_command("random 0"),
-            Ok(MpdCommand::Random(false))
-        ));
-    }
-
-    #[test]
-    fn test_parse_playlistid() {
-        assert!(matches!(
-            parse_command("playlistid"),
-            Ok(MpdCommand::PlaylistId(None))
-        ));
-        assert!(matches!(
-            parse_command("playlistid 12"),
-            Ok(MpdCommand::PlaylistId(Some(12)))
-        ));
-    }
-
-    #[test]
-    fn test_parse_delete_and_deleteid() {
-        match parse_command("delete 3") {
-            Ok(MpdCommand::Delete(pos)) => assert_eq!(pos, 3),
-            other => panic!("unexpected: {other:?}"),
-        }
-        match parse_command("deleteid 99") {
-            Ok(MpdCommand::DeleteId(id)) => assert_eq!(id, 99),
-            other => panic!("unexpected: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_move_and_swap() {
-        match parse_command("move 2 5") {
-            Ok(MpdCommand::Move(from, to)) => {
-                assert_eq!(from, 2);
-                assert_eq!(to, 5);
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-        match parse_command("swap 1 4") {
-            Ok(MpdCommand::Swap(p1, p2)) => {
-                assert_eq!(p1, 1);
-                assert_eq!(p2, 4);
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_addid() {
-        match parse_command("addid \"library/song.flac\"") {
-            Ok(MpdCommand::AddId(uri, pos)) => {
-                assert_eq!(uri, "library/song.flac");
-                assert_eq!(pos, None);
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-        match parse_command("addid \"library/song.flac\" 3") {
-            Ok(MpdCommand::AddId(uri, pos)) => {
-                assert_eq!(uri, "library/song.flac");
-                assert_eq!(pos, Some(3));
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_listall_lsinfo_update() {
-        assert!(matches!(
-            parse_command("listall"),
-            Ok(MpdCommand::ListAll(None))
-        ));
-        assert!(matches!(
-            parse_command("listall Music/Rock"),
-            Ok(MpdCommand::ListAll(Some(p))) if p == "Music/Rock"
-        ));
-        assert!(matches!(
-            parse_command("lsinfo"),
-            Ok(MpdCommand::LsInfo(None))
-        ));
-        assert!(matches!(
-            parse_command("lsinfo Music"),
-            Ok(MpdCommand::LsInfo(Some(p))) if p == "Music"
-        ));
-        assert!(matches!(
-            parse_command("update"),
-            Ok(MpdCommand::Update(None))
-        ));
-        assert!(matches!(
-            parse_command("update Music"),
-            Ok(MpdCommand::Update(Some(p))) if p == "Music"
-        ));
-    }
-
-    #[test]
-    fn test_parse_find_search_count() {
-        match parse_command(r#"find artist "Radiohead""#) {
-            Ok(MpdCommand::Find(filters)) => {
-                assert_eq!(filters.len(), 1);
-                assert_eq!(filters[0].tag, "artist");
-                assert_eq!(filters[0].value, "Radiohead");
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-        match parse_command(r#"count album "OK Computer" artist "Radiohead""#) {
-            Ok(MpdCommand::Count(filters)) => {
-                assert_eq!(filters.len(), 2);
-                assert_eq!(filters[0].tag, "album");
-                assert_eq!(filters[0].value, "OK Computer");
-                assert_eq!(filters[1].tag, "artist");
-                assert_eq!(filters[1].value, "Radiohead");
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_list_with_filters() {
-        match parse_command(r#"list album artist "Radiohead""#) {
-            Ok(MpdCommand::List(tag, filters)) => {
-                assert_eq!(tag, "album");
-                assert_eq!(filters.len(), 1);
-                assert_eq!(filters[0].tag, "artist");
-                assert_eq!(filters[0].value, "Radiohead");
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_outputs_and_toggle() {
-        assert!(matches!(parse_command("outputs"), Ok(MpdCommand::Outputs)));
-        match parse_command("enableoutput 0") {
-            Ok(MpdCommand::EnableOutput(id)) => assert_eq!(id, 0),
-            other => panic!("unexpected: {other:?}"),
-        }
-        match parse_command("disableoutput 1") {
-            Ok(MpdCommand::DisableOutput(id)) => assert_eq!(id, 1),
-            other => panic!("unexpected: {other:?}"),
-        }
-        match parse_command("toggleoutput 2") {
-            Ok(MpdCommand::ToggleOutput(id)) => assert_eq!(id, 2),
-            other => panic!("unexpected: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_parse_reflection_commands() {
-        assert!(matches!(parse_command("commands"), Ok(MpdCommand::Commands)));
-        assert!(matches!(
-            parse_command("notcommands"),
-            Ok(MpdCommand::NotCommands)
-        ));
-        assert!(matches!(parse_command("tagtypes"), Ok(MpdCommand::TagTypes)));
-        assert!(matches!(
-            parse_command("urlhandlers"),
-            Ok(MpdCommand::UrlHandlers)
-        ));
-        assert!(matches!(parse_command("decoders"), Ok(MpdCommand::Decoders)));
-    }
-
-    #[test]
-    fn test_parse_noidle() {
-        assert!(matches!(parse_command("noidle"), Ok(MpdCommand::NoIdle)));
-    }
-
-    #[test]
-    fn test_parse_range_u32_max_no_overflow() {
-        let mut parts = super::command_tokenizer::CommandTokenizer::new("4294967295");
-        assert_eq!(super::parse::parse_range(&mut parts), None);
-    }
-
-    #[test]
-    fn test_parse_range_formats() {
-        // Open range
-        match parse_command("playlistinfo 5:") {
-            Ok(MpdCommand::PlaylistInfo(Some((start, end)))) => {
-                assert_eq!(start, 5);
-                assert_eq!(end, None);
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-        // Single position becomes (pos, Some(pos+1))
-        match parse_command("playlistinfo 7") {
-            Ok(MpdCommand::PlaylistInfo(Some((start, end)))) => {
-                assert_eq!(start, 7);
-                assert_eq!(end, Some(8));
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-        // Invalid range token is treated as no range
-        assert!(matches!(
-            parse_command("playlistinfo abc"),
-            Ok(MpdCommand::PlaylistInfo(None))
-        ));
-    }
-
-    #[test]
-    fn test_parse_range_u32_max_via_command() {
-        // u32::MAX (4294967295) + 1 would overflow; parse_range must return None
-        match parse_command("playlistinfo 4294967295") {
-            Ok(MpdCommand::PlaylistInfo(None)) => {}
-            other => panic!("expected PlaylistInfo(None) for u32::MAX, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_response_list_ok_format() {
-        let resp = MpdResponse::ListOk;
-        assert_eq!(resp.format(), "list_OK\n");
-    }
-
-    #[test]
-    fn test_response_error_format() {
-        let err = MpdError::new(MpdErrorCode::NoExist, "playid", "No such song");
-        let resp = MpdResponse::Error(err);
-        assert_eq!(resp.format(), "ACK [50@0] {playid} No such song\n");
-    }
-
-    #[test]
-    fn test_tokenizer_require_types_reject_invalid() {
-        // Missing argument
-        assert!(matches!(
-            parse_command("seek 3"),
-            Err(MpdError {
-                code: MpdErrorCode::Arg,
-                ..
-            })
-        ));
-        // Bad integer
-        assert!(matches!(
-            parse_command("delete abc"),
-            Err(MpdError {
-                code: MpdErrorCode::Arg,
-                ..
-            })
-        ));
-        // Bad boolean
-        assert!(matches!(
-            parse_command("random maybe"),
-            Err(MpdError {
-                code: MpdErrorCode::Arg,
-                ..
-            })
-        ));
-        // Bad f64
-        assert!(matches!(
-            parse_command("seekcur abc"),
-            Err(MpdError {
-                code: MpdErrorCode::Arg,
-                ..
-            })
-        ));
-    }
-
-    // ----- Regression: trailing tokens must be rejected -----
-
-    #[test]
-    fn test_parse_trailing_tokens_rejected() {
-        for input in ["play 1 extra", "stop extra", "pause 1 extra", "next extra"] {
-            match parse_command(input) {
-                Err(MpdError {
-                    code: MpdErrorCode::Arg,
-                    ..
-                }) => {}
-                other => panic!("expected Arg error for trailing tokens in {input:?}, got {other:?}"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_parse_no_trailing_tokens_ok() {
-        assert!(matches!(parse_command("play 1"), Ok(MpdCommand::Play(Some(1)))));
-        assert!(matches!(parse_command("stop"), Ok(MpdCommand::Stop)));
-        assert!(matches!(parse_command("pause"), Ok(MpdCommand::Pause(None))));
-        assert!(matches!(parse_command("pause 1"), Ok(MpdCommand::Pause(Some(true)))));
-    }
+#[test]
+fn test_parse_no_trailing_tokens_ok() {
+    assert!(matches!(
+        parse_command("play 1"),
+        Ok(MpdCommand::Play(Some(1)))
+    ));
+    assert!(matches!(parse_command("stop"), Ok(MpdCommand::Stop)));
+    assert!(matches!(
+        parse_command("pause"),
+        Ok(MpdCommand::Pause(None))
+    ));
+    assert!(matches!(
+        parse_command("pause 1"),
+        Ok(MpdCommand::Pause(Some(true)))
+    ));
+}
 
 // ============================================================================
 // Property-Based Tests
 // ============================================================================
 
 mod property_tests {
-    use proptest::prelude::*;
     use super::super::command_tokenizer::CommandTokenizer;
     use super::super::parse_command;
     use super::super::types::{FilterExpr, MpdCommand, SingleMode};
+    use proptest::prelude::*;
 
     fn simple_token_strategy() -> BoxedStrategy<String> {
-        proptest::string::string_regex("[a-zA-Z0-9_.:/@-]+").unwrap().boxed()
+        proptest::string::string_regex("[a-zA-Z0-9_.:/@-]+")
+            .unwrap()
+            .boxed()
     }
 
     fn simple_path_strategy() -> BoxedStrategy<String> {
-        proptest::string::string_regex("[a-zA-Z0-9_/.@-]+").unwrap().boxed()
+        proptest::string::string_regex("[a-zA-Z0-9_/.@-]+")
+            .unwrap()
+            .boxed()
     }
 
     fn tag_strategy() -> BoxedStrategy<String> {
@@ -723,12 +747,14 @@ mod property_tests {
             prop::bool::ANY.prop_map(MpdCommand::Random),
             prop::bool::ANY.prop_map(MpdCommand::Repeat),
             prop::bool::ANY.prop_map(MpdCommand::Consume),
-            prop_oneof![Just(SingleMode::Off), Just(SingleMode::On), Just(SingleMode::OneShot)]
-                .prop_map(MpdCommand::Single),
-            (0u32..16u32, 0u32..1000u32)
-                .prop_map(|(pos, time)| MpdCommand::Seek(pos, time as f64)),
-            (0u32..16u32, 0u32..1000u32)
-                .prop_map(|(id, time)| MpdCommand::SeekId(id, time as f64)),
+            prop_oneof![
+                Just(SingleMode::Off),
+                Just(SingleMode::On),
+                Just(SingleMode::OneShot)
+            ]
+            .prop_map(MpdCommand::Single),
+            (0u32..16u32, 0u32..1000u32).prop_map(|(pos, time)| MpdCommand::Seek(pos, time as f64)),
+            (0u32..16u32, 0u32..1000u32).prop_map(|(id, time)| MpdCommand::SeekId(id, time as f64)),
             (0u32..1000u32).prop_map(|time| MpdCommand::SeekCur(time as f64)),
             prop::option::of(0u32..16u32).prop_map(MpdCommand::PlaylistId),
             (0u32..16u32, prop::option::of(0u32..32u32))
@@ -897,9 +923,12 @@ mod property_tests {
             (MpdCommand::Random(a), MpdCommand::Random(b)) => a == b,
             (MpdCommand::Repeat(a), MpdCommand::Repeat(b)) => a == b,
             (MpdCommand::Single(a), MpdCommand::Single(b)) => {
-                matches!((a, b), (SingleMode::Off, SingleMode::Off)
-                    | (SingleMode::On, SingleMode::On)
-                    | (SingleMode::OneShot, SingleMode::OneShot))
+                matches!(
+                    (a, b),
+                    (SingleMode::Off, SingleMode::Off)
+                        | (SingleMode::On, SingleMode::On)
+                        | (SingleMode::OneShot, SingleMode::OneShot)
+                )
             }
             (MpdCommand::Consume(a), MpdCommand::Consume(b)) => a == b,
             (MpdCommand::Status, MpdCommand::Status) => true,

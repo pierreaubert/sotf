@@ -25,4 +25,3 @@ pub(super) struct ParsedTrack {
     pub(super) events: Vec<TrackEvent>,
     pub(super) tempos: Vec<TempoEvent>,
 }
-

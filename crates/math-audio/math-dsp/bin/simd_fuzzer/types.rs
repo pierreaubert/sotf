@@ -27,4 +27,3 @@ pub(super) struct FuzzResult {
     pub(super) iterations: usize,
     pub(super) failures: usize,
 }
-

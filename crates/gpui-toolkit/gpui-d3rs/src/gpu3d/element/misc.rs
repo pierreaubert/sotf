@@ -79,4 +79,3 @@ pub(super) fn remove_positions(values: &mut Vec<f32>, positions_to_remove: &[f32
             .any(|position| (*value - *position).abs() < EPS)
     });
 }
-

@@ -26,4 +26,3 @@ pub fn bounded_capacity(count: u32, remaining_bytes: usize) -> IamfResult<usize>
     }
     Ok(n)
 }
-

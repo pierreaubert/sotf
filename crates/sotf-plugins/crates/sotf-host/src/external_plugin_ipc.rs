@@ -26,10 +26,10 @@ mod plugin_ipc_state;
 mod plugin_sandbox_backend_code;
 mod plugin_sandbox_status_code;
 mod secure_plugin_shared_memory;
-mod types;
-mod validate;
 #[cfg(test)]
 mod tests;
+mod types;
+mod validate;
 
 pub use plugin_ipc_layout::*;
 pub use plugin_ipc_state::*;
@@ -57,4 +57,3 @@ struct PluginIpcHeader {
     worker_state: AtomicU32,
     reserved: [AtomicU32; 6],
 }
-

@@ -38,4 +38,3 @@ pub(super) fn jtw_r(jac: &Array2<f64>, w: &Array1<f64>, r: &Array1<f64>) -> Arra
 
     result
 }
-

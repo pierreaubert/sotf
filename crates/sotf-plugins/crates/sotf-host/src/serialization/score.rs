@@ -6,7 +6,10 @@ use super::plugin_preset::searchable_fields;
 use super::types::PresetSearchResult;
 use super::types::push_unique_field;
 
-pub(super) fn score_preset<'a>(preset: &'a PluginPreset, terms: &[String]) -> Option<PresetSearchResult<'a>> {
+pub(super) fn score_preset<'a>(
+    preset: &'a PluginPreset,
+    terms: &[String],
+) -> Option<PresetSearchResult<'a>> {
     let fields = searchable_fields(preset);
     let mut score = 0u32;
     let mut matched_fields = Vec::new();
@@ -59,4 +62,3 @@ pub(super) fn score_field(
     }
     None
 }
-

@@ -10,10 +10,10 @@ use std::fmt;
 mod design;
 mod fir_filter_type;
 mod misc;
-mod types;
-mod window_type;
 #[cfg(test)]
 mod tests;
+mod types;
+mod window_type;
 
 pub use fir_filter_type::*;
 pub use types::*;
@@ -464,4 +464,3 @@ pub fn fir_bank_preamp_gain<T: FilterFloat>(fir_bank: &FirBank<T>) -> T {
     // Return negative of max gain (to reduce overall level)
     -max_gain
 }
-

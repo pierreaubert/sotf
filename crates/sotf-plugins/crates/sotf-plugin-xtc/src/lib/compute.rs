@@ -4,10 +4,10 @@ pub use super::config::*;
 use super::reflections::{
     RoomReflectionData, build_reflection_data_image_source, build_reflection_data_ir,
 };
-use realfft :: { RealToComplex } ;
-use std::hash::{Hash, Hasher};
-use std :: sync :: { Arc } ;
+use realfft::RealToComplex;
 use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 /// Compute a hash of room-related parameters for cache invalidation.
 ///
@@ -62,4 +62,3 @@ pub(super) fn compute_room_reflection_data(
 
     Some(Arc::new(data))
 }
-

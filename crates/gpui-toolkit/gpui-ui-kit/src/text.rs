@@ -7,7 +7,7 @@
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{SharedString, Rgba, App, Div, div, Window};
+use gpui::{App, Div, Rgba, SharedString, Window, div};
 
 mod code;
 mod heading;
@@ -16,12 +16,12 @@ mod misc;
 mod text_size;
 mod text_weight;
 
-pub use code::{Code};
-pub use heading::{Heading};
-pub use link::{Link};
-pub use misc::{code_text_color};
-pub use text_size::{TextSize};
-pub use text_weight::{TextWeight};
+pub use code::Code;
+pub use heading::Heading;
+pub use link::Link;
+pub use misc::code_text_color;
+pub use text_size::TextSize;
+pub use text_weight::TextWeight;
 /// A styled text component
 #[derive(IntoElement)]
 pub struct Text {
@@ -217,4 +217,3 @@ impl RenderOnce for Text {
         self.build_with_theme(&theme)
     }
 }
-

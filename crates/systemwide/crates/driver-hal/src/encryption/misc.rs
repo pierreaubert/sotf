@@ -104,4 +104,3 @@ pub fn rotate_session_key() -> std::io::Result<[u8; 32]> {
     }
     Ok(key)
 }
-

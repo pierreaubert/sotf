@@ -73,4 +73,3 @@ impl Element for EqChartWrapper {
         self.child.paint(window, cx);
     }
 }
-

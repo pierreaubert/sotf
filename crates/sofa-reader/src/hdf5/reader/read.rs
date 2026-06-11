@@ -19,4 +19,3 @@ pub(super) fn read_f64_bytes(c: &[u8], bo: ByteOrder) -> f64 {
         ByteOrder::Big => f64::from_be_bytes(arr),
     }
 }
-

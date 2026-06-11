@@ -2,7 +2,7 @@
 
 use crate::error::Scene3DError;
 use serde::{Deserialize, Serialize};
-use std :: hash :: { Hash } ;
+use std::hash::Hash;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -28,4 +28,3 @@ impl InteractionMode {
         }
     }
 }
-

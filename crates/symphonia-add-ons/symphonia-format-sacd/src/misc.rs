@@ -40,4 +40,3 @@ pub(super) fn find_chunk(data: &[u8], marker: &[u8; 8]) -> Option<usize> {
 pub(super) fn symphonia_track_id(area_index: usize, track_index: usize) -> u32 {
     (area_index as u32) * 1000 + track_index as u32 + 1
 }
-

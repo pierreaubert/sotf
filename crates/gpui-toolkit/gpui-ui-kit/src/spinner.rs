@@ -4,7 +4,7 @@
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Pixels, px, Rgba, SharedString, Div, div, Window, App};
+use gpui::{App, Div, Pixels, Rgba, SharedString, Window, div, px};
 
 /// Spinner size
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

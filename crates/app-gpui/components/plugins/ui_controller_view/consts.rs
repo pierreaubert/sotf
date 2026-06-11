@@ -14,4 +14,3 @@ pub(super) const BUTTON_SIZE: f32 = 38.0;
 pub(super) fn empty_cell(row_height: f32) -> impl IntoElement {
     div().w(px(CELL_W)).h(px(row_height))
 }
-

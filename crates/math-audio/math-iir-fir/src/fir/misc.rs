@@ -23,4 +23,3 @@ pub(super) fn bessel_i0<T: FilterFloat>(x: T) -> T {
 
     sum
 }
-

@@ -102,4 +102,3 @@ pub fn calculate_panning_gain_with_wraparound(
 
     wrapped_gain * wrap_attenuation
 }
-

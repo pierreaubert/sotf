@@ -113,7 +113,6 @@ fn percent_encode_segment(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::*;
 
     /// Reverse the rules of `escape_mpd_string` to verify the roundtrip.
     fn unescape_mpd_string(s: &str) -> String {
@@ -220,4 +219,3 @@ mod tests {
         );
     }
 }
-

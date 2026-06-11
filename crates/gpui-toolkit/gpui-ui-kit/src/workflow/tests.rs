@@ -854,4 +854,3 @@ fn test_port_positions_clamped_for_tiny_node() {
     );
     assert!(p0.y >= 0.0, "port y must not be above node top");
 }
-

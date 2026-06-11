@@ -111,4 +111,3 @@ impl<'a> Cursor<'a> {
         Ok(&self.data[offset..])
     }
 }
-

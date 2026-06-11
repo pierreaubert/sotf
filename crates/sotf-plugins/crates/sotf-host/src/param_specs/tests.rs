@@ -1,4 +1,4 @@
-use super::param_spec::{find_by_key, index_of, ParamSpec};
+use super::param_spec::{ParamSpec, find_by_key, index_of};
 use super::types::{ParamCategory, UpdateMode};
 
 #[test]
@@ -213,7 +213,9 @@ fn format_value_int_as_integer() {
 #[test]
 fn format_value_bool_uses_labels() {
     // bool_labeled(name, key, default, true_label, false_label, group)
-    let spec = ParamSpec::bool_labeled("Polarity", "polarity", false, "Inverted", "Normal", "General");
+    let spec = ParamSpec::bool_labeled(
+        "Polarity", "polarity", false, "Inverted", "Normal", "General",
+    );
     assert_eq!(spec.format_value(0.0), "Normal");
     assert_eq!(spec.format_value(1.0), "Inverted");
 }
@@ -316,7 +318,8 @@ fn builder_methods_set_metadata() {
     let out = ParamSpec::float("Mix", "mix", 0.5, 0.0, 1.0, 0.01, "", "General").output();
     assert_eq!(out.category, ParamCategory::Output);
 
-    let sec = ParamSpec::float("Depth", "depth", 0.5, 0.0, 1.0, 0.01, "", "General").secondary("Mod");
+    let sec =
+        ParamSpec::float("Depth", "depth", 0.5, 0.0, 1.0, 0.01, "", "General").secondary("Mod");
     assert_eq!(sec.category, ParamCategory::Secondary("Mod"));
 
     let diag = ParamSpec::bool_param("Bypass", "bypass", false, "General").diagnostic();
@@ -349,8 +352,8 @@ fn find_by_key_returns_matching_spec() {
 #[test]
 #[should_panic(expected = "no ParamSpec with engine_key")]
 fn find_by_key_panics_when_missing() {
-    const PARAMS: &[ParamSpec] = &[
-        ParamSpec::float("Gain", "gain_db", 0.0, -60.0, 12.0, 0.1, "dB", "General"),
-    ];
+    const PARAMS: &[ParamSpec] = &[ParamSpec::float(
+        "Gain", "gain_db", 0.0, -60.0, 12.0, 0.1, "dB", "General",
+    )];
     let _ = find_by_key(PARAMS, "missing");
 }

@@ -13,4 +13,3 @@ pub fn radians(degrees: f64) -> f64 {
 pub fn degrees(radians: f64) -> f64 {
     radians * 180.0 / PI
 }
-

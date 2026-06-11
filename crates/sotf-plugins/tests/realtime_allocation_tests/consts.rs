@@ -17,4 +17,3 @@ pub(super) fn generate_test_buffer(num_frames: usize, channels: usize) -> Vec<f3
         })
         .collect()
 }
-

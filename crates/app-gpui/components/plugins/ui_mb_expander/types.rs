@@ -5,14 +5,14 @@ use super::super::common::{
     render_knob, render_section_title, render_toggle, render_transfer_curve_with_level,
     render_vertical_slider_with_ticks,
 };
+use super::misc::SLIDER_HEIGHT;
+use super::misc::TRANSFER_CURVE_SIZE;
 use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_plugins::param_specs::{find_by_key as pk, multiband_expander::GLOBAL_PARAMS as ME};
-use super::misc::SLIDER_HEIGHT;
-use super::misc::TRANSFER_CURVE_SIZE;
 
 /// State for rendering the Multiband Expander plugin
 pub struct MbExpanderRenderState {
@@ -514,4 +514,3 @@ pub fn render_mb_expander_plugin(
             .child(right_col),
     )
 }
-

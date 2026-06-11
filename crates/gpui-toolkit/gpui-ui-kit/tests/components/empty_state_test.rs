@@ -1,7 +1,7 @@
 //! EmptyState component tests
 
 use gpui::div;
-use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, Styled};
+use gpui::prelude::ParentElement;
 use gpui_ui_kit::empty_state::EmptyState;
 
 #[test]

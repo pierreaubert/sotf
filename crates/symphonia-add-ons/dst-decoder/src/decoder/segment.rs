@@ -20,4 +20,3 @@ impl Default for Segment {
         }
     }
 }
-

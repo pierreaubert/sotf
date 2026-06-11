@@ -25,4 +25,3 @@ pub(super) fn effect_to_update_type(
         }),
     }
 }
-

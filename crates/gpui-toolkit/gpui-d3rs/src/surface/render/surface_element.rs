@@ -2,15 +2,18 @@
 
 use super::super::data::SurfaceData;
 use super::super::mesh::SurfaceMesh;
-use super::super :: projection :: { IsometricProjection , ObliqueProjection , OrthographicProjection , PerspectiveProjection , Point2D , ProjectionType } ;
+use super::super::projection::{
+    IsometricProjection, ObliqueProjection, OrthographicProjection, PerspectiveProjection, Point2D,
+    ProjectionType,
+};
+use super::misc::format_tick_value;
+use super::projection_impl::ProjectionImpl;
+use super::surface_config::SurfaceConfig;
 use crate::text::{GlyphTextConfig, HorizontalTextAnchor, VerticalTextAnchor, paint_chart_text_at};
 use gpui::prelude::*;
 use gpui::*;
 use std::f32::consts::PI;
 use std::panic;
-use super::misc::format_tick_value;
-use super::projection_impl::ProjectionImpl;
-use super::surface_config::SurfaceConfig;
 
 /// A custom GPUI element for rendering 3D surfaces
 pub struct SurfaceElement {
@@ -421,4 +424,3 @@ impl Element for SurfaceElement {
         }
     }
 }
-

@@ -46,4 +46,3 @@ impl Extent {
         x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
     }
 }
-

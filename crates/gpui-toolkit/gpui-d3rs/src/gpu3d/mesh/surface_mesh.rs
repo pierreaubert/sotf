@@ -2,8 +2,8 @@
 
 use super::super::config::SurfacePlotType;
 use super::super::data::SurfaceData;
-use glam::Vec3;
 use super::GpuVertex;
+use glam::Vec3;
 
 /// Surface mesh containing GPU-ready vertex and index data
 #[derive(Debug)]
@@ -185,4 +185,3 @@ impl SurfaceMesh {
         self.vertices.is_empty()
     }
 }
-

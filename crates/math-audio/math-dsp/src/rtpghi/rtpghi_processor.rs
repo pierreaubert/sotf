@@ -312,7 +312,7 @@ pub fn stretch_with_rtpghi(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::*;
+
     use crate::stft::RealFftProcessor;
 
     /// Helper: compute STFT magnitudes of a signal
@@ -518,4 +518,3 @@ mod tests {
         }
     }
 }
-

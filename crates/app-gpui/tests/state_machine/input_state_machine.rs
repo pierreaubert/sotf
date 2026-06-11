@@ -61,4 +61,3 @@ impl InputStateMachine {
         !matches!(self.state, InputState::Normal)
     }
 }
-

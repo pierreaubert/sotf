@@ -45,4 +45,3 @@ pub fn peer_allows_command(class: PeerClass, command_name: &str) -> bool {
         ),
     }
 }
-

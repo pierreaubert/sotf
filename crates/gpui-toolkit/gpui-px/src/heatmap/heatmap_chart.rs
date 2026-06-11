@@ -611,7 +611,7 @@ pub fn heatmap(z: &[f64], grid_width: usize, grid_height: usize) -> HeatmapChart
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::*;
+
     use std::any::Any;
 
     fn assert_heatmap_builds(chart: HeatmapChart) {
@@ -818,4 +818,3 @@ mod tests {
         );
     }
 }
-

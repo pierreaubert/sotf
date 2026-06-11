@@ -67,4 +67,3 @@ pub fn compute_vbap_matrix(
         })
         .collect()
 }
-

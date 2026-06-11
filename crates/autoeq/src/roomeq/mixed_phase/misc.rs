@@ -101,4 +101,3 @@ pub(super) fn smooth_phase_log_freq(
 
     smoothed
 }
-

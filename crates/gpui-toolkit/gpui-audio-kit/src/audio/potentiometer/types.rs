@@ -48,4 +48,3 @@ pub struct PotentiometerTheme {
 /// Scale type for potentiometer value mapping
 /// Re-exported from scale module for API consistency
 pub type PotentiometerScale = Scale;
-

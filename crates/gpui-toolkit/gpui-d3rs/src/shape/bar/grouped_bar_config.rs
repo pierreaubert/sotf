@@ -102,4 +102,3 @@ impl GroupedBarConfig {
         self.color_scheme.color(index)
     }
 }
-

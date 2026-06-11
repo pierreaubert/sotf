@@ -8,9 +8,6 @@ use super::dsf_pcm_decoder::DsfPcmDecoder;
 use crate::decoder::core::{AudioDecoder, DecodedAudio};
 use crate::decoder::error::AudioDecoderError;
 use crate::decoder::formats::AudioFormat;
-use std::fs;
-
-use super::*;
 
 fn chunk(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(DSF_HEADER_LEN + payload.len());
@@ -25,7 +22,7 @@ fn chunk_be(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
     bytes.extend_from_slice(id);
     bytes.extend_from_slice(&(payload.len() as u64).to_be_bytes());
     bytes.extend_from_slice(payload);
-    if payload.len() % 2 != 0 {
+    if !payload.len().is_multiple_of(2) {
         bytes.push(0);
     }
     bytes

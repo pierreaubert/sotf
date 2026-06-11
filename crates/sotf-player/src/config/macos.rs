@@ -45,4 +45,3 @@ pub(super) fn macos_home_dir() -> Option<PathBuf> {
         std::env::var_os("APP_SANDBOX_CONTAINER_ID").as_deref(),
     )
 }
-

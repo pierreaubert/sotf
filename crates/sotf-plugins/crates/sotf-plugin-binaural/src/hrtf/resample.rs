@@ -2,7 +2,7 @@
 
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{Fft, FixedSync, Resampler};
-use sotf_host :: sofa :: { SofaFile } ;
+use sotf_host::sofa::SofaFile;
 
 /// Resample all HRTF impulse responses in a SOFA file to the target sample rate.
 ///
@@ -125,4 +125,3 @@ fn resample_stereo_ir(
 
     Ok([output_left, output_right])
 }
-

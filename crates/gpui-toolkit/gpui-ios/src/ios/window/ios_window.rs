@@ -3,32 +3,48 @@
 
 use super::super::IosDisplay;
 use super::super::events::*;
-use crate::momentum::{MomentumScroller, VelocityTracker};
-use crate :: native :: { DynamicTypeCategory , IosSceneMetrics , SizeClass } ;
-use crate::platform_view::NativePlatformViewHost;
-use gpui :: { AnyWindowHandle , Bounds , Capslock , DevicePixels , DispatchEventResult , GpuSpecs , Modifiers , Pixels , PlatformAtlas , PlatformDisplay , PlatformInput , PlatformInputHandler , PlatformWindow , Point , PromptButton , PromptLevel , RequestFrameOptions , Scene , Size , WindowAppearance , WindowBackgroundAppearance , WindowBounds , WindowControlArea , WindowParams , point , px , size } ;
-use gpui_wgpu::{WgpuContext, WgpuRenderer, WgpuSurfaceConfig, wgpu};
-use objc :: { class , msg_send , runtime :: { BOOL , Object , Sel , YES } , sel , sel_impl } ;
-use parking_lot::Mutex;
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle, UiKitDisplayHandle, UiKitWindowHandle};
-use std :: { cell :: { Cell , RefCell } , collections :: HashMap , ffi :: { c_void } , ptr :: { self , NonNull } , rc :: Rc , sync :: Arc } ;
 use super::accessibility;
-use super::handle;
-use super::register;
 use super::accessibility::accessibility_traits_for_node;
 use super::accessibility::accessibility_value_for_node;
 use super::consts::GPUI_WINDOW_IVAR;
 use super::consts::SCROLL_SLOP;
 use super::fallback_atlas::FallbackAtlas;
+use super::handle;
 use super::ios_raw_handles::IosRawHandles;
 use super::misc::ns_string_to_string;
 use super::misc::query_scene_metrics;
 use super::misc::view_safe_area_insets;
+use super::register;
 use super::register::register_accessibility_element_class;
 use super::register::register_metal_view_class;
 use super::register::register_text_input_view_class;
 use super::register::register_view_controller_class;
 use super::types::TouchState;
+use crate::momentum::{MomentumScroller, VelocityTracker};
+use crate::native::{DynamicTypeCategory, IosSceneMetrics, SizeClass};
+use crate::platform_view::NativePlatformViewHost;
+use gpui::{
+    AnyWindowHandle, Bounds, Capslock, DevicePixels, DispatchEventResult, GpuSpecs, Modifiers,
+    Pixels, PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow,
+    Point, PromptButton, PromptLevel, RequestFrameOptions, Scene, Size, WindowAppearance,
+    WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowParams, point, px, size,
+};
+use gpui_wgpu::{WgpuContext, WgpuRenderer, WgpuSurfaceConfig, wgpu};
+use objc::{
+    class, msg_send,
+    runtime::{BOOL, Object, Sel, YES},
+    sel, sel_impl,
+};
+use parking_lot::Mutex;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle, UiKitDisplayHandle, UiKitWindowHandle};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    ffi::c_void,
+    ptr::{self, NonNull},
+    rc::Rc,
+    sync::Arc,
+};
 
 pub(crate) struct IosWindow {
     /// The UIWindow object
@@ -47,9 +63,11 @@ pub(crate) struct IosWindow {
     pub(super) input_handler: RefCell<Option<PlatformInputHandler>>,
     /// Callback for frame requests
     /// Note: pub(super) to allow ffi.rs to access this for the display link callback
-    pub(in super::super) request_frame_callback: RefCell<Option<Box<dyn FnMut(RequestFrameOptions)>>>,
+    pub(in super::super) request_frame_callback:
+        RefCell<Option<Box<dyn FnMut(RequestFrameOptions)>>>,
     /// Callback for input events
-    pub(super) input_callback: RefCell<Option<Box<dyn FnMut(PlatformInput) -> DispatchEventResult>>>,
+    pub(super) input_callback:
+        RefCell<Option<Box<dyn FnMut(PlatformInput) -> DispatchEventResult>>>,
     /// Callback for active status changes
     pub(super) active_status_callback: RefCell<Option<Box<dyn FnMut(bool)>>>,
     /// Callback for hover status changes (not really applicable on iOS)
@@ -706,7 +724,12 @@ impl IosWindow {
         states.insert(touch_id, ts);
     }
 
-    pub(super) fn dispatch_pointer_sample(&self, touch: *mut Object, logical_x: f32, logical_y: f32) {
+    pub(super) fn dispatch_pointer_sample(
+        &self,
+        touch: *mut Object,
+        logical_x: f32,
+        logical_y: f32,
+    ) {
         if touch.is_null() {
             return;
         }
@@ -1629,4 +1652,3 @@ impl PlatformWindow for IosWindow {
         // iOS handles IME positioning automatically
     }
 }
-

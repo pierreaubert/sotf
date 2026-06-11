@@ -36,4 +36,3 @@ pub(super) fn smooth_diffuseness(previous: f32, target: f32, smoothing_scale: f3
     let limited_diff = (smoothed - previous).clamp(-max_step, max_step);
     (previous + limited_diff).clamp(0.0, 1.0)
 }
-

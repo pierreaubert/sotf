@@ -2,13 +2,21 @@
 
 use rustfft::num_complex::Complex;
 
-pub(super) fn scalar_complex_mul_add(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf: &[Complex<f32>]) {
+pub(super) fn scalar_complex_mul_add(
+    dst: &mut [Complex<f32>],
+    src: &[Complex<f32>],
+    hrtf: &[Complex<f32>],
+) {
     for i in 0..dst.len() {
         dst[i] += src[i] * hrtf[i];
     }
 }
 
-pub(super) fn scalar_complex_mul(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf: &[Complex<f32>]) {
+pub(super) fn scalar_complex_mul(
+    dst: &mut [Complex<f32>],
+    src: &[Complex<f32>],
+    hrtf: &[Complex<f32>],
+) {
     for i in 0..dst.len() {
         dst[i] = src[i] * hrtf[i];
     }
@@ -92,4 +100,3 @@ pub(super) fn scalar_flush_denormals(samples: &mut [f32]) {
         }
     }
 }
-

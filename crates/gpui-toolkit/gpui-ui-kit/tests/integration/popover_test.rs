@@ -7,7 +7,7 @@
 //! - With width
 //! - With on_close handler
 
-use gpui::{Context, TestAppContext, Window, div, prelude::*, px};
+use gpui::{Context, IntoElement, ParentElement, Render, Styled, TestAppContext, Window, div, px};
 use gpui_ui_kit::popover::{Popover, PopoverPlacement};
 
 // ============================================================================

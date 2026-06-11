@@ -19,4 +19,3 @@ impl fmt::Display for LayoutIssueSeverity {
         }
     }
 }
-

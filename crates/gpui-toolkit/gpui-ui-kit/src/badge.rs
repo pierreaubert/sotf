@@ -4,7 +4,7 @@
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Rgba, SharedString, Div, px, div, Window, App, Pixels};
+use gpui::{App, Div, Pixels, Rgba, SharedString, Window, div, px};
 
 /// Badge variant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -65,4 +65,3 @@ impl<'a> SlotNode<'a> {
         LayoutNode::Slot(self)
     }
 }
-

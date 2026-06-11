@@ -597,4 +597,3 @@ fn test_upmixer_subharmonic_smoothing() {
 
     println!("✓ Sub-harmonic smoothing test passed: smooth attack/release detected");
 }
-

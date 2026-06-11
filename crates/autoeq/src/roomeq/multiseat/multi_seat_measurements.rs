@@ -129,4 +129,3 @@ pub(super) fn create_eval_frequency_grid(
         10.0_f64.powf(log_f)
     })
 }
-

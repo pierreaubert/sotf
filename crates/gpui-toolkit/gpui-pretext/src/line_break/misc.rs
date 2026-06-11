@@ -69,4 +69,3 @@ pub(super) fn badness(ratio: f64) -> f64 {
     let b = 100.0 * ratio.abs().powi(3);
     b.min(10000.0)
 }
-

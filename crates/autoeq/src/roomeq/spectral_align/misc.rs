@@ -137,4 +137,3 @@ pub(super) fn solve_3x3_wls(
 
     (x0, x1, x2, residual_rms)
 }
-

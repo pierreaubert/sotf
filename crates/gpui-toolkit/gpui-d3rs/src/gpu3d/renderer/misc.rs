@@ -11,4 +11,3 @@ pub(super) fn background_surface_clear_color(config: &Surface3DConfig) -> wgpu::
         a: 1.0,
     }
 }
-

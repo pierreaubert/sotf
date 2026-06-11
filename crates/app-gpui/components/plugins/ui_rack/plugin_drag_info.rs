@@ -62,4 +62,3 @@ impl Render for PluginDragInfo {
             )
     }
 }
-

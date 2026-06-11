@@ -69,4 +69,3 @@ pub fn get_meter_groups(config_id: &str) -> Option<&'static [MeterGroupSpec]> {
 pub fn get_meter_groups_by_channels(num_channels: usize) -> Option<&'static [MeterGroupSpec]> {
     get_speaker_config_by_channels(num_channels).map(|c| c.meter_groups)
 }
-

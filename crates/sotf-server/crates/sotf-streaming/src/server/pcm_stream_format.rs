@@ -39,4 +39,3 @@ pub(super) fn build_wav_stream_header_f32(format: PcmStreamFormat) -> [u8; 44] {
     header[40..44].copy_from_slice(&STREAM_DATA_SIZE.to_le_bytes());
     header
 }
-

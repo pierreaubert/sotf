@@ -5,6 +5,8 @@ use super::super::common::{
     render_knob, render_section_title, render_toggle, render_transfer_curve_with_level,
     render_vertical_slider_with_ticks,
 };
+use super::misc::SLIDER_HEIGHT;
+use super::misc::TRANSFER_CURVE_SIZE;
 use crate::app::AppState;
 use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
@@ -14,8 +16,6 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{NumberInput, NumberInputSize};
 use sotf_plugins::param_specs::{find_by_key as pk, multiband_compressor::GLOBAL_PARAMS as MC};
-use super::misc::SLIDER_HEIGHT;
-use super::misc::TRANSFER_CURVE_SIZE;
 
 /// State for rendering the Multiband Compressor plugin
 pub struct MbCompressorRenderState {
@@ -537,4 +537,3 @@ pub fn render_mb_compressor_plugin(
             .child(right_col),
     )
 }
-

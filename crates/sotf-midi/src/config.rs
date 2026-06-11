@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 //! MIDI configuration and device profiles
 
 use crate::error::Result;

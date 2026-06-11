@@ -56,18 +56,17 @@ pub use interactive_chart::{
 mod chart_interaction;
 mod misc;
 mod mouse_state;
-mod types;
-mod wheel_config;
 #[cfg(test)]
 mod tests;
+mod types;
+mod wheel_config;
 
 pub use chart_interaction::*;
 pub use mouse_state::*;
 pub use types::*;
 pub use wheel_config::*;
 
-# [cfg (feature = "gpui")]
+#[cfg(feature = "gpui")]
 use chart_interaction::interactive_chart;
-# [cfg (feature = "gpui")]
+#[cfg(feature = "gpui")]
 use misc::gpui_render;
-

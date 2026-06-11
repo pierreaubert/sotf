@@ -10,4 +10,3 @@ pub(super) fn encrypted_record_total_bytes(sample_count: usize) -> Option<usize>
 pub(super) fn encrypted_record_slots(sample_count: usize) -> Option<usize> {
     encrypted_record_total_bytes(sample_count).map(|bytes| bytes.div_ceil(4))
 }
-

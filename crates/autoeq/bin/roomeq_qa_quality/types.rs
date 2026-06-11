@@ -9,4 +9,3 @@ pub(super) struct TestResult {
     pub(super) pass: bool,
     pub(super) reason: String,
 }
-

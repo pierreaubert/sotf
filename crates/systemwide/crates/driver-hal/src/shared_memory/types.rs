@@ -101,4 +101,3 @@ pub(super) fn read_encrypted_with_staging(
 
     copied_samples / channel_count
 }
-

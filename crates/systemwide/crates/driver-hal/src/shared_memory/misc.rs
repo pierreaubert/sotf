@@ -49,4 +49,3 @@ pub(super) fn fingerprint_to_u64(fingerprint: [u8; 8]) -> u64 {
 pub(super) fn u64_to_fingerprint(value: u64) -> [u8; 8] {
     value.to_be_bytes()
 }
-

@@ -10,4 +10,3 @@ mod tests;
 
 pub use surface_data::*;
 pub use surface_point3_d::*;
-

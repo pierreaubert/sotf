@@ -569,4 +569,3 @@ impl PlayerView {
             .into_any_element()
     }
 }
-

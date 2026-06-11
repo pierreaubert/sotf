@@ -17,4 +17,3 @@ pub(super) fn compare_solutions(a: &ParetoSolution, b: &ParetoSolution) -> std::
         .then_with(|| b.crowding_distance.total_cmp(&a.crowding_distance))
         .then_with(|| sum_objectives(&a.objectives).total_cmp(&sum_objectives(&b.objectives)))
 }
-

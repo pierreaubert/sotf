@@ -20,10 +20,6 @@ use super::consts::MONO_FLAG;
 use super::consts::RATE_S;
 use super::consts::SHIFT_LSB;
 use super::consts::SRATE_LSB;
-use super::consts::WAVPACK_HEADER_LEN;
-use super::consts::WAVPACK_MARKER;
-use super::consts::WAVPACK_MAX_STREAM_VERSION;
-use super::consts::WAVPACK_MIN_CK_SIZE;
 use super::consts::fixup_samples;
 use super::decode::decode_dsd_into;
 use super::dsd_scratch::DsdScratch;
@@ -37,28 +33,18 @@ use super::parse::parse_shaping_info;
 use super::restore::restore_weight;
 use super::types::DecodedWord;
 use super::types::DecorrPass;
-use super::types::EntropyVars;
 use super::types::FloatInfo;
-use super::types::HybridProfile;
 use super::types::Int32Info;
 use super::types::ShapingInfo;
-use super::types::WavPackBlock;
-use super::wav_pack_bit_reader::WavPackBitReader;
-use super::wav_pack_block_header::WavPackBlockHeader;
 use super::wav_pack_decoder::WavPackDecoder;
-use super::wav_pack_reader::WavPackReader;
-use super::words_decoder::WordsDecoder;
 use super::wp::wp_exp2s;
 use super::write::write_samples_to_buffer;
 use symphonia_core::audio::sample::SampleFormat;
 use symphonia_core::audio::{AudioSpec, Channels, GenericAudioBuffer};
-use symphonia_core::codecs::CodecParameters;
 use symphonia_core::codecs::audio::AudioDecoder;
 use symphonia_core::errors::{Error, Result};
 use symphonia_core::formats::prelude::*;
-use symphonia_core::io::MediaSourceStream;
 use symphonia_core::units::{Duration, Timestamp};
-use std::io::Cursor;
 
 mod make;
 mod misc;
@@ -453,4 +439,3 @@ fn wavpack_hybrid_correction_reconstructs_joint_stereo() {
         vec![9, -3]
     );
 }
-

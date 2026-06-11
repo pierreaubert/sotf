@@ -267,7 +267,7 @@ fn escape_table_cell(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{LayoutNode, LayoutViewport, LayoutPreferences, solve_snapshot_matrix};
+    use super::{LayoutNode, LayoutPreferences, LayoutViewport, solve_snapshot_matrix};
     use crate::{Axis, ContainerNode, DisplayTier, Sizing, SlotNode};
 
     static CHART_TIERS: &[DisplayTier<'_>] = &[

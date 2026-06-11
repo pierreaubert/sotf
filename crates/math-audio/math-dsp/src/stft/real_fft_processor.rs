@@ -71,4 +71,3 @@ impl RealFftProcessor {
             .expect("FFT inverse failed");
     }
 }
-

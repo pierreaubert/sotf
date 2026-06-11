@@ -54,4 +54,3 @@ pub struct DbaSyntheticScenario {
     pub front_curves: Vec<Curve>,
     pub rear_curves: Vec<Curve>,
 }
-

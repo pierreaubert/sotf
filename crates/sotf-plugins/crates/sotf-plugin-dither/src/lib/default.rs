@@ -14,4 +14,3 @@ pub(super) fn default_noise_shaping() -> bool {
 pub(super) fn default_dither_type() -> usize {
     pk(DT, "dither_type").default_usize()
 }
-

@@ -312,4 +312,3 @@ pub fn ease_bounce_in_out(t: f64) -> f64 {
         (ease_bounce_out(t - 1.0) + 1.0) / 2.0
     }
 }
-

@@ -91,6 +91,6 @@ mod tests {
 
     #[test]
     fn parse_sequence_header_too_short_errors() {
-        assert!(parse_sequence_header(&[b'i', b'a']).is_err());
+        assert!(parse_sequence_header(b"ia").is_err());
     }
 }

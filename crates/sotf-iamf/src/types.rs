@@ -384,17 +384,35 @@ mod tests {
 
     #[test]
     fn test_parameter_data_kind_from_u32() {
-        assert_eq!(ParameterDataKind::from_u32(0), Some(ParameterDataKind::MixGain));
-        assert_eq!(ParameterDataKind::from_u32(1), Some(ParameterDataKind::DemixingInfo));
-        assert_eq!(ParameterDataKind::from_u32(2), Some(ParameterDataKind::ReconGain));
+        assert_eq!(
+            ParameterDataKind::from_u32(0),
+            Some(ParameterDataKind::MixGain)
+        );
+        assert_eq!(
+            ParameterDataKind::from_u32(1),
+            Some(ParameterDataKind::DemixingInfo)
+        );
+        assert_eq!(
+            ParameterDataKind::from_u32(2),
+            Some(ParameterDataKind::ReconGain)
+        );
         assert_eq!(ParameterDataKind::from_u32(3), None);
     }
 
     #[test]
     fn test_channel_layout_from_index_all() {
-        assert_eq!(IamfChannelLayout::from_layout_index(0), Some(IamfChannelLayout::Mono));
-        assert_eq!(IamfChannelLayout::from_layout_index(1), Some(IamfChannelLayout::Stereo));
-        assert_eq!(IamfChannelLayout::from_layout_index(9), Some(IamfChannelLayout::Binaural));
+        assert_eq!(
+            IamfChannelLayout::from_layout_index(0),
+            Some(IamfChannelLayout::Mono)
+        );
+        assert_eq!(
+            IamfChannelLayout::from_layout_index(1),
+            Some(IamfChannelLayout::Stereo)
+        );
+        assert_eq!(
+            IamfChannelLayout::from_layout_index(9),
+            Some(IamfChannelLayout::Binaural)
+        );
         assert_eq!(IamfChannelLayout::from_layout_index(10), None);
     }
 

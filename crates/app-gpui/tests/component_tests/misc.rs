@@ -57,4 +57,3 @@ fn test_rgba_to_u32_gray() {
     // 0.5 * 255 = 127 (0x7F)
     assert_eq!(rgba_to_u32(rgba(0.5, 0.5, 0.5)), 0x7F7F7F);
 }
-

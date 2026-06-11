@@ -75,4 +75,3 @@ where
     try_evaluate_area_loss(loss, params, prior, quadrature, scalarisation)
         .unwrap_or_else(|e| panic!("evaluate_area_loss: {e}"))
 }
-

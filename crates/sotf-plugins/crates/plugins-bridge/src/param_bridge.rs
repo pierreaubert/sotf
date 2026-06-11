@@ -433,19 +433,37 @@ mod tests {
         let bridge = ParamBridge::new(&[spec_lower, spec_upper]);
 
         // info() should report logarithmic for both "hz" and "HZ"
-        assert!(bridge.info(0).unwrap().logarithmic, "lowercase 'hz' should be logarithmic");
-        assert!(bridge.info(1).unwrap().logarithmic, "uppercase 'HZ' should be logarithmic");
+        assert!(
+            bridge.info(0).unwrap().logarithmic,
+            "lowercase 'hz' should be logarithmic"
+        );
+        assert!(
+            bridge.info(1).unwrap().logarithmic,
+            "uppercase 'HZ' should be logarithmic"
+        );
 
         // normalize should use log scale for case-insensitive Hz
         let n_lower = bridge.normalize(0, 1000.0).unwrap();
         let n_upper = bridge.normalize(1, 1000.0).unwrap();
-        assert!((n_lower - n_upper).abs() < 1e-10, "normalize should match for hz vs HZ");
-        assert!(n_lower > 0.4 && n_lower < 0.6, "1kHz normalized = {n_lower}");
+        assert!(
+            (n_lower - n_upper).abs() < 1e-10,
+            "normalize should match for hz vs HZ"
+        );
+        assert!(
+            n_lower > 0.4 && n_lower < 0.6,
+            "1kHz normalized = {n_lower}"
+        );
 
         // denormalize round-trip
         let back_lower = bridge.denormalize(0, n_lower).unwrap();
         let back_upper = bridge.denormalize(1, n_upper).unwrap();
-        assert!((back_lower - 1000.0).abs() / 1000.0 < 1e-6, "denormalize hz failed: {back_lower}");
-        assert!((back_upper - 1000.0).abs() / 1000.0 < 1e-6, "denormalize HZ failed: {back_upper}");
+        assert!(
+            (back_lower - 1000.0).abs() / 1000.0 < 1e-6,
+            "denormalize hz failed: {back_lower}"
+        );
+        assert!(
+            (back_upper - 1000.0).abs() / 1000.0 < 1e-6,
+            "denormalize HZ failed: {back_upper}"
+        );
     }
 }

@@ -4,7 +4,9 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_audio::LoudnessCompensation;
 use sotf_plugins::{CrossfeedMode, CrossfeedPreset};
 
-pub(super) fn parse_loudness_compensation(vals: &[f64]) -> Result<Option<LoudnessCompensation>, String> {
+pub(super) fn parse_loudness_compensation(
+    vals: &[f64],
+) -> Result<Option<LoudnessCompensation>, String> {
     let (ref_level, low, high) = match vals {
         [r, l] => (*r, *l, *l),
         [r, l, h] => (*r, *l, *h),
@@ -118,7 +120,9 @@ pub(super) fn parse_filters(filter_strings: &[String]) -> Result<Vec<Biquad>, St
 
 /// Parse channel mapping specification and create matrix plugin config
 #[allow(clippy::type_complexity)]
-pub(super) fn parse_channel_mapping(mapping_str: &str) -> Result<(Vec<usize>, Vec<usize>, Vec<f32>), String> {
+pub(super) fn parse_channel_mapping(
+    mapping_str: &str,
+) -> Result<(Vec<usize>, Vec<usize>, Vec<f32>), String> {
     let parts: Vec<&str> = mapping_str.split("->").collect();
     if parts.len() != 2 {
         return Err(format!(
@@ -195,4 +199,3 @@ pub(super) fn parse_channel_mapping(mapping_str: &str) -> Result<(Vec<usize>, Ve
 
     Ok((input_channel_map, output_channel_map, matrix))
 }
-

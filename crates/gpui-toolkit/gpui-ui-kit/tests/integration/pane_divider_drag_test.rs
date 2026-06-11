@@ -8,8 +8,8 @@
 //! - No-op when not dragging
 
 use gpui::{
-    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, point,
-    prelude::*, px,
+    Context, InteractiveElement, IntoElement, Modifiers, MouseButton, ParentElement, Render,
+    Styled, TestAppContext, VisualTestContext, Window, div, point, px,
 };
 use gpui_ui_kit::pane_divider::{CollapseDirection, PaneDivider};
 use std::cell::RefCell;

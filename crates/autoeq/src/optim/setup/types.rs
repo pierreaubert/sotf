@@ -32,4 +32,3 @@ pub struct OptimizationOutput {
     /// Optimization history: (iteration, loss)
     pub history: Vec<(usize, f64)>,
 }
-

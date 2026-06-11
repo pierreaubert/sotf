@@ -100,4 +100,3 @@ pub(super) fn sum_room_eq_report_curves_db(
         phase: None,
     }
 }
-

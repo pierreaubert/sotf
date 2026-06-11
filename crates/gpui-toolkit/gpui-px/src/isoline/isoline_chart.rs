@@ -614,7 +614,7 @@ pub fn isoline(z: &[f64], grid_width: usize, grid_height: usize) -> IsolineChart
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::*;
+
     use std::any::Any;
 
     fn assert_isoline_builds(chart: IsolineChart) {
@@ -762,4 +762,3 @@ mod tests {
         );
     }
 }
-

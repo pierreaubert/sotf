@@ -170,11 +170,7 @@ pub fn parse_command(line: &str) -> Result<MpdCommand, MpdError> {
 
     // Reject any trailing tokens after the command has been parsed.
     if parts.next_token().is_some() {
-        return Err(MpdError::new(
-            MpdErrorCode::Arg,
-            &cmd,
-            "trailing tokens",
-        ));
+        return Err(MpdError::new(MpdErrorCode::Arg, &cmd, "trailing tokens"));
     }
 
     result
@@ -205,4 +201,3 @@ fn parse_filter_exprs(parts: &mut CommandTokenizer) -> Vec<FilterExpr> {
     }
     exprs
 }
-

@@ -14,11 +14,11 @@ mod create;
 mod misc;
 #[path = "sotf_player_cli/parse.rs"]
 mod parse;
-#[path = "sotf_player_cli/types.rs"]
-mod types;
 #[cfg(test)]
 #[path = "sotf_player_cli/tests.rs"]
 mod tests;
+#[path = "sotf_player_cli/types.rs"]
+mod types;
 
 use build::play_stream;
 use misc::list_devices;
@@ -155,4 +155,3 @@ fn main() {
         }
     }
 }
-

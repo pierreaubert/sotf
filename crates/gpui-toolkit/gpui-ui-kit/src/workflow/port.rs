@@ -2,7 +2,7 @@
 
 use super::theme::WorkflowTheme;
 use gpui::prelude::{InteractiveElement, IntoElement, RenderOnce, Styled};
-use gpui::{ElementId, Window, App, Rgba, div, px, MouseButton};
+use gpui::{App, ElementId, MouseButton, Rgba, Window, div, px};
 
 /// Port direction
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -84,4 +84,3 @@ pub(super) fn compact(
         starts: out_starts,
     }
 }
-

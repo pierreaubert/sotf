@@ -3,7 +3,7 @@
 use crate::ComponentTheme;
 use crate::theme::glow_shadow;
 use gpui::prelude::{InteractiveElement, ParentElement, Styled};
-use gpui::{Rgba, SharedString, Stateful, Div, div, px, FontWeight};
+use gpui::{Div, FontWeight, Rgba, SharedString, Stateful, div, px};
 
 /// Theme colors for menu styling
 #[derive(Debug, Clone, ComponentTheme)]
@@ -70,4 +70,3 @@ pub fn menu_bar_button(
 
     button.child(label)
 }
-

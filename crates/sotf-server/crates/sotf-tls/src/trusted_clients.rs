@@ -185,7 +185,7 @@ mod tests {
         {
             let mut store = TrustedClientStore::load(tmp.path()).expect("load");
             store.add("FF:00", "Persistent").expect("add");
-        }
+        };
 
         // Reload from disk
         let store = TrustedClientStore::load(tmp.path()).expect("reload");

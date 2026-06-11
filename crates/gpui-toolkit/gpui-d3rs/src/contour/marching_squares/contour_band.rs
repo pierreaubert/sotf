@@ -28,4 +28,3 @@ impl ContourBand {
         (self.lower + self.upper) / 2.0
     }
 }
-

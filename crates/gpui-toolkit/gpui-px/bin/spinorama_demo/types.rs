@@ -9,4 +9,3 @@ pub(super) enum LoadState {
     Loaded,
     Error(String),
 }
-

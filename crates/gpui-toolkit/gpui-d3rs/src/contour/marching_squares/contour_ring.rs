@@ -40,4 +40,3 @@ impl ContourRing {
         sum / 2.0
     }
 }
-

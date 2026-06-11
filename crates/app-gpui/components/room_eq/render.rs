@@ -3062,4 +3062,3 @@ fn render_group_delay_graph(
         .when_some(chart_element, |div, el| div.child(el))
         .into_any_element()
 }
-

@@ -701,4 +701,3 @@ No data is lost due to buffer resizing; resizing only adjusts capacity."
         );
     }
 }
-

@@ -49,4 +49,3 @@ impl CrossoverMode {
         *self = Self::new(freqs, sample_rate, channels, kind);
     }
 }
-

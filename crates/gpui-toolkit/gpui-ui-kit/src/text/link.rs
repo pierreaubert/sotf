@@ -2,7 +2,7 @@
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Component, ElementId, SharedString, Window, App, Stateful, Div, div, MouseButton};
+use gpui::{App, Component, Div, ElementId, MouseButton, SharedString, Stateful, Window, div};
 
 /// A link component
 pub struct Link {
@@ -99,4 +99,3 @@ impl RenderOnce for Link {
         self.build_with_theme(&theme)
     }
 }
-

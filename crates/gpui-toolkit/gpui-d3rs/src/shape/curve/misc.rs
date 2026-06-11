@@ -19,7 +19,14 @@ pub(super) fn basis_point(p0: &Point, p1: &Point, p2: &Point, p3: &Point, t: f64
 }
 
 /// Compute a point on a cardinal spline.
-pub(super) fn cardinal_point(p0: &Point, p1: &Point, p2: &Point, p3: &Point, t: f64, k: f64) -> Point {
+pub(super) fn cardinal_point(
+    p0: &Point,
+    p1: &Point,
+    p2: &Point,
+    p3: &Point,
+    t: f64,
+    k: f64,
+) -> Point {
     let t2 = t * t;
     let t3 = t2 * t;
 
@@ -40,7 +47,14 @@ pub(super) fn cardinal_point(p0: &Point, p1: &Point, p2: &Point, p3: &Point, t: 
 }
 
 /// Compute a point on a Catmull-Rom spline.
-pub(super) fn catmull_rom_point(p0: &Point, p1: &Point, p2: &Point, p3: &Point, t: f64, alpha: f64) -> Point {
+pub(super) fn catmull_rom_point(
+    p0: &Point,
+    p1: &Point,
+    p2: &Point,
+    p3: &Point,
+    t: f64,
+    alpha: f64,
+) -> Point {
     // Calculate knot intervals based on alpha
     fn dist(a: &Point, b: &Point, alpha: f64) -> f64 {
         let dx = b.x - a.x;
@@ -104,4 +118,3 @@ pub(super) fn natural_spline_derivs(values: &[f64]) -> Vec<f64> {
 
     y2
 }
-

@@ -38,4 +38,3 @@ pub(super) fn default_itu_mode() -> bool {
 pub(super) fn default_matrix_ltrt() -> bool {
     false
 }
-

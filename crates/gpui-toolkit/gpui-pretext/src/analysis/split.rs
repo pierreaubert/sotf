@@ -142,4 +142,3 @@ pub(super) fn split_hyphenated_numeric_runs(seg: MergedSegmentation) -> MergedSe
         starts,
     }
 }
-

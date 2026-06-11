@@ -305,7 +305,11 @@ impl ComponentShowcase {
             .build()
     }
 
-    pub(super) fn color_swatch(&self, name: &'static str, color: crate::theme::Color) -> impl IntoElement {
+    pub(super) fn color_swatch(
+        &self,
+        name: &'static str,
+        color: crate::theme::Color,
+    ) -> impl IntoElement {
         VStack::new()
             .spacing(StackSpacing::Xs)
             .child(
@@ -523,4 +527,3 @@ impl Render for ComponentShowcase {
         )
     }
 }
-

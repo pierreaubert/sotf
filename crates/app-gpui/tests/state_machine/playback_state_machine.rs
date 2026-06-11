@@ -95,4 +95,3 @@ impl PlaybackStateMachine {
         (self.volume - expected).abs() < f32::EPSILON
     }
 }
-

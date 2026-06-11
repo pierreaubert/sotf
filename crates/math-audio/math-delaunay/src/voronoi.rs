@@ -674,4 +674,3 @@ impl<'a> Voronoi<'a> {
         Some(p)
     }
 }
-

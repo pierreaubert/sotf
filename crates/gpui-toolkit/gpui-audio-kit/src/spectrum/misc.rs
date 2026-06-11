@@ -63,4 +63,3 @@ pub(super) fn rgba(hex: u32) -> Rgba {
         a: (hex & 0xff) as f32 / 255.0,
     }
 }
-

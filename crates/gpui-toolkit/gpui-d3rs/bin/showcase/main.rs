@@ -33,4 +33,3 @@ fn main() {
         |cx| cx.new(ShowcaseApp::new),
     );
 }
-

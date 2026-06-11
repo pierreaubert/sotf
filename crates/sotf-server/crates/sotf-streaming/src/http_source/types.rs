@@ -12,4 +12,3 @@ pub enum StreamMetadata {
     /// Bitrate detected from ICY headers (kbps).
     Bitrate(u32),
 }
-

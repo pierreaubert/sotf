@@ -29,4 +29,3 @@ pub fn measure_binaural_from_surround(
     meter.add_surround_f32(samples_interleaved, downmix)?;
     meter.snapshot()
 }
-

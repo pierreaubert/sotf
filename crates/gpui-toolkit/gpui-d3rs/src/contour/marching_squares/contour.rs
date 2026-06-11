@@ -67,4 +67,3 @@ pub fn contours(values: &[f64], width: usize, height: usize, thresholds: &[f64])
 pub fn contour(values: &[f64], width: usize, height: usize, threshold: f64) -> Contour {
     ContourGenerator::new(width, height).contour(values, threshold)
 }
-

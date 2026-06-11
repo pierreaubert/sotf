@@ -14,11 +14,11 @@ mod misc;
 mod note_expression_event;
 mod plugin_info;
 mod process_context;
+#[cfg(test)]
+mod tests;
 mod time_signature;
 mod transport_info;
 mod types;
-#[cfg(test)]
-mod tests;
 
 pub use in_place_plugin::*;
 pub use in_place_plugin_adapter::*;
@@ -193,4 +193,3 @@ pub trait Plugin: Send {
         false
     }
 }
-

@@ -34,4 +34,3 @@ pub(super) struct SavedPlaybackConfig {
     pub(super) output_device: Option<String>,
     pub(super) last_position_secs: f64,
 }
-

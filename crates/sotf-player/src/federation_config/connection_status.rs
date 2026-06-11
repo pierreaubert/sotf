@@ -39,4 +39,3 @@ impl ConnectionStatus {
         matches!(self, Self::Diagnostic(_))
     }
 }
-

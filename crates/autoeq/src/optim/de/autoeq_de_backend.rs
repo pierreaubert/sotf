@@ -2,10 +2,10 @@
 
 use super::super::backend::{AlgorithmType, ConstraintCapabilities, FilterOptimizer};
 use super::super::params::OptimParams as BackendOptimParams;
-use super::super :: { ObjectiveData , OptimProgressCallback , PenaltyMode } ;
-use crate :: de :: { CallbackAction , DEIntermediate } ;
+use super::super::{ObjectiveData, OptimProgressCallback, PenaltyMode};
 use super::optimize::optimize_filters_autoeq;
 use super::optimize::optimize_filters_autoeq_with_callback;
+use crate::de::{CallbackAction, DEIntermediate};
 
 /// AutoEQ DE-backed `FilterOptimizer`. Single instance — name is `"autoeq:de"`
 /// today; the strategy variants (best1bin, lshadebin, …) are picked from
@@ -68,4 +68,3 @@ impl FilterOptimizer for AutoeqDeBackend {
         }
     }
 }
-

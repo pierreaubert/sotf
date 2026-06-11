@@ -25,4 +25,3 @@ pub(super) fn status_json(stats: &PcmStreamStats) -> String {
         stats.published_bytes
     )
 }
-

@@ -17,4 +17,3 @@ pub(super) fn default_isolation_dir(input_path: &Path) -> PathBuf {
         .unwrap_or("upmixer");
     input_path.with_file_name(format!("{stem}.upmixer-isolate"))
 }
-

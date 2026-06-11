@@ -169,4 +169,3 @@ impl BatchedRealFftProcessor {
         ch * self.spectrum_size..(ch + 1) * self.spectrum_size
     }
 }
-

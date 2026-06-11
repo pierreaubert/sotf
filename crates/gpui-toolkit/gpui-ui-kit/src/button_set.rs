@@ -21,7 +21,7 @@
 use crate::ComponentTheme;
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Rgba, SharedString, ElementId, Window, App, Stateful, Div, px, div, MouseButton};
+use gpui::{App, Div, ElementId, MouseButton, Rgba, SharedString, Stateful, Window, div, px};
 
 /// Theme colors for button set styling
 #[derive(Debug, Clone, ComponentTheme)]

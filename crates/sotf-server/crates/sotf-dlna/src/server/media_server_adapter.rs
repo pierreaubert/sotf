@@ -27,4 +27,3 @@ pub trait MediaServerAdapter: Send + Sync + 'static {
         None
     }
 }
-

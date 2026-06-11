@@ -13,4 +13,3 @@ pub(super) fn default_step_size() -> f32 {
 pub(super) fn default_post_filter_enabled() -> bool {
     true
 }
-

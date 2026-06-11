@@ -104,4 +104,3 @@ pub fn optimize_filters_with_callback(
         cb_for_backend,
     )
 }
-

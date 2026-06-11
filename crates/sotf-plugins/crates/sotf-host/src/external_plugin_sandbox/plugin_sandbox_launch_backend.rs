@@ -2,7 +2,7 @@
 
 use super::plugin_sandbox_backend::PluginSandboxBackend;
 use super::types::PluginSandboxBackendCapabilities;
-# [cfg (target_os = "linux")]
+#[cfg(target_os = "linux")]
 use super::types::platform;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,4 +81,3 @@ impl PluginSandboxBackend for PluginSandboxLaunchBackend {
         (*self).capabilities()
     }
 }
-

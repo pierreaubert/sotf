@@ -2,7 +2,12 @@
 
 use ndarray::Array1;
 
-pub(super) fn is_local_extremum(spl: &Array1<f64>, idx: usize, radius: usize, maximum: bool) -> bool {
+pub(super) fn is_local_extremum(
+    spl: &Array1<f64>,
+    idx: usize,
+    radius: usize,
+    maximum: bool,
+) -> bool {
     let lo = idx.saturating_sub(radius);
     let hi = (idx + radius).min(spl.len().saturating_sub(1));
     let center = spl[idx];
@@ -59,4 +64,3 @@ pub(super) fn interpolate_fdw_to_grid(
 
     Array1::from_vec(values)
 }
-

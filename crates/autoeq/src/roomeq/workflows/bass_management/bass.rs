@@ -62,4 +62,3 @@ pub(in super::super) fn bass_route_upper_frequency_hz(
         })
         .unwrap_or(fallback_hz)
 }
-

@@ -22,4 +22,3 @@ impl SolvedChassis {
         self.sections.iter().filter(|s| s.visible)
     }
 }
-

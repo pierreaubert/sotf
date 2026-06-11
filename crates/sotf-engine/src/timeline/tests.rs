@@ -1,3 +1,4 @@
+#![allow(clippy::module_inception, clippy::needless_range_loop)]
 // ============================================================================
 // Timeline integration tests
 // ============================================================================
@@ -61,7 +62,7 @@ mod tests {
 
         // Process enough blocks to cover the clip
         let mut all_output = Vec::new();
-        let blocks_needed = (frames + 1023) / 1024;
+        let blocks_needed = frames.div_ceil(1024);
         for _ in 0..blocks_needed {
             let mut output = vec![0.0f32; 1024 * ch as usize];
             timeline.process(&mut output).unwrap();
@@ -254,7 +255,7 @@ mod tests {
 
         // Process enough blocks and collect all output
         let mut all_output = Vec::new();
-        let blocks_needed = (frames + block_size - 1) / block_size;
+        let blocks_needed = frames.div_ceil(block_size);
         for _ in 0..blocks_needed {
             let mut output = vec![0.0f32; block_size];
             timeline.process(&mut output).unwrap();

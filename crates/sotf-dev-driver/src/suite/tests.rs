@@ -3,11 +3,9 @@
 use super::misc::safe_name;
 use super::types::SuiteFile;
 
-    use super::*;
-
-    #[test]
-    fn parses_suite_with_scenario_alias() {
-        let src = r#"
+#[test]
+fn parses_suite_with_scenario_alias() {
+    let src = r#"
             [runner]
             app_bin = "target/debug/sotf-desktop"
 
@@ -32,42 +30,41 @@ use super::types::SuiteFile;
             max_iter = 20
             population = 24
         "#;
-        let suite: SuiteFile = toml::from_str(src).unwrap();
-        assert_eq!(suite.scenarios.len(), 1);
-        assert_eq!(suite.scenarios[0].name, "smoke");
-        assert!(suite.scenarios[0].seed_demo_audio);
-        let fake = suite.scenarios[0].fake_recording.as_ref().unwrap();
-        assert_eq!(fake.channels, 2);
-        assert_eq!(fake.points, 48);
-        let room_eq = suite.scenarios[0].room_eq.as_ref().unwrap();
-        assert_eq!(room_eq.target, "NearField");
-        assert_eq!(room_eq.loss, "Flat");
-        assert_eq!(room_eq.processing, "Iir");
-        assert_eq!(room_eq.crossover, "Lr24");
-        assert_eq!(room_eq.num_filters, 7);
-        assert_eq!(room_eq.max_iter, 20);
-        assert_eq!(room_eq.population, 24);
-        assert!(room_eq.start);
-    }
+    let suite: SuiteFile = toml::from_str(src).unwrap();
+    assert_eq!(suite.scenarios.len(), 1);
+    assert_eq!(suite.scenarios[0].name, "smoke");
+    assert!(suite.scenarios[0].seed_demo_audio);
+    let fake = suite.scenarios[0].fake_recording.as_ref().unwrap();
+    assert_eq!(fake.channels, 2);
+    assert_eq!(fake.points, 48);
+    let room_eq = suite.scenarios[0].room_eq.as_ref().unwrap();
+    assert_eq!(room_eq.target, "NearField");
+    assert_eq!(room_eq.loss, "Flat");
+    assert_eq!(room_eq.processing, "Iir");
+    assert_eq!(room_eq.crossover, "Lr24");
+    assert_eq!(room_eq.num_filters, 7);
+    assert_eq!(room_eq.max_iter, 20);
+    assert_eq!(room_eq.population, 24);
+    assert!(room_eq.start);
+}
 
-    #[test]
-    fn safe_name_removes_path_punctuation() {
-        assert_eq!(safe_name("Player / Smoke"), "Player---Smoke");
-    }
+#[test]
+fn safe_name_removes_path_punctuation() {
+    assert_eq!(safe_name("Player / Smoke"), "Player---Smoke");
+}
 
-    #[test]
-    fn checked_in_suites_parse() {
-        let smoke: SuiteFile = toml::from_str(include_str!("../../suites/smoke.toml")).unwrap();
-        assert!(!smoke.scenarios.is_empty());
+#[test]
+fn checked_in_suites_parse() {
+    let smoke: SuiteFile = toml::from_str(include_str!("../../suites/smoke.toml")).unwrap();
+    assert!(!smoke.scenarios.is_empty());
 
-        let roomeq: SuiteFile =
-            toml::from_str(include_str!("../../suites/roomeq_matrix.toml")).unwrap();
-        assert_eq!(roomeq.scenarios.len(), 24);
+    let roomeq: SuiteFile =
+        toml::from_str(include_str!("../../suites/roomeq_matrix.toml")).unwrap();
+    assert_eq!(roomeq.scenarios.len(), 24);
 
-        let tui: SuiteFile = toml::from_str(include_str!("../../suites/tui.toml")).unwrap();
-        assert_eq!(tui.scenarios.len(), 18);
+    let tui: SuiteFile = toml::from_str(include_str!("../../suites/tui.toml")).unwrap();
+    assert_eq!(tui.scenarios.len(), 18);
 
-        let full: SuiteFile = toml::from_str(include_str!("../../suites/full_matrix.toml")).unwrap();
-        assert_eq!(full.scenarios.len(), 15);
-    }
-
+    let full: SuiteFile = toml::from_str(include_str!("../../suites/full_matrix.toml")).unwrap();
+    assert_eq!(full.scenarios.len(), 15);
+}

@@ -91,7 +91,11 @@ pub(super) fn normalized_weights(len: usize, weights: Option<&[f64]>) -> Vec<f64
 ///
 /// Window width is specified in octaves. Each output sample is the average
 /// of all input samples within +/- half_width octaves.
-pub(super) fn smooth_log_frequency(data: &Array1<f64>, freq: &Array1<f64>, width_octaves: f64) -> Array1<f64> {
+pub(super) fn smooth_log_frequency(
+    data: &Array1<f64>,
+    freq: &Array1<f64>,
+    width_octaves: f64,
+) -> Array1<f64> {
     let len = data.len();
     let half_width = width_octaves / 2.0;
     let mut smoothed = Array1::zeros(len);
@@ -146,4 +150,3 @@ pub(super) fn smooth_log_frequency(data: &Array1<f64>, freq: &Array1<f64>, width
 
     smoothed
 }
-

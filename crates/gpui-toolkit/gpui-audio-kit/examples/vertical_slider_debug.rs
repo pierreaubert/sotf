@@ -709,4 +709,3 @@ fn main() {
         |cx| cx.new(VerticalSliderDebug::new),
     );
 }
-

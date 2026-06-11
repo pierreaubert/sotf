@@ -19,4 +19,3 @@ pub(super) fn env_present(name: &str) -> bool {
 pub(super) fn any_env_present(names: &[&str]) -> bool {
     names.iter().any(|n| env_present(n))
 }
-

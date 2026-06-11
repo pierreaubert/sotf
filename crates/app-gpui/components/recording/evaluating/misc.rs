@@ -258,7 +258,11 @@ impl PlayerView {
     }
 
     /// Apply octave smoothing to frequency data
-    pub(super) fn apply_smoothing(frequencies: &[f32], values: &[f32], smoothing: PlotSmoothing) -> Vec<f32> {
+    pub(super) fn apply_smoothing(
+        frequencies: &[f32],
+        values: &[f32],
+        smoothing: PlotSmoothing,
+    ) -> Vec<f32> {
         if let Some(octaves) = smoothing.octave_fraction() {
             dsp::smooth_response_f32(frequencies, values, octaves)
         } else {
@@ -608,7 +612,11 @@ impl PlayerView {
         render_spectrum_heatmap(d, grid, config, theme, None).into_any_element()
     }
 
-    pub(super) fn render_no_data_placeholder(&self, d: &Ds, theme: &crate::theme::Theme) -> impl IntoElement {
+    pub(super) fn render_no_data_placeholder(
+        &self,
+        d: &Ds,
+        theme: &crate::theme::Theme,
+    ) -> impl IntoElement {
         div()
             .h(px(200.0)) // intentional: empty-state placeholder height
             .w_full()
@@ -1257,4 +1265,3 @@ impl PlayerView {
         )
     }
 }
-

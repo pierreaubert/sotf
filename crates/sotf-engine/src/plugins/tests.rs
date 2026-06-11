@@ -3,9 +3,6 @@
 pub use super::eq::{EQFilter, KautzSectionConfig};
 use super::plugin_settings::PluginSettings;
 use super::plugin_type::PluginType;
-use math_audio_iir_fir::BiquadFilterType;
-
-use super::*;
 
 #[test]
 fn binaural_decoder_defaults_do_not_require_removed_ui_params() {

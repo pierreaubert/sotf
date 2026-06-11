@@ -31,4 +31,3 @@ impl<'a> LayoutPreferences<'a> {
             .any(|(slot_id, collapsed)| *slot_id == id && *collapsed)
     }
 }
-

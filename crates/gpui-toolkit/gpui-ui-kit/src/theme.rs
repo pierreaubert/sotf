@@ -32,10 +32,10 @@ mod theme_ext;
 mod theme_state;
 mod theme_variant;
 
-pub use misc::{glow_shadow};
-pub use theme_ext::{ThemeExt};
-pub use theme_state::{ThemeState};
-pub use theme_variant::{ThemeVariant};
+pub use misc::glow_shadow;
+pub use theme_ext::ThemeExt;
+pub use theme_state::ThemeState;
+pub use theme_variant::ThemeVariant;
 /// Global theme colors
 #[derive(Debug, Clone)]
 pub struct Theme {
@@ -538,4 +538,3 @@ impl Default for Theme {
         Self::dark()
     }
 }
-

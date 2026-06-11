@@ -92,4 +92,3 @@ pub async fn load_preview_curves_async(
         deviation_curve: deviation_vec,
     })
 }
-

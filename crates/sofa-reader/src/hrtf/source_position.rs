@@ -76,4 +76,3 @@ impl SourcePosition {
         Self::new(azimuth, elevation, distance)
     }
 }
-

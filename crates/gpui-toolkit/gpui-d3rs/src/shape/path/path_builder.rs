@@ -172,4 +172,3 @@ impl PathBuilder {
         self.current_point
     }
 }
-

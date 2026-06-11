@@ -19,4 +19,3 @@ impl Ord for OrdF64 {
         self.0.partial_cmp(&other.0).unwrap_or(Ordering::Equal)
     }
 }
-

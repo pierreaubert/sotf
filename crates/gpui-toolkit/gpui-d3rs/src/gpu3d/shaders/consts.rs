@@ -545,4 +545,3 @@ pub fn combined_shader() -> String {
         GRID_FRAGMENT_SHADER
     )
 }
-

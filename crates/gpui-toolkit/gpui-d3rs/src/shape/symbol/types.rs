@@ -58,4 +58,3 @@ pub fn symbol_radius(symbol_type: SymbolType, size: f64) -> f64 {
         SymbolType::Wye => (size / (3.0 + 3.0_f64.sqrt())).sqrt() * 2.0,
     }
 }
-

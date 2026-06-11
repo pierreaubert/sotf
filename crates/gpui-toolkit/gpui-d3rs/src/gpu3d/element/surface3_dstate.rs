@@ -51,4 +51,3 @@ impl Surface3DState {
         self.controls.update_camera(&mut self.camera);
     }
 }
-

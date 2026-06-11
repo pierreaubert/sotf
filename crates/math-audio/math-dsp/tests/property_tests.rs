@@ -9,9 +9,9 @@
 
 use proptest::prelude::*;
 
+use math_audio_dsp::analysis::find_db_point;
 use math_audio_dsp::audio_features::utils::{mean, std_deviation};
 use math_audio_dsp::simd::{scale_add_simd, scale_add_simd_inplace};
-use math_audio_dsp::analysis::find_db_point;
 
 // ============================================================================
 // Strategies

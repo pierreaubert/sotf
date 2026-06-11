@@ -174,18 +174,10 @@ mod tests {
         );
     }
 
+    #[derive(Default)]
     struct RecordingPlugin {
         values: HashMap<String, ParameterValue>,
         set_calls: Vec<String>,
-    }
-
-    impl Default for RecordingPlugin {
-        fn default() -> Self {
-            Self {
-                values: HashMap::new(),
-                set_calls: Vec::new(),
-            }
-        }
     }
 
     impl Plugin for RecordingPlugin {

@@ -8,4 +8,3 @@ pub(super) enum StackDirection {
     Horizontal,
     Wrap,
 }
-

@@ -5,9 +5,9 @@ use super::PluginGraph;
 use super::node_position::NodePosition;
 use super::types::NodeRole;
 use super::types::SpecialNodeType;
-use sotf_audio::plugins::{PluginSettings, PluginType};
 use math_audio_iir_fir::BiquadFilterType;
 use sotf_audio::plugins::EQFilter;
+use sotf_audio::plugins::{PluginSettings, PluginType};
 
 #[test]
 fn test_add_and_remove_nodes() {
@@ -737,4 +737,3 @@ fn test_disabled_eq_excluded_from_configs() {
         "Disabled EQ should not appear in configs"
     );
 }
-

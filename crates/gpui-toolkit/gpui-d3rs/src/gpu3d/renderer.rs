@@ -40,4 +40,3 @@ struct Uniforms {
     _padding0: f32,
     _padding1: f32,
 }
-

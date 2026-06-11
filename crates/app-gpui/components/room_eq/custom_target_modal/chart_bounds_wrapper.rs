@@ -73,4 +73,3 @@ impl Element for ChartBoundsWrapper {
         self.child.paint(window, cx);
     }
 }
-

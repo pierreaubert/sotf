@@ -81,22 +81,6 @@ pub(super) fn format_sample_rate_range(rates: &[u32]) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use super::super::format_sample_rate_range;
-
-    #[test]
-    fn sample_rate_range_handles_empty_single_and_multiple_rates() {
-        assert_eq!(format_sample_rate_range(&[]), "unknown");
-        assert_eq!(format_sample_rate_range(&[48_000]), "48000 Hz");
-        assert_eq!(
-            format_sample_rate_range(&[44_100, 48_000, 96_000]),
-            "44100-96000 Hz"
-        );
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn record_signal(
     signal: String,
@@ -364,3 +348,18 @@ pub fn record_signal(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+
+    use super::super::format_sample_rate_range;
+
+    #[test]
+    fn sample_rate_range_handles_empty_single_and_multiple_rates() {
+        assert_eq!(format_sample_rate_range(&[]), "unknown");
+        assert_eq!(format_sample_rate_range(&[48_000]), "48000 Hz");
+        assert_eq!(
+            format_sample_rate_range(&[44_100, 48_000, 96_000]),
+            "44100-96000 Hz"
+        );
+    }
+}

@@ -39,4 +39,3 @@ pub(super) struct PresetParams {
     pub(super) smooth: bool,
     pub(super) smooth_n: usize,
 }
-

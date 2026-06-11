@@ -28,4 +28,3 @@ pub enum AutoEqLayoutMode {
     /// Room EQ layout: 3 sections (Optimisation Mode, Room Configuration, Optimiser Configuration)
     RoomEq,
 }
-

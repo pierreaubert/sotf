@@ -1,7 +1,7 @@
 //! Card component tests
 
 use gpui::div;
-use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, Styled};
+use gpui::prelude::{IntoElement, ParentElement, Styled};
 use gpui_ui_kit::card::Card;
 
 #[test]

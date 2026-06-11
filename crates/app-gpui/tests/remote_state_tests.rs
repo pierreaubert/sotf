@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
 

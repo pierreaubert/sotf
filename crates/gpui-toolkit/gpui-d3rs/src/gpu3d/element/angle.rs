@@ -24,4 +24,3 @@ pub(super) fn angle_major_ticks(data: &SurfaceData) -> Vec<f64> {
         .clone()
         .unwrap_or_else(|| linear_step_ticks(data.y_min, data.y_max, 30.0))
 }
-

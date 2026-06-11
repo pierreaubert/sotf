@@ -10,4 +10,3 @@ pub(super) fn default_remote_token_store_version() -> u32 {
 pub(super) fn default_remote_server_store_version() -> u32 {
     REMOTE_SERVER_STORE_VERSION
 }
-

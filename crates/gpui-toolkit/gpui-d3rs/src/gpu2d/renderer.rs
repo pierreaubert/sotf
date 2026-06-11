@@ -17,4 +17,3 @@ struct Uniforms {
     viewport_size: [f32; 2],
     _padding: [f32; 2],
 }
-

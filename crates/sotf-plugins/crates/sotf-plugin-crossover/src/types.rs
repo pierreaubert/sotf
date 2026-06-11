@@ -27,4 +27,3 @@ pub struct CrossoverPluginParams {
     #[serde(default)]
     pub channel_modes: Vec<String>,
 }
-

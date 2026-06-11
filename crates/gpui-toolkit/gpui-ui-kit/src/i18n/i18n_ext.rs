@@ -11,4 +11,3 @@ pub trait I18nExt {
     /// Get current language
     fn language(&self) -> Language;
 }
-

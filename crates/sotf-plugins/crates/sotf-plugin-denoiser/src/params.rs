@@ -229,4 +229,3 @@ impl PluginParamDef for Params {
         }
     }
 }
-

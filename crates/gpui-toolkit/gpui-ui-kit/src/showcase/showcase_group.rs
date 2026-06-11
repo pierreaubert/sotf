@@ -202,4 +202,3 @@ Image View displays images with optional zoom, pan, and loading states."
         }
     }
 }
-

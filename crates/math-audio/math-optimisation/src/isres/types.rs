@@ -33,4 +33,3 @@ pub(super) fn max_violation_of(x: &Array1<f64>, constraints: &[IsresConstraint])
     }
     worst
 }
-

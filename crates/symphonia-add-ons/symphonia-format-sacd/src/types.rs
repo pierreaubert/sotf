@@ -79,4 +79,3 @@ pub(super) struct PacketTrack {
     pub(super) end_lsn: u32,
     pub(super) packet_index: u64,
 }
-

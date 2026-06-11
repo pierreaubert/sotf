@@ -15,4 +15,3 @@ pub(super) fn cmaes_eval_budget(config: &BenchmarkConfig) -> usize {
 pub(super) fn cmaes_restart_seed(seed: u64, restart: usize) -> u64 {
     seed.wrapping_add((restart as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15))
 }
-

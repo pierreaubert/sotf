@@ -19,4 +19,3 @@ pub fn preset_options(workflow: EqWorkflow) -> Vec<(&'static str, &'static str)>
         .map(|p| (p.id, p.name))
         .collect()
 }
-

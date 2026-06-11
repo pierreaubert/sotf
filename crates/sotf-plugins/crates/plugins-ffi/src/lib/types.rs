@@ -11,4 +11,3 @@ pub(super) fn current_host_kind() -> PluginFfiHostKind {
         PluginFfiHostKind::Unknown
     }
 }
-

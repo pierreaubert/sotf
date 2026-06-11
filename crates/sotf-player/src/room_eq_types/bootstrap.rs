@@ -31,4 +31,3 @@ pub(super) fn bootstrap_uncertainty_to_backend(
         cvar_alpha: ui.cvar_alpha,
     }
 }
-

@@ -28,4 +28,3 @@ pub(super) fn http_soap_fault(code: u32, description: &str) -> String {
     let fault = xml::soap_fault(code, description);
     http_response(500, "text/xml; charset=\"utf-8\"", &fault)
 }
-

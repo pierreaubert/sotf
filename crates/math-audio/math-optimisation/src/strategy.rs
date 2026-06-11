@@ -79,4 +79,3 @@ impl FromStr for Strategy {
         }
     }
 }
-

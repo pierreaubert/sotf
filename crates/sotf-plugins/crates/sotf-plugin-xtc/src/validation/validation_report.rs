@@ -49,4 +49,3 @@ impl ValidationReport {
         self.failed_count == 0
     }
 }
-

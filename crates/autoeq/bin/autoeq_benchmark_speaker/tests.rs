@@ -8,69 +8,69 @@ use super::misc::mean_std;
 use super::types::distribution_summary;
 use serde_json::json;
 
-    #[test]
-    fn metadata_pref_path_extracts() {
-        let v = json!({
-            "default_measurement": "CEA2034",
-            "measurements": {
-                "CEA2034": {
-                    "pref_rating_eq": {"pref_score": 6.789},
-                    "pref_rating": {"pref_score": 5.0}
-                }
+#[test]
+fn metadata_pref_path_extracts() {
+    let v = json!({
+        "default_measurement": "CEA2034",
+        "measurements": {
+            "CEA2034": {
+                "pref_rating_eq": {"pref_score": 6.789},
+                "pref_rating": {"pref_score": 5.0}
             }
-        });
-        let got = extract_pref_from_metadata_value(&v);
-        assert!(got.is_some());
-        assert!((got.unwrap() - 6.789).abs() < 1e-12);
-    }
+        }
+    });
+    let got = extract_pref_from_metadata_value(&v);
+    assert!(got.is_some());
+    assert!((got.unwrap() - 6.789).abs() < 1e-12);
+}
 
-    #[test]
-    fn mean_std_basic() {
-        let d = vec![1.0, 2.0, 3.0, 4.0];
-        let (m, s) = mean_std(&d).unwrap();
-        assert!((m - 2.5).abs() < 1e-12, "mean got {}", m);
-        let expected_std = (5.0_f64 / 3.0).sqrt(); // sample std
-        assert!((s - expected_std).abs() < 1e-12, "std got {}", s);
-    }
+#[test]
+fn mean_std_basic() {
+    let d = vec![1.0, 2.0, 3.0, 4.0];
+    let (m, s) = mean_std(&d).unwrap();
+    assert!((m - 2.5).abs() < 1e-12, "mean got {}", m);
+    let expected_std = (5.0_f64 / 3.0).sqrt(); // sample std
+    assert!((s - expected_std).abs() < 1e-12, "std got {}", s);
+}
 
-    #[test]
-    fn csv_header_exposes_optimizer_comparisons() {
-        assert!(CSV_HEADER.contains(&"score_cea2034_mh_pso"));
-        assert!(CSV_HEADER.contains(&"score_cea2034_autoeq_de"));
-        assert!(CSV_HEADER.contains(&"score_cea2034_autoeq_cmaes"));
-        assert!(CSV_HEADER.contains(&"score_cea2034_pso_minus_de"));
-        assert!(CSV_HEADER.contains(&"score_cea2034_cmaes_minus_de"));
-    }
+#[test]
+fn csv_header_exposes_optimizer_comparisons() {
+    assert!(CSV_HEADER.contains(&"score_cea2034_mh_pso"));
+    assert!(CSV_HEADER.contains(&"score_cea2034_autoeq_de"));
+    assert!(CSV_HEADER.contains(&"score_cea2034_autoeq_cmaes"));
+    assert!(CSV_HEADER.contains(&"score_cea2034_pso_minus_de"));
+    assert!(CSV_HEADER.contains(&"score_cea2034_cmaes_minus_de"));
+}
 
-    #[test]
-    fn finite_diff_requires_finite_inputs() {
-        assert_eq!(finite_diff(Some(6.5), Some(5.0)), Some(1.5));
-        assert_eq!(finite_diff(Some(f64::NAN), Some(5.0)), None);
-        assert_eq!(finite_diff(Some(6.5), None), None);
-    }
+#[test]
+fn finite_diff_requires_finite_inputs() {
+    assert_eq!(finite_diff(Some(6.5), Some(5.0)), Some(1.5));
+    assert_eq!(finite_diff(Some(f64::NAN), Some(5.0)), None);
+    assert_eq!(finite_diff(Some(6.5), None), None);
+}
 
-    #[test]
-    fn distribution_summary_reports_percentiles() {
-        let summary = distribution_summary(&[1.0, 2.0, 3.0, 4.0]).unwrap();
-        assert_eq!(summary.n, 4);
-        assert!((summary.mean - 2.5).abs() < 1e-12);
-        assert!((summary.median - 2.5).abs() < 1e-12);
-        assert!((summary.p10 - 1.3).abs() < 1e-12);
-        assert!((summary.p90 - 3.7).abs() < 1e-12);
-    }
+#[test]
+fn distribution_summary_reports_percentiles() {
+    let summary = distribution_summary(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+    assert_eq!(summary.n, 4);
+    assert!((summary.mean - 2.5).abs() < 1e-12);
+    assert!((summary.median - 2.5).abs() < 1e-12);
+    assert!((summary.p10 - 1.3).abs() < 1e-12);
+    assert!((summary.p90 - 3.7).abs() < 1e-12);
+}
 
-    #[test]
-    fn tied_best_mask_requires_complete_finite_scores() {
-        assert_eq!(
-            tied_best_mask([Some(1.0), Some(2.0), Some(2.0), Some(0.0)]),
-            Some([false, true, true, false])
-        );
-        assert_eq!(
-            tied_best_mask([Some(1.0), None, Some(2.0), Some(0.0)]),
-            None
-        );
-        assert_eq!(
-            tied_best_mask([Some(1.0), Some(f64::NAN), Some(2.0), Some(0.0)]),
-            None
-        );
-    }
+#[test]
+fn tied_best_mask_requires_complete_finite_scores() {
+    assert_eq!(
+        tied_best_mask([Some(1.0), Some(2.0), Some(2.0), Some(0.0)]),
+        Some([false, true, true, false])
+    );
+    assert_eq!(
+        tied_best_mask([Some(1.0), None, Some(2.0), Some(0.0)]),
+        None
+    );
+    assert_eq!(
+        tied_best_mask([Some(1.0), Some(f64::NAN), Some(2.0), Some(0.0)]),
+        None
+    );
+}

@@ -7,4 +7,3 @@ pub trait ThemeExt {
     /// Get the current theme
     fn theme(&self) -> Theme;
 }
-

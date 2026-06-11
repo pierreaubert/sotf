@@ -86,4 +86,3 @@ pub fn benchmark_plugin_full(
 
     group.finish();
 }
-

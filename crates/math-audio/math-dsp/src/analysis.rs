@@ -27,11 +27,11 @@ mod microphone_compensation;
 mod misc;
 mod plan;
 mod smooth;
+#[cfg(test)]
+mod tests;
 mod types;
 mod wav_analysis_config;
 mod write;
-#[cfg(test)]
-mod tests;
 
 pub use analyze::*;
 pub use compute::*;
@@ -43,4 +43,3 @@ pub use smooth::*;
 pub use types::*;
 pub use wav_analysis_config::*;
 pub use write::*;
-

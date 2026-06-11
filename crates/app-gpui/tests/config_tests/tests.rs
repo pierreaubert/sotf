@@ -7,7 +7,11 @@ use sotf_audio_player_gpui::app::state::ui::{
 use sotf_audio_player_gpui::app::state::{
     RACK_STRIP_MAX_HEIGHT, RACK_STRIP_MIN_HEIGHT, rack_strip_height_from_drag,
 };
-use sotf_audio_player_gpui :: { Config , IconName , IconSize , ImageAccessTracker , PanelLayout , PlaybackDeviceConfig , PlaybackState , RecordingConfigState , RecordingDeviceConfig , RecordingSignalType , ScaleType , WindowGeometry , default_volume , estimate_grid_dimensions } ;
+use sotf_audio_player_gpui::{
+    Config, IconName, IconSize, ImageAccessTracker, PanelLayout, PlaybackDeviceConfig,
+    PlaybackState, RecordingConfigState, RecordingDeviceConfig, RecordingSignalType, ScaleType,
+    WindowGeometry, default_volume, estimate_grid_dimensions,
+};
 use std::path::PathBuf;
 
 #[test]
@@ -696,4 +700,3 @@ fn test_icon_size_to_rems_matches_px_at_base_rem() {
         );
     }
 }
-

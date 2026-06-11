@@ -13,4 +13,3 @@ mod misc;
 mod plugin_editing_manager;
 
 pub use plugin_editing_manager::*;
-

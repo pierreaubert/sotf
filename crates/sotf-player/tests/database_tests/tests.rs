@@ -3,8 +3,6 @@
 /// Integration tests for MusicDatabase
 use sotf_audio_player::database::MusicDatabase;
 use std::path::PathBuf;
-use super::fixtures;
-use super::test;
 
 #[test]
 fn test_database_creation() {
@@ -81,4 +79,3 @@ fn test_federation_migrations_in_history() {
         versions
     );
 }
-

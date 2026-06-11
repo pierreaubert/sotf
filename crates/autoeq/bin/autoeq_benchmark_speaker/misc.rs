@@ -8,10 +8,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
-use std :: path :: { Path } ;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std :: time :: { Duration } ;
+use std::time::Duration;
 use tokio::select;
 
 pub(super) fn fmt_opt_f64(v: Option<f64>) -> String {
@@ -274,4 +274,3 @@ pub(super) fn extract_pref_from_metadata_value(v: &Value) -> Option<f64> {
     let pref = m.get("pref_rating_eq")?;
     pref.get("pref_score").and_then(|x| x.as_f64())
 }
-

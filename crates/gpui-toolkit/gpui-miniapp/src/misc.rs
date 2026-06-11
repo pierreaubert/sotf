@@ -40,4 +40,3 @@ pub fn current_platform() -> Result<Rc<dyn gpui::Platform>, String> {
         compile_error!("unsupported platform for gpui-miniapp")
     }
 }
-

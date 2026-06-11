@@ -1,6 +1,6 @@
 //! Integration tests for ImageView component
 
-use gpui::{Context, TestAppContext, Window, div, prelude::*, px};
+use gpui::{Context, IntoElement, ParentElement, Render, Styled, TestAppContext, Window, div, px};
 use gpui_ui_kit::image_view::{ImageFit, ImageView};
 
 // ============================================================================

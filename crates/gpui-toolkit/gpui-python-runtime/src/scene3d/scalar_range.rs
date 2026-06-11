@@ -51,4 +51,3 @@ impl ScalarRange {
         self.max.to_bits().hash(h);
     }
 }
-

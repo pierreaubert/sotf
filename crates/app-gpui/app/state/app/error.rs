@@ -7,4 +7,3 @@ pub struct RemoteCacheRefreshError {
     pub requests: RemoteRefreshRequests,
     pub message: String,
 }
-

@@ -7,217 +7,214 @@ use super::types::InputState;
 use super::types::PlaybackEvent;
 use super::types::PlaybackState;
 
-    use super::*;
+// =========================================================================
+// Playback State Machine Tests
+// =========================================================================
 
-    // =========================================================================
-    // Playback State Machine Tests
-    // =========================================================================
+#[test]
+fn test_playback_valid_sequence() {
+    let mut sm = PlaybackStateMachine::default();
+    sm.volume = 0.5;
 
-    #[test]
-    fn test_playback_valid_sequence() {
-        let mut sm = PlaybackStateMachine::default();
-        sm.volume = 0.5;
+    // Valid sequence: Idle → Loaded → Playing → Paused → Playing → Stop
+    assert!(sm.transition(PlaybackEvent::LoadTrack).is_ok());
+    assert_eq!(sm.state, PlaybackState::Loaded);
+    assert!(sm.verify_volume_preserved(0.5));
 
-        // Valid sequence: Idle → Loaded → Playing → Paused → Playing → Stop
-        assert!(sm.transition(PlaybackEvent::LoadTrack).is_ok());
-        assert_eq!(sm.state, PlaybackState::Loaded);
-        assert!(sm.verify_volume_preserved(0.5));
+    assert!(sm.transition(PlaybackEvent::Play).is_ok());
+    assert_eq!(sm.state, PlaybackState::Playing);
+    assert!(sm.verify_volume_preserved(0.5));
 
-        assert!(sm.transition(PlaybackEvent::Play).is_ok());
-        assert_eq!(sm.state, PlaybackState::Playing);
-        assert!(sm.verify_volume_preserved(0.5));
+    assert!(sm.transition(PlaybackEvent::Pause).is_ok());
+    assert_eq!(sm.state, PlaybackState::Paused);
+    assert!(sm.verify_volume_preserved(0.5));
 
-        assert!(sm.transition(PlaybackEvent::Pause).is_ok());
-        assert_eq!(sm.state, PlaybackState::Paused);
-        assert!(sm.verify_volume_preserved(0.5));
+    assert!(sm.transition(PlaybackEvent::Resume).is_ok());
+    assert_eq!(sm.state, PlaybackState::Playing);
+    assert!(sm.verify_volume_preserved(0.5));
 
-        assert!(sm.transition(PlaybackEvent::Resume).is_ok());
-        assert_eq!(sm.state, PlaybackState::Playing);
-        assert!(sm.verify_volume_preserved(0.5));
+    assert!(sm.transition(PlaybackEvent::Stop).is_ok());
+    assert_eq!(sm.state, PlaybackState::Idle);
+    assert!(sm.verify_volume_preserved(0.5));
+}
 
-        assert!(sm.transition(PlaybackEvent::Stop).is_ok());
-        assert_eq!(sm.state, PlaybackState::Idle);
-        assert!(sm.verify_volume_preserved(0.5));
+#[test]
+fn test_playback_invalid_transitions() {
+    let mut sm = PlaybackStateMachine::default();
+
+    // Cannot play from Idle (no track loaded)
+    let result = sm.transition(PlaybackEvent::Play);
+    assert!(result.is_err());
+
+    // Cannot pause from Idle
+    let result = sm.transition(PlaybackEvent::Pause);
+    assert!(result.is_err());
+
+    // Cannot seek from Idle
+    let result = sm.transition(PlaybackEvent::Seek);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_playback_seek_sequence() {
+    let mut sm = PlaybackStateMachine::default();
+    sm.transition(PlaybackEvent::LoadTrack).unwrap();
+    sm.transition(PlaybackEvent::Play).unwrap();
+
+    // Enter seeking state
+    assert!(sm.transition(PlaybackEvent::Seek).is_ok());
+    assert_eq!(sm.state, PlaybackState::Seeking);
+
+    // Complete seek
+    assert!(sm.transition(PlaybackEvent::SeekComplete).is_ok());
+    assert_eq!(sm.state, PlaybackState::Playing);
+}
+
+#[test]
+fn test_playback_end_of_track() {
+    let mut sm = PlaybackStateMachine::default();
+    sm.transition(PlaybackEvent::LoadTrack).unwrap();
+    sm.transition(PlaybackEvent::Play).unwrap();
+
+    // End of track returns to Loaded (ready for next track)
+    assert!(sm.transition(PlaybackEvent::EndOfTrack).is_ok());
+    assert_eq!(sm.state, PlaybackState::Loaded);
+}
+
+#[test]
+fn test_playback_end_of_queue() {
+    let mut sm = PlaybackStateMachine::default();
+    sm.transition(PlaybackEvent::LoadTrack).unwrap();
+    sm.transition(PlaybackEvent::Play).unwrap();
+
+    // End of queue returns to Idle
+    assert!(sm.transition(PlaybackEvent::EndOfQueue).is_ok());
+    assert_eq!(sm.state, PlaybackState::Idle);
+}
+
+#[test]
+fn test_playback_volume_preserved_through_all_transitions() {
+    let mut sm = PlaybackStateMachine::default();
+    sm.volume = 0.42;
+
+    let events = [
+        PlaybackEvent::LoadTrack,
+        PlaybackEvent::Play,
+        PlaybackEvent::Pause,
+        PlaybackEvent::Resume,
+        PlaybackEvent::Seek,
+        PlaybackEvent::SeekComplete,
+        PlaybackEvent::Stop,
+    ];
+
+    for event in events {
+        let _ = sm.transition(event);
+        assert!(
+            sm.verify_volume_preserved(0.42),
+            "Volume changed after {:?}",
+            event
+        );
     }
+}
 
-    #[test]
-    fn test_playback_invalid_transitions() {
-        let mut sm = PlaybackStateMachine::default();
+// =========================================================================
+// Input State Machine Tests
+// =========================================================================
 
-        // Cannot play from Idle (no track loaded)
-        let result = sm.transition(PlaybackEvent::Play);
-        assert!(result.is_err());
+#[test]
+fn test_input_search_cycle() {
+    let mut sm = InputStateMachine::default();
 
-        // Cannot pause from Idle
-        let result = sm.transition(PlaybackEvent::Pause);
-        assert!(result.is_err());
+    // Enter search
+    sm.transition(InputEvent::PressSlash).unwrap();
+    assert_eq!(sm.state, InputState::Search);
 
-        // Cannot seek from Idle
-        let result = sm.transition(PlaybackEvent::Seek);
-        assert!(result.is_err());
+    // Type characters
+    sm.transition(InputEvent::TypeCharacter).unwrap();
+    assert_eq!(sm.state, InputState::Search);
+
+    // Exit with escape
+    sm.transition(InputEvent::PressEscape).unwrap();
+    assert_eq!(sm.state, InputState::Normal);
+}
+
+#[test]
+fn test_input_text_mode_detection() {
+    let mut sm = InputStateMachine::default();
+
+    assert!(!sm.is_text_input_mode());
+
+    sm.transition(InputEvent::PressSlash).unwrap();
+    assert!(sm.is_text_input_mode());
+
+    sm.transition(InputEvent::PressEscape).unwrap();
+    assert!(!sm.is_text_input_mode());
+}
+
+#[test]
+fn test_input_escape_from_all_modes() {
+    let modes = [
+        InputState::Search,
+        InputState::AddDirectory,
+        InputState::SavePlugins,
+        InputState::LoadPlugins,
+        InputState::EditingParam,
+    ];
+
+    for mode in modes {
+        let mut sm = InputStateMachine {
+            state: mode,
+            buffer: "test".to_string(),
+        };
+
+        sm.transition(InputEvent::PressEscape).unwrap();
+        assert_eq!(
+            sm.state,
+            InputState::Normal,
+            "Escape didn't exit {:?}",
+            mode
+        );
+        assert!(sm.buffer.is_empty(), "Buffer not cleared for {:?}", mode);
     }
+}
 
-    #[test]
-    fn test_playback_seek_sequence() {
-        let mut sm = PlaybackStateMachine::default();
-        sm.transition(PlaybackEvent::LoadTrack).unwrap();
-        sm.transition(PlaybackEvent::Play).unwrap();
+// =========================================================================
+// Exhaustive Transition Tests
+// =========================================================================
 
-        // Enter seeking state
-        assert!(sm.transition(PlaybackEvent::Seek).is_ok());
-        assert_eq!(sm.state, PlaybackState::Seeking);
+#[test]
+fn test_all_playback_transitions_documented() {
+    // This test verifies that all state/event combinations are handled
+    let states = [
+        PlaybackState::Idle,
+        PlaybackState::Loaded,
+        PlaybackState::Playing,
+        PlaybackState::Paused,
+        PlaybackState::Seeking,
+    ];
 
-        // Complete seek
-        assert!(sm.transition(PlaybackEvent::SeekComplete).is_ok());
-        assert_eq!(sm.state, PlaybackState::Playing);
-    }
+    let events = [
+        PlaybackEvent::LoadTrack,
+        PlaybackEvent::Play,
+        PlaybackEvent::Pause,
+        PlaybackEvent::Resume,
+        PlaybackEvent::Stop,
+        PlaybackEvent::Seek,
+        PlaybackEvent::SeekComplete,
+        PlaybackEvent::EndOfTrack,
+        PlaybackEvent::EndOfQueue,
+    ];
 
-    #[test]
-    fn test_playback_end_of_track() {
-        let mut sm = PlaybackStateMachine::default();
-        sm.transition(PlaybackEvent::LoadTrack).unwrap();
-        sm.transition(PlaybackEvent::Play).unwrap();
-
-        // End of track returns to Loaded (ready for next track)
-        assert!(sm.transition(PlaybackEvent::EndOfTrack).is_ok());
-        assert_eq!(sm.state, PlaybackState::Loaded);
-    }
-
-    #[test]
-    fn test_playback_end_of_queue() {
-        let mut sm = PlaybackStateMachine::default();
-        sm.transition(PlaybackEvent::LoadTrack).unwrap();
-        sm.transition(PlaybackEvent::Play).unwrap();
-
-        // End of queue returns to Idle
-        assert!(sm.transition(PlaybackEvent::EndOfQueue).is_ok());
-        assert_eq!(sm.state, PlaybackState::Idle);
-    }
-
-    #[test]
-    fn test_playback_volume_preserved_through_all_transitions() {
-        let mut sm = PlaybackStateMachine::default();
-        sm.volume = 0.42;
-
-        let events = [
-            PlaybackEvent::LoadTrack,
-            PlaybackEvent::Play,
-            PlaybackEvent::Pause,
-            PlaybackEvent::Resume,
-            PlaybackEvent::Seek,
-            PlaybackEvent::SeekComplete,
-            PlaybackEvent::Stop,
-        ];
-
+    // Every combination should either succeed or return a proper error
+    // (not panic)
+    for state in states {
         for event in events {
-            let _ = sm.transition(event);
-            assert!(
-                sm.verify_volume_preserved(0.42),
-                "Volume changed after {:?}",
-                event
-            );
+            let mut sm = PlaybackStateMachine::default();
+            sm.state = state;
+            sm.track_loaded = state != PlaybackState::Idle;
+
+            // This should not panic
+            let _result = sm.transition(event);
         }
     }
-
-    // =========================================================================
-    // Input State Machine Tests
-    // =========================================================================
-
-    #[test]
-    fn test_input_search_cycle() {
-        let mut sm = InputStateMachine::default();
-
-        // Enter search
-        sm.transition(InputEvent::PressSlash).unwrap();
-        assert_eq!(sm.state, InputState::Search);
-
-        // Type characters
-        sm.transition(InputEvent::TypeCharacter).unwrap();
-        assert_eq!(sm.state, InputState::Search);
-
-        // Exit with escape
-        sm.transition(InputEvent::PressEscape).unwrap();
-        assert_eq!(sm.state, InputState::Normal);
-    }
-
-    #[test]
-    fn test_input_text_mode_detection() {
-        let mut sm = InputStateMachine::default();
-
-        assert!(!sm.is_text_input_mode());
-
-        sm.transition(InputEvent::PressSlash).unwrap();
-        assert!(sm.is_text_input_mode());
-
-        sm.transition(InputEvent::PressEscape).unwrap();
-        assert!(!sm.is_text_input_mode());
-    }
-
-    #[test]
-    fn test_input_escape_from_all_modes() {
-        let modes = [
-            InputState::Search,
-            InputState::AddDirectory,
-            InputState::SavePlugins,
-            InputState::LoadPlugins,
-            InputState::EditingParam,
-        ];
-
-        for mode in modes {
-            let mut sm = InputStateMachine {
-                state: mode,
-                buffer: "test".to_string(),
-            };
-
-            sm.transition(InputEvent::PressEscape).unwrap();
-            assert_eq!(
-                sm.state,
-                InputState::Normal,
-                "Escape didn't exit {:?}",
-                mode
-            );
-            assert!(sm.buffer.is_empty(), "Buffer not cleared for {:?}", mode);
-        }
-    }
-
-    // =========================================================================
-    // Exhaustive Transition Tests
-    // =========================================================================
-
-    #[test]
-    fn test_all_playback_transitions_documented() {
-        // This test verifies that all state/event combinations are handled
-        let states = [
-            PlaybackState::Idle,
-            PlaybackState::Loaded,
-            PlaybackState::Playing,
-            PlaybackState::Paused,
-            PlaybackState::Seeking,
-        ];
-
-        let events = [
-            PlaybackEvent::LoadTrack,
-            PlaybackEvent::Play,
-            PlaybackEvent::Pause,
-            PlaybackEvent::Resume,
-            PlaybackEvent::Stop,
-            PlaybackEvent::Seek,
-            PlaybackEvent::SeekComplete,
-            PlaybackEvent::EndOfTrack,
-            PlaybackEvent::EndOfQueue,
-        ];
-
-        // Every combination should either succeed or return a proper error
-        // (not panic)
-        for state in states {
-            for event in events {
-                let mut sm = PlaybackStateMachine::default();
-                sm.state = state;
-                sm.track_loaded = state != PlaybackState::Idle;
-
-                // This should not panic
-                let _result = sm.transition(event);
-            }
-        }
-    }
-
+}

@@ -17,4 +17,3 @@ pub(super) fn assert_no_allocs<F: FnOnce()>(label: &str, f: F) {
         "{label}: {count} allocations detected in hot path (expected 0)"
     );
 }
-

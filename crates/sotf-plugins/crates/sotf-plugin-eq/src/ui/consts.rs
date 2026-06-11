@@ -89,4 +89,3 @@ pub fn y_to_gain(y: f32, min_db: f64, max_db: f64) -> f64 {
     let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
     max_db - t * (max_db - min_db)
 }
-

@@ -16,7 +16,12 @@ pub(super) fn create_test_curve(freqs: &[f64], spl_values: &[f64]) -> Curve {
 }
 
 /// Create a flat response at the given SPL level
-pub(super) fn create_flat_curve(min_freq: f64, max_freq: f64, n_points: usize, spl_db: f64) -> Curve {
+pub(super) fn create_flat_curve(
+    min_freq: f64,
+    max_freq: f64,
+    n_points: usize,
+    spl_db: f64,
+) -> Curve {
     let freqs: Vec<f64> = (0..n_points)
         .map(|i| {
             let t = i as f64 / (n_points - 1) as f64;
@@ -232,4 +237,3 @@ fn test_fir_different_tap_counts() {
         );
     }
 }
-

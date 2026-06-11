@@ -31,4 +31,3 @@ impl ParamSectionStyle for Div {
         self.param_section_base(d, theme).p(d.card)
     }
 }
-

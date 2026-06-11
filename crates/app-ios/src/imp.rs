@@ -31,4 +31,3 @@ pub use remote_command::*;
 pub use sotf::*;
 pub use types::*;
 pub use update::*;
-

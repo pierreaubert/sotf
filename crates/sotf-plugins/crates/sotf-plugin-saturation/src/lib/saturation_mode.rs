@@ -44,4 +44,3 @@ pub(super) fn saturate(sample: f32, mode: SaturationMode, drive: f32, tone: f32)
         SaturationMode::Exciter => sample, // handled separately
     }
 }
-

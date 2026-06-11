@@ -34,4 +34,3 @@ pub struct CustomViewRenderContext<'a> {
 /// Function signature for custom view renderers.
 pub type CustomViewRenderFn =
     fn(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement;
-

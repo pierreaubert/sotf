@@ -46,10 +46,10 @@ mod hal_input_reader;
 mod hal_output_writer;
 mod misc;
 mod shared_audio_buffer;
-mod types;
-mod validate;
 #[cfg(test)]
 mod tests;
+mod types;
+mod validate;
 
 pub use consts::*;
 pub use hal_input_reader::*;
@@ -131,4 +131,3 @@ pub struct SharedAudioHeader {
     /// publishing new `write_position` values while this is set.
     pub configuring: AtomicU32,
 }
-

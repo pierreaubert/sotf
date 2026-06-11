@@ -25,4 +25,3 @@ impl BoxSelection {
         !(x + width < sx || x > sx + sw || y + height < sy || y > sy + sh)
     }
 }
-

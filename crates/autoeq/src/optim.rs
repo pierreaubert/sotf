@@ -59,9 +59,9 @@ mod objective_data;
 mod optimize;
 mod penalty_mode;
 mod smoothness_penalty_config;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use algorithm_info::*;
 pub use clamp::*;
@@ -71,4 +71,3 @@ pub use optimize::*;
 pub use penalty_mode::*;
 pub use smoothness_penalty_config::*;
 pub use types::*;
-

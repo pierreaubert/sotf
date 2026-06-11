@@ -10,9 +10,9 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType, peq_butterworth_highpass};
 mod calculate;
 mod consts;
 mod misc;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use types::*;
 
@@ -606,4 +606,3 @@ impl DynamicsCore {
             .collect();
     }
 }
-

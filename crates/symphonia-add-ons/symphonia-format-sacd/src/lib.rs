@@ -26,10 +26,10 @@ mod sacd_frame_format;
 mod sacd_iso;
 mod sacd_metadata;
 mod sacd_packet_reader;
-mod types;
-mod write;
 #[cfg(test)]
 mod tests;
+mod types;
+mod write;
 
 pub use consts::*;
 pub use error::*;
@@ -43,4 +43,3 @@ pub use sacd_metadata::*;
 pub use sacd_packet_reader::*;
 pub use types::*;
 pub use write::*;
-

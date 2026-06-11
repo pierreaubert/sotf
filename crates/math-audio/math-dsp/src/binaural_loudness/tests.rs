@@ -7,305 +7,303 @@ use super::measure::measure_binaural;
 use super::measure::measure_binaural_from_surround;
 use super::types::SurroundLayout;
 
-    use super::*;
-    use std::f64::consts::PI;
+use std::f64::consts::PI;
 
-    fn sine_stereo(freq: f64, amp: f64, sr: u32, secs: u32) -> Vec<f32> {
-        let n = (sr as usize) * (secs as usize);
-        let mut out = vec![0.0f32; n * 2];
-        for i in 0..n {
-            let t = i as f64 / sr as f64;
-            let s = (2.0 * PI * freq * t).sin() * amp;
-            out[i * 2] = s as f32;
-            out[i * 2 + 1] = s as f32;
-        }
-        out
+fn sine_stereo(freq: f64, amp: f64, sr: u32, secs: u32) -> Vec<f32> {
+    let n = (sr as usize) * (secs as usize);
+    let mut out = vec![0.0f32; n * 2];
+    for i in 0..n {
+        let t = i as f64 / sr as f64;
+        let s = (2.0 * PI * freq * t).sin() * amp;
+        out[i * 2] = s as f32;
+        out[i * 2 + 1] = s as f32;
+    }
+    out
+}
+
+#[test]
+fn rejects_odd_length() {
+    let mut meter = BinauralLoudness::new(48_000).unwrap();
+    let bad = vec![0.0f32; 5];
+    assert!(meter.add_interleaved_f32(&bad).is_err());
+}
+
+#[test]
+fn separate_buffers_must_match_length() {
+    let mut meter = BinauralLoudness::new(48_000).unwrap();
+    let l = vec![0.0f32; 10];
+    let r = vec![0.0f32; 11];
+    assert!(meter.add_separate_f32(&l, &r).is_err());
+}
+
+#[test]
+fn silence_returns_neg_inf() {
+    let mut meter = BinauralLoudness::new(48_000).unwrap();
+    let frames = vec![0.0f32; 48_000 * 2];
+    meter.add_interleaved_f32(&frames).unwrap();
+    let lufs = meter.integrated_lufs().unwrap();
+    assert!(lufs == f64::NEG_INFINITY || lufs < -100.0);
+    assert_eq!(meter.sample_peak(BinauralChannel::Left).unwrap(), 0.0);
+    assert_eq!(meter.true_peak(BinauralChannel::Right), 0.0);
+}
+
+#[test]
+fn sine_1khz_matches_bs1770_stereo() {
+    // BS.1770-4 specifies that a 0 dBFS 1 kHz sine in a stereo bus
+    // produces approximately -3.01 LUFS before K-weighting and
+    // ~-0.3 LUFS after K-weighting (which has +0.2 dB at 1 kHz).
+    // Binaural with G_L = G_R = 1.0 must yield the same result.
+    let sr = 48_000u32;
+    let samples = sine_stereo(1_000.0, 1.0, sr, 5);
+    let result = measure_binaural(&samples, sr).unwrap();
+    assert!(
+        result.integrated_lufs > -2.0 && result.integrated_lufs < 1.0,
+        "expected ~-0.3 LUFS, got {}",
+        result.integrated_lufs
+    );
+    // Peaks for full-scale sine should hit close to 1.0.
+    assert!(
+        result.sample_peak_left > 0.99,
+        "left sample peak {}",
+        result.sample_peak_left
+    );
+    assert!(
+        result.true_peak_right >= result.sample_peak_right,
+        "true peak ({}) must be >= sample peak ({})",
+        result.true_peak_right,
+        result.sample_peak_right
+    );
+}
+
+#[test]
+fn asymmetric_channels_tracked_independently() {
+    let sr = 48_000u32;
+    let n = (sr as usize) * 2;
+    let mut frames = vec![0.0f32; n * 2];
+    // Left = 0 dBFS sine, right = silence.
+    for i in 0..n {
+        let t = i as f64 / sr as f64;
+        frames[i * 2] = (2.0 * PI * 1_000.0 * t).sin() as f32;
+        frames[i * 2 + 1] = 0.0;
+    }
+    let result = measure_binaural(&frames, sr).unwrap();
+    assert!(
+        result.sample_peak_left > 0.99,
+        "left peak should be ~1.0, got {}",
+        result.sample_peak_left
+    );
+    assert_eq!(result.sample_peak_right, 0.0);
+    assert!(result.true_peak_left >= result.sample_peak_left);
+    assert_eq!(result.true_peak_right, 0.0);
+    // Halving the active channels removes 3 dB: expect roughly -3 LUFS
+    // relative to the symmetric stereo case (~-0.3 LUFS), i.e. ~-3.3.
+    assert!(
+        result.integrated_lufs > -6.0 && result.integrated_lufs < -1.0,
+        "expected ~-3.3 LUFS for single-ear sine, got {}",
+        result.integrated_lufs
+    );
+}
+
+#[test]
+fn interleaved_and_separate_agree() {
+    let sr = 48_000u32;
+    let n = (sr as usize) * 2;
+    let mut interleaved = vec![0.0f32; n * 2];
+    let mut left = vec![0.0f32; n];
+    let mut right = vec![0.0f32; n];
+    for i in 0..n {
+        let t = i as f64 / sr as f64;
+        let l = (2.0 * PI * 440.0 * t).sin() as f32 * 0.5;
+        let r = (2.0 * PI * 880.0 * t).sin() as f32 * 0.25;
+        interleaved[i * 2] = l;
+        interleaved[i * 2 + 1] = r;
+        left[i] = l;
+        right[i] = r;
     }
 
-    #[test]
-    fn rejects_odd_length() {
-        let mut meter = BinauralLoudness::new(48_000).unwrap();
-        let bad = vec![0.0f32; 5];
-        assert!(meter.add_interleaved_f32(&bad).is_err());
+    let mut m_inter = BinauralLoudness::new(sr).unwrap();
+    m_inter.add_interleaved_f32(&interleaved).unwrap();
+    let mut m_sep = BinauralLoudness::new(sr).unwrap();
+    m_sep.add_separate_f32(&left, &right).unwrap();
+
+    let a = m_inter.integrated_lufs().unwrap();
+    let b = m_sep.integrated_lufs().unwrap();
+    assert!(
+        (a - b).abs() < 1e-9,
+        "interleaved {a} should equal separate {b}"
+    );
+    assert_eq!(
+        m_inter.sample_peak(BinauralChannel::Left).unwrap(),
+        m_sep.sample_peak(BinauralChannel::Left).unwrap()
+    );
+}
+
+#[test]
+fn reset_clears_state() {
+    let mut meter = BinauralLoudness::new(48_000).unwrap();
+    let frames = sine_stereo(1_000.0, 0.5, 48_000, 2);
+    meter.add_interleaved_f32(&frames).unwrap();
+    assert!(meter.sample_peak(BinauralChannel::Left).unwrap() > 0.0);
+    meter.reset();
+    assert_eq!(meter.sample_peak(BinauralChannel::Left).unwrap(), 0.0);
+    assert_eq!(meter.true_peak(BinauralChannel::Left), 0.0);
+    let lufs = meter.integrated_lufs().unwrap();
+    assert!(lufs == f64::NEG_INFINITY || lufs < -100.0);
+}
+
+#[test]
+fn surround_downmix_rejects_wrong_channel_count() {
+    let mut meter = BinauralLoudness::new(48_000).unwrap();
+    let dm = BinauralDownmix::bs775(SurroundLayout::FiveOne); // 6 channels
+    let bad = vec![0.0f32; 10]; // 10 is not a multiple of 6
+    assert!(meter.add_surround_f32(&bad, &dm).is_err());
+}
+
+#[test]
+fn surround_downmix_empty_matrix_rejected() {
+    assert!(BinauralDownmix::from_matrix(vec![]).is_err());
+}
+
+#[test]
+fn bs775_5_1_lfe_excluded() {
+    // LFE-only 5.1 signal must yield silence after the BS.775 downmix
+    // (LFE coefficients are [0.0, 0.0]).
+    let sr = 48_000u32;
+    let n = (sr as usize) * 2;
+    let mut frames = vec![0.0f32; n * 6];
+    for i in 0..n {
+        let t = i as f64 / sr as f64;
+        frames[i * 6 + 3] = (2.0 * PI * 60.0 * t).sin() as f32; // LFE only
     }
+    let dm = BinauralDownmix::bs775(SurroundLayout::FiveOne);
+    let result = measure_binaural_from_surround(&frames, sr, &dm).unwrap();
+    assert_eq!(result.sample_peak_left, 0.0);
+    assert_eq!(result.sample_peak_right, 0.0);
+    assert!(
+        result.integrated_lufs == f64::NEG_INFINITY || result.integrated_lufs < -100.0,
+        "LFE-only must be silence after downmix, got {}",
+        result.integrated_lufs
+    );
+}
 
-    #[test]
-    fn separate_buffers_must_match_length() {
-        let mut meter = BinauralLoudness::new(48_000).unwrap();
-        let l = vec![0.0f32; 10];
-        let r = vec![0.0f32; 11];
-        assert!(meter.add_separate_f32(&l, &r).is_err());
+#[test]
+fn bs775_5_1_centre_routes_to_both_ears() {
+    // Centre-only 5.1: BS.775 distributes C → both ears at -3 dB
+    // (1/√2 ≈ 0.707), so a 0 dBFS centre tone produces ~0.707 in
+    // each ear. Loudness should be close to a 0.707-amplitude
+    // stereo sine (~-3.3 LUFS).
+    let sr = 48_000u32;
+    let n = (sr as usize) * 5;
+    let mut frames = vec![0.0f32; n * 6];
+    for i in 0..n {
+        let t = i as f64 / sr as f64;
+        frames[i * 6 + 2] = (2.0 * PI * 1_000.0 * t).sin() as f32; // C only
     }
+    let dm = BinauralDownmix::bs775(SurroundLayout::FiveOne);
+    let result = measure_binaural_from_surround(&frames, sr, &dm).unwrap();
+    // 1/√2 ≈ 0.7071; both ears should be ~0.7071.
+    assert!(
+        (result.sample_peak_left - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-3,
+        "left peak should be ~0.707, got {}",
+        result.sample_peak_left
+    );
+    assert!(
+        (result.sample_peak_right - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-3,
+        "right peak should be ~0.707, got {}",
+        result.sample_peak_right
+    );
+    // -3 dB amplitude both ears -> ~-3.3 LUFS relative to full-scale stereo (~-0.3 LUFS).
+    assert!(
+        result.integrated_lufs > -6.0 && result.integrated_lufs < -1.0,
+        "expected ~-3.3 LUFS, got {}",
+        result.integrated_lufs
+    );
+}
 
-    #[test]
-    fn silence_returns_neg_inf() {
-        let mut meter = BinauralLoudness::new(48_000).unwrap();
-        let frames = vec![0.0f32; 48_000 * 2];
-        meter.add_interleaved_f32(&frames).unwrap();
-        let lufs = meter.integrated_lufs().unwrap();
-        assert!(lufs == f64::NEG_INFINITY || lufs < -100.0);
-        assert_eq!(meter.sample_peak(BinauralChannel::Left).unwrap(), 0.0);
-        assert_eq!(meter.true_peak(BinauralChannel::Right), 0.0);
+#[test]
+fn bs775_5_0_and_5_1_agree_when_lfe_silent() {
+    // 5.0 measurement should equal 5.1 measurement when LFE is silent.
+    let sr = 48_000u32;
+    let n = (sr as usize) * 3;
+    // Build a 5.0 buffer with content in L, R, C, Ls, Rs.
+    let mut frames_5_0 = vec![0.0f32; n * 5];
+    let mut frames_5_1 = vec![0.0f32; n * 6];
+    for i in 0..n {
+        let t = i as f64 / sr as f64;
+        let l = (2.0 * PI * 440.0 * t).sin() as f32 * 0.3;
+        let r = (2.0 * PI * 660.0 * t).sin() as f32 * 0.3;
+        let c = (2.0 * PI * 1_000.0 * t).sin() as f32 * 0.2;
+        let ls = (2.0 * PI * 800.0 * t).sin() as f32 * 0.15;
+        let rs = (2.0 * PI * 900.0 * t).sin() as f32 * 0.15;
+        frames_5_0[i * 5] = l;
+        frames_5_0[i * 5 + 1] = r;
+        frames_5_0[i * 5 + 2] = c;
+        frames_5_0[i * 5 + 3] = ls;
+        frames_5_0[i * 5 + 4] = rs;
+        frames_5_1[i * 6] = l;
+        frames_5_1[i * 6 + 1] = r;
+        frames_5_1[i * 6 + 2] = c;
+        frames_5_1[i * 6 + 3] = 0.0; // LFE silent
+        frames_5_1[i * 6 + 4] = ls;
+        frames_5_1[i * 6 + 5] = rs;
     }
+    let dm50 = BinauralDownmix::bs775(SurroundLayout::FiveZero);
+    let dm51 = BinauralDownmix::bs775(SurroundLayout::FiveOne);
+    let a = measure_binaural_from_surround(&frames_5_0, sr, &dm50).unwrap();
+    let b = measure_binaural_from_surround(&frames_5_1, sr, &dm51).unwrap();
+    assert!(
+        (a.integrated_lufs - b.integrated_lufs).abs() < 1e-6,
+        "5.0 ({}) vs 5.1-with-silent-LFE ({}) should match",
+        a.integrated_lufs,
+        b.integrated_lufs
+    );
+}
 
-    #[test]
-    fn sine_1khz_matches_bs1770_stereo() {
-        // BS.1770-4 specifies that a 0 dBFS 1 kHz sine in a stereo bus
-        // produces approximately -3.01 LUFS before K-weighting and
-        // ~-0.3 LUFS after K-weighting (which has +0.2 dB at 1 kHz).
-        // Binaural with G_L = G_R = 1.0 must yield the same result.
-        let sr = 48_000u32;
-        let samples = sine_stereo(1_000.0, 1.0, sr, 5);
-        let result = measure_binaural(&samples, sr).unwrap();
-        assert!(
-            result.integrated_lufs > -2.0 && result.integrated_lufs < 1.0,
-            "expected ~-0.3 LUFS, got {}",
-            result.integrated_lufs
-        );
-        // Peaks for full-scale sine should hit close to 1.0.
-        assert!(
-            result.sample_peak_left > 0.99,
-            "left sample peak {}",
-            result.sample_peak_left
-        );
-        assert!(
-            result.true_peak_right >= result.sample_peak_right,
-            "true peak ({}) must be >= sample peak ({})",
-            result.true_peak_right,
-            result.sample_peak_right
-        );
-    }
+#[test]
+fn custom_matrix_can_pass_through_stereo() {
+    // Identity 2x[L,R] matrix should make add_surround_f32 behave
+    // identically to add_interleaved_f32 for 2-channel input.
+    let sr = 48_000u32;
+    let samples = sine_stereo(1_000.0, 0.6, sr, 2);
 
-    #[test]
-    fn asymmetric_channels_tracked_independently() {
-        let sr = 48_000u32;
-        let n = (sr as usize) * 2;
-        let mut frames = vec![0.0f32; n * 2];
-        // Left = 0 dBFS sine, right = silence.
-        for i in 0..n {
-            let t = i as f64 / sr as f64;
-            frames[i * 2] = (2.0 * PI * 1_000.0 * t).sin() as f32;
-            frames[i * 2 + 1] = 0.0;
-        }
-        let result = measure_binaural(&frames, sr).unwrap();
-        assert!(
-            result.sample_peak_left > 0.99,
-            "left peak should be ~1.0, got {}",
-            result.sample_peak_left
-        );
-        assert_eq!(result.sample_peak_right, 0.0);
-        assert!(result.true_peak_left >= result.sample_peak_left);
-        assert_eq!(result.true_peak_right, 0.0);
-        // Halving the active channels removes 3 dB: expect roughly -3 LUFS
-        // relative to the symmetric stereo case (~-0.3 LUFS), i.e. ~-3.3.
-        assert!(
-            result.integrated_lufs > -6.0 && result.integrated_lufs < -1.0,
-            "expected ~-3.3 LUFS for single-ear sine, got {}",
-            result.integrated_lufs
-        );
-    }
+    let identity = BinauralDownmix::from_matrix(vec![[1.0, 0.0], [0.0, 1.0]]).unwrap();
 
-    #[test]
-    fn interleaved_and_separate_agree() {
-        let sr = 48_000u32;
-        let n = (sr as usize) * 2;
-        let mut interleaved = vec![0.0f32; n * 2];
-        let mut left = vec![0.0f32; n];
-        let mut right = vec![0.0f32; n];
-        for i in 0..n {
-            let t = i as f64 / sr as f64;
-            let l = (2.0 * PI * 440.0 * t).sin() as f32 * 0.5;
-            let r = (2.0 * PI * 880.0 * t).sin() as f32 * 0.25;
-            interleaved[i * 2] = l;
-            interleaved[i * 2 + 1] = r;
-            left[i] = l;
-            right[i] = r;
-        }
+    let mut a = BinauralLoudness::new(sr).unwrap();
+    a.add_interleaved_f32(&samples).unwrap();
+    let mut b = BinauralLoudness::new(sr).unwrap();
+    b.add_surround_f32(&samples, &identity).unwrap();
 
-        let mut m_inter = BinauralLoudness::new(sr).unwrap();
-        m_inter.add_interleaved_f32(&interleaved).unwrap();
-        let mut m_sep = BinauralLoudness::new(sr).unwrap();
-        m_sep.add_separate_f32(&left, &right).unwrap();
+    assert!(
+        (a.integrated_lufs().unwrap() - b.integrated_lufs().unwrap()).abs() < 1e-9,
+        "identity downmix must match interleaved path"
+    );
+    assert_eq!(
+        a.sample_peak(BinauralChannel::Left).unwrap(),
+        b.sample_peak(BinauralChannel::Left).unwrap()
+    );
+}
 
-        let a = m_inter.integrated_lufs().unwrap();
-        let b = m_sep.integrated_lufs().unwrap();
-        assert!(
-            (a - b).abs() < 1e-9,
-            "interleaved {a} should equal separate {b}"
-        );
-        assert_eq!(
-            m_inter.sample_peak(BinauralChannel::Left).unwrap(),
-            m_sep.sample_peak(BinauralChannel::Left).unwrap()
-        );
-    }
+#[test]
+fn bs775_7_1_channel_count() {
+    let dm = BinauralDownmix::bs775(SurroundLayout::SevenOne);
+    assert_eq!(dm.channels(), 8);
+    // LFE row must be zero.
+    assert_eq!(dm.coeffs()[3], [0.0, 0.0]);
+}
 
-    #[test]
-    fn reset_clears_state() {
-        let mut meter = BinauralLoudness::new(48_000).unwrap();
-        let frames = sine_stereo(1_000.0, 0.5, 48_000, 2);
-        meter.add_interleaved_f32(&frames).unwrap();
-        assert!(meter.sample_peak(BinauralChannel::Left).unwrap() > 0.0);
-        meter.reset();
-        assert_eq!(meter.sample_peak(BinauralChannel::Left).unwrap(), 0.0);
-        assert_eq!(meter.true_peak(BinauralChannel::Left), 0.0);
-        let lufs = meter.integrated_lufs().unwrap();
-        assert!(lufs == f64::NEG_INFINITY || lufs < -100.0);
-    }
-
-    #[test]
-    fn surround_downmix_rejects_wrong_channel_count() {
-        let mut meter = BinauralLoudness::new(48_000).unwrap();
-        let dm = BinauralDownmix::bs775(SurroundLayout::FiveOne); // 6 channels
-        let bad = vec![0.0f32; 10]; // 10 is not a multiple of 6
-        assert!(meter.add_surround_f32(&bad, &dm).is_err());
-    }
-
-    #[test]
-    fn surround_downmix_empty_matrix_rejected() {
-        assert!(BinauralDownmix::from_matrix(vec![]).is_err());
-    }
-
-    #[test]
-    fn bs775_5_1_lfe_excluded() {
-        // LFE-only 5.1 signal must yield silence after the BS.775 downmix
-        // (LFE coefficients are [0.0, 0.0]).
-        let sr = 48_000u32;
-        let n = (sr as usize) * 2;
-        let mut frames = vec![0.0f32; n * 6];
-        for i in 0..n {
-            let t = i as f64 / sr as f64;
-            frames[i * 6 + 3] = (2.0 * PI * 60.0 * t).sin() as f32; // LFE only
-        }
-        let dm = BinauralDownmix::bs775(SurroundLayout::FiveOne);
-        let result = measure_binaural_from_surround(&frames, sr, &dm).unwrap();
-        assert_eq!(result.sample_peak_left, 0.0);
-        assert_eq!(result.sample_peak_right, 0.0);
-        assert!(
-            result.integrated_lufs == f64::NEG_INFINITY || result.integrated_lufs < -100.0,
-            "LFE-only must be silence after downmix, got {}",
-            result.integrated_lufs
-        );
-    }
-
-    #[test]
-    fn bs775_5_1_centre_routes_to_both_ears() {
-        // Centre-only 5.1: BS.775 distributes C → both ears at -3 dB
-        // (1/√2 ≈ 0.707), so a 0 dBFS centre tone produces ~0.707 in
-        // each ear. Loudness should be close to a 0.707-amplitude
-        // stereo sine (~-3.3 LUFS).
-        let sr = 48_000u32;
-        let n = (sr as usize) * 5;
-        let mut frames = vec![0.0f32; n * 6];
-        for i in 0..n {
-            let t = i as f64 / sr as f64;
-            frames[i * 6 + 2] = (2.0 * PI * 1_000.0 * t).sin() as f32; // C only
-        }
-        let dm = BinauralDownmix::bs775(SurroundLayout::FiveOne);
-        let result = measure_binaural_from_surround(&frames, sr, &dm).unwrap();
-        // 1/√2 ≈ 0.7071; both ears should be ~0.7071.
-        assert!(
-            (result.sample_peak_left - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-3,
-            "left peak should be ~0.707, got {}",
-            result.sample_peak_left
-        );
-        assert!(
-            (result.sample_peak_right - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-3,
-            "right peak should be ~0.707, got {}",
-            result.sample_peak_right
-        );
-        // -3 dB amplitude both ears -> ~-3.3 LUFS relative to full-scale stereo (~-0.3 LUFS).
-        assert!(
-            result.integrated_lufs > -6.0 && result.integrated_lufs < -1.0,
-            "expected ~-3.3 LUFS, got {}",
-            result.integrated_lufs
-        );
-    }
-
-    #[test]
-    fn bs775_5_0_and_5_1_agree_when_lfe_silent() {
-        // 5.0 measurement should equal 5.1 measurement when LFE is silent.
-        let sr = 48_000u32;
-        let n = (sr as usize) * 3;
-        // Build a 5.0 buffer with content in L, R, C, Ls, Rs.
-        let mut frames_5_0 = vec![0.0f32; n * 5];
-        let mut frames_5_1 = vec![0.0f32; n * 6];
-        for i in 0..n {
-            let t = i as f64 / sr as f64;
-            let l = (2.0 * PI * 440.0 * t).sin() as f32 * 0.3;
-            let r = (2.0 * PI * 660.0 * t).sin() as f32 * 0.3;
-            let c = (2.0 * PI * 1_000.0 * t).sin() as f32 * 0.2;
-            let ls = (2.0 * PI * 800.0 * t).sin() as f32 * 0.15;
-            let rs = (2.0 * PI * 900.0 * t).sin() as f32 * 0.15;
-            frames_5_0[i * 5] = l;
-            frames_5_0[i * 5 + 1] = r;
-            frames_5_0[i * 5 + 2] = c;
-            frames_5_0[i * 5 + 3] = ls;
-            frames_5_0[i * 5 + 4] = rs;
-            frames_5_1[i * 6] = l;
-            frames_5_1[i * 6 + 1] = r;
-            frames_5_1[i * 6 + 2] = c;
-            frames_5_1[i * 6 + 3] = 0.0; // LFE silent
-            frames_5_1[i * 6 + 4] = ls;
-            frames_5_1[i * 6 + 5] = rs;
-        }
-        let dm50 = BinauralDownmix::bs775(SurroundLayout::FiveZero);
-        let dm51 = BinauralDownmix::bs775(SurroundLayout::FiveOne);
-        let a = measure_binaural_from_surround(&frames_5_0, sr, &dm50).unwrap();
-        let b = measure_binaural_from_surround(&frames_5_1, sr, &dm51).unwrap();
-        assert!(
-            (a.integrated_lufs - b.integrated_lufs).abs() < 1e-6,
-            "5.0 ({}) vs 5.1-with-silent-LFE ({}) should match",
-            a.integrated_lufs,
-            b.integrated_lufs
-        );
-    }
-
-    #[test]
-    fn custom_matrix_can_pass_through_stereo() {
-        // Identity 2x[L,R] matrix should make add_surround_f32 behave
-        // identically to add_interleaved_f32 for 2-channel input.
-        let sr = 48_000u32;
-        let samples = sine_stereo(1_000.0, 0.6, sr, 2);
-
-        let identity = BinauralDownmix::from_matrix(vec![[1.0, 0.0], [0.0, 1.0]]).unwrap();
-
-        let mut a = BinauralLoudness::new(sr).unwrap();
-        a.add_interleaved_f32(&samples).unwrap();
-        let mut b = BinauralLoudness::new(sr).unwrap();
-        b.add_surround_f32(&samples, &identity).unwrap();
-
-        assert!(
-            (a.integrated_lufs().unwrap() - b.integrated_lufs().unwrap()).abs() < 1e-9,
-            "identity downmix must match interleaved path"
-        );
-        assert_eq!(
-            a.sample_peak(BinauralChannel::Left).unwrap(),
-            b.sample_peak(BinauralChannel::Left).unwrap()
-        );
-    }
-
-    #[test]
-    fn bs775_7_1_channel_count() {
-        let dm = BinauralDownmix::bs775(SurroundLayout::SevenOne);
-        assert_eq!(dm.channels(), 8);
-        // LFE row must be zero.
-        assert_eq!(dm.coeffs()[3], [0.0, 0.0]);
-    }
-
-    #[test]
-    fn true_peak_accumulates_across_calls() {
-        // Submit two short bursts; true peak after the second call must be
-        // at least the max of both bursts (cumulative tracking).
-        let sr = 48_000u32;
-        let burst_a = sine_stereo(1_000.0, 0.5, sr, 1);
-        let burst_b = sine_stereo(1_000.0, 0.9, sr, 1);
-        let mut meter = BinauralLoudness::new(sr).unwrap();
-        meter.add_interleaved_f32(&burst_a).unwrap();
-        let peak_after_a = meter.true_peak(BinauralChannel::Left);
-        meter.add_interleaved_f32(&burst_b).unwrap();
-        let peak_after_b = meter.true_peak(BinauralChannel::Left);
-        assert!(peak_after_a > 0.4 && peak_after_a < 0.6);
-        assert!(peak_after_b >= peak_after_a);
-        assert!(peak_after_b > 0.8);
-    }
-
+#[test]
+fn true_peak_accumulates_across_calls() {
+    // Submit two short bursts; true peak after the second call must be
+    // at least the max of both bursts (cumulative tracking).
+    let sr = 48_000u32;
+    let burst_a = sine_stereo(1_000.0, 0.5, sr, 1);
+    let burst_b = sine_stereo(1_000.0, 0.9, sr, 1);
+    let mut meter = BinauralLoudness::new(sr).unwrap();
+    meter.add_interleaved_f32(&burst_a).unwrap();
+    let peak_after_a = meter.true_peak(BinauralChannel::Left);
+    meter.add_interleaved_f32(&burst_b).unwrap();
+    let peak_after_b = meter.true_peak(BinauralChannel::Left);
+    assert!(peak_after_a > 0.4 && peak_after_a < 0.6);
+    assert!(peak_after_b >= peak_after_a);
+    assert!(peak_after_b > 0.8);
+}

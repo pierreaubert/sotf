@@ -17,7 +17,9 @@
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Rgba, SharedString, ElementId, Window, App, Stateful, Div, div, px, MouseButton, FontWeight};
+use gpui::{
+    App, Div, ElementId, FontWeight, MouseButton, Rgba, SharedString, Stateful, Window, div, px,
+};
 
 /// Theme colors for command palette
 #[derive(Debug, Clone, ComponentTheme)]

@@ -200,4 +200,3 @@ pub fn resolve_plugin_theme(
         .unwrap_or(rack_theme_id)
         .theme()
 }
-

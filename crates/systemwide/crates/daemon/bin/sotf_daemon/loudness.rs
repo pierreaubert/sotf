@@ -25,4 +25,3 @@ pub(super) fn loudness_info_to_json(info: &sotf_audio::LoudnessInfo) -> Value {
         "correlation_lr": null,
     })
 }
-

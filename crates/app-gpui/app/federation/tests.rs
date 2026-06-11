@@ -3,19 +3,18 @@
 use super::local::local_api_connect_host;
 use super::misc::pairing_qr_host;
 
-    use super::*;
+use super::*;
 
-    #[test]
-    fn pairing_qr_host_uses_configured_lan_address() {
-        assert_eq!(
-            pairing_qr_host("192.168.1.42").as_deref(),
-            Some("192.168.1.42")
-        );
-    }
+#[test]
+fn pairing_qr_host_uses_configured_lan_address() {
+    assert_eq!(
+        pairing_qr_host("192.168.1.42").as_deref(),
+        Some("192.168.1.42")
+    );
+}
 
-    #[test]
-    fn local_api_connect_host_maps_wildcard_to_loopback() {
-        assert_eq!(local_api_connect_host("0.0.0.0"), "127.0.0.1");
-        assert_eq!(local_api_connect_host("192.168.1.42"), "192.168.1.42");
-    }
-
+#[test]
+fn local_api_connect_host_maps_wildcard_to_loopback() {
+    assert_eq!(local_api_connect_host("0.0.0.0"), "127.0.0.1");
+    assert_eq!(local_api_connect_host("192.168.1.42"), "192.168.1.42");
+}

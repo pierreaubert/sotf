@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 use super::PlayerCommand;
 use crate::app::{App, InputMode, ServerSection};
 use crossterm::event::{KeyCode, KeyEvent};

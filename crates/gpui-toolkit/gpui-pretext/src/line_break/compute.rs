@@ -87,4 +87,3 @@ pub(super) fn compute_demerits(
 
     total
 }
-

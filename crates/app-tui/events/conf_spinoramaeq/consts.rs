@@ -3,8 +3,9 @@
 use std::sync::{Arc, Mutex};
 
 #[allow(clippy::type_complexity)]
-pub(super) static SPEAKERS_RESULT: std::sync::OnceLock<Arc<Mutex<Option<Result<Vec<String>, String>>>>> =
-    std::sync::OnceLock::new();
+pub(super) static SPEAKERS_RESULT: std::sync::OnceLock<
+    Arc<Mutex<Option<Result<Vec<String>, String>>>>,
+> = std::sync::OnceLock::new();
 
 #[allow(clippy::type_complexity)]
 pub(super) static OPT_RESULT: std::sync::OnceLock<
@@ -15,4 +16,3 @@ pub(super) static OPT_RESULT: std::sync::OnceLock<
 pub(super) static OPT_PROGRESS: std::sync::OnceLock<
     Arc<Mutex<Option<(usize, usize, f64, f32, Option<f64>)>>>,
 > = std::sync::OnceLock::new();
-

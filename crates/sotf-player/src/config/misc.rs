@@ -46,4 +46,3 @@ pub(super) fn dedupe_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<Path
     }
     deduped
 }
-

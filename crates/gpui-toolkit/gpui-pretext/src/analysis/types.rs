@@ -61,7 +61,10 @@ pub(super) struct SegmentationPiece {
     pub(super) start: usize,
 }
 
-pub(super) fn classify_segment_break_char(ch: char, profile: &WhiteSpaceProfile) -> SegmentBreakKind {
+pub(super) fn classify_segment_break_char(
+    ch: char,
+    profile: &WhiteSpaceProfile,
+) -> SegmentBreakKind {
     if profile.preserve_ordinary_spaces || profile.preserve_hard_breaks {
         if ch == ' ' {
             return SegmentBreakKind::PreservedSpace;
@@ -128,4 +131,3 @@ pub(super) fn compile_analysis_chunks(
 
     chunks
 }
-

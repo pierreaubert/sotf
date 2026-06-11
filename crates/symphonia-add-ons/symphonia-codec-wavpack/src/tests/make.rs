@@ -11,12 +11,12 @@ use super::super::consts::WAVPACK_MARKER;
 use super::super::consts::WAVPACK_MAX_STREAM_VERSION;
 use super::super::consts::WAVPACK_MIN_CK_SIZE;
 use super::super::wav_pack_reader::WavPackReader;
+use std::io::Cursor;
 use symphonia_core::audio::sample::SampleFormat;
 use symphonia_core::codecs::CodecParameters;
 use symphonia_core::formats::prelude::*;
 use symphonia_core::io::MediaSourceStream;
-use symphonia_core :: units :: { Timestamp } ;
-use std::io::Cursor;
+use symphonia_core::units::Timestamp;
 
 pub(super) fn make_test_block(
     flags: u32,
@@ -140,4 +140,3 @@ fn wavpack_reader_seeks_to_packet_boundary() {
     let packet = reader.next_packet().unwrap().unwrap();
     assert_eq!(packet.pts, Timestamp::new(10));
 }
-

@@ -38,4 +38,3 @@ impl Default for BorderColors {
         Self::dark()
     }
 }
-

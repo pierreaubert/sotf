@@ -217,4 +217,3 @@ impl Drop for ReplayGainScanner {
         self.stop();
     }
 }
-

@@ -21,9 +21,9 @@ mod speaker_optimization_config;
 mod speaker_optimization_config_ext;
 mod speaker_optimization_progress;
 mod speaker_optimization_result;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use callback_config::*;
 pub use load::*;
@@ -33,4 +33,3 @@ pub use speaker_optimization_config_ext::*;
 pub use speaker_optimization_progress::*;
 pub use speaker_optimization_result::*;
 pub use types::*;
-

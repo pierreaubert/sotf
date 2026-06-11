@@ -63,8 +63,13 @@
 
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
-use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
-use gpui::{ElementId, FocusHandle, SharedString, Rgba, Window, App, px, div, FontWeight, MouseButton, ClipboardItem};
+use gpui::prelude::{
+    InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled,
+};
+use gpui::{
+    App, ClipboardItem, ElementId, FocusHandle, FontWeight, MouseButton, Rgba, SharedString,
+    Window, div, px,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -86,11 +91,11 @@ mod misc;
 mod types;
 
 pub use cleanup::{cleanup_input_state, cleanup_stale_input_states};
-pub use input_size::{InputSize};
-pub use misc::{is_input_editing, input_state_count, clear_all_input_states};
-pub use types::{InputTheme, InputVariant};
 use edit_state::EditState;
+pub use input_size::InputSize;
 use misc::keystroke_to_char;
+pub use misc::{clear_all_input_states, input_state_count, is_input_editing};
+pub use types::{InputTheme, InputVariant};
 
 /// A text input component with full keyboard editing support
 ///
@@ -968,4 +973,3 @@ impl IntoElement for Input {
         gpui::Component::new(self)
     }
 }
-

@@ -80,4 +80,3 @@ pub(super) fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &
         ],
     }
 }
-

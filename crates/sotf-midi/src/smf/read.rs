@@ -72,4 +72,3 @@ pub(super) fn read_u32_be(data: &[u8], pos: &mut usize) -> u32 {
     *pos += 4;
     val
 }
-

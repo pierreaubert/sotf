@@ -7,7 +7,7 @@
 //! - With custom height
 //! - Full configuration
 
-use gpui::{Context, TestAppContext, Window, div, prelude::*, px};
+use gpui::{Context, IntoElement, ParentElement, Render, Styled, TestAppContext, Window, div, px};
 use gpui_ui_kit::status_bar::{StatusBar, StatusBarPosition};
 
 // ============================================================================

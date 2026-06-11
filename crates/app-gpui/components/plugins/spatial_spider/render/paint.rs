@@ -19,7 +19,15 @@ pub(super) fn paint_filled_rect(window: &mut Window, bounds: Bounds<Pixels>, col
     }
 }
 
-pub(super) fn paint_line(window: &mut Window, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Rgba) {
+pub(super) fn paint_line(
+    window: &mut Window,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    width: f32,
+    color: Rgba,
+) {
     let mut b = PathBuilder::stroke(px(width));
     b.move_to(Point {
         x: px(x0),
@@ -34,7 +42,15 @@ pub(super) fn paint_line(window: &mut Window, x0: f32, y0: f32, x1: f32, y1: f32
     }
 }
 
-pub(super) fn paint_circle(window: &mut Window, cx: f32, cy: f32, r: f32, width: f32, color: Rgba, segs: u32) {
+pub(super) fn paint_circle(
+    window: &mut Window,
+    cx: f32,
+    cy: f32,
+    r: f32,
+    width: f32,
+    color: Rgba,
+    segs: u32,
+) {
     if r <= 0.5 || segs < 3 {
         return;
     }
@@ -55,7 +71,14 @@ pub(super) fn paint_circle(window: &mut Window, cx: f32, cy: f32, r: f32, width:
     }
 }
 
-pub(super) fn paint_filled_disc(window: &mut Window, cx: f32, cy: f32, r: f32, color: Rgba, segs: u32) {
+pub(super) fn paint_filled_disc(
+    window: &mut Window,
+    cx: f32,
+    cy: f32,
+    r: f32,
+    color: Rgba,
+    segs: u32,
+) {
     if r <= 0.0 || segs < 3 {
         return;
     }
@@ -122,4 +145,3 @@ pub(super) fn paint_closed_polygon(
         }
     }
 }
-

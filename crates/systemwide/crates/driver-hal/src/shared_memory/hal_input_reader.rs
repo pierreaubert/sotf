@@ -213,4 +213,3 @@ impl HalInputReader {
         shared_frames + pending_samples.checked_div(channels).unwrap_or(0)
     }
 }
-

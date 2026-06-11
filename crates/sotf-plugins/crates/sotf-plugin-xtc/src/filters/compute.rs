@@ -5,9 +5,6 @@ use super::super::config::XtcPluginParams;
 use super::super::reflections::{
     RoomReflectionData, build_reflection_data_image_source, build_reflection_data_ir,
 };
-use rustfft::num_complex::Complex;
-use std::f32::consts::PI;
-use std::sync::Arc;
 use super::apply::apply_beta_freq_boosts;
 use super::apply::apply_effort_constraint;
 use super::build::build_beta_lut_condition_number;
@@ -28,6 +25,9 @@ use super::types::HrtfTransferFunctions;
 use super::types::SymmetricGeometry;
 use super::types::XtcFilterSet;
 use super::xtc_filters::XtcFilters;
+use rustfft::num_complex::Complex;
+use std::f32::consts::PI;
+use std::sync::Arc;
 
 /// Compute geometry cache for the given parameters.
 ///
@@ -1123,4 +1123,3 @@ pub(crate) fn compute_beta(freq: f32, params: &XtcPluginParams) -> f32 {
 
     beta_base * low_freq_factor * high_freq_factor
 }
-

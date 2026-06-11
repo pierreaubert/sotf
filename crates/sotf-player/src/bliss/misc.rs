@@ -4,7 +4,7 @@ use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use math_audio_dsp::audio_features;
 use rubato::{Fft, FixedSync, Resampler};
 use sotf_audio::decoder::create_decoder;
-use std :: path :: { Path } ;
+use std::path::Path;
 
 /// Number of audio analysis features stored
 pub const BLISS_FEATURES_COUNT: usize = audio_features::FEATURES_COUNT;
@@ -59,7 +59,11 @@ pub(super) fn decode_for_analysis(path: &Path) -> Result<Vec<f32>, String> {
 }
 
 /// Resample audio to the target sample rate using rubato
-pub(super) fn resample(samples: &[f32], source_rate: u32, target_rate: u32) -> Result<Vec<f32>, String> {
+pub(super) fn resample(
+    samples: &[f32],
+    source_rate: u32,
+    target_rate: u32,
+) -> Result<Vec<f32>, String> {
     if source_rate == target_rate {
         return Ok(samples.to_vec());
     }
@@ -118,4 +122,3 @@ pub(super) fn resample(samples: &[f32], source_rate: u32, target_rate: u32) -> R
 
     Ok(output)
 }
-

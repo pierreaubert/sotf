@@ -2,7 +2,7 @@
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
-use gpui :: {SharedString, Div, div, FontWeight, Window, App} ;
+use gpui::{App, Div, FontWeight, SharedString, Window, div};
 
 /// A heading component
 #[derive(IntoElement)]
@@ -86,4 +86,3 @@ impl RenderOnce for Heading {
         self.build_with_theme(&theme)
     }
 }
-

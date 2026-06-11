@@ -1011,4 +1011,3 @@ impl RenderOnce for Potentiometer {
         container.child(knob_container)
     }
 }
-

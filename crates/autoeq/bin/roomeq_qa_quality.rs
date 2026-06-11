@@ -53,13 +53,13 @@ mod residual;
 mod run;
 #[path = "roomeq_qa_quality/test_case.rs"]
 mod test_case;
+#[cfg(test)]
+#[path = "roomeq_qa_quality/tests.rs"]
+mod tests;
 #[path = "roomeq_qa_quality/types.rs"]
 mod types;
 #[path = "roomeq_qa_quality/validate.rs"]
 mod validate;
-#[cfg(test)]
-#[path = "roomeq_qa_quality/tests.rs"]
-mod tests;
 
 use consts::FEM_DIR;
 use consts::OPTIM_CONFIG_DIR;
@@ -256,4 +256,3 @@ fn main() -> Result<()> {
 
     Ok(())
 }
-

@@ -140,4 +140,3 @@ impl RoomEqTuiState {
         sotf_audio_player::room_eq_types::compute_lr_slope(&self.channel_measurements)
     }
 }
-

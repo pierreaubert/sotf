@@ -50,4 +50,3 @@ use benchmark::benchmark_loudness;
 use benchmark::benchmark_matrix;
 use benchmark::benchmark_multiband_compressor;
 use benchmark::benchmark_multiband_expander;
-

@@ -10,4 +10,3 @@ pub(super) fn default_dim_gain_db() -> f32 {
 pub(super) fn default_fade_ms() -> f32 {
     DEFAULT_FADE_MS
 }
-

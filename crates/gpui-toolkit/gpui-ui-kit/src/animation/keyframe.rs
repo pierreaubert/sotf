@@ -29,4 +29,3 @@ impl<T> Keyframe<T> {
         self
     }
 }
-

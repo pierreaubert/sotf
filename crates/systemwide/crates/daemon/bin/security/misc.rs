@@ -54,4 +54,3 @@ pub fn ensure_secure_socket_dir(socket_path: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
-

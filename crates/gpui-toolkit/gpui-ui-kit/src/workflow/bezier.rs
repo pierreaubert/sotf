@@ -195,8 +195,8 @@ pub fn connection_path_avoiding(
 
 #[cfg(test)]
 mod tests {
-    use super::{connection_path, flatten_cubic_bezier, horizontal_bezier};
     use super::super::Position;
+    use super::{connection_path, flatten_cubic_bezier, horizontal_bezier};
 
     #[test]
     fn test_flatten_straight_line() {

@@ -17,4 +17,3 @@ pub(super) fn format_label(format: PluginFormat) -> &'static str {
         PluginFormat::AudioUnit => "AudioUnit",
     }
 }
-

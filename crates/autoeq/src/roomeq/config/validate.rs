@@ -6,13 +6,13 @@ use super::super::types::{
     Cea2034CorrectionMode, MultiMeasurementStrategy, MultiSeatStrategy, OptimizerConfig,
     ProcessingMode, RoomConfig, SpeakerConfig, TargetShape,
 };
-use crate :: { MeasurementSource } ;
-use std::collections::HashMap;
 use super::misc::PHASE_LINEAR_RECOMMENDED_MAX_FREQ_HZ;
 use super::misc::collect_sources;
 use super::misc::is_valid_speaker_name;
 use super::misc::source_is_cea2034_shaped;
 use super::validation_result::ValidationResult;
+use crate::MeasurementSource;
+use std::collections::HashMap;
 
 /// Validate a complete room configuration
 pub fn validate_room_config(config: &RoomConfig) -> ValidationResult {
@@ -1009,4 +1009,3 @@ fn validate_role_targets(config: &RoomConfig, result: &mut ValidationResult) {
         ));
     }
 }
-

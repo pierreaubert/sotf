@@ -13,9 +13,9 @@ mod extract;
 mod http_browse_source;
 mod misc;
 mod parse;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use browse_source::*;
 pub use misc::*;
@@ -117,4 +117,3 @@ impl LibraryProvider for DlnaProvider {
         Box::pin(async move { http_get(&url).is_ok() })
     }
 }
-

@@ -783,4 +783,3 @@ fn main() {
         |cx| cx.new(WizardDebug::new),
     );
 }
-

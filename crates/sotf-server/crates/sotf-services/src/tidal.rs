@@ -8,10 +8,9 @@ use std::sync::Arc;
 mod async_runtime;
 mod consts;
 mod misc;
-mod tidal_service;
-mod types;
 #[cfg(test)]
 mod tests;
+mod tidal_service;
+mod types;
 
 pub use tidal_service::*;
-

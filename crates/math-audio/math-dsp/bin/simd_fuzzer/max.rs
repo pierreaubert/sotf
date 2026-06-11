@@ -36,4 +36,3 @@ pub(super) fn max_rel_diff_f32(a: &[f32], b: &[f32]) -> f32 {
         })
         .fold(0.0_f32, f32::max)
 }
-

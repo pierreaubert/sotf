@@ -335,4 +335,3 @@ impl Delaunay {
         }
     }
 }
-

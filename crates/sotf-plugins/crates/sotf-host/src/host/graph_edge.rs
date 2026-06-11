@@ -45,4 +45,3 @@ impl GraphEdge {
         self.id
     }
 }
-

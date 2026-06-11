@@ -231,4 +231,3 @@ pub const ROOMEQ_PRESETS: &[EqPreset] = &[
         params: None,
     },
 ];
-

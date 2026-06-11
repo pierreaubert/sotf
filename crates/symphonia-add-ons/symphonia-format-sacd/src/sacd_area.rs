@@ -25,4 +25,3 @@ impl SacdArea {
         self.tracks.get(index).ok_or(SacdError::TrackOutOfRange)
     }
 }
-

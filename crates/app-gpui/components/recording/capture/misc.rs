@@ -351,7 +351,10 @@ impl PlayerView {
     }
 
     /// Render per-channel recording metrics (avg SPL and noise floor)
-    pub(super) fn render_channel_metrics_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_channel_metrics_section(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -2847,4 +2850,3 @@ impl PlayerView {
         cx.notify();
     }
 }
-

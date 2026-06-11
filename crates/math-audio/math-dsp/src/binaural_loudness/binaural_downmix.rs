@@ -72,4 +72,3 @@ impl BinauralDownmix {
         &self.coeffs
     }
 }
-

@@ -26,4 +26,3 @@ struct Uniforms {
     diffuse: f32,
     _pad: f32,
 }
-

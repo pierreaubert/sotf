@@ -3,9 +3,9 @@
 
 pub use config::PndPluginParams;
 
-pub mod params;
 pub mod analysis;
 mod config;
+pub mod params;
 
 #[path = "lib/consts.rs"]
 mod consts;
@@ -15,12 +15,11 @@ mod phase_vocoder;
 mod phase_vocoder_channel;
 #[path = "lib/pnd_plugin.rs"]
 mod pnd_plugin;
-#[path = "lib/types.rs"]
-mod types;
 #[cfg(test)]
 #[path = "lib/tests.rs"]
 mod tests;
+#[path = "lib/types.rs"]
+mod types;
 
 pub use pnd_plugin::*;
 pub use types::*;
-

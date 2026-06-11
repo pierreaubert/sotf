@@ -174,4 +174,3 @@ pub(super) fn real_fft_half_spectrum(input: &[f64], fft_size: usize) -> Vec<Comp
     buffer.truncate(fft_size / 2 + 1);
     buffer
 }
-

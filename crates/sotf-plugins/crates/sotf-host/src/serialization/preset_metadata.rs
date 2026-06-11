@@ -34,4 +34,3 @@ impl PresetMetadata {
         self.created_at = Some(Utc::now());
     }
 }
-

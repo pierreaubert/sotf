@@ -21,4 +21,3 @@ pub(super) fn be_u32(data: &[u8], offset: usize) -> SacdResult<u32> {
         data[offset + 3],
     ]))
 }
-

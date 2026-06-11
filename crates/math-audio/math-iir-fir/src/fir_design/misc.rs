@@ -119,7 +119,11 @@ pub(super) fn hilbert_transform(signal: &[f64]) -> Vec<f64> {
 }
 
 /// Interpolate values from source frequencies to target frequencies using log-space
-pub(super) fn interpolate_log_space(src_freqs: &[f64], src_values: &[f64], target_freqs: &[f64]) -> Vec<f64> {
+pub(super) fn interpolate_log_space(
+    src_freqs: &[f64],
+    src_values: &[f64],
+    target_freqs: &[f64],
+) -> Vec<f64> {
     let mut result = Vec::with_capacity(target_freqs.len());
 
     for &f in target_freqs {
@@ -186,4 +190,3 @@ pub(super) fn spectrum_to_impulse_response(spectrum: &[Complex64], fft_size: usi
     // Extract real part and normalize
     ir_complex.iter().map(|c| c.re / fft_size as f64).collect()
 }
-

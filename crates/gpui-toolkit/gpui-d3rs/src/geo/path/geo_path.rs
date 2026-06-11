@@ -302,4 +302,3 @@ impl<P: Projection> GeoPath<P> {
         }
     }
 }
-

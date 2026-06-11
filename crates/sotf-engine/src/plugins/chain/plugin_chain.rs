@@ -1262,7 +1262,7 @@ impl PluginChain {
 
 #[cfg(test)]
 mod tests {
-    use super::super::*;
+
     use super::*;
     use crate::plugins::matrix::{
         apply_matrix_preset, available_matrix_presets, detect_matrix_preset,

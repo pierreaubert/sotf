@@ -3,6 +3,7 @@
 
 use clap::Parser;
 use directories::ProjectDirs;
+use math_audio_test_functions::{FunctionMetadata, functions, get_function_metadata};
 use ndarray::Array1;
 use plotly::common::{ColorScale, ColorScalePalette, Marker, Mode, Title};
 use plotly::contour::Contour;
@@ -10,7 +11,6 @@ use plotly::{Layout, Plot, Scatter};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Write;
-use math_audio_test_functions::{FunctionMetadata, functions, get_function_metadata};
 
 #[path = "plot_functions/add.rs"]
 mod add;
@@ -183,4 +183,3 @@ fn main() {
         processed_functions.values().map(|v| v.len()).sum::<usize>()
     );
 }
-

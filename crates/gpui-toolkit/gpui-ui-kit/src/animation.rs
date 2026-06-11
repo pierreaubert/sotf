@@ -47,15 +47,15 @@ mod easing;
 mod keyframe;
 mod keyframe_animation;
 mod spring;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use easing::{ease, interpolate, interpolate_color};
-pub use keyframe::{Keyframe};
+pub use keyframe::Keyframe;
 pub use keyframe_animation::{KeyframeAnimation, evaluate_keyframes};
-pub use spring::{Spring};
-pub use types::{Easing};
+pub use spring::Spring;
+pub use types::Easing;
 /// Animation timing and easing configuration
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Animation {
@@ -185,4 +185,3 @@ impl Default for Animation {
         }
     }
 }
-

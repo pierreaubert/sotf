@@ -34,4 +34,3 @@ pub(super) fn option_gd_profile(option: &OptionOverride) -> Option<GroupDelayQaP
 pub(super) fn option_is_group_delay(option: &OptionOverride) -> bool {
     matches!(option, OptionOverride::GroupDelay { .. })
 }
-

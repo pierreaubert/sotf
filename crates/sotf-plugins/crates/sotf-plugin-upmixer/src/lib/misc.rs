@@ -19,7 +19,6 @@ pub(super) fn periodic_sqrt_hann_window(size: usize) -> Vec<f32> {
 #[cfg(test)]
 mod local_tests {
     use super::*;
-    use super::super::*;
 
     #[test]
     fn hr_delay_buffer_len_is_zero_when_ola_latencies_match() {

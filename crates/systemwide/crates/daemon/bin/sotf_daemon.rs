@@ -49,11 +49,11 @@ mod plugin;
 mod response;
 #[path = "sotf_daemon/systemwide_state.rs"]
 mod systemwide_state;
-#[path = "sotf_daemon/types.rs"]
-mod types;
 #[cfg(test)]
 #[path = "sotf_daemon/tests.rs"]
 mod tests;
+#[path = "sotf_daemon/types.rs"]
+mod types;
 
 use audio_daemon::AudioDaemon;
 
@@ -154,4 +154,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Daemon stopped cleanly");
     Ok(())
 }
-

@@ -115,4 +115,3 @@ pub fn phasor_coherence(a: &[TonePhasorWindow], b: &[TonePhasorWindow]) -> Optio
     let num = cross_re * cross_re + cross_im * cross_im;
     Some((num / denom).clamp(0.0, 1.0))
 }
-

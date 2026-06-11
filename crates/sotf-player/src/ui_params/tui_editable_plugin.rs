@@ -67,4 +67,3 @@ pub trait TuiEditablePlugin {
         false
     }
 }
-

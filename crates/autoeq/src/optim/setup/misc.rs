@@ -135,4 +135,3 @@ pub(super) fn resolves_to_backend(name: &str, canonical: &str) -> bool {
 pub fn multisub_initial_guess(n_drivers: usize) -> Vec<f64> {
     vec![0.0; n_drivers * 2]
 }
-

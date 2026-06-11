@@ -10,401 +10,398 @@ use super::find::find_arrival_time_with_reference;
 use super::misc::calculate_alignment_delays;
 use super::misc::phase_arrival_regression_band;
 
-    use super::*;
+fn write_mono_wav(samples: &[f32], sample_rate: u32) -> tempfile::NamedTempFile {
+    let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
+    for &sample in samples {
+        writer.write_sample(sample).unwrap();
+    }
+    writer.finalize().unwrap();
+    temp_file
+}
 
-    fn write_mono_wav(samples: &[f32], sample_rate: u32) -> tempfile::NamedTempFile {
-        let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate,
-            bits_per_sample: 32,
-            sample_format: hound::SampleFormat::Float,
-        };
-        let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
-        for &sample in samples {
-            writer.write_sample(sample).unwrap();
-        }
-        writer.finalize().unwrap();
-        temp_file
+#[test]
+fn test_calculate_alignment_delays() {
+    let mut arrivals = std::collections::HashMap::new();
+    arrivals.insert("L".to_string(), 10.0);
+    arrivals.insert("R".to_string(), 12.0);
+    arrivals.insert("C".to_string(), 8.0);
+
+    let delays = calculate_alignment_delays(&arrivals);
+
+    // R is slowest (12ms), so it gets 0 delay
+    // L needs 2ms delay to match R
+    // C needs 4ms delay to match R
+    assert!((delays["R"] - 0.0).abs() < 0.001);
+    assert!((delays["L"] - 2.0).abs() < 0.001);
+    assert!((delays["C"] - 4.0).abs() < 0.001);
+}
+
+#[test]
+fn negative_relative_delay_is_accepted() {
+    use ndarray::Array1;
+
+    // Synthesize a phase curve for τ = -10 ms (closer than reference)
+    let tau_ms = -10.0_f64;
+    let tau_s = tau_ms / 1000.0;
+    let freqs: Vec<f64> = (20..=2000).step_by(10).map(|f| f as f64).collect();
+    let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
+
+    let curve = crate::Curve {
+        freq: Array1::from_vec(freqs),
+        spl: Array1::zeros(phase_deg.len()),
+        phase: Some(Array1::from_vec(phase_deg)),
+        ..Default::default()
+    };
+
+    let estimated = estimate_arrival_from_phase(&curve, 200.0, 2000.0);
+
+    assert!(
+        estimated.is_some(),
+        "negative delays within -50 ms should be accepted, got {:?}",
+        estimated
+    );
+    assert!((estimated.unwrap() - tau_ms).abs() < 0.5);
+}
+
+#[test]
+fn test_estimate_arrival_from_phase() {
+    use ndarray::Array1;
+
+    // Synthesize φ(f) = -2π·τ·f for τ = 5 ms
+    let tau_ms = 5.0_f64;
+    let tau_s = tau_ms / 1000.0;
+    let freqs: Vec<f64> = (20..=2000).step_by(10).map(|f| f as f64).collect();
+    let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
+
+    let curve = crate::Curve {
+        freq: Array1::from_vec(freqs),
+        spl: Array1::zeros(phase_deg.len()),
+        phase: Some(Array1::from_vec(phase_deg)),
+        ..Default::default()
+    };
+
+    let estimated = estimate_arrival_from_phase(&curve, 200.0, 2000.0);
+    assert!(
+        estimated.is_some(),
+        "Should recover arrival time from phase"
+    );
+    let estimated = estimated.unwrap();
+    assert!(
+        (estimated - tau_ms).abs() < 0.1,
+        "Expected ~{} ms, got {} ms",
+        tau_ms,
+        estimated
+    );
+}
+
+#[test]
+fn test_estimate_arrival_from_phase_no_phase() {
+    use ndarray::Array1;
+
+    let curve = crate::Curve {
+        freq: Array1::linspace(20.0, 2000.0, 100),
+        spl: Array1::zeros(100),
+        phase: None,
+        ..Default::default()
+    };
+    assert!(estimate_arrival_from_phase(&curve, 200.0, 2000.0).is_none());
+}
+
+#[test]
+fn test_find_arrival_time_errors_when_no_sample_crosses_threshold() {
+    let sr = 48_000_u32;
+    let samples = vec![0.001_f32; 2048];
+    let wav = write_mono_wav(&samples, sr);
+
+    let err = find_arrival_time(wav.path(), None).unwrap_err();
+
+    assert!(
+        err.contains("No sample exceeded arrival threshold"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_find_arrival_time_uses_rms_noise_floor_not_peak() {
+    let sr = 48_000_u32;
+    let mut samples = vec![0.0_f32; 4096];
+    samples[12] = 0.02; // isolated early noise click
+    let arrival = 1200_usize;
+    samples[arrival] = 0.1;
+    let wav = write_mono_wav(&samples, sr);
+
+    let result = find_arrival_time(wav.path(), None).unwrap();
+
+    assert_eq!(result.arrival_samples, arrival);
+}
+
+#[test]
+fn test_estimate_arrival_from_phase_detailed_reports_implausible_delay() {
+    use ndarray::Array1;
+
+    // Use -55 ms (outside the accepted -50..500 ms window) to test rejection.
+    // Fine 1 Hz grid ensures unwrap_phase_degrees sees < 180° per step.
+    let tau_ms = -55.0_f64;
+    let tau_s = tau_ms / 1000.0;
+    let freqs: Vec<f64> = (100..=3000).map(|f| f as f64).collect();
+    let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
+
+    let curve = crate::Curve {
+        freq: Array1::from_vec(freqs),
+        spl: Array1::zeros(phase_deg.len()),
+        phase: Some(Array1::from_vec(phase_deg)),
+        ..Default::default()
+    };
+
+    let err = estimate_arrival_from_phase_detailed(&curve, 200.0, 2000.0).unwrap_err();
+
+    assert!(matches!(
+        err,
+        PhaseArrivalError::ImplausibleDelay { delay_ms } if delay_ms < -50.0
+    ));
+}
+
+#[test]
+fn test_phase_arrival_regression_band_falls_back_to_active_sub_band() {
+    use ndarray::Array1;
+
+    let freqs: Vec<f64> = (20..=2000).step_by(10).map(|f| f as f64).collect();
+    let spl: Vec<f64> = freqs
+        .iter()
+        .map(|&f| if f <= 120.0 { 0.0 } else { -80.0 })
+        .collect();
+    let curve = crate::Curve {
+        freq: Array1::from_vec(freqs),
+        spl: Array1::from_vec(spl),
+        phase: Some(Array1::zeros(199)),
+        ..Default::default()
+    };
+
+    let band = phase_arrival_regression_band(&curve, 200.0, 2000.0).unwrap();
+
+    assert_eq!(band, (20.0, 120.0));
+}
+
+#[test]
+fn test_calculate_alignment_delays_empty() {
+    let arrivals = std::collections::HashMap::new();
+    let delays = calculate_alignment_delays(&arrivals);
+    assert!(delays.is_empty());
+}
+
+#[test]
+fn test_alignment_delays_three_speakers() {
+    // Arrivals: [0, 2, 5] ms → delays: [5, 3, 0] ms
+    let mut arrivals = std::collections::HashMap::new();
+    arrivals.insert("A".to_string(), 0.0);
+    arrivals.insert("B".to_string(), 2.0);
+    arrivals.insert("C".to_string(), 5.0);
+
+    let delays = calculate_alignment_delays(&arrivals);
+
+    assert!(
+        (delays["A"] - 5.0).abs() < 0.001,
+        "A should get 5ms delay, got {}",
+        delays["A"]
+    );
+    assert!(
+        (delays["B"] - 3.0).abs() < 0.001,
+        "B should get 3ms delay, got {}",
+        delays["B"]
+    );
+    assert!(
+        (delays["C"] - 0.0).abs() < 0.001,
+        "C should get 0ms delay, got {}",
+        delays["C"]
+    );
+}
+
+#[test]
+fn test_estimate_arrival_linear_phase() {
+    use ndarray::Array1;
+
+    // Construct a curve with linear phase corresponding to 3ms delay
+    let tau_ms = 3.0;
+    let tau_s = tau_ms / 1000.0;
+    let freqs: Vec<f64> = (100..=5000).step_by(20).map(|f| f as f64).collect();
+    let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
+
+    let curve = crate::Curve {
+        freq: Array1::from_vec(freqs),
+        spl: Array1::zeros(phase_deg.len()),
+        phase: Some(Array1::from_vec(phase_deg)),
+        ..Default::default()
+    };
+
+    let estimated = estimate_arrival_from_phase(&curve, 200.0, 4000.0);
+    assert!(
+        estimated.is_some(),
+        "Should recover arrival time from linear phase"
+    );
+    let estimated = estimated.unwrap();
+    assert!(
+        (estimated - tau_ms).abs() < 0.1,
+        "Expected ~{} ms, got {} ms (error {:.3} ms)",
+        tau_ms,
+        estimated,
+        (estimated - tau_ms).abs()
+    );
+}
+
+#[test]
+fn test_estimate_arrival_zero_delay_accepted() {
+    use ndarray::Array1;
+
+    // A speaker at the exact reference position has 0 ms propagation delay.
+    // Phase is flat (0° everywhere) → slope = 0 → delay = 0.
+    let freqs: Vec<f64> = (100..=5000).step_by(20).map(|f| f as f64).collect();
+    let phase_deg: Vec<f64> = freqs.iter().map(|_| 0.0).collect();
+
+    let curve = crate::Curve {
+        freq: Array1::from_vec(freqs),
+        spl: Array1::zeros(phase_deg.len()),
+        phase: Some(Array1::from_vec(phase_deg)),
+        ..Default::default()
+    };
+
+    let result = estimate_arrival_from_phase_detailed(&curve, 200.0, 4000.0);
+    assert!(
+        result.is_ok(),
+        "Exactly 0 ms delay should be accepted, not rejected as implausible: {:?}",
+        result
+    );
+    let delay = result.unwrap();
+    assert!(delay.abs() < 0.01, "Expected ~0 ms, got {} ms", delay);
+}
+
+#[test]
+fn test_detect_delay_with_probe() {
+    let sr = 48000_u32;
+    let n = 4096;
+    let probe = math_audio_dsp::signals::gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
+
+    // Simulate: delay 480 samples (10ms), attenuate by 0.4
+    let delay = 480_usize;
+    let atten = 0.4_f32;
+    let mut recorded = vec![0.0_f32; n + delay + 500];
+    for (i, &s) in probe.iter().enumerate() {
+        recorded[i + delay] += s * atten;
     }
 
-    #[test]
-    fn test_calculate_alignment_delays() {
-        let mut arrivals = std::collections::HashMap::new();
-        arrivals.insert("L".to_string(), 10.0);
-        arrivals.insert("R".to_string(), 12.0);
-        arrivals.insert("C".to_string(), 8.0);
+    let result = detect_delay_with_probe(&probe, &recorded, sr).unwrap();
 
-        let delays = calculate_alignment_delays(&arrivals);
+    assert!(
+        (result.arrival_ms - 10.0).abs() < 0.2,
+        "Expected ~10ms arrival, got {:.3}ms",
+        result.arrival_ms
+    );
+    assert!(
+        result.detection_snr_db > 10.0,
+        "SNR should be high for clean signal, got {:.1}dB",
+        result.detection_snr_db
+    );
+    // Gain should be close to the applied attenuation
+    let expected_gain_db = 20.0 * (atten as f64).log10(); // -7.96 dB
+    assert!(
+        (result.gain_db - expected_gain_db).abs() < 3.0,
+        "Expected gain ~{:.1}dB, got {:.1}dB",
+        expected_gain_db,
+        result.gain_db
+    );
+}
 
-        // R is slowest (12ms), so it gets 0 delay
-        // L needs 2ms delay to match R
-        // C needs 4ms delay to match R
-        assert!((delays["R"] - 0.0).abs() < 0.001);
-        assert!((delays["L"] - 2.0).abs() < 0.001);
-        assert!((delays["C"] - 4.0).abs() < 0.001);
+#[test]
+fn test_find_arrival_time_with_reference_mls_wav() {
+    let sr = 48000_u32;
+    let reference = math_audio_dsp::signals::gen_mls(10, 0.5);
+    let delay = 321_usize;
+    let mut recorded = vec![0.0_f32; reference.len() + delay + 256];
+    for (i, &sample) in reference.iter().enumerate() {
+        recorded[i + delay] += sample * 0.6;
     }
 
-    #[test]
-    fn negative_relative_delay_is_accepted() {
-        use ndarray::Array1;
+    let wav = write_mono_wav(&recorded, sr);
+    let result = find_arrival_time_with_reference(wav.path(), &reference, sr).unwrap();
+    let expected_ms = delay as f64 * 1000.0 / sr as f64;
 
-        // Synthesize a phase curve for τ = -10 ms (closer than reference)
-        let tau_ms = -10.0_f64;
-        let tau_s = tau_ms / 1000.0;
-        let freqs: Vec<f64> = (20..=2000).step_by(10).map(|f| f as f64).collect();
-        let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
+    assert!(
+        (result.arrival_ms - expected_ms).abs() < 0.15,
+        "Expected {:.3}ms, got {:.3}ms",
+        expected_ms,
+        result.arrival_ms
+    );
+    assert!(result.detection_snr_db > 20.0);
+}
 
-        let curve = crate::Curve {
-            freq: Array1::from_vec(freqs),
-            spl: Array1::zeros(phase_deg.len()),
-            phase: Some(Array1::from_vec(phase_deg)),
-            ..Default::default()
-        };
-
-        let estimated = estimate_arrival_from_phase(&curve, 200.0, 2000.0);
-
-        assert!(
-            estimated.is_some(),
-            "negative delays within -50 ms should be accepted, got {:?}",
-            estimated
-        );
-        assert!((estimated.unwrap() - tau_ms).abs() < 0.5);
+#[test]
+fn test_find_arrival_time_with_reference_dirac_wav() {
+    let sr = 48000_u32;
+    let reference = math_audio_dsp::signals::gen_dirac(0.5, sr, 0.01);
+    let delay = 96_usize;
+    let mut recorded = vec![0.0_f32; reference.len() + delay + 256];
+    for (i, &sample) in reference.iter().enumerate() {
+        recorded[i + delay] += sample * 0.8;
     }
 
-    #[test]
-    fn test_estimate_arrival_from_phase() {
-        use ndarray::Array1;
+    let wav = write_mono_wav(&recorded, sr);
+    let result = find_arrival_time_with_reference(wav.path(), &reference, sr).unwrap();
+    let expected_ms = delay as f64 * 1000.0 / sr as f64;
 
-        // Synthesize φ(f) = -2π·τ·f for τ = 5 ms
-        let tau_ms = 5.0_f64;
-        let tau_s = tau_ms / 1000.0;
-        let freqs: Vec<f64> = (20..=2000).step_by(10).map(|f| f as f64).collect();
-        let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
+    assert!(
+        (result.arrival_ms - expected_ms).abs() < 0.15,
+        "Expected {:.3}ms, got {:.3}ms",
+        expected_ms,
+        result.arrival_ms
+    );
+}
 
-        let curve = crate::Curve {
-            freq: Array1::from_vec(freqs),
-            spl: Array1::zeros(phase_deg.len()),
-            phase: Some(Array1::from_vec(phase_deg)),
-            ..Default::default()
-        };
+#[test]
+fn test_detect_delays_multi_channel() {
+    let sr = 48000_u32;
+    let n = 2048;
+    let probe = math_audio_dsp::signals::gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
 
-        let estimated = estimate_arrival_from_phase(&curve, 200.0, 2000.0);
-        assert!(
-            estimated.is_some(),
-            "Should recover arrival time from phase"
-        );
-        let estimated = estimated.unwrap();
-        assert!(
-            (estimated - tau_ms).abs() < 0.1,
-            "Expected ~{} ms, got {} ms",
-            tau_ms,
-            estimated
-        );
-    }
+    // Build a sequential recording with 3 channels at different delays
+    let segment_len = n + 1000; // probe + some room tail
+    let silence_len = 1000;
+    let delays = [240_usize, 480, 120]; // 5ms, 10ms, 2.5ms
+    let attens = [0.5_f32, 0.3, 0.7];
 
-    #[test]
-    fn test_estimate_arrival_from_phase_no_phase() {
-        use ndarray::Array1;
+    let total_len = delays.len() * (segment_len + silence_len) + silence_len;
+    let mut recorded = vec![0.0_f32; total_len];
+    let mut offsets = Vec::new();
 
-        let curve = crate::Curve {
-            freq: Array1::linspace(20.0, 2000.0, 100),
-            spl: Array1::zeros(100),
-            phase: None,
-            ..Default::default()
-        };
-        assert!(estimate_arrival_from_phase(&curve, 200.0, 2000.0).is_none());
-    }
-
-    #[test]
-    fn test_find_arrival_time_errors_when_no_sample_crosses_threshold() {
-        let sr = 48_000_u32;
-        let samples = vec![0.001_f32; 2048];
-        let wav = write_mono_wav(&samples, sr);
-
-        let err = find_arrival_time(wav.path(), None).unwrap_err();
-
-        assert!(
-            err.contains("No sample exceeded arrival threshold"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn test_find_arrival_time_uses_rms_noise_floor_not_peak() {
-        let sr = 48_000_u32;
-        let mut samples = vec![0.0_f32; 4096];
-        samples[12] = 0.02; // isolated early noise click
-        let arrival = 1200_usize;
-        samples[arrival] = 0.1;
-        let wav = write_mono_wav(&samples, sr);
-
-        let result = find_arrival_time(wav.path(), None).unwrap();
-
-        assert_eq!(result.arrival_samples, arrival);
-    }
-
-    #[test]
-    fn test_estimate_arrival_from_phase_detailed_reports_implausible_delay() {
-        use ndarray::Array1;
-
-        // Use -55 ms (outside the accepted -50..500 ms window) to test rejection.
-        // Fine 1 Hz grid ensures unwrap_phase_degrees sees < 180° per step.
-        let tau_ms = -55.0_f64;
-        let tau_s = tau_ms / 1000.0;
-        let freqs: Vec<f64> = (100..=3000).map(|f| f as f64).collect();
-        let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
-
-        let curve = crate::Curve {
-            freq: Array1::from_vec(freqs),
-            spl: Array1::zeros(phase_deg.len()),
-            phase: Some(Array1::from_vec(phase_deg)),
-            ..Default::default()
-        };
-
-        let err = estimate_arrival_from_phase_detailed(&curve, 200.0, 2000.0).unwrap_err();
-
-        assert!(matches!(
-            err,
-            PhaseArrivalError::ImplausibleDelay { delay_ms } if delay_ms < -50.0
-        ));
-    }
-
-    #[test]
-    fn test_phase_arrival_regression_band_falls_back_to_active_sub_band() {
-        use ndarray::Array1;
-
-        let freqs: Vec<f64> = (20..=2000).step_by(10).map(|f| f as f64).collect();
-        let spl: Vec<f64> = freqs
-            .iter()
-            .map(|&f| if f <= 120.0 { 0.0 } else { -80.0 })
-            .collect();
-        let curve = crate::Curve {
-            freq: Array1::from_vec(freqs),
-            spl: Array1::from_vec(spl),
-            phase: Some(Array1::zeros(199)),
-            ..Default::default()
-        };
-
-        let band = phase_arrival_regression_band(&curve, 200.0, 2000.0).unwrap();
-
-        assert_eq!(band, (20.0, 120.0));
-    }
-
-    #[test]
-    fn test_calculate_alignment_delays_empty() {
-        let arrivals = std::collections::HashMap::new();
-        let delays = calculate_alignment_delays(&arrivals);
-        assert!(delays.is_empty());
-    }
-
-    #[test]
-    fn test_alignment_delays_three_speakers() {
-        // Arrivals: [0, 2, 5] ms → delays: [5, 3, 0] ms
-        let mut arrivals = std::collections::HashMap::new();
-        arrivals.insert("A".to_string(), 0.0);
-        arrivals.insert("B".to_string(), 2.0);
-        arrivals.insert("C".to_string(), 5.0);
-
-        let delays = calculate_alignment_delays(&arrivals);
-
-        assert!(
-            (delays["A"] - 5.0).abs() < 0.001,
-            "A should get 5ms delay, got {}",
-            delays["A"]
-        );
-        assert!(
-            (delays["B"] - 3.0).abs() < 0.001,
-            "B should get 3ms delay, got {}",
-            delays["B"]
-        );
-        assert!(
-            (delays["C"] - 0.0).abs() < 0.001,
-            "C should get 0ms delay, got {}",
-            delays["C"]
-        );
-    }
-
-    #[test]
-    fn test_estimate_arrival_linear_phase() {
-        use ndarray::Array1;
-
-        // Construct a curve with linear phase corresponding to 3ms delay
-        let tau_ms = 3.0;
-        let tau_s = tau_ms / 1000.0;
-        let freqs: Vec<f64> = (100..=5000).step_by(20).map(|f| f as f64).collect();
-        let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
-
-        let curve = crate::Curve {
-            freq: Array1::from_vec(freqs),
-            spl: Array1::zeros(phase_deg.len()),
-            phase: Some(Array1::from_vec(phase_deg)),
-            ..Default::default()
-        };
-
-        let estimated = estimate_arrival_from_phase(&curve, 200.0, 4000.0);
-        assert!(
-            estimated.is_some(),
-            "Should recover arrival time from linear phase"
-        );
-        let estimated = estimated.unwrap();
-        assert!(
-            (estimated - tau_ms).abs() < 0.1,
-            "Expected ~{} ms, got {} ms (error {:.3} ms)",
-            tau_ms,
-            estimated,
-            (estimated - tau_ms).abs()
-        );
-    }
-
-    #[test]
-    fn test_estimate_arrival_zero_delay_accepted() {
-        use ndarray::Array1;
-
-        // A speaker at the exact reference position has 0 ms propagation delay.
-        // Phase is flat (0° everywhere) → slope = 0 → delay = 0.
-        let freqs: Vec<f64> = (100..=5000).step_by(20).map(|f| f as f64).collect();
-        let phase_deg: Vec<f64> = freqs.iter().map(|_| 0.0).collect();
-
-        let curve = crate::Curve {
-            freq: Array1::from_vec(freqs),
-            spl: Array1::zeros(phase_deg.len()),
-            phase: Some(Array1::from_vec(phase_deg)),
-            ..Default::default()
-        };
-
-        let result = estimate_arrival_from_phase_detailed(&curve, 200.0, 4000.0);
-        assert!(
-            result.is_ok(),
-            "Exactly 0 ms delay should be accepted, not rejected as implausible: {:?}",
-            result
-        );
-        let delay = result.unwrap();
-        assert!(delay.abs() < 0.01, "Expected ~0 ms, got {} ms", delay);
-    }
-
-    #[test]
-    fn test_detect_delay_with_probe() {
-        let sr = 48000_u32;
-        let n = 4096;
-        let probe = math_audio_dsp::signals::gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
-
-        // Simulate: delay 480 samples (10ms), attenuate by 0.4
-        let delay = 480_usize;
-        let atten = 0.4_f32;
-        let mut recorded = vec![0.0_f32; n + delay + 500];
+    for (ch, (&d, &a)) in delays.iter().zip(attens.iter()).enumerate() {
+        let offset = silence_len + ch * (segment_len + silence_len);
+        offsets.push(offset);
         for (i, &s) in probe.iter().enumerate() {
-            recorded[i + delay] += s * atten;
-        }
-
-        let result = detect_delay_with_probe(&probe, &recorded, sr).unwrap();
-
-        assert!(
-            (result.arrival_ms - 10.0).abs() < 0.2,
-            "Expected ~10ms arrival, got {:.3}ms",
-            result.arrival_ms
-        );
-        assert!(
-            result.detection_snr_db > 10.0,
-            "SNR should be high for clean signal, got {:.1}dB",
-            result.detection_snr_db
-        );
-        // Gain should be close to the applied attenuation
-        let expected_gain_db = 20.0 * (atten as f64).log10(); // -7.96 dB
-        assert!(
-            (result.gain_db - expected_gain_db).abs() < 3.0,
-            "Expected gain ~{:.1}dB, got {:.1}dB",
-            expected_gain_db,
-            result.gain_db
-        );
-    }
-
-    #[test]
-    fn test_find_arrival_time_with_reference_mls_wav() {
-        let sr = 48000_u32;
-        let reference = math_audio_dsp::signals::gen_mls(10, 0.5);
-        let delay = 321_usize;
-        let mut recorded = vec![0.0_f32; reference.len() + delay + 256];
-        for (i, &sample) in reference.iter().enumerate() {
-            recorded[i + delay] += sample * 0.6;
-        }
-
-        let wav = write_mono_wav(&recorded, sr);
-        let result = find_arrival_time_with_reference(wav.path(), &reference, sr).unwrap();
-        let expected_ms = delay as f64 * 1000.0 / sr as f64;
-
-        assert!(
-            (result.arrival_ms - expected_ms).abs() < 0.15,
-            "Expected {:.3}ms, got {:.3}ms",
-            expected_ms,
-            result.arrival_ms
-        );
-        assert!(result.detection_snr_db > 20.0);
-    }
-
-    #[test]
-    fn test_find_arrival_time_with_reference_dirac_wav() {
-        let sr = 48000_u32;
-        let reference = math_audio_dsp::signals::gen_dirac(0.5, sr, 0.01);
-        let delay = 96_usize;
-        let mut recorded = vec![0.0_f32; reference.len() + delay + 256];
-        for (i, &sample) in reference.iter().enumerate() {
-            recorded[i + delay] += sample * 0.8;
-        }
-
-        let wav = write_mono_wav(&recorded, sr);
-        let result = find_arrival_time_with_reference(wav.path(), &reference, sr).unwrap();
-        let expected_ms = delay as f64 * 1000.0 / sr as f64;
-
-        assert!(
-            (result.arrival_ms - expected_ms).abs() < 0.15,
-            "Expected {:.3}ms, got {:.3}ms",
-            expected_ms,
-            result.arrival_ms
-        );
-    }
-
-    #[test]
-    fn test_detect_delays_multi_channel() {
-        let sr = 48000_u32;
-        let n = 2048;
-        let probe = math_audio_dsp::signals::gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
-
-        // Build a sequential recording with 3 channels at different delays
-        let segment_len = n + 1000; // probe + some room tail
-        let silence_len = 1000;
-        let delays = [240_usize, 480, 120]; // 5ms, 10ms, 2.5ms
-        let attens = [0.5_f32, 0.3, 0.7];
-
-        let total_len = delays.len() * (segment_len + silence_len) + silence_len;
-        let mut recorded = vec![0.0_f32; total_len];
-        let mut offsets = Vec::new();
-
-        for (ch, (&d, &a)) in delays.iter().zip(attens.iter()).enumerate() {
-            let offset = silence_len + ch * (segment_len + silence_len);
-            offsets.push(offset);
-            for (i, &s) in probe.iter().enumerate() {
-                let idx = offset + d + i;
-                if idx < recorded.len() {
-                    recorded[idx] += s * a;
-                }
+            let idx = offset + d + i;
+            if idx < recorded.len() {
+                recorded[idx] += s * a;
             }
         }
-
-        let results =
-            detect_delays_multi_channel(&probe, &recorded, &offsets, segment_len, sr).unwrap();
-
-        assert_eq!(results.len(), 3);
-
-        let expected_ms = [5.0, 10.0, 2.5];
-        for (i, (result, &expected)) in results.iter().zip(expected_ms.iter()).enumerate() {
-            assert!(
-                (result.arrival_ms - expected).abs() < 0.5,
-                "Channel {}: expected ~{:.1}ms, got {:.3}ms",
-                i,
-                expected,
-                result.arrival_ms
-            );
-        }
     }
 
+    let results =
+        detect_delays_multi_channel(&probe, &recorded, &offsets, segment_len, sr).unwrap();
+
+    assert_eq!(results.len(), 3);
+
+    let expected_ms = [5.0, 10.0, 2.5];
+    for (i, (result, &expected)) in results.iter().zip(expected_ms.iter()).enumerate() {
+        assert!(
+            (result.arrival_ms - expected).abs() < 0.5,
+            "Channel {}: expected ~{:.1}ms, got {:.3}ms",
+            i,
+            expected,
+            result.arrival_ms
+        );
+    }
+}

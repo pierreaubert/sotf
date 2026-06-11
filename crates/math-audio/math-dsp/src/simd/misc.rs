@@ -448,4 +448,3 @@ pub fn find_max_abs_simd(samples: &[f32]) -> f32 {
         max_val
     }
 }
-

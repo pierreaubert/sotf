@@ -86,4 +86,3 @@ pub fn evaluate_keyframes<T: Clone>(
         interpolate_fn(&prev.value, &next.value, eased_t)
     })
 }
-

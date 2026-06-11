@@ -11,8 +11,8 @@
 use gpui::{App, Rgba, SharedString};
 use gpui_design::DesignExt;
 use gpui_themes::{
-    AccentPalette, AccentSource, Color as ThemeColor,
-    CommunityThemeBundle, EditorTheme, ThemeAppearance,
+    AccentPalette, AccentSource, Color as ThemeColor, CommunityThemeBundle, EditorTheme,
+    ThemeAppearance,
 };
 use gpui_ui_kit::theme::{Theme as UiKitTheme, ThemeVariant as UiKitThemeVariant};
 
@@ -601,4 +601,3 @@ impl Theme {
         }
     }
 }
-

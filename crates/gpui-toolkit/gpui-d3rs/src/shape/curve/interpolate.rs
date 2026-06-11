@@ -269,4 +269,3 @@ pub(super) fn interpolate_natural(points: &[Point]) -> Vec<Point> {
 
     result
 }
-

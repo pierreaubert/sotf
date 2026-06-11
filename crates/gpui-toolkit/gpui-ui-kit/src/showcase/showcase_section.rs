@@ -107,4 +107,3 @@ impl ShowcaseSection {
         ShowcaseGroup::Actions
     }
 }
-

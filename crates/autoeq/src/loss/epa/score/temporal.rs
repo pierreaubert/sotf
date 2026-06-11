@@ -132,4 +132,3 @@ pub fn temporal_ir_masking_metrics(
         penalty,
     })
 }
-

@@ -21,4 +21,3 @@ impl std::fmt::Debug for Listener {
             .finish()
     }
 }
-

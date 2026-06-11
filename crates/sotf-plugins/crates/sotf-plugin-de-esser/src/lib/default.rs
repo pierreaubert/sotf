@@ -34,4 +34,3 @@ pub(super) fn default_mode() -> String {
 pub(super) fn default_mix() -> f32 {
     pk(DE, "mix").default_f64() as f32
 }
-

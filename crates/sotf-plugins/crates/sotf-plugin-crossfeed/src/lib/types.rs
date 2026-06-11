@@ -20,4 +20,3 @@ pub enum CrossfeedPreset {
     Mb,
     Off,
 }
-

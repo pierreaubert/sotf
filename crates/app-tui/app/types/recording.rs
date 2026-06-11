@@ -31,4 +31,3 @@ pub fn recording_field_at(s: &RecordingTuiState, idx: usize) -> Option<Recording
 pub fn recording_field_count(s: &RecordingTuiState) -> usize {
     12 + 2 * s.recording_config.num_channels.max(1)
 }
-

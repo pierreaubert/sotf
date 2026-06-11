@@ -30,4 +30,3 @@ pub(super) fn pareto_values(values: &[Vec<f64>]) -> Vec<Vec<f64>> {
     }
     front
 }
-

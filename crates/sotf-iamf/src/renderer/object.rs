@@ -426,11 +426,14 @@ mod tests {
         let mut renderer = ObjectRenderer::new(config, 1);
 
         let substream_pcm = vec![vec![1.0_f32]]; // only 1 frame
-        let mut output = vec![0.0_f32; 12];      // request 2 frames
+        let mut output = vec![0.0_f32; 12]; // request 2 frames
         renderer.render(&substream_pcm, &mut output, 2).unwrap();
 
         // First frame should have non-zero center, second frame silent.
         assert!(output[2].abs() > 0.9, "First frame center should be active");
-        assert!(output[2 + 6].abs() < 1e-6, "Second frame should be zero-padded");
+        assert!(
+            output[2 + 6].abs() < 1e-6,
+            "Second frame should be zero-padded"
+        );
     }
 }

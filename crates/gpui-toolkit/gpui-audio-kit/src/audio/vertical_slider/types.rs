@@ -65,4 +65,3 @@ pub(super) struct TickMark {
     /// Optional label text
     pub(super) label: Option<String>,
 }
-

@@ -27,9 +27,9 @@ mod ios_app_state;
 mod misc;
 mod set;
 mod take;
-mod window_list_wrapper;
 #[cfg(test)]
 mod tests;
+mod window_list_wrapper;
 
 pub use consts::*;
 pub use gpui_mod::*;
@@ -37,4 +37,3 @@ pub use ios_app_state::*;
 pub use misc::*;
 pub use set::*;
 pub use window_list_wrapper::*;
-

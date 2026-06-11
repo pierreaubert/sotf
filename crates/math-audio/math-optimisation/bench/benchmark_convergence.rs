@@ -22,11 +22,11 @@ mod optimizer_kind;
 mod print;
 #[path = "benchmark_convergence/run.rs"]
 mod run;
-#[path = "benchmark_convergence/types.rs"]
-mod types;
 #[cfg(test)]
 #[path = "benchmark_convergence/tests.rs"]
 mod tests;
+#[path = "benchmark_convergence/types.rs"]
+mod types;
 
 use benchmark_comparison::BenchmarkComparison;
 use benchmark_comparison::generate_all_benchmarks;
@@ -167,4 +167,3 @@ fn main() {
         std::process::exit(1);
     }
 }
-

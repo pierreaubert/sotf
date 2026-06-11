@@ -41,4 +41,3 @@ impl From<crate::ComponentSize> for SliderSize {
         }
     }
 }
-

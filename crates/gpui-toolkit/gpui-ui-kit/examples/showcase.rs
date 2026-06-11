@@ -609,4 +609,3 @@ fn main() {
         |cx| cx.new(Showcase::new),
     );
 }
-

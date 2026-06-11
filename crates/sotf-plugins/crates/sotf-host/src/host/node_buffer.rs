@@ -37,4 +37,3 @@ impl<T: AudioSample> NodeBuffer<T> {
         ensure_len(&mut self.data, required);
     }
 }
-

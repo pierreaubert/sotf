@@ -38,4 +38,3 @@ impl std::fmt::Debug for IsresReport {
             .finish()
     }
 }
-

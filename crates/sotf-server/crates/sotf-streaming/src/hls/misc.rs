@@ -15,4 +15,3 @@ pub(super) fn segment_format_hint(url: &Url) -> Option<String> {
         _ => None,
     }
 }
-

@@ -66,4 +66,3 @@ impl<T: AudioSample> CompensationDelays<T> {
         self.delays.iter().all(Option::is_none)
     }
 }
-

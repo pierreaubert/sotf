@@ -153,4 +153,3 @@ pub(super) fn median_of(values: &mut [f64]) -> f64 {
         values[valid_len / 2]
     }
 }
-

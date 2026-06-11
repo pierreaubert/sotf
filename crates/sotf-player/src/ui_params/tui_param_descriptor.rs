@@ -3,7 +3,9 @@
 use super::types::TuiParamDescriptor;
 use super::types::TuiParamType;
 
-pub(super) fn spec_to_descriptor(spec: &sotf_plugins::param_specs::ParamSpec) -> TuiParamDescriptor {
+pub(super) fn spec_to_descriptor(
+    spec: &sotf_plugins::param_specs::ParamSpec,
+) -> TuiParamDescriptor {
     use sotf_plugins::param_specs::ParamType;
     TuiParamDescriptor {
         name: spec.name.to_string(),
@@ -26,7 +28,8 @@ pub(super) fn spec_to_descriptor(spec: &sotf_plugins::param_specs::ParamSpec) ->
     }
 }
 
-pub(super) fn specs_to_descriptors(specs: &[sotf_plugins::param_specs::ParamSpec]) -> Vec<TuiParamDescriptor> {
+pub(super) fn specs_to_descriptors(
+    specs: &[sotf_plugins::param_specs::ParamSpec],
+) -> Vec<TuiParamDescriptor> {
     specs.iter().map(spec_to_descriptor).collect()
 }
-

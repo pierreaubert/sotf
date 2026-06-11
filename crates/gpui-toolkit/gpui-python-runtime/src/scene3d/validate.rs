@@ -56,7 +56,10 @@ pub(super) fn validate_positive_f32(value: f32, field: &'static str) -> Result<(
     Ok(())
 }
 
-pub(super) fn validate_finite_f64_slice(values: &[f64], field: &'static str) -> Result<(), Scene3DError> {
+pub(super) fn validate_finite_f64_slice(
+    values: &[f64],
+    field: &'static str,
+) -> Result<(), Scene3DError> {
     if values.is_empty() {
         return Err(Scene3DError::EmptyData { field });
     }
@@ -69,7 +72,10 @@ pub(super) fn validate_finite_f64_slice(values: &[f64], field: &'static str) -> 
     Ok(())
 }
 
-pub(super) fn validate_positive_f64_slice(values: &[f64], field: &'static str) -> Result<(), Scene3DError> {
+pub(super) fn validate_positive_f64_slice(
+    values: &[f64],
+    field: &'static str,
+) -> Result<(), Scene3DError> {
     if values.iter().any(|value| *value <= 0.0) {
         return Err(Scene3DError::InvalidData {
             field,
@@ -90,4 +96,3 @@ pub(super) fn validate_monotonic(values: &[f64], field: &'static str) -> Result<
     }
     Ok(())
 }
-

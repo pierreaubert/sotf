@@ -19,4 +19,3 @@ impl AxisLabels {
         self.title.hash(h);
     }
 }
-

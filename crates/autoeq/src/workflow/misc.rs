@@ -8,7 +8,10 @@ use std::collections::HashMap;
 
 /// Interpolate all curves in Cea2034Data to a standard frequency grid
 /// Note: Does NOT normalize - preserves original dB levels for proper visualization
-pub(super) fn interpolate_cea2034_data(spin_data: &Cea2034Data, standard_freq: &Array1<f64>) -> Cea2034Data {
+pub(super) fn interpolate_cea2034_data(
+    spin_data: &Cea2034Data,
+    standard_freq: &Array1<f64>,
+) -> Cea2034Data {
     let interpolate = |curve: &Curve| read::interpolate_response(standard_freq, curve);
 
     let on_axis = interpolate(&spin_data.on_axis);
@@ -116,4 +119,3 @@ pub(super) fn create_driver_optimization_args(
         preset: None,
     }
 }
-

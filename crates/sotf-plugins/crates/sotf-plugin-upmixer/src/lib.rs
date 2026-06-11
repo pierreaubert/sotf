@@ -3,7 +3,6 @@
 
 pub use config::*;
 
-pub mod params;
 mod bass;
 mod config;
 mod decorrelation;
@@ -18,19 +17,19 @@ mod ml_features;
 mod ml_inference;
 mod output;
 mod panning;
+pub mod params;
 mod process;
 mod setup;
 
 #[path = "lib/misc.rs"]
 mod misc;
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;
 #[path = "lib/types.rs"]
 mod types;
 #[path = "lib/upmixer_plugin.rs"]
 mod upmixer_plugin;
-#[cfg(test)]
-#[path = "lib/tests.rs"]
-mod tests;
 
 pub use types::*;
 pub use upmixer_plugin::*;
-

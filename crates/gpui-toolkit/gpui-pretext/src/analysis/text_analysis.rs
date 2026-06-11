@@ -22,4 +22,3 @@ impl TextAnalysis {
         self.texts.is_empty()
     }
 }
-

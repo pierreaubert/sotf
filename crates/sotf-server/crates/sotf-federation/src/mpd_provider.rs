@@ -389,4 +389,3 @@ impl LibraryProvider for MpdProvider {
         })
     }
 }
-

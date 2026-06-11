@@ -14,4 +14,3 @@ pub struct MatrixInverseBin {
     /// Worst-position mean squared reconstruction error.
     pub worst_position_error: f64,
 }
-

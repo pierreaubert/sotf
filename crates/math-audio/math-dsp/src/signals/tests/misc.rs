@@ -2,72 +2,71 @@
 
 use super::super::gen_::gen_log_sweep_octave_scaled;
 
-    fn rms_of(samples: &[f32]) -> f32 {
-        if samples.is_empty() {
-            return 0.0;
+fn rms_of(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f64 = samples.iter().map(|&x| (x as f64) * (x as f64)).sum();
+    (sum_sq / samples.len() as f64).sqrt() as f32
+}
+
+#[test]
+fn test_octave_sweep_bass_energy_duration() {
+    // The 20–40 Hz band (one octave) must contain at least
+    // bass_octave_duration_s seconds of energy at a consistent level.
+    let sr = 48000_u32;
+    let bass_dur = 3.0_f32;
+    let signal = gen_log_sweep_octave_scaled(10.0, 20_000.0, 0.5, sr, bass_dur, 5.0);
+
+    // Compute time bounds for the 20–40 Hz band inside the bass zone.
+    let oct_bass = (100.0_f64 / 10.0_f64).log2();
+    let oct_mid = (1000.0_f64 / 100.0_f64).log2();
+    let oct_high = (20_000.0_f64 / 1000.0_f64).log2();
+    let raw = oct_bass * bass_dur as f64
+        + oct_mid * (bass_dur as f64 * 0.5)
+        + oct_high * (bass_dur as f64 * 0.25);
+    let total = raw.max(5.0_f64);
+    let scale = total / raw;
+    let t_bass = oct_bass * bass_dur as f64 * scale;
+
+    // Within bass zone: t(f) = t_bass * ln(f / f_start) / ln(f_bass_hi / f_start)
+    let f_start = 10.0_f64;
+    let t_at_20 = t_bass * (20.0_f64 / f_start).ln() / (100.0_f64 / f_start).ln();
+    let t_at_40 = t_bass * (40.0_f64 / f_start).ln() / (100.0_f64 / f_start).ln();
+
+    // Collect 200 ms window RMS values whose centre falls in [t_at_20, t_at_40].
+    let win = (0.2 * sr as f64).round() as usize;
+    let hop = win / 4;
+    let mut band_rms: Vec<f32> = Vec::new();
+    let mut n = 0;
+    while n + win <= signal.len() {
+        let t_c = (n + win / 2) as f64 / sr as f64;
+        if t_c >= t_at_20 && t_c <= t_at_40 {
+            band_rms.push(rms_of(&signal[n..n + win]));
         }
-        let sum_sq: f64 = samples.iter().map(|&x| (x as f64) * (x as f64)).sum();
-        (sum_sq / samples.len() as f64).sqrt() as f32
+        n += hop;
     }
 
-    #[test]
-    fn test_octave_sweep_bass_energy_duration() {
-        // The 20–40 Hz band (one octave) must contain at least
-        // bass_octave_duration_s seconds of energy at a consistent level.
-        let sr = 48000_u32;
-        let bass_dur = 3.0_f32;
-        let signal = gen_log_sweep_octave_scaled(10.0, 20_000.0, 0.5, sr, bass_dur, 5.0);
+    assert!(
+        !band_rms.is_empty(),
+        "No windows found in the 20–40 Hz band"
+    );
 
-        // Compute time bounds for the 20–40 Hz band inside the bass zone.
-        let oct_bass = (100.0_f64 / 10.0_f64).log2();
-        let oct_mid = (1000.0_f64 / 100.0_f64).log2();
-        let oct_high = (20_000.0_f64 / 1000.0_f64).log2();
-        let raw = oct_bass * bass_dur as f64
-            + oct_mid * (bass_dur as f64 * 0.5)
-            + oct_high * (bass_dur as f64 * 0.25);
-        let total = raw.max(5.0_f64);
-        let scale = total / raw;
-        let t_bass = oct_bass * bass_dur as f64 * scale;
+    let avg: f32 = band_rms.iter().sum::<f32>() / band_rms.len() as f32;
 
-        // Within bass zone: t(f) = t_bass * ln(f / f_start) / ln(f_bass_hi / f_start)
-        let f_start = 10.0_f64;
-        let t_at_20 = t_bass * (20.0_f64 / f_start).ln() / (100.0_f64 / f_start).ln();
-        let t_at_40 = t_bass * (40.0_f64 / f_start).ln() / (100.0_f64 / f_start).ln();
-
-        // Collect 200 ms window RMS values whose centre falls in [t_at_20, t_at_40].
-        let win = (0.2 * sr as f64).round() as usize;
-        let hop = win / 4;
-        let mut band_rms: Vec<f32> = Vec::new();
-        let mut n = 0;
-        while n + win <= signal.len() {
-            let t_c = (n + win / 2) as f64 / sr as f64;
-            if t_c >= t_at_20 && t_c <= t_at_40 {
-                band_rms.push(rms_of(&signal[n..n + win]));
-            }
-            n += hop;
-        }
-
+    // All in-band windows must be within ±3 dB of the band average.
+    for (i, &w) in band_rms.iter().enumerate() {
+        let ratio = if avg > 1e-9 { w / avg } else { 1.0 };
         assert!(
-            !band_rms.is_empty(),
-            "No windows found in the 20–40 Hz band"
-        );
-
-        let avg: f32 = band_rms.iter().sum::<f32>() / band_rms.len() as f32;
-
-        // All in-band windows must be within ±3 dB of the band average.
-        for (i, &w) in band_rms.iter().enumerate() {
-            let ratio = if avg > 1e-9 { w / avg } else { 1.0 };
-            assert!(
-                (0.5..=2.0).contains(&ratio),
-                "Window {i} RMS {w:.4} is outside ±3 dB of band avg {avg:.4}"
-            );
-        }
-
-        // Total time in band >= bass_octave_duration_s (with 10% tolerance).
-        let time_in_band = band_rms.len() as f64 * hop as f64 / sr as f64;
-        assert!(
-            time_in_band >= bass_dur as f64 * 0.9,
-            "Time in 20–40 Hz band ({time_in_band:.2}s) < bass_dur ({bass_dur}s)"
+            (0.5..=2.0).contains(&ratio),
+            "Window {i} RMS {w:.4} is outside ±3 dB of band avg {avg:.4}"
         );
     }
 
+    // Total time in band >= bass_octave_duration_s (with 10% tolerance).
+    let time_in_band = band_rms.len() as f64 * hop as f64 / sr as f64;
+    assert!(
+        time_in_band >= bass_dur as f64 * 0.9,
+        "Time in 20–40 Hz band ({time_in_band:.2}s) < bass_dur ({bass_dur}s)"
+    );
+}

@@ -219,4 +219,3 @@ pub(super) fn tile_squarify(
 
     rects
 }
-

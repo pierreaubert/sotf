@@ -21,12 +21,11 @@ pub mod params;
 mod abcompare_plugin;
 #[path = "lib/delay_line.rs"]
 mod delay_line;
-#[path = "lib/types.rs"]
-mod types;
 #[cfg(test)]
 #[path = "lib/tests.rs"]
 mod tests;
+#[path = "lib/types.rs"]
+mod types;
 
 pub use abcompare_plugin::*;
 pub use types::*;
-

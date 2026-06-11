@@ -151,6 +151,9 @@ fn test_spectral_too_short() {
     let features = compute_spectral_features(&short, 22050);
     assert_eq!(features.len(), 6);
     for &f in &features {
-        assert!((f - -1.0).abs() < 1e-6, "expected -1 for no windows, got {f}");
+        assert!(
+            (f - -1.0).abs() < 1e-6,
+            "expected -1 for no windows, got {f}"
+        );
     }
 }

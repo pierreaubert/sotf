@@ -16,7 +16,9 @@ pub(super) fn average_flatness_from_responses(responses: &[Vec<f64>]) -> f64 {
     variance.sqrt()
 }
 
-pub(super) fn average_perceptual_from_responses(responses: &[Vec<f64>], context: &MsoObjectiveContext) -> f64 {
+pub(super) fn average_perceptual_from_responses(
+    responses: &[Vec<f64>],
+    context: &MsoObjectiveContext,
+) -> f64 {
     average_flatness_from_responses(responses) + mso_resource_penalty(responses, context)
 }
-

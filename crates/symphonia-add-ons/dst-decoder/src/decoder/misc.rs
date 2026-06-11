@@ -30,4 +30,3 @@ pub(super) fn log2_round_up(x: u32) -> usize {
     }
     y
 }
-

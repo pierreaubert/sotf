@@ -43,4 +43,3 @@ fn plugin_format_capability(format: PluginFormat) -> PluginFormatCapability {
         reason,
     }
 }
-

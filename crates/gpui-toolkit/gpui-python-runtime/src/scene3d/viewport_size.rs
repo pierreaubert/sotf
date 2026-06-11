@@ -37,4 +37,3 @@ impl ViewportSize {
         self.height.to_bits().hash(h);
     }
 }
-

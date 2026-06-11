@@ -82,4 +82,3 @@ pub(super) fn measure_raw(text: &str, font_size: f32, letter_spacing: f32) -> Ra
         max_y,
     }
 }
-

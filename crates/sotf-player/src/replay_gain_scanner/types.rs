@@ -44,4 +44,3 @@ pub(super) enum AlbumGainMessage {
     Progress { albums_done: usize },
     Complete { succeeded: usize, failed: usize },
 }
-

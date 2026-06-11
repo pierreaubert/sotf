@@ -16,7 +16,10 @@
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Rgba, SharedString, AnyElement, ElementId, Pixels, Window, App, px, Stateful, Div, div, CursorStyle, MouseButton};
+use gpui::{
+    AnyElement, App, CursorStyle, Div, ElementId, MouseButton, Pixels, Rgba, SharedString,
+    Stateful, Window, div, px,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -229,7 +232,7 @@ impl IntoElement for DragList {
 #[cfg(test)]
 mod tests {
     use super::{DragItem, DragList};
-    use gpui::{div, prelude::*};
+    use gpui::{ParentElement, div};
 
     #[test]
     fn test_drag_list_builds_with_reorder_handler() {

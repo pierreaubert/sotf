@@ -20,9 +20,9 @@ mod drivers;
 mod misc;
 mod perform;
 mod progress_callback_config;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use drivers::*;
 pub use misc::*;
@@ -552,4 +552,3 @@ pub fn setup_multisub_bounds(
 
     (lower_bounds, upper_bounds)
 }
-

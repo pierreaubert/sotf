@@ -31,4 +31,3 @@ pub struct MpdDirEntry {
     pub is_directory: bool,
     pub path: String,
 }
-

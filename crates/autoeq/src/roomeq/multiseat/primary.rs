@@ -56,4 +56,3 @@ pub(super) fn primary_constrained_from_responses(
 
     primary_flatness + 10.0 * constraint + resource_penalty
 }
-

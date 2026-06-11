@@ -277,4 +277,3 @@ impl RecordingTuiState {
         6 + self.playback_config.channel_mappings.len()
     }
 }
-

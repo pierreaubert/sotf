@@ -14,4 +14,3 @@ pub struct PluginIpcRequest {
     pub sequence: u64,
     pub frames: usize,
 }
-

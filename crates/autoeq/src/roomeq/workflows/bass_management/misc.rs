@@ -56,7 +56,9 @@ pub(in super::super) fn load_logical_channels(
     Ok(curves)
 }
 
-pub(in super::super) fn grouped_home_cinema_roles(main_roles: &[String]) -> BTreeMap<String, Vec<String>> {
+pub(in super::super) fn grouped_home_cinema_roles(
+    main_roles: &[String],
+) -> BTreeMap<String, Vec<String>> {
     let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for role in main_roles {
         let role_id = crate::roomeq::home_cinema::group_id_for_role(
@@ -261,4 +263,3 @@ pub(in super::super) fn representative_bass_route_signature(
         })
         .unwrap_or_else(|| (fallback_type.to_string(), fallback_hz))
 }
-

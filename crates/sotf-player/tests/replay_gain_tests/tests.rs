@@ -6,7 +6,6 @@ use sotf_audio_player::MusicLibrary;
 use sotf_audio_player::database::MusicDatabase;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use super::fixtures;
 
 #[test]
 fn test_replay_gain_scanner_creation() {
@@ -547,4 +546,3 @@ fn test_real_replay_gain_scanning() {
         );
     }
 }
-

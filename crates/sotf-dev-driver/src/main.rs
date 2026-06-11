@@ -37,13 +37,13 @@ mod ctx;
 mod misc;
 #[path = "main/parse.rs"]
 mod parse;
+#[cfg(test)]
+#[path = "main/tests.rs"]
+mod tests;
 #[path = "main/types.rs"]
 mod types;
 #[path = "main/verb.rs"]
 mod verb;
-#[cfg(test)]
-#[path = "main/tests.rs"]
-mod tests;
 
 pub(crate) use ctx::*;
 pub(crate) use parse::*;
@@ -59,4 +59,3 @@ fn main() {
     }
     println!("PASS");
 }
-

@@ -193,4 +193,3 @@ impl HalOutputWriter {
         }
     }
 }
-

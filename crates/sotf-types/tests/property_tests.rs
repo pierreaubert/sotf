@@ -22,12 +22,14 @@ fn plugin_graph_node_strategy(id: usize) -> impl Strategy<Value = PluginGraphNod
         1usize..16,
         prop::collection::vec(-100.0f32..100.0f32, 0..8),
     )
-        .prop_map(move |(plugin_type, input_channels, _params)| PluginGraphNodeConfig {
-            id,
-            plugin_type,
-            parameters: json!({}),
-            input_channels,
-        })
+        .prop_map(
+            move |(plugin_type, input_channels, _params)| PluginGraphNodeConfig {
+                id,
+                plugin_type,
+                parameters: json!({}),
+                input_channels,
+            },
+        )
 }
 
 /// Build a valid DAG: nodes 0..n, edges only from smaller to larger ids.
@@ -90,7 +92,10 @@ fn valid_dag_with_edge_strategy() -> BoxedStrategy<PluginGraphConfig> {
                 ((from + 1)..n).prop_map(move |to| PluginGraphEdgeConfig::new(from, to))
             });
 
-            (mandatory_edge, prop::collection::vec(extra_edge_strategy, 0..=((n * (n - 1) / 2).min(32))))
+            (
+                mandatory_edge,
+                prop::collection::vec(extra_edge_strategy, 0..=((n * (n - 1) / 2).min(32))),
+            )
                 .prop_map(move |(mandatory, mut extras)| {
                     extras.push(mandatory);
                     PluginGraphConfig {
@@ -307,7 +312,14 @@ fn valid_engine_config_strategy() -> impl Strategy<Value = EngineConfig> {
         0.0f32..1.0f32,
     )
         .prop_map(
-            |(frame_size, buffer_ms, output_sample_rate, input_channels, output_channels, volume)| {
+            |(
+                frame_size,
+                buffer_ms,
+                output_sample_rate,
+                input_channels,
+                output_channels,
+                volume,
+            )| {
                 EngineConfig {
                     frame_size,
                     buffer_ms,

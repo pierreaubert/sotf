@@ -5,7 +5,11 @@ use super::consts::SLOPE_TOLERANCE;
 use super::consts::STEP_REGRESSION_TOLERANCE;
 use super::types::StepResult;
 
-pub(super) fn validate_pass(pass_name: &str, results: &[StepResult], enforce_flat_slope: bool) -> Vec<String> {
+pub(super) fn validate_pass(
+    pass_name: &str,
+    results: &[StepResult],
+    enforce_flat_slope: bool,
+) -> Vec<String> {
     let mut errors = Vec::new();
 
     // Track whether we've crossed a loss-change boundary. Once crossed,
@@ -126,4 +130,3 @@ pub(super) fn print_pass_results(results: &[StepResult]) {
         }
     }
 }
-

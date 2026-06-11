@@ -37,4 +37,3 @@ pub(super) fn token(path: &str, value: impl ToString, token_type: &'static str) 
         token_type,
     }
 }
-

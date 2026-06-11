@@ -35,4 +35,3 @@ pub struct BootstrapBand {
     /// Per-bin standard deviation across the B resampled means (dB).
     pub per_bin_std: Array1<f64>,
 }
-

@@ -77,4 +77,3 @@ pub fn estimate_arrival_from_phase_detailed(
         Err(PhaseArrivalError::ImplausibleDelay { delay_ms })
     }
 }
-

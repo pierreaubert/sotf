@@ -24,4 +24,3 @@ pub fn quality_label(quality: f32) -> &'static str {
         "Maximum (very slow)"
     }
 }
-

@@ -10,8 +10,6 @@ use super::types::verified_rate_cache_key;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use super::*;
-
 #[test]
 fn test_manager_creation() {
     let manager = AudioEngineManager::new();

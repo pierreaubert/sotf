@@ -116,4 +116,3 @@ pub(super) fn peak_deviation_db(curve: &Curve, fmin: f64, fmax: f64) -> f64 {
     }
     max_peak
 }
-

@@ -25,4 +25,3 @@ pub(super) const B8: f64 = 21.0 / 22.0;
 pub(super) const B9: f64 = 63.0 / 64.0;
 
 pub(super) const B0: f64 = 1.0 / B1 / B1;
-

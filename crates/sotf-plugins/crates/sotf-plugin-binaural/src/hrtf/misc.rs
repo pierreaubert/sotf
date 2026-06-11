@@ -321,4 +321,3 @@ pub fn normalize_hrtf_gains(
         );
     }
 }
-

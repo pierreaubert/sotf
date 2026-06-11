@@ -25,8 +25,8 @@
 
 use crate::error::ChartError;
 use crate::{
-    ChartSize, DEFAULT_TITLE_FONT_SIZE, TITLE_AREA_HEIGHT,
-    apply_chart_size, default_design, resolved_chart_dimensions, validate_dimensions,
+    ChartSize, DEFAULT_TITLE_FONT_SIZE, TITLE_AREA_HEIGHT, apply_chart_size, default_design,
+    resolved_chart_dimensions, validate_dimensions,
 };
 use d3rs::color::ColorScheme;
 use d3rs::text::{GlyphTextConfig, render_glyph_text};
@@ -36,13 +36,13 @@ use gpui_design::DesignSystem;
 use std::rc::Rc;
 use std::sync::Arc;
 
+#[cfg(test)]
+mod tests;
 mod tile;
 mod tiling_method;
 mod treemap_node;
 mod treemap_rect;
 mod types;
-#[cfg(test)]
-mod tests;
 
 pub use tiling_method::*;
 pub use treemap_node::*;
@@ -343,4 +343,3 @@ impl Treemap {
         Ok(container)
     }
 }
-

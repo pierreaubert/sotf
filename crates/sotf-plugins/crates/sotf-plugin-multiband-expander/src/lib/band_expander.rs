@@ -21,4 +21,3 @@ impl BandExpander {
         self.hold_counter.fill(0);
     }
 }
-

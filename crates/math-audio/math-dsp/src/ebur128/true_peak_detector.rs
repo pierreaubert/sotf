@@ -48,4 +48,3 @@ impl TruePeakDetector {
         self.prev_peak.fill(0.0);
     }
 }
-

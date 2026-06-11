@@ -13,7 +13,10 @@ pub(in super::super) fn biquad_to_json(biquad: &Biquad) -> serde_json::Value {
     })
 }
 
-pub(in super::super) fn biquad_to_warped_json(biquad: &Biquad, lambda: Option<f64>) -> serde_json::Value {
+pub(in super::super) fn biquad_to_warped_json(
+    biquad: &Biquad,
+    lambda: Option<f64>,
+) -> serde_json::Value {
     let mut value = biquad_to_json(biquad);
     if let Some(obj) = value.as_object_mut() {
         obj.insert("topology".to_string(), json!("warped_biquad"));
@@ -23,4 +26,3 @@ pub(in super::super) fn biquad_to_warped_json(biquad: &Biquad, lambda: Option<f6
     }
     value
 }
-

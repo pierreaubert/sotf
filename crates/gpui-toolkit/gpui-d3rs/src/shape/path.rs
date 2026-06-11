@@ -10,9 +10,9 @@ use std::f64::consts::PI;
 mod flatten;
 mod path_builder;
 mod point;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use path_builder::*;
 pub use point::*;
@@ -352,4 +352,3 @@ impl Path {
         s
     }
 }
-

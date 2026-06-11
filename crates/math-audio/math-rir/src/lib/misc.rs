@@ -34,7 +34,11 @@ use rayon::prelude::*;
 ///     scratch input + one f64 filtfilt output that is then materialised
 ///     into the owned f32 vector — we cannot eliminate that pair without
 ///     changing the `filtfilt` API to operate in-place).
-pub(super) fn compute_bformat_doa(channels: &[&[f32]], len: usize, config: &SsirConfig) -> Vec<[f32; 3]> {
+pub(super) fn compute_bformat_doa(
+    channels: &[&[f32]],
+    len: usize,
+    config: &SsirConfig,
+) -> Vec<[f32; 3]> {
     let (low_hz, high_hz) = config.doa_bandpass_hz;
     let order = config.doa_bandpass_order;
     let nyquist = config.sample_rate / 2.0;

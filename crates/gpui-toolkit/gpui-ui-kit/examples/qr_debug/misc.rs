@@ -222,4 +222,3 @@ pub(super) fn extract_qr_bounds<G>(
         normalize(bounds[3]),
     ]
 }
-

@@ -14,4 +14,3 @@ pub(super) enum PlaybackState {
     Playing,
     Paused,
 }
-

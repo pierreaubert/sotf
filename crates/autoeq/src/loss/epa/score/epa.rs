@@ -86,4 +86,3 @@ pub fn epa_flatness(
         config.flatness_band_weight,
     )
 }
-

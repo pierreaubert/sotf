@@ -31,4 +31,3 @@ impl IntoElement for Spacer {
         self.build()
     }
 }
-

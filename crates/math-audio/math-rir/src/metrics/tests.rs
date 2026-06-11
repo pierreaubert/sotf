@@ -7,187 +7,184 @@ use super::iso3382_metrics::EMPTY_METRICS;
 use super::misc::estimate_noise_cutoff;
 use super::misc::linear_fit;
 
-    use super::*;
-
-    /// Synthetic exponentially-decaying noise burst whose −60 dB time
-    /// equals `t60_s`. Useful as ground truth for T20/T30/EDT.
-    fn exponential_decay_rir(sample_rate: f64, t60_s: f64, duration_s: f64) -> Vec<f32> {
-        let n = (duration_s * sample_rate) as usize;
-        // h(t) = exp(-α t) · ξ(t),    α such that 20·log10(exp(-α·T60)) = -60
-        // ⇒ α = ln(10⁶) / (2·T60) (because h² gives 60 dB drop at T60).
-        let alpha = std::f64::consts::LN_10 * 6.0 / (2.0 * t60_s);
-        let mut rir = vec![0.0f32; n];
-        // First sample = direct sound.
-        rir[0] = 1.0;
-        // Pseudo-noise tail with envelope exp(-α t).
-        let mut state: u64 = 0xDEAD_BEEF_CAFE_BABE;
-        for (i, sample) in rir.iter_mut().enumerate().skip(1) {
-            // xorshift64
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            let noise = ((state >> 32) as i32 as f64) / (i32::MAX as f64);
-            let t = i as f64 / sample_rate;
-            *sample = (noise * (-alpha * t).exp()) as f32;
-        }
-        rir
+/// Synthetic exponentially-decaying noise burst whose −60 dB time
+/// equals `t60_s`. Useful as ground truth for T20/T30/EDT.
+fn exponential_decay_rir(sample_rate: f64, t60_s: f64, duration_s: f64) -> Vec<f32> {
+    let n = (duration_s * sample_rate) as usize;
+    // h(t) = exp(-α t) · ξ(t),    α such that 20·log10(exp(-α·T60)) = -60
+    // ⇒ α = ln(10⁶) / (2·T60) (because h² gives 60 dB drop at T60).
+    let alpha = std::f64::consts::LN_10 * 6.0 / (2.0 * t60_s);
+    let mut rir = vec![0.0f32; n];
+    // First sample = direct sound.
+    rir[0] = 1.0;
+    // Pseudo-noise tail with envelope exp(-α t).
+    let mut state: u64 = 0xDEAD_BEEF_CAFE_BABE;
+    for (i, sample) in rir.iter_mut().enumerate().skip(1) {
+        // xorshift64
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let noise = ((state >> 32) as i32 as f64) / (i32::MAX as f64);
+        let t = i as f64 / sample_rate;
+        *sample = (noise * (-alpha * t).exp()) as f32;
     }
+    rir
+}
 
-    #[test]
-    fn linear_fit_perfect_line() {
-        let xs = [0.0, 1.0, 2.0, 3.0, 4.0];
-        let ys = [0.0, -2.0, -4.0, -6.0, -8.0];
-        let (slope, intercept, r2) = linear_fit(xs, ys).unwrap();
-        assert!((slope - -2.0).abs() < 1e-12);
-        assert!(intercept.abs() < 1e-12);
-        assert!((r2 - 1.0).abs() < 1e-12);
+#[test]
+fn linear_fit_perfect_line() {
+    let xs = [0.0, 1.0, 2.0, 3.0, 4.0];
+    let ys = [0.0, -2.0, -4.0, -6.0, -8.0];
+    let (slope, intercept, r2) = linear_fit(xs, ys).unwrap();
+    assert!((slope - -2.0).abs() < 1e-12);
+    assert!(intercept.abs() < 1e-12);
+    assert!((r2 - 1.0).abs() < 1e-12);
+}
+
+#[test]
+fn schroeder_monotonic_decreasing_for_exp_decay() {
+    let sr = 48000.0;
+    let rir = exponential_decay_rir(sr, 1.0, 2.0);
+    let curve = DecayCurve::from_rir(&rir, sr, 0, None);
+    assert!(!curve.samples.is_empty());
+    // The Schroeder integral of any non-negative envelope is
+    // monotonically non-increasing.
+    for w in curve.samples.windows(2) {
+        assert!(w[1] <= w[0] + 1e-9, "non-monotonic: {} -> {}", w[0], w[1]);
     }
+    // First sample must be 0 dB by construction.
+    assert!(curve.samples[0].abs() < 1e-9);
+}
 
-    #[test]
-    fn schroeder_monotonic_decreasing_for_exp_decay() {
-        let sr = 48000.0;
-        let rir = exponential_decay_rir(sr, 1.0, 2.0);
-        let curve = DecayCurve::from_rir(&rir, sr, 0, None);
-        assert!(!curve.samples.is_empty());
-        // The Schroeder integral of any non-negative envelope is
-        // monotonically non-increasing.
-        for w in curve.samples.windows(2) {
-            assert!(w[1] <= w[0] + 1e-9, "non-monotonic: {} -> {}", w[0], w[1]);
-        }
-        // First sample must be 0 dB by construction.
-        assert!(curve.samples[0].abs() < 1e-9);
-    }
+#[test]
+fn schroeder_curve_helper_anchors_at_detected_direct_sound() {
+    let sr = 48000.0;
+    let mut rir = vec![0.0f32; 4096];
+    rir[96] = 1.0;
+    rir[97] = 0.5;
+    rir[500] = 0.1;
 
-    #[test]
-    fn schroeder_curve_helper_anchors_at_detected_direct_sound() {
-        let sr = 48000.0;
-        let mut rir = vec![0.0f32; 4096];
-        rir[96] = 1.0;
-        rir[97] = 0.5;
-        rir[500] = 0.1;
+    let curve = schroeder_curve(&rir, sr);
+    assert!(!curve.samples.is_empty());
+    assert_eq!(curve.sample_rate, sr);
+    assert!(curve.noise_cutoff_sample >= 96);
+    assert!(curve.samples[0].abs() < 1e-9);
+}
 
-        let curve = schroeder_curve(&rir, sr);
-        assert!(!curve.samples.is_empty());
-        assert_eq!(curve.sample_rate, sr);
-        assert!(curve.noise_cutoff_sample >= 96);
-        assert!(curve.samples[0].abs() < 1e-9);
-    }
+#[test]
+fn reverberation_times_match_synthetic_t60() {
+    let sr = 48000.0;
+    let target_t60 = 0.6_f64;
+    let rir = exponential_decay_rir(sr, target_t60, 2.0);
+    let m = analyze_iso3382(&rir, sr);
 
-    #[test]
-    fn reverberation_times_match_synthetic_t60() {
-        let sr = 48000.0;
-        let target_t60 = 0.6_f64;
-        let rir = exponential_decay_rir(sr, target_t60, 2.0);
-        let m = analyze_iso3382(&rir, sr);
+    // Synthetic exponential decay → all three should match T60 within
+    // a small fraction. We allow ±15 % because the noise excitation
+    // adds variance in the slope fit.
+    assert!(
+        m.t30_s.is_finite() && (m.t30_s - target_t60).abs() < 0.15 * target_t60,
+        "T30 = {:.3}s, expected ≈ {:.3}s",
+        m.t30_s,
+        target_t60
+    );
+    assert!(
+        m.t20_s.is_finite() && (m.t20_s - target_t60).abs() < 0.20 * target_t60,
+        "T20 = {:.3}s, expected ≈ {:.3}s",
+        m.t20_s,
+        target_t60
+    );
+    // EDT on a pure exponential equals T60. Loose tolerance because
+    // only the first 10 dB are used.
+    assert!(
+        m.edt_s.is_finite() && (m.edt_s - target_t60).abs() < 0.40 * target_t60,
+        "EDT = {:.3}s, expected ≈ {:.3}s",
+        m.edt_s,
+        target_t60
+    );
 
-        // Synthetic exponential decay → all three should match T60 within
-        // a small fraction. We allow ±15 % because the noise excitation
-        // adds variance in the slope fit.
-        assert!(
-            m.t30_s.is_finite() && (m.t30_s - target_t60).abs() < 0.15 * target_t60,
-            "T30 = {:.3}s, expected ≈ {:.3}s",
-            m.t30_s,
-            target_t60
-        );
-        assert!(
-            m.t20_s.is_finite() && (m.t20_s - target_t60).abs() < 0.20 * target_t60,
-            "T20 = {:.3}s, expected ≈ {:.3}s",
-            m.t20_s,
-            target_t60
-        );
-        // EDT on a pure exponential equals T60. Loose tolerance because
-        // only the first 10 dB are used.
-        assert!(
-            m.edt_s.is_finite() && (m.edt_s - target_t60).abs() < 0.40 * target_t60,
-            "EDT = {:.3}s, expected ≈ {:.3}s",
-            m.edt_s,
-            target_t60
-        );
+    // r² should be high on a clean exponential decay.
+    assert!(m.t20_r2 > 0.9, "T20 r² = {:.3}", m.t20_r2);
+    assert!(m.t30_r2 > 0.9, "T30 r² = {:.3}", m.t30_r2);
+}
 
-        // r² should be high on a clean exponential decay.
-        assert!(m.t20_r2 > 0.9, "T20 r² = {:.3}", m.t20_r2);
-        assert!(m.t30_r2 > 0.9, "T30 r² = {:.3}", m.t30_r2);
-    }
+#[test]
+fn definition_and_clarity_for_anechoic_ir_max_out() {
+    // Single direct sound, no reverberation.
+    let sr = 48000.0;
+    let mut rir = vec![0.0f32; (sr as usize) / 10]; // 100 ms
+    rir[0] = 1.0;
+    let m = analyze_iso3382(&rir, sr);
+    // All energy is in the first sample → D50 = 1, C50/C80 are large.
+    assert!((m.d50 - 1.0).abs() < 1e-6, "D50 = {}", m.d50);
+    assert!(m.c50_db > 100.0, "C50 = {}", m.c50_db);
+    assert!(m.c80_db > 100.0, "C80 = {}", m.c80_db);
+    // Center time → 0 because all energy is at t = 0.
+    assert!(m.ts_s.abs() < 1e-9, "Ts = {}", m.ts_s);
+}
 
-    #[test]
-    fn definition_and_clarity_for_anechoic_ir_max_out() {
-        // Single direct sound, no reverberation.
-        let sr = 48000.0;
-        let mut rir = vec![0.0f32; (sr as usize) / 10]; // 100 ms
-        rir[0] = 1.0;
-        let m = analyze_iso3382(&rir, sr);
-        // All energy is in the first sample → D50 = 1, C50/C80 are large.
-        assert!((m.d50 - 1.0).abs() < 1e-6, "D50 = {}", m.d50);
-        assert!(m.c50_db > 100.0, "C50 = {}", m.c50_db);
-        assert!(m.c80_db > 100.0, "C80 = {}", m.c80_db);
-        // Center time → 0 because all energy is at t = 0.
-        assert!(m.ts_s.abs() < 1e-9, "Ts = {}", m.ts_s);
-    }
+#[test]
+fn clarity_for_uniform_energy_rir() {
+    // Uniform energy across 100 ms: C80 should be exactly
+    // 10·log10(80 / 20) ≈ 6.02 dB; D50 = 0.5; Ts = 50 ms.
+    let sr = 48000.0;
+    let n = (sr * 0.1) as usize;
+    let rir = vec![1.0f32; n];
+    let m = analyze_iso3382(&rir, sr);
+    let expected_c80 = 10.0 * (80.0_f64 / 20.0).log10();
+    assert!(
+        (m.c80_db - expected_c80).abs() < 0.05,
+        "C80 = {}, expected {}",
+        m.c80_db,
+        expected_c80
+    );
+    assert!((m.d50 - 0.5).abs() < 0.005, "D50 = {}", m.d50);
+    assert!((m.ts_s - 0.050).abs() < 0.001, "Ts = {}s", m.ts_s);
+}
 
-    #[test]
-    fn clarity_for_uniform_energy_rir() {
-        // Uniform energy across 100 ms: C80 should be exactly
-        // 10·log10(80 / 20) ≈ 6.02 dB; D50 = 0.5; Ts = 50 ms.
-        let sr = 48000.0;
-        let n = (sr * 0.1) as usize;
-        let rir = vec![1.0f32; n];
-        let m = analyze_iso3382(&rir, sr);
-        let expected_c80 = 10.0 * (80.0_f64 / 20.0).log10();
-        assert!(
-            (m.c80_db - expected_c80).abs() < 0.05,
-            "C80 = {}, expected {}",
-            m.c80_db,
-            expected_c80
-        );
-        assert!((m.d50 - 0.5).abs() < 0.005, "D50 = {}", m.d50);
-        assert!((m.ts_s - 0.050).abs() < 0.001, "Ts = {}s", m.ts_s);
-    }
+#[test]
+fn empty_rir_returns_nan() {
+    let m = analyze_iso3382(&[], 48000.0);
+    assert!(m.t30_s.is_nan());
+    assert!(m.c80_db.is_nan());
+}
 
-    #[test]
-    fn empty_rir_returns_nan() {
-        let m = analyze_iso3382(&[], 48000.0);
-        assert!(m.t30_s.is_nan());
-        assert!(m.c80_db.is_nan());
-    }
+#[test]
+fn fit_is_valid_threshold() {
+    let mut m = EMPTY_METRICS;
+    m.edt_r2 = 0.96;
+    m.t20_r2 = 0.97;
+    m.t30_r2 = 0.95;
+    assert!(m.fit_is_valid());
+    m.t30_r2 = 0.94;
+    assert!(!m.fit_is_valid());
+}
 
-    #[test]
-    fn fit_is_valid_threshold() {
-        let mut m = EMPTY_METRICS;
-        m.edt_r2 = 0.96;
-        m.t20_r2 = 0.97;
-        m.t30_r2 = 0.95;
-        assert!(m.fit_is_valid());
-        m.t30_r2 = 0.94;
-        assert!(!m.fit_is_valid());
-    }
+#[test]
+fn test_estimate_noise_cutoff_empty_and_out_of_bounds() {
+    assert_eq!(estimate_noise_cutoff(&[], 0), 0);
+    let rir = vec![0.0f32; 100];
+    assert_eq!(estimate_noise_cutoff(&rir, 200), 100);
+}
 
-    #[test]
-    fn test_estimate_noise_cutoff_empty_and_out_of_bounds() {
-        assert_eq!(estimate_noise_cutoff(&[], 0), 0);
-        let rir = vec![0.0f32; 100];
-        assert_eq!(estimate_noise_cutoff(&rir, 200), 100);
-    }
+#[test]
+fn test_estimate_noise_cutoff_finds_decay() {
+    let mut rir = vec![0.0001f32; 4800];
+    rir[48] = 1.0;
+    let cutoff = estimate_noise_cutoff(&rir, 48);
+    assert!(cutoff > 48 && cutoff <= rir.len());
+}
 
-    #[test]
-    fn test_estimate_noise_cutoff_finds_decay() {
-        let mut rir = vec![0.0001f32; 4800];
-        rir[48] = 1.0;
-        let cutoff = estimate_noise_cutoff(&rir, 48);
-        assert!(cutoff > 48 && cutoff <= rir.len());
-    }
+#[test]
+fn test_linear_fit_mismatched_and_constant_x() {
+    assert!(linear_fit([0.0, 1.0], [0.0]).is_none());
+    assert!(linear_fit([1.0, 1.0], [0.0, 1.0]).is_none());
+}
 
-    #[test]
-    fn test_linear_fit_mismatched_and_constant_x() {
-        assert!(linear_fit([0.0, 1.0], [0.0]).is_none());
-        assert!(linear_fit([1.0, 1.0], [0.0, 1.0]).is_none());
-    }
-
-    #[test]
-    fn test_decay_curve_first_crossing() {
-        let rir = vec![1.0f32, 0.5, 0.25, 0.125];
-        let curve = DecayCurve::from_rir(&rir, 48000.0, 0, None);
-        let idx = curve.first_crossing(-6.0);
-        assert_eq!(idx, Some(1));
-        assert!(curve.first_crossing(-100.0).is_none());
-    }
-
+#[test]
+fn test_decay_curve_first_crossing() {
+    let rir = vec![1.0f32, 0.5, 0.25, 0.125];
+    let curve = DecayCurve::from_rir(&rir, 48000.0, 0, None);
+    let idx = curve.first_crossing(-6.0);
+    assert_eq!(idx, Some(1));
+    assert!(curve.first_crossing(-100.0).is_none());
+}

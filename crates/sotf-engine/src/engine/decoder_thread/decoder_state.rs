@@ -8,6 +8,8 @@ use super::consts::DECODER_LOCAL_FRAME_POOL_SIZE;
 use super::consts::HAL_RECONNECT_INTERVAL;
 use super::consts::MAX_RESAMPLE_STAGING_SAMPLES;
 use super::consts::send_or_interrupt;
+#[cfg(all(target_os = "macos", feature = "hal"))]
+use super::hal_input_guard_trip::guard_hal_input_block;
 #[cfg(any(test, all(target_os = "macos", feature = "hal")))]
 use super::misc::frames_to_sample_count;
 use super::misc::take_frame_buffer;
@@ -19,8 +21,6 @@ use crate::decoder::{
 };
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalInputReader;
-#[cfg(all(target_os = "macos", feature = "hal"))]
-use super::hal_input_guard_trip::guard_hal_input_block;
 use sotf_plugins::{Plugin, ProcessContext, ResamplerPlugin};
 use sotf_types::DsdOutputMode;
 #[cfg(feature = "streaming")]

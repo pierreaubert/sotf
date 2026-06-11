@@ -575,4 +575,3 @@ fn swift_shared_memory_drops_old_capture_when_ring_is_full() {
         "encrypted capture writes must drop old records at record boundaries when the ring is full"
     );
 }
-

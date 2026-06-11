@@ -314,7 +314,9 @@ mod tests {
         let elem_a = vec![1.0_f32, 0.0];
         let elem_b = vec![0.0_f32, 1.0];
         let mut output = vec![0.0_f32; 2];
-        state.mix_from_bufs(&[elem_a, elem_b], &mut output, 1).unwrap();
+        state
+            .mix_from_bufs(&[elem_a, elem_b], &mut output, 1)
+            .unwrap();
 
         assert!((output[0] - 1.0).abs() < 1e-6);
         assert!((output[1] - 1.0).abs() < 1e-6);
@@ -383,7 +385,9 @@ mod tests {
         let elem_a = vec![0.5_f32, 0.5];
         let elem_b = vec![0.25_f32, -0.25];
         let mut output = vec![0.0_f32; 2];
-        state.mix_from_bufs(&[elem_a, elem_b], &mut output, 1).unwrap();
+        state
+            .mix_from_bufs(&[elem_a, elem_b], &mut output, 1)
+            .unwrap();
 
         // elem_a at unity + elem_b at default unity.
         assert!((output[0] - 0.75).abs() < 1e-6);

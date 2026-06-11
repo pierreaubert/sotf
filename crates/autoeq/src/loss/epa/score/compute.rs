@@ -121,4 +121,3 @@ pub fn compute_epa_normalized(freqs: &[f64], spl_rel: &[f64], config: &EpaConfig
     let spl_abs = denormalize_spl(spl_rel, config.listening_level_phon);
     compute_epa(freqs, &spl_abs, config)
 }
-

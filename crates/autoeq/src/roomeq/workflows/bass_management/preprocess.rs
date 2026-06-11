@@ -87,7 +87,9 @@ pub(in super::super) fn preprocess_multisub_mso(
 }
 
 /// Independent subs: average all sub curves, return combined + per-sub info (zero gains/delays)
-pub(in super::super) fn preprocess_multisub_independent(ms: &MultiSubGroup) -> Result<SubPreprocessResult> {
+pub(in super::super) fn preprocess_multisub_independent(
+    ms: &MultiSubGroup,
+) -> Result<SubPreprocessResult> {
     info!(
         "  Independent sub averaging for {} subwoofers",
         ms.subwoofers.len()
@@ -294,4 +296,3 @@ pub(in super::super) fn preprocess_dba(
         drivers: Some(drivers),
     })
 }
-

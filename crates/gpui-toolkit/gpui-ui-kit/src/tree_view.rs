@@ -22,7 +22,7 @@ use crate::ComponentTheme;
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::ThemeExt;
 use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Rgba, SharedString, ElementId, Pixels, Window, App, px, Div, div, Stateful};
+use gpui::{App, Div, ElementId, Pixels, Rgba, SharedString, Stateful, Window, div, px};
 use std::collections::HashSet;
 
 /// Theme colors for tree view

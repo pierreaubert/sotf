@@ -32,4 +32,3 @@ impl Default for AlbumCardState {
         }
     }
 }
-

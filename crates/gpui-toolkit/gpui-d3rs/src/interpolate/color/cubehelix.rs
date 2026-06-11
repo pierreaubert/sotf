@@ -110,4 +110,3 @@ pub fn cubehelix_custom(
         .to_rgb()
     }
 }
-

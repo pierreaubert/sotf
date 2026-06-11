@@ -19,9 +19,9 @@ mod node_buffer;
 mod parameter_event;
 mod parameter_event_sender;
 mod processing_stage;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use daw_host::*;
 pub use graph_edge::*;
@@ -70,4 +70,3 @@ pub trait Host {
         Vec::new()
     }
 }
-

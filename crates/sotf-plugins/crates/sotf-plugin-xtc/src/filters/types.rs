@@ -60,4 +60,3 @@ pub(crate) struct AsymmetricGeometry {
     pub delay_right_contra: f32,
     pub angle_right_contra: f32,
 }
-

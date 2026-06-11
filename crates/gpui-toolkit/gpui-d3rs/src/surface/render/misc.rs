@@ -110,4 +110,3 @@ pub(super) fn format_tick_value(value: f64, min: f64, max: f64) -> String {
         format!("{:.0}", value)
     }
 }
-

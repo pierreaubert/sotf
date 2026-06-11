@@ -142,4 +142,3 @@ pub(super) fn continuous_area_to_backend(
         idw_power: ui.idw_power,
     }
 }
-

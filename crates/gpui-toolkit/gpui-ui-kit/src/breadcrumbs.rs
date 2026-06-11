@@ -5,7 +5,7 @@
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{SharedString, Window, App, Div, div, FontWeight, MouseButton, ElementId};
+use gpui::{App, Div, ElementId, FontWeight, MouseButton, SharedString, Window, div};
 
 /// A single breadcrumb item
 #[derive(Clone)]

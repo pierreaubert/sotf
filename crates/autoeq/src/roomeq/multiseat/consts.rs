@@ -43,7 +43,11 @@ pub(super) fn spl_from_complex_responses(responses: &[Vec<Complex64>]) -> Vec<Ve
         .collect()
 }
 
-pub(super) fn select_modal_mode_count(singular_values: &[f64], energy_cutoff: f64, max_modes: usize) -> usize {
+pub(super) fn select_modal_mode_count(
+    singular_values: &[f64],
+    energy_cutoff: f64,
+    max_modes: usize,
+) -> usize {
     if max_modes == 0 {
         return 0;
     }
@@ -97,4 +101,3 @@ pub(super) const MSO_ALLPASS_Q_MIN: f64 = 0.3;
 pub(super) const MSO_ALLPASS_Q_MAX: f64 = 5.0;
 
 pub(super) const MSO_DE_SEED: u64 = 0x5eed_5eed_d15e_a5e5;
-

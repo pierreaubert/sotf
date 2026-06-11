@@ -15,4 +15,3 @@ pub enum RemoteCommand {
     /// A QR code payload was scanned by the native camera view.
     QrPayloadScanned,
 }
-

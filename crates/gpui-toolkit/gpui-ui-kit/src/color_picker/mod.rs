@@ -9,8 +9,14 @@ use crate::color::Color;
 use crate::{
     Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
-use gpui::prelude::{Context, FluentBuilder as _, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled};
-use gpui::{SharedString, Rgba, div, px, MouseButton, MouseDownEvent, MouseMoveEvent, ClickEvent, ScrollWheelEvent, Window};
+use gpui::prelude::{
+    Context, FluentBuilder as _, InteractiveElement, IntoElement, ParentElement, Render,
+    StatefulInteractiveElement, Styled,
+};
+use gpui::{
+    ClickEvent, MouseButton, MouseDownEvent, MouseMoveEvent, Rgba, ScrollWheelEvent, SharedString,
+    Window, div, px,
+};
 
 /// Color picker mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

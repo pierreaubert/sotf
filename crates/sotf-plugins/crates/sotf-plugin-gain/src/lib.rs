@@ -533,8 +533,11 @@ mod tests {
         assert!((p.gain_db() - (-12.0)).abs() < 1e-5);
 
         // smoothing_ms
-        p.set_parameter(ParameterId::from("smoothing_ms"), ParameterValue::Float(50.0))
-            .unwrap();
+        p.set_parameter(
+            ParameterId::from("smoothing_ms"),
+            ParameterValue::Float(50.0),
+        )
+        .unwrap();
         assert!((p.smoothing_ms - 50.0).abs() < 1e-5);
 
         // per-channel gain
@@ -552,8 +555,11 @@ mod tests {
     fn test_set_parameter_rejects_non_finite() {
         let mut p = GainPlugin::new(2, 0.0);
         assert!(
-            p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(f32::NAN))
-                .is_err()
+            p.set_parameter(
+                ParameterId::from("gain_db"),
+                ParameterValue::Float(f32::NAN)
+            )
+            .is_err()
         );
         assert!(
             p.set_parameter(
@@ -588,8 +594,11 @@ mod tests {
             Some(ParameterValue::Float(-10.0))
         );
 
-        p.set_parameter(ParameterId::from("smoothing_ms"), ParameterValue::Float(42.0))
-            .unwrap();
+        p.set_parameter(
+            ParameterId::from("smoothing_ms"),
+            ParameterValue::Float(42.0),
+        )
+        .unwrap();
         assert_eq!(
             p.get_parameter(&ParameterId::from("smoothing_ms")),
             Some(ParameterValue::Float(42.0))

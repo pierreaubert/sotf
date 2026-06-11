@@ -113,72 +113,66 @@ fn system_message_strategy() -> impl Strategy<Value = MidiMessage> {
 fn midi_message_strategy() -> impl Strategy<Value = MidiMessage> {
     prop_oneof![
         // Note Off
-        (0u8..16, 0u8..128, 0u8..128)
-            .prop_map(|(channel, note, velocity)| MidiMessage::NoteOff {
-                channel,
-                note,
-                velocity,
-            }),
+        (0u8..16, 0u8..128, 0u8..128).prop_map(|(channel, note, velocity)| MidiMessage::NoteOff {
+            channel,
+            note,
+            velocity,
+        }),
         // Note On (velocity 1..127 to avoid Note Off normalization on round-trip)
-        (0u8..16, 0u8..128, 1u8..128)
-            .prop_map(|(channel, note, velocity)| MidiMessage::NoteOn {
-                channel,
-                note,
-                velocity,
-            }),
+        (0u8..16, 0u8..128, 1u8..128).prop_map(|(channel, note, velocity)| MidiMessage::NoteOn {
+            channel,
+            note,
+            velocity,
+        }),
         // Note On with velocity 0 (round-trips through Note Off by design)
-        (0u8..16, 0u8..128)
-            .prop_map(|(channel, note)| MidiMessage::NoteOn {
-                channel,
-                note,
-                velocity: 0,
-            }),
+        (0u8..16, 0u8..128).prop_map(|(channel, note)| MidiMessage::NoteOn {
+            channel,
+            note,
+            velocity: 0,
+        }),
         // Polyphonic Aftertouch
-        (0u8..16, 0u8..128, 0u8..128)
-            .prop_map(|(channel, note, pressure)| MidiMessage::PolyphonicAftertouch {
+        (0u8..16, 0u8..128, 0u8..128).prop_map(|(channel, note, pressure)| {
+            MidiMessage::PolyphonicAftertouch {
                 channel,
                 note,
                 pressure,
-            }),
+            }
+        }),
         // Control Change
-        (0u8..16, 0u8..128, 0u8..128)
-            .prop_map(|(channel, controller, value)| MidiMessage::ControlChange {
+        (0u8..16, 0u8..128, 0u8..128).prop_map(|(channel, controller, value)| {
+            MidiMessage::ControlChange {
                 channel,
                 controller,
                 value,
-            }),
+            }
+        }),
         // Program Change
         (0u8..16, 0u8..128)
-            .prop_map(|(channel, program)| MidiMessage::ProgramChange {
-                channel,
-                program,
-            }),
+            .prop_map(|(channel, program)| MidiMessage::ProgramChange { channel, program }),
         // Channel Aftertouch
         (0u8..16, 0u8..128)
-            .prop_map(|(channel, pressure)| MidiMessage::ChannelAftertouch {
-                channel,
-                pressure,
-            }),
+            .prop_map(|(channel, pressure)| MidiMessage::ChannelAftertouch { channel, pressure }),
         // Pitch Bend
         (0u8..16, 0u16..16384)
             .prop_map(|(channel, value)| MidiMessage::PitchBend { channel, value }),
         // System Exclusive (first byte must be 0xF0 to survive round-trip)
-        prop::collection::vec(0u8..128, 1..16)
-            .prop_map(|mut data| {
-                data[0] = 0xF0;
-                MidiMessage::SystemExclusive { data }
-            }),
+        prop::collection::vec(0u8..128, 1..16).prop_map(|mut data| {
+            data[0] = 0xF0;
+            MidiMessage::SystemExclusive { data }
+        }),
         // System common / realtime
         system_message_strategy(),
         // Raw undefined system status (0xF4 and 0xF5 are the only undefined ones)
-        prop::collection::vec(0u8..=255, 1..8)
-            .prop_filter_map("status must be undefined system", |mut data| {
+        prop::collection::vec(0u8..=255, 1..8).prop_filter_map(
+            "status must be undefined system",
+            |mut data| {
                 // Pin to undefined system status bytes
                 if data[0] != 0xF4 && data[0] != 0xF5 {
                     data[0] = 0xF4;
                 }
                 Some(MidiMessage::Raw { data })
-            }),
+            }
+        ),
     ]
 }
 

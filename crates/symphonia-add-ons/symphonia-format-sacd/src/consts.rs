@@ -3,7 +3,7 @@
 use std::num::NonZero;
 use symphonia_core::common::FourCc;
 use symphonia_core::formats::prelude::*;
-use symphonia_core :: meta :: { MetadataId , MetadataInfo } ;
+use symphonia_core::meta::{MetadataId, MetadataInfo};
 
 pub const SACD_LSN_SIZE: usize = 2048;
 
@@ -54,4 +54,3 @@ pub(super) fn sacd_time_base() -> TimeBase {
         NonZero::new(SACD_FRAME_RATE).unwrap(),
     )
 }
-

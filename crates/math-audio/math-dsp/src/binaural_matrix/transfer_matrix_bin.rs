@@ -96,4 +96,3 @@ pub fn condition_number(matrix: &TransferMatrixBin) -> f64 {
         f64::INFINITY
     }
 }
-

@@ -26,4 +26,3 @@ pub(super) fn fir_complex_response(coeffs: &[f64], freq: f64, sample_rate: f64) 
             acc + Complex64::from_polar(coeff, -w * n as f64)
         })
 }
-

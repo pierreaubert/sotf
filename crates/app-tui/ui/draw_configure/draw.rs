@@ -1668,4 +1668,3 @@ fn draw_recording_spl_calibration_step(f: &mut Frame, content: Rect, app: &App) 
         inner[3],
     );
 }
-

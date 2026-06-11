@@ -6,7 +6,7 @@
 //! - All sizes
 //! - Custom separator
 
-use gpui::{Context, TestAppContext, Window, div, prelude::*};
+use gpui::{Context, IntoElement, ParentElement, Render, Styled, TestAppContext, Window, div};
 use gpui_ui_kit::keyboard_shortcut_label::{KeyboardShortcutLabel, KeyboardShortcutSize};
 
 // ============================================================================

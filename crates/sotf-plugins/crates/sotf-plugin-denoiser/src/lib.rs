@@ -3,13 +3,13 @@
 
 pub use config::DenoiserPluginParams;
 
-pub mod params;
 mod config;
 mod fft;
 mod masking;
 mod mcra;
 mod multi_resolution;
 mod noise_profile;
+pub mod params;
 mod polyphonic;
 mod spectral_sub;
 mod wiener;
@@ -26,4 +26,3 @@ mod tests;
 
 pub use denoiser_data::*;
 pub use denoiser_plugin::*;
-

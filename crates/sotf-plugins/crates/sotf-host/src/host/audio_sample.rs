@@ -56,4 +56,3 @@ pub(super) fn write_plugin_failure_passthrough<T: AudioSample>(
 
     num_frames
 }
-

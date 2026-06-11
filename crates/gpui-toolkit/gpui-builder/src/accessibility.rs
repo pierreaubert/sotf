@@ -132,7 +132,9 @@ fn default_role(node: &SolvedNode) -> AccessibilityRole {
 
 #[cfg(test)]
 mod tests {
-    use super::{accessibility_tree_from_solved, AccessibilityMetadata, AccessibilityRole, SolvedNode};
+    use super::{
+        AccessibilityMetadata, AccessibilityRole, SolvedNode, accessibility_tree_from_solved,
+    };
     use crate::Axis;
 
     fn solved_tree() -> SolvedNode {

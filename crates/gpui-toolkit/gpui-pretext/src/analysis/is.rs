@@ -365,4 +365,3 @@ pub(super) fn is_ascii_punctuation_chain_segment(text: &str) -> bool {
     }
     saw_alphanum
 }
-

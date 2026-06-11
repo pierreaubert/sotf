@@ -103,4 +103,3 @@ impl Projection for Equirectangular {
         self.config.rotate = (lambda, phi, gamma);
     }
 }
-

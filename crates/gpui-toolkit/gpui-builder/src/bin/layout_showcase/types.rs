@@ -20,7 +20,11 @@ pub(super) struct VisualTreeRow {
     pub(super) active_tier: Option<String>,
 }
 
-pub(super) fn collect_visual_tree_rows(node: &SolvedNode, depth: usize, rows: &mut Vec<VisualTreeRow>) {
+pub(super) fn collect_visual_tree_rows(
+    node: &SolvedNode,
+    depth: usize,
+    rows: &mut Vec<VisualTreeRow>,
+) {
     rows.push(VisualTreeRow {
         id: node.id.clone(),
         depth,

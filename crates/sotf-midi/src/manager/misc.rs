@@ -21,4 +21,3 @@ pub(super) fn channel_of(msg: &MidiMessage) -> Option<u8> {
         | MidiMessage::Raw { .. } => None,
     }
 }
-

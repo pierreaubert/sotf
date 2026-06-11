@@ -2,39 +2,41 @@
 
 use crate::Curve;
 use ndarray::Array1;
-    use super::super::*;
 
-    /// Build a simple Curve at log-spaced frequencies from 20 Hz to 20 kHz
-    pub(super) fn make_curve(spl_fn: impl Fn(f64) -> f64) -> Curve {
-        let n = 200;
-        let log_start = 20f64.log10();
-        let log_end = 20000f64.log10();
-        let freq: Vec<f64> = (0..n)
-            .map(|i| 10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64))
-            .collect();
-        let spl: Vec<f64> = freq.iter().map(|&f| spl_fn(f)).collect();
-        Curve {
-            freq: Array1::from(freq),
-            spl: Array1::from(spl),
-            phase: None,
-            ..Default::default()
-        }
+/// Build a simple Curve at log-spaced frequencies from 20 Hz to 20 kHz
+pub(super) fn make_curve(spl_fn: impl Fn(f64) -> f64) -> Curve {
+    let n = 200;
+    let log_start = 20f64.log10();
+    let log_end = 20000f64.log10();
+    let freq: Vec<f64> = (0..n)
+        .map(|i| 10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64))
+        .collect();
+    let spl: Vec<f64> = freq.iter().map(|&f| spl_fn(f)).collect();
+    Curve {
+        freq: Array1::from(freq),
+        spl: Array1::from(spl),
+        phase: None,
+        ..Default::default()
     }
+}
 
-    /// Build a narrow-band Curve at log-spaced frequencies within [min_freq, max_freq]
-    pub(super) fn make_narrow_curve(spl_fn: impl Fn(f64) -> f64, min_freq: f64, max_freq: f64) -> Curve {
-        let n = 50;
-        let log_start = min_freq.log10();
-        let log_end = max_freq.log10();
-        let freq: Vec<f64> = (0..n)
-            .map(|i| 10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64))
-            .collect();
-        let spl: Vec<f64> = freq.iter().map(|&f| spl_fn(f)).collect();
-        Curve {
-            freq: Array1::from(freq),
-            spl: Array1::from(spl),
-            phase: None,
-            ..Default::default()
-        }
+/// Build a narrow-band Curve at log-spaced frequencies within [min_freq, max_freq]
+pub(super) fn make_narrow_curve(
+    spl_fn: impl Fn(f64) -> f64,
+    min_freq: f64,
+    max_freq: f64,
+) -> Curve {
+    let n = 50;
+    let log_start = min_freq.log10();
+    let log_end = max_freq.log10();
+    let freq: Vec<f64> = (0..n)
+        .map(|i| 10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64))
+        .collect();
+    let spl: Vec<f64> = freq.iter().map(|&f| spl_fn(f)).collect();
+    Curve {
+        freq: Array1::from(freq),
+        spl: Array1::from(spl),
+        phase: None,
+        ..Default::default()
     }
-
+}

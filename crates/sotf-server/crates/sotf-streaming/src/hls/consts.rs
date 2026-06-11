@@ -9,4 +9,3 @@ pub(super) const DEFAULT_TARGET_DURATION: Duration = Duration::from_secs(4);
 pub(super) const MAX_PLAYLIST_BYTES: usize = 2 * 1024 * 1024;
 
 pub(super) const MAX_SEGMENT_BYTES: usize = 64 * 1024 * 1024;
-

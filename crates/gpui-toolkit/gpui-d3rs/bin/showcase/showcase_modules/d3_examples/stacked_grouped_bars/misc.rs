@@ -95,4 +95,3 @@ pub(super) fn start_animation_loop(entity: Entity<ShowcaseApp>, cx: &mut Context
     })
     .detach();
 }
-

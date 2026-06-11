@@ -19,4 +19,3 @@ impl ContourSegment {
         Self { value, start, end }
     }
 }
-

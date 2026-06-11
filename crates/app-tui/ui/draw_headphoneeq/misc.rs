@@ -731,4 +731,3 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 }
-

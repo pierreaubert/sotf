@@ -14,12 +14,11 @@ mod build;
 mod load;
 mod misc;
 mod optimize;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use build::*;
 pub use load::*;
 pub use optimize::*;
 pub use types::*;
-

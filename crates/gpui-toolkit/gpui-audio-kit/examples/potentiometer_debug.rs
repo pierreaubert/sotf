@@ -536,4 +536,3 @@ fn main() {
         |cx| cx.new(PotentiometerDebug::new),
     );
 }
-

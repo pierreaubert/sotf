@@ -23,4 +23,3 @@ pub(super) fn param_range(spec: &ParamSpec) -> (f64, f64) {
         ParamType::FilePath => (0.0, 1.0),
     }
 }
-

@@ -36,4 +36,3 @@ pub(super) struct Args {
     #[arg(long, default_value = "0.5")]
     pub(super) max_dc_offset: f32,
 }
-

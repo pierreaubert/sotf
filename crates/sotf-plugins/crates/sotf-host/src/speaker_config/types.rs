@@ -81,4 +81,3 @@ pub fn make_fallback_channel(index: usize) -> MeterChannelSpec {
         }
     }
 }
-

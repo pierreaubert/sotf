@@ -11,7 +11,11 @@ pub(super) const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
 pub(super) const SHARED_MEMORY_VERSION: u32 = 5;
 
 /// Generate test audio with a known pattern (sine waves)
-pub(super) fn generate_test_audio(num_frames: usize, channels: usize, sample_rate: u32) -> Vec<f32> {
+pub(super) fn generate_test_audio(
+    num_frames: usize,
+    channels: usize,
+    sample_rate: u32,
+) -> Vec<f32> {
     (0..num_frames)
         .flat_map(|i| {
             let t = i as f32 / sample_rate as f32;
@@ -198,4 +202,3 @@ fn test_eq_empty_filters_passthrough_bit_exact() {
         );
     }
 }
-

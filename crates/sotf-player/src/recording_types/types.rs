@@ -62,4 +62,3 @@ pub struct RecordingResult {
     pub clarity_c80_db: Option<Vec<f32>>,
     pub spectrogram_db: Option<Vec<Vec<f32>>>,
 }
-

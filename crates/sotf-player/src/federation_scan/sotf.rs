@@ -2,7 +2,7 @@
 
 use crate::sotf_api_client::{SotfApiAlbum, SotfApiAlbumTracks, SotfApiClient, SotfApiClientError};
 use sotf_audio::decoder::AudioSource;
-use sotf_federation :: { ProviderAlbum , ProviderTrack } ;
+use sotf_federation::{ProviderAlbum, ProviderTrack};
 
 pub(super) fn sotf_api_album_to_provider_album(
     client: &SotfApiClient,
@@ -63,4 +63,3 @@ pub(super) fn sotf_peer_base_url(host: &str, port: u16) -> String {
         format!("http://{trimmed}:{port}")
     }
 }
-

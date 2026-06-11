@@ -129,4 +129,3 @@ impl StftState {
         self.latency_filled = 0;
     }
 }
-

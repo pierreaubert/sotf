@@ -28,13 +28,13 @@ mod generation_stats;
 mod misc;
 #[path = "generate_audio_tests/signal_kind.rs"]
 mod signal_kind;
+#[cfg(test)]
+#[path = "generate_audio_tests/tests.rs"]
+mod tests;
 #[path = "generate_audio_tests/types.rs"]
 mod types;
 #[path = "generate_audio_tests/write.rs"]
 mod write;
-#[cfg(test)]
-#[path = "generate_audio_tests/tests.rs"]
-mod tests;
 
 use consts::SWEEP_DURATION;
 use consts::generate_one;
@@ -136,4 +136,3 @@ fn main() {
         stats.generated, stats.skipped, stats.failed
     );
 }
-

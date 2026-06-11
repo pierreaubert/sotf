@@ -55,4 +55,3 @@ pub fn clamp_cuts_to_envelope(x: &[f64], envelope: &[(f64, f64)], peq_model: Peq
     }
     clamped
 }
-

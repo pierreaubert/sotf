@@ -70,4 +70,3 @@ pub(crate) fn apply_effort_constraint(
         }
     }
 }
-

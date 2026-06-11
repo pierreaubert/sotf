@@ -137,4 +137,3 @@ pub fn load_app_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
         Err("Could not determine config directory".into())
     }
 }
-

@@ -15,4 +15,3 @@ impl PluginSandboxPermissionBroker for DenyPluginSandboxPermissionBroker {
         request.deny()
     }
 }
-

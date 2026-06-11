@@ -26,4 +26,3 @@ impl DiagnosticMaxDeltas {
         self.safety_scale_abs = self.safety_scale_abs.max(deltas.safety_scale_abs);
     }
 }
-

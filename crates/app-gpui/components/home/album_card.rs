@@ -423,4 +423,3 @@ impl AlbumCard {
             .into_any_element()
     }
 }
-

@@ -599,4 +599,3 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 }
-

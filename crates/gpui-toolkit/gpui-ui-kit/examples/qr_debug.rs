@@ -39,7 +39,7 @@ use camera::camera_capture_loop;
 use misc::PREVIEW_HEIGHT;
 use misc::PREVIEW_WIDTH;
 use misc::paint_camera_preview;
-# [cfg (target_os = "macos")]
+#[cfg(target_os = "macos")]
 use misc::request_camera_permission_macos;
 use misc::tab_button;
 use types::CameraPreview;
@@ -592,4 +592,3 @@ fn main() {
         |cx| cx.new(QrDebug::new),
     );
 }
-

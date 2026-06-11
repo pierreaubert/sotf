@@ -29,4 +29,3 @@ pub(super) fn escape_side_label_svg_text(text: &str) -> String {
     }
     escaped
 }
-

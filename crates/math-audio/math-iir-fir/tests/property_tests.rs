@@ -6,7 +6,7 @@
 // filters, and window functions across a wide range of generated parameters.
 
 use math_audio_iir_fir::{
-    generate_window, Biquad, BiquadCoefficients, BiquadFilterType, Fir, FirFilterType, WindowType,
+    Biquad, BiquadCoefficients, BiquadFilterType, Fir, FirFilterType, WindowType, generate_window,
 };
 use proptest::prelude::*;
 

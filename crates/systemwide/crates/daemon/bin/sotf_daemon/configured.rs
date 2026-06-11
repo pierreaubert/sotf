@@ -11,4 +11,3 @@ pub(super) fn configured_output_device_from_value(value: Option<&str>) -> Option
         .map(|device| device.trim().to_string())
         .filter(|device| !device.is_empty())
 }
-

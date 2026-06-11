@@ -22,10 +22,10 @@ mod extract;
 mod misc;
 mod package;
 mod pipewire;
-mod types;
-mod write;
 #[cfg(test)]
 mod tests;
+mod types;
+mod write;
 
 pub use export_format::*;
 pub use package::*;
@@ -596,4 +596,3 @@ fn export_roon(output: &DspChainOutput) -> anyhow::Result<String> {
         roon,
     ))?)
 }
-

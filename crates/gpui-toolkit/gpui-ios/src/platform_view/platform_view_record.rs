@@ -26,4 +26,3 @@ impl PlatformViewRecord {
             && y <= self.bounds.y + self.bounds.height
     }
 }
-

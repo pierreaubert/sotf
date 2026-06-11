@@ -37,4 +37,3 @@ pub enum RoomEqApplyOutcome {
     Rack(RackApplyOutcome),
     Graph(GraphApplyOutcome),
 }
-

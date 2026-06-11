@@ -26,9 +26,9 @@ mod room_dimension_unit;
 mod speaker_configuration;
 mod spl_calibration_capture_state;
 mod spl_calibration_capture_status;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use bass_anchor_capture_state::*;
 pub use bass_anchor_capture_status::*;
@@ -47,4 +47,3 @@ pub use speaker_configuration::*;
 pub use spl_calibration_capture_state::*;
 pub use spl_calibration_capture_status::*;
 pub use types::*;
-

@@ -28,10 +28,10 @@ use crate::theme::ThemeExt;
 use gpui::*;
 
 mod misc;
-mod types;
-mod volume_knob_fill_element;
 #[cfg(test)]
 mod tests;
+mod types;
+mod volume_knob_fill_element;
 
 pub use types::*;
 
@@ -411,4 +411,3 @@ impl RenderOnce for VolumeKnob {
             )
     }
 }
-

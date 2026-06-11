@@ -34,4 +34,3 @@ pub(crate) fn extent_padded(values: &[f64], padding_fraction: f64) -> (f64, f64)
     };
     (min - padding, max + padding)
 }
-

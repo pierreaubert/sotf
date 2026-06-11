@@ -61,7 +61,6 @@ pub(super) fn sandbox_reason_text(
 ))]
 mod sandbox_reason_tests {
     use super::*;
-    use super::super::*;
 
     #[test]
     fn unsupported_backend_has_reason() {
@@ -86,4 +85,3 @@ mod sandbox_reason_tests {
         );
     }
 }
-

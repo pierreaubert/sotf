@@ -152,4 +152,3 @@ impl Rotation {
         (degrees(lambda), degrees(phi))
     }
 }
-

@@ -115,4 +115,3 @@ pub(crate) fn build_beta_lut(
         })
         .collect()
 }
-

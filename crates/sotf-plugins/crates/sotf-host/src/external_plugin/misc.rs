@@ -69,4 +69,3 @@ pub(super) fn find_dynamic_library_in_dir(root: &Path, max_depth: usize) -> Opti
 
     recurse(root, 0, max_depth)
 }
-

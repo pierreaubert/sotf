@@ -39,4 +39,3 @@ pub(super) fn solve_lower_matrix(l: &DMatrix<f64>, b: &DMatrix<f64>) -> DMatrix<
     }
     out
 }
-

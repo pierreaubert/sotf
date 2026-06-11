@@ -8,4 +8,3 @@ pub(super) struct BinauralState {
     pub(super) diffuse_field_eq_filter: Option<[Vec<Complex<f32>>; 2]>,
     pub(super) _hrtf_data: Option<SofaFile>,
 }
-

@@ -9,4 +9,3 @@ pub enum BeamformerType {
     Superdirective,
     Gsc,
 }
-

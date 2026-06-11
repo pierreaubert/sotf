@@ -36,4 +36,3 @@ pub(super) fn ends_with_myanmar_medial_glue(segment: &str) -> bool {
         .map(is_myanmar_medial_glue)
         .unwrap_or(false)
 }
-

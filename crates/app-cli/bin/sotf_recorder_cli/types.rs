@@ -91,4 +91,3 @@ pub(super) struct Cli {
     #[arg(long = "mic-calibration", value_name = "CHANNEL:PATH")]
     pub(super) mic_calibration: Vec<String>,
 }
-

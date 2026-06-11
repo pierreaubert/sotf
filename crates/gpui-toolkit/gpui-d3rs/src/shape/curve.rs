@@ -229,4 +229,3 @@ mod tests {
         assert!(result.len() > points.len());
     }
 }
-

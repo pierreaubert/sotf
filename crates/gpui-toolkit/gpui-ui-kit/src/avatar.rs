@@ -4,7 +4,7 @@
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Pixels, px, SharedString, Rgba, rgb, Div, div, FontWeight, Window, App};
+use gpui::{App, Div, FontWeight, Pixels, Rgba, SharedString, Window, div, px, rgb};
 
 /// Avatar size
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -182,4 +182,3 @@ pub(super) struct RoomEqTrendSeries {
     pub(super) spl: Vec<f64>,
     pub(super) color: u32,
 }
-

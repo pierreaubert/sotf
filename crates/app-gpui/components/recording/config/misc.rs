@@ -119,7 +119,10 @@ impl PlayerView {
     }
 
     /// Render playback device content for accordion
-    pub(super) fn render_playback_device_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_playback_device_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let translations = self.state.read(cx).app.ui_state.translations.clone();
         let device_label = VStack::new()
             .spacing(StackSpacing::Xs)
@@ -147,7 +150,10 @@ impl PlayerView {
     }
 
     /// Render recording device content for accordion
-    pub(super) fn render_recording_device_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_recording_device_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
         let (
@@ -357,7 +363,10 @@ impl PlayerView {
     }
 
     /// Render microphone calibration content for accordion
-    pub(super) fn render_mic_calibration_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_mic_calibration_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -497,7 +506,10 @@ impl PlayerView {
     }
 
     /// Render output directory content for accordion
-    pub(super) fn render_output_directory_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_output_directory_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -602,7 +614,10 @@ impl PlayerView {
     /// - Post-silence: numeric input in seconds (blank = derived from RT60 estimate)
     ///
     /// The estimated capture time for the whole session is also shown.
-    pub(super) fn render_advanced_sweep_quality_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_advanced_sweep_quality_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -827,7 +842,10 @@ impl PlayerView {
     }
 
     /// Render playback device dropdown
-    pub(super) fn render_playback_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_playback_device_dropdown(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -961,7 +979,10 @@ impl PlayerView {
     }
 
     /// Render playback sample rate dropdown
-    pub(super) fn render_playback_sample_rate_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_playback_sample_rate_dropdown(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -1043,7 +1064,10 @@ impl PlayerView {
     }
 
     /// Render speaker configuration dropdown with channel count and sample rate badges
-    pub(super) fn render_speaker_config_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_speaker_config_dropdown(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -1198,7 +1222,10 @@ impl PlayerView {
     }
 
     /// Render playback channel mapping table (speaker-centric view)
-    pub(super) fn render_playback_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_playback_channel_mapping(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let translations = self.state.read(cx).app.ui_state.translations.clone();
         // Extract all needed data upfront, then release the borrow
         let (theme, speaker_data, is_custom) = {
@@ -1812,7 +1839,10 @@ impl PlayerView {
     }
 
     /// Render recording device dropdown
-    pub(super) fn render_recording_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_recording_device_dropdown(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -1943,7 +1973,10 @@ impl PlayerView {
     }
 
     /// Render recording sample rate dropdown
-    pub(super) fn render_recording_sample_rate_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_recording_sample_rate_dropdown(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -2025,7 +2058,10 @@ impl PlayerView {
     }
 
     /// Render recording channel mapping table
-    pub(super) fn render_recording_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_recording_channel_mapping(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -2196,7 +2232,11 @@ impl PlayerView {
     }
 
     /// Open file dialog to browse for calibration file for a specific channel
-    pub(super) fn browse_calibration_file_for_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
+    pub(super) fn browse_calibration_file_for_channel(
+        &mut self,
+        channel_idx: usize,
+        cx: &mut Context<Self>,
+    ) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let weak_state = self.state.downgrade();
@@ -2311,4 +2351,3 @@ fn renumber_interface_channels(state: &mut RecordingState) {
         }
     }
 }
-

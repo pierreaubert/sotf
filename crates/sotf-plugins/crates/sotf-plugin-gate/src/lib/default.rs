@@ -50,4 +50,3 @@ pub(super) fn default_sidechain_external() -> bool {
 pub(super) fn default_range_db() -> f32 {
     80.0
 }
-

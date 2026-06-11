@@ -21,14 +21,13 @@ mod multiband_expander_plugin;
 mod spectral_bin_state;
 #[path = "lib/spectral_state.rs"]
 mod spectral_state;
-#[path = "lib/types.rs"]
-mod types;
 #[cfg(test)]
 #[path = "lib/tests.rs"]
 mod tests;
+#[path = "lib/types.rs"]
+mod types;
 
 pub use band_expander_params::*;
 pub use multiband_expander_data::*;
 pub use multiband_expander_plugin::*;
 pub use types::*;
-

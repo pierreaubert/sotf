@@ -38,4 +38,3 @@ pub enum LMError {
     #[error("singular Jacobian — cannot compute step")]
     SingularJacobian,
 }
-

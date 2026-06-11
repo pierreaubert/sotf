@@ -33,11 +33,11 @@ mod consts;
 mod misc;
 #[path = "autoeq_benchmark_speaker/print.rs"]
 mod print;
-#[path = "autoeq_benchmark_speaker/types.rs"]
-mod types;
 #[cfg(test)]
 #[path = "autoeq_benchmark_speaker/tests.rs"]
 mod tests;
+#[path = "autoeq_benchmark_speaker/types.rs"]
+mod types;
 
 pub use types::*;
 

@@ -99,4 +99,3 @@ pub fn save_app_config(config: &AppConfig) -> Result<(), Box<dyn std::error::Err
         Err("Could not determine config directory".into())
     }
 }
-

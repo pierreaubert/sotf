@@ -7,4 +7,3 @@ use super::design_system::DesignSystem;
 pub trait DesignExt {
     fn design(&self) -> std::sync::Arc<DesignSystem>;
 }
-

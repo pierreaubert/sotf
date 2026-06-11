@@ -4,7 +4,7 @@ use crate::Curve;
 use log::info;
 use math_audio_dsp::analysis::compute_average_response;
 use math_audio_iir_fir::Biquad;
-use std :: collections :: { HashMap } ;
+use std::collections::HashMap;
 
 /// Align channel levels by normalizing down to the lowest level.
 pub fn align_channels_to_lowest(
@@ -183,7 +183,11 @@ pub(super) fn is_linear_phase_crossover_type(type_str: &str) -> bool {
     )
 }
 
-pub(super) fn linear_phase_crossover_coefficients(freq: f64, sample_rate: f64, is_lowpass: bool) -> Vec<f64> {
+pub(super) fn linear_phase_crossover_coefficients(
+    freq: f64,
+    sample_rate: f64,
+    is_lowpass: bool,
+) -> Vec<f64> {
     let crossover = math_audio_iir_fir::FirCrossover::new(
         freq,
         sample_rate,
@@ -196,4 +200,3 @@ pub(super) fn linear_phase_crossover_coefficients(freq: f64, sample_rate: f64, i
         crossover.highpass_coefficients()
     }
 }
-

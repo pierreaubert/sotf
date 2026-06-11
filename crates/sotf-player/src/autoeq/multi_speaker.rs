@@ -88,10 +88,10 @@ mod misc;
 mod multi_speaker_optimization_config;
 mod run;
 mod speaker_measurement_data;
-mod to;
-mod types;
 #[cfg(test)]
 mod tests;
+mod to;
+mod types;
 
 pub use misc::*;
 pub use multi_speaker_optimization_config::*;
@@ -99,4 +99,3 @@ pub use run::*;
 pub use speaker_measurement_data::*;
 pub use to::*;
 pub use types::*;
-

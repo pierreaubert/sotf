@@ -159,4 +159,3 @@ pub(super) fn smooth_stroke_segment(
     .map(|stroke_point| point(px(stroke_point.x), px(stroke_point.y)))
     .collect()
 }
-

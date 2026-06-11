@@ -44,7 +44,10 @@ pub(super) fn load_wav_mono_with_rate(path: &Path) -> Result<(Vec<f32>, u32), St
 /// # Arguments
 /// * `path` - Path to WAV file
 /// * `channel_index` - Optional channel index to extract (0-based). If None, will average all channels for mono
-pub(super) fn load_wav_mono_channel(path: &Path, channel_index: Option<usize>) -> Result<Vec<f32>, String> {
+pub(super) fn load_wav_mono_channel(
+    path: &Path,
+    channel_index: Option<usize>,
+) -> Result<Vec<f32>, String> {
     let mut reader =
         WavReader::open(path).map_err(|e| format!("Failed to open WAV file: {}", e))?;
 
@@ -117,4 +120,3 @@ pub(super) fn load_wav_mono_channel(path: &Path, channel_index: Option<usize>) -
 pub(super) fn load_wav_mono(path: &Path) -> Result<Vec<f32>, String> {
     load_wav_mono_channel(path, None)
 }
-

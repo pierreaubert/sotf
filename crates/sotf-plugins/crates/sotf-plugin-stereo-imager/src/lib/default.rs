@@ -30,4 +30,3 @@ pub(super) fn default_high_width() -> f32 {
 pub(super) fn default_mix() -> f32 {
     pk(SI, "mix").default_f64() as f32
 }
-

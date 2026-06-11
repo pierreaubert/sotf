@@ -84,4 +84,3 @@ pub(super) fn read_string(data: &[u8], pos: &mut usize) -> IamfResult<String> {
     }
     Ok(s)
 }
-

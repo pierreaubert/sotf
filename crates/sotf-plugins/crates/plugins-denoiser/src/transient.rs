@@ -1,3 +1,4 @@
+#![allow(clippy::needless_range_loop)]
 /// Adaptive slew-rate limiter for click and pop repair.
 #[derive(Clone, Copy)]
 struct ChannelState {

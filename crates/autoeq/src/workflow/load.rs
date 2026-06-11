@@ -108,4 +108,3 @@ pub fn load_driver_measurements_from_files(
 
     Ok(measurements)
 }
-

@@ -58,4 +58,3 @@ mod string_index_converter;
 mod types;
 
 pub use ios_text_system::*;
-

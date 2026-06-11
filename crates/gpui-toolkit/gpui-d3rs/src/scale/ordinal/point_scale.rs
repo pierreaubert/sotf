@@ -147,4 +147,3 @@ where
         &self.domain
     }
 }
-

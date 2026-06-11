@@ -2,8 +2,8 @@
 
 use clap::Parser;
 use serde::Deserialize;
-use std :: collections :: { HashMap } ;
-use std :: path :: { PathBuf } ;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 /// Fuzzer for roomeq
 #[derive(Parser, Debug)]
@@ -89,4 +89,3 @@ pub(super) struct Metadata {
     pub(super) pre_score: f64,
     pub(super) post_score: f64,
 }
-

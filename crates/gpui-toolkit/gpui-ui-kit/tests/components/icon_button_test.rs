@@ -1,6 +1,6 @@
 //! IconButton component tests
 
-use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, Styled};
+use gpui::prelude::ParentElement;
 use gpui_ui_kit::ComponentSize;
 use gpui_ui_kit::icon_button::{IconButton, IconButtonSize, IconButtonTheme, IconButtonVariant};
 

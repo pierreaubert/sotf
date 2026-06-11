@@ -43,4 +43,3 @@ impl From<EpaTemporalProfile> for autoeq::loss::epa::score::TemporalMaskingProfi
         }
     }
 }
-

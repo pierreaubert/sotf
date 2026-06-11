@@ -80,4 +80,3 @@ pub(super) fn group_crossover_plan(
         frequency_range: (min_hz != max_hz).then_some((min_hz, max_hz)),
     })
 }
-

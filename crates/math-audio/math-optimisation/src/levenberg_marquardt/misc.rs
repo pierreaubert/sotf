@@ -95,4 +95,3 @@ pub(super) fn solve_linear_system(a: &Array2<f64>, b: &Array1<f64>) -> Option<Ar
 
     Some(x)
 }
-

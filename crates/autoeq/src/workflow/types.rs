@@ -142,4 +142,3 @@ pub struct DriverOptimizationResult {
     /// Whether optimization converged successfully
     pub converged: bool,
 }
-

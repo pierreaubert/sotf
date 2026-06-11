@@ -32,4 +32,3 @@ impl Default for TimeOfDay {
         Self::new(0, 0)
     }
 }
-

@@ -20,4 +20,3 @@ pub struct Reflection {
     /// Populated during initialize() when a SOFA file is loaded. Empty for ISM reflections.
     pub hrtf_filter: Option<ReflectionHrtf>,
 }
-

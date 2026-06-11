@@ -1,6 +1,6 @@
 //! Integration tests for Toolbar component
 
-use gpui::{Context, TestAppContext, Window, div, prelude::*};
+use gpui::{Context, IntoElement, ParentElement, Render, TestAppContext, Window, div};
 use gpui_ui_kit::toolbar::{Toolbar, ToolbarItem};
 
 // ============================================================================

@@ -13,4 +13,3 @@ pub struct ABCompareData {
     pub current_mix: f32,
     pub bypass_active: bool,
 }
-

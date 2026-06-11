@@ -15,4 +15,3 @@ pub(super) type RecordingResultSlot = Arc<
         >,
     >,
 >;
-

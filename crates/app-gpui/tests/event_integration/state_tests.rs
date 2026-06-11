@@ -10,10 +10,6 @@
 use super::event_types::*;
 
 mod event_handler_state;
-mod types;
 #[cfg(test)]
 mod tests;
-
-pub use event_handler_state::*;
-pub use types::*;
-
+mod types;

@@ -4,9 +4,9 @@ use super::super::{
     DsdOutputMode, EngineOversamplingPolicy, LatencyCompensationMode, NetworkEndpointConfig,
     OutputAccessMode, PluginConfig, SinkType,
 };
+use super::misc::default_engine_config_version;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use super::misc::default_engine_config_version;
 
 /// Audio engine configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -235,7 +235,9 @@ impl EngineConfig {
     /// versions are migrated forward. Currently v2 only adds serde-defaulted
     /// policy fields, so older configs are upgraded by stamping the latest
     /// version onto them after deserialization.
-    pub(super) fn migrate(mut config: EngineConfig) -> Result<EngineConfig, Box<dyn std::error::Error>> {
+    pub(super) fn migrate(
+        mut config: EngineConfig,
+    ) -> Result<EngineConfig, Box<dyn std::error::Error>> {
         const LATEST_VERSION: u32 = default_engine_config_version();
 
         if config.version > LATEST_VERSION {
@@ -252,4 +254,3 @@ impl EngineConfig {
         Ok(config)
     }
 }
-

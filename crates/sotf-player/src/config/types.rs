@@ -20,4 +20,3 @@ pub struct PluginSandboxPermissionResolution {
     pub persistent_grants_changed: bool,
     pub restart_required: bool,
 }
-

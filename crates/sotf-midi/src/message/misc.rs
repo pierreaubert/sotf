@@ -2,7 +2,11 @@
 
 use crate::error::{MidiError, Result};
 
-pub(super) fn required_data_bytes<'a>(bytes: &'a [u8], data_len: usize, name: &str) -> Result<&'a [u8]> {
+pub(super) fn required_data_bytes<'a>(
+    bytes: &'a [u8],
+    data_len: usize,
+    name: &str,
+) -> Result<&'a [u8]> {
     if bytes.len() < 1 + data_len {
         return Err(MidiError::InvalidMessage(format!("{name} too short")));
     }
@@ -43,4 +47,3 @@ pub(super) fn system_data_len(status: u8) -> Option<usize> {
         _ => None,
     }
 }
-

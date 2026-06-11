@@ -264,4 +264,3 @@ pub(super) fn fit_rt60_decay(
         fit_end_seconds: end as f32 / sample_rate,
     })
 }
-

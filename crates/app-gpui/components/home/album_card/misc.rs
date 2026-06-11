@@ -42,4 +42,3 @@ pub fn get_format_from_path(path: &std::path::Path) -> Option<String> {
     path.extension()
         .and_then(|ext| ext.to_str().map(|s| s.to_uppercase()))
 }
-

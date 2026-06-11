@@ -11,6 +11,6 @@ pub(in super::super) struct RoleChannelMatchingGroup {
 #[derive(Debug, Clone, Copy)]
 pub(in super::super) struct RoleChannelMatchingProfile {
     pub(in super::super) rms_threshold_db: f64,
-    pub(in super::super) correction: crate::roomeq::spectral_align::ChannelMatchingCorrectionProfile,
+    pub(in super::super) correction:
+        crate::roomeq::spectral_align::ChannelMatchingCorrectionProfile,
 }
-

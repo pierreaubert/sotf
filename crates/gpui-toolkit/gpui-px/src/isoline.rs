@@ -9,4 +9,3 @@ use d3rs::shape::render_contour;
 mod isoline_chart;
 
 pub use isoline_chart::*;
-

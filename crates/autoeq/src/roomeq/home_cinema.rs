@@ -26,9 +26,9 @@ mod resolved;
 mod role;
 mod route;
 mod target;
-mod types_mod;
 #[cfg(test)]
 mod tests;
+mod types_mod;
 
 pub use all::*;
 pub use apply::*;
@@ -40,4 +40,3 @@ pub use multi::*;
 pub use resolve::*;
 pub use role::*;
 pub use target::*;
-

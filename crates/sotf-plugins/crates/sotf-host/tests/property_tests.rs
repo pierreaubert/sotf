@@ -13,23 +13,14 @@ use sotf_host::parameters::{ParameterId, ParameterValue};
 // Fixed test specs — one representative per ParamType
 // ============================================================================
 
-const FLOAT_SPEC: ParamSpec = ParamSpec::float(
-    "Gain",
-    "gain_db",
-    -6.0,
-    -60.0,
-    12.0,
-    0.5,
-    "dB",
-    "General",
-);
+const FLOAT_SPEC: ParamSpec =
+    ParamSpec::float("Gain", "gain_db", -6.0, -60.0, 12.0, 0.5, "dB", "General");
 
 const INT_SPEC: ParamSpec = ParamSpec::int("Bands", "num_bands", 3, 1, 8, 1, "", "General");
 
 const BOOL_SPEC: ParamSpec = ParamSpec::bool_param("Bypass", "bypass", false, "General");
 
-const CHOICE_SPEC: ParamSpec =
-    ParamSpec::choice("Mode", "mode", 1, &["A", "B", "C"], "General");
+const CHOICE_SPEC: ParamSpec = ParamSpec::choice("Mode", "mode", 1, &["A", "B", "C"], "General");
 
 const FILE_SPEC: ParamSpec = ParamSpec::file_path("IR", "ir_path", "General");
 

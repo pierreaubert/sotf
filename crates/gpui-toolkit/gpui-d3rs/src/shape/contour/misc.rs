@@ -182,4 +182,3 @@ pub fn inferno_color_scale() -> impl Fn(f64) -> D3Color + Send + Sync {
         colors[idx].interpolate(&colors[idx + 1], local_t as f32)
     }
 }
-

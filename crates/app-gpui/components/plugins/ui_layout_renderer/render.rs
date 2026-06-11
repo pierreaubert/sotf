@@ -7,21 +7,6 @@ use super::super::common::{
     render_vertical_slider_with_ticks,
 };
 use super::super::level_meters::render_gr_meter;
-use crate::app::AppState;
-use crate::app::constants::spacing;
-use crate::components::design::Ds;
-use crate::components::plugins::editing::PluginEditingManager;
-use crate::components::plugins::theme::PluginTheme;
-use crate::theme::Theme;
-use gpui::prelude::*;
-use gpui::*;
-use gpui_audio_kit::audio::potentiometer::PotentiometerSize;
-use gpui_ui_kit :: { PaneDividerTheme } ;
-use sotf_audio_player::PluginSettings;
-use sotf_plugins::layout_solver::{KnobSize, SolvedLayout, solve_layout};
-use sotf_plugins::param_specs::{ParamSpec, ParamType};
-use sotf_plugins::plugin_layout::*;
-use std::collections::HashMap;
 use super::auto::auto_side_max_width;
 use super::auto::auto_tab_divider;
 use super::misc::AUTO_COLUMN_MIN_MAIN_WIDTH;
@@ -36,6 +21,21 @@ use super::pot::pot_size;
 use super::pot::pot_size_large;
 use super::types::LayoutTabContent;
 use super::types::collect_all_tabs;
+use crate::app::AppState;
+use crate::app::constants::spacing;
+use crate::components::design::Ds;
+use crate::components::plugins::editing::PluginEditingManager;
+use crate::components::plugins::theme::PluginTheme;
+use crate::theme::Theme;
+use gpui::prelude::*;
+use gpui::*;
+use gpui_audio_kit::audio::potentiometer::PotentiometerSize;
+use gpui_ui_kit::PaneDividerTheme;
+use sotf_audio_player::PluginSettings;
+use sotf_plugins::layout_solver::{KnobSize, SolvedLayout, solve_layout};
+use sotf_plugins::param_specs::{ParamSpec, ParamType};
+use sotf_plugins::plugin_layout::*;
+use std::collections::HashMap;
 
 /// Render a plugin using its declarative layout.
 ///
@@ -1583,4 +1583,3 @@ fn render_layout_tab_content(
             .into_any_element(),
     }
 }
-

@@ -39,4 +39,3 @@ pub fn update_now_playing_position(position: f64, is_playing: bool) {
         sotf_ios_update_now_playing_position(position, is_playing);
     }
 }
-

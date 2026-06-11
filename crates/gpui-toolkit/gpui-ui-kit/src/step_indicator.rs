@@ -15,7 +15,9 @@
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Pixels, px, Rgba, SharedString, ElementId, Window, App, Stateful, Div, div, FontWeight};
+use gpui::{
+    App, Div, ElementId, FontWeight, Pixels, Rgba, SharedString, Stateful, Window, div, px,
+};
 
 /// Step status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

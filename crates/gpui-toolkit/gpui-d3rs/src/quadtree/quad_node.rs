@@ -19,4 +19,3 @@ impl<T> QuadNode<T> {
         QuadNode::Internal(Box::new([None, None, None, None]))
     }
 }
-

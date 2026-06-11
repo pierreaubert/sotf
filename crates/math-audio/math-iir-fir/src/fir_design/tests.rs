@@ -10,523 +10,521 @@ use super::pre_ringing_config::PreRingingConfig;
 use super::pre_ringing_config::suppress_pre_ringing;
 use super::types::analyze_pre_ringing;
 
-    use super::*;
-    use crate::fir::Fir;
-    use ndarray::array;
+use crate::fir::Fir;
+use ndarray::array;
 
-    fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
-        (a - b).abs() <= tol
-    }
+fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
+    (a - b).abs() <= tol
+}
 
-    #[test]
-    fn test_fir_phase_names() {
-        assert_eq!(FirPhase::Linear.short_name(), "LIN");
-        assert_eq!(FirPhase::Minimum.short_name(), "MIN");
-        assert_eq!(FirPhase::Kirkeby.short_name(), "KIRK");
+#[test]
+fn test_fir_phase_names() {
+    assert_eq!(FirPhase::Linear.short_name(), "LIN");
+    assert_eq!(FirPhase::Minimum.short_name(), "MIN");
+    assert_eq!(FirPhase::Kirkeby.short_name(), "KIRK");
 
-        assert_eq!(FirPhase::Linear.long_name(), "Linear");
-        assert_eq!(FirPhase::Minimum.long_name(), "Minimum");
-        assert_eq!(FirPhase::Kirkeby.long_name(), "Kirkeby");
-    }
+    assert_eq!(FirPhase::Linear.long_name(), "Linear");
+    assert_eq!(FirPhase::Minimum.long_name(), "Minimum");
+    assert_eq!(FirPhase::Kirkeby.long_name(), "Kirkeby");
+}
 
-    #[test]
-    fn test_fir_design_config_default() {
-        let config = FirDesignConfig::default();
-        assert_eq!(config.n_taps, 4096);
-        assert_eq!(config.sample_rate, 48000.0);
-        assert_eq!(config.phase, FirPhase::Linear);
-    }
+#[test]
+fn test_fir_design_config_default() {
+    let config = FirDesignConfig::default();
+    assert_eq!(config.n_taps, 4096);
+    assert_eq!(config.sample_rate, 48000.0);
+    assert_eq!(config.phase, FirPhase::Linear);
+}
 
-    #[test]
-    fn test_generate_fir_from_response_flat() {
-        let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
-        let magnitude_db = vec![0.0, 0.0, 0.0, 0.0, 0.0];
+#[test]
+fn test_generate_fir_from_response_flat() {
+    let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
+    let magnitude_db = vec![0.0, 0.0, 0.0, 0.0, 0.0];
 
-        let config = FirDesignConfig {
-            n_taps: 256,
-            sample_rate: 48000.0,
-            phase: FirPhase::Linear,
-            ..Default::default()
-        };
+    let config = FirDesignConfig {
+        n_taps: 256,
+        sample_rate: 48000.0,
+        phase: FirPhase::Linear,
+        ..Default::default()
+    };
 
-        let coeffs = generate_fir_from_response(&freqs, &magnitude_db, &config);
+    let coeffs = generate_fir_from_response(&freqs, &magnitude_db, &config);
 
-        assert_eq!(coeffs.len(), 256);
-        // Should have non-zero coefficients
-        assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));
-    }
+    assert_eq!(coeffs.len(), 256);
+    // Should have non-zero coefficients
+    assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));
+}
 
-    #[test]
-    fn test_generate_fir_minimum_phase() {
-        let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
-        let magnitude_db = vec![-3.0, 0.0, 2.0, 0.0, -3.0];
+#[test]
+fn test_generate_fir_minimum_phase() {
+    let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
+    let magnitude_db = vec![-3.0, 0.0, 2.0, 0.0, -3.0];
 
-        let config = FirDesignConfig {
-            n_taps: 512,
-            sample_rate: 48000.0,
-            phase: FirPhase::Minimum,
-            ..Default::default()
-        };
+    let config = FirDesignConfig {
+        n_taps: 512,
+        sample_rate: 48000.0,
+        phase: FirPhase::Minimum,
+        ..Default::default()
+    };
 
-        let coeffs = generate_fir_from_response(&freqs, &magnitude_db, &config);
+    let coeffs = generate_fir_from_response(&freqs, &magnitude_db, &config);
 
-        assert_eq!(coeffs.len(), 512);
+    assert_eq!(coeffs.len(), 512);
 
-        // For minimum phase, first half should have more energy than second half
-        // (windowing affects the exact distribution)
-        let total_energy: f64 = coeffs.iter().map(|x| x * x).sum();
-        let first_half_energy: f64 = coeffs[..256].iter().map(|x| x * x).sum();
-        let second_half_energy: f64 = coeffs[256..].iter().map(|x| x * x).sum();
+    // For minimum phase, first half should have more energy than second half
+    // (windowing affects the exact distribution)
+    let total_energy: f64 = coeffs.iter().map(|x| x * x).sum();
+    let first_half_energy: f64 = coeffs[..256].iter().map(|x| x * x).sum();
+    let second_half_energy: f64 = coeffs[256..].iter().map(|x| x * x).sum();
 
-        // First half should have more energy than second half for minimum phase
-        assert!(
-            first_half_energy > second_half_energy,
-            "Minimum phase should have more energy in first half: first={:.4}, second={:.4}",
-            first_half_energy / total_energy,
-            second_half_energy / total_energy
-        );
-    }
+    // First half should have more energy than second half for minimum phase
+    assert!(
+        first_half_energy > second_half_energy,
+        "Minimum phase should have more energy in first half: first={:.4}, second={:.4}",
+        first_half_energy / total_energy,
+        second_half_energy / total_energy
+    );
+}
 
-    #[test]
-    #[should_panic(expected = "Kirkeby correction requires measurement and target")]
-    fn test_generate_fir_from_response_rejects_kirkeby_phase() {
-        let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
-        let magnitude_db = vec![0.0, 0.0, 0.0, 0.0, 0.0];
-        let config = FirDesignConfig {
-            n_taps: 256,
-            sample_rate: 48_000.0,
-            phase: FirPhase::Kirkeby,
-            ..Default::default()
-        };
+#[test]
+#[should_panic(expected = "Kirkeby correction requires measurement and target")]
+fn test_generate_fir_from_response_rejects_kirkeby_phase() {
+    let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
+    let magnitude_db = vec![0.0, 0.0, 0.0, 0.0, 0.0];
+    let config = FirDesignConfig {
+        n_taps: 256,
+        sample_rate: 48_000.0,
+        phase: FirPhase::Kirkeby,
+        ..Default::default()
+    };
 
-        let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
-    }
+    let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
+}
 
-    #[test]
-    #[should_panic(expected = "freqs must be strictly increasing")]
-    fn test_generate_fir_from_response_rejects_unsorted_freqs() {
-        let freqs = vec![20.0, 1000.0, 100.0];
-        let magnitude_db = vec![0.0, 0.0, 0.0];
-        let config = FirDesignConfig {
-            n_taps: 128,
-            sample_rate: 48_000.0,
-            phase: FirPhase::Linear,
-            ..Default::default()
-        };
+#[test]
+#[should_panic(expected = "freqs must be strictly increasing")]
+fn test_generate_fir_from_response_rejects_unsorted_freqs() {
+    let freqs = vec![20.0, 1000.0, 100.0];
+    let magnitude_db = vec![0.0, 0.0, 0.0];
+    let config = FirDesignConfig {
+        n_taps: 128,
+        sample_rate: 48_000.0,
+        phase: FirPhase::Linear,
+        ..Default::default()
+    };
 
-        let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
-    }
+    let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
+}
 
-    #[test]
-    #[should_panic(expected = "freqs must contain finite positive values")]
-    fn test_generate_fir_from_response_rejects_nonpositive_freqs() {
-        let freqs = vec![0.0, 100.0, 1000.0];
-        let magnitude_db = vec![0.0, 0.0, 0.0];
-        let config = FirDesignConfig {
-            n_taps: 128,
-            sample_rate: 48_000.0,
-            phase: FirPhase::Linear,
-            ..Default::default()
-        };
+#[test]
+#[should_panic(expected = "freqs must contain finite positive values")]
+fn test_generate_fir_from_response_rejects_nonpositive_freqs() {
+    let freqs = vec![0.0, 100.0, 1000.0];
+    let magnitude_db = vec![0.0, 0.0, 0.0];
+    let config = FirDesignConfig {
+        n_taps: 128,
+        sample_rate: 48_000.0,
+        phase: FirPhase::Linear,
+        ..Default::default()
+    };
 
-        let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
-    }
+    let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
+}
 
-    #[test]
-    #[should_panic(expected = "magnitude_db must contain finite values")]
-    fn test_generate_fir_from_response_rejects_nonfinite_magnitude() {
-        let freqs = vec![20.0, 100.0, 1000.0];
-        let magnitude_db = vec![0.0, f64::NAN, 0.0];
-        let config = FirDesignConfig {
-            n_taps: 128,
-            sample_rate: 48_000.0,
-            phase: FirPhase::Linear,
-            ..Default::default()
-        };
+#[test]
+#[should_panic(expected = "magnitude_db must contain finite values")]
+fn test_generate_fir_from_response_rejects_nonfinite_magnitude() {
+    let freqs = vec![20.0, 100.0, 1000.0];
+    let magnitude_db = vec![0.0, f64::NAN, 0.0];
+    let config = FirDesignConfig {
+        n_taps: 128,
+        sample_rate: 48_000.0,
+        phase: FirPhase::Linear,
+        ..Default::default()
+    };
 
-        let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
-    }
+    let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
+}
 
-    #[test]
-    fn test_generate_kirkeby_correction() {
-        let freqs = vec![20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0];
-        let meas_db = vec![75.0, 82.0, 80.0, 78.0, 72.0, 65.0];
-        let target_db = vec![80.0, 80.0, 80.0, 80.0, 80.0, 80.0];
+#[test]
+fn test_generate_kirkeby_correction() {
+    let freqs = vec![20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0];
+    let meas_db = vec![75.0, 82.0, 80.0, 78.0, 72.0, 65.0];
+    let target_db = vec![80.0, 80.0, 80.0, 80.0, 80.0, 80.0];
 
-        let config = FirDesignConfig {
-            n_taps: 4096,
-            sample_rate: 48000.0,
-            phase: FirPhase::Kirkeby,
-            min_freq: 20.0,
-            max_freq: 1000.0,
-            ..Default::default()
-        };
+    let config = FirDesignConfig {
+        n_taps: 4096,
+        sample_rate: 48000.0,
+        phase: FirPhase::Kirkeby,
+        min_freq: 20.0,
+        max_freq: 1000.0,
+        ..Default::default()
+    };
 
-        let coeffs = generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
+    let coeffs = generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
 
-        assert_eq!(coeffs.len(), 4096);
-        assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));
-    }
+    assert_eq!(coeffs.len(), 4096);
+    assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));
+}
 
-    #[test]
-    fn test_generate_kirkeby_correction_regularizes_deep_null() {
-        let freqs = vec![
-            20.0, 40.0, 80.0, 100.0, 120.0, 200.0, 1000.0, 5000.0, 20000.0,
-        ];
-        let meas_db = vec![0.0, 0.0, -6.0, -30.0, -6.0, 0.0, 0.0, 0.0, 0.0];
-        let target_db = vec![0.0; freqs.len()];
+#[test]
+fn test_generate_kirkeby_correction_regularizes_deep_null() {
+    let freqs = vec![
+        20.0, 40.0, 80.0, 100.0, 120.0, 200.0, 1000.0, 5000.0, 20000.0,
+    ];
+    let meas_db = vec![0.0, 0.0, -6.0, -30.0, -6.0, 0.0, 0.0, 0.0, 0.0];
+    let target_db = vec![0.0; freqs.len()];
 
-        let config = FirDesignConfig {
-            n_taps: 2048,
-            sample_rate: 48_000.0,
-            phase: FirPhase::Kirkeby,
-            min_freq: 20.0,
-            max_freq: 500.0,
-            ..Default::default()
-        };
+    let config = FirDesignConfig {
+        n_taps: 2048,
+        sample_rate: 48_000.0,
+        phase: FirPhase::Kirkeby,
+        min_freq: 20.0,
+        max_freq: 500.0,
+        ..Default::default()
+    };
 
-        let coeffs = generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
-        let fir = Fir::new_custom(coeffs, config.sample_rate);
-        let response = fir.np_log_result(&array![80.0, 100.0, 120.0]);
+    let coeffs = generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
+    let fir = Fir::new_custom(coeffs, config.sample_rate);
+    let response = fir.np_log_result(&array![80.0, 100.0, 120.0]);
 
-        assert!(response[1].is_finite());
-        assert!(
-            response[1] < 15.5,
-            "deep-null correction should stay below the regularized boost ceiling, got {:.2} dB",
-            response[1]
-        );
-        assert!(
-            response[1] > response[0] && response[1] > response[2],
-            "the correction should still target the null center more strongly than nearby bins"
-        );
-    }
+    assert!(response[1].is_finite());
+    assert!(
+        response[1] < 15.5,
+        "deep-null correction should stay below the regularized boost ceiling, got {:.2} dB",
+        response[1]
+    );
+    assert!(
+        response[1] > response[0] && response[1] > response[2],
+        "the correction should still target the null center more strongly than nearby bins"
+    );
+}
 
-    #[test]
-    fn test_interpolate_log_space() {
-        let src_freqs = vec![100.0, 1000.0, 10000.0];
-        let src_values = vec![0.0, 10.0, 20.0];
+#[test]
+fn test_interpolate_log_space() {
+    let src_freqs = vec![100.0, 1000.0, 10000.0];
+    let src_values = vec![0.0, 10.0, 20.0];
 
-        // Test at known points
-        let target = vec![100.0, 1000.0, 10000.0];
-        let result = interpolate_log_space(&src_freqs, &src_values, &target);
+    // Test at known points
+    let target = vec![100.0, 1000.0, 10000.0];
+    let result = interpolate_log_space(&src_freqs, &src_values, &target);
 
-        assert!(approx_eq(result[0], 0.0, 0.1));
-        assert!(approx_eq(result[1], 10.0, 0.1));
-        assert!(approx_eq(result[2], 20.0, 0.1));
+    assert!(approx_eq(result[0], 0.0, 0.1));
+    assert!(approx_eq(result[1], 10.0, 0.1));
+    assert!(approx_eq(result[2], 20.0, 0.1));
 
-        // Test interpolated point (geometric mean of 100 and 1000 is ~316)
-        let target2 = vec![316.0];
-        let result2 = interpolate_log_space(&src_freqs, &src_values, &target2);
-        // Should be approximately 5.0 (halfway in log space)
-        assert!(result2[0] > 3.0 && result2[0] < 7.0);
-    }
+    // Test interpolated point (geometric mean of 100 and 1000 is ~316)
+    let target2 = vec![316.0];
+    let result2 = interpolate_log_space(&src_freqs, &src_values, &target2);
+    // Should be approximately 5.0 (halfway in log space)
+    assert!(result2[0] > 3.0 && result2[0] < 7.0);
+}
 
-    #[test]
-    fn test_save_fir_to_wav() {
-        let coeffs: Vec<f64> = (0..256).map(|i| (i as f64 * 0.01).sin()).collect();
-        let temp_dir = std::env::temp_dir();
-        let wav_path = temp_dir.join("test_fir_design.wav");
+#[test]
+fn test_save_fir_to_wav() {
+    let coeffs: Vec<f64> = (0..256).map(|i| (i as f64 * 0.01).sin()).collect();
+    let temp_dir = std::env::temp_dir();
+    let wav_path = temp_dir.join("test_fir_design.wav");
 
-        let result = save_fir_to_wav(&coeffs, 48000, &wav_path);
-        assert!(result.is_ok());
-        assert!(wav_path.exists());
+    let result = save_fir_to_wav(&coeffs, 48000, &wav_path);
+    assert!(result.is_ok());
+    assert!(wav_path.exists());
 
-        // Clean up
-        let _ = std::fs::remove_file(&wav_path);
-    }
+    // Clean up
+    let _ = std::fs::remove_file(&wav_path);
+}
 
-    // Pre-ringing tests
+// Pre-ringing tests
 
-    #[test]
-    fn test_suppress_pre_ringing_basic() {
-        // Create IR with pre-ringing: main tap at center, some energy before
-        let mut ir = vec![0.0; 100];
-        ir[50] = 1.0; // main tap
-        ir[30] = 0.1; // pre-ringing: -20 dB relative to main
-        ir[40] = 0.05; // pre-ringing: -26 dB relative to main
+#[test]
+fn test_suppress_pre_ringing_basic() {
+    // Create IR with pre-ringing: main tap at center, some energy before
+    let mut ir = vec![0.0; 100];
+    ir[50] = 1.0; // main tap
+    ir[30] = 0.1; // pre-ringing: -20 dB relative to main
+    ir[40] = 0.05; // pre-ringing: -26 dB relative to main
 
-        let config = PreRingingConfig {
+    let config = PreRingingConfig {
+        threshold_db: -30.0,
+        max_time_s: 0.01,
+    };
+
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+
+    // Main tap should be unchanged
+    assert_eq!(ir[50], 1.0);
+
+    // Pre-ringing taps should be clamped
+    let threshold_linear = 10.0_f64.powf(-30.0 / 20.0); // ≈ 0.0316
+    assert!(
+        ir[30].abs() <= threshold_linear + 1e-10,
+        "tap 30 should be <= {:.4}, got {:.4}",
+        threshold_linear,
+        ir[30].abs()
+    );
+}
+
+#[test]
+fn test_suppress_pre_ringing_time_limit() {
+    let mut ir = vec![0.0; 1000];
+    ir[500] = 1.0; // main tap
+    ir[10] = 0.5; // far before main tap
+
+    let config = PreRingingConfig {
+        threshold_db: -30.0,
+        max_time_s: 0.005, // 5 ms = 240 samples at 48 kHz
+    };
+
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+
+    // Tap at index 10 is 490 samples before main tap (> 240 max)
+    // Should be fully suppressed
+    assert_eq!(ir[10], 0.0, "tap beyond time limit should be zeroed");
+}
+
+#[test]
+fn test_suppress_pre_ringing_no_effect_on_post_ringing() {
+    let mut ir = vec![0.0; 100];
+    ir[30] = 1.0; // main tap
+    ir[60] = 0.5; // post-ringing (after main tap)
+
+    let config = PreRingingConfig::default();
+    let original_post = ir[60];
+
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+
+    // Post-ringing should be untouched
+    assert_eq!(ir[60], original_post);
+}
+
+#[test]
+fn test_analyze_pre_ringing() {
+    let mut ir = vec![0.0; 200];
+    ir[100] = 1.0; // main tap
+    ir[80] = 0.1; // -20 dB pre-ringing
+    ir[90] = 0.01; // -40 dB pre-ringing
+
+    let analysis = analyze_pre_ringing(&ir, 48000.0);
+
+    assert_eq!(analysis.main_tap_index, 100);
+    assert!(
+        (analysis.peak_pre_ringing_db - (-20.0)).abs() < 0.5,
+        "peak pre-ringing should be ~-20 dB, got {:.1}",
+        analysis.peak_pre_ringing_db
+    );
+    assert!(analysis.pre_ringing_time_ms > 0.0);
+}
+
+#[test]
+fn test_suppress_pre_ringing_zero_max_time() {
+    // Bug fix: max_time_s = 0 should suppress all pre-ringing (not divide by zero)
+    let mut ir = vec![0.0; 100];
+    ir[50] = 1.0;
+    ir[40] = 0.1;
+
+    let config = PreRingingConfig {
+        threshold_db: -30.0,
+        max_time_s: 0.0, // zero time limit
+    };
+
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+
+    // All taps before main should be zeroed
+    assert_eq!(
+        ir[40], 0.0,
+        "all pre-ringing should be suppressed with max_time=0"
+    );
+    assert_eq!(ir[50], 1.0, "main tap should be preserved");
+}
+
+#[test]
+fn test_analyze_pre_ringing_with_zero_taps() {
+    // Bug fix: zero-valued taps before main tap should not produce NaN
+    let mut ir = vec![0.0; 100];
+    ir[50] = 1.0;
+    // All other taps are 0.0
+
+    let analysis = analyze_pre_ringing(&ir, 48000.0);
+
+    assert_eq!(analysis.main_tap_index, 50);
+    assert!(
+        analysis.peak_pre_ringing_db.is_finite()
+            || analysis.peak_pre_ringing_db == f64::NEG_INFINITY,
+        "peak_pre_ringing_db should be finite or -inf, got {}",
+        analysis.peak_pre_ringing_db
+    );
+}
+
+#[test]
+fn test_pre_ringing_config_in_fir_design() {
+    // Test that pre_ringing config flows through FirDesignConfig
+    let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
+    let magnitude_db = vec![-3.0, 0.0, 2.0, 0.0, -3.0];
+
+    let config_without = FirDesignConfig {
+        n_taps: 512,
+        sample_rate: 48000.0,
+        phase: FirPhase::Linear,
+        pre_ringing: None,
+        ..Default::default()
+    };
+
+    let config_with = FirDesignConfig {
+        pre_ringing: Some(PreRingingConfig::default()),
+        ..config_without.clone()
+    };
+
+    let coeffs_without = generate_fir_from_response(&freqs, &magnitude_db, &config_without);
+    let coeffs_with = generate_fir_from_response(&freqs, &magnitude_db, &config_with);
+
+    // Both should produce valid filters
+    assert_eq!(coeffs_without.len(), 512);
+    assert_eq!(coeffs_with.len(), 512);
+
+    // With pre-ringing suppression, energy before main tap should be reduced
+    let analysis_without = analyze_pre_ringing(&coeffs_without, 48000.0);
+    let analysis_with = analyze_pre_ringing(&coeffs_with, 48000.0);
+
+    assert!(
+        analysis_with.peak_pre_ringing_db <= analysis_without.peak_pre_ringing_db,
+        "pre-ringing should be reduced: without={:.1} dB, with={:.1} dB",
+        analysis_without.peak_pre_ringing_db,
+        analysis_with.peak_pre_ringing_db
+    );
+}
+
+#[test]
+fn test_suppress_pre_ringing_main_tap_at_zero() {
+    // Main tap at index 0 — no pre-ringing possible
+    let mut ir = vec![1.0, 0.5, 0.2, 0.1];
+    let config = PreRingingConfig::default();
+    let original = ir.clone();
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+    // Nothing should change since main tap is at 0
+    assert_eq!(ir, original);
+}
+
+#[test]
+fn test_analyze_pre_ringing_main_tap_at_zero() {
+    // Main tap at index 0 — pre-ringing should be -inf
+    let ir = vec![1.0, 0.5, 0.1];
+    let analysis = analyze_pre_ringing(&ir, 48000.0);
+    assert_eq!(analysis.main_tap_index, 0);
+    assert_eq!(analysis.peak_pre_ringing_db, f64::NEG_INFINITY);
+    assert_eq!(analysis.pre_ringing_time_ms, 0.0);
+}
+
+#[test]
+fn test_suppress_pre_ringing_empty_ir() {
+    let mut ir: Vec<f64> = vec![];
+    let config = PreRingingConfig::default();
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+    assert!(ir.is_empty());
+}
+
+#[test]
+fn test_analyze_pre_ringing_empty_ir() {
+    let ir: Vec<f64> = vec![];
+    let analysis = analyze_pre_ringing(&ir, 48000.0);
+    assert_eq!(analysis.main_tap_index, 0);
+    assert_eq!(analysis.peak_pre_ringing_db, f64::NEG_INFINITY);
+}
+
+#[test]
+fn test_kirkeby_with_pre_ringing_config() {
+    // Kirkeby should accept and use pre-ringing config
+    let freqs = vec![20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0];
+    let meas_db = vec![75.0, 82.0, 80.0, 78.0, 72.0, 65.0];
+    let target_db = vec![80.0, 80.0, 80.0, 80.0, 80.0, 80.0];
+
+    let config = FirDesignConfig {
+        n_taps: 2048,
+        sample_rate: 48000.0,
+        phase: FirPhase::Kirkeby,
+        min_freq: 20.0,
+        max_freq: 1000.0,
+        pre_ringing: Some(PreRingingConfig {
             threshold_db: -30.0,
-            max_time_s: 0.01,
-        };
+            max_time_s: 0.003,
+        }),
+        ..Default::default()
+    };
 
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
+    let coeffs = generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
+    assert_eq!(coeffs.len(), 2048);
 
-        // Main tap should be unchanged
-        assert_eq!(ir[50], 1.0);
+    // Verify pre-ringing is bounded
+    let analysis = analyze_pre_ringing(&coeffs, 48000.0);
+    assert!(
+        analysis.peak_pre_ringing_db.is_finite()
+            || analysis.peak_pre_ringing_db == f64::NEG_INFINITY
+    );
+}
 
-        // Pre-ringing taps should be clamped
-        let threshold_linear = 10.0_f64.powf(-30.0 / 20.0); // ≈ 0.0316
-        assert!(
-            ir[30].abs() <= threshold_linear + 1e-10,
-            "tap 30 should be <= {:.4}, got {:.4}",
-            threshold_linear,
-            ir[30].abs()
-        );
+#[test]
+fn test_suppress_pre_ringing_all_zeros() {
+    let mut ir = vec![0.0; 64];
+    let config = PreRingingConfig::default();
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+    for v in &ir {
+        assert_eq!(*v, 0.0);
     }
+}
 
-    #[test]
-    fn test_suppress_pre_ringing_time_limit() {
-        let mut ir = vec![0.0; 1000];
-        ir[500] = 1.0; // main tap
-        ir[10] = 0.5; // far before main tap
+#[test]
+fn test_suppress_pre_ringing_below_threshold_unchanged() {
+    let mut ir = vec![0.0; 100];
+    ir[50] = 1.0;
+    ir[45] = 0.01; // -40 dB, below default -30 dB threshold
+    let original = ir.clone();
+    let config = PreRingingConfig::default();
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+    // Main tap preserved, below-threshold pre-tap untouched
+    assert_eq!(ir[50], 1.0);
+    assert_eq!(ir[45], original[45]);
+}
 
-        let config = PreRingingConfig {
-            threshold_db: -30.0,
-            max_time_s: 0.005, // 5 ms = 240 samples at 48 kHz
-        };
+#[test]
+fn test_suppress_pre_ringing_sign_preservation() {
+    let mut ir = vec![0.0; 100];
+    ir[50] = 1.0;
+    ir[40] = -0.2; // above -30 dB threshold, negative
+    let config = PreRingingConfig {
+        threshold_db: -30.0,
+        max_time_s: 0.01,
+    };
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+    let threshold_linear = 10.0_f64.powf(config.threshold_db / 20.0);
+    assert!(ir[40].abs() <= threshold_linear + 1e-12);
+    assert!(ir[40].is_sign_negative(), "sign should be preserved");
+}
 
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
+#[test]
+fn test_suppress_pre_ringing_equal_peaks() {
+    let mut ir = vec![0.0; 100];
+    ir[30] = 0.8;
+    ir[60] = 0.8; // equal magnitude later -> main tap
+    let config = PreRingingConfig {
+        threshold_db: -30.0,
+        max_time_s: 0.01,
+    };
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+    // Main tap should be the later occurrence
+    assert_eq!(ir[60], 0.8);
+    // Pre-ringing before index 60 should be suppressed if above threshold
+    let threshold_linear = 10.0_f64.powf(config.threshold_db / 20.0);
+    assert!(ir[30].abs() <= threshold_linear + 1e-12);
+}
 
-        // Tap at index 10 is 490 samples before main tap (> 240 max)
-        // Should be fully suppressed
-        assert_eq!(ir[10], 0.0, "tap beyond time limit should be zeroed");
-    }
-
-    #[test]
-    fn test_suppress_pre_ringing_no_effect_on_post_ringing() {
-        let mut ir = vec![0.0; 100];
-        ir[30] = 1.0; // main tap
-        ir[60] = 0.5; // post-ringing (after main tap)
-
-        let config = PreRingingConfig::default();
-        let original_post = ir[60];
-
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
-
-        // Post-ringing should be untouched
-        assert_eq!(ir[60], original_post);
-    }
-
-    #[test]
-    fn test_analyze_pre_ringing() {
-        let mut ir = vec![0.0; 200];
-        ir[100] = 1.0; // main tap
-        ir[80] = 0.1; // -20 dB pre-ringing
-        ir[90] = 0.01; // -40 dB pre-ringing
-
-        let analysis = analyze_pre_ringing(&ir, 48000.0);
-
-        assert_eq!(analysis.main_tap_index, 100);
-        assert!(
-            (analysis.peak_pre_ringing_db - (-20.0)).abs() < 0.5,
-            "peak pre-ringing should be ~-20 dB, got {:.1}",
-            analysis.peak_pre_ringing_db
-        );
-        assert!(analysis.pre_ringing_time_ms > 0.0);
-    }
-
-    #[test]
-    fn test_suppress_pre_ringing_zero_max_time() {
-        // Bug fix: max_time_s = 0 should suppress all pre-ringing (not divide by zero)
-        let mut ir = vec![0.0; 100];
-        ir[50] = 1.0;
-        ir[40] = 0.1;
-
-        let config = PreRingingConfig {
-            threshold_db: -30.0,
-            max_time_s: 0.0, // zero time limit
-        };
-
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
-
-        // All taps before main should be zeroed
-        assert_eq!(
-            ir[40], 0.0,
-            "all pre-ringing should be suppressed with max_time=0"
-        );
-        assert_eq!(ir[50], 1.0, "main tap should be preserved");
-    }
-
-    #[test]
-    fn test_analyze_pre_ringing_with_zero_taps() {
-        // Bug fix: zero-valued taps before main tap should not produce NaN
-        let mut ir = vec![0.0; 100];
-        ir[50] = 1.0;
-        // All other taps are 0.0
-
-        let analysis = analyze_pre_ringing(&ir, 48000.0);
-
-        assert_eq!(analysis.main_tap_index, 50);
-        assert!(
-            analysis.peak_pre_ringing_db.is_finite()
-                || analysis.peak_pre_ringing_db == f64::NEG_INFINITY,
-            "peak_pre_ringing_db should be finite or -inf, got {}",
-            analysis.peak_pre_ringing_db
-        );
-    }
-
-    #[test]
-    fn test_pre_ringing_config_in_fir_design() {
-        // Test that pre_ringing config flows through FirDesignConfig
-        let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
-        let magnitude_db = vec![-3.0, 0.0, 2.0, 0.0, -3.0];
-
-        let config_without = FirDesignConfig {
-            n_taps: 512,
-            sample_rate: 48000.0,
-            phase: FirPhase::Linear,
-            pre_ringing: None,
-            ..Default::default()
-        };
-
-        let config_with = FirDesignConfig {
-            pre_ringing: Some(PreRingingConfig::default()),
-            ..config_without.clone()
-        };
-
-        let coeffs_without = generate_fir_from_response(&freqs, &magnitude_db, &config_without);
-        let coeffs_with = generate_fir_from_response(&freqs, &magnitude_db, &config_with);
-
-        // Both should produce valid filters
-        assert_eq!(coeffs_without.len(), 512);
-        assert_eq!(coeffs_with.len(), 512);
-
-        // With pre-ringing suppression, energy before main tap should be reduced
-        let analysis_without = analyze_pre_ringing(&coeffs_without, 48000.0);
-        let analysis_with = analyze_pre_ringing(&coeffs_with, 48000.0);
-
-        assert!(
-            analysis_with.peak_pre_ringing_db <= analysis_without.peak_pre_ringing_db,
-            "pre-ringing should be reduced: without={:.1} dB, with={:.1} dB",
-            analysis_without.peak_pre_ringing_db,
-            analysis_with.peak_pre_ringing_db
-        );
-    }
-
-    #[test]
-    fn test_suppress_pre_ringing_main_tap_at_zero() {
-        // Main tap at index 0 — no pre-ringing possible
-        let mut ir = vec![1.0, 0.5, 0.2, 0.1];
-        let config = PreRingingConfig::default();
-        let original = ir.clone();
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
-        // Nothing should change since main tap is at 0
-        assert_eq!(ir, original);
-    }
-
-    #[test]
-    fn test_analyze_pre_ringing_main_tap_at_zero() {
-        // Main tap at index 0 — pre-ringing should be -inf
-        let ir = vec![1.0, 0.5, 0.1];
-        let analysis = analyze_pre_ringing(&ir, 48000.0);
-        assert_eq!(analysis.main_tap_index, 0);
-        assert_eq!(analysis.peak_pre_ringing_db, f64::NEG_INFINITY);
-        assert_eq!(analysis.pre_ringing_time_ms, 0.0);
-    }
-
-    #[test]
-    fn test_suppress_pre_ringing_empty_ir() {
-        let mut ir: Vec<f64> = vec![];
-        let config = PreRingingConfig::default();
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
-        assert!(ir.is_empty());
-    }
-
-    #[test]
-    fn test_analyze_pre_ringing_empty_ir() {
-        let ir: Vec<f64> = vec![];
-        let analysis = analyze_pre_ringing(&ir, 48000.0);
-        assert_eq!(analysis.main_tap_index, 0);
-        assert_eq!(analysis.peak_pre_ringing_db, f64::NEG_INFINITY);
-    }
-
-    #[test]
-    fn test_kirkeby_with_pre_ringing_config() {
-        // Kirkeby should accept and use pre-ringing config
-        let freqs = vec![20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0];
-        let meas_db = vec![75.0, 82.0, 80.0, 78.0, 72.0, 65.0];
-        let target_db = vec![80.0, 80.0, 80.0, 80.0, 80.0, 80.0];
-
-        let config = FirDesignConfig {
-            n_taps: 2048,
-            sample_rate: 48000.0,
-            phase: FirPhase::Kirkeby,
-            min_freq: 20.0,
-            max_freq: 1000.0,
-            pre_ringing: Some(PreRingingConfig {
-                threshold_db: -30.0,
-                max_time_s: 0.003,
-            }),
-            ..Default::default()
-        };
-
-        let coeffs = generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
-        assert_eq!(coeffs.len(), 2048);
-
-        // Verify pre-ringing is bounded
-        let analysis = analyze_pre_ringing(&coeffs, 48000.0);
-        assert!(
-            analysis.peak_pre_ringing_db.is_finite()
-                || analysis.peak_pre_ringing_db == f64::NEG_INFINITY
-        );
-    }
-
-    #[test]
-    fn test_suppress_pre_ringing_all_zeros() {
-        let mut ir = vec![0.0; 64];
-        let config = PreRingingConfig::default();
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
-        for v in &ir {
-            assert_eq!(*v, 0.0);
-        }
-    }
-
-    #[test]
-    fn test_suppress_pre_ringing_below_threshold_unchanged() {
-        let mut ir = vec![0.0; 100];
-        ir[50] = 1.0;
-        ir[45] = 0.01; // -40 dB, below default -30 dB threshold
-        let original = ir.clone();
-        let config = PreRingingConfig::default();
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
-        // Main tap preserved, below-threshold pre-tap untouched
-        assert_eq!(ir[50], 1.0);
-        assert_eq!(ir[45], original[45]);
-    }
-
-    #[test]
-    fn test_suppress_pre_ringing_sign_preservation() {
-        let mut ir = vec![0.0; 100];
-        ir[50] = 1.0;
-        ir[40] = -0.2; // above -30 dB threshold, negative
-        let config = PreRingingConfig {
-            threshold_db: -30.0,
-            max_time_s: 0.01,
-        };
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
-        let threshold_linear = 10.0_f64.powf(config.threshold_db / 20.0);
-        assert!(ir[40].abs() <= threshold_linear + 1e-12);
-        assert!(ir[40].is_sign_negative(), "sign should be preserved");
-    }
-
-    #[test]
-    fn test_suppress_pre_ringing_equal_peaks() {
-        let mut ir = vec![0.0; 100];
-        ir[30] = 0.8;
-        ir[60] = 0.8; // equal magnitude later -> main tap
-        let config = PreRingingConfig {
-            threshold_db: -30.0,
-            max_time_s: 0.01,
-        };
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
-        // Main tap should be the later occurrence
-        assert_eq!(ir[60], 0.8);
-        // Pre-ringing before index 60 should be suppressed if above threshold
-        let threshold_linear = 10.0_f64.powf(config.threshold_db / 20.0);
-        assert!(ir[30].abs() <= threshold_linear + 1e-12);
-    }
-
-    #[test]
-    fn test_suppress_pre_ringing_main_tap_at_end() {
-        let mut ir = vec![0.1, 0.2, 0.3, 1.0];
-        let config = PreRingingConfig::default();
-        suppress_pre_ringing(&mut ir, &config, 48000.0);
-        let threshold_linear = 10.0_f64.powf(config.threshold_db / 20.0);
-        // Main tap preserved, earlier samples above threshold are clamped
-        assert_eq!(ir[3], 1.0);
-        assert!(ir[0].abs() <= threshold_linear + 1e-12);
-        assert!(ir[1].abs() <= threshold_linear + 1e-12);
-        assert!(ir[2].abs() <= threshold_linear + 1e-12);
-    }
-
+#[test]
+fn test_suppress_pre_ringing_main_tap_at_end() {
+    let mut ir = vec![0.1, 0.2, 0.3, 1.0];
+    let config = PreRingingConfig::default();
+    suppress_pre_ringing(&mut ir, &config, 48000.0);
+    let threshold_linear = 10.0_f64.powf(config.threshold_db / 20.0);
+    // Main tap preserved, earlier samples above threshold are clamped
+    assert_eq!(ir[3], 1.0);
+    assert!(ir[0].abs() <= threshold_linear + 1e-12);
+    assert!(ir[1].abs() <= threshold_linear + 1e-12);
+    assert!(ir[2].abs() <= threshold_linear + 1e-12);
+}

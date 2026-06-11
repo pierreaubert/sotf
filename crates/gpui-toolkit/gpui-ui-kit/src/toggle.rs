@@ -15,12 +15,14 @@
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
 use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{ElementId, SharedString, Window, App, Stateful, Div, div, FontWeight, MouseButton, Rgba, px};
+use gpui::{
+    App, Div, ElementId, FontWeight, MouseButton, Rgba, SharedString, Stateful, Window, div, px,
+};
 
 mod toggle_size;
 mod types;
 
-pub use toggle_size::{ToggleSize};
+pub use toggle_size::ToggleSize;
 pub use types::{ToggleStyle, ToggleTheme};
 /// A toggle switch component with optional selection highlighting
 pub struct Toggle {
@@ -426,4 +428,3 @@ impl IntoElement for Toggle {
         gpui::Component::new(self)
     }
 }
-

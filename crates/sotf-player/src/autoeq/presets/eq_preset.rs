@@ -65,4 +65,3 @@ pub fn presets_for(workflow: EqWorkflow) -> &'static [EqPreset] {
 pub fn find_preset(workflow: EqWorkflow, id: &str) -> Option<&'static EqPreset> {
     presets_for(workflow).iter().find(|p| p.id == id)
 }
-

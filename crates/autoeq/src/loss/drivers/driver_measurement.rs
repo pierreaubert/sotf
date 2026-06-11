@@ -36,4 +36,3 @@ impl DriverMeasurement {
         (min_freq * max_freq).sqrt()
     }
 }
-

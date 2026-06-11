@@ -136,7 +136,11 @@ pub(super) fn compute_group_delay(freqs: &[f64], phase_rad: &[f64]) -> Vec<f64> 
 ///
 /// # Returns
 /// * Reconstructed phase values in radians
-pub(super) fn integrate_group_delay(freqs: &[f64], group_delay: &[f64], initial_phase: f64) -> Vec<f64> {
+pub(super) fn integrate_group_delay(
+    freqs: &[f64],
+    group_delay: &[f64],
+    initial_phase: f64,
+) -> Vec<f64> {
     if freqs.is_empty() || group_delay.is_empty() {
         return Vec::new();
     }
@@ -200,4 +204,3 @@ pub(super) fn find_interpolation_indices(freqs: &[f64], target_freq: f64) -> (us
 
     (lower, upper, t.clamp(0.0, 1.0))
 }
-

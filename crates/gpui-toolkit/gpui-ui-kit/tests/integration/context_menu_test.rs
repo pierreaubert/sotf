@@ -7,7 +7,9 @@
 //! - With min width
 //! - Full configuration
 
-use gpui::{Context, TestAppContext, Window, div, point, prelude::*, px};
+use gpui::{
+    Context, IntoElement, ParentElement, Render, Styled, TestAppContext, Window, div, point, px,
+};
 use gpui_ui_kit::context_menu::ContextMenu;
 use gpui_ui_kit::menu::MenuItem;
 

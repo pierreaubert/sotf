@@ -77,4 +77,3 @@ pub(super) fn extract_xml_text(xml: &str, tag: &str) -> Option<String> {
         Some(xml_unescape(text))
     }
 }
-

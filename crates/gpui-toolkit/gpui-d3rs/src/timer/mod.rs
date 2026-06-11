@@ -43,10 +43,10 @@ use std::time::Duration;
 
 mod interval;
 mod misc;
-mod timeout;
-mod types;
 #[cfg(test)]
 mod tests;
+mod timeout;
+mod types;
 
 pub use interval::*;
 pub use misc::*;
@@ -268,4 +268,3 @@ where
 {
     Timer::new(callback, delay, time)
 }
-

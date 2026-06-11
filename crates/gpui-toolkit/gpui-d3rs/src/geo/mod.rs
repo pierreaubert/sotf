@@ -283,4 +283,3 @@ pub fn geo_contains(coordinates: &[(f64, f64)], lon: f64, lat: f64) -> bool {
 
     inside
 }
-

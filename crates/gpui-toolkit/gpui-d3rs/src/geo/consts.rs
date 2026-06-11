@@ -10,4 +10,3 @@ pub const TAU: f64 = 2.0 * PI;
 
 /// Small epsilon for floating point comparisons
 pub const EPSILON: f64 = 1e-6;
-

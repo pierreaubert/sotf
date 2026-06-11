@@ -4,72 +4,69 @@ use super::parse::parse_channel_mapping;
 use super::parse::parse_loudness_compensation;
 use super::types::Cli;
 
-    use super::*;
+#[test]
+fn cli_definition_has_unique_argument_ids() {
+    use clap::CommandFactory;
 
-    #[test]
-    fn cli_definition_has_unique_argument_ids() {
-        use clap::CommandFactory;
+    Cli::command().debug_assert();
+}
 
-        Cli::command().debug_assert();
-    }
+// -- parse_channel_mapping ------------------------------------------------
 
-    // -- parse_channel_mapping ------------------------------------------------
+#[test]
+fn parse_channel_mapping_rejects_zero_input_channel() {
+    // Regression: previously `ch - 1` underflowed to usize::MAX for ch == 0.
+    let err = parse_channel_mapping("0,1->1,2").expect_err("0-indexed input must fail");
+    assert!(
+        err.contains("Input channel index must be >= 1"),
+        "unexpected error: {err}"
+    );
+}
 
-    #[test]
-    fn parse_channel_mapping_rejects_zero_input_channel() {
-        // Regression: previously `ch - 1` underflowed to usize::MAX for ch == 0.
-        let err = parse_channel_mapping("0,1->1,2").expect_err("0-indexed input must fail");
-        assert!(
-            err.contains("Input channel index must be >= 1"),
-            "unexpected error: {err}"
-        );
-    }
+#[test]
+fn parse_channel_mapping_rejects_zero_output_channel() {
+    let err = parse_channel_mapping("1,2->0,1").expect_err("0-indexed output must fail");
+    assert!(err.contains(">= 1"), "unexpected error: {err}");
+}
 
-    #[test]
-    fn parse_channel_mapping_rejects_zero_output_channel() {
-        let err = parse_channel_mapping("1,2->0,1").expect_err("0-indexed output must fail");
-        assert!(err.contains(">= 1"), "unexpected error: {err}");
-    }
+#[test]
+fn parse_channel_mapping_happy_path_is_one_indexed() {
+    let (inp, out, matrix) = parse_channel_mapping("1,2->9,10").expect("valid mapping");
+    assert_eq!(inp, vec![0, 1]);
+    assert_eq!(out, vec![8, 9]);
+    assert_eq!(matrix, vec![1.0, 0.0, 0.0, 1.0]);
+}
 
-    #[test]
-    fn parse_channel_mapping_happy_path_is_one_indexed() {
-        let (inp, out, matrix) = parse_channel_mapping("1,2->9,10").expect("valid mapping");
-        assert_eq!(inp, vec![0, 1]);
-        assert_eq!(out, vec![8, 9]);
-        assert_eq!(matrix, vec![1.0, 0.0, 0.0, 1.0]);
-    }
+#[test]
+fn parse_channel_mapping_supports_gap_underscore() {
+    let (inp, out, _matrix) = parse_channel_mapping("1,2->_,9,10").expect("gap mapping");
+    assert_eq!(inp, vec![0, 1]);
+    assert_eq!(out, vec![8, 9]);
+}
 
-    #[test]
-    fn parse_channel_mapping_supports_gap_underscore() {
-        let (inp, out, _matrix) = parse_channel_mapping("1,2->_,9,10").expect("gap mapping");
-        assert_eq!(inp, vec![0, 1]);
-        assert_eq!(out, vec![8, 9]);
-    }
+#[test]
+fn parse_channel_mapping_rejects_unparseable_input() {
+    assert!(parse_channel_mapping("x,1->1,2").is_err());
+    assert!(parse_channel_mapping("1,2").is_err());
+}
 
-    #[test]
-    fn parse_channel_mapping_rejects_unparseable_input() {
-        assert!(parse_channel_mapping("x,1->1,2").is_err());
-        assert!(parse_channel_mapping("1,2").is_err());
-    }
+// -- parse_loudness_compensation -----------------------------------------
 
-    // -- parse_loudness_compensation -----------------------------------------
+#[test]
+fn parse_loudness_compensation_accepts_two_values() {
+    let res = parse_loudness_compensation(&[70.0, 3.0]).expect("2 values valid");
+    assert!(res.is_some());
+}
 
-    #[test]
-    fn parse_loudness_compensation_accepts_two_values() {
-        let res = parse_loudness_compensation(&[70.0, 3.0]).expect("2 values valid");
-        assert!(res.is_some());
-    }
+#[test]
+fn parse_loudness_compensation_accepts_three_values() {
+    let res = parse_loudness_compensation(&[70.0, 3.0, 4.0]).expect("3 values valid");
+    assert!(res.is_some());
+}
 
-    #[test]
-    fn parse_loudness_compensation_accepts_three_values() {
-        let res = parse_loudness_compensation(&[70.0, 3.0, 4.0]).expect("3 values valid");
-        assert!(res.is_some());
-    }
-
-    #[test]
-    fn parse_loudness_compensation_rejects_wrong_arity() {
-        assert!(parse_loudness_compensation(&[]).is_err());
-        assert!(parse_loudness_compensation(&[70.0]).is_err());
-        assert!(parse_loudness_compensation(&[70.0, 3.0, 4.0, 5.0]).is_err());
-    }
-
+#[test]
+fn parse_loudness_compensation_rejects_wrong_arity() {
+    assert!(parse_loudness_compensation(&[]).is_err());
+    assert!(parse_loudness_compensation(&[70.0]).is_err());
+    assert!(parse_loudness_compensation(&[70.0, 3.0, 4.0, 5.0]).is_err());
+}

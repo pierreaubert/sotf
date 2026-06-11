@@ -54,4 +54,3 @@ pub(super) fn tagged_album_key(title: &str, edition: Option<&str>) -> String {
     let edition = edition.map(normalize_album_key).unwrap_or_default();
     format!("{}|{}", normalized, edition)
 }
-

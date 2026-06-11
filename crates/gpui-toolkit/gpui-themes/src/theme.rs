@@ -16,6 +16,8 @@ mod community_theme_manifest;
 mod default;
 mod editor_theme;
 mod misc;
+#[cfg(test)]
+mod tests;
 mod theme_gallery;
 mod theme_mode_preference;
 mod theme_schedule;
@@ -24,8 +26,6 @@ mod time_of_day;
 mod tui_ansi_palette;
 mod tui_theme_preset;
 mod types;
-#[cfg(test)]
-mod tests;
 
 pub use accent_palette::*;
 pub use accessibility_palette::*;
@@ -43,4 +43,3 @@ pub use time_of_day::*;
 pub use tui_ansi_palette::*;
 pub use tui_theme_preset::*;
 pub use types::*;
-

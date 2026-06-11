@@ -103,4 +103,3 @@ impl ColorRgba {
         self.a.to_bits().hash(h);
     }
 }
-

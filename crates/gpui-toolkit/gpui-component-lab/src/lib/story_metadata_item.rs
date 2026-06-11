@@ -19,4 +19,3 @@ impl StoryMetadataItem {
         }
     }
 }
-

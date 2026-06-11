@@ -714,7 +714,10 @@ impl PlayerView {
     }
 
     /// Render the scanner threads section for library settings
-    pub(super) fn render_scanner_threads_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_scanner_threads_section(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -794,4 +797,3 @@ impl PlayerView {
             )
     }
 }
-

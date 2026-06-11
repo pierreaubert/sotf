@@ -39,4 +39,3 @@ pub(super) fn is_color_scale_type(scale: &ColorScale, scale_type: ColorScaleType
             | (ColorScale::Greys, ColorScaleType::Greys)
     )
 }
-

@@ -67,4 +67,3 @@ impl TempoMap {
         sample_position as u64
     }
 }
-

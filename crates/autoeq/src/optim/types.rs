@@ -26,4 +26,3 @@ pub struct MultiObjectiveData {
 /// `epa_preference` is `Some` when EPA is computed (every N iterations), `None` otherwise.
 pub type OptimProgressCallback =
     Box<dyn FnMut(usize, f64, Option<f64>) -> crate::de::CallbackAction + Send>;
-

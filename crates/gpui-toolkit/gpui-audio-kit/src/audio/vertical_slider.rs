@@ -930,4 +930,3 @@ impl RenderOnce for VerticalSlider {
         container
     }
 }
-

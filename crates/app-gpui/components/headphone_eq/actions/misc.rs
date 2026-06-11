@@ -730,4 +730,3 @@ fn parse_filter_type(type_str: &str) -> math_audio_iir_fir::BiquadFilterType {
         _ => math_audio_iir_fir::BiquadFilterType::Peak, // Default
     }
 }
-

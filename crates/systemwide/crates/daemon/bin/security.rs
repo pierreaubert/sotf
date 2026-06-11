@@ -21,13 +21,13 @@ mod get;
 mod misc;
 #[path = "security/peer_class.rs"]
 mod peer_class;
+#[cfg(test)]
+#[path = "security/tests.rs"]
+mod tests;
 #[path = "security/types.rs"]
 mod types;
 #[path = "security/verify.rs"]
 mod verify;
-#[cfg(test)]
-#[path = "security/tests.rs"]
-mod tests;
 
 pub use get::*;
 pub use misc::*;
@@ -35,8 +35,7 @@ pub use peer_class::*;
 pub use types::*;
 pub use verify::*;
 
-# [cfg (all (target_os = "macos" , feature = "hal"))]
+#[cfg(all(target_os = "macos", feature = "hal"))]
 use get::encryption_impl;
-# [cfg (not (all (target_os = "macos" , feature = "hal")))]
+#[cfg(not(all(target_os = "macos", feature = "hal")))]
 use types::encryption_impl;
-

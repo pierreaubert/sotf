@@ -13,7 +13,13 @@ pub(super) struct VolumeKnobFillElement {
 }
 
 impl VolumeKnobFillElement {
-    pub(super) fn new(size: Pixels, value: f32, bg_color: Rgba, fill_color: Rgba, ring_color: Rgba) -> Self {
+    pub(super) fn new(
+        size: Pixels,
+        value: f32,
+        bg_color: Rgba,
+        fill_color: Rgba,
+        ring_color: Rgba,
+    ) -> Self {
         Self {
             size,
             value,
@@ -210,4 +216,3 @@ impl Element for VolumeKnobFillElement {
         });
     }
 }
-

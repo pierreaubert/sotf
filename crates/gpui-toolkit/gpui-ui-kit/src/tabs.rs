@@ -7,14 +7,19 @@
 
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::{ThemeExt, glow_shadow};
-use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
-use gpui::{ElementId, Window, App, SharedString, FocusHandle, Stateful, Div, div, FontWeight, MouseButton, px};
+use gpui::prelude::{
+    InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled,
+};
+use gpui::{
+    App, Div, ElementId, FocusHandle, FontWeight, MouseButton, SharedString, Stateful, Window, div,
+    px,
+};
 
 mod tab_item;
 mod types;
 
-pub use tab_item::{TabItem};
-pub use types::{TabsTheme, TabVariant, IconFactory};
+pub use tab_item::TabItem;
+pub use types::{IconFactory, TabVariant, TabsTheme};
 /// A tabs component with theming support
 pub struct Tabs {
     id: ElementId,
@@ -569,4 +574,3 @@ impl IntoElement for Tabs {
         gpui::Component::new(self)
     }
 }
-

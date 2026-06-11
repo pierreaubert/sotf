@@ -4,6 +4,11 @@
 use super::super::actions::ToggleUpmixerConfig;
 use super::super::level_meters::render_gradient_meter;
 use super::super::render_plugin_content;
+use super::super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_icon};
+use super::misc::speaker_config_to_channels;
+use super::plugin_drag_info::PluginDragInfo;
+use super::short::short_name;
+use super::short::short_name_with_permanent;
 use crate::app::constants::spacing;
 use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
@@ -13,24 +18,19 @@ use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::level_meters::LevelMeterManager;
 use crate::components::plugins::theme::PluginThemeId;
+use crate::components::themed_tooltip as make_tooltip;
 use crate::theme::Theme;
-use gpui_audio_kit::db_to_position;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
+use gpui_audio_kit::db_to_position;
 use gpui_ui_kit::{
     CollapseDirection, IconButton, IconButtonSize, IconButtonVariant, PaneDivider,
     PaneDividerTheme, Select, SelectOption, SelectSize, Toggle, ToggleSize, ToggleStyle,
 };
 use sotf_audio_player::PluginType;
 use sotf_plugins::param_specs::{find_by_key as pk, index_of, upmixer::PARAMS as UP};
-use crate::components::themed_tooltip as make_tooltip;
-use super::super :: ui_plugin_shell :: { plugin_accent_color as plugin_color , plugin_icon } ;
-use super::misc::speaker_config_to_channels;
-use super::plugin_drag_info::PluginDragInfo;
-use super::short::short_name;
-use super::short::short_name_with_permanent;
 
 /// Brief description for each plugin type (shown in add-plugin menu tooltips).
 pub(crate) fn plugin_description(plugin_type: &PluginType) -> &'static str {
@@ -318,7 +318,10 @@ impl PlayerView {
 
     /// Render the empty-state notice shown in Studio when the plugin graph
     /// has a non-linear topology that the rack strip can't render.
-    pub(super) fn render_non_linear_chain_notice(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_non_linear_chain_notice(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         use gpui_ui_kit::{
             Button, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack,
         };
@@ -2826,4 +2829,3 @@ impl PlayerView {
         cx.notify();
     }
 }
-

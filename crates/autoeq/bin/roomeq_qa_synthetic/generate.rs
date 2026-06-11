@@ -35,4 +35,3 @@ pub(super) fn generate_ms_option_combos() -> Vec<Vec<&'static str>> {
     }
     combos
 }
-

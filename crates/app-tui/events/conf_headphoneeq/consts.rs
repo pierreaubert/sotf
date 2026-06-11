@@ -8,14 +8,16 @@ pub(super) static HEADPHONE_OPT_RESULT: std::sync::OnceLock<
 > = std::sync::OnceLock::new();
 
 #[allow(clippy::type_complexity)]
-pub(super) static HEADPHONE_OPT_PROGRESS: std::sync::OnceLock<Arc<Mutex<Option<(usize, usize, f64, f32)>>>> =
-    std::sync::OnceLock::new();
+pub(super) static HEADPHONE_OPT_PROGRESS: std::sync::OnceLock<
+    Arc<Mutex<Option<(usize, usize, f64, f32)>>>,
+> = std::sync::OnceLock::new();
 
 #[allow(clippy::type_complexity)]
-pub(super) static HEADPHONE_LIST_RESULT: std::sync::OnceLock<Arc<Mutex<Option<Result<Vec<String>, String>>>>> =
-    std::sync::OnceLock::new();
+pub(super) static HEADPHONE_LIST_RESULT: std::sync::OnceLock<
+    Arc<Mutex<Option<Result<Vec<String>, String>>>>,
+> = std::sync::OnceLock::new();
 
 #[allow(clippy::type_complexity)]
-pub(super) static HEADPHONE_DOWNLOAD_RESULT: std::sync::OnceLock<Arc<Mutex<Option<Result<String, String>>>>> =
-    std::sync::OnceLock::new();
-
+pub(super) static HEADPHONE_DOWNLOAD_RESULT: std::sync::OnceLock<
+    Arc<Mutex<Option<Result<String, String>>>>,
+> = std::sync::OnceLock::new();

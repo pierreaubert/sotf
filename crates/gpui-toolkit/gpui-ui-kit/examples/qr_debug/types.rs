@@ -35,4 +35,3 @@ pub(super) enum Tab {
     Generate,
     Scan,
 }
-

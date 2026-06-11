@@ -56,4 +56,3 @@ pub fn encrypted_to_samples_into(ciphertext: &[u8], output: &mut [f32]) -> usize
 
     to_write
 }
-

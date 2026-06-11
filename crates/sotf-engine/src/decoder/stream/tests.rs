@@ -9,13 +9,9 @@ use super::types::StreamState;
 use super::types::lock_stream_state;
 use crate::decoder::core::{AudioSpec, DecodedAudio};
 use crate::decoder::error::AudioDecoderError;
-use std::path::Path;
 use std::sync::mpsc::{self};
 use std::sync::{Arc, Mutex};
-use std::thread::{self};
 use std::time::Duration;
-
-use super::*;
 
 #[test]
 fn test_stream_config_default() {

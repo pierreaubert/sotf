@@ -404,7 +404,6 @@ pub fn unwrap_phase_degrees(phase_deg: &Array1<f64>) -> Array1<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::*;
 
     /// Assert that two floats are approximately equal
     fn assert_approx_eq(a: f64, b: f64, epsilon: f64) {
@@ -777,4 +776,3 @@ mod tests {
         );
     }
 }
-

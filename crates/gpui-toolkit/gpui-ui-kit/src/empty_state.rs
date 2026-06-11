@@ -12,7 +12,7 @@
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{SharedString, AnyElement, Div, div, FontWeight, Window, App};
+use gpui::{AnyElement, App, Div, FontWeight, SharedString, Window, div};
 
 /// An empty state placeholder component
 #[derive(IntoElement)]

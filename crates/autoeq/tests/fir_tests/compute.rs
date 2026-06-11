@@ -44,4 +44,3 @@ pub(super) fn compute_rms_deviation(curve1: &[f64], curve2: &[f64]) -> f64 {
         .sum();
     (sum_sq / curve1.len() as f64).sqrt()
 }
-

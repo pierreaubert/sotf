@@ -51,4 +51,3 @@ pub(super) fn assign_crowding_distance_for_indices(population: &mut [Individual]
         }
     }
 }
-

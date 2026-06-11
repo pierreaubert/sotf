@@ -13,13 +13,12 @@ mod autoeq_de_backend;
 mod create;
 mod misc;
 mod optimize;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use autoeq_de_backend::*;
 pub use create::*;
 pub use misc::*;
 pub use optimize::*;
 pub use types::*;
-

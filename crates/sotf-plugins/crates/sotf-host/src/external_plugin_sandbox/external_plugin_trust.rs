@@ -34,4 +34,3 @@ pub(super) const fn should_require_platform_sandbox(trust: ExternalPluginTrust) 
         }
     }
 }
-

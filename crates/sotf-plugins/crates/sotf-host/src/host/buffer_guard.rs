@@ -28,4 +28,3 @@ impl<'a, T: AudioSample> Drop for BufferGuard<'a, T> {
         *self.slot = self.buffers.take();
     }
 }
-

@@ -1673,4 +1673,3 @@ pub(super) enum Commands {
     /// Get current playback status
     Status,
 }
-

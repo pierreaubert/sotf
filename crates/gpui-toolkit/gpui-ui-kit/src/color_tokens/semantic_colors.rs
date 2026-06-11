@@ -72,4 +72,3 @@ impl Default for SemanticColors {
         Self::dark()
     }
 }
-

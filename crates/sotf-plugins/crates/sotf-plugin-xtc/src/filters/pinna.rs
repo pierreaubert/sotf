@@ -76,4 +76,3 @@ pub(crate) fn pinna_resonance_contra(freq: f32, speaker_angle_deg: f32) -> f32 {
 
     ear_response * concha_response * pinna_response
 }
-

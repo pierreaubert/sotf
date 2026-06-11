@@ -16,7 +16,7 @@ use crate::ComponentTheme;
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::ThemeExt;
 use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
-use gpui::{Rgba, ElementId, SharedString, Window, App, Stateful, Div, px, div, MouseButton};
+use gpui::{App, Div, ElementId, MouseButton, Rgba, SharedString, Stateful, Window, div, px};
 
 /// Theme colors for search bar styling
 #[derive(Debug, Clone, ComponentTheme)]

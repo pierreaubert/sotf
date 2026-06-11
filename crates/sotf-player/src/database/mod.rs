@@ -20,4 +20,3 @@ mod tests;
 
 pub use misc::*;
 pub use music_database::*;
-

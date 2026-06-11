@@ -30,4 +30,3 @@ pub(super) fn validate_api_path_segment(segment: &str) -> SotfApiResult<&str> {
         ))
     }
 }
-

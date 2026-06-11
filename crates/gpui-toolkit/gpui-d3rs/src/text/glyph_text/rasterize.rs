@@ -77,4 +77,3 @@ pub(super) fn rasterize_text(
         ],
     }
 }
-

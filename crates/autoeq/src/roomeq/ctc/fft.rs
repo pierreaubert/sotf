@@ -20,4 +20,3 @@ pub(super) fn fft_real_to_half_spectrum_f64(input: &[f64], fft_size: usize) -> V
     buffer.truncate(fft_size / 2 + 1);
     buffer
 }
-

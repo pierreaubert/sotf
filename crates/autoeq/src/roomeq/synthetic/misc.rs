@@ -32,4 +32,3 @@ pub(super) fn xorshift64(state: &mut u64) -> u64 {
     *state = x;
     x
 }
-

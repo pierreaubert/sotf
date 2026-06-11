@@ -54,4 +54,3 @@ pub(super) fn apply_tukey_window(signal: &[f32], alpha: f32) -> Vec<f32> {
         })
         .collect()
 }
-

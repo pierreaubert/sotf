@@ -39,4 +39,3 @@ impl SpeakerPosition {
         [cos_el * az.sin(), cos_el * az.cos(), el.sin()]
     }
 }
-

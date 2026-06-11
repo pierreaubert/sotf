@@ -12,4 +12,3 @@ pub(super) fn param_range(p: &ParamSpec) -> Option<(f64, f64)> {
         ParamType::FilePath => None,
     }
 }
-

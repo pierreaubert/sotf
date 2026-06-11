@@ -8,10 +8,10 @@ use super::super::primitives::{
 };
 use super::super::shaders;
 use super::super::text::{TextAtlas, TextBatch, TextVertex};
-use wgpu::util::DeviceExt;
-use std::sync::Arc;
 use super::Uniforms;
 use super::misc::DEFAULT_FONT;
+use std::sync::Arc;
+use wgpu::util::DeviceExt;
 
 /// GPU-accelerated 2D chart renderer
 pub struct Chart2DRenderer {

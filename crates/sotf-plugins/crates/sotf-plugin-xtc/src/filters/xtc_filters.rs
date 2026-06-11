@@ -30,4 +30,3 @@ impl XtcFilters {
             .unwrap_or(2)
     }
 }
-

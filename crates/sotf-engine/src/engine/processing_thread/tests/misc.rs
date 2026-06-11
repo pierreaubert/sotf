@@ -2,10 +2,7 @@
 
 use super::super::build::build_plugin_host;
 use super::super::misc::create_plugin;
-use super::super::*;
-use super::test;
 use crate::plugins::{PluginSettings, PluginType};
-use sotf_plugins::{Host, Plugin};
 
 /// Returns the input channel count that `create_plugin` expects for each type.
 fn input_channels_for(plugin_type: &PluginType) -> usize {

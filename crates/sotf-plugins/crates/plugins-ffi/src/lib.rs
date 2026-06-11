@@ -19,10 +19,10 @@
 
 #[cfg(target_os = "macos")]
 pub use gpui_au::ffi as gpui_au_ffi;
+pub use parameter_map::{ParameterInfo, ParameterMap};
+use sotf_host::plugin::Plugin;
 use std::ffi::CString;
 use std::os::raw::c_char;
-use sotf_host::plugin::Plugin;
-pub use parameter_map::{ParameterInfo, ParameterMap};
 
 thread_local! {
     static LAST_ERROR: std::cell::RefCell<Option<CString>> = const { std::cell::RefCell::new(None) };
@@ -49,11 +49,11 @@ mod misc;
 mod plugin;
 #[path = "lib/process.rs"]
 mod process;
-#[path = "lib/types.rs"]
-mod types;
 #[cfg(test)]
 #[path = "lib/tests.rs"]
 mod tests;
+#[path = "lib/types.rs"]
+mod types;
 
 pub use misc::*;
 pub use plugin::*;
@@ -195,4 +195,3 @@ pub enum PluginError {
     BufferTooSmall = -10,
     UnknownError = -99,
 }
-

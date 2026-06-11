@@ -938,4 +938,3 @@ fn draw_delay_detection_step(f: &mut Frame, content: Rect, app: &App) {
         );
     }
 }
-

@@ -22,4 +22,3 @@ pub(super) fn default_output_gain() -> f32 {
 pub(super) fn default_mix() -> f32 {
     pk(TS, "mix").default_f64() as f32
 }
-

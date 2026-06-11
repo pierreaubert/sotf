@@ -125,4 +125,3 @@ pub fn calculate_alignment_delays(
         .map(|(name, &arrival)| (name.clone(), max_arrival - arrival))
         .collect()
 }
-

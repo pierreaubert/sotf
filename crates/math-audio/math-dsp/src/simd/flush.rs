@@ -95,7 +95,6 @@ pub fn flush_denormals_complex_inplace(samples: &mut [Complex<f32>]) {
 #[cfg(test)]
 mod denorm_tests {
     use super::*;
-    use super::super::*;
 
     #[test]
     fn test_flush_denormals_basic() {
@@ -168,4 +167,3 @@ mod denorm_tests {
         }
     }
 }
-

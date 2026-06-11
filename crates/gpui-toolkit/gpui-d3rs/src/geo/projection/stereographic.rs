@@ -137,4 +137,3 @@ impl Projection for Stereographic {
         clip_angle_visible(&self.config, lon, lat)
     }
 }
-

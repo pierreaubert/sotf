@@ -37,4 +37,3 @@ impl<T: AudioSample> DelayBuffer<T> {
         self.delay
     }
 }
-

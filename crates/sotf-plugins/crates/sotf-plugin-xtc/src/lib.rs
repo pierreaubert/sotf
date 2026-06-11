@@ -43,16 +43,15 @@ mod compute;
 mod load;
 #[path = "lib/misc.rs"]
 mod misc;
+#[cfg(test)]
+#[path = "lib/tests.rs"]
+mod tests;
 #[path = "lib/types.rs"]
 mod types;
 #[path = "lib/xtc_data.rs"]
 mod xtc_data;
 #[path = "lib/xtc_plugin.rs"]
 mod xtc_plugin;
-#[cfg(test)]
-#[path = "lib/tests.rs"]
-mod tests;
 
 pub use xtc_data::*;
 pub use xtc_plugin::*;
-

@@ -39,4 +39,3 @@ impl Point3 {
         self.z.to_bits().hash(h);
     }
 }
-

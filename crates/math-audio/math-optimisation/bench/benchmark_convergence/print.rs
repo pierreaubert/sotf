@@ -32,4 +32,3 @@ pub(super) fn print_verbose_comparison(comparison: &BenchmarkComparison) {
         format_delta(comparison.cmaes_minus_de())
     );
 }
-

@@ -1624,4 +1624,3 @@ pub const CONFIG_9_1_6: SpeakerConfig = SpeakerConfig {
     ],
     meter_groups: METER_GROUPS_9_1_6,
 };
-

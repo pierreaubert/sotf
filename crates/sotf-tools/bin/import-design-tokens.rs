@@ -20,13 +20,13 @@ mod hex;
 mod misc;
 #[path = "import-design-tokens/parse.rs"]
 mod parse;
+#[cfg(test)]
+#[path = "import-design-tokens/tests.rs"]
+mod tests;
 #[path = "import-design-tokens/theme.rs"]
 mod theme;
 #[path = "import-design-tokens/types.rs"]
 mod types;
-#[cfg(test)]
-#[path = "import-design-tokens/tests.rs"]
-mod tests;
 
 use default::default_app_tokens_path;
 use default::default_toolkit_tokens_path;
@@ -93,4 +93,3 @@ fn main() -> Result<()> {
     );
     Ok(())
 }
-

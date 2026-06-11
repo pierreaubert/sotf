@@ -4,9 +4,6 @@
 use super::super::choose::choose_measurement_input_config;
 #[cfg(not(target_os = "ios"))]
 use super::super::choose::choose_measurement_output_config;
-use super::super::*;
-use crate::signals::*;
-use hound::SampleFormat;
 
 #[cfg(not(target_os = "ios"))]
 fn supported_stream_config(

@@ -13,11 +13,10 @@ mod adjust;
 mod misc;
 mod plugin_controller;
 mod set;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use misc::*;
 pub use plugin_controller::*;
 pub use types::*;
-

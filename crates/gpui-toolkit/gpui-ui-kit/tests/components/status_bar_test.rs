@@ -1,7 +1,7 @@
 //! StatusBar component tests
 
 use gpui::div;
-use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, Styled};
+use gpui::prelude::ParentElement;
 use gpui_ui_kit::status_bar::{StatusBar, StatusBarPosition};
 
 #[test]

@@ -47,4 +47,3 @@ impl MpdSongInfo {
         kvs
     }
 }
-

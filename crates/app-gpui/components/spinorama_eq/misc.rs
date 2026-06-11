@@ -8,4 +8,3 @@ pub(super) fn spinorama_runtime() -> &'static tokio::runtime::Runtime {
         tokio::runtime::Runtime::new().expect("Failed to create spinorama tokio runtime")
     })
 }
-

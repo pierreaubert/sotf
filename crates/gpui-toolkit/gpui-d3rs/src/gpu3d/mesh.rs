@@ -23,4 +23,3 @@ pub struct GpuVertex {
     pub value: f32,
     pub _padding: f32, // Align to 32 bytes
 }
-
