@@ -54,5 +54,6 @@ Due to dependency ordering, publish in this sequence:
 1. `math-test-functions`
 2. `math-optimisation`
 3. `math-iir-fir`
-4. `math-dsp` (not currently published)
-5. `math-delaunay` (not currently published)
+5. `math-rir`
+4. `math-dsp`
+5. `math-delaunay`
