@@ -1,0 +1,27 @@
+# ----------------------------------------------------------------------
+# Downloads
+# ----------------------------------------------------------------------
+
+[group('download')]
+generate-audio-tests:
+	cargo run --bin generate-audio-tests -p sotf-tools --release --no-default-features
+	cargo run --bin generate-upmixer-golden -p sotf-tools --release --no-default-features
+
+[group('download')]
+download-sofa:
+	mkdir -p data_cached/org.sofacoustics/mit
+	wget -O data_cached/org.sofacoustics/mit/kemar_normal_pinna.sofa https://sofacoustics.org/data/database/mit/mit_kemar_normal_pinna.sofa
+	wget -O data_cached/org.sofacoustics/mit/kemar_large.sofa https://sofacoustics.org/data/database/mit/mit_kemar_large_pinna.sofa
+
+[group('download')]
+convert-sofa-to-sqlite:
+	@for sofa in data_cached/org.sofacoustics/mit/*.sofa; do \
+		hrtfdb="$${sofa%.sofa}.hrtfdb"; \
+		if [ ! -f "$$hrtfdb" ]; then \
+			echo "Converting $$sofa -> $$hrtfdb"; \
+			cargo run --bin sofa-to-sqlite -p sotf-tools --release -- "$$sofa" "$$hrtfdb"; \
+		else \
+			echo "Skipping $$sofa (already converted)"; \
+		fi \
+	done
+

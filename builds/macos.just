@@ -276,10 +276,10 @@ install-macos: install-macos-brew install-rustup
 	# need metal
 	xcodebuild -downloadComponent MetalToolchain
 	# chromedriver sheanigans
-	brew install chromedriver
-	xattr -d com.apple.quarantine $(which chromedriver)
+	# brew install chromedriver
+	# xattr -d com.apple.quarantine $(which chromedriver)
 	# build tools for native deps in the dep tree (skia, etc.)
-	brew install cmake
+	brew install cmake pluginval
 
 
 # ----------------------------------------------------------------------

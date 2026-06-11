@@ -6,50 +6,37 @@
 _default:
 	just --list
 
-import? 'builds/aggregates.just'
-import? 'builds/cross.just'
-import? 'builds/macos.just'
-import? 'builds/windows.just'
-import? 'builds/linux.just'
-import? 'builds/ios.just'
-import? 'builds/tvos.just'
+import 'builds/install.just'
+import 'builds/updates.just'
+import 'builds/aggregates.just'
+import 'builds/cross.just'
+import 'builds/macos.just'
+import 'builds/windows.just'
+import 'builds/linux.just'
+import 'builds/ios.just'
+import 'builds/tvos.just'
 
-import? 'crates/math-audio/Justfile'
-import? 'crates/autoeq/Justfile'
-import? 'crates/gpui-toolkit/Justfile'
-import? 'crates/sotf-plugins/Justfile'
-import? 'crates/sotf-engine/Justfile'
-import? 'crates/sotf-plugins/crates/plugins-bridge/Justfile'
-import? 'crates/sotf-plugins/crates/plugins-ffi/Justfile'
-import? 'crates/sotf-plugins/crates/plugins-nih/Justfile'
-import? 'crates/sotf-plugins/crates/plugins-au/Justfile'
+import 'crates/math-audio/Justfile'
+import 'crates/autoeq/Justfile'
+import 'crates/gpui-toolkit/Justfile'
+import 'crates/sotf-plugins/Justfile'
+import 'crates/sotf-engine/Justfile'
+import 'crates/sotf-tools/Justfile'
 
 # ----------------------------------------------------------------------
-# Downloads
+# VARIABLES
 # ----------------------------------------------------------------------
 
-[group('download')]
-download-sofa:
-	mkdir -p data_cached/org.sofacoustics/mit
-	wget -O data_cached/org.sofacoustics/mit/kemar_normal_pinna.sofa https://sofacoustics.org/data/database/mit/mit_kemar_normal_pinna.sofa
-	wget -O data_cached/org.sofacoustics/mit/kemar_large.sofa https://sofacoustics.org/data/database/mit/mit_kemar_large_pinna.sofa
+list_test_features := "qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"
+list_prod_features := "onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls"
 
-[group('download')]
-convert-sofa-to-sqlite:
-	@for sofa in data_cached/org.sofacoustics/mit/*.sofa; do \
-		hrtfdb="$${sofa%.sofa}.hrtfdb"; \
-		if [ ! -f "$$hrtfdb" ]; then \
-			echo "Converting $$sofa -> $$hrtfdb"; \
-			cargo run --bin sofa-to-sqlite -p sotf-tools --release -- "$$sofa" "$$hrtfdb"; \
-		else \
-			echo "Skipping $$sofa (already converted)"; \
-		fi \
-	done
+test_features := '--features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"'
+release_test_features := '--features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls"'
+prod_features := '--features="onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls"'
 
-[group('download')]
-generate-audio-tests:
-	cargo run --bin generate-audio-tests -p sotf-tools --release --no-default-features
-	cargo run --bin generate-upmixer-golden -p sotf-tools --release --no-default-features
+test_features_macos := test_features
+test_features_linux := '--features="qa, onnx, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"'
+test_features_windows := '--features="qa, onnx, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"'
 
 # ----------------------------------------------------------------------
 # TEST
@@ -57,26 +44,26 @@ generate-audio-tests:
 
 [group('test')]
 check:
-	RUST_MIN_STACK=16777216 cargo check --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming"
+	cargo check --workspace  --lib --bins --tests --examples {{test_features}}
 
 [group('test')]
 test:
-	RUST_MIN_STACK=16777216 cargo test --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming"
+	cargo test --workspace  --lib --bins --tests --examples {{test_features}}
 
 [group('test')]
 test-negative:
-	cargo test --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming"
+	cargo test --test negative --release {{release_test_features}}
 
 [group('test')]
 test-proptest:
-	PROPTEST_CASES=10000 cargo test --test proptest_tests --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming"
+	PROPTEST_CASES=10000 cargo test --test proptest_tests --release {{release_test_features}}
 
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest:
-	RUST_MIN_STACK=67108864 CLANG_MODULE_CACHE_PATH=/private/tmp/clang-module-cache cargo test --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, streaming"
-	PROPTEST_CASES=10000 cargo test --test proptest_tests --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, streaming"
-	RUST_MIN_STACK=67108864 CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 CLANG_MODULE_CACHE_PATH=/private/tmp/clang-module-cache cargo nextest run --release --no-fail-fast --test-threads=1 --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, streaming"
+	cargo test --test negative --release {{release_test_features}}
+	PROPTEST_CASES=10000 cargo test --test proptest_tests --release {{release_test_features}}
+	CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 cargo nextest run --release --no-fail-fast --test-threads=1 --workspace --lib --bins --tests --examples {{release_test_features}}
 
 # ----------------------------------------------------------------------
 # LINT
@@ -84,7 +71,7 @@ ntest:
 
 [group('lint')]
 lint:
-	cargo clippy --all --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming" -- -D warnings
+	cargo clippy --all {{test_features}} -- -D warnings
 
 # ----------------------------------------------------------------------
 # DOC
@@ -120,21 +107,21 @@ doc-manual: doc-info doc-html
 # 127.0.0.1:7777 (override via SOTF_DEV_API_PORT). Release builds never include it.
 [group('run')]
 run-gpui:
-	cargo build --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf"
+	cargo build --bin sotf-desktop {{test_features}}
 	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/sotf-desktop
 	./target/debug/sotf-desktop
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-release:
-	cargo build --release --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+	cargo build --release --bin sotf-desktop {{prod_features}}
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/sotf-desktop
 	./target/release/sotf-desktop
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin sotf-desktop {{test_features}}
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/sotf-desktop
 	./target/release/sotf-desktop
 
@@ -142,33 +129,33 @@ run-gpui-leaks:
 [group('run')]
 [macos]
 run-tui:
-	cargo run --release --bin sotf-tui --features "onnx, hal, streaming, hls"
+	cargo run --release --bin sotf-tui {{test_features_macos}}
 
 [group('run')]
 [linux]
 run-tui:
-	cargo run --release --bin sotf-tui --features "onnx, streaming, hls"
+	cargo run --release --bin sotf-tui {{test_features_linux}}
 
 [group('run')]
 [windows]
 run-tui:
-	cargo run --release --bin sotf-tui --features "onnx, streaming, hls"
+	cargo run --release --bin sotf-tui {{test_features_windows}}
 
 # Run the TUI player (with debug info for leak detection)
 [group('run')]
 [macos]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features "onnx, hal, streaming, hls"
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui {{test_features_macos}}
 
 [group('run')]
 [linux]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features "onnx, streaming, hls"
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui {{test_features_linux}}
 
 [group('run')]
 [windows]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features "onnx, streaming, hls"
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui {{test_features_windows}}
 
 # ----------------------------------------------------------------------
 # FORMAT
@@ -313,63 +300,3 @@ dev:
 systemwide-lab:
 	SOTF_SYSTEMWIDE_DRIVER=lab SOTF_SYSTEMWIDE_RUNTIME_DIR="${SOTF_SYSTEMWIDE_RUNTIME_DIR:-/tmp/sotf-systemwide-lab-$USER}" cargo run -p sotf-daemon --bin sotf-daemon --features hal
 
-# ----------------------------------------------------------------------
-# UPDATE
-# ----------------------------------------------------------------------
-
-[group('install')]
-update: update-rust update-pre-commit
-
-[group('install')]
-update-rust:
-	rustup update
-	cargo update
-
-[group('install')]
-update-pre-commit:
-	pre-commit autoupdate
-
-# ----------------------------------------------------------------------
-# Install rustup
-# ----------------------------------------------------------------------
-
-[group('install')]
-install-rustup:
-	curl https://sh.rustup.rs -sSf > ./scripts/install-rustup
-	chmod +x ./scripts/install-rustup
-	./scripts/install-rustup -y
-	~/.cargo/bin/rustup default stable
-	~/.cargo/bin/cargo install just
-	~/.cargo/bin/cargo install cargo-wizard
-	~/.cargo/bin/cargo install cargo-llvm-cov
-	~/.cargo/bin/cargo install cross
-	~/.cargo/bin/cargo install cargo-binstall
-	~/.cargo/bin/cargo binstall cargo-nextest --secure
-	~/.cargo/bin/cargo install samply
-	~/.cargo/bin/cargo install cargo-insta
-
-# ----------------------------------------------------------------------
-# POST
-# ----------------------------------------------------------------------
-
-[group('install')]
-post-install: post-install-rust post-install-python
-
-[group('install')]
-post-install-rust:
-	$HOME/.cargo/bin/rustup default stable
-	$HOME/.cargo/bin/cargo install just
-	$HOME/.cargo/bin/cargo install cargo-wizard
-	$HOME/.cargo/bin/cargo install cargo-vcpkg
-	$HOME/.cargo/bin/cargo install cargo-llvm-cov
-	$HOME/.cargo/bin/cargo install cross
-	$HOME/.cargo/bin/cargo install cargo-binstall
-	$HOME/.cargo/bin/cargo binstall cargo-nextest --secure
-	$HOME/.cargo/bin/cargo check
-
-[group('install')]
-post-install-python:
-	python3 -m venv venv
-	./venv/bin/pip install -U pip
-	./venv/bin/pip install -r ./crates/autoeq/scripts/requirements.txt
-	./venv/bin/pip install -r ./crates/math-audio/math-dsp/ml/requirements.txt
