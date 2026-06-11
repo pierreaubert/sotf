@@ -2,10 +2,10 @@
 # sotf-plugins — test, example, QA, bench recipes
 # ==============================================================================
 
-import? 'crates/plugins-bridge/Justfile'
-import? 'crates/plugins-ffi/Justfile'
-import? 'crates/plugins-nih/Justfile'
-import? 'crates/plugins-au/Justfile'
+import 'crates/plugins-bridge/Justfile'
+import 'crates/plugins-ffi/Justfile'
+import 'crates/plugins-nih/Justfile'
+import 'crates/plugins-au/Justfile'
 
 # ----------------------------------------------------------------------
 # TESTS

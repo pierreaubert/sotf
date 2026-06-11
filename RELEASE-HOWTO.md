@@ -15,6 +15,12 @@ just ntest
 
 needs to work cleanly.
 
+## Documentation
+
+```
+just doc
+```
+
 ## QA
 
 Full qa is very slow (hours).
@@ -24,6 +30,7 @@ just qa
 ```
  You can run a minimal subset (minutes):
 ```
+just qa-math
 just qa-autoeq
 just qa-roomeq-quick
 just qa-roomeq-multi-measurement

@@ -5,7 +5,7 @@ test-examples:
 	RUST_MIN_STACK=16777216 cargo build --examples -p gpui-ui-kit
 	@echo "✓ All gpui-ui-kit examples compiled successfully"
 
-[group('test')]
+[group('qa')]
 qa-gpui-conformance:
 	mkdir -p target/gpui-conformance
 	RUST_MIN_STACK=16777216 cargo test -p gpui-design-tools
@@ -13,7 +13,7 @@ qa-gpui-conformance:
 	RUST_MIN_STACK=16777216 cargo run -p gpui-design-tools --bin gpui-validate-design-tokens -- --report-json target/gpui-conformance/design-tokens.json --report-markdown target/gpui-conformance/design-tokens.md
 	RUST_MIN_STACK=16777216 cargo run -p gpui-component-lab --bin gpui-component-lab -- --conformance --report-json target/gpui-conformance/component-lab.json --report-markdown target/gpui-conformance/component-lab.md
 
-[group('test')]
+[group('qa')]
 qa-gpui-obvious: qa-gpui-conformance
 	RUST_MIN_STACK=16777216 cargo test -p gpui-ui-kit-macros
 	RUST_MIN_STACK=16777216 cargo test -p gpui-builder

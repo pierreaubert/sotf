@@ -103,6 +103,7 @@ Per-plugin manuals:
 * compressor Plugin::
 * convolution Plugin::
 * crossfeed Plugin::
+* crossover Plugin::
 * de-esser Plugin::
 * declick Plugin::
 * delay Plugin::
@@ -112,8 +113,11 @@ Per-plugin manuals:
 * dynamic-eq Plugin::
 * eq Plugin::
 * expander Plugin::
+* fir-designer Plugin::
 * gain Plugin::
 * gate Plugin::
+* hal-input Plugin::
+* hal-output Plugin::
 * hiss-reducer Plugin::
 * limiter Plugin::
 * linear-phase-eq Plugin::
@@ -123,6 +127,7 @@ Per-plugin manuals:
 * multiband-compressor Plugin::
 * multiband-expander Plugin::
 * pnd Plugin::
+* resampler Plugin::
 * saturation Plugin::
 * spectral-compressor Plugin::
 * spectrum-analyzer Plugin::

@@ -8,6 +8,7 @@ _default:
 
 import 'builds/install.just'
 import 'builds/updates.just'
+import 'builds/docs.just'
 import 'builds/aggregates.just'
 import 'builds/cross.just'
 import 'builds/macos.just'
@@ -58,12 +59,11 @@ test-negative:
 test-proptest:
 	PROPTEST_CASES=10000 cargo test --test proptest_tests --release {{release_test_features}}
 
-# which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest:
 	cargo test --test negative --release {{release_test_features}}
 	PROPTEST_CASES=10000 cargo test --test proptest_tests --release {{release_test_features}}
-	CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 cargo nextest run --release --no-fail-fast --test-threads=1 --workspace --lib --bins --tests --examples {{release_test_features}}
+	CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples {{release_test_features}}
 
 # ----------------------------------------------------------------------
 # LINT
@@ -72,31 +72,6 @@ ntest:
 [group('lint')]
 lint:
 	cargo clippy --all {{test_features}} -- -D warnings
-
-# ----------------------------------------------------------------------
-# DOC
-# ----------------------------------------------------------------------
-
-[group('doc')]
-doc:
-	cargo doc --all --no-deps
-
-# Build the Texinfo manual (sotf.info, sotf.html, sotf.pdf).
-# Requires `makeinfo` (texinfo) and, for PDF, `texi2pdf` / TeX Live.
-[group('doc')]
-doc-info:
-	makeinfo --no-split docs/sotf.texi -o docs/sotf.info
-
-[group('doc')]
-doc-html:
-	makeinfo --html --no-split docs/sotf.texi -o docs/sotf.html
-
-[group('doc')]
-doc-pdf:
-	cd docs && texi2pdf --clean sotf.texi
-
-[group('doc')]
-doc-manual: doc-info doc-html
 
 # ----------------------------------------------------------------------
 # RUN

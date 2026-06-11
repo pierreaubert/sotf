@@ -25,8 +25,10 @@ publish: publish-autoeq publish-math
 [group('qa')]
 qa: qa-autoeq \
 	qa-math \
-	qa-plugins \
 	qa-roomeq \
+	qa-gpui-obvious \
+	qa-gpui-conformance \
+	qa-plugins \
 	qa-engine \
 	qa-bridge \
 	qa-ffi

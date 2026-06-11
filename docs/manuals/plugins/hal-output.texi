@@ -1,0 +1,47 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: hal-output
+@node hal-output Plugin
+@chapter Plugin: @code{hal-output}
+@cindex hal-output plugin
+
+SOTF HAL Output plugin for macOS audio HAL output. Writes processed audio data back to the macOS CoreAudio HAL driver via shared memory, completing the system-wide audio processing chain.
+
+@menu
+* hal-output Plugin Parameters::
+* hal-output Plugin Developer Guide::
+@end menu
+
+@node hal-output Plugin Parameters
+@section Parameters
+
+
+@subsection Diagnostics
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Underrun Count} @tab Int @tab 0 .. 2147483647 @tab 0 @tab - @tab Number of buffer underruns detected (read-only diagnostic)
+@item @code{Write Success} @tab Float @tab 0 .. 100 @tab 100 @tab % @tab Percentage of samples accepted by the HAL writer in the last process block (100 = all accepted, <100 = back-pressure / partial write; read-only diagnostic)
+@item @code{Connected} @tab Bool @tab On / Off @tab Off @tab - @tab HAL output writer currently connected to shared memory
+@item @code{Backpressure} @tab Bool @tab On / Off @tab Off @tab - @tab HAL output reported a partial write in the last process block
+@end multitable
+
+
+All HAL Output parameters are @strong{read-only diagnostics}. They cannot be adjusted at runtime and do not affect the audio signal.
+
+@node hal-output Plugin Developer Guide
+@section Developer Guide
+
+SOTF HAL Output plugin for macOS audio HAL output.
+
+Writes processed audio data back to the macOS CoreAudio HAL driver via shared memory, completing the system-wide audio processing chain.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-hal-output/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-hal-output}.
+

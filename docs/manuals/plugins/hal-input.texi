@@ -1,0 +1,44 @@
+@c -*-texinfo-*-
+@c Per-plugin manual: hal-input
+@node hal-input Plugin
+@chapter Plugin: @code{hal-input}
+@cindex hal-input plugin
+
+SOTF HAL Input plugin for macOS audio HAL input. Reads audio data from the macOS CoreAudio HAL driver via shared memory, acting as the input source for system-wide audio processing.
+
+@menu
+* hal-input Plugin Parameters::
+* hal-input Plugin Developer Guide::
+@end menu
+
+@node hal-input Plugin Parameters
+@section Parameters
+
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Input Channels} @tab Int @tab 1 .. 16 @tab 2 @tab ch @tab Number of HAL input channels
+@end multitable
+
+
+@strong{Structural parameters} (Input Channels) require rebuilding the plugin when changed.
+
+@node hal-input Plugin Developer Guide
+@section Developer Guide
+
+SOTF HAL Input plugin for macOS audio HAL input.
+
+Reads audio data from the macOS CoreAudio HAL driver via shared memory, acting as the input source for system-wide audio processing.
+
+@subsubheading Parameter wiring
+
+All parameters reach the audio thread through the host's @code{rebuild_cached_parameters} / @code{set_parameter} / @code{get_parameter} triad. Structural parameters (marked in the notes below) trigger a rebuild; the rest update in real time with zero dropouts.
+
+@subsubheading Source
+
+@file{crates/sotf-plugins/crates/sotf-plugin-hal-input/}
+
+Run the unit tests with @code{cargo test -p sotf-plugin-hal-input}.
+
