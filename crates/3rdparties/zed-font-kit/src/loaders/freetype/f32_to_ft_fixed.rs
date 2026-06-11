@@ -4,7 +4,7 @@ use freetype_sys :: { FT_Fixed } ;
 use pathfinder_geometry::vector::{Vector2F, Vector2I};
 use std::f32;
 
-trait F32ToFtFixed {
+pub(super) trait F32ToFtFixed {
     type Output;
     fn f32_to_ft_fixed_26_6(self) -> Self::Output;
 }
@@ -24,4 +24,3 @@ impl F32ToFtFixed for f32 {
         (self * 64.0) as FT_Fixed
     }
 }
-

@@ -3,7 +3,7 @@
 use pathfinder_geometry::rect::{RectF, RectI};
 use pathfinder_geometry::vector::{Vector2F, Vector2I};
 
-trait FtFixedToF32 {
+pub(super) trait FtFixedToF32 {
     type Output;
     fn ft_fixed_26_6_to_f32(self) -> Self::Output;
 }
@@ -23,4 +23,3 @@ impl FtFixedToF32 for RectI {
         self.to_f32() * (1.0 / 64.0)
     }
 }
-

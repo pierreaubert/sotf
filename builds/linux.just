@@ -28,7 +28,7 @@ install-ubuntu-common:
 			 libasound2-dev \
 			 libnetcdf-dev \
 			 libopencv-dev \
-			 libclang-dev
+			 libclang-dev \
 			 librust-alsa-dev \
 			 librust-servo-fontconfig-dev \
 			 python3-venv \
