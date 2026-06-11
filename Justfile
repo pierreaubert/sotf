@@ -57,26 +57,26 @@ generate-audio-tests:
 
 [group('test')]
 check:
-	RUST_MIN_STACK=16777216 cargo check --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+	RUST_MIN_STACK=16777216 cargo check --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming"
 
 [group('test')]
 test:
-	RUST_MIN_STACK=16777216 cargo test --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+	RUST_MIN_STACK=16777216 cargo test --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming"
 
 [group('test')]
 test-negative:
-	cargo test --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+	cargo test --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming"
 
 [group('test')]
 test-proptest:
-	PROPTEST_CASES=10000 cargo test --test proptest_tests --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+	PROPTEST_CASES=10000 cargo test --test proptest_tests --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming"
 
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest:
-	RUST_MIN_STACK=67108864 CLANG_MODULE_CACHE_PATH=/private/tmp/clang-module-cache cargo test --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
-	PROPTEST_CASES=10000 cargo test --test proptest_tests --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
-	RUST_MIN_STACK=67108864 CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 CLANG_MODULE_CACHE_PATH=/private/tmp/clang-module-cache cargo nextest run --release --no-fail-fast --test-threads=1 --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
+	RUST_MIN_STACK=67108864 CLANG_MODULE_CACHE_PATH=/private/tmp/clang-module-cache cargo test --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, streaming"
+	PROPTEST_CASES=10000 cargo test --test proptest_tests --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, streaming"
+	RUST_MIN_STACK=67108864 CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 CLANG_MODULE_CACHE_PATH=/private/tmp/clang-module-cache cargo nextest run --release --no-fail-fast --test-threads=1 --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, streaming"
 
 # ----------------------------------------------------------------------
 # LINT
@@ -84,7 +84,7 @@ ntest:
 
 [group('lint')]
 lint:
-	cargo clippy --all --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api" -- -D warnings
+	cargo clippy --all --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming" -- -D warnings
 
 # ----------------------------------------------------------------------
 # DOC
@@ -142,33 +142,33 @@ run-gpui-leaks:
 [group('run')]
 [macos]
 run-tui:
-	cargo run --release --bin sotf-tui --features "onnx, hal"
+	cargo run --release --bin sotf-tui --features "onnx, hal, streaming, hls"
 
 [group('run')]
 [linux]
 run-tui:
-	cargo run --release --bin sotf-tui --features onnx
+	cargo run --release --bin sotf-tui --features "onnx, streaming, hls"
 
 [group('run')]
 [windows]
 run-tui:
-	cargo run --release --bin sotf-tui --features onnx
+	cargo run --release --bin sotf-tui --features "onnx, streaming, hls"
 
 # Run the TUI player (with debug info for leak detection)
 [group('run')]
 [macos]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features "onnx, hal"
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features "onnx, hal, streaming, hls"
 
 [group('run')]
 [linux]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features onnx
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features "onnx, streaming, hls"
 
 [group('run')]
 [windows]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features onnx
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features "onnx, streaming, hls"
 
 # ----------------------------------------------------------------------
 # FORMAT
@@ -209,7 +209,7 @@ prod-sotf-gpui:
 
 [group('build')]
 prod-sotf-tui:
-	cargo build --release --bin sotf-tui -p sotf-tui --features onnx
+	cargo build --release --bin sotf-tui -p sotf-tui --features "onnx, streaming, hls"
 
 [group('build')]
 prod-sotf-recorder:
@@ -236,7 +236,7 @@ dist-sotf-gpui:
 
 [group('dist')]
 dist-sotf-tui:
-	cargo build --profile dist --bin sotf-tui -p sotf-tui --features onnx
+	cargo build --profile dist --bin sotf-tui -p sotf-tui --features "onnx, streaming, hls"
 
 [group('dist')]
 dist-sotf-recorder:
@@ -263,17 +263,17 @@ dist-workspace: dist-plot-bins
 [group('build')]
 [macos]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx, hal, iamf, dev-api"
+	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx, hal, iamf, dev-api, streaming, hls"
 
 [group('build')]
 [linux]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx,hal,iamf"
+	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx,hal,iamf,streaming,hls"
 
 [group('build')]
 [windows]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx,hal,iamf"
+	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx,hal,iamf,streaming,hls"
 
 alias terminal := gpui
 
