@@ -4,9 +4,9 @@
 
 [group('build')]
 prod-math:
-	cargo build --release --bin plot_functions
-	cargo build --release --bin plot-autoeq-de
-	cargo build --release --bin run-autoeq-de
+	cargo build --release --bin plot-functions -p math-test-functions --features plotly
+	cargo build --release --bin plot-de -p math-optimisation --features plotly
+	cargo build --release --bin run-de -p math-optimisation
 
 # ----------------------------------------------------------------------
 # BENCH MATH

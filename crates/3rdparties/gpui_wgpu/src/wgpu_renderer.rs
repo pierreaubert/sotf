@@ -99,6 +99,7 @@ pub struct WgpuRenderer {
     last_error: Arc<Mutex<Option<String>>>,
     failed_frame_count: u32,
     device_lost: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    needs_redraw: bool,
 }
 
 impl WgpuRenderer {
@@ -435,6 +436,7 @@ impl WgpuRenderer {
             last_error,
             failed_frame_count: 0,
             device_lost: context.device_lost_flag(),
+            needs_redraw: false,
         })
     }
 
@@ -1597,6 +1599,12 @@ impl WgpuRenderer {
     /// Returns true if the GPU device was lost and recovery is needed.
     pub fn device_lost(&self) -> bool {
         self.device_lost.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Returns true if a redraw is needed because GPU state was cleared.
+    /// Calling this method clears the flag.
+    pub fn needs_redraw(&mut self) -> bool {
+        std::mem::take(&mut self.needs_redraw)
     }
 
     /// Recovers from a lost GPU device by recreating the renderer with a new context.

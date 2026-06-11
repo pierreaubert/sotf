@@ -2,6 +2,7 @@
 
 use autoeq::roomeq::{MultiMeasurementStrategy, ProcessingMode};
 use rand::Rng;
+use rand::prelude::IndexedRandom;
 use rand_chacha::ChaCha8Rng;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

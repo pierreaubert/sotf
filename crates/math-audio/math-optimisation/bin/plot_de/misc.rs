@@ -4,6 +4,7 @@ use math_audio_optimisation::function_registry::TestFunction;
 use plotly::Plot;
 use std::collections::BTreeMap;
 use std::fs::File;
+use std::io::Write;
 
 pub(super) fn find_csv_for_function(csv_dir: &str, function_name: &str) -> Vec<String> {
     math_audio_optimisation::function_registry::find_csv_files_for_function(csv_dir, function_name)

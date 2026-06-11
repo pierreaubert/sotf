@@ -2,6 +2,8 @@
 
 use anyhow :: { Context as _ , Ok , Result } ;
 use gpui :: { Font , FontId } ;
+# [cfg (feature = "font-kit")]
+use smallvec::SmallVec;
 use super::cosmic_text_system_state::CosmicTextSystemState;
 # [cfg (feature = "font-kit")]
 use super::misc::face_info_into_properties;

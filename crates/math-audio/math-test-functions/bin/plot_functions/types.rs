@@ -5,6 +5,7 @@ use math_audio_test_functions::functions;
 use ndarray::Array1;
 use std::collections::BTreeMap;
 use std::fs::File;
+use std::io::Write;
 
 pub(super) type TestFunction = fn(&Array1<f64>) -> f64;
 

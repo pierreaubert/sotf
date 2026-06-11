@@ -19,6 +19,7 @@ use autoeq::roomeq::{
     OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig, SpeakerGroup, TargetCurveConfig,
 };
 use rand::Rng;
+use rand::prelude::IndexedRandom;
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 use std::error::Error;

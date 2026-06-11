@@ -2,6 +2,7 @@
 
 use plotly::Plot;
 use std::fs::File;
+use std::io::Write;
 
 pub(super) fn parse_bounds(bounds_str: &str) -> Result<(f64, f64), Box<dyn std::error::Error>> {
     let cleaned = bounds_str.trim_matches(|c| c == '\'' || c == '"');

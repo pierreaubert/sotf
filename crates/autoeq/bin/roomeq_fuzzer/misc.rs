@@ -5,6 +5,7 @@ use autoeq::roomeq::{
     MultiMeasurementStrategy, OptimizerConfig, ProcessingMode, SpatialRobustnessSerdeConfig,
 };
 use rand::Rng;
+use rand::prelude::IndexedRandom;
 use rand_chacha::ChaCha8Rng;
 use std::sync::atomic::AtomicUsize;
 

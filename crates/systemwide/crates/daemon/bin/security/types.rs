@@ -29,6 +29,7 @@ pub enum PeerClass {
 
 #[cfg(not(all(target_os = "macos", feature = "hal")))]
 pub(super) mod encryption_impl {
+    use super::super::get::get_hal_key_path;
     use super::*;
 
     /// Stub key manager when encryption is not available.

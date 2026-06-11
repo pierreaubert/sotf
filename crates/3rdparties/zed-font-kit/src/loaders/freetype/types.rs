@@ -11,20 +11,20 @@ pub type NativeFont = FT_Face;
 pub(super) type BDF_PropertyType = i32;
 
 extern "C" {
-    fn FT_Get_Font_Format(face: FT_Face) -> *const c_char;
-    fn FT_Get_BDF_Property(
+    pub(super) fn FT_Get_Font_Format(face: FT_Face) -> *const c_char;
+    pub(super) fn FT_Get_BDF_Property(
         face: FT_Face,
         prop_name: *const c_char,
         aproperty: *mut BDF_PropertyRec,
     ) -> FT_Error;
-    fn FT_Get_PS_Font_Value(
+    pub(super) fn FT_Get_PS_Font_Value(
         face: FT_Face,
         key: u32,
         idx: FT_UInt,
         value: *mut c_void,
         value_len: FT_Long,
     ) -> FT_Long;
-    fn FT_Load_Sfnt_Table(
+    pub(super) fn FT_Load_Sfnt_Table(
         face: FT_Face,
         tag: FT_ULong,
         offset: FT_Long,

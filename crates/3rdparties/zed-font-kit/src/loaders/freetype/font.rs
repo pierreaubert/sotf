@@ -45,7 +45,10 @@ use super::f32_to_ft_fixed::F32ToFtFixed;
 use super::ft_fixed_to_f32::FtFixedToF32;
 use super::misc::reset_freetype_face_char_size;
 use super::misc::setup_freetype_face;
-use super::types::NativeFont;
+use super::types::{
+    FT_Get_BDF_Property, FT_Get_Font_Format, FT_Get_PS_Font_Value, FT_Load_Sfnt_Table,
+    NativeFont,
+};
 
 /// A cross-platform loader that uses the FreeType library to load and rasterize fonts.
 ///
