@@ -2,12 +2,12 @@
 
 use super::super::{PlaybackCommand, ProcessingMessage, ThreadEvent};
 use super::misc::SPIN_MS_RINGBUFFER;
+use super::misc::core_audio_ffi as ca;
 use super::misc::playback_buffer_capacity;
 use super::misc::write_chunk_bulk;
 use super::playback_state::PlaybackState;
 use super::types::RenderContext;
 use super::types::render_callback;
-use core_audio_ffi as ca;
 use rtrb::{Consumer, RingBuffer};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;

@@ -97,6 +97,9 @@ pub mod param_specs {
     pub mod pnd {
         pub use sotf_plugin_pnd::params::*;
     }
+    pub mod resampler {
+        pub use sotf_plugin_resampler::params::*;
+    }
     pub mod downmix {
         pub use sotf_plugin_downmix::params::*;
     }
@@ -124,6 +127,9 @@ pub mod param_specs {
     }
     pub mod crossfeed {
         pub use sotf_plugin_crossfeed::params::*;
+    }
+    pub mod crossover {
+        pub use sotf_plugin_crossover::params::*;
     }
     pub mod xtc {
         pub use sotf_plugin_xtc::params::*;

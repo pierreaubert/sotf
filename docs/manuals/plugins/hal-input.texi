@@ -4,7 +4,7 @@
 @chapter Plugin: @code{hal-input}
 @cindex hal-input plugin
 
-SOTF HAL Input plugin for macOS audio HAL input. Reads audio data from the macOS CoreAudio HAL driver via shared memory, acting as the input source for system-wide audio processing.
+Reads audio from a system HAL device into the engine. Used by the macOS system-wide daemon.
 
 @menu
 * hal-input Plugin Parameters::
@@ -23,7 +23,7 @@ SOTF HAL Input plugin for macOS audio HAL input. Reads audio data from the macOS
 @end multitable
 
 
-@strong{Structural parameters} (Input Channels) require rebuilding the plugin when changed.
+@strong{Structural parameters} (Input Channels) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 
 @node hal-input Plugin Developer Guide
 @section Developer Guide

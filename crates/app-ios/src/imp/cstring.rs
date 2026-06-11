@@ -3,6 +3,8 @@
 use sotf_audio_player::{SotfRemoteAuthToken, SotfRemoteServer};
 use std::ffi::{CStr, CString};
 
+use super::misc::{sotf_ios_keychain_delete, sotf_ios_keychain_load, sotf_ios_keychain_save};
+
 /// Build a `CString` from a `&str`, logging and substituting on interior NUL.
 pub(super) fn cstring_or_unknown(value: &str, field: &str) -> CString {
     match CString::new(value) {

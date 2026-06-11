@@ -9,21 +9,21 @@ use std::ffi::CStr;
 
 #[link(name = "UIKit", kind = "framework")]
 unsafe extern "C" {
-    static UIAccessibilityTraitButton: u64;
-    static UIAccessibilityTraitLink: u64;
-    static UIAccessibilityTraitHeader: u64;
-    static UIAccessibilityTraitSearchField: u64;
-    static UIAccessibilityTraitImage: u64;
-    static UIAccessibilityTraitSelected: u64;
-    static UIAccessibilityTraitStaticText: u64;
-    static UIAccessibilityTraitNotEnabled: u64;
-    static UIAccessibilityTraitUpdatesFrequently: u64;
-    static UIAccessibilityTraitAdjustable: u64;
+    pub(super) static UIAccessibilityTraitButton: u64;
+    pub(super) static UIAccessibilityTraitLink: u64;
+    pub(super) static UIAccessibilityTraitHeader: u64;
+    pub(super) static UIAccessibilityTraitSearchField: u64;
+    pub(super) static UIAccessibilityTraitImage: u64;
+    pub(super) static UIAccessibilityTraitSelected: u64;
+    pub(super) static UIAccessibilityTraitStaticText: u64;
+    pub(super) static UIAccessibilityTraitNotEnabled: u64;
+    pub(super) static UIAccessibilityTraitUpdatesFrequently: u64;
+    pub(super) static UIAccessibilityTraitAdjustable: u64;
 
-    static UIAccessibilityLayoutChangedNotification: u32;
-    static UIAccessibilityAnnouncementNotification: u32;
+    pub(super) static UIAccessibilityLayoutChangedNotification: u32;
+    pub(super) static UIAccessibilityAnnouncementNotification: u32;
 
-    fn UIAccessibilityPostNotification(notification: u32, argument: *mut Object);
+    pub(super) fn UIAccessibilityPostNotification(notification: u32, argument: *mut Object);
 }
 
 pub(super) fn size_class_from_uikit(value: i64) -> SizeClass {

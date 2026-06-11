@@ -2,10 +2,10 @@
 
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
-    fn sotf_ios_pop_remote_command() -> i32;
-    fn sotf_ios_take_imported_files_json() -> *mut std::ffi::c_char;
-    fn sotf_ios_take_scanned_qr_payload() -> *mut std::ffi::c_char;
-    fn sotf_ios_string_free(value: *mut std::ffi::c_char);
+    pub(super) fn sotf_ios_pop_remote_command() -> i32;
+    pub(super) fn sotf_ios_take_imported_files_json() -> *mut std::ffi::c_char;
+    pub(super) fn sotf_ios_take_scanned_qr_payload() -> *mut std::ffi::c_char;
+    pub(super) fn sotf_ios_string_free(value: *mut std::ffi::c_char);
 }
 
 /// Compute the responsive scale factor for a given window size.

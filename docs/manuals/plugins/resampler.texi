@@ -4,7 +4,7 @@
 @chapter Plugin: @code{resampler}
 @cindex resampler plugin
 
-High-quality sample rate conversion using rubato with sinc interpolation for transparent resampling between any sample rates.
+High-quality sample-rate converter using sinc interpolation. Supports fixed and dynamic resampling ratios.
 
 @menu
 * resampler Plugin Parameters::
@@ -19,7 +19,7 @@ High-quality sample rate conversion using rubato with sinc interpolation for tra
 
 @multitable @columnfractions .22 .18 .15 .10 .08 .27
 @headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Quality} @tab Choice (Fast, Medium, High) @tab 3 options @tab Medium @tab - @tab Resampling quality: fast (64-tap), medium (128-tap), high (256-tap)
+@item @code{Quality} @tab Choice (Fast, Medium, High) @tab 3 options @tab Medium @tab - @tab Resampling quality: fast (64-tap), medium (128-tap), high (256-tap) sinc filter
 @end multitable
 
 
@@ -27,8 +27,8 @@ High-quality sample rate conversion using rubato with sinc interpolation for tra
 
 @multitable @columnfractions .22 .18 .15 .10 .08 .27
 @headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Dynamic Ratio} @tab Bool @tab On / Off @tab Off @tab - @tab Enable runtime ratio changes without rebuilding
-@item @code{Ratio} @tab Float @tab nominal / 2 .. nominal * 2 @tab Nominal @tab - @tab Current resampling ratio (only adjustable when Dynamic Ratio is enabled)
+@item @code{Dynamic Ratio} @tab Bool @tab On / Off @tab Off @tab - @tab Enable runtime ratio changes without rebuilding the resampler
+@item @code{Ratio} @tab Float @tab 0.25 .. 4 @tab 1 @tab - @tab Current resampling ratio (only adjustable when Dynamic Ratio is enabled)
 @end multitable
 
 

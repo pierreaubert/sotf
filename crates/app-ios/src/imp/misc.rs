@@ -6,9 +6,9 @@ use std::panic::UnwindSafe;
 use std::path::PathBuf;
 
 unsafe extern "C" {
-    fn sotf_ios_show_document_picker();
-    fn sotf_ios_get_music_directory() -> *const std::ffi::c_char;
-    fn sotf_ios_update_now_playing(
+    pub(super) fn sotf_ios_show_document_picker();
+    pub(super) fn sotf_ios_get_music_directory() -> *const std::ffi::c_char;
+    pub(super) fn sotf_ios_update_now_playing(
         title: *const std::ffi::c_char,
         artist: *const std::ffi::c_char,
         album: *const std::ffi::c_char,
@@ -16,14 +16,16 @@ unsafe extern "C" {
         position: f64,
         is_playing: bool,
     );
-    fn sotf_ios_update_now_playing_position(position: f64, is_playing: bool);
+    pub(super) fn sotf_ios_update_now_playing_position(position: f64, is_playing: bool);
     #[allow(dead_code)]
-    fn sotf_ios_keychain_save(key: *const std::ffi::c_char, token: *const std::ffi::c_char)
-    -> bool;
+    pub(super) fn sotf_ios_keychain_save(
+        key: *const std::ffi::c_char,
+        token: *const std::ffi::c_char,
+    ) -> bool;
     #[allow(dead_code)]
-    fn sotf_ios_keychain_load(key: *const std::ffi::c_char) -> *const std::ffi::c_char;
+    pub(super) fn sotf_ios_keychain_load(key: *const std::ffi::c_char) -> *const std::ffi::c_char;
     #[allow(dead_code)]
-    fn sotf_ios_keychain_delete(key: *const std::ffi::c_char) -> bool;
+    pub(super) fn sotf_ios_keychain_delete(key: *const std::ffi::c_char) -> bool;
 }
 
 /// FFI panic guard. Wrap every `extern "C"` body in this so a Rust panic does

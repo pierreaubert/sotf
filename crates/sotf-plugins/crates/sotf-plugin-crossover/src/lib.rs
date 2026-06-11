@@ -5,6 +5,7 @@ mod crossover_kind;
 mod crossover_mode;
 mod crossover_plugin;
 mod misc;
+pub mod params;
 mod parse;
 mod per_channel_op_mode;
 #[cfg(test)]

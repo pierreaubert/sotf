@@ -1,13 +1,29 @@
 ---
 title: "FIR Designer"
-description: "FIR magnitude and phase designer with parametric target bands. Runs as a linear-phase or minimum-phase FIR equalizer using frequency-domain convolution."
+description: "Linear-phase and minimum-phase FIR equalizer designed from parametric EQ bands."
 ---
 
-FIR magnitude and phase designer with parametric target bands. Runs as a linear-phase or minimum-phase FIR equalizer using frequency-domain convolution.
+Linear-phase and minimum-phase FIR equalizer designed from parametric EQ bands.
 
 ## Parameters
 
-### Global Parameters
+### Per-Band Parameters
+
+These parameters are repeated for each filter band.
+
+
+### Band
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| Type | Choice (Peak, Lowshelf, Highshelf, Lowpass, Highpass) | 5 options | Peak | - | Filter type |
+| Frequency | Float | 20 .. 20000 | 1000 | Hz | Center frequency |
+| Q | Float | 0.1 .. 10 | 1 | - | Bandwidth |
+| Gain | Float | -24 .. 24 | 0 | dB | Boost/cut |
+| Active | Bool | On / Off | On | - | Enable this band |
+
+### Single-Band Parameters
+
 
 ### EQ
 
@@ -32,22 +48,8 @@ FIR magnitude and phase designer with parametric target bands. Runs as a linear-
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Auto Gain | Bool | On / Off | Off | - | Compensate output level |
-| Mix | Float | 0 .. 100 | 100 | % | Dry/wet mix |
-
-### Per-Band Parameters
-
-These parameters are repeated for each filter band.
-
-### Band
-
-| Parameter | Type | Range | Default | Unit | Description |
-|-----------|------|-------|---------|------|-------------|
-| Type | Choice (Peak, Lowshelf, Highshelf, Lowpass, Highpass) | 5 options | Peak | - | Filter type |
-| Frequency | Float | 20 .. 20000 | 1000 | Hz | Center frequency |
-| Q | Float | 0.1 .. 10 | 1 | - | Bandwidth |
-| Gain | Float | -24 .. 24 | 0 | dB | Boost/cut |
-| Active | Bool | On / Off | On | - | Enable this band |
+| Mix | Float | 0 .. 1 | 1 | % | Dry/wet mix |
 
 :::note
-**Structural parameters** (Num Filters, FIR Length, and Phase Mode) require rebuilding the FIR response when changed. Other parameters update in real time with zero dropout.
+**Structural parameters** (Num Filters) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 :::

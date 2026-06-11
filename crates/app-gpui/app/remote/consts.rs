@@ -443,7 +443,11 @@ impl App {
                             state.playback.volume,
                             state.library.albums
                         );
+                        let stale_album_page = self.remote_visible_album_page_needs_refresh();
                         self.remote.current_state = Some(state);
+                        if stale_album_page || self.remote_visible_album_page_needs_refresh() {
+                            self.remote.refresh_requests.visible_album_page = true;
+                        }
                     }
                     sotf_audio_player::sotf_api_client::SotfApiStreamEvent::Server(event) => {
                         match event {
@@ -700,6 +704,41 @@ impl App {
                 let _ = tx.send(result);
             })
             .expect("spawn SOTF remote cache refresh thread");
+    }
+
+    pub fn remote_visible_album_page_needs_refresh(&self) -> bool {
+        let Some(server_id) = self.remote.server_store.selected_server_id.as_deref() else {
+            return false;
+        };
+
+        let query = self.library_state.search_query.trim();
+        let Some(page) = self.remote.current_album_page.as_ref() else {
+            return true;
+        };
+
+        if self.remote.current_album_page_server_id.as_deref() != Some(server_id) {
+            return true;
+        }
+
+        if self.remote.current_album_page_query != query {
+            return true;
+        }
+
+        if let Some(summary) = self
+            .remote
+            .current_state
+            .as_ref()
+            .map(|state| &state.library)
+        {
+            if summary.library_version != 0 && page.library_version != summary.library_version {
+                return true;
+            }
+            if summary.albums > 0 && page.total == 0 {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub(super) fn apply_remote_cache_refresh_result(&mut self, result: RemoteCacheRefreshResult) {

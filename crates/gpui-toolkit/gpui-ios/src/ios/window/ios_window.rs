@@ -14,6 +14,10 @@ use super::ios_raw_handles::IosRawHandles;
 use super::misc::ns_string_to_string;
 use super::misc::query_scene_metrics;
 use super::misc::view_safe_area_insets;
+use super::misc::{
+    UIAccessibilityAnnouncementNotification, UIAccessibilityLayoutChangedNotification,
+    UIAccessibilityPostNotification,
+};
 use super::register;
 use super::register::register_accessibility_element_class;
 use super::register::register_metal_view_class;
@@ -31,7 +35,7 @@ use gpui::{
 };
 use gpui_wgpu::{WgpuContext, WgpuRenderer, WgpuSurfaceConfig, wgpu};
 use objc::{
-    class, msg_send,
+    Message, class, msg_send,
     runtime::{BOOL, Object, Sel, YES},
     sel, sel_impl,
 };

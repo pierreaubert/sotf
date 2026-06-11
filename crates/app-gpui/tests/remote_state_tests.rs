@@ -3,7 +3,10 @@ use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
 
 use sotf_audio_player::lan_discovery::DiscoveredSotfApiServer;
-use sotf_audio_player::sotf_api_client::{SotfApiAlbum, SotfApiAlbumList};
+use sotf_audio_player::sotf_api_client::{
+    SotfApiAlbum, SotfApiAlbumList, SotfApiLibrarySummary, SotfApiPlayback, SotfApiState,
+};
+use sotf_audio_player_gpui::app::App;
 use sotf_audio_player_gpui::app::state::app::{
     RemoteAlbumCache, RemoteCacheRefreshError, RemoteRefreshRequests, RemoteServerProbeStatus,
     RemoteState,
@@ -176,6 +179,27 @@ fn remote_album(id: &str, title: &str) -> SotfApiAlbum {
     }
 }
 
+fn remote_state_summary(albums: usize, library_version: u64) -> SotfApiState {
+    SotfApiState {
+        playback: SotfApiPlayback {
+            state: "stop".to_string(),
+            position_secs: 0.0,
+            duration_secs: 0.0,
+            volume: 100,
+            current_index: None,
+            playlist_length: 0,
+            playlist_version: 1,
+            audio: None,
+        },
+        current_song: None,
+        library: SotfApiLibrarySummary {
+            albums,
+            tracks: albums,
+            library_version,
+        },
+    }
+}
+
 #[test]
 fn remote_album_cache_is_bounded_to_recent_metadata() {
     let mut cache = RemoteAlbumCache::with_limit(2);
@@ -265,6 +289,62 @@ fn remote_state_applies_visible_album_page_without_local_db() {
     assert!(state.current_album_page.is_none());
     assert_eq!(state.current_album_page_query, "");
     assert_eq!(state.remote_album_page_revision, 2);
+}
+
+#[test]
+fn app_requests_remote_album_page_when_selected_server_has_no_page() {
+    let mut app = App::new();
+    app.remote
+        .add_manual_server_record("Desk", "http://desk.local:8732")
+        .unwrap();
+
+    assert!(app.remote_visible_album_page_needs_refresh());
+}
+
+#[test]
+fn app_requests_remote_album_page_when_empty_page_is_stale_after_scan() {
+    let mut app = App::new();
+    let server_id = app
+        .remote
+        .add_manual_server_record("Desk", "http://desk.local:8732")
+        .unwrap();
+    app.remote.apply_remote_album_page(
+        server_id,
+        SotfApiAlbumList {
+            albums: Vec::new(),
+            total: 0,
+            offset: 0,
+            limit: 50,
+            library_version: 3,
+        },
+        "",
+    );
+    app.remote.current_state = Some(remote_state_summary(12, 3));
+
+    assert!(app.remote_visible_album_page_needs_refresh());
+}
+
+#[test]
+fn app_keeps_current_remote_album_page_when_server_query_and_version_match() {
+    let mut app = App::new();
+    let server_id = app
+        .remote
+        .add_manual_server_record("Desk", "http://desk.local:8732")
+        .unwrap();
+    app.remote.apply_remote_album_page(
+        server_id,
+        SotfApiAlbumList {
+            albums: vec![remote_album("one", "One")],
+            total: 1,
+            offset: 0,
+            limit: 50,
+            library_version: 3,
+        },
+        "",
+    );
+    app.remote.current_state = Some(remote_state_summary(1, 3));
+
+    assert!(!app.remote_visible_album_page_needs_refresh());
 }
 
 #[test]

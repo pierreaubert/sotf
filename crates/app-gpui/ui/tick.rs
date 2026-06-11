@@ -356,10 +356,19 @@ impl PlayerView {
         state.app.update_remote_server_probe();
         state.app.update_remote_event_stream();
         state.app.update_remote_album_queue_command();
-        if state.app.ui_state.current_screen == Screen::Home
-            && state.app.remote.server_store.selected_server_id.is_some()
-            && state.app.remote.current_album_page.is_none()
+        let remote_browse_visible = matches!(
+            state.app.ui_state.current_screen,
+            Screen::Home | Screen::Library
+        ) && state.app.remote.server_store.selected_server_id.is_some();
+        if remote_browse_visible
+            && state.app.remote.current_state.is_none()
+            && !state.app.remote.refresh_requests.state
+        {
+            state.app.remote.refresh_requests.state = true;
+        }
+        if remote_browse_visible
             && !state.app.remote.refresh_requests.visible_album_page
+            && state.app.remote_visible_album_page_needs_refresh()
         {
             state.app.remote.refresh_requests.visible_album_page = true;
         }

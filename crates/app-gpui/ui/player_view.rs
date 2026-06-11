@@ -16,6 +16,12 @@ use gpui::*;
 use sotf_audio_player::QueuePlaybackEffect;
 use std::time::Duration;
 
+#[cfg(target_os = "ios")]
+use super::misc::{
+    sotf_ios_pop_remote_command, sotf_ios_string_free, sotf_ios_take_imported_files_json,
+    sotf_ios_take_scanned_qr_payload,
+};
+
 /// `PlayerView` is GPUI's view type. The code-review (`reviews/review-app-gpui.md`)
 /// flags `impl PlayerView { … }` as a god-class spread across ~12 files (ui/mod.rs,
 /// components/recording/capture.rs, components/plugins/ui_rack.rs,

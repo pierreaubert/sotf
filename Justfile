@@ -16,6 +16,7 @@ import 'builds/windows.just'
 import 'builds/linux.just'
 import 'builds/ios.just'
 import 'builds/tvos.just'
+import 'build/dev-driver.just'
 
 import 'crates/math-audio/Justfile'
 import 'crates/autoeq/Justfile'
@@ -61,9 +62,11 @@ test-proptest:
 
 [group('test')]
 ntest:
-	cargo test --test negative --release {{release_test_features}}
-	PROPTEST_CASES=10000 cargo test --test proptest_tests --release {{release_test_features}}
-	CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples {{release_test_features}}
+	CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --lib --bins --examples {{release_test_features}}
+
+[group('test')]
+itest:
+	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --tests {{release_test_features}}
 
 # ----------------------------------------------------------------------
 # LINT
@@ -274,4 +277,3 @@ dev:
 [group('dev')]
 systemwide-lab:
 	SOTF_SYSTEMWIDE_DRIVER=lab SOTF_SYSTEMWIDE_RUNTIME_DIR="${SOTF_SYSTEMWIDE_RUNTIME_DIR:-/tmp/sotf-systemwide-lab-$USER}" cargo run -p sotf-daemon --bin sotf-daemon --features hal
-

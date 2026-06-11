@@ -4,6 +4,8 @@
 use super::misc::cstring_for_keychain;
 #[cfg(target_os = "macos")]
 use super::misc::macos_keychain;
+#[cfg(target_os = "ios")]
+use super::misc::sotf_ios_keychain_delete;
 
 #[cfg(target_os = "ios")]
 pub(super) fn delete_persisted_remote_server_token(

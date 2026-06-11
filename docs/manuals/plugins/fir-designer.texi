@@ -4,7 +4,7 @@
 @chapter Plugin: @code{fir-designer}
 @cindex fir-designer plugin
 
-FIR magnitude and phase designer with parametric target bands. Runs as a linear-phase or minimum-phase FIR equalizer using frequency-domain convolution.
+Linear-phase and minimum-phase FIR equalizer designed from parametric EQ bands.
 
 @menu
 * fir-designer Plugin Parameters::
@@ -13,39 +13,6 @@ FIR magnitude and phase designer with parametric target bands. Runs as a linear-
 
 @node fir-designer Plugin Parameters
 @section Parameters
-
-
-@subsection EQ
-
-@multitable @columnfractions .22 .18 .15 .10 .08 .27
-@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Num Filters} @tab Int @tab 1 .. 10 @tab 5 @tab - @tab Number of EQ bands
-@end multitable
-
-
-@subsection Quality
-
-@multitable @columnfractions .22 .18 .15 .10 .08 .27
-@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{FIR Length} @tab Choice (1024, 2048, 4096, 8192) @tab 4 options @tab 2048 @tab - @tab FIR length in taps (higher = better bass resolution, more latency)
-@end multitable
-
-
-@subsection Phase
-
-@multitable @columnfractions .22 .18 .15 .10 .08 .27
-@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Phase Mode} @tab Choice (Linear, Minimum) @tab 2 options @tab Linear @tab - @tab FIR phase design mode
-@end multitable
-
-
-@subsection Output
-
-@multitable @columnfractions .22 .18 .15 .10 .08 .27
-@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Auto Gain} @tab Bool @tab On / Off @tab Off @tab - @tab Compensate output level
-@item @code{Mix} @tab Float @tab 0 .. 100 @tab 100 @tab % @tab Dry/wet mix
-@end multitable
 
 
 @subsection Per-band parameters
@@ -64,7 +31,40 @@ The following parameters are repeated for each band:
 @end multitable
 
 
-@strong{Structural parameters} (Num Filters, FIR Length, and Phase Mode) require rebuilding the FIR response when changed. Other parameters update in real time with zero dropout.
+@subsubheading EQ
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Num Filters} @tab Int @tab 1 .. 10 @tab 5 @tab - @tab Number of EQ bands
+@end multitable
+
+
+@subsubheading Quality
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{FIR Length} @tab Choice (1024, 2048, 4096, 8192) @tab 4 options @tab 2048 @tab - @tab FIR length in taps (higher = better bass resolution, more latency)
+@end multitable
+
+
+@subsubheading Phase
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Phase Mode} @tab Choice (Linear, Minimum) @tab 2 options @tab Linear @tab - @tab FIR phase design mode
+@end multitable
+
+
+@subsubheading Output
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Auto Gain} @tab Bool @tab On / Off @tab Off @tab - @tab Compensate output level
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet mix
+@end multitable
+
+
+@strong{Structural parameters} (Num Filters) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 
 @node fir-designer Plugin Developer Guide
 @section Developer Guide

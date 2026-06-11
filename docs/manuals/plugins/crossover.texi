@@ -4,7 +4,7 @@
 @chapter Plugin: @code{crossover}
 @cindex crossover plugin
 
-Splits audio into frequency bands using Linkwitz-Riley or linear-phase FIR filters for multiband processing or multi-way speaker management.
+N-way crossover with selectable filter family (LR24 or linear-phase FIR) and per-channel configuration.
 
 @menu
 * crossover Plugin Parameters::
@@ -15,36 +15,27 @@ Splits audio into frequency bands using Linkwitz-Riley or linear-phase FIR filte
 @section Parameters
 
 
-@subsection Global
+@subsection General
 
 @multitable @columnfractions .22 .18 .15 .10 .08 .27
 @headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Type} @tab Choice (LR24, LinearPhase) @tab 2 options @tab LR24 @tab - @tab Crossover filter family: LR24 (Linkwitz-Riley 24 dB/oct) or LinearPhase (FIR)
+@item @code{Type} @tab Choice (LR24, LinearPhase) @tab 2 options @tab LR24 @tab - @tab Crossover filter family: LR24 (Linkwitz-Riley 24 dB/octave) or linear-phase FIR
 @item @code{Frequency} @tab Float @tab 20 .. 20000 @tab 1000 @tab Hz @tab Primary crossover frequency
-@item @code{Mode} @tab Choice (Lowpass, Highpass, Both) @tab 3 options @tab Lowpass @tab - @tab Output mode: low band only, high band only, or both bands
-@item @code{FIR Taps} @tab Int @tab 31 .. 16385 @tab 1025 @tab - @tab FIR filter length in taps (LinearPhase only)
+@item @code{Mode} @tab Choice (Lowpass, Highpass, Both) @tab 3 options @tab Lowpass @tab - @tab Output mode for the primary crossover
+@item @code{FIR Taps} @tab Int @tab 31 .. 16385 @tab 1025 @tab - @tab FIR length for linear-phase mode (odd values are rounded up)
 @end multitable
 
 
-@subsection Multi-way Parameters
+@subsection Multi-way
 
 @multitable @columnfractions .22 .18 .15 .10 .08 .27
 @headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Frequency 2} @tab Float @tab 20 .. 20000 @tab - @tab Hz @tab Second crossover frequency
-@item @code{Frequency 3} @tab Float @tab 20 .. 20000 @tab - @tab Hz @tab Third crossover frequency
+@item @code{Frequency 2} @tab Float @tab 20 .. 20000 @tab 1000 @tab Hz @tab Second crossover frequency for 3-way/4-way operation
+@item @code{Frequency 3} @tab Float @tab 20 .. 20000 @tab 1000 @tab Hz @tab Third crossover frequency for 4-way operation
 @end multitable
 
 
-@subsection Per-Channel Parameters
-
-@multitable @columnfractions .22 .18 .15 .10 .08 .27
-@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Frequency ChN} @tab Float @tab 20 .. 20000 @tab - @tab Hz @tab Crossover frequency for channel N
-@item @code{Mode ChN} @tab Choice (Lowpass, Highpass, Mute, Passthrough) @tab 4 options @tab - @tab - @tab Operation mode for channel N
-@end multitable
-
-
-@strong{Structural parameters} (Type, extra crossover frequencies, per-channel configuration, FIR Taps) require rebuilding the plugin when changed. Frequency and Mode update in real-time with zero dropout.
+@strong{Structural parameters} (Type, FIR Taps) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 
 @node crossover Plugin Developer Guide
 @section Developer Guide

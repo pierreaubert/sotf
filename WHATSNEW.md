@@ -4,14 +4,20 @@
 
 ### RoomEQ
 
-- Added support for atmosphere to optimised for hifi, cinema, reference, night, speech
+- Added support for *atmosphere* to optimised for *hifi*, *cinema*, *reference*, *night* or *speech*
 - Added audibility/JND residual deadbands and safer high-frequency correction
 - Added EPA temporal masking integration
+
+### Main applications
+
+- New look more modern and less cluttered
+- Editor for music metadata
 
 ### Server and streaming
 
 - SotF can now act as a server (you can stream from your computer) and can also act as client (you can listen to stream)
 - Support for Spotify and other streaming protocols is in but not well tested
+- Authentification is simplified with QR code that you can scan on the client side.
 
 ### Audio Plugins
 
@@ -30,6 +36,7 @@
 
 ## Bug fixes
 
+- too many to name
 
 
 # 0.6.7

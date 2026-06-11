@@ -3,7 +3,7 @@ title: Plugin Reference
 description: Complete reference for all SotF audio plugins.
 ---
 
-SotF includes 40 audio processing plugins. Click any plugin for its full parameter reference.
+SotF includes 45 audio processing plugins. Click any plugin for its full parameter reference.
 
 ## All Plugins
 
@@ -13,9 +13,12 @@ SotF includes 40 audio processing plugins. Click any plugin for its full paramet
 | [Gain](/reference/plugins/gain/) | Simple volume control with smooth gain ramping to prevent clicks. |
 | [Compressor](/reference/plugins/compressor/) | Dynamic range compression with configurable threshold, ratio, attack, release, and makeup gain. |
 | [Expander](/reference/plugins/expander/) | Dynamic range expansion with configurable threshold, ratio, attack, release, and range. Opens up dynamics below the threshold. |
+| [FIR Designer](/reference/plugins/fir-designer/) | Linear-phase and minimum-phase FIR equalizer designed from parametric EQ bands. |
 | [Multiband Compressor](/reference/plugins/multiband-compressor/) | Per-band dynamic range compression with 2-5 frequency bands and independent compressor settings per band. |
 | [Multiband Expander](/reference/plugins/multiband-expander/) | Per-band dynamic range expansion with 2-5 frequency bands and independent expander settings per band. |
 | [Gate](/reference/plugins/gate/) | Noise gate that silences audio below a configurable threshold. |
+| [HAL Input](/reference/plugins/hal-input/) | Reads audio from a system HAL device into the engine. Used by the macOS system-wide daemon. |
+| [HAL Output](/reference/plugins/hal-output/) | Writes audio from the engine to a system HAL device. Pair with HAL Input to route system audio through a plugin chain. |
 | [Limiter](/reference/plugins/limiter/) | Peak limiter to prevent clipping. Ensures output never exceeds the ceiling level. |
 | [Delay](/reference/plugins/delay/) | Audio delay with configurable delay time per channel. |
 | [Convolution](/reference/plugins/convolution/) | FFT-based convolution engine for applying impulse responses (room correction, cabinet simulation, reverb). |
@@ -25,8 +28,10 @@ SotF includes 40 audio processing plugins. Click any plugin for its full paramet
 | [Downmix](/reference/plugins/downmix/) | Surround to stereo downmixing with configurable channel contributions. |
 | [Binaural Renderer](/reference/plugins/binaural/) | HRTF-based 3D spatial audio rendering. Converts multichannel audio to binaural headphone output using SOFA files. |
 | [Crossfeed](/reference/plugins/crossfeed/) | Headphone crossfeed that simulates speaker spacing. Supports Bauer, Meier, and multiband algorithms. |
+| [Crossover](/reference/plugins/crossover/) | N-way crossover with selectable filter family (LR24 or linear-phase FIR) and per-channel configuration. |
 | [Crosstalk Cancellation (XTC)](/reference/plugins/xtc/) | Crosstalk cancellation for speaker playback. Creates a wider stereo image by cancelling inter-speaker interference. |
 | [Perceptual Noise Diffusion](/reference/plugins/pnd/) | Perceptual noise diffusion (PND) for improving perceived audio quality through controlled noise shaping. |
+| [Resampler](/reference/plugins/resampler/) | High-quality sample-rate converter using sinc interpolation. Supports fixed and dynamic resampling ratios. |
 | [Loudness Compensation](/reference/plugins/loudness-compensation/) | Equal-loudness contour compensation (Fletcher-Munson). Adjusts frequency response based on playback volume to maintain perceived tonal balance. |
 | [Mono to Stereo](/reference/plugins/mono-to-stereo/) | Converts mono signals to stereo output. |
 | [Denoiser](/reference/plugins/denoiser/) | Audio denoising using MCRA (Minima Controlled Recursive Averaging) and Wiener filtering. |

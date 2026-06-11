@@ -21,10 +21,12 @@ pub(super) fn persist_remote_library_identity(identity: crate::config::RemoteLib
 
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
-    fn sotf_ios_keychain_save(key: *const std::ffi::c_char, token: *const std::ffi::c_char)
-    -> bool;
-    fn sotf_ios_keychain_load(key: *const std::ffi::c_char) -> *const std::ffi::c_char;
-    fn sotf_ios_keychain_delete(key: *const std::ffi::c_char) -> bool;
+    pub(super) fn sotf_ios_keychain_save(
+        key: *const std::ffi::c_char,
+        token: *const std::ffi::c_char,
+    ) -> bool;
+    pub(super) fn sotf_ios_keychain_load(key: *const std::ffi::c_char) -> *const std::ffi::c_char;
+    pub(super) fn sotf_ios_keychain_delete(key: *const std::ffi::c_char) -> bool;
 }
 
 #[cfg(target_os = "ios")]
