@@ -2,7 +2,8 @@
 
 use super::super::*;
 use sotf_host::host::DawHost;
-use sotf_host::plugin::{PluginInfo, ProcessContext};
+use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::plugin::{Plugin, PluginInfo, ProcessContext};
 
 /// Pass-through plugin that reports a fixed latency for testing.
 struct LatencyPassthrough {
@@ -278,4 +279,3 @@ fn test_latency_compensation_returns_error_on_broken_host() {
         "delay_b should be zeroed on build failure"
     );
 }
-

@@ -207,3 +207,96 @@ pub fn freq_from_log10(log_freq: f64) -> f64 {
 pub fn freq_from_log10_clamped(log_freq: f64, min_freq: f64) -> f64 {
     10f64.powf(log_freq).max(min_freq)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::PeqModel;
+    use crate::iir::BiquadFilterType;
+
+    #[test]
+    fn get_filter_params_fixed() {
+        let x = vec![2.0, 1.5, 3.0];
+        let p = get_filter_params(&x, 0, PeqModel::Pk);
+        assert_eq!(p.freq, 2.0);
+        assert_eq!(p.q, 1.5);
+        assert_eq!(p.gain, 3.0);
+        assert!(p.filter_type.is_none());
+    }
+
+    #[test]
+    fn get_filter_params_free() {
+        let x = vec![1.0, 2.0, 1.5, 3.0];
+        let p = get_filter_params(&x, 0, PeqModel::Free);
+        assert_eq!(p.filter_type, Some(1.0));
+        assert_eq!(p.freq, 2.0);
+        assert_eq!(p.q, 1.5);
+        assert_eq!(p.gain, 3.0);
+    }
+
+    #[test]
+    fn set_filter_params_round_trip() {
+        let mut x = vec![0.0; 3];
+        let params = FilterParams {
+            filter_type: None,
+            freq: 2.0,
+            q: 1.5,
+            gain: 3.0,
+        };
+        set_filter_params(&mut x, 0, &params, PeqModel::Pk);
+        assert_eq!(x, vec![2.0, 1.5, 3.0]);
+    }
+
+    #[test]
+    fn determine_filter_type_pk() {
+        assert_eq!(
+            determine_filter_type(0, 3, PeqModel::Pk, None),
+            BiquadFilterType::Peak
+        );
+    }
+
+    #[test]
+    fn determine_filter_type_hp_pk() {
+        assert_eq!(
+            determine_filter_type(0, 3, PeqModel::HpPk, None),
+            BiquadFilterType::HighpassVariableQ
+        );
+        assert_eq!(
+            determine_filter_type(1, 3, PeqModel::HpPk, None),
+            BiquadFilterType::Peak
+        );
+    }
+
+    #[test]
+    fn determine_filter_type_ls_pk_hs() {
+        assert_eq!(
+            determine_filter_type(0, 3, PeqModel::LsPkHs, None),
+            BiquadFilterType::Lowshelf
+        );
+        assert_eq!(
+            determine_filter_type(1, 3, PeqModel::LsPkHs, None),
+            BiquadFilterType::Peak
+        );
+        assert_eq!(
+            determine_filter_type(2, 3, PeqModel::LsPkHs, None),
+            BiquadFilterType::Highshelf
+        );
+    }
+
+    #[test]
+    fn filter_type_bounds_range() {
+        let (min, max) = filter_type_bounds();
+        assert_eq!(min, 0.0);
+        assert_eq!(max, 8.999);
+    }
+
+    #[test]
+    fn freq_from_log10_basic() {
+        assert!((freq_from_log10(2.0) - 100.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn freq_from_log10_clamped_respects_min() {
+        assert_eq!(freq_from_log10_clamped(-10.0, 20.0), 20.0);
+    }
+}

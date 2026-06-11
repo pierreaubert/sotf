@@ -438,6 +438,9 @@ fn symmetrise_and_regularise(c: &mut DMatrix<f64>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ndarray::array;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn cma_es_converges_on_sphere() {
@@ -483,6 +486,161 @@ mod tests {
         assert!(
             report.fun < 1e-5,
             "CMA-ES should solve rotated ill-conditioned quadratic, got {}",
+            report.fun
+        );
+    }
+
+    #[test]
+    fn cma_es_rejects_empty_bounds() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let result = cma_es(
+            &sphere,
+            CmaEsConfig {
+                bounds: vec![],
+                ..Default::default()
+            },
+        );
+        assert!(result.is_err(), "Empty bounds should error");
+    }
+
+    #[test]
+    fn cma_es_rejects_inverted_bounds() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let result = cma_es(
+            &sphere,
+            CmaEsConfig {
+                bounds: vec![(1.0, -1.0)],
+                ..Default::default()
+            },
+        );
+        assert!(result.is_err(), "Inverted bounds should error");
+    }
+
+    #[test]
+    fn cma_es_rejects_mismatched_x0() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let result = cma_es(
+            &sphere,
+            CmaEsConfig {
+                bounds: vec![(-5.0, 5.0); 3],
+                x0: Some(array![0.0, 0.0]),
+                ..Default::default()
+            },
+        );
+        assert!(result.is_err(), "Mismatched x0 dimension should error");
+    }
+
+    #[test]
+    fn cma_es_callback_stop() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let call_count_clone = call_count.clone();
+        let report = cma_es(
+            &sphere,
+            CmaEsConfig {
+                bounds: vec![(-5.0, 5.0); 2],
+                maxeval: 10_000,
+                seed: Some(42),
+                callback: Some(Box::new(move |_| {
+                    let c = call_count_clone.fetch_add(1, Ordering::SeqCst);
+                    if c + 1 >= 3 {
+                        crate::CallbackAction::Stop
+                    } else {
+                        crate::CallbackAction::Continue
+                    }
+                })),
+                ..Default::default()
+            },
+        )
+        .expect("CMA-ES should run");
+        assert!(report.success, "Should stop successfully by callback");
+        assert_eq!(report.message, "stopped by callback");
+    }
+
+    #[test]
+    fn cma_es_target_f_reached() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let report = cma_es(
+            &sphere,
+            CmaEsConfig {
+                bounds: vec![(-5.0, 5.0); 2],
+                maxeval: 10_000,
+                seed: Some(42),
+                target_f: 1.0,
+                ..Default::default()
+            },
+        )
+        .expect("CMA-ES should run");
+        assert!(
+            report.fun <= 1.0,
+            "Should stop when target_f reached: f={}",
+            report.fun
+        );
+        assert!(report.success);
+    }
+
+    #[test]
+    fn cma_es_single_dimension() {
+        let sphere = |x: &Array1<f64>| x[0] * x[0];
+        let report = cma_es(
+            &sphere,
+            CmaEsConfig {
+                bounds: vec![(-5.0, 5.0)],
+                maxeval: 2_000,
+                seed: Some(42),
+                target_f: 1e-8,
+                ..Default::default()
+            },
+        )
+        .expect("CMA-ES should run");
+        assert!(
+            report.fun < 1e-6,
+            "1D CMA-ES should converge: f={}",
+            report.fun
+        );
+    }
+
+    #[test]
+    fn cma_es_custom_lambda_mu() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let report = cma_es(
+            &sphere,
+            CmaEsConfig {
+                bounds: vec![(-5.0, 5.0); 2],
+                lambda: 20,
+                mu: 8,
+                maxeval: 3_000,
+                seed: Some(42),
+                target_f: 1e-8,
+                ..Default::default()
+            },
+        )
+        .expect("CMA-ES should run");
+        assert!(
+            report.fun < 1e-6,
+            "Custom lambda/mu should converge: f={}",
+            report.fun
+        );
+    }
+
+    #[test]
+    fn cma_es_sigma0_override() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let report = cma_es(
+            &sphere,
+            CmaEsConfig {
+                bounds: vec![(-5.0, 5.0); 2],
+                sigma0: Some(0.1),
+                maxeval: 3_000,
+                seed: Some(42),
+                target_f: 1e-8,
+                ..Default::default()
+            },
+        )
+        .expect("CMA-ES should run");
+        assert!(
+            report.fun < 1e-6,
+            "Small sigma0 should still converge: f={}",
             report.fun
         );
     }

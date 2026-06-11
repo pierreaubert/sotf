@@ -57,7 +57,11 @@ fn switch_case_body<'a>(source: &'a str, case_label: &str, next_case_label: &str
 
 #[test]
 fn decoder_retries_hal_reader_after_late_shared_memory_creation() {
-    let source = read_repo_file("crates/sotf-engine/src/engine/decoder_thread.rs");
+    let source = format!(
+        "{}\n{}",
+        read_repo_file("crates/sotf-engine/src/engine/decoder_thread/decoder_state.rs"),
+        read_repo_file("crates/sotf-engine/src/engine/decoder_thread/consts.rs")
+    );
     let start_silent_source = function_body(&source, "fn start_silent_source");
     let process_hal_input = function_body(&source, "fn process_hal_input");
 
@@ -77,7 +81,9 @@ fn decoder_retries_hal_reader_after_late_shared_memory_creation() {
 
 #[test]
 fn daemon_reconfiguration_uses_negotiated_hal_format() {
-    let source = read_repo_file("crates/systemwide/crates/daemon/bin/sotf_daemon.rs");
+    let source = read_repo_file(
+        "crates/systemwide/crates/daemon/bin/sotf_daemon/pipeline_reconfigure_outcome.rs",
+    );
     let body = function_body(&source, "fn reconfigure_audio_pipeline");
 
     assert!(

@@ -2,18 +2,20 @@
 
 use super::home_album_ext::HomeAlbumExt;
 use crate::ui::PlayerView;
+use crate::ui::{ALBUM_CARD_GAP_REMS, ALBUM_CARD_WIDTH_REMS};
 use sotf_audio_player::Album;
 
 const HOME_SHELF_CONTENT_RESERVE_PX: f32 = 192.0;
-const HOME_SHELF_CARD_WIDTH_PX: f32 = 180.0;
-const HOME_SHELF_CARD_GAP_PX: f32 = 12.0;
+const HOME_SHELF_BASE_REM_PX: f32 = 16.0;
 
 pub(super) const EXPANDED_ALBUM_LIMIT: usize = 24;
 
 pub(super) fn collapsed_album_limit_for_width(window_width: f32) -> usize {
-    let available = (window_width - HOME_SHELF_CONTENT_RESERVE_PX).max(HOME_SHELF_CARD_WIDTH_PX);
-    let slot = HOME_SHELF_CARD_WIDTH_PX + HOME_SHELF_CARD_GAP_PX;
-    (((available + HOME_SHELF_CARD_GAP_PX) / slot).floor() as usize).max(1)
+    let card_width = ALBUM_CARD_WIDTH_REMS * HOME_SHELF_BASE_REM_PX;
+    let card_gap = ALBUM_CARD_GAP_REMS * HOME_SHELF_BASE_REM_PX;
+    let available = (window_width - HOME_SHELF_CONTENT_RESERVE_PX).max(card_width);
+    let slot = card_width + card_gap;
+    (((available + card_gap) / slot).floor() as usize).max(1)
 }
 
 pub(super) fn add_home_album_to_queue(

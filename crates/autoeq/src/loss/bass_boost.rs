@@ -106,3 +106,81 @@ pub fn create_bass_boosted_target(
     let bass_boost = compute_bass_boost_curve(freqs, config);
     base_target + &bass_boost
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::Array1;
+
+    #[test]
+    fn default_config_values() {
+        let cfg = BassBoostConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.start_freq, 20.0);
+        assert_eq!(cfg.peak_freq, 60.0);
+        assert_eq!(cfg.end_freq, 200.0);
+        assert_eq!(cfg.max_boost_db, 4.0);
+        assert_eq!(cfg.curve_type, BassBoostCurve::Harman);
+    }
+
+    #[test]
+    fn disabled_bass_boost_returns_zeros() {
+        let freqs = Array1::from(vec![20.0, 60.0, 200.0]);
+        let cfg = BassBoostConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let boost = compute_bass_boost_curve(&freqs, &cfg);
+        assert_eq!(boost.to_vec(), vec![0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn linear_bass_boost_ramp() {
+        let cfg = BassBoostConfig {
+            enabled: true,
+            start_freq: 20.0,
+            peak_freq: 60.0,
+            end_freq: 200.0,
+            max_boost_db: 4.0,
+            curve_type: BassBoostCurve::Linear,
+        };
+        assert_eq!(compute_linear_bass_boost(10.0, &cfg), 0.0);
+        assert_eq!(compute_linear_bass_boost(20.0, &cfg), 0.0);
+        assert_eq!(compute_linear_bass_boost(60.0, &cfg), 4.0);
+        assert_eq!(compute_linear_bass_boost(200.0, &cfg), 0.0);
+        assert!((compute_linear_bass_boost(40.0, &cfg) - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn harman_bass_boost_shape() {
+        let cfg = BassBoostConfig {
+            enabled: true,
+            start_freq: 20.0,
+            peak_freq: 60.0,
+            end_freq: 200.0,
+            max_boost_db: 4.0,
+            curve_type: BassBoostCurve::Harman,
+        };
+        assert_eq!(compute_harman_bass_boost(10.0, &cfg), 0.0);
+        assert_eq!(compute_harman_bass_boost(60.0, &cfg), 4.0);
+        assert_eq!(compute_harman_bass_boost(250.0, &cfg), 0.0);
+        assert!(compute_harman_bass_boost(130.0, &cfg) > 0.0);
+        assert!(compute_harman_bass_boost(130.0, &cfg) < 4.0);
+    }
+
+    #[test]
+    fn create_bass_boosted_target_adds_boost() {
+        let freqs = Array1::from(vec![20.0, 60.0, 200.0]);
+        let base = Array1::from(vec![0.0, 0.0, 0.0]);
+        let cfg = BassBoostConfig {
+            enabled: true,
+            start_freq: 20.0,
+            peak_freq: 60.0,
+            end_freq: 200.0,
+            max_boost_db: 4.0,
+            curve_type: BassBoostCurve::Linear,
+        };
+        let target = create_bass_boosted_target(&base, &freqs, &cfg);
+        assert_eq!(target.to_vec(), vec![0.0, 4.0, 0.0]);
+    }
+}

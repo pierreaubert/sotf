@@ -737,3 +737,186 @@ fn test_disabled_eq_excluded_from_configs() {
         "Disabled EQ should not appear in configs"
     );
 }
+
+// =========================================================================
+// add_connection edge cases
+// =========================================================================
+
+#[test]
+fn test_add_connection_missing_source_node() {
+    let mut graph = PluginGraph::new();
+    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
+    let node2 = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0));
+    graph.remove_node(node1);
+    let result = graph.add_connection(node1, 0, node2, 0);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Source node"));
+}
+
+#[test]
+fn test_add_connection_missing_target_node() {
+    let mut graph = PluginGraph::new();
+    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
+    let node2 = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0));
+    graph.remove_node(node2);
+    let result = graph.add_connection(node1, 0, node2, 0);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Target node"));
+}
+
+#[test]
+fn test_add_connection_duplicate() {
+    let mut graph = PluginGraph::new();
+    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
+    let node2 = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0));
+    graph.add_connection(node1, 0, node2, 0).unwrap();
+    let result = graph.add_connection(node1, 0, node2, 0);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err(), "Connection already exists");
+}
+
+#[test]
+fn test_add_connection_self_loop() {
+    let mut graph = PluginGraph::new();
+    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
+    let result = graph.add_connection(node1, 0, node1, 0);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err(), "Connection would create a cycle");
+}
+
+// =========================================================================
+// update_channel_dependent_plugins
+// =========================================================================
+
+#[test]
+fn test_update_channel_dependent_plugins_band_split() {
+    let mut g = PluginGraph::with_default_rack();
+    let split_id = g.add_user_plugin(&PluginType::BandSplit).unwrap();
+
+    g.update_channel_dependent_plugins();
+
+    let split_node = g.nodes.get(&split_id).unwrap();
+    assert_eq!(split_node.input_channels, 2);
+    assert_eq!(
+        split_node.output_channels, 4,
+        "BandSplit should double channels"
+    );
+
+    let matrix = g.node_for_role(NodeRole::Matrix).unwrap();
+    assert_eq!(
+        matrix.input_channels, 4,
+        "Matrix should adopt BandSplit output"
+    );
+}
+
+#[test]
+fn test_update_channel_dependent_plugins_band_merge() {
+    let mut g = PluginGraph::with_default_rack();
+    let _split_id = g.add_user_plugin(&PluginType::BandSplit).unwrap();
+    let merge_id = g.add_user_plugin(&PluginType::BandMerge).unwrap();
+
+    g.update_channel_dependent_plugins();
+
+    let merge_node = g.nodes.get(&merge_id).unwrap();
+    assert_eq!(
+        merge_node.input_channels, 4,
+        "BandMerge input should follow BandSplit output"
+    );
+    assert_eq!(
+        merge_node.output_channels, 2,
+        "BandMerge should halve channels (bands=2)"
+    );
+
+    let matrix = g.node_for_role(NodeRole::Matrix).unwrap();
+    assert_eq!(
+        matrix.input_channels, 2,
+        "Matrix should follow BandMerge output"
+    );
+}
+
+#[test]
+fn test_update_channel_dependent_plugins_downmix() {
+    let mut g = PluginGraph::with_default_rack();
+    let _upmixer_id = g.add_user_plugin(&PluginType::Upmixer).unwrap();
+    let downmix_id = g.add_user_plugin(&PluginType::Downmix).unwrap();
+
+    g.update_channel_dependent_plugins();
+
+    let downmix_node = g.nodes.get(&downmix_id).unwrap();
+    // Upmixer default is 5.1 = 6 channels
+    assert_eq!(
+        downmix_node.input_channels, 6,
+        "Downmix should adopt upmixer output"
+    );
+    assert_eq!(
+        downmix_node.output_channels, 2,
+        "Downmix should output 2 channels"
+    );
+}
+
+#[test]
+fn test_update_channel_dependent_plugins_suspended_skipped() {
+    let mut g = PluginGraph::with_default_rack();
+    let upmixer_id = g.add_user_plugin(&PluginType::Upmixer).unwrap();
+
+    // Find linear index of upmixer and suspend it
+    let upmixer_idx = g.linear_index_of_node(upmixer_id).unwrap();
+    g.suspend_plugins(&[upmixer_idx]);
+
+    g.update_channel_dependent_plugins();
+
+    let matrix = g.node_for_role(NodeRole::Matrix).unwrap();
+    assert_eq!(
+        matrix.input_channels, 2,
+        "Suspended upmixer should not expand channels"
+    );
+}
+
+#[test]
+fn test_update_channel_dependent_plugins_non_linear_returns_early() {
+    let mut g = PluginGraph::new();
+    let input = g.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
+    let a = g.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0));
+    let b = g.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0));
+    let output = g.add_special_node(SpecialNodeType::Output, NodePosition::new(200.0, 50.0), 2);
+
+    g.add_connection(input, 0, a, 0).unwrap();
+    g.add_connection(input, 1, b, 0).unwrap();
+    g.add_connection(a, 0, output, 0).unwrap();
+    g.add_connection(b, 0, output, 1).unwrap();
+
+    // Should not panic on non-linear graph
+    g.update_channel_dependent_plugins();
+
+    // Nodes keep their default channel counts since linear_order returns None
+    let a_node = g.nodes.get(&a).unwrap();
+    assert_eq!(a_node.input_channels, 2);
+}
+
+// =========================================================================
+// get_engine_index edge cases
+// =========================================================================
+
+#[test]
+fn test_get_engine_index_suspended_returns_none() {
+    let mut g = PluginGraph::with_default_rack();
+    let eq_id = g.add_user_plugin(&PluginType::EQ).unwrap();
+
+    let eq_idx = g.linear_index_of_node(eq_id).unwrap();
+    g.suspend_plugins(&[eq_idx]);
+
+    assert_eq!(g.get_engine_index(eq_id), None);
+}
+
+#[test]
+fn test_get_engine_index_unknown_node() {
+    let g = PluginGraph::with_default_rack();
+    let unknown_id = super::types::GraphNodeId::new_v4();
+    assert_eq!(g.get_engine_index(unknown_id), None);
+}
+
+#[test]
+fn test_get_engine_index_by_linear_position_out_of_bounds() {
+    let g = PluginGraph::with_default_rack();
+    assert_eq!(g.get_engine_index_by_linear_position(100), None);
+}

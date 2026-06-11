@@ -422,3 +422,191 @@ fn test_validate_parameter_rejects_bad_values() {
     // validate_parameter should reject it
     assert!(res.is_err());
 }
+
+#[test]
+fn test_set_parameter_attack_roundtrip() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    plugin
+        .set_parameter(ParameterId::from("attack"), ParameterValue::Float(50.0))
+        .unwrap();
+    assert!((plugin.attack_ms - 50.0).abs() < 1e-6);
+    let val = plugin.get_parameter(&ParameterId::from("attack"));
+    assert_eq!(val, Some(ParameterValue::Float(50.0)));
+}
+
+#[test]
+fn test_set_parameter_release_roundtrip() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    plugin
+        .set_parameter(ParameterId::from("release"), ParameterValue::Float(500.0))
+        .unwrap();
+    assert!((plugin.release_ms - 500.0).abs() < 1e-6);
+    let val = plugin.get_parameter(&ParameterId::from("release"));
+    assert_eq!(val, Some(ParameterValue::Float(500.0)));
+}
+
+#[test]
+fn test_set_parameter_knee_roundtrip() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    plugin
+        .set_parameter(ParameterId::from("knee"), ParameterValue::Float(6.0))
+        .unwrap();
+    assert!((plugin.knee_db - 6.0).abs() < 1e-6);
+    let val = plugin.get_parameter(&ParameterId::from("knee"));
+    assert_eq!(val, Some(ParameterValue::Float(6.0)));
+}
+
+#[test]
+fn test_get_parameter_attack_release_knee() {
+    let plugin = DynamicEqPlugin::new(1);
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("attack")),
+        Some(ParameterValue::Float(plugin.attack_ms))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("release")),
+        Some(ParameterValue::Float(plugin.release_ms))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("knee")),
+        Some(ParameterValue::Float(plugin.knee_db))
+    );
+}
+
+#[test]
+fn test_get_parameter_band_solo() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    plugin.bands[0].solo = true;
+    let val = plugin.get_parameter(&ParameterId::from("band_0_solo"));
+    assert_eq!(val, Some(ParameterValue::Bool(true)));
+}
+
+#[test]
+fn test_set_parameter_band_solo() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    plugin
+        .set_parameter(ParameterId::from("band_0_solo"), ParameterValue::Bool(true))
+        .unwrap();
+    assert!(plugin.bands[0].solo);
+    let val = plugin.get_parameter(&ParameterId::from("band_0_solo"));
+    assert_eq!(val, Some(ParameterValue::Bool(true)));
+}
+
+#[test]
+fn test_set_parameter_band_active() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("band_0_active"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+    assert!(!plugin.bands[0].active);
+    let val = plugin.get_parameter(&ParameterId::from("band_0_active"));
+    assert_eq!(val, Some(ParameterValue::Bool(false)));
+}
+
+#[test]
+fn test_set_parameter_band_frequency_alias() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    let original = plugin.bands[0].frequency;
+    plugin
+        .set_parameter(
+            ParameterId::from("band_0_frequency"),
+            ParameterValue::Float(500.0),
+        )
+        .unwrap();
+    assert!((plugin.bands[0].frequency - 500.0).abs() < 1e-6);
+    assert_ne!(plugin.bands[0].frequency, original);
+}
+
+#[test]
+fn test_set_parameter_non_finite_rejected() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    let result = plugin.set_parameter(
+        ParameterId::from("threshold"),
+        ParameterValue::Float(f32::NAN),
+    );
+    assert!(
+        result.is_err(),
+        "NaN threshold should be rejected by validation"
+    );
+    let result = plugin.set_parameter(
+        ParameterId::from("ratio"),
+        ParameterValue::Float(f32::INFINITY),
+    );
+    assert!(
+        result.is_err(),
+        "Infinite ratio should be rejected by validation"
+    );
+}
+
+#[test]
+fn test_process_block_too_large_rejected() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    // dry_buf is 96000 * 2 = 192000 after initialize(48000) for 1 channel
+    let num_frames = 200_000;
+    let mut big = vec![0.0f32; num_frames];
+    let ctx = ProcessContext::new(48000, num_frames);
+    let err = plugin.process_in_place(&mut big, &ctx).unwrap_err();
+    assert!(err.contains("exceeds max"));
+}
+
+#[test]
+fn test_get_data_returns_cache() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    let data = plugin.get_data();
+    assert!(data.is_some());
+    assert!((&*data.unwrap()).is::<DynamicEqData>());
+}
+
+#[test]
+fn test_set_parameter_band_unknown_field_ignored() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    let original_freq = plugin.bands[0].frequency;
+    plugin
+        .set_parameter(
+            ParameterId::from("band_0_unknown"),
+            ParameterValue::Float(1.0),
+        )
+        .unwrap();
+    assert!((plugin.bands[0].frequency - original_freq).abs() < 1e-6);
+}
+
+#[test]
+fn test_set_parameter_band_threshold_and_ratio_roundtrip() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("band_0_threshold"),
+            ParameterValue::Float(-40.0),
+        )
+        .unwrap();
+    assert!((plugin.bands[0].band_threshold - (-40.0)).abs() < 1e-6);
+    assert!(plugin.bands[0].use_band_threshold);
+    let val = plugin.get_parameter(&ParameterId::from("band_0_threshold"));
+    assert_eq!(val, Some(ParameterValue::Float(-40.0)));
+
+    plugin
+        .set_parameter(
+            ParameterId::from("band_0_ratio"),
+            ParameterValue::Float(8.0),
+        )
+        .unwrap();
+    assert!((plugin.bands[0].band_ratio - 8.0).abs() < 1e-6);
+    assert!(plugin.bands[0].use_band_ratio);
+    let val = plugin.get_parameter(&ParameterId::from("band_0_ratio"));
+    assert_eq!(val, Some(ParameterValue::Float(8.0)));
+}

@@ -509,3 +509,65 @@ fn test_null_detection_config_defaults() {
     assert_eq!(config.min_null_q, 3.0);
     assert_eq!(config.min_null_depth_db, 4.0);
 }
+
+#[test]
+fn test_estimate_peak_q_plateau_peak() {
+    // A flat plateau at the top: two adjacent samples at exactly the same max SPL
+    let freq = Array1::from_vec(vec![50.0, 60.0, 70.0, 80.0, 90.0]);
+    let spl = Array1::from_vec(vec![80.0, 85.0, 90.0, 90.0, 85.0]);
+    // Peak at idx 3 (last of the plateau)
+    let q = estimate_peak_q(&freq, &spl, 3);
+    assert!(
+        q.is_finite() && q > 0.0,
+        "plateau peak Q should be finite positive, got {}",
+        q
+    );
+}
+
+#[test]
+fn test_estimate_peak_q_very_wide_peak() {
+    // Very wide bump: bandwidth ≈ 50 Hz, center ≈ 100 Hz → Q ≈ 2
+    let freq = Array1::from_vec(vec![50.0, 75.0, 100.0, 125.0, 150.0]);
+    let spl = Array1::from_vec(vec![87.0, 88.5, 90.0, 88.5, 87.0]);
+    let q = estimate_peak_q(&freq, &spl, 2);
+    assert!(q < 3.0, "wide bump should have low Q, got {q:.1}");
+    assert!(q > 0.5, "Q should still be positive, got {q:.1}");
+}
+
+#[test]
+fn test_estimate_peak_q_two_point_array() {
+    // Degenerate 2-point array — no interior points, but function should not panic
+    let freq = Array1::from_vec(vec![100.0, 200.0]);
+    let spl = Array1::from_vec(vec![90.0, 80.0]);
+    let q = estimate_peak_q(&freq, &spl, 0);
+    assert!(
+        q.is_finite() && q >= 0.0,
+        "2-point array Q should be finite, got {}",
+        q
+    );
+}
+
+#[test]
+fn test_estimate_dip_q_basic() {
+    let freq = Array1::from_vec(vec![50.0, 75.0, 100.0, 125.0, 150.0]);
+    let spl = Array1::from_vec(vec![93.0, 91.5, 90.0, 91.5, 93.0]);
+    let q = estimate_dip_q(&freq, &spl, 2);
+    assert!(
+        q.is_finite() && q > 0.0,
+        "dip Q should be finite positive, got {}",
+        q
+    );
+}
+
+#[test]
+fn test_estimate_dip_q_at_edge() {
+    // Dip at the start of array — can't find left +3dB crossing
+    let freq = Array1::from_vec(vec![20.0, 30.0, 40.0, 50.0, 60.0]);
+    let spl = Array1::from_vec(vec![90.0, 92.0, 95.0, 93.0, 80.0]); // dip at idx 0
+    let q = estimate_dip_q(&freq, &spl, 0);
+    assert!(
+        q.is_finite() && q > 0.0,
+        "edge dip Q should be finite positive, got {}",
+        q
+    );
+}

@@ -456,3 +456,314 @@ mod polish_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod differential_evolution_function_tests {
+    use super::*;
+    use crate::differential_evolution;
+
+    #[test]
+    fn test_convenience_function_sphere() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(200)
+            .popsize(20)
+            .build()
+            .expect("popsize must be >= 4");
+
+        let report = differential_evolution(&sphere, &[(-5.0, 5.0), (-5.0, 5.0)], config)
+            .expect("DE should succeed");
+        assert!(
+            report.fun < 1.0,
+            "Should converge near origin: f={}",
+            report.fun
+        );
+    }
+
+    #[test]
+    fn test_convenience_function_invalid_bounds() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let config = DEConfigBuilder::new().seed(42).maxiter(10).build().unwrap();
+        let result = differential_evolution(&sphere, &[(5.0, -5.0)], config);
+        assert!(result.is_err(), "Inverted bounds should error");
+    }
+
+    #[test]
+    fn test_convenience_function_empty_bounds() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let config = DEConfigBuilder::new().seed(42).maxiter(10).build().unwrap();
+        let report = differential_evolution(&sphere, &[], config)
+            .expect("0-D optimization should trivially succeed");
+        assert!(report.success);
+        assert_eq!(report.nit, 0);
+        assert_eq!(report.nfev, 1);
+    }
+}
+
+#[cfg(test)]
+mod strategy_coverage_tests {
+    use super::*;
+
+    fn test_strategy_converges(strategy: Strategy) {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(300)
+            .popsize(30)
+            .strategy(strategy)
+            .build()
+            .expect("popsize must be >= 4");
+
+        let mut de =
+            DifferentialEvolution::new(&sphere, array![-5.0f64, -5.0], array![5.0f64, 5.0])
+                .unwrap();
+        *de.config_mut() = config;
+        let report = de.solve();
+        assert!(
+            report.fun < 1.0,
+            "Strategy {:?} should converge: f={}",
+            strategy,
+            report.fun
+        );
+    }
+
+    #[test]
+    fn test_best1_exp() {
+        test_strategy_converges(Strategy::Best1Exp);
+    }
+    #[test]
+    fn test_rand1_exp() {
+        test_strategy_converges(Strategy::Rand1Exp);
+    }
+    #[test]
+    fn test_rand2_exp() {
+        test_strategy_converges(Strategy::Rand2Exp);
+    }
+    #[test]
+    fn test_current_to_best1_exp() {
+        test_strategy_converges(Strategy::CurrentToBest1Exp);
+    }
+    #[test]
+    fn test_best2_exp() {
+        test_strategy_converges(Strategy::Best2Exp);
+    }
+    #[test]
+    fn test_rand_to_best1_exp() {
+        test_strategy_converges(Strategy::RandToBest1Exp);
+    }
+    #[test]
+    fn test_adaptive_bin() {
+        test_strategy_converges(Strategy::AdaptiveBin);
+    }
+    #[test]
+    fn test_adaptive_exp() {
+        test_strategy_converges(Strategy::AdaptiveExp);
+    }
+    #[test]
+    fn test_lshade_exp() {
+        test_strategy_converges(Strategy::LShadeExp);
+    }
+}
+
+#[cfg(test)]
+mod constraint_and_penalty_tests {
+    use super::*;
+
+    #[test]
+    fn test_inequality_penalty() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(200)
+            .popsize(20)
+            .add_penalty_ineq(|x| x[0] + 1.0, 1e3) // x0 >= -1
+            .build()
+            .expect("popsize must be >= 4");
+
+        let mut de =
+            DifferentialEvolution::new(&sphere, array![-5.0f64, -5.0], array![5.0f64, 5.0])
+                .unwrap();
+        *de.config_mut() = config;
+        let report = de.solve();
+        assert!(
+            report.fun < 1.0,
+            "Should converge with inequality penalty: f={}",
+            report.fun
+        );
+    }
+
+    #[test]
+    fn test_equality_penalty() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(200)
+            .popsize(20)
+            .add_penalty_eq(|x| x[0] - 1.0, 1e3) // x0 == 1
+            .build()
+            .expect("popsize must be >= 4");
+
+        let mut de =
+            DifferentialEvolution::new(&sphere, array![-5.0f64, -5.0], array![5.0f64, 5.0])
+                .unwrap();
+        *de.config_mut() = config;
+        let report = de.solve();
+        // With strong equality penalty, x0 should be pulled toward 1
+        assert!(
+            (report.x[0] - 1.0).abs() < 0.5,
+            "x0 should be near 1: {}",
+            report.x[0]
+        );
+    }
+
+    #[test]
+    fn test_linear_penalty() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let a = ndarray::Array2::from_shape_vec((1, 2), vec![1.0, 0.0]).unwrap();
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(200)
+            .popsize(20)
+            .linear_penalty(crate::LinearPenalty {
+                a,
+                lb: array![-1.0],
+                ub: array![1.0],
+                weight: 1e3,
+            })
+            .build()
+            .expect("popsize must be >= 4");
+
+        let mut de =
+            DifferentialEvolution::new(&sphere, array![-5.0f64, -5.0], array![5.0f64, 5.0])
+                .unwrap();
+        *de.config_mut() = config;
+        let report = de.solve();
+        assert!(
+            report.fun < 10.0,
+            "Should converge with linear penalty: f={}",
+            report.fun
+        );
+    }
+}
+
+#[cfg(test)]
+mod integrality_and_wls_tests {
+    use super::*;
+
+    #[test]
+    fn test_integrality_mask() {
+        let f = |x: &Array1<f64>| (x[0] - 2.0).powi(2) + (x[1] - 3.0).powi(2);
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(100)
+            .popsize(10)
+            .integrality(vec![true, false])
+            .build()
+            .expect("popsize must be >= 4");
+
+        let mut de =
+            DifferentialEvolution::new(&f, array![0.0f64, 0.0], array![5.0f64, 5.0]).unwrap();
+        *de.config_mut() = config;
+        let report = de.solve();
+        assert!(
+            report.fun < 1.0,
+            "Should converge with integrality: f={}",
+            report.fun
+        );
+        // x0 should be very close to an integer
+        assert!(
+            (report.x[0].round() - report.x[0]).abs() < 1e-6,
+            "x0 should be integral: {}",
+            report.x[0]
+        );
+    }
+
+    #[test]
+    fn test_wls_enabled() {
+        let sphere = |x: &Array1<f64>| x.iter().map(|&xi| xi * xi).sum::<f64>();
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(100)
+            .popsize(10)
+            .enable_wls(true)
+            .build()
+            .expect("popsize must be >= 4");
+
+        let mut de =
+            DifferentialEvolution::new(&sphere, array![-5.0f64, -5.0], array![5.0f64, 5.0])
+                .unwrap();
+        *de.config_mut() = config;
+        let report = de.solve();
+        assert!(
+            report.fun < 1.0,
+            "Should converge with WLS: f={}",
+            report.fun
+        );
+    }
+}
+
+#[cfg(test)]
+mod edge_case_and_error_tests {
+    use super::*;
+
+    #[test]
+    fn test_all_fixed_variables() {
+        let f = |x: &Array1<f64>| x[0] * x[0] + x[1] * x[1];
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(10)
+            .popsize(10)
+            .build()
+            .expect("popsize must be >= 4");
+
+        let mut de =
+            DifferentialEvolution::new(&f, array![2.0f64, 3.0], array![2.0f64, 3.0]).unwrap();
+        *de.config_mut() = config;
+        let report = de.solve();
+        assert!(report.success);
+        assert_eq!(report.nit, 0);
+        assert_eq!(report.nfev, 1);
+        assert!((report.x[0] - 2.0).abs() < 1e-10);
+        assert!((report.x[1] - 3.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_new_bounds_mismatch() {
+        let f = |x: &Array1<f64>| x[0] * x[0];
+        let result = DifferentialEvolution::new(&f, array![-5.0f64], array![5.0f64, 5.0]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_new_invalid_bounds() {
+        let f = |x: &Array1<f64>| x[0] * x[0];
+        let result = DifferentialEvolution::new(&f, array![5.0f64], array![-5.0f64]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_inf_objective_becomes_infinity() {
+        let call_count = std::sync::atomic::AtomicUsize::new(0);
+        let f = |x: &Array1<f64>| {
+            let c = call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if c == 0 {
+                f64::INFINITY
+            } else {
+                x.iter().map(|&xi| xi * xi).sum::<f64>()
+            }
+        };
+        let config = DEConfigBuilder::new()
+            .seed(42)
+            .maxiter(50)
+            .popsize(10)
+            .build()
+            .expect("popsize must be >= 4");
+
+        let mut de =
+            DifferentialEvolution::new(&f, array![-5.0f64, -5.0], array![5.0f64, 5.0]).unwrap();
+        *de.config_mut() = config;
+        let report = de.solve();
+        assert!(report.fun.is_finite(), "Best fitness must be finite");
+    }
+}

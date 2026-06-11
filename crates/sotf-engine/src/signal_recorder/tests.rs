@@ -1166,3 +1166,279 @@ fn bass_anchor_replay_errors_when_start_past_eof() {
     .expect_err("start past EOF must fail");
     assert!(err.contains("exceeds recording length"));
 }
+
+#[test]
+fn test_validate_signal_params_two_tone() {
+    let sample_rate = 48000;
+    let nyquist = sample_rate as f32 / 2.0;
+
+    // Valid
+    let params = SignalParams::TwoTone {
+        freq1: 100.0,
+        amp1: 0.5,
+        freq2: 1000.0,
+        amp2: 0.3,
+    };
+    assert!(validate_signal_params(SignalType::TwoTone, &params, 1.0, sample_rate).is_ok());
+
+    // freq1 at boundary
+    let p = SignalParams::TwoTone {
+        freq1: 0.0,
+        amp1: 0.5,
+        freq2: 1000.0,
+        amp2: 0.3,
+    };
+    assert!(validate_signal_params(SignalType::TwoTone, &p, 1.0, sample_rate).is_err());
+    let p = SignalParams::TwoTone {
+        freq1: nyquist,
+        amp1: 0.5,
+        freq2: 1000.0,
+        amp2: 0.3,
+    };
+    assert!(validate_signal_params(SignalType::TwoTone, &p, 1.0, sample_rate).is_err());
+
+    // freq2 at boundary
+    let p = SignalParams::TwoTone {
+        freq1: 100.0,
+        amp1: 0.5,
+        freq2: 0.0,
+        amp2: 0.3,
+    };
+    assert!(validate_signal_params(SignalType::TwoTone, &p, 1.0, sample_rate).is_err());
+    let p = SignalParams::TwoTone {
+        freq1: 100.0,
+        amp1: 0.5,
+        freq2: nyquist,
+        amp2: 0.3,
+    };
+    assert!(validate_signal_params(SignalType::TwoTone, &p, 1.0, sample_rate).is_err());
+
+    // amp1 at boundary
+    let p = SignalParams::TwoTone {
+        freq1: 100.0,
+        amp1: 0.0,
+        freq2: 1000.0,
+        amp2: 0.3,
+    };
+    assert!(validate_signal_params(SignalType::TwoTone, &p, 1.0, sample_rate).is_err());
+    let p = SignalParams::TwoTone {
+        freq1: 100.0,
+        amp1: 1.0,
+        freq2: 1000.0,
+        amp2: 0.3,
+    };
+    assert!(validate_signal_params(SignalType::TwoTone, &p, 1.0, sample_rate).is_ok());
+    let p = SignalParams::TwoTone {
+        freq1: 100.0,
+        amp1: 1.1,
+        freq2: 1000.0,
+        amp2: 0.3,
+    };
+    assert!(validate_signal_params(SignalType::TwoTone, &p, 1.0, sample_rate).is_err());
+
+    // amp2 at boundary
+    let p = SignalParams::TwoTone {
+        freq1: 100.0,
+        amp1: 0.5,
+        freq2: 1000.0,
+        amp2: 0.0,
+    };
+    assert!(validate_signal_params(SignalType::TwoTone, &p, 1.0, sample_rate).is_err());
+    let p = SignalParams::TwoTone {
+        freq1: 100.0,
+        amp1: 0.5,
+        freq2: 1000.0,
+        amp2: 1.0,
+    };
+    assert!(validate_signal_params(SignalType::TwoTone, &p, 1.0, sample_rate).is_ok());
+}
+
+#[test]
+fn test_validate_signal_params_noise_amp() {
+    let sample_rate = 48000;
+
+    // Valid amplitude for all noise types
+    let p = SignalParams::Noise { amp: 0.5 };
+    assert!(validate_signal_params(SignalType::WhiteNoise, &p, 1.0, sample_rate).is_ok());
+    assert!(validate_signal_params(SignalType::PinkNoise, &p, 1.0, sample_rate).is_ok());
+    assert!(validate_signal_params(SignalType::MNoise, &p, 1.0, sample_rate).is_ok());
+
+    // amp = 0 is invalid
+    let p = SignalParams::Noise { amp: 0.0 };
+    assert!(validate_signal_params(SignalType::WhiteNoise, &p, 1.0, sample_rate).is_err());
+
+    // amp = 1.0 is valid
+    let p = SignalParams::Noise { amp: 1.0 };
+    assert!(validate_signal_params(SignalType::WhiteNoise, &p, 1.0, sample_rate).is_ok());
+
+    // amp > 1.0 is invalid
+    let p = SignalParams::Noise { amp: 1.1 };
+    assert!(validate_signal_params(SignalType::WhiteNoise, &p, 1.0, sample_rate).is_err());
+}
+
+#[test]
+fn test_validate_signal_params_sweep_edge_cases() {
+    let sample_rate = 48000;
+    let nyquist = sample_rate as f32 / 2.0;
+
+    // start_freq = 0
+    let p = SignalParams::Sweep {
+        start_freq: 0.0,
+        end_freq: 1000.0,
+        amp: 0.5,
+    };
+    assert!(validate_signal_params(SignalType::Sweep, &p, 1.0, sample_rate).is_err());
+
+    // start_freq = nyquist
+    let p = SignalParams::Sweep {
+        start_freq: nyquist,
+        end_freq: nyquist + 100.0,
+        amp: 0.5,
+    };
+    assert!(validate_signal_params(SignalType::Sweep, &p, 1.0, sample_rate).is_err());
+
+    // end_freq = 0
+    let p = SignalParams::Sweep {
+        start_freq: 100.0,
+        end_freq: 0.0,
+        amp: 0.5,
+    };
+    assert!(validate_signal_params(SignalType::Sweep, &p, 1.0, sample_rate).is_err());
+
+    // end_freq = nyquist
+    let p = SignalParams::Sweep {
+        start_freq: 100.0,
+        end_freq: nyquist,
+        amp: 0.5,
+    };
+    assert!(validate_signal_params(SignalType::Sweep, &p, 1.0, sample_rate).is_err());
+
+    // amp = 0
+    let p = SignalParams::Sweep {
+        start_freq: 100.0,
+        end_freq: 1000.0,
+        amp: 0.0,
+    };
+    assert!(validate_signal_params(SignalType::Sweep, &p, 1.0, sample_rate).is_err());
+
+    // amp = 1.0
+    let p = SignalParams::Sweep {
+        start_freq: 100.0,
+        end_freq: 1000.0,
+        amp: 1.0,
+    };
+    assert!(validate_signal_params(SignalType::Sweep, &p, 1.0, sample_rate).is_ok());
+}
+
+#[test]
+fn test_validate_signal_params_tone_edge_cases() {
+    let sample_rate = 48000;
+    let nyquist = sample_rate as f32 / 2.0;
+
+    // freq = 0
+    let p = SignalParams::Tone {
+        freq: 0.0,
+        amp: 0.5,
+    };
+    assert!(validate_signal_params(SignalType::Tone, &p, 1.0, sample_rate).is_err());
+
+    // freq = nyquist
+    let p = SignalParams::Tone {
+        freq: nyquist,
+        amp: 0.5,
+    };
+    assert!(validate_signal_params(SignalType::Tone, &p, 1.0, sample_rate).is_err());
+
+    // amp = 0
+    let p = SignalParams::Tone {
+        freq: 1000.0,
+        amp: 0.0,
+    };
+    assert!(validate_signal_params(SignalType::Tone, &p, 1.0, sample_rate).is_err());
+
+    // amp = 1.0
+    let p = SignalParams::Tone {
+        freq: 1000.0,
+        amp: 1.0,
+    };
+    assert!(validate_signal_params(SignalType::Tone, &p, 1.0, sample_rate).is_ok());
+}
+
+#[test]
+fn test_validate_signal_params_mls_order_boundary() {
+    let sample_rate = 48000;
+
+    // order = 2 (minimum valid)
+    let p = SignalParams::Mls { order: 2, amp: 0.5 };
+    assert!(validate_signal_params(SignalType::Mls, &p, 0.0, sample_rate).is_ok());
+
+    // order = 24 (maximum valid)
+    let p = SignalParams::Mls {
+        order: 24,
+        amp: 0.5,
+    };
+    assert!(validate_signal_params(SignalType::Mls, &p, 0.0, sample_rate).is_ok());
+
+    // order = 1 (too low)
+    let p = SignalParams::Mls { order: 1, amp: 0.5 };
+    assert!(validate_signal_params(SignalType::Mls, &p, 0.0, sample_rate).is_err());
+
+    // order = 25 (too high)
+    let p = SignalParams::Mls {
+        order: 25,
+        amp: 0.5,
+    };
+    assert!(validate_signal_params(SignalType::Mls, &p, 0.0, sample_rate).is_err());
+}
+
+#[test]
+fn test_validate_signal_params_dirac_edge_cases() {
+    let sample_rate = 48000;
+
+    // amp = 0
+    let p = SignalParams::Dirac { amp: 0.0 };
+    assert!(validate_signal_params(SignalType::Dirac, &p, 0.1, sample_rate).is_err());
+
+    // amp = 1.0
+    let p = SignalParams::Dirac { amp: 1.0 };
+    assert!(validate_signal_params(SignalType::Dirac, &p, 0.1, sample_rate).is_ok());
+
+    // amp > 1.0
+    let p = SignalParams::Dirac { amp: 1.1 };
+    assert!(validate_signal_params(SignalType::Dirac, &p, 0.1, sample_rate).is_err());
+}
+
+#[test]
+fn test_validate_signal_params_octave_sweep_valid() {
+    let sample_rate = 48000;
+
+    // OctaveSweep used with Sweep signal type should pass through
+    let p = SignalParams::OctaveSweep {
+        start_freq: 20.0,
+        end_freq: 20000.0,
+        amp: 0.5,
+        bass_octave_duration_s: 3.0,
+        pre_silence_s: 2.0,
+        post_silence_s: 2.0,
+    };
+    assert!(validate_signal_params(SignalType::Sweep, &p, 1.0, sample_rate).is_ok());
+}
+
+#[test]
+fn test_validate_signal_params_mismatch_ok() {
+    let sample_rate = 48000;
+
+    // Mismatched signal type and params should fall through to Ok(())
+    let p = SignalParams::Tone {
+        freq: 1000.0,
+        amp: 0.5,
+    };
+    assert!(validate_signal_params(SignalType::Sweep, &p, 1.0, sample_rate).is_ok());
+
+    let p = SignalParams::Sweep {
+        start_freq: 100.0,
+        end_freq: 1000.0,
+        amp: 0.5,
+    };
+    assert!(validate_signal_params(SignalType::Tone, &p, 1.0, sample_rate).is_ok());
+}

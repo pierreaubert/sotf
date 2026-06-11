@@ -545,3 +545,132 @@ mod spacing_diag_tests {
         assert!((spacings[1] - 1.0).abs() < 1e-12);
     }
 }
+
+#[cfg(test)]
+mod smoothness_penalty_edge_tests {
+    use super::{SmoothnessPenaltyConfig, compute_smoothness_penalty};
+    use ndarray::Array1;
+
+    #[test]
+    fn smoothness_penalty_short_array_returns_zero() {
+        let y = Array1::from_vec(vec![1.0, 2.0]);
+        let freqs = Array1::from_vec(vec![100.0, 200.0]);
+        let cfg = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            compute_smoothness_penalty(&y, &freqs, 20.0, 20000.0, &cfg),
+            0.0
+        );
+    }
+
+    #[test]
+    fn smoothness_penalty_mismatched_lengths_returns_zero() {
+        let y = Array1::from_vec(vec![1.0, 2.0, 3.0]);
+        let freqs = Array1::from_vec(vec![100.0, 200.0]);
+        let cfg = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            compute_smoothness_penalty(&y, &freqs, 20.0, 20000.0, &cfg),
+            0.0
+        );
+    }
+
+    #[test]
+    fn smoothness_penalty_negative_or_zero_freqs_skipped() {
+        let freqs = Array1::from_vec(vec![0.0, 100.0, 200.0, 300.0]);
+        let y = Array1::from_vec(vec![0.0, 0.0, 1.0, 0.0]);
+        let cfg = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            ..Default::default()
+        };
+        let p = compute_smoothness_penalty(&y, &freqs, 20.0, 20000.0, &cfg);
+        assert!(p.is_finite() && p >= 0.0);
+    }
+
+    #[test]
+    fn smoothness_penalty_custom_exponent() {
+        let n = 50;
+        let freqs = Array1::<f64>::logspace(10.0, 1.0, 4.0, n);
+        let y = freqs.mapv(|f| 2.0 * (f.log10() * 10.0).sin());
+        let cfg1 = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            exponent: 1.5,
+            ..Default::default()
+        };
+        let cfg2 = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            exponent: 2.0,
+            ..Default::default()
+        };
+        let p1 = compute_smoothness_penalty(&y, &freqs, 20.0, 20000.0, &cfg1);
+        let p2 = compute_smoothness_penalty(&y, &freqs, 20.0, 20000.0, &cfg2);
+        assert!(p1 > 0.0 && p2 > 0.0);
+        assert!(
+            p2 > p1 * 0.5,
+            "exponent=2.0 should produce comparable or larger penalty than 1.5"
+        );
+    }
+
+    #[test]
+    fn smoothness_penalty_nonuniform_dx_skipped() {
+        // Non-monotonic log-freq grid (dx_fwd <= 0 or dx_bwd <= 0)
+        let freqs = Array1::from_vec(vec![100.0, 200.0, 150.0, 400.0]);
+        let y = Array1::from_vec(vec![0.0, 1.0, 0.5, 0.0]);
+        let cfg = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            ..Default::default()
+        };
+        let p = compute_smoothness_penalty(&y, &freqs, 20.0, 20000.0, &cfg);
+        assert!(p.is_finite() && p >= 0.0);
+    }
+
+    #[test]
+    fn smoothness_penalty_schroeder_boundary() {
+        // Create a curve with a sharp bend at exactly 200 Hz (the Schroeder boundary)
+        let n = 100;
+        let freqs = Array1::logspace(10.0, 1.0, 4.0, n);
+        let y = freqs.mapv(|f: f64| {
+            let ratio = f / 200.0_f64;
+            if f < 200.0_f64 {
+                5.0_f64 * ratio.log10()
+            } else {
+                -5.0_f64 * ratio.log10()
+            }
+        });
+        let cfg_modal = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            schroeder_hz: Some(200.0),
+            modal_weight_scale: 0.0,
+            exponent: 1.0,
+        };
+        let cfg_strict = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            schroeder_hz: None,
+            modal_weight_scale: 1.0,
+            exponent: 1.0,
+        };
+        let p_modal = compute_smoothness_penalty(&y, &freqs, 20.0, 20000.0, &cfg_modal);
+        let p_strict = compute_smoothness_penalty(&y, &freqs, 20.0, 20000.0, &cfg_strict);
+        assert!(
+            p_modal <= p_strict,
+            "modal exemption at schroeder boundary should reduce or equal penalty: modal={p_modal}, strict={p_strict}"
+        );
+    }
+
+    #[test]
+    fn smoothness_penalty_outside_range_returns_zero() {
+        let freqs = Array1::from_vec(vec![100.0, 200.0, 300.0, 400.0]);
+        let y = Array1::from_vec(vec![0.0, 1.0, 0.0, 1.0]);
+        let cfg = SmoothnessPenaltyConfig {
+            tv2_weight: 1.0,
+            ..Default::default()
+        };
+        // min_freq > max_freq in data range → no points evaluated
+        let p = compute_smoothness_penalty(&y, &freqs, 500.0, 600.0, &cfg);
+        assert_eq!(p, 0.0, "outside range should produce zero penalty");
+    }
+}

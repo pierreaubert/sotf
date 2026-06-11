@@ -832,3 +832,86 @@ fn windowed_phase_rejects_degenerate_inputs() {
     let r = extract_tone_phase_windowed(&vec![0.1_f32; 1000], 30.0, 48_000, 0);
     assert_eq!(r.magnitude, 0.0);
 }
+
+#[test]
+fn steady_tone_no_fade() {
+    let sr = 48_000_u32;
+    let s = gen_steady_tone(100.0, 1.0, 0.0, sr, 0.5);
+    assert!(!s.is_empty());
+    let peak = s.iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
+    assert!((peak - 0.5).abs() < 0.01);
+}
+
+#[test]
+fn steady_tone_exact_boundary() {
+    let sr = 48_000_u32;
+    let fade_ms = 50.0;
+    let duration_s = 2.0 * fade_ms / 1000.0;
+    let s = gen_steady_tone(100.0, duration_s, fade_ms, sr, 0.5);
+    assert!(!s.is_empty());
+}
+
+#[test]
+fn steady_tone_clipped_amp() {
+    let sr = 48_000_u32;
+    let s = gen_steady_tone(100.0, 1.0, 50.0, sr, 1.5);
+    let peak = s.iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
+    assert!(peak < 1.0);
+}
+
+#[test]
+fn tone_phase_phasors_empty_signal() {
+    let p = tone_phase_phasors(&[], 100.0, 48_000, 4);
+    assert!(p.is_empty());
+}
+
+#[test]
+fn tone_phase_phasors_zero_freq() {
+    let s = gen_steady_tone(100.0, 1.0, 50.0, 48_000, 0.5);
+    let p = tone_phase_phasors(&s, 0.0, 48_000, 4);
+    assert!(p.is_empty());
+}
+
+#[test]
+fn tone_phase_phasors_zero_sample_rate() {
+    let s = gen_steady_tone(100.0, 1.0, 50.0, 48_000, 0.5);
+    let p = tone_phase_phasors(&s, 100.0, 0, 4);
+    assert!(p.is_empty());
+}
+
+#[test]
+fn tone_phase_phasors_zero_windows() {
+    let s = gen_steady_tone(100.0, 1.0, 50.0, 48_000, 0.5);
+    let p = tone_phase_phasors(&s, 100.0, 48_000, 0);
+    assert!(p.is_empty());
+}
+
+#[test]
+fn tone_phase_phasors_short_signal() {
+    let s = vec![0.1_f32, 0.2, 0.3, 0.4, 0.5];
+    let p = tone_phase_phasors(&s, 100.0, 48_000, 4);
+    assert!(p.is_empty());
+}
+
+#[test]
+fn tone_phase_phasors_exactly_one_window() {
+    let sr = 48_000_u32;
+    let freq = 100.0_f32;
+    let s = gen_steady_tone(freq, 1.0, 50.0, sr, 0.5);
+    let p = tone_phase_phasors(&s, freq, sr, 8);
+    assert_eq!(p.len(), 8);
+    for w in &p {
+        assert_eq!(w.len, p[0].len);
+    }
+}
+
+#[test]
+fn tone_phase_phasors_merges_to_single() {
+    let sr = 48_000_u32;
+    let freq = 1000.0_f32;
+    // Very short tone so steady portion < 2 cycles, forcing merge to 1 window.
+    let s = gen_steady_tone(freq, 0.002, 1.0, sr, 0.5);
+    let p = tone_phase_phasors(&s, freq, sr, 64);
+    assert_eq!(p.len(), 1);
+    assert!(p[0].len >= 48);
+}

@@ -759,3 +759,1144 @@ fn test_time_domain_unity_ratio_passthrough() {
         "Unity ratio should pass through, ratio={ratio:.3}"
     );
 }
+
+// -------------------------------------------------------------------------
+// Plugin interface tests
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_plugin_interface() {
+    let p = MultibandExpanderPlugin::new(2);
+    assert_eq!(p.channels(), 2);
+    assert_eq!(p.info().name, "Multiband Expander");
+    assert!(!p.parameters().is_empty());
+}
+
+#[test]
+fn test_get_data() {
+    let p = MultibandExpanderPlugin::new(2);
+    let data = p.get_data();
+    assert!(data.is_some());
+}
+
+#[test]
+fn test_from_params() {
+    let params = MultibandExpanderPluginParams::default();
+    let p = MultibandExpanderPlugin::from_params(2, params);
+    assert_eq!(p.channels(), 2);
+}
+
+// -------------------------------------------------------------------------
+// param_value / set_param_value edge cases
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_param_value_out_of_range() {
+    let p = MultibandExpanderPlugin::new(1);
+    assert!(p.param_value(99).is_none());
+}
+
+#[test]
+fn test_set_param_value_out_of_range() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.set_param_value(99, 1.0); // should not panic
+}
+
+// -------------------------------------------------------------------------
+// get_parameter comprehensive tests
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_get_parameter_global() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+    let v = p.get_parameter(&ParameterId::from("threshold")).unwrap();
+    assert!(matches!(v, ParameterValue::Float(_)));
+}
+
+#[test]
+fn test_get_parameter_band_fields() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_threshold"))
+            .unwrap(),
+        ParameterValue::Float(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_ratio")).unwrap(),
+        ParameterValue::Float(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_attack"))
+            .unwrap(),
+        ParameterValue::Float(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_release"))
+            .unwrap(),
+        ParameterValue::Float(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_knee")).unwrap(),
+        ParameterValue::Float(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_range")).unwrap(),
+        ParameterValue::Float(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_hysteresis"))
+            .unwrap(),
+        ParameterValue::Float(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_hold")).unwrap(),
+        ParameterValue::Float(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_auto")).unwrap(),
+        ParameterValue::Bool(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_measured"))
+            .unwrap(),
+        ParameterValue::Bool(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_active"))
+            .unwrap(),
+        ParameterValue::Bool(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_solo")).unwrap(),
+        ParameterValue::Bool(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("band_0_bypass"))
+            .unwrap(),
+        ParameterValue::Bool(_)
+    ));
+}
+
+#[test]
+fn test_get_parameter_invalid_band() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+    assert!(
+        p.get_parameter(&ParameterId::from("band_99_threshold"))
+            .is_none()
+    );
+}
+
+#[test]
+fn test_get_parameter_unknown() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+    assert!(
+        p.get_parameter(&ParameterId::from("unknown_param"))
+            .is_none()
+    );
+}
+
+#[test]
+fn test_get_parameter_single_band_aliases() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("auto_makeup")).unwrap(),
+        ParameterValue::Bool(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("measured_auto_makeup"))
+            .unwrap(),
+        ParameterValue::Bool(_)
+    ));
+    assert!(matches!(
+        p.get_parameter(&ParameterId::from("sidechain_hpf_hz"))
+            .unwrap(),
+        ParameterValue::Float(_)
+    ));
+}
+
+// -------------------------------------------------------------------------
+// set_parameter comprehensive tests with side effects
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_set_parameter_crossover_freq() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 3,
+            processing_mode: "spectral".to_string(),
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(
+        ParameterId::from("crossover_freq_1"),
+        ParameterValue::Float(500.0),
+    )
+    .unwrap();
+    assert!((p.crossover_frequencies[0] - 500.0).abs() < 1e-3);
+}
+
+#[test]
+fn test_set_parameter_all_crossover_freqs() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(
+        ParameterId::from("crossover_freq_2"),
+        ParameterValue::Float(800.0),
+    )
+    .unwrap();
+    p.set_parameter(
+        ParameterId::from("crossover_freq_3"),
+        ParameterValue::Float(6000.0),
+    )
+    .unwrap();
+    p.set_parameter(
+        ParameterId::from("crossover_freq_4"),
+        ParameterValue::Float(11000.0),
+    )
+    .unwrap();
+
+    assert!((p.crossover_frequencies[1] - 800.0).abs() < 1e-3);
+    assert!((p.crossover_frequencies[2] - 6000.0).abs() < 1e-3);
+    assert!((p.crossover_frequencies[3] - 11000.0).abs() < 1e-3);
+}
+
+#[test]
+fn test_set_parameter_threshold() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+    p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-30.0))
+        .unwrap();
+    assert!((p.threshold_db - (-30.0)).abs() < 1e-6);
+}
+
+#[test]
+fn test_set_parameter_mix() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+        .unwrap();
+    assert!((p.mix - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn test_set_parameter_attack_release_updates_coefficients() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+    let old_attack = p.band_expanders[0].attack_coeff;
+    let old_release = p.band_expanders[0].release_coeff;
+
+    p.set_parameter(ParameterId::from("attack"), ParameterValue::Float(10.0))
+        .unwrap();
+    p.set_parameter(ParameterId::from("release"), ParameterValue::Float(500.0))
+        .unwrap();
+
+    assert_ne!(p.band_expanders[0].attack_coeff, old_attack);
+    assert_ne!(p.band_expanders[0].release_coeff, old_release);
+}
+
+#[test]
+fn test_set_parameter_detection_mode() {
+    let mut p = MultibandExpanderPlugin::new(2);
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(ParameterId::from("detection_mode"), ParameterValue::Int(1))
+        .unwrap();
+    assert_eq!(p.detection_mode, "rms");
+
+    p.set_parameter(ParameterId::from("detection_mode"), ParameterValue::Int(0))
+        .unwrap();
+    assert_eq!(p.detection_mode, "peak");
+}
+
+#[test]
+fn test_set_parameter_band_threshold() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(
+        ParameterId::from("band_0_threshold"),
+        ParameterValue::Float(-25.0),
+    )
+    .unwrap();
+    assert!((p.band_params[0].threshold_db.unwrap() - (-25.0)).abs() < 1e-6);
+}
+
+#[test]
+fn test_set_parameter_band_bools() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(ParameterId::from("band_0_auto"), ParameterValue::Bool(true))
+        .unwrap();
+    assert!(p.band_params[0].auto_makeup);
+
+    p.set_parameter(
+        ParameterId::from("band_0_measured"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    assert!(p.band_params[0].measured_auto_makeup);
+
+    p.set_parameter(
+        ParameterId::from("band_0_active"),
+        ParameterValue::Bool(false),
+    )
+    .unwrap();
+    assert!(!p.band_params[0].active);
+
+    p.set_parameter(ParameterId::from("band_0_solo"), ParameterValue::Bool(true))
+        .unwrap();
+    assert!(p.band_params[0].solo);
+
+    p.set_parameter(
+        ParameterId::from("band_0_bypass"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    assert!(p.band_params[0].bypass);
+}
+
+#[test]
+fn test_set_parameter_auto_makeup_alias() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(ParameterId::from("auto_makeup"), ParameterValue::Bool(true))
+        .unwrap();
+    assert!(p.band_params[0].auto_makeup);
+}
+
+#[test]
+fn test_set_parameter_measured_auto_makeup_alias() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(
+        ParameterId::from("measured_auto_makeup"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    assert!(p.band_params[0].measured_auto_makeup);
+}
+
+#[test]
+fn test_set_parameter_sidechain_hpf_alias() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(
+        ParameterId::from("sidechain_hpf_hz"),
+        ParameterValue::Float(120.0),
+    )
+    .unwrap();
+    assert!((p.sidechain_hpf_hz - 120.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_set_parameter_processing_mode_time_domain() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            processing_mode: "spectral".to_string(),
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+    assert!(p.spectral.is_some());
+
+    p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(0))
+        .unwrap();
+    assert!(p.spectral.is_none());
+    assert_eq!(p.processing_mode, "time_domain");
+}
+
+#[test]
+fn test_set_parameter_num_bands_side_effects() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(4))
+        .unwrap();
+
+    assert_eq!(p.num_bands, 4);
+    assert_eq!(p.band_expanders.len(), 4);
+    assert_eq!(p.lookahead_buffers.len(), 4);
+    assert_eq!(p.measured_makeups.len(), 4);
+    assert_eq!(p.level_detectors.len(), 4);
+    assert_eq!(p.band_levels_db.len(), 4);
+}
+
+#[test]
+fn test_set_parameter_global_misc() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(ParameterId::from("range"), ParameterValue::Float(60.0))
+        .unwrap();
+    assert!((p.range_db - 60.0).abs() < 1e-6);
+
+    p.set_parameter(ParameterId::from("knee"), ParameterValue::Float(12.0))
+        .unwrap();
+    assert!((p.knee_db - 12.0).abs() < 1e-6);
+
+    p.set_parameter(ParameterId::from("hysteresis"), ParameterValue::Float(8.0))
+        .unwrap();
+    assert!((p.hysteresis_db - 8.0).abs() < 1e-6);
+
+    p.set_parameter(ParameterId::from("hold"), ParameterValue::Float(20.0))
+        .unwrap();
+    assert!((p.hold_ms - 20.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_set_parameter_link_channels() {
+    let mut p = MultibandExpanderPlugin::new(2);
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(
+        ParameterId::from("link_channels"),
+        ParameterValue::Bool(false),
+    )
+    .unwrap();
+    assert!(!p.link_channels);
+
+    p.set_parameter(
+        ParameterId::from("link_channels"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    assert!(p.link_channels);
+}
+
+#[test]
+fn test_set_parameter_invalid_type() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+
+    // processing_mode expects int
+    let res = p.set_parameter(
+        ParameterId::from("processing_mode"),
+        ParameterValue::Float(1.0),
+    );
+    assert!(res.is_err());
+
+    // auto_makeup expects bool
+    let res = p.set_parameter(ParameterId::from("auto_makeup"), ParameterValue::Float(1.0));
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_set_parameter_band_invalid_type() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+
+    let res = p.set_parameter(
+        ParameterId::from("band_0_threshold"),
+        ParameterValue::Bool(true),
+    );
+    assert!(res.is_err());
+
+    let res = p.set_parameter(ParameterId::from("band_0_auto"), ParameterValue::Float(1.0));
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_set_parameter_processing_mode_boundary() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(0))
+        .unwrap();
+    assert_eq!(p.processing_mode, "time_domain");
+
+    p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(1))
+        .unwrap();
+    assert_eq!(p.processing_mode, "spectral");
+}
+
+#[test]
+fn test_rebuild_cached_parameters() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 3,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    let params_before = p.parameters().len();
+    p.rebuild_cached_parameters();
+    let params_after = p.parameters().len();
+    assert_eq!(params_before, params_after);
+    assert!(params_after > 0);
+}
+
+// -------------------------------------------------------------------------
+// Initialization tests
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_initialize_different_sample_rate() {
+    let mut p = MultibandExpanderPlugin::new(2);
+    p.initialize(96000).unwrap();
+    assert_eq!(p.sample_rate, 96000);
+}
+
+#[test]
+fn test_initialize_with_lookahead() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            lookahead_ms: 5.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+    let expected = (5.0_f32 * 0.001 * 48000.0).round() as usize;
+    assert_eq!(p.latency_samples(), expected);
+}
+
+#[test]
+fn test_initialize_spectral_mode() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        2,
+        MultibandExpanderPluginParams {
+            processing_mode: "spectral".to_string(),
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+    assert!(p.spectral.is_some());
+}
+
+// -------------------------------------------------------------------------
+// process_in_place time-domain tests (various branch coverage)
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_process_empty_buffer() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+    let mut buf: Vec<f32> = vec![];
+    let res = p.process_in_place(&mut buf, &ProcessContext::new(48000, 0));
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), 0);
+}
+
+#[test]
+fn test_process_link_channels_rms() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        2,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            link_channels: true,
+            detection_mode: "rms".to_string(),
+            threshold_db: -20.0,
+            ratio: 4.0,
+            mix: 1.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf * 2).map(|i| 0.1 * (i as f32 * 0.05).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_unlink_channels_peak() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        2,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            link_channels: false,
+            detection_mode: "peak".to_string(),
+            threshold_db: -20.0,
+            ratio: 4.0,
+            mix: 1.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf * 2).map(|i| 0.1 * (i as f32 * 0.05).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_unlink_channels_rms() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        2,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            link_channels: false,
+            detection_mode: "rms".to_string(),
+            threshold_db: -20.0,
+            ratio: 4.0,
+            mix: 1.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf * 2).map(|i| 0.1 * (i as f32 * 0.05).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_bypassed_band() {
+    let mut params = MultibandExpanderPluginParams {
+        num_bands: 3,
+        threshold_db: -20.0,
+        ratio: 4.0,
+        mix: 1.0,
+        ..Default::default()
+    };
+    params.bands = vec![
+        BandExpanderParams {
+            bypass: true,
+            ..Default::default()
+        },
+        BandExpanderParams::default(),
+        BandExpanderParams::default(),
+    ];
+    let mut p = MultibandExpanderPlugin::with_params(1, params);
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf).map(|i| 0.2 * (i as f32 * 0.1).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_inactive_band() {
+    let mut params = MultibandExpanderPluginParams {
+        num_bands: 3,
+        threshold_db: -20.0,
+        ratio: 4.0,
+        mix: 1.0,
+        ..Default::default()
+    };
+    params.bands = vec![
+        BandExpanderParams {
+            active: false,
+            ..Default::default()
+        },
+        BandExpanderParams::default(),
+        BandExpanderParams::default(),
+    ];
+    let mut p = MultibandExpanderPlugin::with_params(1, params);
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf).map(|i| 0.2 * (i as f32 * 0.1).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_solo_band() {
+    let mut params = MultibandExpanderPluginParams {
+        num_bands: 3,
+        threshold_db: -20.0,
+        ratio: 4.0,
+        mix: 1.0,
+        ..Default::default()
+    };
+    params.bands = vec![
+        BandExpanderParams {
+            solo: true,
+            ..Default::default()
+        },
+        BandExpanderParams::default(),
+        BandExpanderParams::default(),
+    ];
+    let mut p = MultibandExpanderPlugin::with_params(1, params);
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf).map(|i| 0.2 * (i as f32 * 0.1).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_auto_makeup() {
+    let mut params = MultibandExpanderPluginParams {
+        num_bands: 1,
+        threshold_db: -20.0,
+        ratio: 4.0,
+        range_db: 40.0,
+        mix: 1.0,
+        ..Default::default()
+    };
+    params.bands = vec![BandExpanderParams {
+        auto_makeup: true,
+        ..Default::default()
+    }];
+    let mut p = MultibandExpanderPlugin::with_params(1, params);
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf).map(|i| 0.05 * (i as f32 * 0.1).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_time_domain_lookahead() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            lookahead_ms: 3.0,
+            threshold_db: -20.0,
+            ratio: 4.0,
+            mix: 1.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf).map(|i| 0.1 * (i as f32 * 0.1).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_knee_expansion() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 1,
+            threshold_db: -20.0,
+            ratio: 4.0,
+            knee_db: 6.0,
+            mix: 1.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf).map(|i| 0.05 * (i as f32 * 0.1).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_hysteresis_and_hold() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 1,
+            threshold_db: -20.0,
+            ratio: 4.0,
+            hysteresis_db: 4.0,
+            hold_ms: 10.0,
+            mix: 1.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf).map(|i| 0.05 * (i as f32 * 0.1).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_mix_dry_only() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            mix: 0.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    let nf = 2048usize;
+    let mut buf: Vec<f32> = (0..nf).map(|i| 0.2 * (i as f32 * 0.1).sin()).collect();
+    let original = buf.clone();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+
+    let rms_in = (original.iter().map(|s| s * s).sum::<f32>() / nf as f32).sqrt();
+    let rms_out = (buf.iter().map(|s| s * s).sum::<f32>() / nf as f32).sqrt();
+    let ratio = rms_out / rms_in;
+    assert!(
+        (0.5..1.5).contains(&ratio),
+        "Dry only should pass through, ratio={ratio:.3}"
+    );
+}
+
+#[test]
+fn test_process_mix_wet_only() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            mix: 1.0,
+            threshold_db: -20.0,
+            ratio: 4.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    let nf = 2048usize;
+    let mut buf: Vec<f32> = (0..nf).map(|i| 0.05 * (i as f32 * 0.1).sin()).collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_stereo_separate_channels() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        2,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            link_channels: false,
+            threshold_db: -20.0,
+            ratio: 4.0,
+            mix: 1.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+
+    let nf = 4800usize;
+    let mut buf: Vec<f32> = (0..nf)
+        .flat_map(|i| {
+            let t = i as f32 * 0.05;
+            [0.1 * t.sin(), 0.05 * t.cos()]
+        })
+        .collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+// -------------------------------------------------------------------------
+// process_in_place spectral mode branch coverage
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_process_spectral_solo_band() {
+    let mut params = MultibandExpanderPluginParams {
+        num_bands: 3,
+        processing_mode: "spectral".to_string(),
+        threshold_db: -20.0,
+        ratio: 4.0,
+        mix: 1.0,
+        ..Default::default()
+    };
+    params.bands = vec![
+        BandExpanderParams {
+            solo: true,
+            ..Default::default()
+        },
+        BandExpanderParams::default(),
+        BandExpanderParams::default(),
+    ];
+    let mut p = MultibandExpanderPlugin::with_params(2, params);
+    p.initialize(48000).unwrap();
+
+    let nf = 8192usize;
+    let mut buf: Vec<f32> = (0..nf)
+        .flat_map(|i| {
+            let t = i as f32 * 0.05;
+            [0.1 * t.sin(), 0.1 * t.cos()]
+        })
+        .collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_spectral_bypassed_band() {
+    let mut params = MultibandExpanderPluginParams {
+        num_bands: 3,
+        processing_mode: "spectral".to_string(),
+        threshold_db: -20.0,
+        ratio: 4.0,
+        mix: 1.0,
+        ..Default::default()
+    };
+    params.bands = vec![
+        BandExpanderParams {
+            bypass: true,
+            ..Default::default()
+        },
+        BandExpanderParams::default(),
+        BandExpanderParams::default(),
+    ];
+    let mut p = MultibandExpanderPlugin::with_params(2, params);
+    p.initialize(48000).unwrap();
+
+    let nf = 8192usize;
+    let mut buf: Vec<f32> = (0..nf)
+        .flat_map(|i| {
+            let t = i as f32 * 0.05;
+            [0.1 * t.sin(), 0.1 * t.cos()]
+        })
+        .collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_spectral_inactive_band() {
+    let mut params = MultibandExpanderPluginParams {
+        num_bands: 3,
+        processing_mode: "spectral".to_string(),
+        threshold_db: -20.0,
+        ratio: 4.0,
+        mix: 1.0,
+        ..Default::default()
+    };
+    params.bands = vec![
+        BandExpanderParams {
+            active: false,
+            ..Default::default()
+        },
+        BandExpanderParams::default(),
+        BandExpanderParams::default(),
+    ];
+    let mut p = MultibandExpanderPlugin::with_params(2, params);
+    p.initialize(48000).unwrap();
+
+    let nf = 8192usize;
+    let mut buf: Vec<f32> = (0..nf)
+        .flat_map(|i| {
+            let t = i as f32 * 0.05;
+            [0.1 * t.sin(), 0.1 * t.cos()]
+        })
+        .collect();
+    p.process_in_place(&mut buf, &ProcessContext::new(48000, nf))
+        .unwrap();
+    assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+// -------------------------------------------------------------------------
+// Helper / latency tests
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_latency_samples_lookahead() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            lookahead_ms: 5.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+    let expected = (5.0_f32 * 0.001 * 48000.0).round() as usize;
+    assert_eq!(p.latency_samples(), expected);
+}
+
+#[test]
+fn test_latency_samples_zero() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48000).unwrap();
+    assert_eq!(p.latency_samples(), 0);
+}
+
+#[test]
+fn test_build_crossovers() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 3,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+    assert_eq!(p.crossover_points.len(), 2);
+
+    p.set_param_value(0, 5.0); // num_bands = 5
+    p.build_crossovers();
+    assert_eq!(p.crossover_points.len(), 4);
+}
+
+#[test]
+fn test_update_coefficients() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            attack_ms: 1.0,
+            release_ms: 50.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+    let old_attack = p.band_expanders[0].attack_coeff;
+
+    p.attack_ms = 10.0;
+    p.update_coefficients();
+
+    assert_ne!(p.band_expanders[0].attack_coeff, old_attack);
+    assert!(p.band_expanders[0].attack_coeff > 0.0);
+    assert!(p.band_expanders[0].attack_coeff < 1.0);
+}
+
+#[test]
+fn test_update_lookahead_delay() {
+    let mut p = MultibandExpanderPlugin::with_params(
+        1,
+        MultibandExpanderPluginParams {
+            num_bands: 2,
+            lookahead_ms: 5.0,
+            ..Default::default()
+        },
+    );
+    p.initialize(48000).unwrap();
+    p.lookahead_ms = 10.0;
+    p.update_lookahead_delay();
+    // Just verify it doesn't panic
+}
+
+// -------------------------------------------------------------------------
+// SpectralState helper tests
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_compute_bin_to_band() {
+    use super::spectral_state::SpectralState;
+
+    let bin_to_band =
+        SpectralState::compute_bin_to_band(1024, 513, 48000, &[300.0, 3000.0, 8000.0, 12000.0], 5);
+
+    assert_eq!(bin_to_band[0], 0); // DC bin -> lowest band
+    assert_eq!(bin_to_band[10], 1); // ~469 Hz -> above 300 Hz crossover
+}
+
+#[test]
+fn test_spectral_state_reset() {
+    use super::spectral_state::SpectralState;
+
+    let mut ss = SpectralState::new(1024, 2, 48000, &[300.0, 3000.0], 3);
+
+    ss.input_fill = 500;
+    ss.bin_states[0][0].envelope_db = 10.0;
+    ss.bin_states[0][0].gate_state = GateState::Closing;
+    ss.output_accumulator_fill = 100;
+
+    ss.reset();
+
+    assert_eq!(ss.input_fill, 0);
+    assert_eq!(ss.bin_states[0][0].envelope_db, 0.0);
+    assert_eq!(ss.bin_states[0][0].gate_state, GateState::Open);
+    assert_eq!(ss.output_accumulator_fill, 0);
+}
+
+// -------------------------------------------------------------------------
+// MultibandExpanderData tests
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_multiband_expander_data() {
+    use super::multiband_expander_data::MultibandExpanderData;
+
+    let data = MultibandExpanderData::new(3, 2);
+    assert_eq!(data.attenuation_db.len(), 6);
+    assert_eq!(data.is_open.len(), 3);
+    assert_eq!(data.band_levels_db.len(), 3);
+    assert_eq!(data.crossover_frequencies.len(), 2);
+
+    let default = MultibandExpanderData::default();
+    assert!(default.attenuation_db.is_empty());
+
+    let mut data = MultibandExpanderData::new(2, 1);
+    data.update(&[1.0, 2.0], &[true, false], &[-10.0, -20.0], &[500.0]);
+    assert_eq!((*data.attenuation_db)[0], 1.0);
+    assert_eq!((*data.is_open)[0], true);
+    assert_eq!((*data.band_levels_db)[1], -20.0);
+    assert_eq!((*data.crossover_frequencies)[0], 500.0);
+}
+
+#[test]
+fn test_calculate_expansion_attenuation_knee() {
+    let th = -10.0f32;
+    let ratio = 4.0f32;
+    let knee = 6.0f32;
+    let range = 20.0f32;
+
+    // Above threshold + knee/2 -> no attenuation
+    let att =
+        MultibandExpanderPlugin::calculate_expansion_attenuation(-5.0, th, ratio, knee, range);
+    assert_eq!(att, 0.0);
+
+    // Well below threshold - knee/2 -> full attenuation (capped at range)
+    let att =
+        MultibandExpanderPlugin::calculate_expansion_attenuation(-40.0, th, ratio, knee, range);
+    assert_eq!(att, range);
+
+    // Inside knee -> soft attenuation
+    let att =
+        MultibandExpanderPlugin::calculate_expansion_attenuation(-10.0, th, ratio, knee, range);
+    assert!(att >= 0.0);
+    assert!(att < range);
+}

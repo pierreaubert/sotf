@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn test_scan_and_rank_ordering() {
         // Create a temp dir with synthetic SOFA filenames and verify ranking.
-        let tmp = std::env::temp_dir().join("sotf_test_hrtf_db");
+        let tmp = std::env::temp_dir().join(format!("sotf_test_hrtf_db_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&tmp);
 
         // Create empty .sofa files with various dims

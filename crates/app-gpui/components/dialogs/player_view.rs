@@ -1225,10 +1225,8 @@ impl PlayerView {
             return;
         }
 
-        let state_entity = self.state.clone();
-        cx.spawn(async move |_: WeakEntity<PlayerView>, cx| {
-            use sotf_audio_player::metadata::MetadataProvider;
-
+        let (tx, rx) = smol::channel::bounded(1);
+        std::thread::spawn(move || {
             let config = sotf_audio_player::config::load_metadata_services_config()
                 .unwrap_or_else(|_| sotf_audio_player::MetadataServicesConfig::default());
             let provider_config = config
@@ -1242,22 +1240,21 @@ impl PlayerView {
                     "MusicBrainz is disabled in Metadata settings".to_string(),
                 ))
             } else {
-                match sotf_audio_player::MusicBrainzProvider::with_endpoint(
+                run_musicbrainz_search_on_tokio(
+                    scope,
+                    query,
                     provider_config.endpoint,
                     config.user_agent,
-                ) {
-                    Ok(provider) => match scope {
-                        crate::app::MetadataEditorScope::Album => {
-                            provider.search_album(None, &query).await
-                        }
-                        crate::app::MetadataEditorScope::Track => {
-                            provider.search_track(None, &query).await
-                        }
-                    },
-                    Err(err) => Err(err),
-                }
+                )
             };
+            let _ = tx.send_blocking(result);
+        });
 
+        let state_entity = self.state.clone();
+        cx.spawn(async move |_: WeakEntity<PlayerView>, cx| {
+            let Ok(result) = rx.recv().await else {
+                return;
+            };
             state_entity.update(cx, |state, cx| {
                 if let Some(editor) = &mut state.app.metadata_editor {
                     editor.search_in_progress = false;
@@ -1503,6 +1500,26 @@ impl PlayerView {
                 "Enter: Load | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel",
             ))
     }
+}
+
+fn run_musicbrainz_search_on_tokio(
+    scope: crate::app::MetadataEditorScope,
+    query: String,
+    endpoint: String,
+    user_agent: String,
+) -> Result<Vec<sotf_audio_player::MetadataImportCandidate>, sotf_audio_player::MetadataError> {
+    use sotf_audio_player::metadata::MetadataProvider;
+
+    let provider = sotf_audio_player::MusicBrainzProvider::with_endpoint(endpoint, user_agent)?;
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|err| sotf_audio_player::MetadataError::Provider(err.to_string()))?;
+
+    runtime.block_on(async {
+        match scope {
+            crate::app::MetadataEditorScope::Album => provider.search_album(None, &query).await,
+            crate::app::MetadataEditorScope::Track => provider.search_track(None, &query).await,
+        }
+    })
 }
 
 impl PlayerView {

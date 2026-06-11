@@ -598,3 +598,297 @@ fn test_info_and_latency() {
     p2.initialize(48000).unwrap();
     assert!(p2.latency_samples() > 0);
 }
+
+// -------------------------------------------------------------------------
+// process_in_place focused tests (lookahead, external SC, RMS, mix, hold)
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_process_in_place_rms_detection() {
+    let sr = 48000u32;
+    let mut p = GatePlugin::from_params(
+        1,
+        GatePluginParams {
+            threshold_db: -20.0,
+            ratio: 100.0,
+            attack_ms: 1.0,
+            hold_ms: 0.0,
+            release_ms: 10.0,
+            mix: 1.0,
+            link_channels: false,
+            sidechain_hpf_hz: 0.0,
+            sidechain_hpf_order: "2nd".to_string(),
+            detection_mode: "rms".to_string(),
+            sidechain_external: false,
+            range_db: 80.0,
+            hysteresis_db: 0.0,
+            knee_db: 0.0,
+            lookahead_ms: 0.0,
+        },
+    );
+    p.initialize(sr).unwrap();
+
+    let mut quiet = vec![0.0001f32; sr as usize];
+    p.process_in_place(&mut quiet, &ProcessContext::new(sr, sr as usize))
+        .unwrap();
+    let avg_quiet: f32 = quiet.iter().sum::<f32>() / quiet.len() as f32;
+    assert!(
+        avg_quiet < 0.00001,
+        "RMS detection should gate quiet signal, avg={}",
+        avg_quiet
+    );
+}
+
+#[test]
+fn test_process_in_place_lookahead_delays_output() {
+    let sr = 48000u32;
+    let lookahead_ms = 5.0;
+    let mut p = GatePlugin::from_params(
+        1,
+        GatePluginParams {
+            threshold_db: -20.0,
+            ratio: 100.0,
+            attack_ms: 1.0,
+            hold_ms: 0.0,
+            release_ms: 10.0,
+            mix: 1.0,
+            link_channels: false,
+            sidechain_hpf_hz: 0.0,
+            sidechain_hpf_order: "2nd".to_string(),
+            detection_mode: "peak".to_string(),
+            sidechain_external: false,
+            range_db: 80.0,
+            hysteresis_db: 0.0,
+            knee_db: 0.0,
+            lookahead_ms,
+        },
+    );
+    p.initialize(sr).unwrap();
+
+    let delay_samples = (lookahead_ms * 0.001 * sr as f32).round() as usize;
+    let num_frames = delay_samples + 100;
+    let mut buffer = vec![0.0f32; num_frames];
+    buffer[0] = 1.0;
+
+    p.process_in_place(&mut buffer, &ProcessContext::new(sr, num_frames))
+        .unwrap();
+
+    assert!(
+        buffer[0].abs() < 0.001,
+        "lookahead should delay output, got {} at sample 0",
+        buffer[0]
+    );
+    let peak_idx = buffer
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+        .unwrap()
+        .0;
+    assert!(
+        (peak_idx as i32 - delay_samples as i32).abs() <= 2,
+        "lookahead peak should be at ~{}, got {}",
+        delay_samples,
+        peak_idx
+    );
+}
+
+#[test]
+fn test_process_in_place_external_sidechain() {
+    let sr = 48000u32;
+    let mut p = GatePlugin::from_params(
+        1,
+        GatePluginParams {
+            threshold_db: -20.0,
+            ratio: 100.0,
+            attack_ms: 1.0,
+            hold_ms: 0.0,
+            release_ms: 10.0,
+            mix: 1.0,
+            link_channels: false,
+            sidechain_hpf_hz: 0.0,
+            sidechain_hpf_order: "2nd".to_string(),
+            detection_mode: "peak".to_string(),
+            sidechain_external: true,
+            range_db: 80.0,
+            hysteresis_db: 0.0,
+            knee_db: 0.0,
+            lookahead_ms: 0.0,
+        },
+    );
+    p.initialize(sr).unwrap();
+
+    let num_frames = 1000;
+    let mut buffer = vec![0.0f32; num_frames * 2];
+    for i in 0..num_frames {
+        buffer[i * 2] = 0.5; // loud audio
+    }
+    for i in 0..num_frames {
+        buffer[i * 2 + 1] = 0.00001; // quiet sidechain
+    }
+
+    p.process_in_place(&mut buffer, &ProcessContext::new(sr, num_frames))
+        .unwrap();
+
+    let avg_output: f32 = buffer.iter().step_by(2).sum::<f32>() / num_frames as f32;
+    assert!(
+        avg_output < 0.05,
+        "external sidechain: quiet SC should close gate on loud audio, avg={}",
+        avg_output
+    );
+}
+
+#[test]
+fn test_process_in_place_mix_half() {
+    let sr = 48000u32;
+    let mut p = GatePlugin::from_params(
+        1,
+        GatePluginParams {
+            threshold_db: -20.0,
+            ratio: 100.0,
+            attack_ms: 1.0,
+            hold_ms: 0.0,
+            release_ms: 10.0,
+            mix: 0.5,
+            link_channels: false,
+            sidechain_hpf_hz: 0.0,
+            sidechain_hpf_order: "2nd".to_string(),
+            detection_mode: "peak".to_string(),
+            sidechain_external: false,
+            range_db: 80.0,
+            hysteresis_db: 0.0,
+            knee_db: 0.0,
+            lookahead_ms: 0.0,
+        },
+    );
+    p.initialize(sr).unwrap();
+
+    // from_params sets p.mix but does not update the mix smoother target.
+    // Explicitly set the parameter so the smoother ramps to 0.5.
+    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+        .unwrap();
+
+    // Warm-up: let the mix smoother settle (5ms time constant → ~50ms enough)
+    let warmup = sr as usize / 10; // 100ms
+    let mut buf = vec![0.001f32; warmup];
+    p.process_in_place(&mut buf, &ProcessContext::new(sr, warmup))
+        .unwrap();
+
+    let num_frames = sr as usize / 10; // 100ms
+    let input_level = 0.001f32;
+    let mut buffer = vec![input_level; num_frames];
+    p.process_in_place(&mut buffer, &ProcessContext::new(sr, num_frames))
+        .unwrap();
+
+    let avg_output: f32 = buffer.iter().sum::<f32>() / num_frames as f32;
+    assert!(
+        avg_output > input_level * 0.3 && avg_output < input_level * 0.7,
+        "mix=0.5 should blend dry and wet, avg={} (input={})",
+        avg_output,
+        input_level
+    );
+}
+
+#[test]
+fn test_process_in_place_unlinked_dual_channel() {
+    let sr = 48000u32;
+    let mut p = GatePlugin::from_params(
+        2,
+        GatePluginParams {
+            threshold_db: -20.0,
+            ratio: 100.0,
+            attack_ms: 1.0,
+            hold_ms: 0.0,
+            release_ms: 10.0,
+            mix: 1.0,
+            link_channels: false,
+            sidechain_hpf_hz: 0.0,
+            sidechain_hpf_order: "2nd".to_string(),
+            detection_mode: "peak".to_string(),
+            sidechain_external: false,
+            range_db: 80.0,
+            hysteresis_db: 0.0,
+            knee_db: 0.0,
+            lookahead_ms: 0.0,
+        },
+    );
+    p.initialize(sr).unwrap();
+
+    let num_frames = sr as usize;
+    let mut buffer: Vec<f32> = (0..num_frames).flat_map(|_| [0.5f32, 0.0001f32]).collect();
+
+    p.process_in_place(&mut buffer, &ProcessContext::new(sr, num_frames))
+        .unwrap();
+
+    let avg_ch0: f32 = buffer.iter().step_by(2).sum::<f32>() / num_frames as f32;
+    let avg_ch1: f32 = buffer.iter().skip(1).step_by(2).sum::<f32>() / num_frames as f32;
+
+    assert!(
+        avg_ch0 > 0.4,
+        "unlinked ch0 (loud) should pass, avg={}",
+        avg_ch0
+    );
+    assert!(
+        avg_ch1 < 0.00005,
+        "unlinked ch1 (quiet) should be gated, avg={}",
+        avg_ch1
+    );
+}
+
+#[test]
+fn test_process_in_place_hold_counter() {
+    let sr = 48000u32;
+    let hold_ms = 10.0;
+    let mut p = GatePlugin::from_params(
+        1,
+        GatePluginParams {
+            threshold_db: -20.0,
+            ratio: 100.0,
+            attack_ms: 1.0,
+            hold_ms,
+            release_ms: 10.0,
+            mix: 1.0,
+            link_channels: false,
+            sidechain_hpf_hz: 0.0,
+            sidechain_hpf_order: "2nd".to_string(),
+            detection_mode: "peak".to_string(),
+            sidechain_external: false,
+            range_db: 80.0,
+            hysteresis_db: 0.0,
+            knee_db: 0.0,
+            lookahead_ms: 0.0,
+        },
+    );
+    p.initialize(sr).unwrap();
+
+    // Open gate with loud signal
+    let mut loud = vec![0.5f32; sr as usize];
+    p.process_in_place(&mut loud, &ProcessContext::new(sr, sr as usize))
+        .unwrap();
+
+    // Switch to quiet signal for exactly hold_samples frames
+    let hold_samples = p.hold_samples;
+    let input_level = 0.0001f32;
+    let mut quiet = vec![input_level; hold_samples];
+    p.process_in_place(&mut quiet, &ProcessContext::new(sr, hold_samples))
+        .unwrap();
+
+    let avg_during_hold: f32 = quiet.iter().sum::<f32>() / hold_samples as f32;
+    assert!(
+        avg_during_hold > input_level * 0.9,
+        "output should pass during hold period, avg={}",
+        avg_during_hold
+    );
+    assert_eq!(p.hold_counter[0], 0, "hold_counter should be exhausted");
+
+    // After hold expires, process more quiet signal — gate should attenuate
+    let extra = sr as usize / 10; // 100ms
+    let mut quiet2 = vec![input_level; extra];
+    p.process_in_place(&mut quiet2, &ProcessContext::new(sr, extra))
+        .unwrap();
+    let avg_after_hold: f32 = quiet2[extra / 2..].iter().sum::<f32>() / (extra / 2) as f32;
+    assert!(
+        avg_after_hold < input_level * 0.1,
+        "output should be attenuated after hold expires, avg={}",
+        avg_after_hold
+    );
+}

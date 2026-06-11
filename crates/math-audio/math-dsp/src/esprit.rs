@@ -439,4 +439,75 @@ mod tests {
             freqs[0]
         );
     }
+
+    #[test]
+    fn test_esprit_exactly_four_samples() {
+        let signal = vec![1.0_f32, 0.0, -1.0, 0.0];
+        let result = esprit(&signal, 48000.0, Some(1), None);
+        assert!(
+            result.len() <= 1,
+            "4-sample signal should return at most 1 estimate"
+        );
+    }
+
+    #[test]
+    fn test_esprit_dc_component_rejected() {
+        let sample_rate = 48000.0_f32;
+        let signal = vec![0.1_f32; 1024];
+        let estimates = esprit(&signal, sample_rate, Some(1), None);
+        for est in &estimates {
+            assert!(
+                est.frequency > 1.0,
+                "DC component should be rejected, got {} Hz",
+                est.frequency
+            );
+        }
+    }
+
+    #[test]
+    fn test_esprit_amplitude_accuracy() {
+        let sample_rate = 48000.0_f32;
+        let freq = 1000.0;
+        let amp = 0.75;
+        let signal = gen_sinusoid(freq, amp, 0.0, sample_rate as f64, 2048);
+        let estimates = esprit(&signal, sample_rate, Some(1), None);
+        assert!(!estimates.is_empty());
+        let est_amp = estimates[0].amplitude;
+        assert!(
+            (est_amp - amp).abs() < 0.05,
+            "Amplitude error too large: estimated {est_amp}, expected {amp}"
+        );
+    }
+
+    #[test]
+    fn test_esprit_auto_model_order_on_noise() {
+        let mut rng_state: u64 = 12345;
+        let signal: Vec<f32> = (0..512)
+            .map(|_| {
+                rng_state = rng_state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                ((rng_state >> 33) as f32 / u32::MAX as f32) * 2.0 - 1.0
+            })
+            .collect();
+        let estimates = esprit(&signal, 48000.0, None, None);
+        assert!(
+            estimates.len() <= 3,
+            "Noise should produce <= 3 estimates, got {}",
+            estimates.len()
+        );
+    }
+
+    #[test]
+    fn test_esprit_nyquist_boundary() {
+        let sample_rate = 48000.0_f32;
+        let freq = sample_rate as f64 / 2.0 - 100.0;
+        let signal = gen_sinusoid(freq, 1.0, 0.0, sample_rate as f64, 2048);
+        let estimates = esprit(&signal, sample_rate, Some(1), None);
+        assert!(!estimates.is_empty());
+        assert!(
+            (estimates[0].frequency - freq).abs() < 5.0,
+            "Near-Nyquist frequency error too large"
+        );
+    }
 }

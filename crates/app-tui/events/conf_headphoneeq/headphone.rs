@@ -606,8 +606,10 @@ fn headphone_eq_field_value_string(app: &App, field: usize) -> String {
 mod tests {
     use super::*;
 
-    use crate::app::{HeadphoneEqStep, Screen};
+    use crate::app::{HeadphoneEqStep, InputMode, Screen, SpinUpdateSubStep};
     use crate::events::tests::{key, make_app};
+    use sotf_audio_player::headphone_eq_types::HeadphoneMeasurementSource;
+    use sotf_audio_player::room_eq_types::OptimizationStatus;
 
     #[test]
     fn headphone_eq_step_prev_does_not_wrap() {
@@ -853,5 +855,269 @@ mod tests {
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
         assert!(!app.headphone_eq.editing_value);
         assert_eq!(app.headphone_eq.config.num_filters, 15);
+    }
+
+    #[test]
+    fn esc_cancels_editing_value() {
+        let mut app = make_app();
+        app.headphone_eq.editing_value = true;
+        app.headphone_eq.edit_buffer = "123".to_string();
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(!app.headphone_eq.editing_value);
+        assert!(app.headphone_eq.edit_buffer.is_empty());
+    }
+
+    #[test]
+    fn esc_cancels_editing_search() {
+        let mut app = make_app();
+        app.headphone_eq.editing_search = true;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(!app.headphone_eq.editing_search);
+    }
+
+    #[test]
+    fn esc_cancels_editing_measurement() {
+        let mut app = make_app();
+        app.headphone_eq.editing_measurement = true;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(!app.headphone_eq.editing_measurement);
+    }
+
+    #[test]
+    fn esc_cancels_editing_custom_target() {
+        let mut app = make_app();
+        app.headphone_eq.editing_custom_target = true;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(!app.headphone_eq.editing_custom_target);
+    }
+
+    #[test]
+    fn esc_in_confirm_overwrite_resets_to_ready() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::UpdatePlugin;
+        app.headphone_eq.update_substep = SpinUpdateSubStep::ConfirmOverwrite;
+        app.headphone_eq.update_existing_eq_info = Some((0, 5));
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.headphone_eq.update_substep, SpinUpdateSubStep::Ready);
+        assert!(app.headphone_eq.update_existing_eq_info.is_none());
+    }
+
+    #[test]
+    fn step_tab_down_on_optimize_auto_starts_when_idle() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::Optimize;
+        app.headphone_eq.step_tab_focused = true;
+        app.headphone_eq.opt_status = OptimizationStatus::Idle;
+        // measurement_path is empty, so optimization will fail immediately (no spawn)
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
+        assert!(!app.headphone_eq.step_tab_focused);
+        assert_eq!(app.headphone_eq.opt_status, OptimizationStatus::Failed);
+    }
+
+    #[test]
+    fn step_tab_down_on_optimize_does_not_auto_start_when_running() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::Optimize;
+        app.headphone_eq.step_tab_focused = true;
+        app.headphone_eq.opt_status = OptimizationStatus::Running;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
+        assert!(!app.headphone_eq.step_tab_focused);
+        assert_eq!(app.headphone_eq.opt_status, OptimizationStatus::Running);
+    }
+
+    #[test]
+    fn select_file_search_down_clamps() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::SelectFile;
+        app.headphone_eq.editing_search = true;
+        app.headphone_eq.filtered_headphones = vec!["A".to_string(), "B".to_string()];
+        app.headphone_eq.selected_headphone_idx = 0;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
+        assert_eq!(app.headphone_eq.selected_headphone_idx, 1);
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
+        assert_eq!(app.headphone_eq.selected_headphone_idx, 1); // clamped
+    }
+
+    #[test]
+    fn select_file_search_up_clamps_at_zero() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::SelectFile;
+        app.headphone_eq.editing_search = true;
+        app.headphone_eq.filtered_headphones = vec!["A".to_string(), "B".to_string()];
+        app.headphone_eq.selected_headphone_idx = 0;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Up));
+        assert_eq!(app.headphone_eq.selected_headphone_idx, 0);
+    }
+
+    #[test]
+    fn select_file_search_backspace_and_char() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::SelectFile;
+        app.headphone_eq.editing_search = true;
+        app.headphone_eq.search_query = "test".to_string();
+        app.headphone_eq.available_headphones = vec!["testphone".to_string(), "other".to_string()];
+        app.headphone_eq.update_filter();
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Backspace));
+        assert_eq!(app.headphone_eq.search_query, "tes");
+        assert_eq!(app.headphone_eq.filtered_headphones.len(), 1);
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Char('t')));
+        assert_eq!(app.headphone_eq.search_query, "test");
+        assert_eq!(app.headphone_eq.filtered_headphones.len(), 1);
+    }
+
+    #[test]
+    fn select_file_search_enter_selects_headphone() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::SelectFile;
+        app.headphone_eq.editing_search = true;
+        app.headphone_eq.filtered_headphones = vec!["TestPhone".to_string()];
+        app.headphone_eq.selected_headphone_idx = 0;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(!app.headphone_eq.editing_search);
+        assert_eq!(
+            app.headphone_eq.selected_headphone,
+            Some("TestPhone".to_string())
+        );
+        assert!(app.headphone_eq.loading_download);
+    }
+
+    #[test]
+    fn select_file_enter_on_field_1_file_source() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::SelectFile;
+        app.headphone_eq.selected_field = 1;
+        app.headphone_eq.measurement_source = HeadphoneMeasurementSource::File;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(app.headphone_eq.editing_measurement);
+    }
+
+    #[test]
+    fn select_file_enter_on_field_1_spinorama_source() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::SelectFile;
+        app.headphone_eq.selected_field = 1;
+        app.headphone_eq.measurement_source = HeadphoneMeasurementSource::Spinorama;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(app.headphone_eq.editing_search);
+        assert!(app.headphone_eq.loading_headphones);
+    }
+
+    #[test]
+    fn select_file_left_toggles_source() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::SelectFile;
+        app.headphone_eq.selected_field = 0;
+        let old = app.headphone_eq.measurement_source;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Left));
+        assert_ne!(app.headphone_eq.measurement_source, old);
+    }
+
+    #[test]
+    fn configure_edit_mode_esc_cancels() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::Configure;
+        app.headphone_eq.editing_value = true;
+        app.headphone_eq.edit_buffer = "42".to_string();
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(!app.headphone_eq.editing_value);
+        assert!(app.headphone_eq.edit_buffer.is_empty());
+    }
+
+    #[test]
+    fn configure_edit_mode_backspace() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::Configure;
+        app.headphone_eq.editing_value = true;
+        app.headphone_eq.edit_buffer = "42".to_string();
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Backspace));
+        assert_eq!(app.headphone_eq.edit_buffer, "4");
+    }
+
+    #[test]
+    fn configure_edit_mode_invalid_char_ignored() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::Configure;
+        app.headphone_eq.editing_value = true;
+        app.headphone_eq.edit_buffer = "4".to_string();
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Char('a')));
+        assert_eq!(app.headphone_eq.edit_buffer, "4");
+    }
+
+    #[test]
+    fn configure_enter_on_boolean_toggles() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::Configure;
+        app.headphone_eq.config_selected_field = 14; // refine (boolean)
+        let before = app.headphone_eq.config.refine;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
+        assert_eq!(app.headphone_eq.config.refine, !before);
+    }
+
+    #[test]
+    fn configure_backtab_goes_to_select_file() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::Configure;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::BackTab));
+        assert_eq!(app.headphone_eq.step, HeadphoneEqStep::SelectFile);
+    }
+
+    #[test]
+    fn optimize_enter_when_completed_goes_to_results() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::Optimize;
+        app.headphone_eq.opt_status = OptimizationStatus::Completed;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
+        assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Results);
+    }
+
+    #[test]
+    fn optimize_enter_when_running_does_nothing() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::Optimize;
+        app.headphone_eq.opt_status = OptimizationStatus::Running;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
+        assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Optimize);
+        assert_eq!(app.headphone_eq.opt_status, OptimizationStatus::Running);
+    }
+
+    #[test]
+    fn results_backtab_goes_to_optimize() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::Results;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::BackTab));
+        assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Optimize);
+    }
+
+    #[test]
+    fn update_plugin_ready_enter_with_no_eq_info() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::UpdatePlugin;
+        app.headphone_eq.update_substep = SpinUpdateSubStep::Ready;
+        // No filters, so apply_headphone_to_plugins should fail
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(app.status_message.is_some());
+        assert!(app.status_message.as_ref().unwrap().starts_with("Error:"));
+    }
+
+    #[test]
+    fn update_plugin_confirm_overwrite_n() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::UpdatePlugin;
+        app.headphone_eq.update_substep = SpinUpdateSubStep::ConfirmOverwrite;
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Char('n')));
+        assert_eq!(app.headphone_eq.update_substep, SpinUpdateSubStep::Ready);
+        assert!(app.headphone_eq.update_existing_eq_info.is_none());
+        assert!(app.status_message.is_some());
+    }
+
+    #[test]
+    fn update_plugin_confirm_overwrite_esc() {
+        let mut app = make_app();
+        app.headphone_eq.step = HeadphoneEqStep::UpdatePlugin;
+        app.headphone_eq.update_substep = SpinUpdateSubStep::ConfirmOverwrite;
+        app.headphone_eq.update_existing_eq_info = Some((0, 1));
+        handle_headphone_eq_keys(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.headphone_eq.update_substep, SpinUpdateSubStep::Ready);
+        assert!(app.headphone_eq.update_existing_eq_info.is_none());
     }
 }

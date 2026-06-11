@@ -476,4 +476,49 @@ mod tests {
             "Li_2 near -1 should use the stable reference value"
         );
     }
+
+    #[test]
+    fn test_dilog_neg_very_small() {
+        assert!(dilog_neg(1e-20).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_dilog_neg_greater_than_one() {
+        let z = 2.0;
+        let val = dilog_neg(z);
+        // Reference: Li_2(-2) ≈ -1.436746
+        assert!((val + 1.436746).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_dilog_neg_large_z() {
+        let z = 1e6;
+        let val = dilog_neg(z);
+        let approx = -0.5 * (z.ln() * z.ln()) - std::f64::consts::PI * std::f64::consts::PI / 6.0;
+        assert!(
+            (val - approx).abs() < 0.1,
+            "large z approximation failed: {val} vs {approx}"
+        );
+    }
+
+    #[test]
+    fn test_dilog_neg_identity_relation() {
+        // Li_2(-z) + Li_2(-1/z) = -pi^2/6 - 0.5*ln(z)^2
+        for z in [1.5, 2.0, 10.0, 100.0] {
+            let lhs = dilog_neg(z) + dilog_neg(1.0 / z);
+            let rhs = -std::f64::consts::PI * std::f64::consts::PI / 6.0 - 0.5 * z.ln() * z.ln();
+            assert!(
+                (lhs - rhs).abs() < 1e-6,
+                "Identity failed at z={z}: lhs={lhs}, rhs={rhs}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_dilog_neg_near_one() {
+        let expected = -std::f64::consts::PI * std::f64::consts::PI / 12.0;
+        // Use 1e-13 so it triggers the (1-z) < 1e-12 fast path.
+        let val = dilog_neg(1.0 - 1e-13);
+        assert!((val - expected).abs() < 1e-8);
+    }
 }

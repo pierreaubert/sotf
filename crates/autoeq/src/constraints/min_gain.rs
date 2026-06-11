@@ -65,3 +65,41 @@ pub fn viol_min_gain_from_xs(xs: &[f64], peq_model: PeqModel, min_db: f64) -> f6
     }
     worst_short
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::PeqModel;
+
+    #[test]
+    fn viol_min_gain_no_filters() {
+        let xs: Vec<f64> = vec![];
+        assert_eq!(viol_min_gain_from_xs(&xs, PeqModel::Pk, 3.0), 0.0);
+    }
+
+    #[test]
+    fn viol_min_gain_all_above_threshold() {
+        let xs = vec![2.0, 1.0, 5.0, 3.0, 1.0, 5.0];
+        assert_eq!(viol_min_gain_from_xs(&xs, PeqModel::Pk, 3.0), 0.0);
+    }
+
+    #[test]
+    fn viol_min_gain_one_below_threshold() {
+        let xs = vec![2.0, 1.0, 2.0, 3.0, 1.0, 5.0];
+        let v = viol_min_gain_from_xs(&xs, PeqModel::Pk, 3.0);
+        assert!((v - 1.0).abs() < 1e-12, "expected 1.0, got {}", v);
+    }
+
+    #[test]
+    fn viol_min_gain_allows_zero_gain_removal() {
+        let xs = vec![2.0, 1.0, 0.0];
+        assert_eq!(viol_min_gain_from_xs(&xs, PeqModel::Pk, 3.0), 0.0);
+    }
+
+    #[test]
+    fn viol_min_gain_skips_non_peak_filters() {
+        let xs = vec![2.0, 0.5, 0.0, 3.0, 1.0, 2.0];
+        let v = viol_min_gain_from_xs(&xs, PeqModel::HpPk, 3.0);
+        assert!((v - 1.0).abs() < 1e-12, "expected 1.0, got {}", v);
+    }
+}

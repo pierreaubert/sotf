@@ -334,4 +334,63 @@ mod tests {
         assert!(low.is_finite());
         assert!(high.is_finite());
     }
+
+    #[test]
+    fn test_set_frequency_no_op_small_delta() {
+        let mut xo = Lr4Crossover::new(1000.0_f64, 48000.0, 2);
+        let freq_before = xo.frequency();
+        xo.set_frequency(1000.0005);
+        // Difference is < 0.001, so should be a no-op
+        assert!((xo.frequency() - freq_before).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_set_frequency_updates_coefficients() {
+        let mut xo = Lr4Crossover::new(1000.0_f64, 48000.0, 1);
+        xo.set_frequency(2000.0);
+        // After settling with DC, lowpass should still pass DC
+        let mut low = 0.0;
+        for _ in 0..2000 {
+            let (l, _h) = xo.process(1.0, 0);
+            low = l;
+        }
+        assert!(
+            low > 0.9,
+            "lowpass should still pass DC after frequency change, got {}",
+            low
+        );
+    }
+
+    #[test]
+    fn test_multiband_set_frequency() {
+        let mut mb = MultibandLr4Crossover::new(&[500.0, 5000.0], 48000.0, 1);
+        mb.set_frequency(0, 800.0);
+        mb.set_frequency(1, 6000.0);
+        // Process some frames to verify no panic
+        let mut band0 = [0.0f64; 1];
+        let mut band1 = [0.0f64; 1];
+        let mut band2 = [0.0f64; 1];
+        for i in 0..100 {
+            let sample = (i as f64 * 0.01).sin();
+            mb.process_frame(
+                &[sample],
+                &mut [&mut band0[..], &mut band1[..], &mut band2[..]],
+            );
+        }
+        assert!(band0[0].is_finite());
+        assert!(band1[0].is_finite());
+        assert!(band2[0].is_finite());
+    }
+
+    #[test]
+    fn test_set_frequency_out_of_range_index() {
+        let mut mb = MultibandLr4Crossover::new(&[500.0], 48000.0, 1);
+        // Index out of range should be silently ignored
+        mb.set_frequency(5, 1000.0);
+        let mut band0 = [0.0f64; 1];
+        let mut band1 = [0.0f64; 1];
+        mb.process_frame(&[1.0], &mut [&mut band0[..], &mut band1[..]]);
+        assert!(band0[0].is_finite());
+        assert!(band1[0].is_finite());
+    }
 }

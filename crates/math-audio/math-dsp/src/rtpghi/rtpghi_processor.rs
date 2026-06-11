@@ -517,4 +517,56 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_process_frame_into_first_frame_is_zero() {
+        let fft_size = 256;
+        let hop_size = 64;
+        let spectrum_size = fft_size / 2 + 1;
+        let mut processor = RtpghiProcessor::new(fft_size, hop_size);
+        let mags = vec![1.0f32; spectrum_size];
+        let mut phases = vec![0.0f32; spectrum_size];
+        processor.process_frame_into(&mags, &mut phases);
+        for &p in &phases {
+            assert_eq!(p, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_process_frame_into_reset_restarts() {
+        let fft_size = 256;
+        let hop_size = 64;
+        let spectrum_size = fft_size / 2 + 1;
+        let mut processor = RtpghiProcessor::new(fft_size, hop_size);
+        let mags = vec![1.0f32; spectrum_size];
+        let mut phases = vec![0.0f32; spectrum_size];
+
+        processor.process_frame_into(&mags, &mut phases);
+        processor.process_frame_into(&mags, &mut phases);
+        let some_nonzero = phases.iter().any(|&p| p != 0.0);
+        assert!(some_nonzero, "second frame should have non-zero phases");
+
+        processor.reset();
+        processor.process_frame_into(&mags, &mut phases);
+        for &p in &phases {
+            assert_eq!(p, 0.0, "after reset, first frame should be zero again");
+        }
+    }
+
+    #[test]
+    fn test_process_frame_into_all_below_threshold() {
+        let fft_size = 256;
+        let hop_size = 64;
+        let spectrum_size = fft_size / 2 + 1;
+        let mut processor = RtpghiProcessor::new(fft_size, hop_size);
+        let prime = vec![1.0f32; spectrum_size];
+        let _ = processor.process_frame(&prime);
+
+        let mags = vec![0.0f32; spectrum_size];
+        let mut phases = vec![0.0f32; spectrum_size];
+        processor.process_frame_into(&mags, &mut phases);
+        for &p in &phases {
+            assert_eq!(p, 0.0);
+        }
+    }
 }

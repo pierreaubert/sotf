@@ -379,11 +379,21 @@ impl PlayerView {
             let _ = tx.send_blocking(result.map_err(|e| e.to_string()));
         });
 
-        // Await the channel — no polling loop, no global mutex.
+        // Poll the channel on the GPUI scheduler. Awaiting `rx.recv()` lets
+        // the worker thread wake this local task directly, which violates the
+        // deterministic GPUI test scheduler.
         let weak_state = self.state.downgrade();
         cx.spawn(async move |_, cx| {
-            let Ok(result) = rx.recv().await else {
-                return;
+            let result = loop {
+                match rx.try_recv() {
+                    Ok(result) => break result,
+                    Err(smol::channel::TryRecvError::Empty) => {
+                        cx.background_executor()
+                            .timer(std::time::Duration::from_millis(50))
+                            .await;
+                    }
+                    Err(smol::channel::TryRecvError::Closed) => return,
+                }
             };
             let Some(state_entity) = weak_state.upgrade() else {
                 return;
@@ -527,12 +537,22 @@ impl PlayerView {
             let _ = tx.send_blocking(result.map_err(|e| e.to_string()));
         });
 
-        // Await the channel.
+        // Poll the channel on the GPUI scheduler. Awaiting `rx.recv()` lets
+        // the worker thread wake this local task directly, which violates the
+        // deterministic GPUI test scheduler.
         let weak_state = self.state.downgrade();
         let speaker_for_poll = speaker_name.clone();
         cx.spawn(async move |view, cx| {
-            let Ok(result) = rx.recv().await else {
-                return;
+            let result = loop {
+                match rx.try_recv() {
+                    Ok(result) => break result,
+                    Err(smol::channel::TryRecvError::Empty) => {
+                        cx.background_executor()
+                            .timer(std::time::Duration::from_millis(50))
+                            .await;
+                    }
+                    Err(smol::channel::TryRecvError::Closed) => return,
+                }
             };
             let Some(state_entity) = weak_state.upgrade() else {
                 return;
@@ -671,8 +691,16 @@ impl PlayerView {
         let speaker_for_poll = speaker.to_string();
         let version_for_poll = version.to_string();
         cx.spawn(async move |_, cx| {
-            let Ok(result) = measurements_rx.recv().await else {
-                return;
+            let result = loop {
+                match measurements_rx.try_recv() {
+                    Ok(result) => break result,
+                    Err(smol::channel::TryRecvError::Empty) => {
+                        cx.background_executor()
+                            .timer(std::time::Duration::from_millis(50))
+                            .await;
+                    }
+                    Err(smol::channel::TryRecvError::Closed) => return,
+                }
             };
             let Some(state_entity) = weak_state.upgrade() else {
                 return;

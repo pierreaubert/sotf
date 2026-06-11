@@ -1257,4 +1257,116 @@ mod tests {
         assert!(MatrixPlugin::with_matrix(2, 2, vec![1.0, 0.0]).is_err());
         assert!(MatrixPlugin::with_matrix(2, 1, vec![1.0, 0.0, 0.0, 1.0]).is_err());
     }
+
+    #[test]
+    fn test_set_parameter_global_gain() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        plugin
+            .set_parameter(ParameterId::from("gain"), ParameterValue::Float(0.75))
+            .unwrap();
+        assert!((plugin.gain - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_get_parameter_global_gain() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        plugin.gain = 0.5;
+        let val = plugin.get_parameter(&ParameterId::from("gain")).unwrap();
+        assert_eq!(val, ParameterValue::Float(0.5));
+    }
+
+    #[test]
+    fn test_set_parameter_preset_non_int_errors() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        let result = plugin.set_parameter(
+            ParameterId::from("preset"),
+            ParameterValue::String("ms_encode".to_string()),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be an integer"));
+    }
+
+    #[test]
+    fn test_set_parameter_preset_custom_no_change() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        // Apply a preset first
+        plugin.apply_preset("ms_encode").unwrap();
+        assert!((plugin.get_gain(0, 0).unwrap() - 0.5).abs() < 1e-6);
+
+        // Setting preset to Custom should NOT reset the matrix
+        plugin
+            .set_parameter(ParameterId::from("preset"), ParameterValue::Int(0))
+            .unwrap(); // 0 = Custom
+        assert!((plugin.get_gain(0, 0).unwrap() - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_set_parameter_preset_clamped() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        // Index beyond range should be clamped
+        plugin
+            .set_parameter(ParameterId::from("preset"), ParameterValue::Int(999))
+            .unwrap();
+        let preset = plugin.get_parameter(&ParameterId::from("preset")).unwrap();
+        assert_eq!(preset.as_int(), Some((PRESET_CHOICES.len() - 1) as i32));
+    }
+
+    #[test]
+    fn test_set_parameter_phase_invert_non_bool_errors() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        let result = plugin.set_parameter(
+            ParameterId::from("phase_invert_0_0"),
+            ParameterValue::Float(1.0),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be a bool"));
+    }
+
+    #[test]
+    fn test_set_parameter_mute_non_bool_errors() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        let result = plugin.set_parameter(ParameterId::from("mute_0"), ParameterValue::Float(1.0));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be a boolean"));
+    }
+
+    #[test]
+    fn test_set_parameter_dim_non_bool_errors() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        let result = plugin.set_parameter(ParameterId::from("dim_0"), ParameterValue::Float(1.0));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be a boolean"));
+    }
+
+    #[test]
+    fn test_set_parameter_channel_states_invalid_json_errors() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        let result = plugin.set_parameter(
+            ParameterId::from("channel_states"),
+            ParameterValue::String("not valid json".to_string()),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_parameter_channel_states_non_string_errors() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        let result = plugin.set_parameter(
+            ParameterId::from("channel_states"),
+            ParameterValue::Float(1.0),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be string"));
+    }
+
+    #[test]
+    fn test_set_parameter_unknown_returns_ok() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        // Unknown parameters fall through to Ok(())
+        let result = plugin.set_parameter(
+            ParameterId::from("totally_unknown_param"),
+            ParameterValue::Float(1.0),
+        );
+        assert!(result.is_ok());
+    }
 }

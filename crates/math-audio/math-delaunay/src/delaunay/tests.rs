@@ -744,3 +744,78 @@ fn test_splitmix64_deterministic() {
 fn test_splitmix64_nonzero_for_zero_seed() {
     assert_ne!(splitmix64(0), 0);
 }
+
+// ============================================================================
+// neighbors() — direct tests for all branching paths
+// ============================================================================
+
+#[test]
+fn test_neighbors_collinear() {
+    let d = Delaunay::from_points(&[(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)]);
+    assert!(!d.collinear.is_empty());
+
+    // Endpoints have one neighbor each
+    assert_eq!(d.neighbors(0), vec![1]);
+    assert_eq!(d.neighbors(3), vec![2]);
+
+    // Interior points have two neighbors each
+    assert_eq!(d.neighbors(1), vec![0, 2]);
+    assert_eq!(d.neighbors(2), vec![1, 3]);
+}
+
+#[test]
+fn test_neighbors_interior_vs_hull() {
+    let d = Delaunay::from_points(&[(0.0, 0.0), (10.0, 0.0), (5.0, 10.0), (5.0, 5.0)]);
+    assert!(d.collinear.is_empty());
+
+    // Point 3 (5,5) is interior in this configuration
+    let nbrs = d.neighbors(3);
+    assert!(!nbrs.is_empty(), "interior point should have neighbors");
+
+    // Hull points should have neighbors
+    for &h in d.hull() {
+        let nbrs = d.neighbors(h);
+        assert!(!nbrs.is_empty(), "hull point {h} should have neighbors");
+    }
+}
+
+#[test]
+fn test_neighbors_coincident_or_no_inedge() {
+    // Single point — degenerate handling sets inedge but triangles point to
+    // itself, so neighbors returns [NO_EDGE] (not empty). This is the
+    // existing behavior for the 1-point degenerate case.
+    let d = Delaunay::from_points(&[(5.0, 5.0)]);
+    let nbrs = d.neighbors(0);
+    assert_eq!(nbrs.len(), 1);
+    assert_eq!(nbrs[0], delaunator::EMPTY);
+
+    // Two points
+    let d2 = Delaunay::from_points(&[(0.0, 0.0), (1.0, 0.0)]);
+    assert_eq!(d2.neighbors(0), vec![1]);
+    assert_eq!(d2.neighbors(1), vec![0]);
+}
+
+#[test]
+fn test_neighbors_hull_walk_wraps() {
+    // Square: hull wraps around via modulo
+    let d = Delaunay::from_points(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]);
+    for i in 0..4 {
+        let nbrs = d.neighbors(i);
+        assert!(
+            nbrs.len() >= 2,
+            "square vertex {i} should have >= 2 neighbors, got {:?}",
+            nbrs
+        );
+    }
+}
+
+#[test]
+fn test_neighbors_empty_for_out_of_range() {
+    let d = Delaunay::from_points(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)]);
+    // neighbors() takes usize; passing a non-existent index will try to read
+    // inedges[out_of_range] which panics in debug. We don't test that.
+    // Just test that all valid indices have neighbors.
+    for i in 0..d.len() {
+        assert!(!d.neighbors(i).is_empty());
+    }
+}

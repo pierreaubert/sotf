@@ -918,6 +918,40 @@ mod processing_mode_tests {
         assert!(loss.is_finite(), "loss should be finite, got {}", loss);
     }
 
+    /// Test optimize_channel_eq_with_callback invokes callback
+    #[test]
+    fn test_optimize_channel_eq_with_callback_invoked() {
+        let curve = make_simple_room_curve();
+        let config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 2,
+            max_iter: 1000,
+            population: 8,
+            seed: Some(42),
+            ..OptimizerConfig::default()
+        };
+
+        let callback_called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let callback_called_clone = std::sync::Arc::clone(&callback_called);
+        let callback: crate::optim::OptimProgressCallback =
+            Box::new(move |_iter: usize, _loss: f64, _epa: Option<f64>| {
+                callback_called_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+                crate::de::CallbackAction::Continue
+            });
+
+        let result = optimize_channel_eq_with_callback(&curve, &config, None, 48000.0, callback);
+        assert!(
+            result.is_ok(),
+            "optimization with callback should succeed: {:?}",
+            result.err()
+        );
+        assert!(
+            callback_called.load(std::sync::atomic::Ordering::SeqCst),
+            "callback should have been invoked"
+        );
+    }
+
     /// Test PhaseLinear mode configuration
     #[test]
     fn test_processing_mode_phaselinear_config() {
@@ -1153,6 +1187,277 @@ mod harman_regression_tests {
             "High freq should be significantly below low freq (tilt), got low={:.2}, high={:.2}",
             curve.spl[idx_low],
             curve.spl[idx_high]
+        );
+    }
+}
+
+#[cfg(test)]
+mod multi_eq_tests {
+    use super::*;
+    use ndarray::Array1;
+
+    fn make_simple_room_curve() -> Curve {
+        let n = 100;
+        let log_min = 20.0_f64.ln();
+        let log_max = 20000.0_f64.ln();
+        let freqs: Vec<f64> = (0..n)
+            .map(|i| (log_min + (log_max - log_min) * i as f64 / (n - 1) as f64).exp())
+            .collect();
+        let spl: Vec<f64> = freqs
+            .iter()
+            .map(|&f| 10.0 * (-((f.log2() - 80.0_f64.log2()).powi(2) / 0.3).exp()))
+            .collect();
+        Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::from_vec(spl),
+            phase: None,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn optimize_channel_eq_multi_basic() {
+        let curve1 = make_simple_room_curve();
+        let mut curve2 = curve1.clone();
+        curve2.spl = curve2.spl.mapv(|s| s + 1.0);
+
+        let config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 3,
+            max_iter: 2000,
+            population: 10,
+            seed: Some(42),
+            min_filter_improvement: 0.0,
+            ..OptimizerConfig::default()
+        };
+        let multi_config = MultiMeasurementConfig::default();
+
+        let result =
+            optimize_channel_eq_multi(&[curve1, curve2], &config, &multi_config, None, 48000.0);
+        assert!(
+            result.is_ok(),
+            "multi optimization should succeed: {:?}",
+            result.err()
+        );
+        let (filters, loss) = result.unwrap();
+        assert!(!filters.is_empty());
+        assert!(loss.is_finite());
+    }
+
+    #[test]
+    fn optimize_channel_eq_multi_with_auto_optimizer_runs() {
+        let curve1 = make_simple_room_curve();
+        let mut curve2 = curve1.clone();
+        curve2.spl = curve2.spl.mapv(|s| s + 1.0);
+
+        let config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 2,
+            max_iter: 1000,
+            population: 8,
+            seed: Some(42),
+            min_filter_improvement: 0.0,
+            ..OptimizerConfig::default()
+        };
+        let multi_config = MultiMeasurementConfig::default();
+        let auto_context = crate::roomeq::eq::MultiEqAutoOptimizerContext::sub_channel();
+
+        let result = optimize_channel_eq_multi_with_auto_optimizer(
+            &[curve1, curve2],
+            &config,
+            &multi_config,
+            None,
+            48000.0,
+            auto_context,
+        );
+        assert!(
+            result.is_ok(),
+            "multi optimization with auto optimizer should succeed: {:?}",
+            result.err()
+        );
+        let (filters, loss) = result.unwrap();
+        assert!(!filters.is_empty());
+        assert!(loss.is_finite());
+    }
+
+    #[test]
+    fn optimize_channel_eq_multi_spatial_robustness() {
+        let curve1 = make_simple_room_curve();
+        let mut curve2 = curve1.clone();
+        curve2.spl = curve2.spl.mapv(|s| s + 2.0);
+
+        let config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 3,
+            max_iter: 2000,
+            population: 10,
+            seed: Some(42),
+            min_filter_improvement: 0.0,
+            ..OptimizerConfig::default()
+        };
+        let multi_config = MultiMeasurementConfig {
+            strategy: MultiMeasurementStrategy::SpatialRobustness,
+            ..MultiMeasurementConfig::default()
+        };
+
+        let result =
+            optimize_channel_eq_multi(&[curve1, curve2], &config, &multi_config, None, 48000.0);
+        assert!(
+            result.is_ok(),
+            "spatial robustness should succeed: {:?}",
+            result.err()
+        );
+        let (filters, loss) = result.unwrap();
+        assert!(!filters.is_empty());
+        assert!(loss.is_finite());
+    }
+
+    #[test]
+    fn optimize_channel_eq_multi_weighted_sum() {
+        let curve1 = make_simple_room_curve();
+        let mut curve2 = curve1.clone();
+        curve2.spl = curve2.spl.mapv(|s| s + 1.5);
+
+        let config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 3,
+            max_iter: 2000,
+            population: 10,
+            seed: Some(42),
+            min_filter_improvement: 0.0,
+            ..OptimizerConfig::default()
+        };
+        let multi_config = MultiMeasurementConfig {
+            strategy: MultiMeasurementStrategy::WeightedSum,
+            weights: Some(vec![1.0, 2.0]),
+            ..MultiMeasurementConfig::default()
+        };
+
+        let result =
+            optimize_channel_eq_multi(&[curve1, curve2], &config, &multi_config, None, 48000.0);
+        assert!(
+            result.is_ok(),
+            "weighted sum should succeed: {:?}",
+            result.err()
+        );
+        let (filters, loss) = result.unwrap();
+        assert!(!filters.is_empty());
+        assert!(loss.is_finite());
+    }
+
+    #[test]
+    fn optimize_channel_eq_multi_minimax() {
+        let curve1 = make_simple_room_curve();
+        let mut curve2 = curve1.clone();
+        curve2.spl = curve2.spl.mapv(|s| s + 3.0);
+
+        let config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 3,
+            max_iter: 2000,
+            population: 10,
+            seed: Some(42),
+            min_filter_improvement: 0.0,
+            ..OptimizerConfig::default()
+        };
+        let multi_config = MultiMeasurementConfig {
+            strategy: MultiMeasurementStrategy::Minimax,
+            ..MultiMeasurementConfig::default()
+        };
+
+        let result =
+            optimize_channel_eq_multi(&[curve1, curve2], &config, &multi_config, None, 48000.0);
+        assert!(result.is_ok(), "minimax should succeed: {:?}", result.err());
+        let (filters, loss) = result.unwrap();
+        assert!(!filters.is_empty());
+        assert!(loss.is_finite());
+    }
+
+    #[test]
+    fn optimize_channel_eq_multi_variance_penalized() {
+        let curve1 = make_simple_room_curve();
+        let mut curve2 = curve1.clone();
+        curve2.spl = curve2.spl.mapv(|s| s + 2.5);
+
+        let config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 3,
+            max_iter: 2000,
+            population: 10,
+            seed: Some(42),
+            min_filter_improvement: 0.0,
+            ..OptimizerConfig::default()
+        };
+        let multi_config = MultiMeasurementConfig {
+            strategy: MultiMeasurementStrategy::VariancePenalized,
+            variance_lambda: 2.0,
+            ..MultiMeasurementConfig::default()
+        };
+
+        let result =
+            optimize_channel_eq_multi(&[curve1, curve2], &config, &multi_config, None, 48000.0);
+        assert!(
+            result.is_ok(),
+            "variance penalized should succeed: {:?}",
+            result.err()
+        );
+        let (filters, loss) = result.unwrap();
+        assert!(!filters.is_empty());
+        assert!(loss.is_finite());
+    }
+
+    #[test]
+    #[should_panic(expected = "curves must not be empty")]
+    fn optimize_channel_eq_multi_empty_curves_panics() {
+        let config = OptimizerConfig::default();
+        let multi_config = MultiMeasurementConfig::default();
+        let _ = optimize_channel_eq_multi(&[], &config, &multi_config, None, 48000.0);
+    }
+
+    #[test]
+    fn test_optimize_channel_eq_multi_with_callback() {
+        let curve1 = make_simple_room_curve();
+        let mut curve2 = curve1.clone();
+        curve2.spl = curve2.spl.mapv(|s| s + 1.0);
+
+        let config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 2,
+            max_iter: 1000,
+            population: 8,
+            seed: Some(42),
+            min_filter_improvement: 0.0,
+            ..OptimizerConfig::default()
+        };
+        let multi_config = MultiMeasurementConfig::default();
+
+        let callback_called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let callback_called_clone = std::sync::Arc::clone(&callback_called);
+        let callback: crate::optim::OptimProgressCallback =
+            Box::new(move |_iter: usize, _loss: f64, _epa: Option<f64>| {
+                callback_called_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+                crate::de::CallbackAction::Continue
+            });
+
+        let result = optimize_channel_eq_multi_with_callback(
+            &[curve1, curve2],
+            &config,
+            &multi_config,
+            None,
+            48000.0,
+            callback,
+        );
+        assert!(
+            result.is_ok(),
+            "multi with callback should succeed: {:?}",
+            result.err()
         );
     }
 }

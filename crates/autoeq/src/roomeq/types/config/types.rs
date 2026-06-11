@@ -483,6 +483,18 @@ pub struct FirConfig {
     pub pre_ringing: Option<PreRingingSerdeConfig>,
 }
 
+impl Default for FirConfig {
+    fn default() -> Self {
+        Self {
+            taps: default_fir_taps(),
+            phase: default_fir_phase(),
+            correct_excess_phase: false,
+            phase_smoothing: default_phase_smoothing(),
+            pre_ringing: None,
+        }
+    }
+}
+
 /// Serializable pre-ringing configuration for JSON config files
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PreRingingSerdeConfig {

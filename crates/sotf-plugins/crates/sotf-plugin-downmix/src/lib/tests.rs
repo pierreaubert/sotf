@@ -514,3 +514,311 @@ fn test_ltrt_allpass_broadband_phase() {
         );
     }
 }
+
+// ============================================================================
+// Additional tests for param_value, set_param_value, process, set_parameter,
+// get_parameter, initialize, reset, matrix_ltrt, itu_mode, and edge cases.
+// ============================================================================
+
+use sotf_host::parameters::{ParameterId, ParameterValue};
+
+#[test]
+fn test_param_value_roundtrip() {
+    let mut p = DownmixPlugin::new(6);
+    for i in 0..8 {
+        let original = p.param_value(i).unwrap_or(0.0);
+        let is_bool = matches!(i, 4 | 7);
+        if is_bool {
+            p.set_param_value(i, 1.0);
+            assert!((p.param_value(i).unwrap() - 1.0).abs() < 1e-6);
+            p.set_param_value(i, 0.0);
+            assert!(p.param_value(i).unwrap().abs() < 1e-6);
+        } else {
+            p.set_param_value(i, original + 1.0);
+            assert!((p.param_value(i).unwrap() - (original + 1.0)).abs() < 1e-6);
+        }
+        p.set_param_value(i, original);
+        assert!((p.param_value(i).unwrap() - original).abs() < 1e-6);
+    }
+    assert!(p.param_value(8).is_none());
+}
+
+#[test]
+fn test_set_parameter_get_parameter_roundtrip() {
+    let mut p = DownmixPlugin::new(6);
+    p.initialize(48000).unwrap();
+    p.set_parameter(
+        ParameterId::from("center_gain_db"),
+        ParameterValue::Float(-6.0),
+    )
+    .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("center_gain_db")),
+        Some(ParameterValue::Float(-6.0))
+    );
+}
+
+#[test]
+fn test_process_matrix_ltrt() {
+    let mut p = DownmixPlugin::from_params(DownmixPluginParams {
+        input_channels: 6,
+        center_gain_db: 0.0,
+        surround_gain_db: 0.0,
+        height_gain_db: 0.0,
+        lfe_gain_db: 0.0,
+        phase_coherence: false,
+        phase_blend_low_hz: 200.0,
+        phase_blend_high_hz: 5000.0,
+        itu_mode: false,
+        matrix_ltrt: true,
+    });
+    p.initialize(48000).unwrap();
+    let mut input = vec![0.0_f32; 100 * 6];
+    for k in 0..100 {
+        input[k * 6] = (k as f32 * 0.01).sin();
+    }
+    let mut output = vec![0.0_f32; 100 * 2];
+    p.process(&input, &mut output, &ProcessContext::new(48000, 100))
+        .unwrap();
+    assert!(output.iter().any(|&s| s.abs() > 1e-5));
+}
+
+#[test]
+fn test_process_itu_mode() {
+    let mut p = DownmixPlugin::from_params(DownmixPluginParams {
+        input_channels: 6,
+        center_gain_db: 0.0,
+        surround_gain_db: 0.0,
+        height_gain_db: 0.0,
+        lfe_gain_db: 0.0,
+        phase_coherence: false,
+        phase_blend_low_hz: 200.0,
+        phase_blend_high_hz: 5000.0,
+        itu_mode: true,
+        matrix_ltrt: false,
+    });
+    p.initialize(48000).unwrap();
+    let mut input = vec![0.0_f32; 100 * 6];
+    for k in 0..100 {
+        input[k * 6 + 2] = 1.0;
+    }
+    let mut output = vec![0.0_f32; 100 * 2];
+    p.process(&input, &mut output, &ProcessContext::new(48000, 100))
+        .unwrap();
+    assert!(output[0].abs() > 0.01);
+}
+
+#[test]
+fn test_process_zero_input() {
+    let mut p = DownmixPlugin::new(2);
+    p.initialize(48000).unwrap();
+    let input = vec![0.0_f32; 0];
+    let mut output = vec![0.0_f32; 0];
+    p.process(&input, &mut output, &ProcessContext::new(48000, 0))
+        .unwrap();
+}
+
+#[test]
+fn test_process_single_channel() {
+    let mut p = DownmixPlugin::new(1);
+    p.phase_coherence = false;
+    p.initialize(48000).unwrap();
+    let input = vec![0.5_f32; 100];
+    let mut output = vec![0.0_f32; 200];
+    p.process(&input, &mut output, &ProcessContext::new(48000, 100))
+        .unwrap();
+    assert!(output.iter().any(|&s| s.abs() > 1e-5));
+}
+
+#[test]
+fn test_process_eight_channels() {
+    let mut p = DownmixPlugin::new(8);
+    p.phase_coherence = false;
+    p.initialize(48000).unwrap();
+    let input = vec![0.1_f32; 100 * 8];
+    let mut output = vec![0.0_f32; 100 * 2];
+    p.process(&input, &mut output, &ProcessContext::new(48000, 100))
+        .unwrap();
+    assert!(output.iter().any(|&s| s.abs() > 1e-5));
+}
+
+#[test]
+fn test_reset_clears_state() {
+    let mut p = DownmixPlugin::new(6);
+    p.initialize(48000).unwrap();
+    let input = vec![0.1_f32; 100 * 6];
+    let mut output = vec![0.0_f32; 100 * 2];
+    p.process(&input, &mut output, &ProcessContext::new(48000, 100))
+        .unwrap();
+    p.reset();
+    assert_eq!(p.input_fill, 0);
+    assert_eq!(p.output_accumulator_fill, 0);
+}
+
+#[test]
+fn test_initialize_different_sample_rate() {
+    let mut p = DownmixPlugin::new(6);
+    p.initialize(96000).unwrap();
+    assert_eq!(p.sample_rate, 96000);
+}
+
+#[test]
+fn test_latency_samples_phase_coherence_off() {
+    let mut p = DownmixPlugin::new(2);
+    p.phase_coherence = false;
+    assert_eq!(p.latency_samples(), 0);
+}
+
+#[test]
+fn test_latency_samples_phase_coherence_on() {
+    let mut p = DownmixPlugin::new(2);
+    p.phase_coherence = true;
+    assert_eq!(p.latency_samples(), FFT_SIZE);
+}
+
+// ============================================================================
+// Additional unit tests for untested helper functions
+// ============================================================================
+
+#[test]
+fn test_count_surround_channels() {
+    let p = DownmixPlugin::new(6);
+    // 5.1 has 2 surround channels (Ls, Rs)
+    assert_eq!(p.count_surround_channels(), 2);
+
+    let p2 = DownmixPlugin::new(8);
+    // 7.1 has 4 surround channels (SL, SR, BL, BR)
+    assert_eq!(p2.count_surround_channels(), 4);
+
+    let p3 = DownmixPlugin::new(2);
+    assert_eq!(p3.count_surround_channels(), 0);
+}
+
+#[test]
+fn test_is_surround_channel() {
+    let p = DownmixPlugin::new(6);
+    // 5.1: ch0=L, ch1=R, ch2=C, ch3=LFE, ch4=Ls, ch5=Rs
+    assert!(p.is_surround_channel(4).is_some());
+    assert!(p.is_surround_channel(5).is_some());
+    assert!(p.is_surround_channel(0).is_none());
+    assert!(p.is_surround_channel(2).is_none());
+}
+
+#[test]
+fn test_is_center_channel() {
+    let p = DownmixPlugin::new(6);
+    // 5.1: ch2 is center
+    assert!(p.is_center_channel(2));
+    assert!(!p.is_center_channel(0));
+    assert!(!p.is_center_channel(3)); // LFE
+
+    let p2 = DownmixPlugin::new(2);
+    assert!(!p2.is_center_channel(0));
+    assert!(!p2.is_center_channel(1));
+}
+
+#[test]
+fn test_allpass_stage_coeff_and_process() {
+    use super::allpass_stage::AllpassStage;
+
+    let sr = 48000_u32;
+    let stage = AllpassStage::new(1000.0, sr);
+    let coeff = stage.coeff_a;
+    // For fc=1000Hz at 48kHz, tan(π*1000/48000) ≈ 0.0654, so coeff ≈ -0.877
+    assert!(coeff.abs() < 1.0);
+
+    // Process impulse: first output is -a * 1.0 = -coeff
+    let mut s = AllpassStage::new(1000.0, sr);
+    let y1 = s.process(1.0);
+    assert!((y1 - (-coeff)).abs() < 1e-6);
+
+    // After reset, processing again should give same first sample
+    s.reset();
+    let y1_reset = s.process(1.0);
+    assert!((y1 - y1_reset).abs() < 1e-6);
+}
+
+#[test]
+fn test_lt_rt_allpass_update_sample_rate_and_reset() {
+    use super::lt_rt_allpass::LtRtAllpass;
+
+    let mut ap = LtRtAllpass::new(48000);
+    let orig_coeff_a = ap.chain[0].coeff_a;
+
+    // Update to new sample rate (should change coefficients)
+    ap.update_sample_rate(96000);
+    let new_coeff_a = ap.chain[0].coeff_a;
+    assert!((new_coeff_a - orig_coeff_a).abs() > 1e-6);
+
+    // Process some samples
+    for _ in 0..10 {
+        ap.process(1.0);
+    }
+
+    // Reset should zero state but keep coefficients
+    ap.reset();
+    assert_eq!(ap.x_prev, 0.0);
+    assert_eq!(ap.chain[0].x_prev, 0.0);
+    assert_eq!(ap.chain[0].y_prev, 0.0);
+    assert_eq!(ap.chain[1].x_prev, 0.0);
+    assert_eq!(ap.chain[1].y_prev, 0.0);
+    // Coefficients should remain after reset
+    assert!((ap.chain[0].coeff_a - new_coeff_a).abs() < 1e-6);
+}
+
+#[test]
+fn test_advance_coeff_smoothers_by() {
+    let mut p = DownmixPlugin::new(6);
+    p.initialize(48000).unwrap();
+
+    let idx = 2; // center channel left gain smoother
+    let before = p.coeff_smoothers[idx].current();
+    p.coeff_smoothers[idx].set_target(before + 0.5);
+
+    // Advance by 100 samples
+    p.advance_coeff_smoothers_by(100);
+    let after = p.coeff_smoothers[idx].current();
+    assert!(
+        (after - before).abs() > 1e-6,
+        "Smoother should have moved toward target"
+    );
+}
+
+#[test]
+fn test_compute_standard_coefficients_with_gains() {
+    let p = DownmixPlugin::from_params(DownmixPluginParams {
+        input_channels: 6,
+        center_gain_db: -100.0, // mute center to avoid normalization
+        surround_gain_db: -6.0,
+        height_gain_db: 0.0,
+        lfe_gain_db: -100.0, // mute LFE to avoid normalization
+        phase_coherence: false,
+        phase_blend_low_hz: 200.0,
+        phase_blend_high_hz: 5000.0,
+        itu_mode: false,
+        matrix_ltrt: false,
+    });
+
+    // In 5.1, surround channels are ch4 and ch5
+    let s_lin = 10.0_f32.powf(-6.0 / 20.0); // ~0.501
+    let surr_power_l = p.target_coeffs[4].left_gain.powi(2);
+    let surr_power_r = p.target_coeffs[5].right_gain.powi(2);
+    // With center and LFE muted, normalization should not scale surrounds.
+    // Constant-power pan: each surround speaker has power = s_lin²
+    assert!(
+        (surr_power_l - s_lin.powi(2)).abs() < 0.01,
+        "Ls power {} should be ~{}",
+        surr_power_l,
+        s_lin.powi(2)
+    );
+    assert!(
+        (surr_power_r - s_lin.powi(2)).abs() < 0.01,
+        "Rs power {} should be ~{}",
+        surr_power_r,
+        s_lin.powi(2)
+    );
+
+    // Ls should go to left, Rs to right
+    assert!(p.target_coeffs[4].left_gain > p.target_coeffs[4].right_gain);
+    assert!(p.target_coeffs[5].right_gain > p.target_coeffs[5].left_gain);
+}

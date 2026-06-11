@@ -339,4 +339,115 @@ mod tests {
         let err = cobyla(&f, &[], cfg).unwrap_err();
         matches!(err, DEError::InvalidBounds { .. });
     }
+
+    #[test]
+    fn test_per_dim_rho_begin() {
+        let f = |x: &Array1<f64>| (x[0] + 1.0).powi(2) + (x[1]).powi(2);
+        let cfg = CobylaConfig {
+            x0: Array1::from(vec![1.0, 1.0]),
+            bounds: vec![(-10.0, 10.0), (-10.0, 10.0)],
+            rho_begin: CobylaRhoBegin::PerDim(vec![0.5, 1.0]),
+            maxeval: 500,
+            stop_tol: CobylaStopTols {
+                stopval: 0.0,
+                ..CobylaStopTols::default()
+            },
+        };
+        let report = cobyla(&f, &[], cfg).expect("cobyla failed");
+        assert!(report.fun < 1e-3, "fun = {} should be ~0", report.fun);
+    }
+
+    #[test]
+    fn test_per_dim_rho_begin_mismatch() {
+        let f = |x: &Array1<f64>| x[0] * x[0];
+        let cfg = CobylaConfig {
+            x0: Array1::from(vec![1.0, 1.0]),
+            bounds: vec![(-10.0, 10.0), (-10.0, 10.0)],
+            rho_begin: CobylaRhoBegin::PerDim(vec![0.5]), // wrong length
+            maxeval: 100,
+            ..Default::default()
+        };
+        let err = cobyla(&f, &[], cfg).unwrap_err();
+        assert!(matches!(err, DEError::BoundsMismatch { .. }));
+    }
+
+    #[test]
+    fn test_multiple_constraints() {
+        let f = |x: &Array1<f64>| x[0].powi(2) + x[1].powi(2);
+        let constraints = vec![
+            CobylaConstraint {
+                fun: Arc::new(|x: &Array1<f64>| x[0] - 1.0), // x0 <= 1
+            },
+            CobylaConstraint {
+                fun: Arc::new(|x: &Array1<f64>| -x[1] - 1.0), // x1 >= -1
+            },
+        ];
+        let cfg = CobylaConfig {
+            x0: Array1::from(vec![2.0, -2.0]),
+            bounds: vec![(-10.0, 10.0), (-10.0, 10.0)],
+            rho_begin: CobylaRhoBegin::All(0.5),
+            maxeval: 1000,
+            ..Default::default()
+        };
+        let report = cobyla(&f, &constraints, cfg).expect("cobyla failed");
+        assert!(
+            report.x[0] <= 1.01,
+            "x0 = {} should respect <= 1",
+            report.x[0]
+        );
+        assert!(
+            report.x[1] >= -1.01,
+            "x1 = {} should respect >= -1",
+            report.x[1]
+        );
+    }
+
+    #[test]
+    fn test_dimension_mismatch_x0_bounds() {
+        let f = |x: &Array1<f64>| x[0] * x[0];
+        let cfg = CobylaConfig {
+            x0: Array1::from(vec![0.0, 0.0]),
+            bounds: vec![(-10.0, 10.0)], // mismatch
+            rho_begin: CobylaRhoBegin::All(0.5),
+            maxeval: 100,
+            ..Default::default()
+        };
+        let err = cobyla(&f, &[], cfg).unwrap_err();
+        assert!(matches!(err, DEError::BoundsMismatch { .. }));
+    }
+
+    #[test]
+    fn test_empty_x0_rejected() {
+        let f = |x: &Array1<f64>| x[0] * x[0];
+        let cfg = CobylaConfig {
+            x0: Array1::zeros(0),
+            bounds: vec![(-10.0, 10.0)],
+            rho_begin: CobylaRhoBegin::All(0.5),
+            maxeval: 100,
+            ..Default::default()
+        };
+        let err = cobyla(&f, &[], cfg).unwrap_err();
+        assert!(matches!(err, DEError::BoundsMismatch { .. }));
+    }
+
+    #[test]
+    fn test_stopval_reached() {
+        let f = |x: &Array1<f64>| (x[0] + 1.0).powi(2) + x[1].powi(2);
+        let cfg = CobylaConfig {
+            x0: Array1::from(vec![1.0, 1.0]),
+            bounds: vec![(-10.0, 10.0), (-10.0, 10.0)],
+            rho_begin: CobylaRhoBegin::All(0.5),
+            maxeval: 1000,
+            stop_tol: CobylaStopTols {
+                stopval: 0.5, // stop once f <= 0.5
+                ..CobylaStopTols::default()
+            },
+        };
+        let report = cobyla(&f, &[], cfg).expect("cobyla failed");
+        assert!(
+            report.fun <= 0.6,
+            "fun = {} should be <= 0.5+eps",
+            report.fun
+        );
+    }
 }

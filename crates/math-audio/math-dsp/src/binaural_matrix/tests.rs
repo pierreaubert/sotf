@@ -8,6 +8,7 @@ use super::misc::fdw_complex_half_spectrum;
 use super::misc::half_spectrum_to_fir;
 use super::solve::solve_minimax_regularized_inverse_bin;
 use super::solve::solve_regularized_inverse_bin;
+use super::solve::solve_weighted_regularized_inverse_bin;
 use super::transfer_matrix_bin::TransferMatrixBin;
 use nalgebra::DMatrix;
 use num_complex::Complex64;
@@ -169,4 +170,132 @@ fn fdw_complex_half_spectrum_returns_fft_bins() {
     let spectrum = fdw_complex_half_spectrum(&ir, 48_000.0, 128, 8, 8.0, 3.0, 30.0).unwrap();
     assert_eq!(spectrum.len(), 65);
     assert!(spectrum[1].norm() > 0.0);
+}
+
+#[test]
+fn weighted_inverse_rejects_empty_positions() {
+    let target = vec![Complex64::new(1.0, 0.0); 4];
+    let err = solve_weighted_regularized_inverse_bin(&[], &[1.0], &target, 1e-6, None).unwrap_err();
+    assert!(err.contains("at least one"));
+}
+
+#[test]
+fn weighted_inverse_rejects_mismatched_weights() {
+    let h = TransferMatrixBin::new(2, 2, vec![Complex64::new(1.0, 0.0); 4]);
+    let target = vec![Complex64::new(1.0, 0.0); 4];
+    let err =
+        solve_weighted_regularized_inverse_bin(&[h], &[1.0, 2.0], &target, 1e-6, None).unwrap_err();
+    assert!(err.contains("weights len"));
+}
+
+#[test]
+fn weighted_inverse_rejects_negative_beta() {
+    let h = TransferMatrixBin::new(2, 2, vec![Complex64::new(1.0, 0.0); 4]);
+    let target = vec![Complex64::new(1.0, 0.0); 4];
+    let err =
+        solve_weighted_regularized_inverse_bin(&[h], &[1.0], &target, -1.0, None).unwrap_err();
+    assert!(err.contains("beta"));
+}
+
+#[test]
+fn weighted_inverse_rejects_nan_beta() {
+    let h = TransferMatrixBin::new(2, 2, vec![Complex64::new(1.0, 0.0); 4]);
+    let target = vec![Complex64::new(1.0, 0.0); 4];
+    let err =
+        solve_weighted_regularized_inverse_bin(&[h], &[1.0], &target, f64::NAN, None).unwrap_err();
+    assert!(err.contains("beta"));
+}
+
+#[test]
+fn weighted_inverse_rejects_bad_target_size() {
+    let h = TransferMatrixBin::new(2, 2, vec![Complex64::new(1.0, 0.0); 4]);
+    let target = vec![Complex64::new(1.0, 0.0); 3];
+    let err =
+        solve_weighted_regularized_inverse_bin(&[h], &[1.0], &target, 1e-6, None).unwrap_err();
+    assert!(err.contains("target"));
+}
+
+#[test]
+fn weighted_inverse_rejects_negative_weight() {
+    let h = TransferMatrixBin::new(2, 2, vec![Complex64::new(1.0, 0.0); 4]);
+    let target = vec![Complex64::new(1.0, 0.0); 4];
+    let err =
+        solve_weighted_regularized_inverse_bin(&[h], &[-1.0], &target, 1e-6, None).unwrap_err();
+    assert!(err.contains("weights"));
+}
+
+#[test]
+fn weighted_inverse_identity_with_weights() {
+    let h = TransferMatrixBin::new(
+        2,
+        2,
+        vec![
+            Complex64::new(1.0, 0.0),
+            Complex64::new(0.0, 0.0),
+            Complex64::new(0.0, 0.0),
+            Complex64::new(1.0, 0.0),
+        ],
+    );
+    let target = vec![
+        Complex64::new(1.0, 0.0),
+        Complex64::new(0.0, 0.0),
+        Complex64::new(0.0, 0.0),
+        Complex64::new(1.0, 0.0),
+    ];
+    let solved =
+        solve_weighted_regularized_inverse_bin(&[h.clone()], &[2.0], &target, 1e-9, None).unwrap();
+    let f = DMatrix::from_row_slice(2, 2, &solved.values);
+    let delivered = h.as_matrix() * f;
+    assert!((delivered[(0, 0)].re - 1.0).abs() < 1e-6);
+    assert!(delivered[(0, 1)].norm() < 1e-6);
+    assert!(delivered[(1, 0)].norm() < 1e-6);
+    assert!((delivered[(1, 1)].re - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn weighted_inverse_gain_clamping() {
+    let h = TransferMatrixBin::new(
+        2,
+        2,
+        vec![
+            Complex64::new(0.001, 0.0),
+            Complex64::new(0.0, 0.0),
+            Complex64::new(0.0, 0.0),
+            Complex64::new(0.001, 0.0),
+        ],
+    );
+    let target = vec![Complex64::new(1.0, 0.0); 4];
+    let solved =
+        solve_weighted_regularized_inverse_bin(&[h], &[1.0], &target, 1e-12, Some(6.0)).unwrap();
+    let max_mag = solved.values.iter().map(|v| v.norm()).fold(0.0, f64::max);
+    assert!(max_mag <= 10.0_f64.powf(6.0 / 20.0) + 1e-9);
+}
+
+#[test]
+fn weighted_inverse_unweighted_matches_regularized() {
+    let h = TransferMatrixBin::new(
+        2,
+        2,
+        vec![
+            Complex64::new(1.0, 0.0),
+            Complex64::new(0.2, 0.0),
+            Complex64::new(0.15, 0.0),
+            Complex64::new(0.9, 0.0),
+        ],
+    );
+    let target = vec![
+        Complex64::new(1.0, 0.0),
+        Complex64::new(0.0, 0.0),
+        Complex64::new(0.0, 0.0),
+        Complex64::new(1.0, 0.0),
+    ];
+    let weighted =
+        solve_weighted_regularized_inverse_bin(&[h.clone()], &[1.0], &target, 1e-9, None).unwrap();
+    let regularized = solve_regularized_inverse_bin(&[h], &target, 1e-9, None).unwrap();
+    for (a, b) in weighted.values.iter().zip(regularized.values.iter()) {
+        assert!(
+            (a - b).norm() < 1e-9,
+            "weighted and regularized should match when weight=1"
+        );
+    }
 }

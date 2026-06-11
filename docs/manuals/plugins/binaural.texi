@@ -21,7 +21,6 @@ HRTF-based 3D spatial audio rendering. Converts multichannel audio to binaural h
 @headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
 @item @code{SOFA File} @tab File Path @tab - @tab - @tab - @tab HRTF data file (SOFA format)
 @item @code{Input Channels} @tab Int @tab 2 .. 16 @tab 2 @tab ch @tab Number of surround input channels
-@item @code{Optimization} @tab Bool @tab On / Off @tab On @tab - @tab Enable HRIR filter optimization
 @item @code{Externalization} @tab Float @tab 0 .. 1 @tab 0 @tab - @tab Out-of-head perception strength
 @item @code{Near-field} @tab Float @tab 0 .. 1 @tab 0 @tab - @tab Near-field compensation amount
 @end multitable
@@ -46,15 +45,7 @@ HRTF-based 3D spatial audio rendering. Converts multichannel audio to binaural h
 @end multitable
 
 
-@subsection Headphone
-
-@multitable @columnfractions .22 .18 .15 .10 .08 .27
-@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Headphone EQ} @tab Bool @tab On / Off @tab Off @tab - @tab Apply headphone compensation EQ
-@end multitable
-
-
-@strong{Structural parameters} (SOFA File, Input Channels, Optimization, Near-field) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+@strong{Structural parameters} (SOFA File, Input Channels, Near-field) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 
 @node binaural Plugin Developer Guide
 @section Developer Guide

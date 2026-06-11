@@ -1366,3 +1366,32 @@ fn test_window_mul_simd_inplace_known_values() {
         assert!((data[i] - expected).abs() < 1e-6, "index {i}");
     }
 }
+
+#[test]
+fn test_simd_complex_mul_add_empty() {
+    use rustfft::num_complex::Complex;
+    let mut dst: Vec<Complex<f32>> = vec![];
+    let src: Vec<Complex<f32>> = vec![];
+    let hrtf: Vec<Complex<f32>> = vec![];
+    complex_mul_add_simd(&mut dst, &src, &hrtf);
+    assert!(dst.is_empty());
+}
+
+#[test]
+fn test_simd_complex_mul_empty() {
+    use rustfft::num_complex::Complex;
+    let mut dst: Vec<Complex<f32>> = vec![];
+    let src: Vec<Complex<f32>> = vec![];
+    let hrtf: Vec<Complex<f32>> = vec![];
+    complex_mul_simd(&mut dst, &src, &hrtf);
+    assert!(dst.is_empty());
+}
+
+#[test]
+fn test_simd_complex_mul_inplace_empty() {
+    use rustfft::num_complex::Complex;
+    let mut dst: Vec<Complex<f32>> = vec![];
+    let hrtf: Vec<Complex<f32>> = vec![];
+    complex_mul_inplace_simd(&mut dst, &hrtf);
+    assert!(dst.is_empty());
+}

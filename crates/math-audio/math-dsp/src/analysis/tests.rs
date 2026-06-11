@@ -562,3 +562,49 @@ fn align_signals_rejects_lag_overflow() {
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("overflow"));
 }
+
+#[test]
+fn test_coherence_bins_zero() {
+    let r0: Vec<Complex<f32>> = vec![];
+    let r1: Vec<Complex<f32>> = vec![];
+    let r2: Vec<Complex<f32>> = vec![];
+    let r3: Vec<Complex<f32>> = vec![];
+    let coh = compute_coherence_from_realizations(&[r0, r1, r2, r3]).unwrap();
+    assert!(coh.is_empty());
+}
+
+#[test]
+fn test_coherence_partial_zero_energy() {
+    let r0 = vec![Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)];
+    let r1 = vec![Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)];
+    let r2 = vec![Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)];
+    let r3 = vec![Complex::new(1.0, 0.0), Complex::new(0.0, 0.0)];
+    let coh = compute_coherence_from_realizations(&[r0, r1, r2, r3]).unwrap();
+    assert_eq!(coh.len(), 2);
+    assert!((coh[0] - 1.0).abs() < 1e-6);
+    assert_eq!(coh[1], 0.0);
+}
+
+#[test]
+fn test_coherence_intermediate_value() {
+    let mag = 1.0_f32;
+    let phases = [-22.5_f32, -7.5, 7.5, 22.5];
+    let realizations: Vec<Vec<Complex<f32>>> = phases
+        .iter()
+        .map(|&deg| {
+            let rad = deg.to_radians();
+            vec![Complex::new(mag * rad.cos(), mag * rad.sin())]
+        })
+        .collect();
+    let coh = compute_coherence_from_realizations(&realizations).unwrap();
+    assert_eq!(coh.len(), 1);
+    // Mean real part = (cos(-22.5) + cos(-7.5) + cos(7.5) + cos(22.5)) / 4
+    //                 = (cos(22.5) + cos(7.5)) / 2
+    // Imag part cancels by symmetry. mean_sq = 1.
+    let expected = ((22.5_f32.to_radians().cos() + 7.5_f32.to_radians().cos()) / 2.0).powi(2);
+    assert!(
+        (coh[0] - expected).abs() < 1e-4,
+        "expected {expected}, got {}",
+        coh[0]
+    );
+}

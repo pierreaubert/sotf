@@ -667,3 +667,835 @@ fn test_manual_mode_level_change_does_not_corrupt() {
         "output should be finite after parameter change in manual mode"
     );
 }
+
+// ============================================================================
+// set_parameter / get_parameter round-trip coverage
+// ============================================================================
+
+#[test]
+fn test_set_get_parameter_all_fields() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    // low_gain
+    p.set_parameter(ParameterId::from("low_gain"), ParameterValue::Float(8.5))
+        .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("low_gain")),
+        Some(ParameterValue::Float(8.5))
+    );
+
+    // high_gain
+    p.set_parameter(ParameterId::from("high_gain"), ParameterValue::Float(-3.0))
+        .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("high_gain")),
+        Some(ParameterValue::Float(-3.0))
+    );
+
+    // low_freq
+    p.set_parameter(ParameterId::from("low_freq"), ParameterValue::Float(150.0))
+        .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("low_freq")),
+        Some(ParameterValue::Float(150.0))
+    );
+
+    // high_freq
+    p.set_parameter(
+        ParameterId::from("high_freq"),
+        ParameterValue::Float(12000.0),
+    )
+    .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("high_freq")),
+        Some(ParameterValue::Float(12000.0))
+    );
+
+    // mid_enabled
+    p.set_parameter(
+        ParameterId::from("mid_enabled"),
+        ParameterValue::Bool(false),
+    )
+    .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("mid_enabled")),
+        Some(ParameterValue::Bool(false))
+    );
+
+    // mid_freq
+    p.set_parameter(ParameterId::from("mid_freq"), ParameterValue::Float(4000.0))
+        .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("mid_freq")),
+        Some(ParameterValue::Float(4000.0))
+    );
+
+    // mid_gain
+    p.set_parameter(ParameterId::from("mid_gain"), ParameterValue::Float(-2.0))
+        .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("mid_gain")),
+        Some(ParameterValue::Float(-2.0))
+    );
+
+    // mid_q
+    p.set_parameter(ParameterId::from("mid_q"), ParameterValue::Float(1.2))
+        .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("mid_q")),
+        Some(ParameterValue::Float(1.2))
+    );
+
+    // auto_gain_enabled
+    p.set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("auto_gain_enabled")),
+        Some(ParameterValue::Bool(true))
+    );
+
+    // auto_gain_max_db
+    p.set_parameter(
+        ParameterId::from("auto_gain_max_db"),
+        ParameterValue::Float(6.0),
+    )
+    .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("auto_gain_max_db")),
+        Some(ParameterValue::Float(6.0))
+    );
+
+    // auto_gain_smoothing_ms
+    p.set_parameter(
+        ParameterId::from("auto_gain_smoothing_ms"),
+        ParameterValue::Float(50.0),
+    )
+    .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("auto_gain_smoothing_ms")),
+        Some(ParameterValue::Float(50.0))
+    );
+
+    // auto_gain_position
+    p.set_parameter(
+        ParameterId::from("auto_gain_position"),
+        ParameterValue::String("pre".to_string()),
+    )
+    .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("auto_gain_position")),
+        Some(ParameterValue::String("pre".to_string()))
+    );
+
+    // mode
+    p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
+        .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("mode")),
+        Some(ParameterValue::Int(1))
+    );
+
+    // playback_level_db
+    p.set_parameter(
+        ParameterId::from("playback_level_db"),
+        ParameterValue::Float(65.0),
+    )
+    .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("playback_level_db")),
+        Some(ParameterValue::Float(65.0))
+    );
+
+    // reference_level_db
+    p.set_parameter(
+        ParameterId::from("reference_level_db"),
+        ParameterValue::Float(80.0),
+    )
+    .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("reference_level_db")),
+        Some(ParameterValue::Float(80.0))
+    );
+
+    // playback_volume_db
+    p.set_parameter(
+        ParameterId::from("playback_volume_db"),
+        ParameterValue::Float(-10.0),
+    )
+    .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("playback_volume_db")),
+        Some(ParameterValue::Float(-10.0))
+    );
+}
+
+#[test]
+fn test_get_parameter_unknown_returns_none() {
+    let p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    assert_eq!(p.get_parameter(&ParameterId::from("nonexistent")), None);
+}
+
+// ============================================================================
+// set_parameter error paths
+// ============================================================================
+
+#[test]
+fn test_set_parameter_type_errors_preserve_state() {
+    let cases = [
+        ("unknown_param", ParameterValue::Float(1.0)),
+        ("mid_enabled", ParameterValue::Float(1.0)),
+        (
+            "auto_gain_enabled",
+            ParameterValue::String("true".to_string()),
+        ),
+        ("auto_gain_max_db", ParameterValue::Int(5)),
+        ("auto_gain_smoothing_ms", ParameterValue::Int(50)),
+        ("auto_gain_position", ParameterValue::Int(0)),
+        ("mode", ParameterValue::String("auto".to_string())),
+    ];
+
+    for (param, value) in cases {
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+        let original_low_gain = p.low_gain;
+        let original_mid_enabled = p.mid_enabled;
+        let original_mode = p.mode_index;
+        let original_auto_gain_present = p.auto_gain.is_some();
+
+        let result = p.set_parameter(ParameterId::from(param), value);
+        assert!(result.is_err(), "{param} should reject invalid type/value");
+        assert_eq!(p.low_gain, original_low_gain, "{param} mutated low_gain");
+        assert_eq!(
+            p.mid_enabled, original_mid_enabled,
+            "{param} mutated mid_enabled"
+        );
+        assert_eq!(p.mode_index, original_mode, "{param} mutated mode");
+        assert_eq!(
+            p.auto_gain.is_some(),
+            original_auto_gain_present,
+            "{param} changed auto_gain allocation"
+        );
+    }
+}
+
+#[test]
+fn test_set_parameter_mode_out_of_range_rejected_by_validation() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    assert_eq!(p.mode_index, 0);
+    let result = p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(5));
+    assert!(
+        result.is_err(),
+        "mode out of range should be rejected by validation"
+    );
+    assert_eq!(p.mode_index, 0);
+}
+
+#[test]
+fn test_set_parameter_mode_float_rejected_by_validation() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    let result = p.set_parameter(ParameterId::from("mode"), ParameterValue::Float(2.0));
+    assert!(
+        result.is_err(),
+        "mode as float should be rejected by validation (mode is int/choice)"
+    );
+}
+
+#[test]
+fn test_set_parameter_non_finite_float_rejected_by_validation() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    let orig = p.low_gain;
+    let result = p.set_parameter(
+        ParameterId::from("low_gain"),
+        ParameterValue::Float(f32::NAN),
+    );
+    assert!(result.is_err(), "NaN should be rejected by validation");
+    assert_eq!(p.low_gain, orig);
+
+    let result2 = p.set_parameter(
+        ParameterId::from("low_gain"),
+        ParameterValue::Float(f32::INFINITY),
+    );
+    assert!(
+        result2.is_err(),
+        "Infinity should be rejected by validation"
+    );
+    assert_eq!(p.low_gain, orig);
+}
+
+// ============================================================================
+// set_parameter state changes (auto_gain creation / removal / rebuild triggers)
+// ============================================================================
+
+#[test]
+fn test_set_parameter_auto_gain_position_pre_creates_auto_gain() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    assert!(p.auto_gain.is_none());
+
+    p.set_parameter(
+        ParameterId::from("auto_gain_position"),
+        ParameterValue::String("pre".to_string()),
+    )
+    .unwrap();
+
+    assert!(p.auto_gain.is_some());
+    assert!(p.auto_gain_enabled);
+    assert_eq!(
+        p.auto_gain_position,
+        super::auto_gain_position::AutoGainPosition::Pre
+    );
+}
+
+#[test]
+fn test_set_parameter_auto_gain_position_disabled_removes_auto_gain() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    // Enable first
+    p.set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    assert!(p.auto_gain.is_some());
+
+    // Disable via position
+    p.set_parameter(
+        ParameterId::from("auto_gain_position"),
+        ParameterValue::String("disabled".to_string()),
+    )
+    .unwrap();
+
+    assert!(p.auto_gain.is_none());
+    assert!(!p.auto_gain_enabled);
+}
+
+#[test]
+fn test_set_parameter_auto_gain_max_db_updates_existing_auto_gain() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    p.set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+
+    p.set_parameter(
+        ParameterId::from("auto_gain_max_db"),
+        ParameterValue::Float(6.0),
+    )
+    .unwrap();
+    assert_eq!(p.auto_gain_max_db, 6.0);
+}
+
+#[test]
+fn test_set_parameter_auto_gain_max_db_without_auto_gain_no_panic() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    p.set_parameter(
+        ParameterId::from("auto_gain_max_db"),
+        ParameterValue::Float(6.0),
+    )
+    .unwrap();
+    assert_eq!(p.auto_gain_max_db, 6.0);
+}
+
+#[test]
+fn test_set_parameter_auto_gain_smoothing_ms_updates_existing_auto_gain() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    p.set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+
+    p.set_parameter(
+        ParameterId::from("auto_gain_smoothing_ms"),
+        ParameterValue::Float(25.0),
+    )
+    .unwrap();
+    assert_eq!(p.auto_gain_smoothing_ms, 25.0);
+}
+
+#[test]
+fn test_set_parameter_auto_gain_smoothing_ms_without_auto_gain_no_panic() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    p.set_parameter(
+        ParameterId::from("auto_gain_smoothing_ms"),
+        ParameterValue::Float(25.0),
+    )
+    .unwrap();
+    assert_eq!(p.auto_gain_smoothing_ms, 25.0);
+}
+
+#[test]
+fn test_set_parameter_playback_volume_db_manual_mode_no_rebuild() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    assert_eq!(p.mode_index, 0);
+
+    // Save iso_deltas before
+    let deltas_before = p.iso_deltas;
+
+    p.set_parameter(
+        ParameterId::from("playback_volume_db"),
+        ParameterValue::Float(-20.0),
+    )
+    .unwrap();
+
+    // In manual mode, iso_deltas should not change
+    assert_eq!(p.iso_deltas[0].0, deltas_before[0].0);
+    assert_eq!(p.iso_deltas[0].1, deltas_before[0].1);
+}
+
+#[test]
+fn test_set_parameter_playback_volume_db_auto_mode_triggers_rebuild() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
+        .unwrap();
+    p.set_parameter(
+        ParameterId::from("reference_level_db"),
+        ParameterValue::Float(83.0),
+    )
+    .unwrap();
+
+    let last_vol_before = p.last_auto_volume_db;
+    p.set_parameter(
+        ParameterId::from("playback_volume_db"),
+        ParameterValue::Float(-20.0),
+    )
+    .unwrap();
+
+    // A large volume change should trigger rebuild
+    assert_eq!(p.last_auto_volume_db, -20.0);
+    assert_ne!(p.last_auto_volume_db, last_vol_before);
+}
+
+#[test]
+fn test_set_parameter_playback_level_db_auto_mode_no_panic() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
+        .unwrap();
+
+    // playback_level_db in auto mode forces a rebuild but does not change
+    // the coefficients (auto mode uses reference_level_db + playback_volume_db).
+    // This test just verifies no panic and the value is stored.
+    p.set_parameter(
+        ParameterId::from("playback_level_db"),
+        ParameterValue::Float(60.0),
+    )
+    .unwrap();
+    assert_eq!(p.playback_level_db, 60.0);
+}
+
+#[test]
+fn test_set_parameter_reference_level_db_auto_mode_triggers_rebuild() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
+        .unwrap();
+
+    // Set a non-zero playback volume so estimated_spl != reference_level_db
+    p.set_parameter(
+        ParameterId::from("playback_volume_db"),
+        ParameterValue::Float(-10.0),
+    )
+    .unwrap();
+
+    let deltas_before = p.iso_deltas;
+    p.set_parameter(
+        ParameterId::from("reference_level_db"),
+        ParameterValue::Float(70.0),
+    )
+    .unwrap();
+
+    assert_ne!(
+        p.iso_deltas[0].1, deltas_before[0].1,
+        "auto mode should rebuild iso_filters when reference_level_db changes"
+    );
+}
+
+#[test]
+fn test_set_parameter_playback_level_db_iso_mode_rebuilds() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
+        .unwrap();
+
+    let deltas_before = p.iso_deltas;
+    p.set_parameter(
+        ParameterId::from("playback_level_db"),
+        ParameterValue::Float(50.0),
+    )
+    .unwrap();
+
+    // ISO mode should rebuild iso_filters
+    assert_ne!(p.iso_deltas[0].1, deltas_before[0].1);
+}
+
+#[test]
+fn test_set_parameter_playback_level_db_manual_mode_no_rebuild() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    assert_eq!(p.mode_index, 0);
+
+    let deltas_before = p.iso_deltas;
+    p.set_parameter(
+        ParameterId::from("playback_level_db"),
+        ParameterValue::Float(50.0),
+    )
+    .unwrap();
+
+    assert_eq!(p.iso_deltas[0].1, deltas_before[0].1);
+}
+
+// ============================================================================
+// initialize
+// ============================================================================
+
+#[test]
+fn test_initialize_different_sample_rate() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    assert_eq!(p.sample_rate, 48000);
+    InPlacePlugin::initialize(&mut p, 96000).unwrap();
+    assert_eq!(p.sample_rate, 96000);
+}
+
+#[test]
+fn test_initialize_rebuilds_filters() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    // Change sample rate
+    InPlacePlugin::initialize(&mut p, 44100).unwrap();
+
+    // Filters should have been rebuilt for new sample rate
+    let mut b = vec![0.5f32; 480];
+    p.process_in_place(&mut b, &ProcessContext::new(44100, 480))
+        .unwrap();
+    assert!(b.iter().all(|s| s.is_finite()));
+}
+
+// ============================================================================
+// reset
+// ============================================================================
+
+#[test]
+fn test_reset_clears_filter_state() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    // Process to establish state
+    let mut b = vec![0.3f32; 4800];
+    let ctx = ProcessContext::new(48000, 4800);
+    p.process_in_place(&mut b, &ctx).unwrap();
+    let last_before = b[4799];
+
+    // Reset should clear filter delay state
+    InPlacePlugin::reset(&mut p);
+
+    // Process another block — first sample should differ because state was reset
+    let mut b2 = vec![0.3f32; 480];
+    p.process_in_place(&mut b2, &ProcessContext::new(48000, 480))
+        .unwrap();
+
+    // After reset, the first output should NOT match the continuous stream.
+    // The exact value isn't critical; we just need a visible discontinuity.
+    let jump = (b2[0] - last_before).abs();
+    assert!(
+        jump > 0.01,
+        "reset should clear filter state: last={last_before:.4}, first_after_reset={:.4}, jump={jump:.4}",
+        b2[0]
+    );
+}
+
+// ============================================================================
+// process_in_place — Pre mode, multi-channel, edge cases
+// ============================================================================
+
+#[test]
+fn test_process_in_place_pre_mode() {
+    let params = crate::LoudnessCompensationPluginParams {
+        auto_gain_enabled: true,
+        auto_gain_position: "pre".to_string(),
+        auto_gain_max_db: 12.0,
+        auto_gain_smoothing_ms: 5.0,
+        ..Default::default()
+    };
+    let mut p = LoudnessCompensationPlugin::from_params(1, params).unwrap();
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    let nf = 4800;
+    let ctx = ProcessContext::new(48000, nf);
+    let signal: Vec<f32> = (0..nf)
+        .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0).sin())
+        .collect();
+
+    // Process several blocks
+    for _ in 0..10 {
+        let mut buf = signal.clone();
+        p.process_in_place(&mut buf, &ctx).unwrap();
+    }
+
+    let data_arc = p.get_data().expect("auto_gain should produce data");
+    let ag_data = data_arc
+        .downcast_ref::<sotf_host::auto_gain::AutoGainData>()
+        .expect("data should be AutoGainData");
+
+    assert!(ag_data.input_lufs.is_finite(), "input_lufs must be finite");
+    assert!(
+        ag_data.output_lufs.is_finite(),
+        "output_lufs must be finite"
+    );
+}
+
+#[test]
+fn test_process_in_place_disabled_mode() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    let nf = 480;
+    let ctx = ProcessContext::new(48000, nf);
+    let mut b: Vec<f32> = (0..nf).map(|i| 0.2 * (i as f32 / 48.0).sin()).collect();
+    p.process_in_place(&mut b, &ctx).unwrap();
+    assert!(b.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_in_place_stereo() {
+    let mut p = LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    let nf = 480;
+    let ctx = ProcessContext::new(48000, nf);
+    // Interleaved stereo: [L0, R0, L1, R1, ...]
+    let mut b: Vec<f32> = (0..nf * 2).map(|i| 0.2 * (i as f32 / 48.0).sin()).collect();
+    p.process_in_place(&mut b, &ctx).unwrap();
+    assert!(b.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_in_place_empty_buffer() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    let mut b: Vec<f32> = vec![];
+    let ctx = ProcessContext::new(48000, 0);
+    let result = p.process_in_place(&mut b, &ctx);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), 0);
+}
+
+#[test]
+fn test_process_in_place_single_frame() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    let mut b = vec![0.5f32];
+    let ctx = ProcessContext::new(48000, 1);
+    p.process_in_place(&mut b, &ctx).unwrap();
+    assert!(b[0].is_finite());
+}
+
+// ============================================================================
+// get_data
+// ============================================================================
+
+#[test]
+fn test_get_data_none_without_auto_gain() {
+    let p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    assert!(p.get_data().is_none());
+}
+
+#[test]
+fn test_get_data_some_with_auto_gain() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    p.set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    assert!(p.get_data().is_some());
+}
+
+// ============================================================================
+// from_params edge cases
+// ============================================================================
+
+#[test]
+fn test_from_params_auto_gain_disabled_overrides_position() {
+    let params = crate::LoudnessCompensationPluginParams {
+        auto_gain_enabled: false,
+        auto_gain_position: "pre".to_string(),
+        ..Default::default()
+    };
+    let p = LoudnessCompensationPlugin::from_params(1, params).unwrap();
+    assert!(!p.auto_gain_enabled);
+    assert!(p.auto_gain.is_none());
+    assert_eq!(
+        p.auto_gain_position,
+        super::auto_gain_position::AutoGainPosition::Disabled
+    );
+}
+
+#[test]
+fn test_from_params_pre_position() {
+    let params = crate::LoudnessCompensationPluginParams {
+        auto_gain_enabled: true,
+        auto_gain_position: "pre".to_string(),
+        ..Default::default()
+    };
+    let p = LoudnessCompensationPlugin::from_params(1, params).unwrap();
+    assert!(p.auto_gain_enabled);
+    assert!(p.auto_gain.is_some());
+    assert_eq!(
+        p.auto_gain_position,
+        super::auto_gain_position::AutoGainPosition::Pre
+    );
+}
+
+// ============================================================================
+// maybe_rebuild_auto_filters edge cases
+// ============================================================================
+
+#[test]
+fn test_maybe_rebuild_skips_small_volume_change() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
+        .unwrap();
+    p.set_parameter(
+        ParameterId::from("reference_level_db"),
+        ParameterValue::Float(83.0),
+    )
+    .unwrap();
+    p.set_parameter(
+        ParameterId::from("playback_volume_db"),
+        ParameterValue::Float(-10.0),
+    )
+    .unwrap();
+
+    // Force a rebuild so last_auto_volume_db is current
+    p.maybe_rebuild_auto_filters();
+    assert_eq!(p.last_auto_volume_db, -10.0);
+
+    // Tiny change (< 0.5 dB) should not trigger rebuild
+    p.playback_volume_db = -10.3;
+    let deltas_before = p.iso_deltas;
+    p.maybe_rebuild_auto_filters();
+    assert_eq!(p.last_auto_volume_db, -10.0);
+    assert_eq!(p.iso_deltas[0].1, deltas_before[0].1);
+}
+
+#[test]
+fn test_maybe_rebuild_skips_non_auto_mode() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    assert_eq!(p.mode_index, 0);
+
+    let deltas_before = p.iso_deltas;
+    p.playback_volume_db = -20.0;
+    p.maybe_rebuild_auto_filters();
+
+    // Nothing should change in manual mode
+    assert_eq!(p.iso_deltas[0].1, deltas_before[0].1);
+}
+
+// ============================================================================
+// update_comp_gain_smoother edge cases
+// ============================================================================
+
+#[test]
+fn test_update_comp_gain_smoother_manual_mode_mid_disabled() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    p.set_parameter(
+        ParameterId::from("mid_enabled"),
+        ParameterValue::Bool(false),
+    )
+    .unwrap();
+
+    // Manual mode with mid disabled: max gain should be max of low/high abs
+    let expected = p.low_gain.abs().max(p.high_gain.abs());
+    let target = 10.0_f32.powf(-expected / 20.0);
+    assert!(
+        (p.comp_gain_smoother[0].target() - target).abs() < 1e-4,
+        "comp_gain target mismatch"
+    );
+}
+
+#[test]
+fn test_process_sample_all_modes() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    // Manual mode
+    let s_manual = p.process_sample(0, 0.5);
+    assert!(s_manual.is_finite());
+
+    // ISO 226 mode
+    p.mode_index = 1;
+    let s_iso = p.process_sample(0, 0.5);
+    assert!(s_iso.is_finite());
+
+    // Auto mode
+    p.mode_index = 2;
+    let s_auto = p.process_sample(0, 0.5);
+    assert!(s_auto.is_finite());
+}
+
+#[test]
+fn test_info() {
+    let p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    let info = InPlacePlugin::info(&p);
+    assert_eq!(info.name, "Loudness Compensation");
+    assert_eq!(info.version, "3.0.0");
+    assert_eq!(info.author, "Sotf");
+}
+
+#[test]
+fn test_channels() {
+    let p1 = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    assert_eq!(InPlacePlugin::channels(&p1), 1);
+
+    let p2 = LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0);
+    assert_eq!(InPlacePlugin::channels(&p2), 2);
+}
+
+#[test]
+fn test_parameters_returns_clone() {
+    let p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    let params = InPlacePlugin::parameters(&p);
+    assert!(!params.is_empty());
+    // Should contain at least the expected parameters
+    assert!(params.iter().any(|param| param.id.0 == "low_gain"));
+    assert!(params.iter().any(|param| param.id.0 == "mode"));
+}
+
+#[test]
+fn test_rebuild_cached_parameters_updates_values() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    // Change a field directly and rebuild
+    p.low_gain = 12.0;
+    p.rebuild_cached_parameters();
+
+    let params = InPlacePlugin::parameters(&p);
+    let low_gain_param = params
+        .iter()
+        .find(|param| param.id.0 == "low_gain")
+        .unwrap();
+    assert_eq!(
+        low_gain_param.default_value,
+        sotf_host::parameters::ParameterValue::Float(12.0)
+    );
+}

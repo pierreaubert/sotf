@@ -22,6 +22,7 @@ Audio delay with configurable delay time per channel.
 @item @code{Delay} @tab Float @tab 0 .. 5000 @tab 100 @tab ms @tab Delay time
 @item @code{Feedback} @tab Float @tab -0.95 .. 0.95 @tab 0.3 @tab - @tab Amount fed back into delay line
 @item @code{Mix} @tab Float @tab 0 .. 1 @tab 0.5 @tab % @tab Dry/wet blend
+@item @code{Allpass Coeff} @tab Float @tab 0 .. 0.99 @tab 0.5 @tab - @tab Allpass filter coefficient
 @item @code{Allpass Feedback} @tab Bool @tab On / Off @tab Off @tab - @tab Use allpass filter in feedback path
 @end multitable
 

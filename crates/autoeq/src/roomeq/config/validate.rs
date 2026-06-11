@@ -1009,3 +1009,328 @@ fn validate_role_targets(config: &RoomConfig, result: &mut ValidationResult) {
         ));
     }
 }
+
+#[cfg(test)]
+mod validate_optimizer_tests {
+    use super::*;
+    use crate::roomeq::types::OptimizerConfig;
+
+    fn default_config() -> OptimizerConfig {
+        OptimizerConfig::default()
+    }
+
+    #[test]
+    fn validate_normal_config_is_valid() {
+        let mut result = ValidationResult::valid();
+        let config = default_config();
+        validate_optimizer_config(&config, &mut result);
+        assert!(
+            result.is_valid,
+            "default config should be valid: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn validate_num_filters_zero_warns() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.num_filters = 0;
+        validate_optimizer_config(&config, &mut result);
+        assert!(result.is_valid, "zero filters is a warning, not an error");
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("num_filters is 0"))
+        );
+    }
+
+    #[test]
+    fn validate_min_freq_gte_max_freq_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.min_freq = 200.0;
+        config.max_freq = 100.0;
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("min_freq") && e.contains("max_freq"))
+        );
+    }
+
+    #[test]
+    fn validate_min_freq_non_positive_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.min_freq = 0.0;
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("min_freq") && e.contains("positive"))
+        );
+    }
+
+    #[test]
+    fn validate_max_freq_above_nyquist_warns() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.max_freq = 30000.0;
+        validate_optimizer_config(&config, &mut result);
+        assert!(result.is_valid);
+        assert!(result.warnings.iter().any(|w| w.contains("Nyquist")));
+    }
+
+    #[test]
+    fn validate_min_q_gte_max_q_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.min_q = 5.0;
+        config.max_q = 2.0;
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("min_q") && e.contains("max_q"))
+        );
+    }
+
+    #[test]
+    fn validate_min_q_non_positive_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.min_q = 0.0;
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("min_q") && e.contains("positive"))
+        );
+    }
+
+    #[test]
+    fn validate_smooth_n_out_of_range_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.smooth_n = 0;
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(result.errors.iter().any(|e| e.contains("smooth_n")));
+
+        let mut result2 = ValidationResult::valid();
+        config.smooth_n = 50;
+        validate_optimizer_config(&config, &mut result2);
+        assert!(!result2.is_valid);
+    }
+
+    #[test]
+    fn validate_unknown_algorithm_warns() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.algorithm = "unknown:algo".to_string();
+        validate_optimizer_config(&config, &mut result);
+        assert!(result.is_valid);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("Unknown algorithm"))
+        );
+    }
+
+    #[test]
+    fn validate_unknown_loss_type_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.loss_type = "invalid".to_string();
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("Unknown loss_type"))
+        );
+    }
+
+    #[test]
+    fn validate_unknown_peq_model_warns() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.peq_model = "unknown-model".to_string();
+        validate_optimizer_config(&config, &mut result);
+        assert!(result.is_valid);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("Unknown peq_model"))
+        );
+    }
+
+    #[test]
+    fn validate_max_iter_zero_warns() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.max_iter = 0;
+        validate_optimizer_config(&config, &mut result);
+        assert!(result.is_valid);
+        assert!(result.warnings.iter().any(|w| w.contains("max_iter is 0")));
+    }
+
+    #[test]
+    fn validate_auto_optimizer_min_filters_gt_max_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.auto_optimizer = Some(crate::roomeq::types::AutoOptimizerConfig {
+            enabled: true,
+            min_filters: 5,
+            max_filters: 3,
+            ..Default::default()
+        });
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("min_filters") && e.contains("max_filters"))
+        );
+    }
+
+    #[test]
+    fn validate_auto_optimizer_enabled_but_no_flags_warns() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.auto_optimizer = Some(crate::roomeq::types::AutoOptimizerConfig {
+            enabled: true,
+            filter_count: false,
+            q_bounds: false,
+            gain_bounds: false,
+            ..Default::default()
+        });
+        validate_optimizer_config(&config, &mut result);
+        assert!(result.is_valid);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("all automatic selection flags are disabled"))
+        );
+    }
+
+    #[test]
+    fn validate_min_db_gte_max_db_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.min_db = 10.0;
+        config.max_db = 5.0;
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("min_db") && e.contains("max_db"))
+        );
+    }
+
+    #[test]
+    fn validate_psychoacoustic_smoothing_zero_n_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.psychoacoustic_smoothing = Some(crate::read::PsychoacousticSmoothingConfig {
+            low_freq_n: 0,
+            high_freq_n: 1,
+            ..Default::default()
+        });
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("psychoacoustic_smoothing"))
+        );
+    }
+
+    #[test]
+    fn validate_asymmetric_loss_config_negative_weight_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.asymmetric_loss_config = Some(crate::loss::AsymmetricLossConfig {
+            peak_weight: -1.0,
+            ..Default::default()
+        });
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("asymmetric_loss_config") && e.contains("weights"))
+        );
+    }
+
+    #[test]
+    fn validate_fir_taps_zero_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.fir = Some(crate::roomeq::types::FirConfig {
+            taps: 0,
+            phase: "linear".to_string(),
+            ..Default::default()
+        });
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(result.errors.iter().any(|e| e.contains("FIR taps")));
+    }
+
+    #[test]
+    fn validate_fir_phase_invalid_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.fir = Some(crate::roomeq::types::FirConfig {
+            taps: 256,
+            phase: "invalid".to_string(),
+            ..Default::default()
+        });
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("Unknown FIR phase"))
+        );
+    }
+
+    #[test]
+    fn validate_cea2034_correction_score_mode_errors() {
+        let mut result = ValidationResult::valid();
+        let mut config = default_config();
+        config.cea2034_correction = Some(crate::roomeq::types::Cea2034CorrectionConfig {
+            enabled: true,
+            correction_mode: crate::roomeq::types::Cea2034CorrectionMode::Score,
+            ..Default::default()
+        });
+        validate_optimizer_config(&config, &mut result);
+        assert!(!result.is_valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("score is not supported in roomeq"))
+        );
+    }
+}

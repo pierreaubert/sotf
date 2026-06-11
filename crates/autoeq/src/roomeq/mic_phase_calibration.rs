@@ -519,4 +519,135 @@ frequency_hz,mag_db,phase_deg,coherence
         assert_eq!(curve.coherence, None);
         assert!((curve.spl[0] - 58.0).abs() < 1e-9);
     }
+
+    #[test]
+    fn load_mic_phase_calibration_empty_file_errors() {
+        let csv = "frequency_hz,mag_db,phase_deg,coherence\n";
+        let f = write_cal_csv(csv);
+        assert!(load_mic_phase_calibration(f.path()).is_err());
+    }
+
+    #[test]
+    fn load_mic_phase_calibration_comments_and_blanks_skipped() {
+        let csv = "\
+# This is a comment
+frequency_hz,mag_db,phase_deg,coherence
+
+20.0,2.0,-10.0,0.95
+// Another comment
+50.0,1.0,-5.0,0.98
+";
+        let f = write_cal_csv(csv);
+        let cal = load_mic_phase_calibration(f.path()).unwrap();
+        assert_eq!(cal.freq.len(), 2);
+        assert!((cal.freq[1] - 50.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn load_mic_phase_calibration_short_row_skipped() {
+        let csv = "\
+frequency_hz,mag_db,phase_deg,coherence
+20.0,2.0,-10.0,0.95
+50.0,1.0\n200.0,0.0,0.0,0.99
+";
+        let f = write_cal_csv(csv);
+        let cal = load_mic_phase_calibration(f.path()).unwrap();
+        assert_eq!(cal.freq.len(), 2);
+    }
+
+    #[test]
+    fn load_mic_phase_calibration_non_finite_value_skipped() {
+        let csv = "\
+frequency_hz,mag_db,phase_deg,coherence
+20.0,2.0,-10.0,0.95
+50.0,inf,-5.0,0.98
+200.0,0.0,0.0,0.99
+";
+        let f = write_cal_csv(csv);
+        let cal = load_mic_phase_calibration(f.path()).unwrap();
+        assert_eq!(cal.freq.len(), 2);
+    }
+
+    #[test]
+    fn sample_at_empty_cal_returns_none() {
+        let cal = MicPhaseCalibration {
+            freq: Array1::from_vec(vec![]),
+            mag_db: Array1::from_vec(vec![]),
+            phase_deg: Array1::from_vec(vec![]),
+            coherence: Array1::from_vec(vec![]),
+        };
+        assert!(cal.sample_at(100.0).is_none());
+    }
+
+    #[test]
+    fn sample_at_non_finite_freq_returns_none() {
+        let cal = MicPhaseCalibration {
+            freq: Array1::from_vec(vec![20.0, 200.0]),
+            mag_db: Array1::from_vec(vec![0.0, 0.0]),
+            phase_deg: Array1::from_vec(vec![0.0, 0.0]),
+            coherence: Array1::from_vec(vec![1.0, 1.0]),
+        };
+        assert!(cal.sample_at(f64::NAN).is_none());
+        assert!(cal.sample_at(f64::INFINITY).is_none());
+    }
+
+    #[test]
+    fn sample_at_exact_first_node_returns_first_value() {
+        let cal = MicPhaseCalibration {
+            freq: Array1::from_vec(vec![100.0, 200.0]),
+            mag_db: Array1::from_vec(vec![1.0, 2.0]),
+            phase_deg: Array1::from_vec(vec![0.0, 10.0]),
+            coherence: Array1::from_vec(vec![0.9, 0.95]),
+        };
+        let (m, p, c) = cal.sample_at(100.0).unwrap();
+        assert!((m - 1.0).abs() < 1e-9);
+        assert!((p - 0.0).abs() < 1e-9);
+        assert!((c - 0.9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn apply_to_curve_empty_curve_no_panic() {
+        let cal = MicPhaseCalibration::identity(Array1::from_vec(vec![20.0, 200.0]));
+        let mut curve = Curve {
+            freq: Array1::from_vec(vec![]),
+            spl: Array1::from_vec(vec![]),
+            phase: None,
+            coherence: None,
+            ..Default::default()
+        };
+        cal.apply_to_curve(&mut curve);
+        assert!(curve.spl.is_empty());
+    }
+
+    #[test]
+    fn apply_to_curve_mismatched_lengths_no_panic() {
+        let cal = MicPhaseCalibration::identity(Array1::from_vec(vec![20.0, 200.0]));
+        let mut curve = Curve {
+            freq: Array1::from_vec(vec![20.0, 200.0]),
+            spl: Array1::from_vec(vec![80.0]), // mismatched
+            phase: None,
+            coherence: None,
+            ..Default::default()
+        };
+        cal.apply_to_curve(&mut curve);
+        // Should silently no-op
+        assert_eq!(curve.spl.len(), 1);
+    }
+
+    #[test]
+    fn apply_to_curve_phase_mismatched_length_skipped() {
+        let freq = Array1::from_vec(vec![20.0, 200.0]);
+        let cal = MicPhaseCalibration::identity(freq.clone());
+        let mut curve = Curve {
+            freq,
+            spl: Array1::from_vec(vec![80.0, 80.0]),
+            phase: Some(Array1::from_vec(vec![0.0])), // wrong length
+            coherence: Some(Array1::from_vec(vec![1.0, 1.0])),
+            ..Default::default()
+        };
+        cal.apply_to_curve(&mut curve);
+        // phase length mismatch → phase not modified
+        assert_eq!(curve.phase.as_ref().unwrap().len(), 1);
+        assert_eq!(curve.spl[0], 80.0);
+    }
 }

@@ -14,7 +14,15 @@ Adds dither noise for bit-depth reduction, minimizing quantization distortion.
 @node dither Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
+
+@subsection Dither
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Bit Depth} @tab Choice (16, 20, 24) @tab 3 options @tab 16 @tab - @tab Target bit depth for quantization
+@item @code{Noise Shaping} @tab Bool @tab On / Off @tab On @tab - @tab F-weighted noise shaping (Wannamaker 1992)
+@item @code{Dither Type} @tab Choice (TPDF, None (round), Truncate) @tab 3 options @tab TPDF @tab - @tab TPDF with rounding, round-only passthrough, or truncated quantization
+@end multitable
 
 @node dither Plugin Developer Guide
 @section Developer Guide

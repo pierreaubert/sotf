@@ -297,4 +297,110 @@ mod tests {
             "first reflection should be merged when its segment is shorter than min_segment"
         );
     }
+
+    #[test]
+    fn test_find_onset_edge_cases() {
+        // Empty RIR
+        assert_eq!(find_onset(&[], 0, 10), 0);
+
+        // toa out of bounds
+        let rir = vec![0.5f32; 10];
+        assert_eq!(find_onset(&rir, 20, 5), 20);
+
+        // onset_window = 0
+        assert_eq!(find_onset(&rir, 5, 0), 5);
+
+        // start >= toa (window too small to move back)
+        assert_eq!(find_onset(&rir, 0, 0), 0);
+
+        // Zero-energy peak (all zeros)
+        let zeros = vec![0.0f32; 100];
+        assert_eq!(find_onset(&zeros, 50, 10), 50);
+
+        // Very low energy peak
+        let mut low = vec![0.0f32; 100];
+        low[50] = 1e-12;
+        assert_eq!(find_onset(&low, 50, 10), 50);
+
+        // Threshold not reached in window (energy stays below 10% of peak)
+        let mut ramp = vec![0.0f32; 100];
+        ramp[90] = 0.01;
+        ramp[95] = 0.05;
+        ramp[99] = 1.0;
+        let onset = find_onset(&ramp, 99, 10);
+        assert!(onset <= 99 && onset >= 90);
+    }
+
+    #[test]
+    fn test_build_segments_empty_and_invalid() {
+        let config = SsirConfig::new(48000.0);
+
+        // Empty RIR
+        let segs = build_segments(&[], 0, None, &[], 1000, &config);
+        assert!(segs.is_empty());
+
+        // Direct sound TOA beyond RIR length
+        let rir = vec![0.5f32; 10];
+        let segs = build_segments(&rir, 20, None, &[], 1000, &config);
+        assert!(segs.is_empty());
+    }
+
+    #[test]
+    fn test_build_segments_no_reflections() {
+        let mut rir = vec![0.0001f32; 2400];
+        rir[48] = 1.0;
+
+        let config = SsirConfig {
+            sample_rate: 48000.0,
+            mixing_time_ms: Some(40.0),
+            ..SsirConfig::default()
+        };
+
+        let segs = build_segments(&rir, 48, None, &[], config.mixing_time_samples(), &config);
+        assert_eq!(segs.len(), 1);
+        assert!(segs[0].is_direct_sound);
+        assert_eq!(segs[0].onset_sample, 0);
+        assert_eq!(segs[0].toa_sample, 48);
+        // Last segment end should be clamped to mixing_time + final_segment
+        assert!(
+            segs[0].end_sample <= config.mixing_time_samples() + config.final_segment_samples()
+        );
+    }
+
+    #[test]
+    fn test_build_segments_last_segment_end_clamping() {
+        let mut rir = vec![0.0001f32; 4800]; // 100ms
+        rir[48] = 1.0;
+        rir[288] = 0.5;
+
+        let reflections = vec![DetectedReflection {
+            toa_sample: 288,
+            peak_energy: 0.25,
+            doa: None,
+        }];
+
+        let config = SsirConfig {
+            sample_rate: 48000.0,
+            mixing_time_ms: Some(10.0), // very short mixing time
+            final_segment_ms: 2.0,
+            ..SsirConfig::default()
+        };
+
+        let segs = build_segments(
+            &rir,
+            48,
+            None,
+            &reflections,
+            config.mixing_time_samples(),
+            &config,
+        );
+
+        assert_eq!(segs.len(), 2);
+        // Last segment end should be clamped to mixing_time + final_segment and rir.len()
+        let last = segs.last().unwrap();
+        let expected_max = (last.onset_sample + config.final_segment_samples())
+            .min(config.mixing_time_samples() + config.final_segment_samples())
+            .min(rir.len());
+        assert_eq!(last.end_sample, expected_max);
+    }
 }

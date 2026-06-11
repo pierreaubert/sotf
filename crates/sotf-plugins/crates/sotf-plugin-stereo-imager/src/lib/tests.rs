@@ -432,3 +432,139 @@ fn test_process_does_not_reinitialize_on_sample_rate_mismatch() {
         "process_in_place must not call initialize() when context.sample_rate differs"
     );
 }
+
+// -------------------------------------------------------------------------
+// set_parameter extended coverage
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_set_parameter_all_band_params_roundtrip() {
+    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    plugin.initialize(48000).unwrap();
+
+    let cases: &[(&str, f32)] = &[
+        ("low_mid_freq", 500.0),
+        ("mid_high_freq", 3000.0),
+        ("low_width", 0.5),
+        ("mid_width", 1.5),
+        ("high_width", 2.0),
+    ];
+
+    for &(id, value) in cases {
+        plugin
+            .set_parameter(ParameterId::from(id), ParameterValue::Float(value))
+            .unwrap();
+        let got = plugin.get_parameter(&ParameterId::from(id));
+        assert_eq!(
+            got,
+            Some(ParameterValue::Float(value)),
+            "roundtrip failed for {}",
+            id
+        );
+    }
+}
+
+#[test]
+fn test_set_parameter_unknown_returns_error() {
+    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    plugin.initialize(48000).unwrap();
+
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("nonexistent"), ParameterValue::Float(1.0),)
+            .is_err()
+    );
+}
+
+#[test]
+fn test_set_parameter_out_of_range_returns_error() {
+    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    plugin.initialize(48000).unwrap();
+
+    // width range [0, 2]
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("width"), ParameterValue::Float(-1.0))
+            .is_err()
+    );
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("width"), ParameterValue::Float(5.0))
+            .is_err()
+    );
+
+    // mix range [0, 1]
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.5))
+            .is_err()
+    );
+}
+
+// -------------------------------------------------------------------------
+// process_in_place extended coverage
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_process_empty_buffer() {
+    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    plugin.initialize(48000).unwrap();
+
+    let mut buffer = vec![0.0f32; 0];
+    let ctx = ProcessContext::new(48000, 0);
+    let frames = plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    assert_eq!(frames, 0);
+}
+
+#[test]
+fn test_process_mix_one_wet_path() {
+    let params = StereoImagerPluginParams {
+        mix: 1.0,
+        width: 2.0,
+        low_mid_freq: 250.0,
+        mid_high_freq: 4000.0,
+        low_width: 1.0,
+        mid_width: 1.0,
+        high_width: 1.0,
+        mono_bass: false,
+    };
+    let mut plugin = StereoImagerPlugin::new(2, params);
+    plugin.initialize(48000).unwrap();
+
+    let num_frames = 512;
+    let mut buffer: Vec<f32> = (0..num_frames * 2)
+        .map(|i| (i as f32 * 0.05).sin() * 0.7)
+        .collect();
+
+    plugin
+        .process_in_place(&mut buffer, &make_context(num_frames))
+        .unwrap();
+
+    // All outputs should be finite
+    assert!(buffer.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn test_process_freq_swap_when_low_greater_than_high() {
+    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    plugin.initialize(48000).unwrap();
+
+    // Deliberately set low > high by mutating fields directly (bypasses
+    // validate_parameter which would reject this combination).
+    plugin.low_mid_freq = 5000.0;
+    plugin.low_mid_freq_smoother.set_target(5000.0);
+    plugin.mid_high_freq = 200.0;
+    plugin.mid_high_freq_smoother.set_target(200.0);
+
+    let num_frames = 512;
+    let mut buffer: Vec<f32> = (0..num_frames * 2)
+        .map(|i| (i as f32 * 0.05).sin() * 0.7)
+        .collect();
+
+    plugin
+        .process_in_place(&mut buffer, &make_context(num_frames))
+        .unwrap();
+
+    // Processing should not crash and output should be finite
+    assert!(buffer.iter().all(|s| s.is_finite()));
+}

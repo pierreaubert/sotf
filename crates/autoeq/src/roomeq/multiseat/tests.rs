@@ -404,3 +404,115 @@ fn test_continuous_mso_can_optimize_allpass_filter() {
         q
     );
 }
+
+#[test]
+fn test_continuous_mso_single_sub_returns_identity() {
+    let options = MsoSearchOptions {
+        optimize_polarity: false,
+        allpass_filters_per_sub: 0,
+        allpass_min_freq: 20.0,
+        allpass_max_freq: 120.0,
+    };
+    let (gains, delays, polarities, allpass_filters) =
+        optimize_continuous_mso(1, options, &|_, _, _, _| 999.9);
+
+    assert_eq!(gains, vec![0.0]);
+    assert_eq!(delays, vec![0.0]);
+    assert_eq!(polarities, vec![false]);
+    assert!(allpass_filters[0].is_empty());
+}
+
+#[test]
+fn test_continuous_mso_zero_subs_returns_empty() {
+    let options = MsoSearchOptions {
+        optimize_polarity: false,
+        allpass_filters_per_sub: 0,
+        allpass_min_freq: 20.0,
+        allpass_max_freq: 120.0,
+    };
+    let (gains, delays, polarities, allpass_filters) =
+        optimize_continuous_mso(0, options, &|_, _, _, _| 0.0);
+
+    assert!(gains.is_empty());
+    assert!(delays.is_empty());
+    assert!(polarities.is_empty());
+    assert!(allpass_filters.is_empty());
+}
+
+#[test]
+fn test_continuous_mso_three_subs_with_polarity_and_allpass() {
+    let options = MsoSearchOptions {
+        optimize_polarity: true,
+        allpass_filters_per_sub: 1,
+        allpass_min_freq: 20.0,
+        allpass_max_freq: 120.0,
+    };
+    let (gains, delays, polarities, allpass_filters) =
+        optimize_continuous_mso(3, options, &|gains, delays, polarities, allpass| {
+            let mut loss = 0.0;
+            // Target: gain = [0, 2, -2], delay = [0, 3, 1], polarity = [false, true, false]
+            loss += (gains[1] - 2.0).powi(2);
+            loss += (gains[2] + 2.0).powi(2);
+            loss += (delays[1] - 3.0).powi(2);
+            loss += (delays[2] - 1.0).powi(2);
+            if !polarities[1] {
+                loss += 10.0;
+            }
+            if polarities[2] {
+                loss += 10.0;
+            }
+            let (f1, _q1) = allpass[1][0];
+            loss += ((f1 - 60.0) / 10.0).powi(2);
+            loss
+        });
+
+    assert_eq!(gains[0], 0.0);
+    assert_eq!(delays[0], 0.0);
+    assert!(!polarities[0]);
+    assert!(
+        (gains[1] - 2.0).abs() < 0.1,
+        "gain[1] should be ~2.0, got {:.3}",
+        gains[1]
+    );
+    assert!(
+        (delays[1] - 3.0).abs() < 0.1,
+        "delay[1] should be ~3.0, got {:.3}",
+        delays[1]
+    );
+    assert!(polarities[1], "polarity[1] should be true");
+    assert!(!polarities[2], "polarity[2] should be false");
+    assert_eq!(allpass_filters[1].len(), 1);
+}
+
+#[test]
+fn test_continuous_mso_bounds_respected() {
+    let options = MsoSearchOptions {
+        optimize_polarity: false,
+        allpass_filters_per_sub: 0,
+        allpass_min_freq: 20.0,
+        allpass_max_freq: 120.0,
+    };
+    let (gains, delays, _polarities, _allpass) =
+        optimize_continuous_mso(2, options, &|gains, delays, _, _| {
+            // Penalize anything outside expected bounds
+            let mut loss = 0.0;
+            if gains[1] < -12.0 || gains[1] > 12.0 {
+                loss += 1000.0;
+            }
+            if delays[1] < 0.0 || delays[1] > 20.0 {
+                loss += 1000.0;
+            }
+            loss
+        });
+
+    assert!(
+        gains[1] >= -12.0 && gains[1] <= 12.0,
+        "gain[1] = {:.3} should be within bounds",
+        gains[1]
+    );
+    assert!(
+        delays[1] >= 0.0 && delays[1] <= 20.0,
+        "delay[1] = {:.3} should be within bounds",
+        delays[1]
+    );
+}

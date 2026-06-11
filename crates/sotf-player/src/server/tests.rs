@@ -43,9 +43,9 @@ mod read;
 use auth::auth_get;
 use auth::auth_header;
 use misc::api_settings;
-use misc::spawn_test_api_server;
 use misc::stop_test_api_server;
 use misc::test_state;
+use misc::try_spawn_test_api_server;
 use read::connect_sse_client;
 use read::read_http_response;
 use read::read_until;
@@ -315,7 +315,12 @@ fn sotf_api_serves_parallel_clients_while_sse_client_is_connected() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         let state = test_state();
-        let (addr, shutdown_tx, server_handle) = spawn_test_api_server(Arc::clone(&state)).await;
+        let (addr, shutdown_tx, server_handle) =
+            match try_spawn_test_api_server(Arc::clone(&state)).await {
+                Ok(server) => server,
+                Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+                Err(err) => panic!("failed to bind test API server: {err}"),
+            };
 
         let sse_client = connect_sse_client(addr).await;
         let mut handles = Vec::new();
@@ -343,7 +348,12 @@ fn sotf_api_broadcasts_events_to_multiple_sse_clients() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         let state = test_state();
-        let (addr, shutdown_tx, server_handle) = spawn_test_api_server(Arc::clone(&state)).await;
+        let (addr, shutdown_tx, server_handle) =
+            match try_spawn_test_api_server(Arc::clone(&state)).await {
+                Ok(server) => server,
+                Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+                Err(err) => panic!("failed to bind test API server: {err}"),
+            };
 
         let mut first = connect_sse_client(addr).await;
         let mut second = connect_sse_client(addr).await;

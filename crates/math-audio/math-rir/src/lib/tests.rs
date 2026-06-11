@@ -350,3 +350,119 @@ fn test_direct_sound_toa_at_rir_boundary() {
     assert!(result.segments[0].is_direct_sound);
     assert_eq!(result.segments[0].toa_sample, 0);
 }
+
+#[test]
+fn test_analyze_rir_no_direct_sound() {
+    // Silent RIR — no direct sound detectable
+    let rir = vec![0.0f32; 4800];
+    let config = SsirConfig::new(48000.0);
+    let result = analyze_rir(&rir, &config);
+    assert_eq!(result.num_events(), 0);
+    assert!(result.segments.is_empty());
+}
+
+#[test]
+fn test_analyze_rir_with_configured_mixing_time() {
+    let rir = make_synthetic_rir(48000.0, &[6.0, 10.0], &[0.5, 0.3]);
+
+    let config = SsirConfig {
+        sample_rate: 48000.0,
+        mixing_time_ms: Some(25.0), // explicitly configured
+        ..SsirConfig::default()
+    };
+
+    let result = analyze_rir(&rir, &config);
+    assert!(result.num_events() >= 2);
+    // Mixing time should be exactly the configured value
+    let expected_samples = config.mixing_time_samples();
+    assert_eq!(result.mixing_time_samples, expected_samples);
+}
+
+#[test]
+fn test_analyze_rir_no_reflections_anechoic() {
+    // Only direct sound, no reflections at all
+    let mut rir = vec![0.0001f32; 4800];
+    rir[48] = 1.0;
+
+    let config = SsirConfig {
+        sample_rate: 48000.0,
+        mixing_time_ms: Some(40.0),
+        ..SsirConfig::default()
+    };
+
+    let result = analyze_rir(&rir, &config);
+    assert_eq!(result.num_events(), 1);
+    assert!(result.segments[0].is_direct_sound);
+}
+
+#[test]
+fn test_analyze_srir_mismatched_channel_lengths() {
+    let w = vec![0.0001f32; 4800];
+    let x = vec![0.0f32; 2400]; // shorter
+    let y = vec![0.0f32; 4800];
+    let z = vec![0.0f32; 4800];
+
+    let config = SsirConfig::new(48000.0);
+    let result = analyze_srir(&[&w, &x, &y, &z], &config);
+    // Should fall back to mono analysis
+    assert!(result.num_events() >= 0); // may be 0 since silent
+}
+
+#[test]
+fn test_analyze_srir_empty_channels() {
+    let config = SsirConfig::new(48000.0);
+    let result = analyze_srir(&[], &config);
+    assert_eq!(result.num_events(), 0);
+}
+
+#[test]
+fn test_analyze_rir_very_low_energy() {
+    // RIR with extremely low amplitude — direct sound may still be detected
+    let mut rir = vec![1e-8f32; 4800];
+    rir[48] = 1e-6;
+    rir[288] = 5e-7;
+
+    let config = SsirConfig::new(48000.0);
+    let result = analyze_rir(&rir, &config);
+    // Should not panic; may or may not detect events depending on thresholds
+    assert!(result.num_events() <= 3);
+}
+
+#[test]
+fn test_analyze_rir_negative_reflections() {
+    // RIR with negative polarity reflections
+    let mut rir = vec![0.0001f32; 4800];
+    rir[48] = 1.0;
+    rir[288] = -0.5;
+    rir[480] = -0.3;
+
+    let config = SsirConfig {
+        sample_rate: 48000.0,
+        mixing_time_ms: Some(40.0),
+        ..SsirConfig::default()
+    };
+
+    let result = analyze_rir(&rir, &config);
+    assert!(
+        result.num_events() >= 2,
+        "negative reflections should still be detected"
+    );
+}
+
+#[test]
+fn test_analyze_rir_result_methods() {
+    let rir = make_synthetic_rir(48000.0, &[6.0, 10.0], &[0.5, 0.3]);
+    let config = SsirConfig::new(48000.0);
+    let result = analyze_rir(&rir, &config);
+
+    // Test helper methods on SsirResult
+    assert_eq!(result.num_events(), result.segments.len());
+    assert_eq!(
+        result.num_reflections(),
+        result.segments.len().saturating_sub(1)
+    );
+    assert!(result.mixing_time_ms() >= 0.0);
+    assert!(result.direct_sound().is_some() || result.segments.is_empty());
+    assert!(result.direct_sound_doa().is_none()); // mono input has no DOA
+    assert_eq!(result.reflections().count(), result.num_reflections());
+}

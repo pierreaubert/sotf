@@ -4,6 +4,18 @@ use sotf_audio::manager::AudioEngineManager;
 // but since it's in a binary, we can't easily import it.
 // We'll test the underlying AudioEngineManager which is what handles the state.
 
+fn daemon_source() -> String {
+    [
+        include_str!("../bin/sotf_daemon.rs"),
+        include_str!("../bin/sotf_daemon/audio_daemon.rs"),
+        include_str!("../bin/sotf_daemon/consts.rs"),
+        include_str!("../bin/sotf_daemon/misc.rs"),
+        include_str!("../bin/sotf_daemon/pipeline_reconfigure_outcome.rs"),
+        include_str!("../bin/sotf_daemon/pipeline_supervisor.rs"),
+    ]
+    .join("\n")
+}
+
 #[test]
 fn test_audio_engine_manager_state_reporting() {
     let manager = AudioEngineManager::new();
@@ -47,10 +59,10 @@ fn test_device_matching_priority_logic() {
 
 #[test]
 fn daemon_plugin_reload_uses_hot_update_path() {
-    let source = include_str!("../bin/sotf_daemon.rs");
+    let source = daemon_source();
     let reload_start = source
-        .find("async fn reload_plugins")
-        .expect("reload_plugins should exist");
+        .find("async fn reload_plugins_with_user_plugins")
+        .expect("reload_plugins_with_user_plugins should exist");
     let reload_body = &source[reload_start..];
 
     assert!(
@@ -70,7 +82,7 @@ fn daemon_plugin_reload_uses_hot_update_path() {
 
 #[test]
 fn daemon_load_plugins_carries_hal_input_channels() {
-    let source = include_str!("../bin/sotf_daemon.rs");
+    let source = daemon_source();
 
     assert!(
         source.contains("const MAX_HAL_CHANNELS: usize = 32"),
@@ -91,7 +103,7 @@ fn daemon_load_plugins_carries_hal_input_channels() {
 
 #[test]
 fn daemon_metering_returns_channel_sized_fallbacks() {
-    let source = include_str!("../bin/sotf_daemon.rs");
+    let source = daemon_source();
 
     assert!(
         source.contains("fn empty_loudness_json(channels: usize)")
@@ -104,7 +116,7 @@ fn daemon_metering_returns_channel_sized_fallbacks() {
 
 #[test]
 fn daemon_status_exposes_toolbar_device_and_playback_diagnostics() {
-    let source = include_str!("../bin/sotf_daemon.rs");
+    let source = daemon_source();
 
     assert!(
         source.contains("\"selected_device\": selected_device")
@@ -434,8 +446,13 @@ fn configbar_plugin_edit_sheet_batches_parameter_edits_until_apply_or_close() {
 #[test]
 fn configbar_and_daemon_support_isolated_lab_runtime_paths() {
     let configbar = include_str!("../configbar/src/ConfigBar.swift");
-    let daemon = include_str!("../bin/sotf_daemon.rs");
-    let security = include_str!("../bin/security.rs");
+    let daemon = daemon_source();
+    let security = [
+        include_str!("../bin/security.rs"),
+        include_str!("../bin/security/get.rs"),
+        include_str!("../bin/security/misc.rs"),
+    ]
+    .join("\n");
     let justfile = include_str!("../../../../../Justfile");
 
     assert!(

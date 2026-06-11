@@ -15,6 +15,30 @@ Per-band dynamic range compression with 2-5 frequency bands and independent comp
 @section Parameters
 
 
+@subsection Global
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Bands} @tab Int @tab 2 .. 5 @tab 3 @tab - @tab Number of frequency bands
+@item @code{Preset} @tab Int @tab 0 .. 3 @tab 1 @tab - @tab Crossover frequency preset
+@item @code{Crossover 1} @tab Float @tab 20 .. 500 @tab 200 @tab Hz @tab Low/mid split frequency
+@item @code{Crossover 2} @tab Float @tab 500 .. 5000 @tab 2000 @tab Hz @tab Mid/high split frequency
+@item @code{Crossover 3} @tab Float @tab 5000 .. 15000 @tab 8000 @tab Hz @tab High/air split frequency
+@item @code{Crossover 4} @tab Float @tab 10000 .. 18000 @tab 12000 @tab Hz @tab Band 4/5 split frequency
+@item @code{Threshold} @tab Float @tab -60 .. 0 @tab -20 @tab dB @tab Global compression threshold
+@item @code{Ratio} @tab Float @tab 1 .. 20 @tab 4 @tab :1 @tab Global compression ratio
+@item @code{Attack} @tab Float @tab 0.1 .. 100 @tab 5 @tab ms @tab Global attack time
+@item @code{Release} @tab Float @tab 10 .. 1000 @tab 50 @tab ms @tab Global release time
+@item @code{Knee} @tab Float @tab 0 .. 20 @tab 6 @tab dB @tab Global knee softness
+@item @code{Mix} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Dry/wet blend
+@item @code{Link Channels} @tab Bool @tab On / Off @tab Linked @tab - @tab Stereo-link detector for L/R
+@item @code{Lookahead} @tab Float @tab 0 .. 20 @tab 0 @tab ms @tab Per-band pre-delay
+@item @code{M/S Mode} @tab Bool @tab On / Off @tab Off @tab - @tab Mid/Side processing mode
+@item @code{Sidechain Tilt} @tab Float @tab -6 .. 6 @tab 0 @tab dB @tab Detection tilt: +dB = more HF sensitive, -dB = more LF sensitive
+@item @code{Link Amount} @tab Float @tab 0 .. 1 @tab 1 @tab % @tab Channel linking: 0%=independent, 100%=linked
+@end multitable
+
+
 @subsection Per-band parameters
 
 The following parameters are repeated for each band:

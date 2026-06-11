@@ -14,7 +14,13 @@ Merges previously split frequency bands back into a single signal.
 @node band-merge Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Bands} @tab Int @tab 2 .. 8 @tab 2 @tab - @tab Number of bands to recombine
+@end multitable
 
 
 @strong{Structural parameters} (Bands) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.

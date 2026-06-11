@@ -55,3 +55,85 @@ pub fn clamp_cuts_to_envelope(x: &[f64], envelope: &[(f64, f64)], peq_model: Peq
     }
     clamped
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_gains_to_envelope_clamps_boosts_above_limit() {
+        // One PK filter: freq=1000 Hz (log10=3.0), Q=1.0, gain=+10 dB
+        let x = vec![3.0, 1.0, 10.0];
+        // Envelope allows max 6 dB at 1000 Hz
+        let envelope = vec![(100.0, 12.0), (1000.0, 6.0), (10000.0, 3.0)];
+        let clamped = clamp_gains_to_envelope(&x, &envelope, PeqModel::Pk);
+        assert!(
+            (clamped[2] - 6.0).abs() < 1e-12,
+            "boost should be clamped to envelope"
+        );
+    }
+
+    #[test]
+    fn clamp_gains_to_envelope_leaves_boosts_below_limit_unchanged() {
+        let x = vec![3.0, 1.0, 4.0];
+        let envelope = vec![(100.0, 12.0), (1000.0, 6.0), (10000.0, 3.0)];
+        let clamped = clamp_gains_to_envelope(&x, &envelope, PeqModel::Pk);
+        assert!(
+            (clamped[2] - 4.0).abs() < 1e-12,
+            "boost below envelope should stay unchanged"
+        );
+    }
+
+    #[test]
+    fn clamp_gains_to_envelope_leaves_cuts_unchanged() {
+        let x = vec![3.0, 1.0, -8.0];
+        let envelope = vec![(100.0, 12.0), (1000.0, 6.0), (10000.0, 3.0)];
+        let clamped = clamp_gains_to_envelope(&x, &envelope, PeqModel::Pk);
+        assert!(
+            (clamped[2] - (-8.0)).abs() < 1e-12,
+            "cuts should not be affected by gain clamping"
+        );
+    }
+
+    #[test]
+    fn clamp_cuts_to_envelope_clamps_cuts_below_limit() {
+        // One PK filter: freq=1000 Hz, Q=1.0, gain=-10 dB
+        let x = vec![3.0, 1.0, -10.0];
+        // Envelope allows max cut of -6 dB at 1000 Hz (negative value)
+        let envelope = vec![(100.0, -12.0), (1000.0, -6.0), (10000.0, -3.0)];
+        let clamped = clamp_cuts_to_envelope(&x, &envelope, PeqModel::Pk);
+        assert!(
+            (clamped[2] - (-6.0)).abs() < 1e-12,
+            "cut should be clamped to envelope"
+        );
+    }
+
+    #[test]
+    fn clamp_cuts_to_envelope_leaves_cuts_above_limit_unchanged() {
+        let x = vec![3.0, 1.0, -4.0];
+        let envelope = vec![(100.0, -12.0), (1000.0, -6.0), (10000.0, -3.0)];
+        let clamped = clamp_cuts_to_envelope(&x, &envelope, PeqModel::Pk);
+        assert!(
+            (clamped[2] - (-4.0)).abs() < 1e-12,
+            "cut above envelope limit should stay unchanged"
+        );
+    }
+
+    #[test]
+    fn clamp_cuts_to_envelope_leaves_boosts_unchanged() {
+        let x = vec![3.0, 1.0, 8.0];
+        let envelope = vec![(100.0, -12.0), (1000.0, -6.0), (10000.0, -3.0)];
+        let clamped = clamp_cuts_to_envelope(&x, &envelope, PeqModel::Pk);
+        assert!(
+            (clamped[2] - 8.0).abs() < 1e-12,
+            "boosts should not be affected by cut clamping"
+        );
+    }
+
+    #[test]
+    fn clamp_gains_to_envelope_empty_envelope_allows_anything() {
+        let x = vec![3.0, 1.0, 20.0];
+        let clamped = clamp_gains_to_envelope(&x, &[], PeqModel::Pk);
+        assert!((clamped[2] - 20.0).abs() < 1e-12);
+    }
+}

@@ -846,4 +846,112 @@ mod tests {
         let result = parse_system_message(&[0xF2, 0x00]);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_polyphonic_aftertouch_too_short() {
+        assert!(MidiMessage::from_bytes(&[0xA0, 60]).is_err());
+    }
+
+    #[test]
+    fn test_polyphonic_aftertouch_high_bit_data() {
+        assert!(MidiMessage::from_bytes(&[0xA0, 60, 0x80]).is_err());
+    }
+
+    #[test]
+    fn test_program_change_high_bit_data() {
+        assert!(MidiMessage::from_bytes(&[0xC0, 0x80]).is_err());
+    }
+
+    #[test]
+    fn test_channel_aftertouch_high_bit_data() {
+        assert!(MidiMessage::from_bytes(&[0xD0, 0x80]).is_err());
+    }
+
+    #[test]
+    fn test_note_off_too_short() {
+        assert!(MidiMessage::from_bytes(&[0x80, 60]).is_err());
+    }
+
+    #[test]
+    fn test_note_off_high_bit_data() {
+        assert!(MidiMessage::from_bytes(&[0x80, 60, 0x80]).is_err());
+    }
+
+    #[test]
+    fn test_control_change_high_bit_data() {
+        assert!(MidiMessage::from_bytes(&[0xB0, 7, 0x80]).is_err());
+    }
+
+    #[test]
+    fn test_pitch_bend_high_bit_data() {
+        assert!(MidiMessage::from_bytes(&[0xE0, 0, 0x80]).is_err());
+    }
+
+    #[test]
+    fn test_song_position_pointer_valid() {
+        let msg = MidiMessage::from_bytes(&[0xF2, 0x7F, 0x7F]).unwrap();
+        assert_eq!(
+            msg,
+            MidiMessage::System {
+                status: 0xF2,
+                data: [0x7F, 0x7F],
+                len: 2
+            }
+        );
+    }
+
+    #[test]
+    fn test_song_position_pointer_too_short() {
+        assert!(MidiMessage::from_bytes(&[0xF2, 0x7F]).is_err());
+    }
+
+    #[test]
+    fn test_song_select_valid() {
+        let msg = MidiMessage::from_bytes(&[0xF3, 0x7F]).unwrap();
+        assert_eq!(
+            msg,
+            MidiMessage::System {
+                status: 0xF3,
+                data: [0x7F, 0],
+                len: 1
+            }
+        );
+    }
+
+    #[test]
+    fn test_song_select_too_short() {
+        assert!(MidiMessage::from_bytes(&[0xF3]).is_err());
+    }
+
+    #[test]
+    fn test_system_realtime_start() {
+        let msg = MidiMessage::from_bytes(&[0xFA]).unwrap();
+        assert_eq!(
+            msg,
+            MidiMessage::System {
+                status: 0xFA,
+                data: [0, 0],
+                len: 0
+            }
+        );
+        let mut out = [0u8; 3];
+        let n = msg.write_to(&mut out);
+        assert_eq!(n, 1);
+        assert_eq!(&out[..n], &[0xFA]);
+    }
+
+    #[test]
+    fn test_from_bytes_with_status_delegates_when_status_present() {
+        // When bytes already start with a status byte, from_bytes_with_status
+        // should delegate directly to from_bytes regardless of running_status.
+        let msg = MidiMessage::from_bytes_with_status(&[0x90, 60, 100], Some(0xB0)).unwrap();
+        assert_eq!(
+            msg,
+            MidiMessage::NoteOn {
+                channel: 0,
+                note: 60,
+                velocity: 100
+            }
+        );
+    }
 }

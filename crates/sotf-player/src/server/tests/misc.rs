@@ -175,15 +175,15 @@ pub(super) fn test_state() -> Arc<ServerState> {
         })
 }
 
-pub(super) async fn spawn_test_api_server(
+pub(super) async fn try_spawn_test_api_server(
     state: Arc<ServerState>,
-) -> (
+) -> std::io::Result<(
     std::net::SocketAddr,
     tokio::sync::watch::Sender<bool>,
     tokio::task::JoinHandle<Result<(), String>>,
-) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+)> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let handle = tokio::spawn(run_sotf_api_server(
         api_settings(Some("secret")),
@@ -191,7 +191,7 @@ pub(super) async fn spawn_test_api_server(
         listener,
         shutdown_rx,
     ));
-    (addr, shutdown_tx, handle)
+    Ok((addr, shutdown_tx, handle))
 }
 
 pub(super) async fn stop_test_api_server(

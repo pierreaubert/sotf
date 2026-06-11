@@ -166,4 +166,67 @@ mod denorm_tests {
             assert_eq!(*s, 0.0);
         }
     }
+
+    #[test]
+    fn test_flush_denormals_large_buffer() {
+        let mut samples = vec![1e-39_f32; 1000];
+        flush_denormals_inplace(&mut samples);
+        for s in samples.iter() {
+            assert_eq!(*s, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_flush_denormals_all_normal() {
+        let mut samples = [1.0f32, -1.0, 0.5, -0.5, 1e-30, -1e-30];
+        flush_denormals_inplace(&mut samples);
+        assert_eq!(samples[0], 1.0);
+        assert_eq!(samples[1], -1.0);
+        assert_eq!(samples[2], 0.5);
+        assert_eq!(samples[3], -0.5);
+        assert_eq!(samples[4], 1e-30);
+        assert_eq!(samples[5], -1e-30);
+    }
+
+    #[test]
+    fn test_flush_denormals_mixed() {
+        let mut samples = [1.0f32, 1e-39, -1e-39, 0.5, 1e-39, -0.5, 1e-39];
+        flush_denormals_inplace(&mut samples);
+        assert_eq!(samples[0], 1.0);
+        assert_eq!(samples[1], 0.0);
+        assert_eq!(samples[2], 0.0);
+        assert_eq!(samples[3], 0.5);
+        assert_eq!(samples[4], 0.0);
+        assert_eq!(samples[5], -0.5);
+        assert_eq!(samples[6], 0.0);
+    }
+
+    #[test]
+    fn test_flush_denormals_min_positive_boundary() {
+        // f32::MIN_POSITIVE is the boundary; values at or above should NOT be zeroed
+        let mut samples = [f32::MIN_POSITIVE, f32::MIN_POSITIVE * 0.5];
+        flush_denormals_inplace(&mut samples);
+        assert!(samples[0] != 0.0, "f32::MIN_POSITIVE should not be zeroed");
+        assert_eq!(
+            samples[1], 0.0,
+            "half of MIN_POSITIVE is subnormal and should be zeroed"
+        );
+    }
+
+    #[test]
+    fn test_flush_denormals_complex_mixed() {
+        use rustfft::num_complex::Complex;
+        let mut samples = [
+            Complex::new(1.0f32, 1e-39_f32),
+            Complex::new(1e-39_f32, 1.0),
+            Complex::new(1e-39_f32, 1e-39_f32),
+        ];
+        flush_denormals_complex_inplace(&mut samples);
+        assert_eq!(samples[0].re, 1.0);
+        assert_eq!(samples[0].im, 0.0);
+        assert_eq!(samples[1].re, 0.0);
+        assert_eq!(samples[1].im, 1.0);
+        assert_eq!(samples[2].re, 0.0);
+        assert_eq!(samples[2].im, 0.0);
+    }
 }

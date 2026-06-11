@@ -26,15 +26,6 @@ Converts mono signals to stereo output.
 @item @code{Freq Dependent} @tab Bool @tab On / Off @tab On @tab - @tab Vary width by frequency band
 @end multitable
 
-
-@subsection EQ
-
-@multitable @columnfractions .22 .18 .15 .10 .08 .27
-@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Comp EQ} @tab Bool @tab On / Off @tab On @tab - @tab Compensate comb filter coloration
-@item @code{Comp EQ Depth} @tab Float @tab 0 .. 3 @tab 1 @tab dB @tab Compensation EQ strength
-@end multitable
-
 @node mono-to-stereo Plugin Developer Guide
 @section Developer Guide
 

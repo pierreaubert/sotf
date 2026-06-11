@@ -123,7 +123,7 @@ impl PlayerView {
             .when(any_active, |row| {
                 let tracks = state.app.library_state.scan_progress_tracks;
                 let total = state.app.scan_total_files;
-                let progress = if total > 0 {
+                let progress = if total > 0 && tracks < total {
                     Some((tracks as f32 / total as f32).clamp(0.0, 1.0))
                 } else {
                     None
@@ -167,45 +167,37 @@ impl PlayerView {
             })
             .when(any_active, |row| {
                 let mgr = &state.app.scan_ctrl.waveform_manager;
-                let (progress, detail) = if mgr.total > 0 && mgr.processed >= mgr.total && !waveform_active {
-                    (Some(1.0), "done".to_string())
-                } else if mgr.total > 0 {
-                    (
-                        Some((mgr.progress() / 100.0).clamp(0.0, 1.0)),
-                        format!("{}/{}", mgr.processed, mgr.total),
-                    )
-                } else if waveform_active {
-                    (Some(0.0), "starting".to_string())
-                } else {
-                    (Some(0.0), "pending".to_string())
-                };
-                row.child(self.render_scan_status_item(
-                    "Wave",
-                    progress,
-                    detail,
-                    &theme,
-                ))
+                let (progress, detail) =
+                    if mgr.total > 0 && mgr.processed >= mgr.total && !waveform_active {
+                        (Some(1.0), "done".to_string())
+                    } else if mgr.total > 0 {
+                        (
+                            Some((mgr.progress() / 100.0).clamp(0.0, 1.0)),
+                            format!("{}/{}", mgr.processed, mgr.total),
+                        )
+                    } else if waveform_active {
+                        (Some(0.0), "starting".to_string())
+                    } else {
+                        (Some(0.0), "pending".to_string())
+                    };
+                row.child(self.render_scan_status_item("Wave", progress, detail, &theme))
             })
             .when(any_active, |row| {
                 let mgr = &state.app.scan_ctrl.bliss_manager;
-                let (progress, detail) = if mgr.total > 0 && mgr.processed >= mgr.total && !bliss_active {
-                    (Some(1.0), "done".to_string())
-                } else if mgr.total > 0 {
-                    (
-                        Some((mgr.progress() / 100.0).clamp(0.0, 1.0)),
-                        format!("{}/{}", mgr.processed, mgr.total),
-                    )
-                } else if bliss_active {
-                    (Some(0.0), "starting".to_string())
-                } else {
-                    (Some(0.0), "pending".to_string())
-                };
-                row.child(self.render_scan_status_item(
-                    "Bliss",
-                    progress,
-                    detail,
-                    &theme,
-                ))
+                let (progress, detail) =
+                    if mgr.total > 0 && mgr.processed >= mgr.total && !bliss_active {
+                        (Some(1.0), "done".to_string())
+                    } else if mgr.total > 0 {
+                        (
+                            Some((mgr.progress() / 100.0).clamp(0.0, 1.0)),
+                            format!("{}/{}", mgr.processed, mgr.total),
+                        )
+                    } else if bliss_active {
+                        (Some(0.0), "starting".to_string())
+                    } else {
+                        (Some(0.0), "pending".to_string())
+                    };
+                row.child(self.render_scan_status_item("Bliss", progress, detail, &theme))
             })
             .child(div().flex_1())
             .child(
@@ -275,6 +267,12 @@ impl PlayerView {
             .map(Self::format_scan_duration)
             .unwrap_or_else(|| "--".to_string());
         let phase = if phase.is_empty() { "Scanning" } else { phase };
+
+        if total > 0 && tracks >= total {
+            return format!(
+                "Finalizing library: {tracks}/{total} tracks scanned | merging albums + saving DB | {elapsed} elapsed"
+            );
+        }
 
         if total > 0 {
             format!(

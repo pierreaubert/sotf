@@ -185,3 +185,177 @@ fn test_icy_radio_field_get_set() {
     config.set_field_value(1, "My Radio");
     assert_eq!(config.field_value(1), "My Radio");
 }
+
+// =========================================================================
+// set_field_value comprehensive coverage
+// =========================================================================
+
+#[test]
+fn test_set_field_value_subsonic() {
+    let mut config = SourceConnectionConfig::default_for_type("subsonic");
+    config.set_field_value(0, "https://new.example.com");
+    assert_eq!(config.field_value(0), "https://new.example.com");
+
+    config.set_field_value(1, "newuser");
+    assert_eq!(config.field_value(1), "newuser");
+
+    config.set_field_value(2, "secret");
+    assert_eq!(config.field_value(2), "******");
+
+    config.set_field_value(3, "true");
+    assert_eq!(config.field_value(3), "true");
+
+    config.set_field_value(3, "false");
+    assert_eq!(config.field_value(3), "false");
+}
+
+#[test]
+fn test_set_field_value_mpd() {
+    let mut config = SourceConnectionConfig::default_for_type("mpd");
+
+    config.set_field_value(0, "  192.168.1.5  ");
+    assert_eq!(config.field_value(0), "192.168.1.5");
+
+    config.set_field_value(1, "6601");
+    assert_eq!(config.field_value(1), "6601");
+
+    config.set_field_value(2, "Password");
+    assert_eq!(config.field_value(2), "Password");
+
+    config.set_field_value(3, "mypassword");
+    assert_eq!(config.field_value(3), "********");
+
+    config.set_field_value(3, "");
+    assert_eq!(config.field_value(3), "");
+
+    config.set_field_value(4, "6602");
+    assert_eq!(config.field_value(4), "6602");
+}
+
+#[test]
+fn test_set_field_value_mpd_port_parse_error() {
+    let mut config = SourceConnectionConfig::default_for_type("mpd");
+    let original_port = config.field_value(1);
+    config.set_field_value(1, "not_a_number");
+    assert_eq!(config.field_value(1), original_port);
+}
+
+#[test]
+fn test_set_field_value_mpd_auth_mode_variants() {
+    let mut config = SourceConnectionConfig::Mpd {
+        host: "localhost".to_string(),
+        port: 6600,
+        auth_mode: MpdClientAuthMode::None,
+        password: None,
+        httpd_port: 6601,
+    };
+
+    config.set_field_value(2, "Password");
+    assert_eq!(config.field_value(2), "Password");
+
+    config.set_field_value(2, "SSL");
+    assert_eq!(config.field_value(2), "SSL");
+
+    config.set_field_value(2, "None");
+    assert_eq!(config.field_value(2), "None");
+
+    config.set_field_value(2, "Unknown");
+    assert_eq!(config.field_value(2), "None");
+}
+
+#[test]
+fn test_set_field_value_dlna_empty_becomes_none() {
+    let mut config = SourceConnectionConfig::default_for_type("dlna");
+
+    config.set_field_value(0, "http://example.com");
+    assert_eq!(config.field_value(0), "http://example.com");
+
+    config.set_field_value(0, "");
+    assert_eq!(config.field_value(0), "");
+
+    config.set_field_value(1, "Living Room");
+    assert_eq!(config.field_value(1), "Living Room");
+
+    config.set_field_value(1, "");
+    assert_eq!(config.field_value(1), "");
+}
+
+#[test]
+fn test_set_field_value_peer() {
+    let mut config = SourceConnectionConfig::default_for_type("peer");
+
+    config.set_field_value(0, "  10.0.0.5  ");
+    assert_eq!(config.field_value(0), "10.0.0.5");
+
+    config.set_field_value(1, "8733");
+    assert_eq!(config.field_value(1), "8733");
+
+    config.set_field_value(2, "AA:BB:CC");
+    assert_eq!(config.field_value(2), "AA:BB:CC");
+
+    config.set_field_value(2, "");
+    assert_eq!(config.field_value(2), "");
+
+    config.set_field_value(2, "  DD:EE:FF  ");
+    assert_eq!(config.field_value(2), "DD:EE:FF");
+
+    config.set_field_value(3, "mytoken");
+    assert_eq!(config.field_value(3), "*******");
+
+    config.set_field_value(3, "");
+    assert_eq!(config.field_value(3), "");
+
+    config.set_field_value(3, "  ");
+    assert_eq!(config.field_value(3), "");
+}
+
+#[test]
+fn test_set_field_value_tidal() {
+    let mut config = SourceConnectionConfig::default_for_type("tidal");
+
+    config.set_field_value(0, "token123");
+    assert_eq!(config.field_value(0), "********");
+
+    config.set_field_value(1, "HI_RES_LOSSLESS");
+    assert_eq!(config.field_value(1), "HI_RES_LOSSLESS");
+
+    config.set_field_value(2, "US");
+    assert_eq!(config.field_value(2), "US");
+}
+
+#[test]
+fn test_set_field_value_spotify() {
+    let mut config = SourceConnectionConfig::default_for_type("spotify");
+
+    config.set_field_value(0, "user123");
+    assert_eq!(config.field_value(0), "user123");
+
+    config.set_field_value(1, "pass123");
+    assert_eq!(config.field_value(1), "*******");
+
+    config.set_field_value(2, "Very High");
+    assert_eq!(config.field_value(2), "Very High");
+}
+
+#[test]
+fn test_set_field_value_icy_radio() {
+    let mut config = SourceConnectionConfig::default_for_type("icy_radio");
+
+    config.set_field_value(0, "http://radio.example.com:8000/stream");
+    assert_eq!(
+        config.field_value(0),
+        "http://radio.example.com:8000/stream"
+    );
+
+    config.set_field_value(1, "My Station");
+    assert_eq!(config.field_value(1), "My Station");
+}
+
+#[test]
+fn test_set_field_value_out_of_bounds() {
+    let mut config = SourceConnectionConfig::default_for_type("subsonic");
+    // Setting an out-of-bounds index should be a no-op (not panic)
+    config.set_field_value(99, "value");
+    // Values should remain unchanged
+    assert_eq!(config.field_value(0), "https://");
+}

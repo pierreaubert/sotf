@@ -689,6 +689,323 @@ fn test_parse_no_trailing_tokens_ok() {
     ));
 }
 
+#[test]
+fn test_parse_password() {
+    match parse_command("password secret123") {
+        Ok(MpdCommand::Password(pw)) => assert_eq!(pw, "secret123"),
+        other => panic!("unexpected: {other:?}"),
+    }
+    // password with no argument
+    match parse_command("password") {
+        Ok(MpdCommand::Password(pw)) => assert_eq!(pw, ""),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_stats_shuffle_urlhandlers() {
+    assert!(matches!(parse_command("stats"), Ok(MpdCommand::Stats)));
+    assert!(matches!(parse_command("shuffle"), Ok(MpdCommand::Shuffle)));
+    assert!(matches!(
+        parse_command("urlhandlers"),
+        Ok(MpdCommand::UrlHandlers)
+    ));
+}
+
+#[test]
+fn test_parse_deleteid() {
+    match parse_command("deleteid 42") {
+        Ok(MpdCommand::DeleteId(id)) => assert_eq!(id, 42),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_idle_no_subsystems() {
+    match parse_command("idle") {
+        Ok(MpdCommand::Idle(subsystems)) => assert!(subsystems.is_empty()),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_find_search_count_list_no_filters() {
+    assert!(matches!(
+        parse_command("find"),
+        Ok(MpdCommand::Find(filters)) if filters.is_empty()
+    ));
+    assert!(matches!(
+        parse_command("search"),
+        Ok(MpdCommand::Search(filters)) if filters.is_empty()
+    ));
+    assert!(matches!(
+        parse_command("count"),
+        Ok(MpdCommand::Count(filters)) if filters.is_empty()
+    ));
+}
+
+#[test]
+fn test_parse_missing_required_arguments() {
+    // setvol missing volume
+    assert!(matches!(
+        parse_command("setvol"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // volume missing delta
+    assert!(matches!(
+        parse_command("volume"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // random missing bool
+    assert!(matches!(
+        parse_command("random"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // repeat missing bool
+    assert!(matches!(
+        parse_command("repeat"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // single missing mode
+    assert!(matches!(
+        parse_command("single"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // consume missing bool
+    assert!(matches!(
+        parse_command("consume"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // seekid missing args
+    assert!(matches!(
+        parse_command("seekid"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    assert!(matches!(
+        parse_command("seekid 5"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // seekcur missing arg
+    assert!(matches!(
+        parse_command("seekcur"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // add missing uri
+    assert!(matches!(
+        parse_command("add"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // addid missing uri
+    assert!(matches!(
+        parse_command("addid"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // delete missing pos
+    assert!(matches!(
+        parse_command("delete"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // deleteid missing id
+    assert!(matches!(
+        parse_command("deleteid"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // move missing args
+    assert!(matches!(
+        parse_command("move"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    assert!(matches!(
+        parse_command("move 1"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // swap missing args
+    assert!(matches!(
+        parse_command("swap"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    assert!(matches!(
+        parse_command("swap 1"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // enableoutput missing id
+    assert!(matches!(
+        parse_command("enableoutput"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // disableoutput missing id
+    assert!(matches!(
+        parse_command("disableoutput"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+    // toggleoutput missing id
+    assert!(matches!(
+        parse_command("toggleoutput"),
+        Err(MpdError {
+            code: MpdErrorCode::Arg,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn test_parse_trailing_tokens_more_commands() {
+    for input in [
+        "status extra",
+        "stats extra",
+        "currentsong extra",
+        "setvol 50 extra",
+        "volume 10 extra",
+        "random 1 extra",
+        "repeat 0 extra",
+        "single 0 extra",
+        "consume 1 extra",
+        "seek 1 10.0 extra",
+        "seekid 1 10.0 extra",
+        "seekcur 5.0 extra",
+        "add uri extra",
+        "delete 0 extra",
+        "deleteid 0 extra",
+        "clear extra",
+        "shuffle extra",
+        "outputs extra",
+        "enableoutput 0 extra",
+        "disableoutput 0 extra",
+        "toggleoutput 0 extra",
+        "commands extra",
+        "notcommands extra",
+        "tagtypes extra",
+        "urlhandlers extra",
+        "decoders extra",
+        "command_list_begin extra",
+        "command_list_ok_begin extra",
+        "command_list_end extra",
+        "noidle extra",
+    ] {
+        match parse_command(input) {
+            Err(MpdError {
+                code: MpdErrorCode::Arg,
+                ..
+            }) => {}
+            other => panic!("expected Arg error for {input:?}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_parse_setvol_zero_and_max() {
+    match parse_command("setvol 0") {
+        Ok(MpdCommand::SetVol(v)) => assert_eq!(v, 0),
+        other => panic!("unexpected: {other:?}"),
+    }
+    match parse_command("setvol 100") {
+        Ok(MpdCommand::SetVol(v)) => assert_eq!(v, 100),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_filter_exprs_odd_tokens() {
+    // Odd number of tokens after command: last tag has no value and is dropped
+    match parse_command("find artist \"Pink Floyd\" album") {
+        Ok(MpdCommand::Find(filters)) => {
+            assert_eq!(filters.len(), 1);
+            assert_eq!(filters[0].tag, "artist");
+            assert_eq!(filters[0].value, "Pink Floyd");
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_range_directly_open_end() {
+    let mut parts = super::command_tokenizer::CommandTokenizer::new("5:");
+    match super::parse::parse_range(&mut parts) {
+        Some((start, end)) => {
+            assert_eq!(start, 5);
+            assert_eq!(end, None);
+        }
+        None => panic!("expected Some"),
+    }
+}
+
+#[test]
+fn test_parse_range_directly_closed() {
+    let mut parts = super::command_tokenizer::CommandTokenizer::new("3:7");
+    match super::parse::parse_range(&mut parts) {
+        Some((start, end)) => {
+            assert_eq!(start, 3);
+            assert_eq!(end, Some(7));
+        }
+        None => panic!("expected Some"),
+    }
+}
+
+#[test]
+fn test_parse_range_directly_invalid() {
+    let mut parts = super::command_tokenizer::CommandTokenizer::new("abc");
+    assert_eq!(super::parse::parse_range(&mut parts), None);
+    let mut parts = super::command_tokenizer::CommandTokenizer::new("abc:def");
+    assert_eq!(super::parse::parse_range(&mut parts), None);
+}
+
 // ============================================================================
 // Property-Based Tests
 // ============================================================================

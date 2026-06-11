@@ -14,10 +14,16 @@ Reduces high-frequency hiss and tape noise while preserving program content.
 @node hiss-reducer Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
 
+@subsection General
 
-@strong{Structural parameters} (Low Latency) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Enabled} @tab Bool @tab On / Off @tab On @tab - @tab Enable high-frequency hiss reduction
+@item @code{Threshold} @tab Float @tab -60 .. -10 @tab -30 @tab dB @tab SNR threshold for stationary hiss detection
+@item @code{Frequency} @tab Float @tab 1000 .. 16000 @tab 4000 @tab Hz @tab Frequency above which hiss reduction applies
+@item @code{Strength} @tab Float @tab 0 .. 1 @tab 0.5 @tab - @tab Hiss attenuation strength
+@end multitable
 
 @node hiss-reducer Plugin Developer Guide
 @section Developer Guide

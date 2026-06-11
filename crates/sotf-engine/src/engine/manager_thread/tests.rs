@@ -699,3 +699,138 @@ fn test_start_network_stream_server_updates_state_and_publishes_audio() {
 
     server.shutdown();
 }
+
+#[test]
+fn test_handle_thread_event_decoder_end_of_stream() {
+    let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+        playback_state: PlaybackState::Playing,
+        ..AudioEngineState::default()
+    }));
+
+    handle_thread_event(ThreadEvent::DecoderEndOfStream, &state);
+
+    // State should remain unchanged
+    let s = state.load();
+    assert_eq!(s.playback_state, PlaybackState::Playing);
+}
+
+#[test]
+fn test_handle_thread_event_decoder_gapless_transition() {
+    let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+    let source = crate::decoder::AudioSource::File(std::path::PathBuf::from("/tmp/test.wav"));
+
+    handle_thread_event(ThreadEvent::DecoderGaplessTransition(source), &state);
+
+    let s = state.load();
+    assert_eq!(
+        s.current_file,
+        Some(std::path::PathBuf::from("/tmp/test.wav"))
+    );
+    assert!(s.current_source.is_some());
+    assert_eq!(s.position, 0.0);
+}
+
+#[test]
+fn test_handle_thread_event_playback_drained() {
+    let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+        playback_state: PlaybackState::Playing,
+        last_error: Some("previous error".to_string()),
+        ..AudioEngineState::default()
+    }));
+
+    handle_thread_event(ThreadEvent::PlaybackDrained, &state);
+
+    let s = state.load();
+    assert_eq!(s.playback_state, PlaybackState::Stopped);
+    assert!(s.last_error.is_none());
+}
+
+#[test]
+fn test_handle_thread_event_decoder_error() {
+    let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+        playback_state: PlaybackState::Playing,
+        ..AudioEngineState::default()
+    }));
+
+    handle_thread_event(
+        ThreadEvent::DecoderError("decode failed".to_string()),
+        &state,
+    );
+
+    let s = state.load();
+    assert_eq!(s.playback_state, PlaybackState::Stopped);
+    assert_eq!(s.last_error.as_deref(), Some("decode failed"));
+}
+
+#[test]
+fn test_handle_thread_event_thread_panic() {
+    let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+        playback_state: PlaybackState::Playing,
+        ..AudioEngineState::default()
+    }));
+
+    handle_thread_event(ThreadEvent::ThreadPanic("playback".to_string()), &state);
+
+    let s = state.load();
+    assert_eq!(s.playback_state, PlaybackState::Stopped);
+    assert_eq!(s.last_error.as_deref(), Some("Thread panicked: playback"));
+}
+
+#[test]
+fn test_handle_thread_event_seek_complete() {
+    let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+        seeking: true,
+        ..AudioEngineState::default()
+    }));
+
+    handle_thread_event(ThreadEvent::SeekComplete, &state);
+
+    assert!(!state.load().seeking);
+}
+
+#[test]
+fn test_position_update_ignored_when_seeking() {
+    let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+        playback_state: PlaybackState::Playing,
+        seeking: true,
+        position: 1.0,
+        ..AudioEngineState::default()
+    }));
+
+    handle_thread_event(ThreadEvent::PositionUpdate(5.0), &state);
+
+    let s = state.load();
+    assert!((s.position - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn test_position_update_skips_latency_when_sample_rate_zero() {
+    let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+        playback_state: PlaybackState::Playing,
+        sample_rate: 0,
+        plugin_latency_samples: 4800,
+        ..AudioEngineState::default()
+    }));
+
+    handle_thread_event(ThreadEvent::PositionUpdate(5.0), &state);
+
+    let s = state.load();
+    assert!((s.position - 5.0).abs() < 1e-9);
+}
+
+#[test]
+fn test_latency_update_skips_position_shift_when_sample_rate_zero() {
+    let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+        sample_rate: 0,
+        plugin_latency_samples: 0,
+        position: 10.0,
+        latency_compensation_enabled: true,
+        ..AudioEngineState::default()
+    }));
+
+    handle_thread_event(ThreadEvent::PluginLatencyUpdate(4800), &state);
+
+    let s = state.load();
+    assert_eq!(s.plugin_latency_samples, 4800);
+    assert!((s.position - 10.0).abs() < 1e-9);
+}

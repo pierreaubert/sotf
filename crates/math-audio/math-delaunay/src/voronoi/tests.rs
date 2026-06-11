@@ -249,3 +249,251 @@ fn test_simplify_short_polygon_unchanged() {
     let s = v.simplify(Some(poly.clone())).unwrap();
     assert_eq!(s, poly);
 }
+
+// ============================================================================
+// Direct tests for internal Voronoi methods
+// ============================================================================
+
+#[test]
+fn test_edge_walks_corners_clockwise() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    // Walk from bottom-left (0b0001) to bottom-right (0b0010)
+    // via bottom-left corner (0b0101)
+    let mut poly = vec![0.0, 5.0];
+    let j = v.edge(0, 0b0001, 0b0010, &mut poly, 2);
+    assert!(j >= 2, "edge should insert at least one corner point");
+    // The inserted point should be near a corner of the bbox
+    assert!(poly.len() >= 4, "poly should have grown");
+}
+
+#[test]
+fn test_edge_e0_equals_e1_returns_immediately() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    let mut poly = vec![0.0, 0.0];
+    let j = v.edge(0, 0b0101, 0b0101, &mut poly, 0);
+    assert_eq!(j, 0, "edge with e0==e1 should return immediately");
+    assert_eq!(poly.len(), 2, "poly should be unchanged");
+}
+
+#[test]
+fn test_clip_segment_fully_inside() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    let seg = v.clip_segment(2.0, 2.0, 8.0, 8.0, 0, 0);
+    assert!(seg.is_some());
+    let s = seg.unwrap();
+    assert!((s[0] - 2.0).abs() < 1e-9);
+    assert!((s[1] - 2.0).abs() < 1e-9);
+    assert!((s[2] - 8.0).abs() < 1e-9);
+    assert!((s[3] - 8.0).abs() < 1e-9);
+}
+
+#[test]
+fn test_clip_segment_fully_outside() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    // Both points outside left side
+    let seg = v.clip_segment(-2.0, 5.0, -1.0, 5.0, 0b0001, 0b0001);
+    assert!(
+        seg.is_none(),
+        "segment fully outside should be clipped away"
+    );
+}
+
+#[test]
+fn test_clip_segment_crossing_left_boundary() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    let seg = v.clip_segment(-2.0, 5.0, 5.0, 5.0, 0b0001, 0);
+    assert!(seg.is_some());
+    let s = seg.unwrap();
+    assert!(
+        (s[0] - 0.0).abs() < 1e-9,
+        "clipped x0 should be on left boundary"
+    );
+    assert!((s[1] - 5.0).abs() < 1e-9);
+    assert!((s[2] - 5.0).abs() < 1e-9);
+    assert!((s[3] - 5.0).abs() < 1e-9);
+}
+
+#[test]
+fn test_clip_segment_crossing_top_boundary() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    let seg = v.clip_segment(5.0, 5.0, 5.0, 15.0, 0, 0b1000);
+    assert!(seg.is_some());
+    let s = seg.unwrap();
+    assert!(
+        (s[3] - 10.0).abs() < 1e-9,
+        "clipped y1 should be on top boundary"
+    );
+}
+
+#[test]
+fn test_clip_segment_flip_when_c0_less_than_c1() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    // c0=0b0001 (1), c1=0b1000 (8) → flip because 1 < 8
+    let seg = v.clip_segment(-2.0, 5.0, 5.0, 15.0, 0b0001, 0b1000);
+    assert!(seg.is_some());
+    let s = seg.unwrap();
+    // After flip, x0/y0 should correspond to the point that was originally x1/y1
+    // because c0 < c1 triggers a swap. The result is returned flipped back.
+    // Just verify it returns a valid segment within bounds.
+    assert!(s[0] >= 0.0 && s[0] <= 10.0);
+    assert!(s[1] >= 0.0 && s[1] <= 10.0);
+    assert!(s[2] >= 0.0 && s[2] <= 10.0);
+    assert!(s[3] >= 0.0 && s[3] <= 10.0);
+}
+
+#[test]
+fn test_project_zero_direction_returns_none() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    assert_eq!(v.project(5.0, 5.0, 0.0, 0.0), None);
+}
+
+#[test]
+fn test_project_from_center_to_all_boundaries() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    assert_eq!(v.project(5.0, 5.0, 0.0, -1.0), Some([5.0, 0.0]));
+    assert_eq!(v.project(5.0, 5.0, 1.0, 0.0), Some([10.0, 5.0]));
+    assert_eq!(v.project(5.0, 5.0, 0.0, 1.0), Some([5.0, 10.0]));
+    assert_eq!(v.project(5.0, 5.0, -1.0, 0.0), Some([0.0, 5.0]));
+}
+
+#[test]
+fn test_project_diagonal_to_corner() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    // From center, direction (1,1) should hit top or right boundary first
+    let p = v.project(5.0, 5.0, 1.0, 1.0);
+    assert!(p.is_some());
+    let [px, py] = p.unwrap();
+    // Should hit xmax=10 or ymax=10. Distance to xmax: 5, to ymax: 5, so corner.
+    assert!((px - 10.0).abs() < 1e-9 || (py - 10.0).abs() < 1e-9);
+}
+
+#[test]
+fn test_regioncode_corner_combinations() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    // bottom-left outside
+    assert_eq!(v.regioncode(-1.0, -1.0), 0b0101);
+    // bottom-right outside
+    assert_eq!(v.regioncode(11.0, -1.0), 0b0110);
+    // top-right outside
+    assert_eq!(v.regioncode(11.0, 11.0), 0b1010);
+    // top-left outside
+    assert_eq!(v.regioncode(-1.0, 11.0), 0b1001);
+}
+
+#[test]
+fn test_edgecode_on_corners() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    // Exact corners (within epsilon)
+    assert_eq!(v.edgecode(1e-12, 1e-12), 0b0101);
+    assert_eq!(v.edgecode(10.0 - 1e-12, 1e-12), 0b0110);
+    assert_eq!(v.edgecode(10.0 - 1e-12, 10.0 - 1e-12), 0b1010);
+    assert_eq!(v.edgecode(1e-12, 10.0 - 1e-12), 0b1001);
+}
+
+#[test]
+fn test_clip_finite_interior_point() {
+    let points = vec![(5.0, 5.0), (0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    // Point 0 is interior — its cell should be finite and clip_finite should handle it
+    let cell = v.cell_polygon(0);
+    assert!(cell.is_some(), "interior point should have a cell");
+    let poly = cell.unwrap();
+    assert!(poly.len() >= 3, "interior cell should be a polygon");
+}
+
+#[test]
+fn test_clip_finite_all_points_outside() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    // A polygon completely outside the bbox should return None or be empty
+    let outside = vec![20.0, 20.0, 25.0, 20.0, 25.0, 25.0];
+    let clipped = v.clip_finite(0, &outside);
+    assert!(
+        clipped.is_none() || clipped.as_ref().unwrap().is_empty(),
+        "fully outside polygon should produce no clipped result"
+    );
+}
+
+#[test]
+fn test_simplify_all_collinear_returns_none_or_short() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    // All points on a straight line — should simplify down to nothing or a segment
+    let poly = vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0];
+    let s = v.simplify(Some(poly));
+    // simplify returns None if p becomes empty, or a short poly if not enough to simplify
+    if let Some(p) = s {
+        assert!(
+            p.len() <= 4,
+            "all-collinear poly should collapse to a segment"
+        );
+    }
+}
+
+#[test]
+fn test_voronoi_new_and_accessors() {
+    let points = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 10.0, 10.0]);
+
+    assert_eq!(v.bounds(), [0.0, 0.0, 10.0, 10.0]);
+    assert_eq!(v.xmin(), 0.0);
+    assert_eq!(v.ymin(), 0.0);
+    assert_eq!(v.xmax(), 10.0);
+    assert_eq!(v.ymax(), 10.0);
+    assert_eq!(v.delaunay().len(), 3);
+    assert!(!v.circumcenters().is_empty());
+    assert_eq!(v.vectors().len(), 3 * 4);
+}
+
+#[test]
+fn test_voronoi_bbox_scale_and_epsilon_small() {
+    let points = vec![(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)];
+    let d = Delaunay::from_points(&points);
+    let v = d.voronoi([0.0, 0.0, 1.0, 1.0]);
+
+    assert!((v.bbox_scale() - 1.0).abs() < 1e-12);
+    assert!((v.epsilon() - 1e-9).abs() < 1e-12);
+}

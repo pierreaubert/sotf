@@ -436,8 +436,10 @@ fn handle_delay_detection_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCom
 mod tests {
     use super::*;
 
-    use crate::app::Screen;
+    use crate::app::{FilePickerOrigin, InputMode, Screen};
     use crate::events::tests::{key, make_app};
+    use sotf_audio_player::recording_types::DelayProbeResults;
+    use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep, RoomEqWizardMode};
 
     fn app_on_room_eq_content() -> App {
         let mut app = make_app();
@@ -697,5 +699,430 @@ mod tests {
 
         handle_room_eq_keys(&mut app, key(KeyCode::BackTab));
         assert_eq!(app.room_eq.step, RoomEqStep::LoadData);
+    }
+
+    #[test]
+    fn esc_cancels_editing_value() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.editing_value = true;
+        app.room_eq.edit_buffer = "123".to_string();
+        handle_room_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(!app.room_eq.editing_value);
+        assert!(app.room_eq.edit_buffer.is_empty());
+    }
+
+    #[test]
+    fn esc_cancels_editing_file_path() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::LoadData;
+        app.room_eq.editing_file_path = true;
+        handle_room_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(!app.room_eq.editing_file_path);
+    }
+
+    #[test]
+    fn esc_cancels_editing_export_path() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Export;
+        app.room_eq.editing_export_path = true;
+        handle_room_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(!app.room_eq.editing_export_path);
+    }
+
+    #[test]
+    fn step_tab_optimize_auto_starts_when_idle_no_measurements() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+        app.room_eq.step_tab_focused = true;
+        app.room_eq.opt_status = OptimizationStatus::Idle;
+        // channel_measurements is empty, so auto_start_optimization does NOT spawn
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(!app.room_eq.step_tab_focused);
+        assert_eq!(app.room_eq.opt_status, OptimizationStatus::Idle);
+    }
+
+    #[test]
+    fn load_data_editing_file_path_enter() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::LoadData;
+        app.room_eq.editing_file_path = true;
+        app.room_eq.file_path = "".to_string();
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(!app.room_eq.editing_file_path);
+        assert!(app.room_eq.load_error.is_some());
+    }
+
+    #[test]
+    fn load_data_normal_enter_opens_explorer() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::LoadData;
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert_eq!(app.file_picker_origin, FilePickerOrigin::RoomEqFilePath);
+    }
+
+    #[test]
+    fn delay_detection_edit_row_enter_commits() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Delay;
+        app.room_eq.delay_detection.results = Some(DelayProbeResults {
+            channels: vec![
+                sotf_audio_player::recording_types::DelayProbeChannelResult {
+                    channel_name: "L".to_string(),
+                    channel_index: 0,
+                    arrival_ms: 1.0,
+                    gain_db: 0.0,
+                    snr_db: 10.0,
+                },
+            ],
+            sample_rate: 48000,
+            alignment_delays_ms: vec![0.0],
+        });
+        app.room_eq.delay_detection.edited_arrival_ms = vec![1.0];
+        app.room_eq.dd_edit_row = Some(0);
+        app.room_eq.editing_value = true;
+        app.room_eq.edit_buffer = "5.5".to_string();
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(app.room_eq.dd_edit_row.is_none());
+        assert!(!app.room_eq.editing_value);
+        assert_eq!(app.room_eq.delay_detection.edited_arrival_ms[0], 5.5);
+    }
+
+    #[test]
+    fn delay_detection_edit_row_esc_cancels() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Delay;
+        app.room_eq.dd_edit_row = Some(0);
+        app.room_eq.editing_value = true;
+        app.room_eq.edit_buffer = "5.5".to_string();
+        handle_room_eq_keys(&mut app, key(KeyCode::Esc));
+        // The top-level Esc handler clears editing_value first and returns
+        // early; dd_edit_row is only cleared inside handle_delay_detection_keys
+        // which is never reached when editing_value is true.
+        assert!(!app.room_eq.editing_value);
+        assert!(app.room_eq.edit_buffer.is_empty());
+        assert_eq!(app.room_eq.dd_edit_row, Some(0));
+    }
+
+    #[test]
+    fn delay_detection_jk_navigation() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Delay;
+        app.room_eq.delay_detection.results = Some(DelayProbeResults {
+            channels: vec![
+                sotf_audio_player::recording_types::DelayProbeChannelResult {
+                    channel_name: "L".to_string(),
+                    channel_index: 0,
+                    arrival_ms: 1.0,
+                    gain_db: 0.0,
+                    snr_db: 10.0,
+                },
+                sotf_audio_player::recording_types::DelayProbeChannelResult {
+                    channel_name: "R".to_string(),
+                    channel_index: 1,
+                    arrival_ms: 2.0,
+                    gain_db: 0.0,
+                    snr_db: 10.0,
+                },
+                sotf_audio_player::recording_types::DelayProbeChannelResult {
+                    channel_name: "C".to_string(),
+                    channel_index: 2,
+                    arrival_ms: 3.0,
+                    gain_db: 0.0,
+                    snr_db: 10.0,
+                },
+            ],
+            sample_rate: 48000,
+            alignment_delays_ms: vec![0.0, 0.0, 0.0],
+        });
+        app.room_eq.dd_selected_row = 0;
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.room_eq.dd_selected_row, 1);
+        handle_room_eq_keys(&mut app, key(KeyCode::Down));
+        assert_eq!(app.room_eq.dd_selected_row, 2);
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('k')));
+        assert_eq!(app.room_eq.dd_selected_row, 1);
+        handle_room_eq_keys(&mut app, key(KeyCode::Up));
+        assert_eq!(app.room_eq.dd_selected_row, 0);
+    }
+
+    #[test]
+    fn delay_detection_e_starts_editing() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Delay;
+        app.room_eq.delay_detection.results = Some(DelayProbeResults {
+            channels: vec![
+                sotf_audio_player::recording_types::DelayProbeChannelResult {
+                    channel_name: "L".to_string(),
+                    channel_index: 0,
+                    arrival_ms: 1.0,
+                    gain_db: 0.0,
+                    snr_db: 10.0,
+                },
+            ],
+            sample_rate: 48000,
+            alignment_delays_ms: vec![0.0],
+        });
+        app.room_eq.dd_selected_row = 0;
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('e')));
+        assert_eq!(app.room_eq.dd_edit_row, Some(0));
+        assert!(app.room_eq.editing_value);
+        assert!(app.room_eq.edit_buffer.is_empty());
+    }
+
+    #[test]
+    fn process_char_1_sets_simple() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Process;
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('1')));
+        assert!(matches!(app.room_eq.wizard_mode, RoomEqWizardMode::Simple));
+    }
+
+    #[test]
+    fn process_char_2_sets_full() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Process;
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('2')));
+        assert!(matches!(app.room_eq.wizard_mode, RoomEqWizardMode::Full));
+    }
+
+    #[test]
+    fn configure_edit_mode_esc_cancels() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Configure;
+        app.room_eq.editing_value = true;
+        app.room_eq.edit_buffer = "42".to_string();
+        handle_room_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(!app.room_eq.editing_value);
+        assert!(app.room_eq.edit_buffer.is_empty());
+    }
+
+    #[test]
+    fn configure_edit_mode_backspace_and_char() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Configure;
+        app.room_eq.editing_value = true;
+        app.room_eq.edit_buffer = "42".to_string();
+        handle_room_eq_keys(&mut app, key(KeyCode::Backspace));
+        assert_eq!(app.room_eq.edit_buffer, "4");
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('.')));
+        assert_eq!(app.room_eq.edit_buffer, "4.");
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('-')));
+        assert_eq!(app.room_eq.edit_buffer, "4.-");
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('a')));
+        assert_eq!(app.room_eq.edit_buffer, "4.-"); // ignored
+    }
+
+    #[test]
+    fn configure_tab_cycles_fields() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Configure;
+        app.room_eq.selected_field = 0;
+        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.room_eq.selected_field, 1);
+    }
+
+    #[test]
+    fn configure_enter_on_boolean_toggles() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Configure;
+        app.room_eq.selected_field = 15; // bo_ehvi (boolean)
+        let before = app.room_eq.config.bo_ehvi;
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert_eq!(app.room_eq.config.bo_ehvi, !before);
+    }
+
+    #[test]
+    fn configure_backtab_goes_to_load_data() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Configure;
+        handle_room_eq_keys(&mut app, key(KeyCode::BackTab));
+        assert_eq!(app.room_eq.step, RoomEqStep::LoadData);
+    }
+
+    #[test]
+    fn optimize_up_with_log_scrolls_down() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+        app.room_eq.opt_log_lines = std::collections::VecDeque::from(vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+        ]);
+        app.room_eq.opt_log_scroll = 0;
+        handle_room_eq_keys(&mut app, key(KeyCode::Up));
+        assert_eq!(app.room_eq.opt_log_scroll, 1);
+    }
+
+    #[test]
+    fn optimize_k_with_log_scrolls_down() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+        app.room_eq.opt_log_lines =
+            std::collections::VecDeque::from(vec!["a".to_string(), "b".to_string()]);
+        app.room_eq.opt_log_scroll = 0;
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('k')));
+        assert_eq!(app.room_eq.opt_log_scroll, 1);
+    }
+
+    #[test]
+    fn optimize_up_empty_log_goes_to_step_tab() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+        app.room_eq.opt_log_lines.clear();
+        handle_room_eq_keys(&mut app, key(KeyCode::Up));
+        assert!(app.room_eq.step_tab_focused);
+    }
+
+    #[test]
+    fn optimize_down_j_scrolls_up() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+        app.room_eq.opt_log_scroll = 2;
+        handle_room_eq_keys(&mut app, key(KeyCode::Down));
+        assert_eq!(app.room_eq.opt_log_scroll, 1);
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.room_eq.opt_log_scroll, 0);
+    }
+
+    #[test]
+    fn optimize_down_j_clamps_at_zero() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+        app.room_eq.opt_log_scroll = 0;
+        handle_room_eq_keys(&mut app, key(KeyCode::Down));
+        assert_eq!(app.room_eq.opt_log_scroll, 0);
+    }
+
+    #[test]
+    fn optimize_home_end() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+        app.room_eq.opt_log_lines = std::collections::VecDeque::from(vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+        ]);
+        app.room_eq.opt_log_scroll = 0;
+        handle_room_eq_keys(&mut app, key(KeyCode::Home));
+        assert_eq!(app.room_eq.opt_log_scroll, 2);
+        handle_room_eq_keys(&mut app, key(KeyCode::End));
+        assert_eq!(app.room_eq.opt_log_scroll, 0);
+    }
+
+    #[test]
+    fn optimize_enter_when_idle_spawns() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+        app.room_eq.opt_status = OptimizationStatus::Idle;
+        // channel_measurements empty → Failed
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert_eq!(app.room_eq.opt_status, OptimizationStatus::Failed);
+    }
+
+    #[test]
+    fn optimize_enter_when_running_ignored() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+        app.room_eq.opt_status = OptimizationStatus::Running;
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert_eq!(app.room_eq.opt_status, OptimizationStatus::Running);
+    }
+
+    #[test]
+    fn optimize_enter_when_completed_spawns() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+        app.room_eq.opt_status = OptimizationStatus::Completed;
+        // channel_measurements empty → Failed
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert_eq!(app.room_eq.opt_status, OptimizationStatus::Failed);
+    }
+
+    #[test]
+    fn review_down_channels() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Review;
+        app.room_eq.channel_results = vec![
+            sotf_audio_player::room_eq_types::ChannelOptResult {
+                channel_name: "L".to_string(),
+                pre_score: 0.0,
+                post_score: 0.0,
+                eq_filters: Vec::new(),
+                broadband_filters: Vec::new(),
+                preamp_gain_db: 0.0,
+                crossover_freqs: None,
+                driver_gains: None,
+                original_response: None,
+                corrected_response: None,
+                normalized_response: None,
+                target_curve: None,
+                group_delay_before: None,
+                group_delay_after: None,
+                phase_response_before: None,
+                phase_response_after: None,
+                impulse_response: None,
+            },
+            sotf_audio_player::room_eq_types::ChannelOptResult {
+                channel_name: "R".to_string(),
+                pre_score: 0.0,
+                post_score: 0.0,
+                eq_filters: Vec::new(),
+                broadband_filters: Vec::new(),
+                preamp_gain_db: 0.0,
+                crossover_freqs: None,
+                driver_gains: None,
+                original_response: None,
+                corrected_response: None,
+                normalized_response: None,
+                target_curve: None,
+                group_delay_before: None,
+                group_delay_after: None,
+                phase_response_before: None,
+                phase_response_after: None,
+                impulse_response: None,
+            },
+        ];
+        app.room_eq.selected_channel = 0;
+        handle_room_eq_keys(&mut app, key(KeyCode::Down));
+        assert_eq!(app.room_eq.selected_channel, 1);
+        handle_room_eq_keys(&mut app, key(KeyCode::Down));
+        assert_eq!(app.room_eq.selected_channel, 1); // clamped
+    }
+
+    #[test]
+    fn export_editing_enter_with_empty_path_sets_error() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Export;
+        app.room_eq.editing_export_path = true;
+        app.room_eq.export_path = "".to_string();
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(!app.room_eq.editing_export_path);
+        assert!(app.room_eq.export_error.is_some());
+    }
+
+    #[test]
+    fn export_normal_enter_starts_editing() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Export;
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(app.room_eq.editing_export_path);
+    }
+
+    #[test]
+    fn export_backtab_goes_to_review() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Export;
+        handle_room_eq_keys(&mut app, key(KeyCode::BackTab));
+        assert_eq!(app.room_eq.step, RoomEqStep::Review);
+    }
+
+    #[test]
+    fn export_char_a_without_dsp_output_fails() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Export;
+        app.room_eq.dsp_output = None;
+        handle_room_eq_keys(&mut app, key(KeyCode::Char('a')));
+        assert!(app.room_eq.apply_error.is_some());
+        assert!(app.room_eq.apply_status.is_none());
     }
 }

@@ -448,3 +448,178 @@ fn test_cobyla_native_degenerate_nan_returns_failure() {
         "degenerate/NaN input should not panic and should return non-success"
     );
 }
+
+#[test]
+fn test_cobyla_native_multiple_constraints() {
+    let f = |x: &[f64]| x[0].powi(2) + x[1].powi(2);
+    let g0: TestConstraint = Box::new(|x: &[f64]| x[0] - 1.0);
+    let g1: TestConstraint = Box::new(|x: &[f64]| -x[1] - 1.0);
+    let cons = vec![g0, g1];
+    let mut x = vec![2.0, -2.0];
+    let report = cobyla_native(
+        2,
+        f,
+        &cons,
+        &[(-10.0, 10.0), (-10.0, 10.0)],
+        &mut x,
+        &[0.5, 0.5],
+        &StopCriteria {
+            stopval: f64::NEG_INFINITY,
+            ftol_rel: 1e-10,
+            maxeval: 2000,
+            ..Default::default()
+        },
+    )
+    .expect("cobyla_native failed");
+    assert!(
+        report.x[0] <= 1.01,
+        "x0 = {} should respect <= 1",
+        report.x[0]
+    );
+    assert!(
+        report.x[1] >= -1.01,
+        "x1 = {} should respect >= -1",
+        report.x[1]
+    );
+}
+
+#[test]
+fn test_cobyla_native_infinite_bounds() {
+    let f = |x: &[f64]| (x[0] + 1.0).powi(2);
+    let cons: Vec<TestConstraint> = Vec::new();
+    let mut x = vec![1.0];
+    let report = cobyla_native(
+        1,
+        f,
+        &cons,
+        &[(f64::NEG_INFINITY, f64::INFINITY)],
+        &mut x,
+        &[0.5],
+        &StopCriteria {
+            stopval: f64::NEG_INFINITY,
+            ftol_rel: 1e-10,
+            maxeval: 500,
+            ..Default::default()
+        },
+    )
+    .expect("cobyla_native failed");
+    assert!(
+        (report.x[0] - (-1.0)).abs() < 0.01,
+        "x = {} should be ~-1",
+        report.x[0]
+    );
+}
+
+#[test]
+fn test_cobyla_native_maxeval_reached() {
+    let f = |x: &[f64]| x[0].powi(2);
+    let cons: Vec<TestConstraint> = Vec::new();
+    let mut x = vec![1.0];
+    let report = cobyla_native(
+        1,
+        f,
+        &cons,
+        &[(-10.0, 10.0)],
+        &mut x,
+        &[0.5],
+        &StopCriteria {
+            maxeval: 5,
+            ..Default::default()
+        },
+    )
+    .expect("cobyla_native failed");
+    assert!(
+        report.nfev <= 10,
+        "nfev = {} should respect tiny maxeval",
+        report.nfev
+    );
+}
+
+#[test]
+fn test_cobyla_native_zero_dx_does_not_panic() {
+    let f = |x: &[f64]| x[0].powi(2);
+    let cons: Vec<TestConstraint> = Vec::new();
+    let mut x = vec![1.0];
+    // Zero dx is degenerate but should not panic; it may return non-success.
+    let result = cobyla_native(
+        1,
+        f,
+        &cons,
+        &[(-10.0, 10.0)],
+        &mut x,
+        &[0.0], // zero dx
+        &StopCriteria::default(),
+    );
+    // Best-effort: either an error or a non-success report is acceptable.
+    assert!(
+        result.is_err() || !result.unwrap().success,
+        "Zero dx should not panic and should return non-success"
+    );
+}
+
+#[test]
+fn test_cobyla_native_stopval_reached() {
+    let f = |x: &[f64]| (x[0] + 1.0).powi(2);
+    let cons: Vec<TestConstraint> = Vec::new();
+    let mut x = vec![1.0];
+    let report = cobyla_native(
+        1,
+        f,
+        &cons,
+        &[(-10.0, 10.0)],
+        &mut x,
+        &[0.5],
+        &StopCriteria {
+            stopval: 0.5,
+            maxeval: 1000,
+            ..Default::default()
+        },
+    )
+    .expect("cobyla_native failed");
+    assert!(
+        report.fun <= 0.6,
+        "fun = {} should be <= 0.5+eps",
+        report.fun
+    );
+}
+
+#[test]
+fn test_cobyla_native_ftol_reached() {
+    let f = |x: &[f64]| x[0].powi(2);
+    let cons: Vec<TestConstraint> = Vec::new();
+    let mut x = vec![1.0];
+    let report = cobyla_native(
+        1,
+        f,
+        &cons,
+        &[(-10.0, 10.0)],
+        &mut x,
+        &[0.5],
+        &StopCriteria {
+            stopval: f64::NEG_INFINITY,
+            ftol_rel: 1e-2,
+            maxeval: 1000,
+            ..Default::default()
+        },
+    )
+    .expect("cobyla_native failed");
+    // ftol_rel convergence should be marked as success
+    assert!(report.success, "Should succeed when ftol_rel reached");
+}
+
+#[test]
+fn test_cobyla_native_dimension_mismatch() {
+    let f = |x: &[f64]| x[0].powi(2);
+    let cons: Vec<TestConstraint> = Vec::new();
+    let mut x = vec![1.0, 1.0];
+    let result = cobyla_native(
+        2,
+        f,
+        &cons,
+        &[(0.0, 1.0)], // only 1 bound
+        &mut x,
+        &[0.5, 0.5],
+        &StopCriteria::default(),
+    );
+    assert!(result.is_err(), "Dimension mismatch should error");
+}

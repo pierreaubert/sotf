@@ -120,3 +120,55 @@ pub(super) fn compute_crossover_complex_response(
         crate::response::compute_peq_complex_response(&filters, freqs, sample_rate)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Curve;
+    use ndarray::Array1;
+
+    #[test]
+    fn compute_flat_loss_flat_curve_is_near_zero() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 500.0, 1000.0, 2000.0, 5000.0]),
+            spl: Array1::from_vec(vec![80.0, 80.0, 80.0, 80.0, 80.0]),
+            phase: None,
+            ..Default::default()
+        };
+        let loss = compute_flat_loss(&curve, 100.0, 5000.0);
+        assert!(
+            loss < 1e-6,
+            "flat curve should have near-zero loss, got {}",
+            loss
+        );
+    }
+
+    #[test]
+    fn compute_flat_loss_sloped_curve_is_positive() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 500.0, 1000.0, 2000.0, 5000.0]),
+            spl: Array1::from_vec(vec![60.0, 70.0, 80.0, 90.0, 100.0]),
+            phase: None,
+            ..Default::default()
+        };
+        let loss = compute_flat_loss(&curve, 100.0, 5000.0);
+        assert!(loss > 0.0, "sloped curve should have positive loss");
+    }
+
+    #[test]
+    fn compute_flat_loss_respects_freq_range() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![50.0, 100.0, 1000.0, 5000.0, 10000.0]),
+            spl: Array1::from_vec(vec![0.0, 0.0, 10.0, 0.0, 0.0]),
+            phase: None,
+            ..Default::default()
+        };
+        // Restrict to flat region outside the bump
+        let loss_narrow = compute_flat_loss(&curve, 50.0, 200.0);
+        let loss_wide = compute_flat_loss(&curve, 50.0, 10000.0);
+        assert!(
+            loss_narrow < loss_wide,
+            "narrow flat range should have lower loss"
+        );
+    }
+}

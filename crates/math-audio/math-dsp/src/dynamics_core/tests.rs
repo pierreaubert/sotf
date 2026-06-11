@@ -359,3 +359,215 @@ fn test_expand_with_gate_state_machine_and_envelope() {
         "after above-threshold signal, envelope should recover, got {env}"
     );
 }
+
+#[test]
+fn test_gate_state_hold_with_counter() {
+    let mut core = DynamicsCore::new(DynamicsMode::Expand, 1, SR);
+    core.set_expand_params(3.0, 10.0, 40.0); // 10ms hold = 480 samples
+    core.set_attack_release(0.1, 10.0);
+
+    let threshold = -20.0;
+    let ratio = 4.0;
+    let knee = 0.0;
+
+    // Signal drops below threshold → enters Hold
+    let atten = core.process_gate_state(0, -25.0, threshold, ratio, knee);
+    assert_eq!(atten, 0.0);
+    assert_eq!(core.gate_state(0), GateState::Hold);
+    assert_eq!(core.hold_counter[0], 480);
+
+    // During hold period, still below threshold but counter not exhausted
+    let atten = core.process_gate_state(0, -25.0, threshold, ratio, knee);
+    assert_eq!(atten, 0.0);
+    assert_eq!(core.gate_state(0), GateState::Hold);
+    assert!(core.hold_counter[0] < 480);
+}
+
+#[test]
+fn test_gate_state_boundary_open_threshold() {
+    let mut core = DynamicsCore::new(DynamicsMode::Expand, 1, SR);
+    core.set_expand_params(3.0, 0.0, 40.0);
+
+    let threshold = -20.0;
+    let ratio = 4.0;
+    let knee = 0.0;
+
+    // Exactly at open threshold should stay open
+    let atten = core.process_gate_state(0, -20.0, threshold, ratio, knee);
+    assert_eq!(atten, 0.0);
+    assert_eq!(core.gate_state(0), GateState::Open);
+
+    // Just below open threshold → Hold
+    let atten = core.process_gate_state(0, -20.01, threshold, ratio, knee);
+    assert_eq!(atten, 0.0);
+    assert_eq!(core.gate_state(0), GateState::Hold);
+}
+
+#[test]
+fn test_gate_state_boundary_close_threshold() {
+    let mut core = DynamicsCore::new(DynamicsMode::Expand, 1, SR);
+    core.set_expand_params(3.0, 0.0, 40.0);
+
+    let threshold = -20.0;
+    let close_th = threshold - 3.0; // -23.0
+    let ratio = 4.0;
+    let knee = 0.0;
+
+    // Drop below open threshold
+    core.process_gate_state(0, -25.0, threshold, ratio, knee);
+    // With 0ms hold, immediately check transition to Closing
+    let atten = core.process_gate_state(0, -23.0, threshold, ratio, knee);
+    // Exactly at close threshold: not < close_th, so stays in Hold with 0 attenuation
+    assert_eq!(atten, 0.0);
+
+    // Now below close threshold
+    let atten = core.process_gate_state(0, -23.01, threshold, ratio, knee);
+    assert!(atten > 0.0);
+    assert_eq!(core.gate_state(0), GateState::Closing);
+}
+
+#[test]
+fn test_gate_state_multichannel_independence() {
+    let mut core = DynamicsCore::new(DynamicsMode::Expand, 2, SR);
+    core.set_expand_params(3.0, 0.0, 40.0);
+
+    let threshold = -20.0;
+    let ratio = 4.0;
+    let knee = 0.0;
+
+    // Ch0 quiet, Ch1 loud
+    core.process_gate_state(0, -40.0, threshold, ratio, knee);
+    core.process_gate_state(1, -10.0, threshold, ratio, knee);
+
+    assert_eq!(core.gate_state(0), GateState::Hold);
+    assert_eq!(core.gate_state(1), GateState::Open);
+
+    // Continue: ch0 goes to Closing, ch1 stays Open
+    core.process_gate_state(0, -40.0, threshold, ratio, knee);
+    assert_eq!(core.gate_state(0), GateState::Closing);
+    assert_eq!(core.gate_state(1), GateState::Open);
+}
+
+#[test]
+fn test_apply_envelope_attack_release_selection() {
+    let mut core = DynamicsCore::new(DynamicsMode::Compress, 1, SR);
+    core.set_attack_release(1.0, 50.0);
+
+    // Start at 0 envelope
+    core.apply_envelope(0, 10.0); // target > envelope → attack
+    let env_after_attack = core.envelope_db(0);
+
+    // Now target < envelope → release
+    core.apply_envelope(0, 0.0);
+    let env_after_release = core.envelope_db(0);
+
+    assert!(env_after_attack > 0.0);
+    assert!(env_after_release < env_after_attack);
+}
+
+#[test]
+fn test_apply_envelope_exact_equality() {
+    let mut core = DynamicsCore::new(DynamicsMode::Compress, 1, SR);
+    core.set_attack_release(1.0, 50.0);
+
+    // Set envelope to a known value
+    for _ in 0..10000 {
+        core.apply_envelope(0, 5.0);
+    }
+    let env = core.envelope_db(0);
+
+    // target == envelope → release coefficient (since target_gr <= envelope)
+    let env2 = core.apply_envelope(0, env);
+    assert!(
+        (env2 - env).abs() < 0.001,
+        "when target equals envelope, envelope should not change much, got {env2} vs {env}"
+    );
+}
+
+#[test]
+fn test_apply_envelope_program_dependent_release() {
+    let mut core = DynamicsCore::new(DynamicsMode::Compress, 1, SR);
+    core.set_attack_release(1.0, 50.0);
+    core.set_program_dependent_release(true);
+
+    // Build up envelope
+    for _ in 0..1000 {
+        core.apply_envelope(0, 10.0);
+    }
+    let env_before = core.envelope_db(0);
+
+    // Release with program-dependent mode
+    core.apply_envelope(0, 0.0);
+    let env_after = core.envelope_db(0);
+
+    assert!(env_after < env_before);
+}
+
+#[test]
+fn test_calculate_gain_reduction_knee_soft() {
+    let core = DynamicsCore::new(DynamicsMode::Compress, 1, SR);
+
+    // With 6 dB knee centered at threshold (-20), the knee zone is [-23, -17].
+    // Below knee zone: no GR
+    let gr_below = core.calculate_gain_reduction(-24.0, -20.0, 4.0, 6.0);
+    assert_eq!(gr_below, 0.0, "below knee zone should have no GR");
+
+    // At upper edge of knee zone (-17): should match hard knee
+    let gr_edge = core.calculate_gain_reduction(-17.0, -20.0, 4.0, 6.0);
+    let gr_hard = core.calculate_gain_reduction(-17.0, -20.0, 4.0, 0.0);
+    assert!(
+        (gr_edge - gr_hard).abs() < 0.01,
+        "at upper knee edge, soft knee should match hard knee: edge={gr_edge}, hard={gr_hard}"
+    );
+
+    // Inside knee zone (-20, at threshold): GR should be positive but less than hard-knee at upper edge
+    let gr_mid = core.calculate_gain_reduction(-20.0, -20.0, 4.0, 6.0);
+    assert!(
+        gr_mid > 0.0 && gr_mid < gr_hard,
+        "inside knee zone, GR should be moderate: mid={gr_mid}, hard_at_edge={gr_hard}"
+    );
+
+    // Above knee zone: should match hard knee
+    let gr_above = core.calculate_gain_reduction(-10.0, -20.0, 4.0, 6.0);
+    let gr_hard_above = core.calculate_gain_reduction(-10.0, -20.0, 4.0, 0.0);
+    assert!(
+        (gr_above - gr_hard_above).abs() < 0.01,
+        "above knee zone, soft knee should match hard knee: above={gr_above}, hard={gr_hard_above}"
+    );
+}
+
+#[test]
+fn test_calculate_gain_reduction_expand_range_cap() {
+    let core = DynamicsCore::new(DynamicsMode::Expand, 1, SR);
+
+    // Far below threshold should be capped at range_db
+    let atten = core.calculate_gain_reduction(-120.0, -20.0, 4.0, 0.0);
+    // range_db defaults to 40.0
+    assert!(
+        (atten - 40.0).abs() < 0.01,
+        "far below threshold should hit range cap, got {atten}"
+    );
+}
+
+#[test]
+fn test_calculate_gain_reduction_expand_at_threshold() {
+    let core = DynamicsCore::new(DynamicsMode::Expand, 1, SR);
+
+    // At threshold → no attenuation
+    let atten = core.calculate_gain_reduction(-20.0, -20.0, 4.0, 0.0);
+    assert_eq!(atten, 0.0);
+
+    // Above threshold → no attenuation
+    let atten = core.calculate_gain_reduction(-10.0, -20.0, 4.0, 0.0);
+    assert_eq!(atten, 0.0);
+}
+
+#[test]
+fn test_calculate_gain_reduction_compress_knee_edge() {
+    let core = DynamicsCore::new(DynamicsMode::Compress, 1, SR);
+
+    // Exactly at knee edge: threshold + knee/2
+    let gr = core.calculate_gain_reduction(-17.0, -20.0, 4.0, 6.0);
+    assert!(gr >= 0.0);
+    assert!(gr <= 9.0);
+}

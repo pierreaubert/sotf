@@ -444,4 +444,143 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn nan_band_lo_returns_invalid_band() {
+        let c = [healthy_curve(16, 0.95, 85.0, -60.0)];
+        assert_eq!(
+            bass_phase_confidence(&c, (f64::NAN, 100.0), None),
+            BassPhaseConfidence::Degraded {
+                reason: "invalid_band"
+            }
+        );
+    }
+
+    #[test]
+    fn nan_band_hi_returns_invalid_band() {
+        let c = [healthy_curve(16, 0.95, 85.0, -60.0)];
+        assert_eq!(
+            bass_phase_confidence(&c, (20.0, f64::NAN), None),
+            BassPhaseConfidence::Degraded {
+                reason: "invalid_band"
+            }
+        );
+    }
+
+    #[test]
+    fn zero_band_width_returns_invalid_band() {
+        let c = [healthy_curve(16, 0.95, 85.0, -60.0)];
+        assert_eq!(
+            bass_phase_confidence(&c, (50.0, 50.0), None),
+            BassPhaseConfidence::Degraded {
+                reason: "invalid_band"
+            }
+        );
+    }
+
+    #[test]
+    fn negative_band_lo_returns_invalid_band() {
+        let c = [healthy_curve(16, 0.95, 85.0, -60.0)];
+        assert_eq!(
+            bass_phase_confidence(&c, (-1.0, 100.0), None),
+            BassPhaseConfidence::Degraded {
+                reason: "invalid_band"
+            }
+        );
+    }
+
+    #[test]
+    fn multiple_curves_one_missing_coherence() {
+        let mut c0 = healthy_curve(16, 0.95, 85.0, -60.0);
+        c0.coherence = None;
+        let c1 = healthy_curve(16, 0.95, 85.0, -60.0);
+        assert_eq!(
+            bass_phase_confidence(&[c0, c1], (20.0, 100.0), None),
+            BassPhaseConfidence::Degraded {
+                reason: "no_coherence_data"
+            }
+        );
+    }
+
+    #[test]
+    fn mean_coherence_computed_only_in_band() {
+        // Build a curve where coherence is high inside the band and low outside
+        let freq = log_freqs(32, 20.0, 200.0);
+        let spl = Array1::from_elem(32, 85.0);
+        let phase = Array1::from_elem(32, 0.0);
+        let coh: Vec<f64> = freq
+            .iter()
+            .map(|&f| if f <= 100.0 { 0.95 } else { 0.5 })
+            .collect();
+        let noise = Array1::from_elem(32, -60.0);
+        let c = Curve {
+            freq,
+            spl,
+            phase: Some(phase),
+            coherence: Some(Array1::from(coh)),
+            noise_floor_db: Some(noise),
+            ..Default::default()
+        };
+        let rec = healthy_recording();
+        match bass_phase_confidence(&[c], (20.0, 100.0), Some(&rec)) {
+            BassPhaseConfidence::Trustworthy { mean_coherence } => {
+                assert!(
+                    (mean_coherence - 0.95).abs() < 1e-6,
+                    "mean_coherence should be 0.95 when only in-band bins are counted, got {mean_coherence}"
+                );
+            }
+            other => panic!("expected Trustworthy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn malformed_curve_skipped_in_mean_coherence() {
+        // freq and coherence have mismatched lengths → should be skipped
+        let mut c = healthy_curve(16, 0.95, 85.0, -60.0);
+        c.coherence = Some(Array1::from_elem(8, 0.95)); // wrong length
+        let rec = healthy_recording();
+        // No valid bins → mean coherence = 0.0 → below threshold
+        assert_eq!(
+            bass_phase_confidence(&[c], (20.0, 100.0), Some(&rec)),
+            BassPhaseConfidence::Degraded {
+                reason: "coherence_below_threshold"
+            }
+        );
+    }
+
+    #[test]
+    fn recording_with_none_coherence_threshold_uses_default() {
+        let c = [healthy_curve(16, 0.95, 85.0, -60.0)];
+        let rec = RecordingConfiguration {
+            num_sweeps: Some(4),
+            bass_octave_duration_s: Some(3.0),
+            coherence_threshold: None,
+            ..Default::default()
+        };
+        // None coherence_threshold should fall back to DEFAULT_COHERENCE_THRESHOLD (0.9)
+        match bass_phase_confidence(&c, (20.0, 100.0), Some(&rec)) {
+            BassPhaseConfidence::Trustworthy { mean_coherence } => {
+                assert!((mean_coherence - 0.95).abs() < 1e-6);
+            }
+            other => panic!("expected Trustworthy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn recording_with_none_sweeps_uses_default_of_one() {
+        // num_sweeps: None → unwrap_or(1) → 1 < 4 → insufficient_bass_duration
+        let c = [healthy_curve(16, 0.95, 85.0, -60.0)];
+        let rec = RecordingConfiguration {
+            num_sweeps: None,
+            bass_octave_duration_s: Some(3.0),
+            coherence_threshold: None,
+            ..Default::default()
+        };
+        assert_eq!(
+            bass_phase_confidence(&c, (20.0, 100.0), Some(&rec)),
+            BassPhaseConfidence::Degraded {
+                reason: "insufficient_bass_duration"
+            }
+        );
+    }
 }

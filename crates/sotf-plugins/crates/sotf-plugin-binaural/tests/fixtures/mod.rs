@@ -4,6 +4,9 @@
 
 use std::f32::consts::PI;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TEST_SOFA_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Create a minimal test SOFA file with synthetic HRTFs
 ///
@@ -25,7 +28,13 @@ pub fn create_test_sofa_file(
     use std::env;
 
     let temp_dir = env::temp_dir();
-    let path = temp_dir.join(filename);
+    let sequence = TEST_SOFA_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let path = temp_dir.join(format!(
+        "sotf-binaural-{}-{}-{}",
+        std::process::id(),
+        sequence,
+        filename
+    ));
 
     let mut w = SofaWriter::new();
 

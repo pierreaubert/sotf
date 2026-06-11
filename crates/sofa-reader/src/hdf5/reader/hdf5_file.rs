@@ -502,7 +502,7 @@ impl Hdf5File {
         let creation_order_tracked = flags & 0x04 != 0;
 
         let chunk_data_start = c.pos;
-        let chunk_data_end = chunk_data_start + chunk0_size;
+        let chunk_data_end = chunk_data_start + chunk0_size.saturating_sub(4);
 
         self.parse_oh_v2_messages(&mut c, chunk_data_end, creation_order_tracked, group)?;
 
@@ -1828,7 +1828,7 @@ impl Hdf5File {
         let creation_order_tracked = flags & 0x04 != 0;
 
         let chunk_data_start = c.pos;
-        let chunk_data_end = chunk_data_start + chunk0_size;
+        let chunk_data_end = chunk_data_start + chunk0_size.saturating_sub(4);
 
         self.parse_dataset_oh_v2_messages(
             &mut c,

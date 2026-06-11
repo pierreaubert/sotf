@@ -144,3 +144,21 @@ pub fn combined_weighted_loss(
 
     erb_weight * erb_loss + band_weight * band_loss
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn erb_at_1000hz() {
+        let f = 1000.0;
+        let expected = 24.7 * (1.0 + 4.37 * f / 1000.0);
+        assert!((erb(f) - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn erb_at_zero() {
+        let expected = 24.7;
+        assert!((erb(0.0) - expected).abs() < 1e-12);
+    }
+}

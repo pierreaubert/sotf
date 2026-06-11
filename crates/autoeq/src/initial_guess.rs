@@ -439,4 +439,77 @@ mod tests {
         assert!(dense_freq > 700.0 && dense_freq < 1400.0);
         assert!((dense_freq / coarse_freq).log2().abs() < 0.2);
     }
+
+    #[test]
+    fn test_create_smart_initial_guesses_with_pre_detected_problems() {
+        use crate::cli::PeqModel;
+        let target_response = Array1::from(vec![0.0, 0.0, 0.0]);
+        let freq_grid = Array1::from(vec![100.0, 1000.0, 10000.0]);
+        let bounds = vec![
+            (100.0_f64.log10(), 10000.0_f64.log10()),
+            (0.5, 3.0),
+            (-6.0, 6.0),
+        ];
+        let config = SmartInitConfig {
+            num_guesses: 1,
+            pre_detected_problems: vec![(500.0, 5.0, -3.0)],
+            variation_factor: 0.0,
+            seed: Some(42),
+            ..SmartInitConfig::default()
+        };
+        let guesses = create_smart_initial_guesses(
+            &target_response,
+            &freq_grid,
+            1,
+            &bounds,
+            &config,
+            PeqModel::Pk,
+        );
+        assert_eq!(guesses.len(), 1);
+        let freq = 10.0_f64.powf(guesses[0][0]);
+        assert!(
+            (freq - 500.0).abs() < 10.0,
+            "should use pre-detected problem frequency, got {freq}"
+        );
+    }
+
+    #[test]
+    fn test_create_smart_initial_guesses_empty_response() {
+        use crate::cli::PeqModel;
+        let target_response = Array1::from(vec![0.0, 0.0, 0.0]);
+        let freq_grid = Array1::from(vec![100.0, 1000.0, 10000.0]);
+        // 2 filters * 3 params = 6 bounds entries
+        let bounds = vec![
+            (100.0_f64.log10(), 10000.0_f64.log10()),
+            (0.5, 3.0),
+            (-6.0, 6.0),
+            (100.0_f64.log10(), 10000.0_f64.log10()),
+            (0.5, 3.0),
+            (-6.0, 6.0),
+        ];
+        let config = SmartInitConfig {
+            num_guesses: 1,
+            variation_factor: 0.0,
+            seed: Some(42),
+            ..SmartInitConfig::default()
+        };
+        let guesses = create_smart_initial_guesses(
+            &target_response,
+            &freq_grid,
+            2,
+            &bounds,
+            &config,
+            PeqModel::Pk,
+        );
+        assert_eq!(guesses.len(), 1);
+        assert_eq!(guesses[0].len(), 6); // 2 filters * 3 params
+        // All values should be within bounds
+        for (i, &val) in guesses[0].iter().enumerate() {
+            let (lo, hi) = bounds[i];
+            assert!(
+                val >= lo && val <= hi,
+                "param {i} = {val} out of bounds [{lo}, {hi}]"
+            );
+        }
+    }
 }

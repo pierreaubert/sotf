@@ -107,3 +107,91 @@ pub fn normalize_and_interpolate_response_with_range(
         },
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cea2034::Curve;
+    use ndarray::Array1;
+
+    #[test]
+    fn normalize_response_subtracts_mean_in_range() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![500.0, 1000.0, 1500.0, 2000.0, 2500.0]),
+            spl: Array1::from_vec(vec![0.0, 2.0, 4.0, 6.0, 8.0]),
+            phase: None,
+            ..Default::default()
+        };
+        let result = normalize_response(&curve, 1000.0, 2000.0);
+        // Mean of [2.0, 4.0, 6.0] = 4.0
+        assert!((result[0] - (-4.0)).abs() < 1e-12);
+        assert!((result[1] - (-2.0)).abs() < 1e-12);
+        assert!((result[2] - 0.0).abs() < 1e-12);
+        assert!((result[3] - 2.0).abs() < 1e-12);
+        assert!((result[4] - 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn normalize_response_no_points_in_range_returns_unchanged() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![10.0, 20.0, 30.0]),
+            spl: Array1::from_vec(vec![5.0, 6.0, 7.0]),
+            phase: None,
+            ..Default::default()
+        };
+        let result = normalize_response(&curve, 100.0, 200.0);
+        assert_eq!(result.to_vec(), vec![5.0, 6.0, 7.0]);
+    }
+
+    #[test]
+    fn normalize_and_interpolate_response_preserves_shape() {
+        let standard_freq = Array1::logspace(10.0, 2.0, 4.0, 10);
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 1000.0, 10000.0]),
+            spl: Array1::from_vec(vec![0.0, 5.0, 0.0]),
+            phase: None,
+            ..Default::default()
+        };
+        let result = normalize_and_interpolate_response(&standard_freq, &curve);
+        assert_eq!(result.freq.len(), standard_freq.len());
+        assert_eq!(result.spl.len(), standard_freq.len());
+        // All output values should be finite
+        for &v in result.spl.iter() {
+            assert!(v.is_finite(), "spl must be finite");
+        }
+    }
+
+    #[test]
+    fn interpolate_response_preserves_levels() {
+        let standard_freq = Array1::from_vec(vec![100.0, 1000.0, 10000.0]);
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 1000.0, 10000.0]),
+            spl: Array1::from_vec(vec![80.0, 85.0, 82.0]),
+            phase: None,
+            ..Default::default()
+        };
+        let result = interpolate_response(&standard_freq, &curve);
+        // Exact match when grids align
+        assert!((result.spl[0] - 80.0).abs() < 1e-9);
+        assert!((result.spl[1] - 85.0).abs() < 1e-9);
+        assert!((result.spl[2] - 82.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn normalize_and_interpolate_response_with_range_uses_custom_range() {
+        let standard_freq = Array1::from_vec(vec![100.0, 1000.0, 10000.0]);
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 500.0, 10000.0]),
+            spl: Array1::from_vec(vec![0.0, 10.0, 0.0]),
+            phase: None,
+            ..Default::default()
+        };
+        // Normalize using 100-500 Hz range (mean = 5.0)
+        let result =
+            normalize_and_interpolate_response_with_range(&standard_freq, &curve, 100.0, 500.0);
+        assert_eq!(result.freq.len(), standard_freq.len());
+        for &v in result.spl.iter() {
+            assert!(v.is_finite());
+        }
+    }
+}

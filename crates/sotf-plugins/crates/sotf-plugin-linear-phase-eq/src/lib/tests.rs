@@ -419,3 +419,158 @@ fn test_band_contribution_db_skips_inactive() {
     assert!(with_active > 1.0);
     assert!(with_inactive.abs() < 0.01);
 }
+
+#[test]
+fn test_set_parameter_band_type() {
+    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+    plugin
+        .set_parameter(ParameterId::from("band_0_type"), ParameterValue::Int(1))
+        .unwrap();
+    assert_eq!(plugin.bands[0].filter_type, BiquadFilterType::Lowshelf);
+    assert!(plugin.fir_dirty);
+    let val = plugin.get_parameter(&ParameterId::from("band_0_type"));
+    assert_eq!(val, Some(ParameterValue::Int(1)));
+}
+
+#[test]
+fn test_set_parameter_band_q() {
+    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+    plugin
+        .set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.0))
+        .unwrap();
+    assert!((plugin.bands[0].q - 2.0).abs() < 1e-6);
+    assert!(plugin.fir_dirty);
+    let val = plugin.get_parameter(&ParameterId::from("band_0_q"));
+    assert_eq!(val, Some(ParameterValue::Float(2.0)));
+}
+
+#[test]
+fn test_set_parameter_band_gain() {
+    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+    plugin
+        .set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(6.0))
+        .unwrap();
+    assert!((plugin.bands[0].gain_db - 6.0).abs() < 1e-6);
+    assert!(plugin.fir_dirty);
+    let val = plugin.get_parameter(&ParameterId::from("band_0_gain"));
+    assert_eq!(val, Some(ParameterValue::Float(6.0)));
+}
+
+#[test]
+fn test_set_parameter_band_active() {
+    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+    plugin
+        .set_parameter(
+            ParameterId::from("band_0_active"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+    assert!(!plugin.bands[0].active);
+    assert!(plugin.fir_dirty);
+    let val = plugin.get_parameter(&ParameterId::from("band_0_active"));
+    assert_eq!(val, Some(ParameterValue::Bool(false)));
+}
+
+#[test]
+fn test_set_parameter_num_filters_noop() {
+    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+    plugin.fir_dirty = false;
+    let original = plugin.num_filters;
+    plugin
+        .set_parameter(
+            ParameterId::from("num_filters"),
+            ParameterValue::Int(original as i32),
+        )
+        .unwrap();
+    assert!(!plugin.fir_dirty, "same num_filters should not mark dirty");
+}
+
+#[test]
+fn test_set_parameter_fir_length_noop() {
+    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+    plugin.fir_dirty = false;
+    let original = plugin.fir_length_index as i32;
+    plugin
+        .set_parameter(
+            ParameterId::from("fir_length"),
+            ParameterValue::Int(original),
+        )
+        .unwrap();
+    assert!(!plugin.fir_dirty, "same fir_length should not mark dirty");
+}
+
+#[test]
+fn test_set_parameter_mix() {
+    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+    plugin
+        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.75))
+        .unwrap();
+    assert!((plugin.mix_value - 0.75).abs() < 1e-6);
+    let val = plugin.get_parameter(&ParameterId::from("mix"));
+    assert_eq!(val, Some(ParameterValue::Float(0.75)));
+}
+
+#[test]
+fn test_set_parameter_unknown_band_param_returns_error() {
+    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+    let result = plugin.set_parameter(
+        ParameterId::from("band_0_unknown"),
+        ParameterValue::Float(1.0),
+    );
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Unknown band parameter"));
+}
+
+#[test]
+fn test_process_with_mix() {
+    let channels = 1;
+    let sr = 48000;
+    let mut plugin = LinearPhaseEqPlugin::from_params(
+        channels,
+        sr,
+        LinearPhaseEqPluginParams {
+            num_filters: 1,
+            fir_length_index: 0,
+            auto_gain: false,
+            mix: 0.5,
+            filters: vec![BandConfig {
+                filter_type: "Peak".to_string(),
+                frequency: 1000.0,
+                q: 1.0,
+                gain_db: 12.0,
+                active: true,
+            }],
+        },
+    )
+    .unwrap();
+    let num_frames = 1024;
+    let mut buffer = vec![0.0f32; num_frames];
+    for (i, sample) in buffer.iter_mut().enumerate() {
+        let t = i as f32 / sr as f32;
+        *sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.25;
+    }
+    let input = buffer.clone();
+    plugin
+        .process_in_place(&mut buffer, &ProcessContext::new(sr, num_frames))
+        .unwrap();
+    let diff_input: f32 = buffer
+        .iter()
+        .zip(input.iter())
+        .map(|(a, b)| (a - b).abs())
+        .sum();
+    assert!(diff_input > 0.01, "mixed output should differ from input");
+}
+
+#[test]
+fn test_get_data_returns_none() {
+    let plugin = LinearPhaseEqPlugin::new(1, 48000);
+    assert!(plugin.get_data().is_none());
+}
+
+#[test]
+fn test_initialize_same_sample_rate_no_rebuild() {
+    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+    plugin.fir_dirty = false;
+    plugin.initialize(48000).unwrap();
+    assert!(!plugin.fir_dirty);
+}

@@ -78,3 +78,44 @@ pub fn viol_spacing_from_xs(xs: &[f64], peq_model: PeqModel, min_spacing_oct: f6
         0.0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::PeqModel;
+
+    #[test]
+    fn viol_spacing_no_filters() {
+        let xs: Vec<f64> = vec![];
+        assert_eq!(viol_spacing_from_xs(&xs, PeqModel::Pk, 1.0), 0.0);
+    }
+
+    #[test]
+    fn viol_spacing_single_filter() {
+        let xs = vec![2.0, 1.0, 3.0];
+        assert_eq!(viol_spacing_from_xs(&xs, PeqModel::Pk, 1.0), 0.0);
+    }
+
+    #[test]
+    fn viol_spacing_wide_enough() {
+        let xs = vec![2.0, 1.0, 3.0, 3.0, 1.0, 3.0];
+        assert_eq!(viol_spacing_from_xs(&xs, PeqModel::Pk, 1.0), 0.0);
+    }
+
+    #[test]
+    fn viol_spacing_too_close() {
+        let xs = vec![2.0, 1.0, 3.0, 2.176091259055681, 1.0, 3.0];
+        let v = viol_spacing_from_xs(&xs, PeqModel::Pk, 1.0);
+        assert!(v > 0.0, "expected positive violation, got {}", v);
+    }
+
+    #[test]
+    fn constraint_spacing_returns_zero_when_disabled() {
+        let xs = vec![2.0, 1.0, 3.0, 2.1, 1.0, 3.0];
+        let mut data = SpacingConstraintData {
+            min_spacing_oct: 0.0,
+            peq_model: PeqModel::Pk,
+        };
+        assert_eq!(constraint_spacing(&xs, None, &mut data), 0.0);
+    }
+}

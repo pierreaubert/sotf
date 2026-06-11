@@ -14,10 +14,21 @@ FFT-based spectrum analysis with configurable bin count, frequency range, smooth
 @node spectrum-analyzer Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Num Bins} @tab Int @tab 8 .. 120 @tab 30 @tab - @tab Number of frequency bands
+@item @code{Min Freq} @tab Float @tab 10 .. 100 @tab 20 @tab Hz @tab Lowest displayed frequency
+@item @code{Max Freq} @tab Float @tab 5000 .. 22050 @tab 20000 @tab Hz @tab Highest displayed frequency
+@item @code{Smoothing} @tab Float @tab 0 .. 1 @tab 0.7 @tab - @tab Temporal averaging factor
+@item @code{Tilt Correction} @tab Choice (None, 3dB/oct, 6dB/oct, Pink) @tab 4 options @tab None @tab - @tab Slope compensation for display
+@item @code{Tilt Reference} @tab Choice (Standard, 1kHz, 2kHz, Min Freq) @tab 4 options @tab Standard @tab - @tab Reference frequency for tilt
+@end multitable
 
 
-@strong{Structural parameters} (Num Bins) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+@strong{Structural parameters} (Num Bins, Tilt Correction, Tilt Reference) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 
 @node spectrum-analyzer Plugin Developer Guide
 @section Developer Guide

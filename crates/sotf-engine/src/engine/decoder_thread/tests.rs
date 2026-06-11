@@ -84,7 +84,7 @@ fn decoder_frame_buffer_handoff_has_no_allocation_fallback() {
 
 #[test]
 fn hal_input_reloads_stale_cipher_before_reading() {
-    let source = include_str!("../decoder_thread.rs");
+    let source = include_str!("decoder_state.rs");
     let reload_call = source
         .find("!self.reload_hal_cipher_if_needed()")
         .expect("HAL input path should refresh stale encryption ciphers");

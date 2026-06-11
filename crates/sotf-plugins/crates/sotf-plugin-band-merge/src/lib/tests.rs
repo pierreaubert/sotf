@@ -457,3 +457,108 @@ fn test_db_to_linear_round_trip() {
     assert!((db_to_linear(6.0206) - 2.0).abs() < 0.001);
     assert!((db_to_linear(-6.0206) - 0.5).abs() < 0.001);
 }
+
+#[test]
+fn test_set_parameter_bands_valid() {
+    let mut p = BandMergePlugin::new(1, 2).unwrap();
+    assert_eq!(p.num_bands, 2);
+
+    p.set_parameter(ParameterId::from("bands"), ParameterValue::Int(4))
+        .unwrap();
+    assert_eq!(p.num_bands, 4);
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("bands")),
+        Some(ParameterValue::Int(4))
+    );
+}
+
+#[test]
+fn test_set_parameter_gain_non_finite_ignored() {
+    let mut p = BandMergePlugin::new(1, 2).unwrap();
+    let before = p.band_gains_db[0];
+
+    // NaN should be ignored (returns Ok but does not change)
+    p.set_parameter(
+        ParameterId::from("band_0_gain_db"),
+        ParameterValue::Float(f32::NAN),
+    )
+    .unwrap();
+    assert_eq!(p.band_gains_db[0], before);
+
+    // Infinity should be ignored
+    p.set_parameter(
+        ParameterId::from("band_0_gain_db"),
+        ParameterValue::Float(f32::INFINITY),
+    )
+    .unwrap();
+    assert_eq!(p.band_gains_db[0], before);
+}
+
+#[test]
+fn test_set_parameter_gain_extreme_finite_values() {
+    let mut p = BandMergePlugin::new(1, 2).unwrap();
+    p.set_parameter(
+        ParameterId::from("band_0_gain_db"),
+        ParameterValue::Float(-60.0),
+    )
+    .unwrap();
+    assert!((p.band_gains_db[0] - (-60.0)).abs() < 1e-4);
+    assert!((p.band_gains_linear[0] - 0.001).abs() < 1e-4);
+
+    p.set_parameter(
+        ParameterId::from("band_0_gain_db"),
+        ParameterValue::Float(24.0),
+    )
+    .unwrap();
+    assert!((p.band_gains_db[0] - 24.0).abs() < 1e-4);
+}
+
+#[test]
+fn test_get_parameter_all_band_params() {
+    let mut p = BandMergePlugin::new(1, 3).unwrap();
+    p.set_parameter(
+        ParameterId::from("band_0_gain_db"),
+        ParameterValue::Float(-3.0),
+    )
+    .unwrap();
+    p.set_parameter(ParameterId::from("band_1_mute"), ParameterValue::Bool(true))
+        .unwrap();
+
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("band_0_gain_db")),
+        Some(ParameterValue::Float(-3.0))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("band_1_mute")),
+        Some(ParameterValue::Bool(true))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("band_2_gain_db")),
+        Some(ParameterValue::Float(0.0))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("band_2_mute")),
+        Some(ParameterValue::Bool(false))
+    );
+}
+
+#[test]
+fn test_process_reconstruction_error_silence() {
+    let mut p = BandMergePlugin::new(1, 2).unwrap();
+    // Request the diagnostic
+    let _ = p.get_parameter(&ParameterId::from("reconstruction_error_db"));
+
+    // Process silence
+    let input = vec![0.0f32, 0.0];
+    let mut output = vec![0.0f32];
+    p.process(&input, &mut output, &ProcessContext::new(48000, 1))
+        .unwrap();
+
+    let err = p
+        .get_parameter(&ParameterId::from("reconstruction_error_db"))
+        .unwrap()
+        .as_float()
+        .unwrap();
+    // When reference is silence, reconstruction error should be 0.0
+    assert_eq!(err, 0.0);
+}

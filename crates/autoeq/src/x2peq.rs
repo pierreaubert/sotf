@@ -183,3 +183,45 @@ pub fn peq_print_from_x(x: &[f64], srate: f64, peq_model: PeqModel) {
     let peq = x2peq(x, srate, peq_model);
     crate::iir::peq_print(&peq);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::PeqModel;
+    use ndarray::Array1;
+
+    #[test]
+    fn x2spl_empty_is_flat() {
+        let freqs = Array1::from_vec(vec![100.0, 1000.0]);
+        let x: Vec<f64> = vec![];
+        let spl = x2spl(&freqs, &x, 48000.0, PeqModel::Pk);
+        assert_eq!(spl.len(), freqs.len());
+        assert!(spl.iter().all(|v| v.abs() < 1e-12));
+    }
+
+    #[test]
+    fn x2spl_zero_gain_peak_is_flat() {
+        let freqs = Array1::from_vec(vec![1000.0]);
+        let x = vec![3.0, 1.0, 0.0]; // log10(1000)=3, Q=1, gain=0
+        let spl = x2spl(&freqs, &x, 48000.0, PeqModel::Pk);
+        assert!((spl[0] - 0.0).abs() < 1e-6, "got {}", spl[0]);
+    }
+
+    #[test]
+    fn build_sorted_filters_orders_by_frequency() {
+        let x = vec![3.0, 1.0, 0.0, 2.0, 1.0, 0.0]; // 1kHz then 100Hz
+        let rows = build_sorted_filters(&x, PeqModel::Pk);
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].freq < rows[1].freq);
+        assert!((rows[0].freq - 100.0).abs() < 1e-9);
+        assert!((rows[1].freq - 1000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn build_sorted_filters_hp_gain_zeroed() {
+        let x = vec![2.0, 0.5, 0.0, 3.0, 1.0, 0.0]; // HP at 100Hz then peak at 1kHz
+        let rows = build_sorted_filters(&x, PeqModel::HpPk);
+        let hp_row = rows.iter().find(|r| r.kind == "HPQ").unwrap();
+        assert_eq!(hp_row.gain, 0.0);
+    }
+}

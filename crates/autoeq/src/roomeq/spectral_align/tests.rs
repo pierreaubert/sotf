@@ -10,6 +10,7 @@ use super::consts::MAX_FLAT_GAIN_DB;
 use super::consts::MAX_SHELF_GAIN_DB;
 use super::consts::MIN_CORRECTION_DB;
 use super::types::ChannelMatchingResult;
+use crate::Curve;
 use std::collections::HashMap;
 
 mod make;
@@ -609,4 +610,103 @@ fn test_broadband_corrections_are_gentle() {
             MAX_FLAT_GAIN_DB
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// compute_spectral_alignment edge-case tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn spectral_alignment_empty_map_returns_empty() {
+    let curves: HashMap<String, Curve> = HashMap::new();
+    let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
+    assert!(
+        results.is_empty(),
+        "empty input should produce empty output"
+    );
+}
+
+#[test]
+fn spectral_alignment_single_channel_returns_empty() {
+    let mut curves = HashMap::new();
+    curves.insert("L".to_string(), make_curve(|_| 0.0));
+    let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
+    assert!(
+        results.is_empty(),
+        "single channel should produce no alignment"
+    );
+}
+
+#[test]
+fn spectral_alignment_narrow_freq_range_less_than_3_points() {
+    // All curves are flat but the analysis range contains < 3 active points
+    let mut curves = HashMap::new();
+    curves.insert("L".to_string(), make_curve(|_| 2.0));
+    curves.insert("R".to_string(), make_curve(|_| 0.0));
+
+    // Pick a range so narrow it catches fewer than 3 points
+    let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 19990.0, 20000.0);
+    assert!(
+        results.is_empty(),
+        "< 3 active points should yield empty result"
+    );
+}
+
+#[test]
+fn spectral_alignment_respects_min_max_freq() {
+    let mut curves = HashMap::new();
+    // L boosted only below 200 Hz, R flat everywhere
+    curves.insert(
+        "L".to_string(),
+        make_curve(|f| if f < 200.0 { 6.0 } else { 0.0 }),
+    );
+    curves.insert("R".to_string(), make_curve(|_| 0.0));
+
+    // Limit range to high freqs only — no bass difference visible
+    let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 1000.0, 20000.0);
+    for r in results.values() {
+        assert!(
+            r.lowshelf_gain_db.abs() < 0.5,
+            "HS-only range should see no LS correction, got {:.2}",
+            r.lowshelf_gain_db
+        );
+        assert!(
+            r.flat_gain_db.abs() < MIN_CORRECTION_DB,
+            "flat_gain should be negligible in HS-only range, got {:.2}",
+            r.flat_gain_db
+        );
+    }
+}
+
+#[test]
+fn spectral_alignment_many_channels_renormalizes() {
+    // 5 channels: 4 flat, 1 with +10 dB bass boost
+    let mut curves = HashMap::new();
+    curves.insert("FL".to_string(), make_curve(|_| 0.0));
+    curves.insert("FR".to_string(), make_curve(|_| 0.0));
+    curves.insert("C".to_string(), make_curve(|_| 0.0));
+    curves.insert("SL".to_string(), make_curve(|_| 0.0));
+    curves.insert(
+        "SR".to_string(),
+        make_curve(|f| if f < 200.0 { 10.0 } else { 0.0 }),
+    );
+
+    let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
+    assert_eq!(results.len(), 5);
+
+    // Mean flat gain across all channels should be ~0 after renormalization
+    let mean_flat: f64 = results.values().map(|r| r.flat_gain_db).sum::<f64>() / 5.0;
+    assert!(
+        mean_flat.abs() < 0.1,
+        "mean flat_gain should be ~0 after renormalization, got {:.4}",
+        mean_flat
+    );
+
+    // The boosted channel should get a negative LS correction
+    let sr = &results["SR"];
+    assert!(
+        sr.lowshelf_gain_db < -1.0,
+        "SR should need LS cut, got {:.2}",
+        sr.lowshelf_gain_db
+    );
 }

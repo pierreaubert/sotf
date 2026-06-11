@@ -14,7 +14,16 @@ Ambisonics encoding and decoding for immersive spatial audio.
 @node ambisonics Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
+
+@subsection Ambisonics
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Order} @tab Int @tab 1 .. 3 @tab 1 @tab - @tab Ambisonics order (1-3)
+@item @code{Target Layout} @tab Choice (5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6) @tab 8 options @tab 5.1 @tab - @tab Target speaker layout for decode
+@item @code{Max-rE} @tab Bool @tab On / Off @tab On @tab - @tab Apply max-rE energy optimization
+@item @code{Dual-Band} @tab Bool @tab On / Off @tab Off @tab - @tab Separate LF/HF decode weights
+@end multitable
 
 
 @strong{Structural parameters} (Order, Target Layout) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.

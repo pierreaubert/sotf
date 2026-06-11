@@ -119,3 +119,47 @@ mod audibility_deadband_tests {
         assert!(out[2] < 0.0 && out[2].abs() < error[2].abs());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Curve;
+    use ndarray::Array1;
+
+    #[test]
+    fn interpolate_boost_envelope_empty() {
+        assert_eq!(interpolate_boost_envelope(&[], 100.0), f64::INFINITY);
+    }
+
+    #[test]
+    fn interpolate_boost_envelope_clamping() {
+        let env = vec![(100.0, 5.0), (1000.0, 10.0)];
+        assert_eq!(interpolate_boost_envelope(&env, 50.0), 5.0);
+        assert_eq!(interpolate_boost_envelope(&env, 2000.0), 10.0);
+    }
+
+    #[test]
+    fn interpolate_boost_envelope_interpolation() {
+        let env = vec![(100.0, 0.0), (1000.0, 10.0)];
+        let val = interpolate_boost_envelope(&env, 316.2277660168379);
+        assert!((val - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn maybe_smooth_error_noop_when_disabled() {
+        let freqs = Array1::from_vec(vec![100.0, 200.0]);
+        let error = Array1::from_vec(vec![1.0, 2.0]);
+        let out = maybe_smooth_error(&freqs, error.clone(), false, 1);
+        assert_eq!(out.to_vec(), error.to_vec());
+    }
+
+    #[test]
+    fn maybe_smooth_error_smooths_when_enabled() {
+        let freqs = Array1::from_vec(vec![100.0, 150.0, 200.0]);
+        let error = Array1::from_vec(vec![0.0, 10.0, 0.0]);
+        let out = maybe_smooth_error(&freqs, error.clone(), true, 1);
+        assert_eq!(out.len(), error.len());
+        assert!(out[1] < error[1]);
+        assert!(out[1] > 0.0);
+    }
+}

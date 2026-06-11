@@ -385,6 +385,75 @@ mod tests {
         assert!(err.contains("non-empty"));
     }
 
+    #[test]
+    fn fdw_rejects_zero_sample_rate() {
+        let ir = vec![1.0_f32; 512];
+        let err = analyze_impulse_response_fdw(&ir, 0.0, None, &FdwConfig::default())
+            .expect_err("zero sample rate should be rejected");
+        assert!(err.contains("sample_rate"));
+    }
+
+    #[test]
+    fn fdw_rejects_nan_sample_rate() {
+        let ir = vec![1.0_f32; 512];
+        let err = analyze_impulse_response_fdw(&ir, f32::NAN, None, &FdwConfig::default())
+            .expect_err("NaN sample rate should be rejected");
+        assert!(err.contains("sample_rate"));
+    }
+
+    #[test]
+    fn fdw_rejects_invalid_freq_range() {
+        let ir = vec![1.0_f32; 512];
+        let mut config = FdwConfig::default();
+        config.min_freq_hz = 400.0;
+        config.max_freq_hz = 200.0;
+        let err = analyze_impulse_response_fdw(&ir, 48000.0, None, &config)
+            .expect_err("invalid freq range should be rejected");
+        assert!(err.contains("frequency range"));
+    }
+
+    #[test]
+    fn fdw_rejects_bad_cycles() {
+        let ir = vec![1.0_f32; 512];
+        let mut config = FdwConfig::default();
+        config.cycles = 0.0;
+        let err = analyze_impulse_response_fdw(&ir, 48000.0, None, &config)
+            .expect_err("zero cycles should be rejected");
+        assert!(err.contains("cycles"));
+    }
+
+    #[test]
+    fn fdw_rejects_bad_window_limits() {
+        let ir = vec![1.0_f32; 512];
+        let mut config = FdwConfig::default();
+        config.min_window_ms = 500.0;
+        config.max_window_ms = 100.0;
+        let err = analyze_impulse_response_fdw(&ir, 48000.0, None, &config)
+            .expect_err("reversed window limits should be rejected");
+        assert!(err.contains("window limits"));
+    }
+
+    #[test]
+    fn fdw_auto_detects_direct_sound() {
+        let mut ir = vec![0.0_f32; 4096];
+        ir[300] = 1.0;
+        let analysis =
+            analyze_impulse_response_fdw(&ir, 48000.0, None, &FdwConfig::default()).unwrap();
+        assert_eq!(analysis.direct_sound_sample, 300);
+    }
+
+    #[test]
+    fn fdw_single_point() {
+        let mut ir = vec![0.0_f32; 4096];
+        ir[256] = 1.0;
+        let mut config = FdwConfig::default();
+        config.num_points = 1;
+        config.smoothing_octaves = 0.0;
+        let analysis = analyze_impulse_response_fdw(&ir, 48000.0, Some(256), &config).unwrap();
+        assert_eq!(analysis.frequencies.len(), 1);
+        assert_eq!(analysis.magnitude_db.len(), 1);
+    }
+
     fn nearest_ratio(analysis: &FdwAnalysis, freq: f32) -> f32 {
         analysis
             .frequencies

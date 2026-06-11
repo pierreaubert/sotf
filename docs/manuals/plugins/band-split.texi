@@ -14,7 +14,14 @@ Splits the audio signal into separate frequency bands for independent processing
 @node band-split Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Frequency} @tab Float @tab 20 .. 20000 @tab 300 @tab Hz @tab Crossover split frequency
+@item @code{Type} @tab Choice (LR24, LR48) @tab 2 options @tab LR24 @tab - @tab Filter slope (24 or 48 dB/oct)
+@end multitable
 
 
 @strong{Structural parameters} (Frequency, Type) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.

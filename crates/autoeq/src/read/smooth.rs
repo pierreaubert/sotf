@@ -318,4 +318,41 @@ mod tests {
             assert!((v - 80.0).abs() < 0.01, "Expected 80.0, got {}", v);
         }
     }
+
+    #[test]
+    fn smooth_gaussian_zero_sigma_returns_clone() {
+        let signal = Array1::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+        let result = smooth_gaussian(&signal, 0.0);
+        assert_eq!(result.to_vec(), signal.to_vec());
+    }
+
+    #[test]
+    fn smooth_gaussian_flat_signal_stays_flat() {
+        let signal = Array1::from_elem(20, 5.0);
+        let result = smooth_gaussian(&signal, 2.0);
+        for &v in result.iter() {
+            assert!(
+                (v - 5.0).abs() < 1e-9,
+                "flat signal should stay flat, got {}",
+                v
+            );
+        }
+    }
+
+    #[test]
+    fn smooth_gaussian_reduces_peak() {
+        let signal = Array1::from_vec(vec![0.0, 0.0, 10.0, 0.0, 0.0]);
+        let result = smooth_gaussian(&signal, 1.0);
+        // Peak should be lower after smoothing
+        let max_val = result.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        assert!(max_val < 10.0, "peak should be reduced by smoothing");
+        assert!(max_val > 0.0, "peak should still be positive");
+    }
+
+    #[test]
+    fn smooth_gaussian_preserves_length() {
+        let signal = Array1::from_vec(vec![1.0, 5.0, 3.0, 8.0, 2.0]);
+        let result = smooth_gaussian(&signal, 1.5);
+        assert_eq!(result.len(), signal.len());
+    }
 }

@@ -615,10 +615,25 @@ impl MusicLibrary {
         // Final progress report
         progress_callback(total_tracks, album_map.len());
 
+        if let Some(db) = &mut self.db {
+            let missing = db.clean_missing_files()?;
+            if missing > 0 {
+                log::info!("Removed {missing} missing tracks from the library before scan merge");
+            }
+
+            let unsupported = db.clean_unsupported_extensions(SUPPORTED_AUDIO_EXTENSIONS)?;
+            if unsupported > 0 {
+                log::info!(
+                    "Removed {unsupported} tracks with unsupported extensions from the library before scan merge"
+                );
+            }
+        }
+
         // Merge with existing albums if we have a database
         if let Some(db) = &self.db
             && incremental
         {
+            progress_callback(total_tracks, album_map.len());
             // Load existing albums from database
             let existing_albums = db.load_library()?;
             let scanned_paths: HashSet<PathBuf> = album_map
@@ -670,6 +685,7 @@ impl MusicLibrary {
         }
 
         self.albums = album_map.into_values().collect();
+        progress_callback(total_tracks, self.albums.len());
 
         // Sort tracks within each album and generate album art thumbnails
         for album in &mut self.albums {
@@ -710,11 +726,7 @@ impl MusicLibrary {
 
         // Save to database if available
         if let Some(db) = &mut self.db {
-            let removed = db.clean_unsupported_extensions(SUPPORTED_AUDIO_EXTENSIONS)?;
-            if removed > 0 {
-                log::info!("Removed {removed} tracks with unsupported extensions from the library");
-            }
-
+            progress_callback(total_tracks, self.albums.len());
             db.save_albums(&self.albums)?;
 
             // Sync FTS index to ensure search works correctly after scan

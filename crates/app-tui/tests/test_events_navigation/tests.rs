@@ -288,13 +288,22 @@ fn configure_tab_bar_left_right_cycles() {
     send_keys(&mut app, &[KeyCode::Right]);
     assert_eq!(app.configure_sub_screen, ConfigureSubScreen::Servers);
 
+    send_keys(&mut app, &[KeyCode::Right]);
+    assert_eq!(
+        app.configure_sub_screen,
+        ConfigureSubScreen::MetadataServices
+    );
+
     // Wraps back to Directories
     send_keys(&mut app, &[KeyCode::Right]);
     assert_eq!(app.configure_sub_screen, ConfigureSubScreen::Directories);
 
     // And Left wraps backwards
     send_keys(&mut app, &[KeyCode::Left]);
-    assert_eq!(app.configure_sub_screen, ConfigureSubScreen::Servers);
+    assert_eq!(
+        app.configure_sub_screen,
+        ConfigureSubScreen::MetadataServices
+    );
 }
 
 #[test]

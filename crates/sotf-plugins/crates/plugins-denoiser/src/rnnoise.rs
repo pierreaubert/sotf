@@ -479,4 +479,186 @@ mod tests {
             "Stereo image broken: max(L-R) diff = {max_diff} (should be ~0 with linked gain)"
         );
     }
+
+    #[test]
+    fn bypass_copies_input_after_warmup() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+
+        // First frame is discarded even in bypass mode.
+        let mut first = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut first, RNNOISE_FRAME_SIZE, 1, true);
+        for (i, &s) in first.iter().enumerate() {
+            assert_eq!(s, 0.0, "warm-up sample {i} should be zero in bypass");
+        }
+
+        // Second frame should carry its own input through unchanged (bypass).
+        let mut second = vec![0.3f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut second, RNNOISE_FRAME_SIZE, 1, true);
+        for (i, &s) in second.iter().enumerate() {
+            assert!(
+                (s - 0.3).abs() < 1e-6,
+                "bypass sample {i} should equal input (0.3), got {s}"
+            );
+        }
+    }
+
+    #[test]
+    fn uninitialized_process_returns_num_frames() {
+        let mut backend = RnnoiseBackend::new();
+        // Denoisers vector is empty because initialize() was never called.
+        let mut buffer = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        assert_eq!(
+            backend.process(&mut buffer, RNNOISE_FRAME_SIZE, 1, false),
+            RNNOISE_FRAME_SIZE
+        );
+    }
+
+    #[test]
+    fn channels_zero_returns_num_frames() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+        let mut buffer = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        assert_eq!(
+            backend.process(&mut buffer, RNNOISE_FRAME_SIZE, 0, false),
+            RNNOISE_FRAME_SIZE
+        );
+    }
+
+    #[test]
+    fn mono_processing_produces_output_after_warmup() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+
+        // Warm-up frame (discarded).
+        let mut warmup = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 1, false);
+
+        // Second frame: should produce output from the mono path.
+        let mut frame = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut frame, RNNOISE_FRAME_SIZE, 1, false);
+
+        let energy: f32 = frame.iter().map(|s| s * s).sum();
+        assert!(
+            energy > 0.0,
+            "Mono second frame should have non-zero output after warm-up"
+        );
+    }
+
+    #[test]
+    fn four_channel_processing_produces_finite_output() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 4).unwrap();
+
+        // Warm-up + one real frame.
+        let mut buffer = vec![0.2f32; RNNOISE_FRAME_SIZE * 2 * 4];
+        backend.process(&mut buffer, RNNOISE_FRAME_SIZE * 2, 4, false);
+
+        assert!(
+            buffer.iter().all(|s| s.is_finite()),
+            "4-channel output must be finite"
+        );
+    }
+
+    #[test]
+    fn data_returns_reduction_db() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+
+        // Before any processing, reduction should be zero.
+        assert_eq!(backend.data().avg_reduction_db, 0.0);
+
+        // Warm-up.
+        let mut warmup = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 1, false);
+
+        // Second frame with non-silent audio should update reduction.
+        let mut frame = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut frame, RNNOISE_FRAME_SIZE, 1, false);
+
+        // Reduction is updated as a running average and should be finite.
+        let data = backend.data();
+        assert!(data.avg_reduction_db.is_finite());
+    }
+
+    #[test]
+    fn silence_does_not_update_reduction_db() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+
+        // Warm-up + real frame, all silence.
+        let mut buffer = vec![0.0f32; RNNOISE_FRAME_SIZE * 2];
+        backend.process(&mut buffer, RNNOISE_FRAME_SIZE * 2, 1, false);
+
+        // avg_reduction_db should remain at 0.0 because input_power <= 1e-10.
+        assert_eq!(backend.data().avg_reduction_db, 0.0);
+    }
+
+    #[test]
+    fn ring_buffer_wraps_after_many_frames() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+
+        // Process enough 480-sample frames to exceed the ring buffer size (4×480 = 1920).
+        // After the first-frame discard, each subsequent frame reads back 480 samples.
+        // We need 10 calls to push write_pos past 3840 (ring_size * 2).
+        for i in 0..10 {
+            let val = 0.1 * (i + 1) as f32;
+            let mut frame = vec![val; RNNOISE_FRAME_SIZE];
+            let written = backend.process(&mut frame, RNNOISE_FRAME_SIZE, 1, false);
+            // After the warm-up call, every call should return the full frame.
+            if i > 0 {
+                assert_eq!(written, RNNOISE_FRAME_SIZE);
+            }
+        }
+
+        // The wrap should have happened transparently; pointers must stay consistent.
+        assert!(backend.output_write_pos >= backend.output_read_pos);
+        let delta = backend.output_write_pos - backend.output_read_pos;
+        assert!(delta <= backend.output_buffers[0].len());
+    }
+
+    #[test]
+    fn sequential_calls_produce_continuous_output() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+
+        // Warm-up frame (discarded).
+        let mut warmup = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 1, false);
+
+        // Two sequential frames should both produce full output.
+        let mut frame1 = vec![0.4f32; RNNOISE_FRAME_SIZE];
+        let mut frame2 = vec![0.6f32; RNNOISE_FRAME_SIZE];
+
+        let w1 = backend.process(&mut frame1, RNNOISE_FRAME_SIZE, 1, false);
+        let w2 = backend.process(&mut frame2, RNNOISE_FRAME_SIZE, 1, false);
+
+        assert_eq!(w1, RNNOISE_FRAME_SIZE);
+        assert_eq!(w2, RNNOISE_FRAME_SIZE);
+
+        let energy1: f32 = frame1.iter().map(|s| s * s).sum();
+        let energy2: f32 = frame2.iter().map(|s| s * s).sum();
+        assert!(energy1 > 0.0, "Frame 1 should have output");
+        assert!(energy2 > 0.0, "Frame 2 should have output");
+    }
+
+    #[test]
+    fn first_frame_not_double_discarded_on_subsequent_calls() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+
+        // First call: first frame discarded.
+        let mut first = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut first, RNNOISE_FRAME_SIZE, 1, false);
+        assert!(backend.first_frame_discarded);
+
+        // Second call: should not discard again.
+        let mut second = vec![0.3f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut second, RNNOISE_FRAME_SIZE, 1, false);
+
+        // The second call should have returned the first frame's processed audio.
+        let energy: f32 = second.iter().map(|s| s * s).sum();
+        assert!(energy > 0.0, "Second call should produce non-zero output");
+    }
 }

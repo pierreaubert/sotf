@@ -413,4 +413,54 @@ mod fir_tests {
             );
         }
     }
+
+    #[test]
+    fn test_generate_window_f32() {
+        let w = generate_window::<f32>(16, WindowType::Hamming, 0.0);
+        assert_eq!(w.len(), 16);
+        for &v in &w {
+            assert!(v.is_finite());
+            assert!(v >= 0.0);
+        }
+    }
+
+    #[test]
+    fn test_generate_window_kaiser_large_beta() {
+        let w = generate_window::<f64>(32, WindowType::Kaiser, 10.0);
+        assert_eq!(w.len(), 32);
+        // Center should be maximum (close to 1.0)
+        assert!(w[16] > 0.99);
+        // Edges should be small but positive
+        assert!(w[0] > 0.0);
+        assert!(w[0] < 0.5);
+    }
+
+    #[test]
+    fn test_generate_window_blackman_edges_near_zero() {
+        let w = generate_window::<f64>(64, WindowType::Blackman, 0.0);
+        assert!(w[0].abs() < 1e-12);
+        assert!(w[w.len() - 1].abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_generate_window_all_types_non_empty() {
+        for &wt in &[
+            WindowType::Rectangular,
+            WindowType::Hamming,
+            WindowType::Hann,
+            WindowType::Blackman,
+            WindowType::Kaiser,
+        ] {
+            let beta = if wt == WindowType::Kaiser { 3.0 } else { 0.0 };
+            let w = generate_window::<f64>(8, wt, beta);
+            assert_eq!(w.len(), 8);
+            for &v in &w {
+                assert!(v.is_finite());
+                assert!(
+                    v >= -1e-12,
+                    "window value should not be significantly negative: {v}"
+                );
+            }
+        }
+    }
 }

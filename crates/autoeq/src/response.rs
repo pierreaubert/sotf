@@ -157,6 +157,7 @@ pub fn apply_complex_response(curve: &Curve, response: &[Complex64]) -> Curve {
 mod tests {
     use super::*;
     use ndarray::Array1;
+    use num_complex::Complex64;
     use std::f64::consts::PI;
 
     #[test]
@@ -199,5 +200,52 @@ mod tests {
             }
             assert!(diff.abs() < 1e-10);
         }
+    }
+
+    #[test]
+    fn test_peq_empty_filters_identity() {
+        let filters: Vec<crate::iir::Biquad> = vec![];
+        let freqs = Array1::from(vec![100.0, 1000.0, 10000.0]);
+        let sr = 48000.0;
+        let resp = compute_peq_complex_response(&filters, &freqs, sr);
+        assert_eq!(resp.len(), freqs.len());
+        for h in &resp {
+            assert!((h.norm() - 1.0).abs() < 1e-12);
+            assert!(h.arg().abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn test_apply_complex_response_identity() {
+        let curve = Curve {
+            freq: Array1::from(vec![100.0, 1000.0]),
+            spl: Array1::from(vec![0.0, 10.0]),
+            phase: None,
+            ..Default::default()
+        };
+        let identity = vec![Complex64::new(1.0, 0.0), Complex64::new(1.0, 0.0)];
+        let out = apply_complex_response(&curve, &identity);
+        assert!((out.spl[0] - 0.0).abs() < 1e-12);
+        assert!((out.spl[1] - 10.0).abs() < 1e-12);
+        assert!(out.phase.is_some());
+        assert!(out.phase.unwrap()[0].abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_apply_complex_response_boost() {
+        let curve = Curve {
+            freq: Array1::from(vec![1000.0]),
+            spl: Array1::from(vec![0.0]),
+            phase: None,
+            ..Default::default()
+        };
+        let boost = vec![Complex64::new(2.0, 0.0)];
+        let out = apply_complex_response(&curve, &boost);
+        let expected_db = 20.0 * 2.0f64.log10();
+        assert!(
+            (out.spl[0] - expected_db).abs() < 1e-9,
+            "got {}",
+            out.spl[0]
+        );
     }
 }

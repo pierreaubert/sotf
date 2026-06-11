@@ -36,14 +36,14 @@ Biquad-based parametric equalizer with peak, shelf, and pass filters. Supports m
 
 The following parameters are repeated for each band:
 
-@subsubheading Per-band
+@subsubheading Filter
 
 @multitable @columnfractions .22 .18 .15 .10 .08 .27
 @headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
 @item @code{Frequency} @tab Float @tab 20 .. 20000 @tab 1000 @tab Hz @tab Filter center/corner frequency
 @item @code{Q} @tab Float @tab 0.1 .. 10 @tab 1 @tab - @tab Filter bandwidth (quality factor)
 @item @code{Gain} @tab Float @tab -24 .. 24 @tab 0 @tab dB @tab Boost or cut amount
-@item @code{Type} @tab Choice (Peak, Lowshelf, Highshelf, Lowpass, Highpass, Bandpass, Notch) @tab 7 options @tab Peak @tab - @tab Biquad filter shape
+@item @code{Type} @tab Choice (Peak, Lowshelf, Highshelf, Lowpass, Highpass, Bandpass, Notch, AllPass) @tab 8 options @tab Peak @tab - @tab Biquad filter shape
 @end multitable
 
 

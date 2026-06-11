@@ -199,3 +199,173 @@ fn test_parameter_roundtrip() {
     let val = plugin.get_parameter(&ParameterId::from("mix"));
     assert_eq!(val, Some(ParameterValue::Float(0.75)));
 }
+
+#[test]
+fn test_get_parameter_sota_params() {
+    let mut plugin = SaturationPlugin::new(2);
+    plugin.initialize(48000).unwrap();
+
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_amount")),
+        Some(ParameterValue::Float(0.0))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_attack_ms")),
+        Some(ParameterValue::Float(5.0))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_release_ms")),
+        Some(ParameterValue::Float(50.0))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dc_blocker")),
+        Some(ParameterValue::Float(1.0))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("use_adaa")),
+        Some(ParameterValue::Float(1.0))
+    );
+}
+
+#[test]
+fn test_get_parameter_unknown_returns_none() {
+    let plugin = SaturationPlugin::new(2);
+    assert!(
+        plugin
+            .get_parameter(&ParameterId::from("nonexistent"))
+            .is_none()
+    );
+}
+
+#[test]
+fn test_set_parameter_sota_roundtrip() {
+    let mut plugin = SaturationPlugin::new(2);
+    plugin.initialize(48000).unwrap();
+
+    plugin
+        .set_parameter(
+            ParameterId::from("dynamic_amount"),
+            ParameterValue::Float(0.75),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_amount")),
+        Some(ParameterValue::Float(0.75))
+    );
+
+    plugin
+        .set_parameter(
+            ParameterId::from("dynamic_attack_ms"),
+            ParameterValue::Float(10.0),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_attack_ms")),
+        Some(ParameterValue::Float(10.0))
+    );
+
+    plugin
+        .set_parameter(
+            ParameterId::from("dynamic_release_ms"),
+            ParameterValue::Float(100.0),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_release_ms")),
+        Some(ParameterValue::Float(100.0))
+    );
+}
+
+#[test]
+fn test_set_parameter_sota_updates_envelope_followers() {
+    let mut plugin = SaturationPlugin::new(2);
+    plugin.initialize(48000).unwrap();
+
+    // Changing dynamic_attack_ms should update envelope follower times
+    plugin
+        .set_parameter(
+            ParameterId::from("dynamic_attack_ms"),
+            ParameterValue::Float(25.0),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_attack_ms")),
+        Some(ParameterValue::Float(25.0))
+    );
+
+    plugin
+        .set_parameter(
+            ParameterId::from("dynamic_release_ms"),
+            ParameterValue::Float(150.0),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_release_ms")),
+        Some(ParameterValue::Float(150.0))
+    );
+}
+
+#[test]
+fn test_get_parameter_output_gain_and_tone() {
+    let mut plugin = SaturationPlugin::new(2);
+    plugin.initialize(48000).unwrap();
+
+    plugin
+        .set_parameter(ParameterId::from("tone"), ParameterValue::Float(2.5))
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("tone")),
+        Some(ParameterValue::Float(2.5))
+    );
+
+    plugin
+        .set_parameter(
+            ParameterId::from("output_gain"),
+            ParameterValue::Float(-3.0),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("output_gain")),
+        Some(ParameterValue::Float(-3.0))
+    );
+}
+
+#[test]
+fn test_get_parameter_after_from_params() {
+    let params = SaturationPluginParams {
+        mode: "Tape".to_string(),
+        drive: 8.0,
+        tone: 2.0,
+        exciter_freq: 6000.0,
+        oversampling: "Off".to_string(),
+        output_gain_db: -6.0,
+        mix: 0.25,
+        dynamic_amount: 0.5,
+        dynamic_attack_ms: 20.0,
+        dynamic_release_ms: 200.0,
+        dc_blocker_enabled: false,
+        use_adaa: false,
+    };
+    let plugin = SaturationPlugin::from_params(2, params);
+
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_amount")),
+        Some(ParameterValue::Float(0.5))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_attack_ms")),
+        Some(ParameterValue::Float(20.0))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dynamic_release_ms")),
+        Some(ParameterValue::Float(200.0))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dc_blocker")),
+        Some(ParameterValue::Float(0.0))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("use_adaa")),
+        Some(ParameterValue::Float(0.0))
+    );
+}

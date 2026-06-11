@@ -14,7 +14,15 @@ Per-channel mute, solo, and dim controls with smooth fade transitions.
 @node channel-mute-solo Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Enabled} @tab Bool @tab On / Off @tab On @tab - @tab Master enable for mute/solo
+@item @code{Dim Gain} @tab Float @tab -60 .. 0 @tab -20 @tab dB @tab Attenuation level when dimmed
+@item @code{Fade Time} @tab Float @tab 0 .. 100 @tab 5 @tab ms @tab Mute/solo crossfade duration
+@end multitable
 
 @node channel-mute-solo Plugin Developer Guide
 @section Developer Guide

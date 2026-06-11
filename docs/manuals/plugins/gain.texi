@@ -14,7 +14,14 @@ Simple volume control with smooth gain ramping to prevent clicks.
 @node gain Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Gain} @tab Float @tab -60 .. 20 @tab 0 @tab dB @tab Volume level adjustment
+@item @code{Smoothing} @tab Float @tab 0 .. 100 @tab 10 @tab ms @tab Transition time for gain changes
+@end multitable
 
 @node gain Plugin Developer Guide
 @section Developer Guide

@@ -10,6 +10,7 @@ use super::prepared_single_channel_eq::prepare_single_channel_eq;
 use super::representative::representative_bass_rt60;
 use super::representative::representative_multi_measurement_curve;
 use crate::Curve;
+use crate::OptimizerConfig;
 use ndarray::Array1;
 
 #[path = "tests/make.rs"]
@@ -212,4 +213,221 @@ fn trim_cuts_clean_decay_with_strong_noise_tail() {
         min_keep,
         kept
     );
+}
+
+// ---------------------------------------------------------------------------
+// prepare_single_channel_eq tests
+// ---------------------------------------------------------------------------
+
+fn make_simple_test_curve() -> Curve {
+    let n = 100;
+    let log_min = 20.0_f64.ln();
+    let log_max = 20000.0_f64.ln();
+    let freqs: Vec<f64> = (0..n)
+        .map(|i| (log_min + (log_max - log_min) * i as f64 / (n - 1) as f64).exp())
+        .collect();
+    let spl: Vec<f64> = freqs
+        .iter()
+        .map(|&f| 10.0 * (-((f.log2() - 80.0_f64.log2()).powi(2) / 0.3).exp()))
+        .collect();
+    Curve {
+        freq: Array1::from_vec(freqs),
+        spl: Array1::from_vec(spl),
+        phase: None,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn prepare_single_channel_eq_basic() {
+    let curve = make_simple_test_curve();
+    let config = OptimizerConfig {
+        num_filters: 3,
+        max_iter: 1000,
+        seed: Some(42),
+        ..OptimizerConfig::default()
+    };
+    let prep = prepare_single_channel_eq(&curve, &config, None, 48000.0)
+        .expect("basic prepare should succeed");
+    assert!(!prep.objective_data.freqs.is_empty());
+    assert_eq!(prep.peq_model, crate::cli::PeqModel::Pk);
+    assert!(prep.objective_data.deviation.len() > 0);
+}
+
+#[test]
+fn prepare_single_channel_eq_clamps_freq_range() {
+    let mut curve = make_simple_test_curve();
+    // Restrict curve to 100-10000 Hz
+    let mask: Vec<bool> = curve
+        .freq
+        .iter()
+        .map(|&f| f >= 100.0 && f <= 10000.0)
+        .collect();
+    curve.freq = Array1::from(
+        curve
+            .freq
+            .iter()
+            .zip(mask.iter())
+            .filter(|(_, m)| **m)
+            .map(|(f, _)| *f)
+            .collect::<Vec<_>>(),
+    );
+    curve.spl = Array1::from(
+        curve
+            .spl
+            .iter()
+            .zip(mask.iter())
+            .filter(|(_, m)| **m)
+            .map(|(s, _)| *s)
+            .collect::<Vec<_>>(),
+    );
+
+    let config = OptimizerConfig {
+        min_freq: 20.0,
+        max_freq: 20000.0,
+        num_filters: 3,
+        max_iter: 1000,
+        seed: Some(42),
+        ..OptimizerConfig::default()
+    };
+    let prep = prepare_single_channel_eq(&curve, &config, None, 48000.0)
+        .expect("clamped prepare should succeed");
+    assert!(prep.objective_data.min_freq >= 100.0);
+    assert!(prep.objective_data.max_freq <= 10000.0);
+}
+
+#[test]
+fn prepare_single_channel_eq_asymmetric_loss() {
+    let curve = make_simple_test_curve();
+    let config = OptimizerConfig {
+        asymmetric_loss: true,
+        num_filters: 3,
+        max_iter: 1000,
+        seed: Some(42),
+        ..OptimizerConfig::default()
+    };
+    let prep = prepare_single_channel_eq(&curve, &config, None, 48000.0)
+        .expect("asymmetric prepare should succeed");
+    assert!(prep.objective_data.null_suppression.is_some());
+}
+
+#[test]
+fn prepare_single_channel_eq_flat_loss_type() {
+    let curve = make_simple_test_curve();
+    let config = OptimizerConfig {
+        loss_type: "flat".to_string(),
+        asymmetric_loss: false,
+        num_filters: 3,
+        max_iter: 1000,
+        seed: Some(42),
+        ..OptimizerConfig::default()
+    };
+    let prep = prepare_single_channel_eq(&curve, &config, None, 48000.0)
+        .expect("flat loss prepare should succeed");
+    assert!(matches!(
+        prep.objective_data.loss_type,
+        crate::loss::LossType::SpeakerFlat
+    ));
+}
+
+#[test]
+fn prepare_single_channel_eq_score_loss_type() {
+    let curve = make_simple_test_curve();
+    let config = OptimizerConfig {
+        loss_type: "score".to_string(),
+        num_filters: 3,
+        max_iter: 1000,
+        seed: Some(42),
+        ..OptimizerConfig::default()
+    };
+    let prep = prepare_single_channel_eq(&curve, &config, None, 48000.0)
+        .expect("score loss prepare should succeed");
+    assert!(matches!(
+        prep.objective_data.loss_type,
+        crate::loss::LossType::SpeakerScore
+    ));
+}
+
+#[test]
+fn prepare_single_channel_eq_epa_loss_type() {
+    let curve = make_simple_test_curve();
+    let config = OptimizerConfig {
+        loss_type: "epa".to_string(),
+        num_filters: 3,
+        max_iter: 1000,
+        seed: Some(42),
+        ..OptimizerConfig::default()
+    };
+    let prep = prepare_single_channel_eq(&curve, &config, None, 48000.0)
+        .expect("epa loss prepare should succeed");
+    assert!(matches!(
+        prep.objective_data.loss_type,
+        crate::loss::LossType::Epa
+    ));
+}
+
+#[test]
+fn prepare_single_channel_eq_unknown_loss_type_errors() {
+    let curve = make_simple_test_curve();
+    let config = OptimizerConfig {
+        loss_type: "unknown".to_string(),
+        num_filters: 3,
+        max_iter: 1000,
+        seed: Some(42),
+        ..OptimizerConfig::default()
+    };
+    let result = prepare_single_channel_eq(&curve, &config, None, 48000.0);
+    assert!(result.is_err(), "unknown loss type should error");
+    let err = match result {
+        Ok(_) => unreachable!("unknown loss type should error"),
+        Err(err) => err.to_string(),
+    };
+    assert!(
+        err.contains("Unknown loss type"),
+        "error should mention loss type: {}",
+        err
+    );
+}
+
+#[test]
+fn prepare_single_channel_eq_with_target_curve() {
+    let curve = make_simple_test_curve();
+    let target = Curve {
+        freq: curve.freq.clone(),
+        spl: Array1::zeros(curve.freq.len()),
+        phase: None,
+        ..Default::default()
+    };
+    // We need a temporary CSV file for the target
+    let mut tmpfile = tempfile::NamedTempFile::new().unwrap();
+    use std::io::Write;
+    writeln!(tmpfile, "frequency,spl").unwrap();
+    for i in 0..target.freq.len() {
+        writeln!(tmpfile, "{},{}", target.freq[i], target.spl[i]).unwrap();
+    }
+    tmpfile.flush().unwrap();
+
+    let target_config = crate::roomeq::types::TargetCurveConfig::Path(tmpfile.path().to_path_buf());
+    let config = OptimizerConfig {
+        num_filters: 3,
+        max_iter: 1000,
+        seed: Some(42),
+        ..OptimizerConfig::default()
+    };
+    let prep = prepare_single_channel_eq(&curve, &config, Some(&target_config), 48000.0)
+        .expect("target prepare should succeed");
+    assert!(!prep.objective_data.target.is_empty());
+}
+
+#[test]
+#[should_panic(expected = "out of bounds")]
+fn prepare_single_channel_eq_empty_curve_panics() {
+    let curve = Curve::default();
+    let config = OptimizerConfig {
+        num_filters: 3,
+        max_iter: 1000,
+        seed: Some(42),
+        ..OptimizerConfig::default()
+    };
+    let _ = prepare_single_channel_eq(&curve, &config, None, 48000.0);
 }

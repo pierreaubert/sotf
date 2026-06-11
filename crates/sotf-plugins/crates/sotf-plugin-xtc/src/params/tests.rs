@@ -163,3 +163,47 @@ fn deserialize_empty_json_uses_defaults() {
         pk(PARAMS, "auto_gain_smoothing_ms").default_f64()
     );
 }
+
+use sotf_host::param_specs::ParamType;
+
+#[test]
+fn test_param_value_set_param_value_roundtrip() {
+    let mut p = Params::default();
+    for i in 0..PARAMS.len() {
+        let spec = &PARAMS[i];
+        let new_val = match spec.param_type {
+            ParamType::Bool { .. } => 1.0,
+            _ => spec.min_f64() + 0.5 * (spec.max_f64() - spec.min_f64()),
+        };
+        p.set_param_value(i, new_val);
+        let retrieved = p.param_value(i).unwrap();
+        if let ParamType::Bool { .. } = spec.param_type {
+            assert!(
+                (retrieved - 1.0).abs() < 0.001,
+                "bool param {} roundtrip failed",
+                spec.engine_key
+            );
+        } else {
+            assert!(
+                (retrieved - new_val).abs() < 0.001,
+                "param {} roundtrip failed",
+                spec.engine_key
+            );
+        }
+    }
+}
+
+#[test]
+fn test_param_value_out_of_range() {
+    let p = Params::default();
+    assert!(p.param_value(PARAMS.len()).is_none());
+    assert!(p.param_value(999).is_none());
+}
+
+#[test]
+fn test_set_param_value_out_of_range() {
+    let mut p = Params::default();
+    // Should not panic
+    p.set_param_value(999, 1.0);
+    p.set_param_value(PARAMS.len(), 1.0);
+}

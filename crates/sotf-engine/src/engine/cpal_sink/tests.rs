@@ -18,7 +18,7 @@ use super::*;
 
 #[test]
 fn stream_error_callbacks_gate_event_formatting() {
-    let source = include_str!("../cpal_sink.rs");
+    let source = include_str!("build.rs");
 
     assert!(
         source.contains("if crate::rate_limit::allow(&EVENT_GATE, 5_000_000_000)"),

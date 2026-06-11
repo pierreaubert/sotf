@@ -1115,3 +1115,372 @@ fn test_dead_params_not_exposed_in_parameters() {
         "headphone_eq_enabled (unimplemented) must not be exposed in parameters()"
     );
 }
+
+// -------------------------------------------------------------------------
+// set_parameter extended coverage
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_set_parameter_hrtf_file_empty_clears_path() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.hrtf_path = Some(std::path::PathBuf::from("/some/path.sofa"));
+    plugin
+        .set_parameter(
+            ParameterId::from("hrtf_file"),
+            ParameterValue::String("".to_string()),
+        )
+        .unwrap();
+    assert!(plugin.hrtf_path.is_none());
+}
+
+#[test]
+fn test_set_parameter_hrtf_database_dir_empty() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.hrtf_database_dir = "/previous".to_string();
+    plugin
+        .set_parameter(
+            ParameterId::from("hrtf_database_dir"),
+            ParameterValue::String("".to_string()),
+        )
+        .unwrap();
+    assert_eq!(plugin.hrtf_database_dir, "");
+}
+
+#[test]
+fn test_set_parameter_head_width_cm_valid() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin
+        .set_parameter(
+            ParameterId::from("head_width_cm"),
+            ParameterValue::Float(20.0),
+        )
+        .unwrap();
+    assert_eq!(plugin.head_width_cm, 20.0);
+}
+
+#[test]
+fn test_set_parameter_head_width_cm_out_of_range_ignored() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin
+        .set_parameter(
+            ParameterId::from("head_width_cm"),
+            ParameterValue::Float(5.0),
+        )
+        .unwrap();
+    assert_eq!(plugin.head_width_cm, 15.0);
+}
+
+#[test]
+fn test_set_parameter_ear_height_cm_valid() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin
+        .set_parameter(
+            ParameterId::from("ear_height_cm"),
+            ParameterValue::Float(12.0),
+        )
+        .unwrap();
+    assert_eq!(plugin.ear_height_cm, 12.0);
+}
+
+#[test]
+fn test_set_parameter_ear_height_cm_out_of_range_ignored() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin
+        .set_parameter(
+            ParameterId::from("ear_height_cm"),
+            ParameterValue::Float(2.0),
+        )
+        .unwrap();
+    assert_eq!(plugin.ear_height_cm, 10.0);
+}
+
+#[test]
+fn test_set_parameter_late_reverb_params() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.initialize(44100).unwrap();
+
+    plugin
+        .set_parameter(
+            ParameterId::from("late_reverb_enabled"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    assert!(plugin.late_reverb_enabled);
+
+    plugin
+        .set_parameter(
+            ParameterId::from("late_reverb_mix"),
+            ParameterValue::Float(0.5),
+        )
+        .unwrap();
+    assert_eq!(plugin.late_reverb_mix, 0.5);
+
+    plugin
+        .set_parameter(
+            ParameterId::from("late_reverb_rt60"),
+            ParameterValue::Float(2.0),
+        )
+        .unwrap();
+    assert_eq!(plugin.late_reverb_rt60, 2.0);
+
+    plugin
+        .set_parameter(
+            ParameterId::from("late_reverb_damping"),
+            ParameterValue::Float(0.5),
+        )
+        .unwrap();
+    assert_eq!(plugin.late_reverb_damping, 0.5);
+}
+
+#[test]
+fn test_set_parameter_externalization() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin
+        .set_parameter(
+            ParameterId::from("externalization"),
+            ParameterValue::Float(0.75),
+        )
+        .unwrap();
+    assert!((plugin.externalization.target() - 0.75).abs() < 1e-4);
+}
+
+#[test]
+fn test_set_parameter_near_field_strength() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin
+        .set_parameter(
+            ParameterId::from("near_field_strength"),
+            ParameterValue::Float(0.5),
+        )
+        .unwrap();
+    assert!((plugin.near_field_strength - 0.5).abs() < 1e-4);
+}
+
+#[test]
+fn test_set_parameter_crossfade_ms_non_float_error() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("crossfade_ms"),
+                ParameterValue::String("not_a_number".to_string()),
+            )
+            .is_err()
+    );
+}
+
+// -------------------------------------------------------------------------
+// initialize extended coverage
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_initialize_sets_sample_rate_and_lfe_filter() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        5,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.initialize(96000).unwrap();
+    assert_eq!(plugin.sample_rate, 96000);
+    assert!(!plugin.lfe_lowpass_filter.is_empty());
+    assert!(plugin.lfe_gain > 0.0);
+}
+
+#[test]
+fn test_initialize_with_nonexistent_srir_file_falls_back_to_ism() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.srir_file = Some(std::path::PathBuf::from("/nonexistent/path.wav"));
+    plugin.initialize(48000).unwrap();
+    assert!(!plugin.cached_reflections.is_empty());
+}
+
+#[test]
+fn test_initialize_clamps_reflection_delays() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel {
+            dimensions: [1000.0, 1000.0, 1000.0],
+            listener_position: [500.0, 500.0, 500.0],
+            max_order: 1,
+            ..Default::default()
+        },
+    );
+    plugin.initialize(48000).unwrap();
+    let max_delay = plugin.reflection_delay_mask;
+    for r in &plugin.cached_reflections {
+        assert!(
+            r.delay_samples <= max_delay,
+            "delay {} exceeds buffer mask {}",
+            r.delay_samples,
+            max_delay
+        );
+    }
+}
+
+#[test]
+fn test_initialize_empty_hrtf_database_dir_no_crash() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.hrtf_database_dir = "".to_string();
+    plugin.initialize(48000).unwrap();
+}

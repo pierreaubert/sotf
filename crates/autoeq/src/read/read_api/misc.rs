@@ -4,63 +4,9 @@ use serde_json::Value;
 use std::error::Error;
 
 pub(super) fn decode_typed_array(bdata: &str, dtype: &str) -> Result<Vec<f64>, Box<dyn Error>> {
-    // Create lookup table for base64 decoding
-    let chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut lookup = [0u8; 256];
-    for (i, c) in chars.chars().enumerate() {
-        lookup[c as usize] = i as u8;
-    }
+    use base64::Engine as _;
 
-    // Calculate buffer length
-    let len = bdata.len();
-    let mut buffer_length = len * 3 / 4;
-
-    // Adjust for padding
-    if len > 0 && bdata.chars().nth(len - 1) == Some('=') {
-        buffer_length -= 1;
-        if len > 1 && bdata.chars().nth(len - 2) == Some('=') {
-            buffer_length -= 1;
-        }
-    }
-
-    // Decode base64
-    let mut bytes = vec![0u8; buffer_length];
-    let mut p = 0;
-    let bdata_bytes = bdata.as_bytes();
-
-    for i in (0..len).step_by(4) {
-        let encoded1 = lookup[bdata_bytes[i] as usize] as u32;
-        let encoded2 = if i + 1 < len {
-            lookup[bdata_bytes[i + 1] as usize] as u32
-        } else {
-            0
-        };
-        let encoded3 = if i + 2 < len {
-            lookup[bdata_bytes[i + 2] as usize] as u32
-        } else {
-            0
-        };
-        let encoded4 = if i + 3 < len {
-            lookup[bdata_bytes[i + 3] as usize] as u32
-        } else {
-            0
-        };
-
-        if p < buffer_length {
-            bytes[p] = ((encoded1 << 2) | (encoded2 >> 4)) as u8;
-            p += 1;
-        }
-
-        if p < buffer_length {
-            bytes[p] = (((encoded2 & 15) << 4) | (encoded3 >> 2)) as u8;
-            p += 1;
-        }
-
-        if p < buffer_length {
-            bytes[p] = (((encoded3 & 3) << 6) | (encoded4 & 63)) as u8;
-            p += 1;
-        }
-    }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(bdata)?;
 
     // Convert to appropriate typed array based on dtype
     let result = match dtype {
@@ -181,4 +127,161 @@ pub(super) fn headphone_cache_dir(headphone: &str) -> std::path::PathBuf {
     p.push("org.spinorama");
     p.push(crate::read::directory::sanitize_dir_name(headphone));
     p
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_typed_array_u1() {
+        let values = decode_typed_array("AA==", "u1").unwrap();
+        assert_eq!(values, vec![0.0]);
+
+        let values = decode_typed_array("AQ==", "u1").unwrap();
+        assert_eq!(values, vec![1.0]);
+
+        let values = decode_typed_array("/w==", "u1").unwrap();
+        assert_eq!(values, vec![255.0]);
+    }
+
+    #[test]
+    fn decode_typed_array_i1() {
+        let values = decode_typed_array("AA==", "i1").unwrap();
+        assert_eq!(values, vec![0.0]);
+
+        let values = decode_typed_array("AQ==", "i1").unwrap();
+        assert_eq!(values, vec![1.0]);
+
+        let values = decode_typed_array("/w==", "i1").unwrap();
+        assert_eq!(values, vec![-1.0]);
+    }
+
+    #[test]
+    fn decode_typed_array_u2() {
+        // 1 as little-endian u16: bytes [0x01, 0x00]
+        // base64 of [0x01, 0x00] with 1 padding: AQA=
+        let values = decode_typed_array("AQA=", "u2").unwrap();
+        assert_eq!(values, vec![1.0]);
+
+        // 256 as little-endian u16: bytes [0x00, 0x01]
+        // base64: AAE=
+        let values = decode_typed_array("AAE=", "u2").unwrap();
+        assert_eq!(values, vec![256.0]);
+    }
+
+    #[test]
+    fn decode_typed_array_i2() {
+        // -1 as little-endian i16: bytes [0xff, 0xff]
+        // base64 of [0xff, 0xff]: //8=
+        let values = decode_typed_array("//8=", "i2").unwrap();
+        assert_eq!(values, vec![-1.0]);
+
+        // 1 as little-endian i16: bytes [0x01, 0x00]
+        let values = decode_typed_array("AQA=", "i2").unwrap();
+        assert_eq!(values, vec![1.0]);
+    }
+
+    #[test]
+    fn decode_typed_array_u4() {
+        // 1 as little-endian u32: bytes [0x01, 0x00, 0x00, 0x00]
+        // base64: AQAAAA==
+        let values = decode_typed_array("AQAAAA==", "u4").unwrap();
+        assert_eq!(values, vec![1.0]);
+    }
+
+    #[test]
+    fn decode_typed_array_i4() {
+        // -1 as little-endian i32: bytes [0xff, 0xff, 0xff, 0xff]
+        // base64: /////w==
+        let values = decode_typed_array("/////w==", "i4").unwrap();
+        assert_eq!(values, vec![-1.0]);
+    }
+
+    #[test]
+    fn decode_typed_array_f4() {
+        // 1.0 as little-endian f32: bytes [0x00, 0x00, 0x80, 0x3f]
+        // base64: AACAPw==
+        let values = decode_typed_array("AACAPw==", "f4").unwrap();
+        assert!((values[0] - 1.0).abs() < 1e-6, "got {}", values[0]);
+    }
+
+    #[test]
+    fn decode_typed_array_f8() {
+        // 1.0 as little-endian f64: bytes [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f]
+        // base64: AAAAAAAA8D8=
+        let values = decode_typed_array("AAAAAAAA8D8=", "f8").unwrap();
+        assert!((values[0] - 1.0).abs() < 1e-12, "got {}", values[0]);
+    }
+
+    #[test]
+    fn decode_typed_array_unknown_dtype_falls_back_to_bytes() {
+        // "AQ==" decodes to byte 0x01
+        let values = decode_typed_array("AQ==", "unknown").unwrap();
+        assert_eq!(values, vec![1.0]);
+    }
+
+    #[test]
+    fn decode_typed_array_empty_returns_empty() {
+        let values = decode_typed_array("", "u1").unwrap();
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn decode_typed_array_with_padding() {
+        // "AQ==" has 2 padding chars, decodes to 1 byte
+        let values = decode_typed_array("AQ==", "u1").unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], 1.0);
+    }
+
+    #[test]
+    fn decode_typed_array_multiple_values() {
+        // Two u8 values: 0, 1 → bytes [0x00, 0x01]
+        // base64: AAE=
+        let values = decode_typed_array("AAE=", "u1").unwrap();
+        assert_eq!(values, vec![0.0, 1.0]);
+    }
+
+    #[test]
+    fn is_target_trace_name_exact_for_cea2034() {
+        assert!(is_target_trace_name("CEA2034", "On Axis", "On Axis"));
+        assert!(!is_target_trace_name(
+            "CEA2034",
+            "On Axis",
+            "Listening Window"
+        ));
+    }
+
+    #[test]
+    fn is_target_trace_name_heuristic_for_other() {
+        assert!(is_target_trace_name("Other", "X", "Listening Window"));
+        assert!(is_target_trace_name("Other", "X", "On Axis"));
+        assert!(!is_target_trace_name("Other", "X", "Random"));
+    }
+
+    #[test]
+    fn collect_trace_names_empty() {
+        let data = serde_json::json!({"data": []});
+        assert!(collect_trace_names(&data).is_empty());
+    }
+
+    #[test]
+    fn collect_trace_names_extracts_names() {
+        let data = serde_json::json!({
+            "data": [
+                {"name": "Trace1"},
+                {"name": "Trace2"},
+                {"x": [1, 2]}
+            ]
+        });
+        let names = collect_trace_names(&data);
+        assert_eq!(names, vec!["Trace1", "Trace2"]);
+    }
+
+    #[test]
+    fn collect_trace_names_missing_data() {
+        let data = serde_json::json!({});
+        assert!(collect_trace_names(&data).is_empty());
+    }
 }

@@ -14,7 +14,15 @@ Cancels acoustic echoes from microphone input using reference signal correlation
 @node aec Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
+
+@subsection AEC
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Echo Tail} @tab Float @tab 50 .. 500 @tab 200 @tab ms @tab Max echo path length to cancel
+@item @code{Step Size} @tab Float @tab 0.1 .. 0.9 @tab 0.5 @tab - @tab Adaptive filter convergence rate
+@item @code{Post-Filter} @tab Bool @tab On / Off @tab On @tab - @tab Apply residual echo suppression
+@end multitable
 
 @node aec Plugin Developer Guide
 @section Developer Guide

@@ -102,3 +102,64 @@ pub fn impulse_response_duration(freqs: &Array1<f64>, phase: &Array1<f64>) -> f6
     // Return standard deviation of group delay in ms
     gd_variance.sqrt()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::Array1;
+    use num_complex::Complex64;
+    use std::f64::consts::PI;
+
+    #[test]
+    fn compute_phase_basic() {
+        let response = Array1::from(vec![
+            Complex64::new(1.0, 0.0),
+            Complex64::new(0.0, 1.0),
+            Complex64::new(-1.0, 0.0),
+        ]);
+        let phase = compute_phase(&response);
+        assert!((phase[0] - 0.0).abs() < 1e-12);
+        assert!((phase[1] - 90.0).abs() < 1e-12);
+        assert!((phase[2] - 180.0).abs() < 1e-12, "got {}", phase[2]);
+    }
+
+    #[test]
+    fn compute_group_delay_linear_phase() {
+        let freqs = Array1::from(vec![100.0, 200.0]);
+        let phase = Array1::from(vec![0.0, -90.0]);
+        let gd = compute_group_delay(&freqs, &phase);
+        // d_phase = -90 deg = -PI/2 rad
+        // gd = -(-PI/2) / (2*PI*100) * 1000 = 2.5 ms
+        assert!((gd[1] - 2.5).abs() < 1e-9, "gd[1] = {}", gd[1]);
+        assert_eq!(gd[0], gd[1]);
+    }
+
+    #[test]
+    fn phase_deviation_rms() {
+        let measured = Array1::from(vec![0.0, 90.0]);
+        let target = Array1::from(vec![0.0, 0.0]);
+        let freqs = Array1::from(vec![100.0, 200.0]);
+        let dev = phase_deviation(&measured, &target, &freqs);
+        let expected = ((0.0f64.powi(2) + 90.0f64.powi(2)) / 2.0).sqrt();
+        assert!((dev - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn magnitude_phase_loss_combination() {
+        let loss = magnitude_phase_loss(1.5, 2.0, 0.5);
+        assert!((loss - 2.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn impulse_response_duration_constant_gd() {
+        // Uniform frequency spacing + constant phase step -> constant group delay
+        let freqs = Array1::from(vec![100.0, 200.0, 300.0]);
+        let phase = Array1::from(vec![0.0, -90.0, -180.0]);
+        let duration = impulse_response_duration(&freqs, &phase);
+        assert!(
+            duration.abs() < 1e-9,
+            "duration should be ~0, got {}",
+            duration
+        );
+    }
+}

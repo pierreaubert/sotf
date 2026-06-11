@@ -479,4 +479,123 @@ mod tests {
         assert_eq!(suppressor.work.len(), initial_len);
         assert!(buffer.iter().all(|sample| sample.is_finite()));
     }
+
+    #[test]
+    fn process_with_zero_channels_returns_early() {
+        let mut suppressor = TransientSuppressor::new(0);
+        let mut buffer = vec![1.0f32; 10];
+        suppressor.process(&mut buffer);
+        // Buffer should be untouched because channels == 0 causes early return.
+        assert!(buffer.iter().all(|&s| s == 1.0));
+    }
+
+    #[test]
+    fn process_empty_buffer_returns_early() {
+        let mut suppressor = TransientSuppressor::new(1);
+        let mut buffer: Vec<f32> = vec![];
+        suppressor.process(&mut buffer);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn process_non_multiple_len_returns_early() {
+        let mut suppressor = TransientSuppressor::new(2);
+        let mut buffer = vec![1.0f32; 5]; // 5 is not a multiple of 2
+        suppressor.process(&mut buffer);
+        // Buffer should be untouched because len is not a multiple of channels.
+        assert!(buffer.iter().all(|&s| s == 1.0));
+    }
+
+    #[test]
+    fn sensitivity_clamped_below_one() {
+        let mut suppressor = TransientSuppressor::new(1);
+        suppressor.set_sensitivity(0.5);
+        assert_eq!(suppressor.sensitivity, 1.0);
+    }
+
+    #[test]
+    fn sample_rate_zero_clamped() {
+        let mut suppressor = TransientSuppressor::new(1);
+        suppressor.set_sample_rate(0);
+        // sample_rate is clamped to 1, so decay should be calculated with sr=1
+        assert!(suppressor.decay > 0.0 && suppressor.decay < 1.0);
+        assert!((suppressor.decay + suppressor.one_minus_decay - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn silence_stays_zero() {
+        let mut suppressor = TransientSuppressor::new(1);
+        let mut buffer = vec![0.0f32; 100];
+        suppressor.process(&mut buffer);
+        for &s in &buffer {
+            assert_eq!(s, 0.0, "Silence should remain zero, got {}", s);
+        }
+    }
+
+    #[test]
+    fn state_persists_across_process_calls() {
+        let mut suppressor = TransientSuppressor::new(1);
+        suppressor.set_sensitivity(5.0);
+
+        // First call primes the envelope.
+        let mut first = vec![0.0f32, 0.1, 0.1, 0.1];
+        suppressor.process(&mut first);
+
+        // Second call with a spike should be suppressed because the envelope
+        // carried over from the first call.
+        let mut second = vec![2.0f32, 0.0, 0.0, 0.0];
+        suppressor.process(&mut second);
+        assert!(
+            second[0] < 2.0,
+            "Spike should be suppressed due to persistent state"
+        );
+    }
+
+    #[test]
+    fn reset_restores_initial_state() {
+        let mut suppressor = TransientSuppressor::new(1);
+        suppressor.set_sensitivity(5.0);
+
+        // Process some audio to mutate state.
+        let mut buf = vec![0.5f32; 20];
+        suppressor.process(&mut buf);
+
+        suppressor.reset();
+
+        // After reset, processing identical buffers should yield identical results
+        // to a fresh suppressor.
+        let mut fresh = TransientSuppressor::new(1);
+        fresh.set_sensitivity(5.0);
+
+        let mut post_reset = vec![0.3f32; 10];
+        let mut post_fresh = vec![0.3f32; 10];
+        suppressor.process(&mut post_reset);
+        fresh.process(&mut post_fresh);
+
+        assert_eq!(post_reset, post_fresh);
+    }
+
+    #[test]
+    fn single_sample_mono() {
+        let mut suppressor = TransientSuppressor::new(1);
+        // A lone sample has no prior history, so the algorithm sees high
+        // curvature and clamps it to the threshold.  The important property
+        // is that the output is finite and bounded.
+        let mut buffer = vec![0.1f32];
+        suppressor.process(&mut buffer);
+        assert!(buffer[0].is_finite());
+        assert!(buffer[0].abs() < 0.1); // clamped
+    }
+
+    #[test]
+    fn two_channel_small_buffer() {
+        let mut suppressor = TransientSuppressor::new(2);
+        // Two frames give the second frame a delta history, so the second
+        // frame should pass through unchanged for a smooth signal.
+        let mut buffer = vec![0.1f32, 0.2, 0.1, 0.2];
+        suppressor.process(&mut buffer);
+        // Second frame (samples 2 and 3) should be unchanged because delta is zero.
+        assert_eq!(buffer[2], 0.1);
+        assert_eq!(buffer[3], 0.2);
+    }
 }

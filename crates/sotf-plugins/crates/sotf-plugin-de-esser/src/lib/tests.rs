@@ -617,3 +617,94 @@ fn test_reset_clears_filter_state() {
         "reset should restore LF pass-through behavior"
     );
 }
+
+// -------------------------------------------------------------------------
+// set_parameter extended coverage
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_set_parameter_q_rebuilds_filters() {
+    let mut plugin = DeEsserPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+
+    let original_hp_freq = plugin.hp_filters.freq;
+    plugin
+        .set_parameter(ParameterId::from("q"), ParameterValue::Float(4.0))
+        .unwrap();
+    let new_hp_freq = plugin.hp_filters.freq;
+    assert_ne!(
+        original_hp_freq, new_hp_freq,
+        "HP filter frequency should change when Q changes"
+    );
+}
+
+#[test]
+fn test_set_parameter_attack_updates_cores() {
+    let mut plugin = DeEsserPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+
+    plugin
+        .set_parameter(ParameterId::from("attack"), ParameterValue::Float(5.0))
+        .unwrap();
+    assert_eq!(plugin.attack_ms, 5.0);
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("attack")),
+        Some(ParameterValue::Float(5.0))
+    );
+}
+
+#[test]
+fn test_set_parameter_release_updates_cores() {
+    let mut plugin = DeEsserPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+
+    plugin
+        .set_parameter(ParameterId::from("release"), ParameterValue::Float(100.0))
+        .unwrap();
+    assert_eq!(plugin.release_ms, 100.0);
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("release")),
+        Some(ParameterValue::Float(100.0))
+    );
+}
+
+#[test]
+fn test_initialize_different_sample_rate() {
+    let mut plugin = DeEsserPlugin::new(1);
+    plugin.initialize(44100).unwrap();
+    assert_eq!(plugin.sample_rate, 44100);
+
+    plugin.initialize(96000).unwrap();
+    assert_eq!(plugin.sample_rate, 96000);
+    // Filters and crossovers should have been rebuilt for the new rate without panic
+}
+
+#[test]
+fn test_set_parameter_mode_unknown_string_defaults_split_band() {
+    let mut plugin = DeEsserPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+
+    plugin
+        .set_parameter(
+            ParameterId::from("mode"),
+            ParameterValue::String("Unknown".to_string()),
+        )
+        .unwrap();
+    assert_eq!(plugin.mode_index, 1);
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("mode")),
+        Some(ParameterValue::String("Split-Band".to_string()))
+    );
+}
+
+#[test]
+fn test_set_parameter_mix_updates_smoother_target() {
+    let mut plugin = DeEsserPlugin::new(1);
+    plugin.initialize(48000).unwrap();
+
+    plugin
+        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.75))
+        .unwrap();
+    assert_eq!(plugin.mix, 0.75);
+    assert!((plugin.mix_smoother.target() - 0.75).abs() < 1e-4);
+}

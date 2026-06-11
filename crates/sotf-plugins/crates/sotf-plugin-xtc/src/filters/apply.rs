@@ -70,3 +70,39 @@ pub(crate) fn apply_effort_constraint(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustfft::num_complex::Complex;
+
+    #[test]
+    fn test_apply_effort_constraint_scales() {
+        let mut ll = vec![Complex::new(10.0, 0.0); 10];
+        let mut lr = vec![Complex::new(10.0, 0.0); 10];
+        apply_effort_constraint(&mut ll, &mut lr, None, None, 1.0);
+        assert!(ll[0].norm() < 10.0);
+        assert!(lr[0].norm() < 10.0);
+    }
+
+    #[test]
+    fn test_apply_effort_constraint_no_scale() {
+        let mut ll = vec![Complex::new(0.1, 0.0); 10];
+        let mut lr = vec![Complex::new(0.1, 0.0); 10];
+        let original = ll[0].norm();
+        apply_effort_constraint(&mut ll, &mut lr, None, None, 10.0);
+        assert!((ll[0].norm() - original).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_apply_beta_freq_boosts() {
+        let params = crate::config::XtcPluginParams::default();
+        let beta = 0.01;
+        let low = apply_beta_freq_boosts(beta, 50.0, &params);
+        let mid = apply_beta_freq_boosts(beta, 1000.0, &params);
+        let high = apply_beta_freq_boosts(beta, 20000.0, &params);
+        assert!(low >= beta);
+        assert!(high >= beta);
+        assert!((mid - beta).abs() < 0.001);
+    }
+}

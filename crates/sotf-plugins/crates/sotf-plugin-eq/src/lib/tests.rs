@@ -1250,3 +1250,267 @@ fn test_set_parameter_band_gain_out_of_bounds_rejected() {
     );
     assert!(result.is_err(), "gain below GAIN_MIN should be rejected");
 }
+
+#[test]
+fn test_new_per_channel() {
+    let ch1 = vec![Biquad::new(
+        BiquadFilterType::Peak,
+        1000.0,
+        48000.0,
+        1.0,
+        6.0,
+    )];
+    let ch2 = vec![Biquad::new(
+        BiquadFilterType::Lowpass,
+        2000.0,
+        48000.0,
+        0.707,
+        0.0,
+    )];
+    let p = EqPlugin::new_per_channel(2, vec![ch1, ch2]).unwrap();
+    assert_eq!(p.num_channels, 2);
+    assert_eq!(p.filters[0][0][0].freq, 1000.0);
+    assert_eq!(p.filters[1][0][0].freq, 2000.0);
+}
+
+#[test]
+fn test_new_per_channel_count_mismatch() {
+    let result = EqPlugin::new_per_channel(2, vec![vec![]]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_set_filters() {
+    let mut p = EqPlugin::new(
+        2,
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            6.0,
+        )],
+    );
+    let new_filters = vec![
+        Biquad::new(BiquadFilterType::Lowpass, 500.0, 48000.0, 0.707, 0.0),
+        Biquad::new(BiquadFilterType::Highpass, 8000.0, 48000.0, 0.707, 0.0),
+    ];
+    p.set_filters(new_filters);
+    assert_eq!(p.filters.len(), 2);
+    assert_eq!(p.filters[0].len(), 2);
+    assert_eq!(p.filters[0][0][0].freq, 500.0);
+    assert_eq!(p.band_orders, vec![2, 2]);
+}
+
+#[test]
+fn test_set_channel_filters() {
+    let mut p = EqPlugin::new(2, vec![]);
+    let cf = vec![
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )],
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            2000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )],
+    ];
+    p.set_channel_filters(cf).unwrap();
+    assert_eq!(p.filters[0][0][0].freq, 1000.0);
+    assert_eq!(p.filters[1][0][0].freq, 2000.0);
+}
+
+#[test]
+fn test_set_channel_filters_mismatch() {
+    let mut p = EqPlugin::new(2, vec![]);
+    let result = p.set_channel_filters(vec![vec![]]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_transition_samples_scales_with_sample_rate() {
+    let mut p = EqPlugin::new(1, vec![]);
+    p.initialize(48000).unwrap();
+    let t48 = p.transition_samples();
+    p.initialize(96000).unwrap();
+    let t96 = p.transition_samples();
+    assert_eq!(t96, t48 * 2);
+}
+
+#[test]
+fn test_apply_sample_rate_to_advanced_filters() {
+    let params = EqPluginParams {
+        filters: vec![BiquadFilterConfig {
+            filter_type: "peak".to_string(),
+            freq: 1000.0,
+            q: 1.0,
+            db_gain: 6.0,
+            order: 2,
+            topology: EqFilterTopology::WarpedBiquad,
+            lambda: Some(0.5),
+            kautz_sections: Vec::new(),
+        }],
+        channel_filters: None,
+        auto_gain: Default::default(),
+    };
+    let mut p = EqPlugin::from_params(1, 48000, params).unwrap();
+    p.apply_sample_rate_to_advanced_filters(96000.0).unwrap();
+}
+
+#[test]
+fn test_get_data_returns_auto_gain() {
+    let mut p = EqPlugin::new(1, vec![]);
+    p.initialize(48000).unwrap();
+    let data = p.get_data();
+    assert!(data.is_some());
+}
+
+#[test]
+fn test_set_parameter_band_q_roundtrip() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )],
+    );
+    p.initialize(48000).unwrap();
+    InPlacePlugin::set_parameter(
+        &mut p,
+        ParameterId::from("band_0_q"),
+        ParameterValue::Float(2.5),
+    )
+    .unwrap();
+    assert!(p.transitions[0].is_some());
+    let val = InPlacePlugin::get_parameter(&p, &ParameterId::from("band_0_q"));
+    assert_eq!(val, Some(ParameterValue::Float(2.5)));
+}
+
+#[test]
+fn test_set_parameter_band_freq_roundtrip() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )],
+    );
+    p.initialize(48000).unwrap();
+    InPlacePlugin::set_parameter(
+        &mut p,
+        ParameterId::from("band_0_freq"),
+        ParameterValue::Float(2000.0),
+    )
+    .unwrap();
+    assert!(p.transitions[0].is_some());
+    let val = InPlacePlugin::get_parameter(&p, &ParameterId::from("band_0_freq"));
+    assert_eq!(val, Some(ParameterValue::Float(2000.0)));
+}
+
+#[test]
+fn test_set_parameter_topology_float() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )],
+    );
+    p.initialize(48000).unwrap();
+    InPlacePlugin::set_parameter(
+        &mut p,
+        ParameterId::from("topology"),
+        ParameterValue::Float(1.0),
+    )
+    .unwrap();
+    assert_eq!(p.topology, 1);
+}
+
+#[test]
+fn test_set_parameter_topology_noop() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )],
+    );
+    p.initialize(48000).unwrap();
+    InPlacePlugin::set_parameter(
+        &mut p,
+        ParameterId::from("topology"),
+        ParameterValue::String("Biquad".to_string()),
+    )
+    .unwrap();
+    assert_eq!(p.topology, 0);
+    assert!(p.svf_filters.is_empty());
+}
+
+#[test]
+fn test_set_parameter_oversampling_float_fallback() {
+    let mut p = EqPlugin::new(1, vec![]);
+    p.initialize(48000).unwrap();
+    // Set to 2x first
+    InPlacePlugin::set_parameter(
+        &mut p,
+        ParameterId::from("oversampling"),
+        ParameterValue::Int(2),
+    )
+    .unwrap();
+    assert_eq!(p.oversampling_factor, 2);
+    // Float value falls through to unwrap_or(1)
+    InPlacePlugin::set_parameter(
+        &mut p,
+        ParameterId::from("oversampling"),
+        ParameterValue::Float(2.0),
+    )
+    .unwrap();
+    assert_eq!(p.oversampling_factor, 1);
+}
+
+#[test]
+fn test_set_parameter_auto_gain_validation_fails() {
+    let mut p = EqPlugin::new(1, vec![]);
+    p.initialize(48000).unwrap();
+    let result = InPlacePlugin::set_parameter(
+        &mut p,
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Float(1.0),
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_get_parameter_band_order() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )],
+    );
+    p.initialize(48000).unwrap();
+    let val = InPlacePlugin::get_parameter(&p, &ParameterId::from("band_0_order"));
+    assert_eq!(val, Some(ParameterValue::Int(2)));
+}

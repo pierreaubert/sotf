@@ -42,7 +42,7 @@ Active acoustic enhancement using psychoacoustic processing to improve perceived
 
 @multitable @columnfractions .22 .18 .15 .10 .08 .27
 @headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
-@item @code{Dry Level} @tab Float @tab 0 .. 1 @tab 0.5 @tab x @tab Direct signal level
+@item @code{Dry Level} @tab Float @tab 0 .. 1 @tab 0.5 @tab x @tab Direct dry output level
 @item @code{ER Level} @tab Float @tab 0 .. 1 @tab 0.3 @tab x @tab Early reflection level
 @item @code{Late Level} @tab Float @tab 0 .. 1 @tab 0.2 @tab x @tab Late reverb (FDN) level
 @item @code{LFE Level} @tab Float @tab 0 .. 1 @tab 0.2 @tab x @tab Bass sent to LFE channel

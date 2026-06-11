@@ -411,3 +411,32 @@ fn test_find_album_art_no_images() {
     let result = find_album_art(temp_dir.path());
     assert!(result.is_none());
 }
+
+#[test]
+fn test_clean_album_title_edge_cases() {
+    // Empty string
+    assert_eq!(clean_album_title(""), "");
+
+    // Only disc marker
+    assert_eq!(clean_album_title("(CD 1)"), "");
+
+    // Volume marker
+    assert_eq!(clean_album_title("Album Vol. 2"), "Album");
+    assert_eq!(clean_album_title("Album vol 1"), "Album");
+
+    // Disc in middle of title should not be stripped
+    assert_eq!(clean_album_title("The CD Is Dead"), "The CD Is Dead");
+
+    // Multiple parentheses - should strip the last catalog number
+    assert_eq!(clean_album_title("Album (Live) (123-4)"), "Album (Live)");
+
+    // Bracket catalog number that is also a disc marker (should NOT strip)
+    assert_eq!(clean_album_title("Album [CD 1]"), "Album");
+
+    // Short catalog number in parentheses
+    assert_eq!(clean_album_title("Album (R2 47730)"), "Album");
+
+    // Case-insensitive disc markers
+    assert_eq!(clean_album_title("Album (cd 1)"), "Album");
+    assert_eq!(clean_album_title("Album (DISC 2)"), "Album");
+}

@@ -151,3 +151,83 @@ fn gating_blocks_overflow_oldest_dropped() {
         "gating_block_count_and_energy should work after overflow"
     );
 }
+
+#[test]
+fn add_frames_f32_error_on_non_multiple_channels() {
+    let mut meter = EbuR128::new(2, 48000, Mode::SAMPLE_PEAK).unwrap();
+    // 3 samples for 2 channels → error
+    let result = meter.add_frames_f32(&[0.5, 0.5, 0.5]);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.contains("multiple of channel count"));
+}
+
+#[test]
+fn add_frames_f32_empty() {
+    let mut meter = EbuR128::new(2, 48000, Mode::SAMPLE_PEAK).unwrap();
+    let result = meter.add_frames_f32(&[]);
+    assert!(result.is_ok());
+    assert_eq!(meter.sample_peak(0).unwrap(), 0.0);
+}
+
+#[test]
+fn add_frames_f32_mono_peak_tracking() {
+    let mut meter = EbuR128::new(1, 48000, Mode::SAMPLE_PEAK).unwrap();
+    let samples = vec![0.3f32, -0.8, 0.5, -0.9, 0.1];
+    meter.add_frames_f32(&samples).unwrap();
+
+    let peak = meter.sample_peak(0).unwrap();
+    assert!((peak - 0.9).abs() < 1e-6, "Expected peak ~0.9, got {peak}");
+}
+
+#[test]
+fn add_frames_f32_multichannel_peaks() {
+    let mut meter = EbuR128::new(4, 48000, Mode::SAMPLE_PEAK).unwrap();
+    // Interleaved 4 channels: ch0=0.1, ch1=0.2, ch2=0.3, ch3=0.4
+    let samples = vec![0.1f32, 0.2, 0.3, 0.4, -0.5, -0.6, -0.7, -0.8];
+    meter.add_frames_f32(&samples).unwrap();
+
+    assert!((meter.sample_peak(0).unwrap() - 0.5).abs() < 1e-6);
+    assert!((meter.sample_peak(1).unwrap() - 0.6).abs() < 1e-6);
+    assert!((meter.sample_peak(2).unwrap() - 0.7).abs() < 1e-6);
+    assert!((meter.sample_peak(3).unwrap() - 0.8).abs() < 1e-6);
+}
+
+#[test]
+fn add_frames_f32_prev_sample_peak_snapshot() {
+    let mut meter = EbuR128::new(1, 48000, Mode::SAMPLE_PEAK).unwrap();
+    let samples1 = vec![0.5f32];
+    meter.add_frames_f32(&samples1).unwrap();
+
+    let prev = meter.prev_sample_peak(0).unwrap();
+    assert!((prev - 0.5).abs() < 1e-6);
+
+    // After reading, prev should be reset
+    let prev2 = meter.prev_sample_peak(0).unwrap();
+    assert_eq!(prev2, 0.0);
+}
+
+#[test]
+fn add_frames_f32_silence_momentary() {
+    let mut meter = EbuR128::new(2, 48000, Mode::M).unwrap();
+    // 400ms silence = 19200 frames stereo
+    let silence = vec![0.0f32; 19200 * 2];
+    meter.add_frames_f32(&silence).unwrap();
+
+    let lufs = meter.loudness_momentary().unwrap();
+    assert!(
+        lufs == f64::NEG_INFINITY || lufs < -100.0,
+        "silence momentary should be -inf, got {lufs}"
+    );
+}
+
+#[test]
+fn add_frames_f32_short_burst() {
+    let mut meter = EbuR128::new(1, 48000, Mode::SAMPLE_PEAK).unwrap();
+    // Very short burst (less than 100ms)
+    let burst = vec![1.0f32; 100];
+    meter.add_frames_f32(&burst).unwrap();
+
+    let peak = meter.sample_peak(0).unwrap();
+    assert!((peak - 1.0).abs() < 1e-6);
+}

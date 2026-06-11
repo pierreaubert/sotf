@@ -14,7 +14,14 @@ Removes clicks, pops, and short transient defects from audio (vinyl restoration,
 @node declick Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
+
+@subsection General
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Enabled} @tab Bool @tab On / Off @tab On @tab - @tab Enable time-domain click repair
+@item @code{Sensitivity} @tab Float @tab 1 .. 100 @tab 10 @tab - @tab Click detection sensitivity; lower values detect more clicks
+@end multitable
 
 @node declick Plugin Developer Guide
 @section Developer Guide

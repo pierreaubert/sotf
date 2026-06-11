@@ -67,8 +67,8 @@ impl MidiManager {
     /// Poll MIDI ports without touching active input/output connections.
     pub fn device_snapshot(&self) -> Result<MidiDeviceSnapshot> {
         Ok(MidiDeviceSnapshot::new(
-            enumerate_input_devices()?,
-            enumerate_output_devices()?,
+            enumerate_input_devices().unwrap_or_default(),
+            enumerate_output_devices().unwrap_or_default(),
         ))
     }
 

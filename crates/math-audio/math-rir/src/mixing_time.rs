@@ -170,4 +170,64 @@ mod tests {
             "dry room should return default, got {mt_ms:.1}ms"
         );
     }
+
+    #[test]
+    fn test_estimate_mixing_time_very_low_sample_rate() {
+        // At 400 Hz, 5ms window = 2 samples → falls back to default (< 4)
+        let rir = vec![0.5f32; 100];
+        let mt = estimate_mixing_time(&rir, 400.0);
+        assert_eq!(mt, default_mixing_time_samples(400.0));
+    }
+
+    #[test]
+    fn test_estimate_mixing_time_short_rir_no_room() {
+        // RIR so short that analysis_start + window >= search_end
+        let mut rir = vec![0.0f32; 10];
+        rir[0] = 1.0;
+        let mt = estimate_mixing_time(&rir, 48000.0);
+        assert_eq!(mt, default_mixing_time_samples(48000.0));
+    }
+
+    #[test]
+    fn test_estimate_mixing_time_all_zeros() {
+        // All-zero RIR (not empty) — direct_peak will be sample 0,
+        // but RMS in every window is zero, so density never exceeds threshold.
+        let rir = vec![0.0f32; 4800];
+        let mt = estimate_mixing_time(&rir, 48000.0);
+        assert_eq!(mt, default_mixing_time_samples(48000.0));
+    }
+
+    #[test]
+    fn test_estimate_mixing_time_early_dense_tail() {
+        // Dense tail starts immediately after direct sound → mixing time should be early
+        let sample_rate = 48000.0;
+        let len = (0.100 * sample_rate) as usize;
+        let mut rir = vec![0.0f32; len];
+        rir[48] = 1.0;
+
+        // Fill everything after direct sound with dense noise
+        let mut amp = 0.1f32;
+        let mut rng: u32 = 12345;
+        for sample in rir.iter_mut().skip(49) {
+            rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
+            let noise = ((rng >> 16) as f32 / 32768.0) - 1.0;
+            *sample = noise * amp;
+            amp *= 0.9997;
+        }
+
+        let mt = estimate_mixing_time(&rir, sample_rate);
+        let mt_ms = mt as f64 / sample_rate * 1000.0;
+        // Should detect an early mixing time (before default 38ms)
+        assert!(
+            mt_ms < 50.0,
+            "early dense tail should yield early mixing time, got {mt_ms:.1}ms"
+        );
+    }
+
+    #[test]
+    fn test_default_mixing_time_samples_exact() {
+        assert_eq!(default_mixing_time_samples(48000.0), 1824); // 0.038 * 48000 = 1824
+        assert_eq!(default_mixing_time_samples(44100.0), 1676); // 0.038 * 44100 = 1675.8 ≈ 1676
+        assert_eq!(default_mixing_time_samples(96000.0), 3648);
+    }
 }

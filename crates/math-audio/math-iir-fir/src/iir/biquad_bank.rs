@@ -663,4 +663,58 @@ mod biquad_bank_tests {
         bank.process_interleaved_frame(&mut frame);
         assert!(frame[0] != 0.5);
     }
+
+    /// Test process_interleaved_frame with odd channel count.
+    #[test]
+    fn test_biquad_bank_odd_channels() {
+        let mut template = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
+        template.use_tdf2 = true;
+        let mut bank = BiquadBank::new(&template, 3);
+        let mut frame = [0.5f64, 0.25, 0.125];
+        bank.process_interleaved_frame(&mut frame);
+        assert!(frame[0].is_finite());
+        assert!(frame[1].is_finite());
+        assert!(frame[2].is_finite());
+    }
+
+    /// Test process_interleaved_frame with high-frequency signal is attenuated by lowpass.
+    #[test]
+    fn test_biquad_bank_highfreq_lowpass_attenuation() {
+        let template = Biquad::new(BiquadFilterType::Lowpass, 1000.0, 48000.0, 0.707, 0.0);
+        let mut bank = BiquadBank::new(&template, 2);
+        // Process a 10kHz sine (well above cutoff)
+        let mut peak_out = 0.0f64;
+        for i in 0..4800 {
+            let t = i as f64 / 48000.0;
+            let sample = (2.0 * std::f64::consts::PI * 10000.0 * t).sin();
+            let mut frame = [sample; 2];
+            bank.process_interleaved_frame(&mut frame);
+            peak_out = peak_out.max(frame[0].abs());
+        }
+        // Output should be significantly attenuated vs input amplitude of 1.0
+        assert!(
+            peak_out < 0.3,
+            "high freq should be attenuated by lowpass, got peak {}",
+            peak_out
+        );
+    }
+
+    /// Test process_interleaved_frame with zero input after reset.
+    #[test]
+    fn test_biquad_bank_zero_input_after_reset() {
+        let mut template = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
+        template.use_tdf2 = true;
+        let mut bank = BiquadBank::new(&template, 4);
+        // Build up state
+        for _ in 0..100 {
+            let mut frame = [0.5f64; 4];
+            bank.process_interleaved_frame(&mut frame);
+        }
+        bank.reset();
+        let mut frame = [0.0f64; 4];
+        bank.process_interleaved_frame(&mut frame);
+        for ch in 0..4 {
+            assert_eq!(frame[ch], 0.0, "zero input after reset should yield zero");
+        }
+    }
 }

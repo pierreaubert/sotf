@@ -709,3 +709,173 @@ fn test_oversized_block_returns_error() {
         err
     );
 }
+
+// -------------------------------------------------------------------------
+// process_in_place focused tests (Off mode, autogain, yaw, ITD, mix=0)
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_process_in_place_enabled_off_mode_passthrough() {
+    let mut params = CrossfeedPluginParams::default();
+    params.enabled = true;
+    params.mode = CrossfeedMode::Off;
+    let mut p = CrossfeedPlugin::new(params).unwrap();
+    p.initialize(48000).unwrap();
+
+    let mut buffer = vec![1.0, 0.5, 0.3, 0.7];
+    let original = buffer.clone();
+    p.process_in_place(&mut buffer, &ProcessContext::new(48000, 2))
+        .unwrap();
+    assert_eq!(
+        buffer, original,
+        "enabled=true with mode=Off should pass through unchanged"
+    );
+}
+
+#[test]
+fn test_process_in_place_autogain_enabled() {
+    let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+    params.autogain_enabled = true;
+    params.mode = CrossfeedMode::Bauer;
+    let mut p = CrossfeedPlugin::new(params).unwrap();
+    p.initialize(48000).unwrap();
+
+    let n = 4096;
+    let mut buffer: Vec<f32> = (0..n).flat_map(|_| [0.5f32, 0.3f32]).collect();
+    p.process_in_place(&mut buffer, &ProcessContext::new(48000, n))
+        .unwrap();
+
+    assert!(
+        buffer.iter().all(|s| s.is_finite()),
+        "autogain should produce finite output"
+    );
+}
+
+#[test]
+fn test_process_in_place_yaw_parameter_affects_itd() {
+    let sr = 48000u32;
+    let n = 300usize;
+
+    let find_onset = |yaw_deg: f32| -> usize {
+        let mut params = CrossfeedPluginParams {
+            mode: CrossfeedMode::Bauer,
+            bauer_feed_db: 6.0,
+            itd_delay_ms: 0.5,
+            head_yaw_deg: 0.0,
+            mix: 1.0,
+            ..CrossfeedPluginParams::default()
+        };
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+        p.initialize(sr).unwrap();
+
+        p.set_parameter(
+            ParameterId::from("head_yaw_deg"),
+            ParameterValue::Float(yaw_deg),
+        )
+        .unwrap();
+        p.reset(); // snap yaw smoother to target immediately
+
+        let mut buffer = vec![0.0f32; n * 2];
+        buffer[0] = 1.0;
+
+        p.process_in_place(&mut buffer, &ProcessContext::new(sr, n))
+            .unwrap();
+
+        let threshold = 0.001;
+        for f in 0..n {
+            if buffer[f * 2 + 1].abs() > threshold {
+                return f;
+            }
+        }
+        n
+    };
+
+    let onset_yaw0 = find_onset(0.0);
+    let onset_yaw45 = find_onset(45.0);
+
+    assert!(
+        onset_yaw45 >= onset_yaw0,
+        "positive yaw should delay L→R crossfeed: yaw0={onset_yaw0}, yaw45={onset_yaw45}"
+    );
+}
+
+#[test]
+fn test_process_in_place_meier_with_itd() {
+    let sr = 48000u32;
+    let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Meier);
+    params.mode = CrossfeedMode::Meier;
+    params.itd_delay_ms = 0.5;
+    let mut p = CrossfeedPlugin::new(params).unwrap();
+    p.initialize(sr).unwrap();
+
+    let n = 200;
+    let mut buffer = vec![0.0f32; n * 2];
+    buffer[0] = 1.0;
+
+    p.process_in_place(&mut buffer, &ProcessContext::new(sr, n))
+        .unwrap();
+
+    let early_r: f32 = (0..10).map(|f| buffer[f * 2 + 1].abs()).sum();
+    let late_r: f32 = (25..50).map(|f| buffer[f * 2 + 1].abs()).sum();
+    assert!(
+        late_r > early_r,
+        "Meier with ITD: delayed crossfeed should arrive later. early={}, late={}",
+        early_r,
+        late_r
+    );
+}
+
+#[test]
+fn test_process_in_place_mb_with_itd() {
+    let sr = 48000u32;
+    let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Mb);
+    params.mode = CrossfeedMode::Mb;
+    params.itd_delay_ms = 0.5;
+    let mut p = CrossfeedPlugin::new(params).unwrap();
+    p.initialize(sr).unwrap();
+
+    let n = 200;
+    let mut buffer = vec![0.0f32; n * 2];
+    buffer[0] = 1.0;
+
+    p.process_in_place(&mut buffer, &ProcessContext::new(sr, n))
+        .unwrap();
+
+    let early_r: f32 = (0..10).map(|f| buffer[f * 2 + 1].abs()).sum();
+    let late_r: f32 = (25..50).map(|f| buffer[f * 2 + 1].abs()).sum();
+    assert!(
+        late_r > early_r,
+        "MB with ITD: delayed crossfeed should arrive later. early={}, late={}",
+        early_r,
+        late_r
+    );
+}
+
+#[test]
+fn test_process_in_place_mix_zero_passthrough() {
+    let sr = 48000u32;
+    let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+    params.mode = CrossfeedMode::Bauer;
+    params.mix = 0.0;
+    let mut p = CrossfeedPlugin::new(params).unwrap();
+    p.initialize(sr).unwrap();
+
+    let n = 100;
+    let mut buffer: Vec<f32> = (0..n)
+        .flat_map(|i| [(i as f32 * 0.1).sin(), 0.0f32])
+        .collect();
+    let original = buffer.clone();
+
+    p.process_in_place(&mut buffer, &ProcessContext::new(sr, n))
+        .unwrap();
+
+    for (i, (&out, &inp)) in buffer.iter().zip(original.iter()).enumerate() {
+        assert!(
+            (out - inp).abs() < 1e-5,
+            "mix=0 should pass through unchanged at sample {}: out={}, in={}",
+            i,
+            out,
+            inp
+        );
+    }
+}

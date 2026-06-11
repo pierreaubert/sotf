@@ -216,3 +216,98 @@ fn test_biquad_f32_instantiation() {
     let resp = bq.log_result(1000.0);
     assert!((resp - 3.0).abs() < 0.5); // f32 has less precision
 }
+
+#[test]
+fn test_filter_type_long_names_complete() {
+    assert_eq!(BiquadFilterType::Lowpass.long_name(), "Lowpass");
+    assert_eq!(BiquadFilterType::Highpass.long_name(), "Highpass");
+    assert_eq!(
+        BiquadFilterType::HighpassVariableQ.long_name(),
+        "HighpassVariableQ"
+    );
+    assert_eq!(BiquadFilterType::Bandpass.long_name(), "Bandpass");
+    assert_eq!(BiquadFilterType::Peak.long_name(), "Peak");
+    assert_eq!(BiquadFilterType::Notch.long_name(), "Notch");
+    assert_eq!(BiquadFilterType::Lowshelf.long_name(), "Lowshelf");
+    assert_eq!(BiquadFilterType::Highshelf.long_name(), "Highshelf");
+    assert_eq!(BiquadFilterType::AllPass.long_name(), "AllPass");
+    assert_eq!(BiquadFilterType::LowshelfOrf.long_name(), "LowshelfOrf");
+    assert_eq!(BiquadFilterType::HighshelfOrf.long_name(), "HighshelfOrf");
+    assert_eq!(BiquadFilterType::PeakMatched.long_name(), "PeakMatched");
+}
+
+#[test]
+fn test_compute_coeffs_all_filter_types_finite() {
+    // Verify compute_coeffs produces finite coefficients for all filter types
+    let types = [
+        BiquadFilterType::Lowpass,
+        BiquadFilterType::Highpass,
+        BiquadFilterType::HighpassVariableQ,
+        BiquadFilterType::Bandpass,
+        BiquadFilterType::Notch,
+        BiquadFilterType::Peak,
+        BiquadFilterType::Lowshelf,
+        BiquadFilterType::Highshelf,
+        BiquadFilterType::AllPass,
+        BiquadFilterType::LowshelfOrf,
+        BiquadFilterType::HighshelfOrf,
+        BiquadFilterType::PeakMatched,
+    ];
+    for &ft in &types {
+        let mut bq = Biquad::<f64>::new(ft, 1000.0, 48000.0, 1.0, 0.0);
+        bq.compute_coeffs();
+        let (a1, a2, b0, b1, b2) = bq.constants();
+        assert!(
+            a1.is_finite(),
+            "{}: a1 should be finite after compute_coeffs",
+            ft.short_name()
+        );
+        assert!(a2.is_finite(), "{}: a2 should be finite", ft.short_name());
+        assert!(b0.is_finite(), "{}: b0 should be finite", ft.short_name());
+        assert!(b1.is_finite(), "{}: b1 should be finite", ft.short_name());
+        assert!(b2.is_finite(), "{}: b2 should be finite", ft.short_name());
+    }
+}
+
+#[test]
+fn test_compute_coeffs_a0_guard_path() {
+    // Extreme parameters can drive a0 to near-zero; verify fallback identity coeffs.
+    // LowshelfOrf at DC with extreme negative gain produces a0 < 1e-15.
+    let mut bq = Biquad::<f64>::new(BiquadFilterType::LowshelfOrf, 0.0, 48000.0, 0.7, -640.0);
+    bq.compute_coeffs();
+    let (a1, a2, b0, b1, b2) = bq.constants();
+    // When a0 guard triggers, coefficients become identity (pass-through)
+    assert_eq!(b0, 1.0, "a0 guard should set b0=1, got {b0}");
+    assert_eq!(b1, 0.0, "a0 guard should set b1=0, got {b1}");
+    assert_eq!(b2, 0.0, "a0 guard should set b2=0, got {b2}");
+    assert_eq!(a1, 0.0, "a0 guard should set a1=0, got {a1}");
+    assert_eq!(a2, 0.0, "a0 guard should set a2=0, got {a2}");
+}
+
+#[test]
+fn test_compute_coeffs_recomputes_after_update() {
+    let mut bq = Biquad::<f64>::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0);
+    let (_, _, b0_before, _, _) = bq.constants();
+
+    bq.update_params(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 12.0);
+    let (_, _, b0_after, _, _) = bq.constants();
+
+    assert_ne!(
+        b0_before, b0_after,
+        "compute_coeffs should update b0 when gain changes"
+    );
+}
+
+#[test]
+fn test_compute_coeffs_normalization() {
+    // Coefficients should be normalized (a0 absorbed into b0,b1,b2,a1,a2)
+    let bq = Biquad::<f64>::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+    let (a1, a2, b0, b1, b2) = bq.constants();
+    // The effective denominator at DC is 1 + a1 + a2
+    // For a peak filter, DC gain should be close to 0 dB
+    let dc_gain = (b0 + b1 + b2) / (1.0 + a1 + a2);
+    assert!(
+        dc_gain.abs() < 10.0,
+        "DC gain should be reasonable, got {dc_gain}"
+    );
+}

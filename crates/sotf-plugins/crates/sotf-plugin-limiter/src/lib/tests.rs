@@ -4,7 +4,7 @@
 
 use super::limiter_plugin::LimiterPlugin;
 use super::misc::CACHE_UPDATE_THROTTLE;
-use super::types::LimiterPluginParams;
+use super::types::{LimiterData, LimiterPluginParams};
 use math_audio_dsp::fast_math::fast_pow10;
 use sotf_host::TruePeakDetector;
 use sotf_host::parameters::{ParameterId, ParameterValue};
@@ -902,4 +902,649 @@ fn test_latency_samples_matches_lookahead() {
     p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(0.0))
         .unwrap();
     assert_eq!(p.latency_samples(), 0);
+}
+
+// -------------------------------------------------------------------------
+// Additional coverage tests for set_parameter and process_in_place
+// -------------------------------------------------------------------------
+
+/// Verify info() returns correct name and version.
+#[test]
+fn test_info() {
+    let p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    let info = p.info();
+    assert_eq!(info.name, "Limiter");
+    assert_eq!(info.version, "1.3.0");
+    assert_eq!(info.author, "SotF");
+}
+
+/// Verify channels() returns the configured channel count.
+#[test]
+fn test_channels() {
+    let p = LimiterPlugin::new(4, -6.0, 50.0, 5.0, false);
+    assert_eq!(p.channels(), 4);
+}
+
+/// Verify parameters() returns all 10 cached parameters.
+#[test]
+fn test_parameters_returns_all_params() {
+    let p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    let params = p.parameters();
+    assert_eq!(params.len(), 10);
+    let ids: Vec<_> = params.iter().map(|p| p.id.clone()).collect();
+    assert!(ids.contains(&ParameterId::from("threshold")));
+    assert!(ids.contains(&ParameterId::from("release")));
+    assert!(ids.contains(&ParameterId::from("lookahead")));
+    assert!(ids.contains(&ParameterId::from("soft")));
+    assert!(ids.contains(&ParameterId::from("true_peak")));
+    assert!(ids.contains(&ParameterId::from("isp_mode")));
+    assert!(ids.contains(&ParameterId::from("dual_release")));
+    assert!(ids.contains(&ParameterId::from("mix")));
+    assert!(ids.contains(&ParameterId::from("link_amount")));
+    assert!(ids.contains(&ParameterId::from("feed_forward")));
+}
+
+/// set_parameter round-trip for the "soft" boolean parameter.
+#[test]
+fn test_set_parameter_soft_roundtrip() {
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p.initialize(48000).unwrap();
+    assert!(!p.soft);
+
+    p.set_parameter(ParameterId::from("soft"), ParameterValue::Bool(true))
+        .unwrap();
+    assert!(p.soft);
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("soft")),
+        Some(ParameterValue::Bool(true))
+    );
+
+    p.set_parameter(ParameterId::from("soft"), ParameterValue::Bool(false))
+        .unwrap();
+    assert!(!p.soft);
+}
+
+/// release parameter minimum is enforced by validation (10.0 ms), so values below that error.
+#[test]
+fn test_set_release_below_min_errors() {
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p.initialize(48000).unwrap();
+
+    assert!(
+        p.set_parameter(ParameterId::from("release"), ParameterValue::Float(0.5))
+            .is_err()
+    );
+}
+
+/// Boundary values for threshold, mix, and link_amount.
+#[test]
+fn test_set_parameter_boundary_values() {
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p.initialize(48000).unwrap();
+
+    // Threshold boundaries [-20, 0]
+    p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-20.0))
+        .unwrap();
+    assert_eq!(p.threshold_db, -20.0);
+    p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(0.0))
+        .unwrap();
+    assert_eq!(p.threshold_db, 0.0);
+
+    // Mix boundaries [0, 1]
+    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
+        .unwrap();
+    assert_eq!(p.mix, 0.0);
+    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+        .unwrap();
+    assert_eq!(p.mix, 1.0);
+
+    // Link amount boundaries [0, 1]
+    p.set_parameter(ParameterId::from("link_amount"), ParameterValue::Float(0.0))
+        .unwrap();
+    assert_eq!(p.link_amount, 0.0);
+    p.set_parameter(ParameterId::from("link_amount"), ParameterValue::Float(1.0))
+        .unwrap();
+    assert_eq!(p.link_amount, 1.0);
+
+    // Lookahead boundaries [0, 20]
+    p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(0.0))
+        .unwrap();
+    assert_eq!(p.lookahead_ms, 0.0);
+    p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
+        .unwrap();
+    assert_eq!(p.lookahead_ms, 20.0);
+}
+
+/// get_parameter returns current values for all float and bool parameters.
+#[test]
+fn test_get_parameter_all_ids() {
+    let mut p = LimiterPlugin::new(2, -3.0, 100.0, 10.0, true);
+    p.true_peak = true;
+    p.isp_mode = true;
+    p.dual_release = true;
+    p.feed_forward = true;
+    p.link_amount = 0.5;
+    p.mix = 0.75;
+    p.rebuild_cached_parameters();
+    p.initialize(48000).unwrap();
+
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("threshold")),
+        Some(ParameterValue::Float(-3.0))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("release")),
+        Some(ParameterValue::Float(100.0))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("lookahead")),
+        Some(ParameterValue::Float(10.0))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("soft")),
+        Some(ParameterValue::Bool(true))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("true_peak")),
+        Some(ParameterValue::Bool(true))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("isp_mode")),
+        Some(ParameterValue::Bool(true))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("dual_release")),
+        Some(ParameterValue::Bool(true))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("mix")),
+        Some(ParameterValue::Float(0.75))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("link_amount")),
+        Some(ParameterValue::Float(0.5))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("feed_forward")),
+        Some(ParameterValue::Bool(true))
+    );
+}
+
+/// Silence input should produce silence and zero gain reduction.
+#[test]
+fn test_process_silence_no_gr() {
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p.initialize(48000).unwrap();
+
+    let frames = 512;
+    let mut b = vec![0.0f32; frames];
+    let ctx = ProcessContext::new(48000, frames);
+    p.process_in_place(&mut b, &ctx).unwrap();
+
+    // All output should be silent
+    for &s in &b {
+        assert_eq!(s, 0.0, "silence input should produce silence output");
+    }
+    // No gain reduction applied
+    assert!(
+        p.monitoring_gr_db < 0.01,
+        "silence should cause no GR, got {} dB",
+        p.monitoring_gr_db
+    );
+    assert!(
+        p.monitoring_peak_db < -50.0,
+        "peak meter should be very low for silence"
+    );
+}
+
+/// Signal well below threshold should pass through with no limiting.
+/// Note: even with lookahead=0 there is a 1-sample delay via the lookahead buffer.
+#[test]
+fn test_process_below_threshold_no_limiting() {
+    let sr = 48000u32;
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
+    p.initialize(sr).unwrap();
+
+    // Signal at -20 dBFS = 0.1 linear, well below -6 dB threshold
+    let frames = 1024;
+    let amplitude = 0.1f32;
+    let mut input = vec![0.0f32; frames];
+    for (i, sample) in input.iter_mut().enumerate() {
+        *sample = amplitude * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sr as f32).sin();
+    }
+    let mut b = input.clone();
+
+    let ctx = ProcessContext::new(sr, frames);
+    p.process_in_place(&mut b, &ctx).unwrap();
+
+    // With lookahead=0 there is still a 1-sample delay (lookahead_len=1).
+    // Skip the first sample and compare output[i] with input[i-1].
+    let max_error = (1..frames)
+        .map(|i| (b[i].abs() - input[i - 1].abs()).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        max_error < 1e-5,
+        "signal below threshold should pass through unchanged (delayed by 1), max_error={max_error}"
+    );
+    assert!(
+        p.monitoring_gr_db < 0.01,
+        "GR should be zero for signal below threshold, got {} dB",
+        p.monitoring_gr_db
+    );
+}
+
+/// Soft knee: very quiet signal should stay in the identity region (abs_s <= soft_start).
+/// Note: even with lookahead=0 there is a 1-sample delay via the lookahead buffer.
+#[test]
+fn test_soft_knee_identity_region() {
+    let sr = 48000u32;
+    let thresh_db = -6.0f32;
+    let thresh_lin = fast_pow10(thresh_db / 20.0);
+    let mut p = LimiterPlugin::new(1, thresh_db, 50.0, 0.0, true);
+    p.initialize(sr).unwrap();
+
+    // Use a signal amplitude of 0.05 * thresh_lin — far below soft_start
+    let amplitude = thresh_lin * 0.05;
+    let frames = 1024;
+    let mut input = vec![0.0f32; frames];
+    for (i, sample) in input.iter_mut().enumerate() {
+        *sample = amplitude * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sr as f32).sin();
+    }
+    let mut b = input.clone();
+
+    let ctx = ProcessContext::new(sr, frames);
+    p.process_in_place(&mut b, &ctx).unwrap();
+
+    // In the identity region the output should equal input delayed by 1 sample.
+    let max_error = (1..frames)
+        .map(|i| (b[i].abs() - input[i - 1].abs()).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        max_error < 1e-5,
+        "soft knee identity region should not alter signal (delayed by 1), max_error={max_error}"
+    );
+}
+
+/// feed_forward=true with lookahead=0 should be disabled (lookahead_len == 1).
+#[test]
+fn test_feed_forward_disabled_when_lookahead_zero() {
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
+    p.feed_forward = true;
+    p.rebuild_cached_parameters();
+    p.initialize(48000).unwrap();
+
+    // lookahead_len should be 1, so use_feed_forward is false
+    assert_eq!(p.lookahead_len, 1);
+
+    let frames = 512;
+    let mut b = vec![0.9f32; frames];
+    let ctx = ProcessContext::new(48000, frames);
+    p.process_in_place(&mut b, &ctx).unwrap();
+
+    // Should still limit normally (just without feed-forward)
+    let thresh_lin = fast_pow10(-6.0 / 20.0);
+    let max_out = b.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    assert!(
+        max_out <= thresh_lin * 1.1,
+        "feed_forward disabled by lookahead=0 should still limit normally"
+    );
+}
+
+/// initialize() with a higher sample rate should update coefficients correctly.
+#[test]
+fn test_initialize_different_sample_rates() {
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p.initialize(96000).unwrap();
+    assert_eq!(p.sample_rate, 96000);
+
+    // 5ms @ 96kHz = 480 samples
+    assert_eq!(p.lookahead_len, 480);
+
+    let mut p2 = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p2.initialize(192000).unwrap();
+    assert_eq!(p2.sample_rate, 192000);
+    assert_eq!(p2.lookahead_len, 960);
+}
+
+/// get_data() returns LimiterData with expected fields.
+#[test]
+fn test_get_data_returns_typed_data() {
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p.initialize(48000).unwrap();
+
+    let data = p.get_data();
+    assert!(data.is_some());
+    // Downcast Arc<dyn Any + Send + Sync> back to Arc<LimiterData>
+    let data = data.unwrap();
+    let limiter_data = data.downcast::<LimiterData>();
+    assert!(limiter_data.is_ok());
+}
+
+/// Stereo with link_amount=0: each channel should be limited independently.
+#[test]
+fn test_process_stereo_independent_channels() {
+    let sr = 48000u32;
+    let mut p = LimiterPlugin::new(2, -6.0, 50.0, 0.0, false);
+    p.link_amount = 0.0;
+    p.rebuild_cached_parameters();
+    p.initialize(sr).unwrap();
+
+    let frames = 1024;
+    let mut b = vec![0.0f32; frames * 2];
+    for frame in 0..frames {
+        // Channel 0 loud, channel 1 quiet
+        b[frame * 2] = 0.9;
+        b[frame * 2 + 1] = 0.1;
+    }
+
+    let ctx = ProcessContext::new(sr, frames);
+    p.process_in_place(&mut b, &ctx).unwrap();
+
+    let thresh_lin = fast_pow10(-6.0 / 20.0);
+    // Channel 0 should be limited
+    let ch0_max = b[500..]
+        .iter()
+        .step_by(2)
+        .map(|&s| s.abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        ch0_max <= thresh_lin * 1.1,
+        "ch0 should be limited, max={ch0_max}"
+    );
+
+    // Channel 1 should pass through unchanged (well below threshold)
+    let ch1_max = b[500..]
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .map(|&s| s.abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        (ch1_max - 0.1).abs() < 1e-4,
+        "ch1 should pass through unchanged, max={ch1_max}"
+    );
+}
+
+/// Envelope should decay (release) after a transient ends.
+#[test]
+fn test_envelope_decay_after_transient() {
+    let sr = 48000u32;
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
+    p.initialize(sr).unwrap();
+
+    // Loud transient
+    let mut b = vec![1.0f32; sr as usize]; // 1 second of loud signal
+    let ctx = ProcessContext::new(sr, b.len());
+    p.process_in_place(&mut b, &ctx).unwrap();
+    let gr_after_transient = p.monitoring_gr_db;
+    assert!(
+        gr_after_transient > 1.0,
+        "should have significant GR after loud signal"
+    );
+
+    // Now silence — envelope should release
+    let mut silence = vec![0.0f32; sr as usize];
+    p.process_in_place(&mut silence, &ctx).unwrap();
+    let gr_after_silence = p.monitoring_gr_db;
+    assert!(
+        gr_after_silence < gr_after_transient,
+        "envelope should decay during silence: before={gr_after_transient}, after={gr_after_silence}"
+    );
+}
+
+/// Verify that lookahead buffer wraps correctly by processing multiple blocks.
+#[test]
+fn test_lookahead_buffer_wraps_correctly() {
+    let sr = 48000u32;
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p.initialize(sr).unwrap();
+
+    let block = 256usize;
+    let mut buf = vec![0.9f32; block];
+    let ctx = ProcessContext::new(sr, block);
+
+    // Process many blocks to exercise lookahead_pos wrapping
+    for _ in 0..100 {
+        p.process_in_place(&mut buf, &ctx).unwrap();
+    }
+
+    // Should still limit correctly after many wraps
+    let thresh_lin = fast_pow10(-6.0 / 20.0);
+    let max_out = buf.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    assert!(
+        max_out <= thresh_lin * 1.1,
+        "output should still be limited after many lookahead wraps"
+    );
+}
+
+/// Threshold of 0 dB should only limit signals above 1.0.
+#[test]
+fn test_threshold_zero_db() {
+    let sr = 48000u32;
+    let mut p = LimiterPlugin::new(1, 0.0, 50.0, 0.0, false);
+    p.initialize(sr).unwrap();
+
+    // Signal at 0.8 (below 0 dB = 1.0) should pass through
+    let frames = 1024;
+    let mut b = vec![0.0f32; frames];
+    for (i, sample) in b.iter_mut().enumerate() {
+        *sample = 0.8f32 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sr as f32).sin();
+    }
+
+    let ctx = ProcessContext::new(sr, frames);
+    p.process_in_place(&mut b, &ctx).unwrap();
+
+    let max_out = b[100..].iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    assert!(
+        max_out > 0.79,
+        "signal below 0 dB threshold should not be limited, max_out={max_out}"
+    );
+    assert!(
+        p.monitoring_gr_db < 0.1,
+        "GR should be near zero, got {} dB",
+        p.monitoring_gr_db
+    );
+}
+
+/// Process with lookahead and verify delayed output.
+#[test]
+fn test_lookahead_causes_delay() {
+    let sr = 48000u32;
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p.initialize(sr).unwrap();
+
+    // Impulse at sample 0
+    let frames = 512;
+    let mut b = vec![0.0f32; frames];
+    b[0] = 1.0;
+
+    let ctx = ProcessContext::new(sr, frames);
+    p.process_in_place(&mut b, &ctx).unwrap();
+
+    // With 5ms lookahead = 240 samples, the impulse should be delayed.
+    // The first non-zero output should appear around the lookahead length.
+    let first_nonzero = b.iter().position(|&s| s.abs() > 1e-4).unwrap_or(frames);
+    assert!(
+        (200..=280).contains(&first_nonzero),
+        "impulse should be delayed by lookahead, first_nonzero={first_nonzero}"
+    );
+}
+
+/// Validation rejects non-finite (infinite) float values before set_parameter processes them.
+#[test]
+fn test_set_parameter_infinite_rejected_by_validation() {
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p.initialize(48000).unwrap();
+
+    assert!(
+        p.set_parameter(
+            ParameterId::from("mix"),
+            ParameterValue::Float(f32::INFINITY)
+        )
+        .is_err()
+    );
+    assert!(
+        p.set_parameter(
+            ParameterId::from("link_amount"),
+            ParameterValue::Float(f32::INFINITY)
+        )
+        .is_err()
+    );
+}
+
+/// Verify that the single-channel path (nc <= 1) always uses max_peak_ch even with link < 1.
+#[test]
+fn test_single_channel_ignores_link_amount() {
+    let sr = 48000u32;
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
+    p.link_amount = 0.0; // would use avg for stereo, but ignored for mono
+    p.rebuild_cached_parameters();
+    p.initialize(sr).unwrap();
+
+    let frames = 512;
+    let mut b = vec![0.9f32; frames];
+    let ctx = ProcessContext::new(sr, frames);
+    p.process_in_place(&mut b, &ctx).unwrap();
+
+    let thresh_lin = fast_pow10(-6.0 / 20.0);
+    let max_out = b.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    assert!(
+        max_out <= thresh_lin * 1.1,
+        "mono with link=0 should still limit correctly"
+    );
+}
+
+/// Dual release envelope should process when target_gr <= envelope (release branch).
+#[test]
+fn test_dual_release_envelope_decay() {
+    let sr = 48000u32;
+    let mut p = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
+    p.dual_release = true;
+    p.rebuild_cached_parameters();
+    p.initialize(sr).unwrap();
+
+    // Loud signal to build envelope
+    let mut b = vec![1.0f32; sr as usize];
+    let ctx = ProcessContext::new(sr, b.len());
+    p.process_in_place(&mut b, &ctx).unwrap();
+    let gr_after_loud = p.monitoring_gr_db;
+    assert!(gr_after_loud > 1.0);
+
+    // Silence to trigger release branch
+    let mut silence = vec![0.0f32; sr as usize];
+    p.process_in_place(&mut silence, &ctx).unwrap();
+    let gr_after_silence = p.monitoring_gr_db;
+
+    assert!(
+        gr_after_silence < gr_after_loud,
+        "dual release should decay envelope: {gr_after_loud} -> {gr_after_silence}"
+    );
+}
+
+/// ISP mode with output below threshold should trigger the correction decay path.
+#[test]
+fn test_isp_mode_correction_decay_path() {
+    let sr = 48000u32;
+    let mut p = LimiterPlugin::new(1, -3.0, 50.0, 0.0, false);
+    p.isp_mode = true;
+    p.true_peak = true;
+    p.rebuild_cached_parameters();
+    p.initialize(sr).unwrap();
+
+    // First, build up some ISP correction with a high-freq signal
+    let frames = 4096;
+    let mut b = vec![0.0f32; frames];
+    for i in 0..frames {
+        b[i] = 0.75 * (2.0 * std::f32::consts::PI * 15000.0 * i as f32 / sr as f32).sin();
+    }
+    let ctx = ProcessContext::new(sr, frames);
+    p.process_in_place(&mut b, &ctx).unwrap();
+    let correction_before = p.isp_correction_db;
+
+    // Now feed a signal well below threshold to trigger the decay path
+    let mut quiet = vec![0.0f32; frames];
+    for i in 0..frames {
+        quiet[i] = 0.1 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin();
+    }
+    p.process_in_place(&mut quiet, &ctx).unwrap();
+
+    if correction_before > 0.1 {
+        assert!(
+            p.isp_correction_db < correction_before,
+            "ISP correction should decay when output is below threshold: before={correction_before}, after={}",
+            p.isp_correction_db
+        );
+    }
+}
+
+/// Cache update with mismatched isp_dbtp channel count should not panic.
+#[test]
+fn test_cache_update_channel_mismatch_does_not_panic() {
+    let mut p = LimiterPlugin::new(1, -1.0, 50.0, 5.0, false);
+    p.true_peak = true;
+    p.rebuild_cached_parameters();
+    p.initialize(48000).unwrap();
+
+    // Force a mismatch by manually changing cache data channel count
+    p.cache.update(|d| {
+        d.isp_dbtp = vec![-120.0; 4]; // 4 channels in cache, but plugin has 1
+    });
+
+    let frames = 512;
+    let mut b = vec![0.8f32; frames];
+    let ctx = ProcessContext::new(48000, frames);
+    // Process enough blocks to trigger cache update; should not panic
+    for _ in 0..CACHE_UPDATE_THROTTLE + 1 {
+        p.process_in_place(&mut b, &ctx).unwrap();
+    }
+}
+
+/// initialize should resize detectors when channel count changes.
+#[test]
+fn test_initialize_resizes_detectors() {
+    let mut p = LimiterPlugin::new(2, -6.0, 50.0, 5.0, false);
+    p.initialize(48000).unwrap();
+    assert_eq!(p.true_peak_detectors.len(), 2);
+    assert_eq!(p.output_isp_detectors.len(), 2);
+    assert_eq!(p.channel_peaks.len(), 2);
+    assert_eq!(p.monitoring_isp_linear.len(), 2);
+
+    // The plugin's channels field doesn't change, but we can verify the resize path
+    // by calling initialize again with same channels (resize_with should be no-op)
+    p.initialize(48000).unwrap();
+    assert_eq!(p.true_peak_detectors.len(), 2);
+}
+
+/// Soft clipping should produce different output than hard clipping for loud signals.
+#[test]
+fn test_soft_vs_hard_clipping_difference() {
+    let sr = 48000u32;
+    let frames = 1024;
+    let mut p_soft = LimiterPlugin::new(1, -6.0, 50.0, 0.0, true);
+    let mut p_hard = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
+    p_soft.initialize(sr).unwrap();
+    p_hard.initialize(sr).unwrap();
+
+    let mut b_soft = vec![0.0f32; frames];
+    let mut b_hard = vec![0.0f32; frames];
+    for i in 0..frames {
+        let s = 0.9f32 * (i as f32 * 0.1).sin();
+        b_soft[i] = s;
+        b_hard[i] = s;
+    }
+
+    let ctx = ProcessContext::new(sr, frames);
+    p_soft.process_in_place(&mut b_soft, &ctx).unwrap();
+    p_hard.process_in_place(&mut b_hard, &ctx).unwrap();
+
+    // At least some samples should differ between soft and hard
+    let differences: usize = b_soft
+        .iter()
+        .zip(b_hard.iter())
+        .filter(|(a, b)| (*a - *b).abs() > 1e-5)
+        .count();
+    assert!(
+        differences > 0,
+        "soft and hard clipping should produce different output for some samples"
+    );
 }

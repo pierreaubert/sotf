@@ -14,7 +14,13 @@ Channel matrix mixing with per-routing gain control. Route any input channel to 
 @node matrix Plugin Parameters
 @section Parameters
 
-This plugin has no user-tunable parameters.
+
+@subsection Matrix
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Gain} @tab Float @tab 0 .. 1 @tab 0 @tab - @tab Matrix routing coefficient
+@end multitable
 
 @node matrix Plugin Developer Guide
 @section Developer Guide

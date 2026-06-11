@@ -6,7 +6,7 @@ use super::misc::reflect_into_bounds;
 use super::misc::standard_normal;
 use super::types::IsresConstraint;
 use crate::error::DEError;
-use ndarray::Array1;
+use ndarray::{Array1, array};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::sync::Arc;
@@ -139,4 +139,120 @@ fn test_standard_normal_samples_are_finite() {
     for _ in 0..20 {
         assert!(standard_normal(&mut rng).is_finite());
     }
+}
+
+#[test]
+fn test_empty_bounds_rejected() {
+    let f = |x: &Array1<f64>| x.iter().map(|v| v * v).sum::<f64>();
+    let cfg = IsresConfig {
+        bounds: vec![],
+        mu: 10,
+        lambda: 50,
+        maxeval: 100,
+        ..Default::default()
+    };
+    let err = isres(&f, &[], cfg).unwrap_err();
+    assert!(matches!(err, DEError::BoundsMismatch { .. }));
+}
+
+#[test]
+fn test_multiple_constraints() {
+    let f = |x: &Array1<f64>| x.iter().map(|v| v * v).sum::<f64>();
+    let constraints = vec![
+        IsresConstraint {
+            fun: Arc::new(|x: &Array1<f64>| x[0] - 1.0), // x0 <= 1
+        },
+        IsresConstraint {
+            fun: Arc::new(|x: &Array1<f64>| -x[1] - 1.0), // x1 >= -1
+        },
+    ];
+    let cfg = IsresConfig {
+        bounds: vec![(-5.0, 5.0); 2],
+        mu: 20,
+        lambda: 100,
+        maxeval: 10_000,
+        seed: Some(42),
+        ..Default::default()
+    };
+    let report = isres(&f, &constraints, cfg).expect("isres failed");
+    assert!(
+        report.max_violation <= 0.1 || report.feasible,
+        "Should be near feasible: max_violation={}, feasible={}",
+        report.max_violation,
+        report.feasible
+    );
+}
+
+#[test]
+fn test_x0_seeding() {
+    let f = |x: &Array1<f64>| (x[0] - 2.0).powi(2) + (x[1] + 1.0).powi(2);
+    let cfg = IsresConfig {
+        bounds: vec![(-5.0, 5.0); 2],
+        x0: Some(array![2.0, -1.0]),
+        mu: 10,
+        lambda: 50,
+        maxeval: 2_000,
+        seed: Some(7),
+        ..Default::default()
+    };
+    let report = isres(&f, &[], cfg).expect("isres failed");
+    assert!(
+        report.fun < 1.0,
+        "Should converge near seeded optimum: f={}",
+        report.fun
+    );
+}
+
+#[test]
+fn test_maxeval_reached() {
+    let f = |x: &Array1<f64>| x.iter().map(|v| v * v).sum::<f64>();
+    let cfg = IsresConfig {
+        bounds: vec![(-5.0, 5.0); 2],
+        mu: 5,
+        lambda: 20,
+        maxeval: 50,
+        seed: Some(1),
+        ..Default::default()
+    };
+    let report = isres(&f, &[], cfg).expect("isres failed");
+    assert!(
+        report.nfev <= 60,
+        "nfev should respect maxeval: {}",
+        report.nfev
+    );
+}
+
+#[test]
+fn test_stagnation_termination() {
+    let f = |x: &Array1<f64>| x.iter().map(|v| v * v).sum::<f64>();
+    let cfg = IsresConfig {
+        bounds: vec![(-5.0, 5.0); 2],
+        mu: 10,
+        lambda: 50,
+        maxeval: 100_000,
+        f_tol: 1e-3,
+        stagnation_window: 5,
+        seed: Some(42),
+        ..Default::default()
+    };
+    let report = isres(&f, &[], cfg).expect("isres failed");
+    assert!(
+        report.fun < 1.0,
+        "Should converge with stagnation termination: f={}",
+        report.fun
+    );
+}
+
+#[test]
+fn test_invalid_lambda_less_than_mu() {
+    let f = |x: &Array1<f64>| x[0] * x[0];
+    let cfg = IsresConfig {
+        bounds: vec![(-1.0, 1.0)],
+        mu: 10,
+        lambda: 5,
+        maxeval: 100,
+        ..Default::default()
+    };
+    let err = isres(&f, &[], cfg).unwrap_err();
+    assert!(matches!(err, DEError::PopulationTooSmall { .. }));
 }

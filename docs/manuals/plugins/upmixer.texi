@@ -21,7 +21,6 @@ Stereo to surround upmixing (2ch to 5.0/5.1/7.1) using FFT-based spatial decompo
 @headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
 @item @code{Speaker Config} @tab Choice (2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6) @tab 10 options @tab 5.1 @tab - @tab Target surround speaker layout
 @item @code{Safety Cap} @tab Float @tab 0 .. 3 @tab 3 @tab dB @tab Max output headroom limit
-@item @code{Binaural Preview} @tab Bool @tab On / Off @tab Off @tab - @tab Preview surround output binaurally (headphone monitoring, changes output to 2ch)
 @end multitable
 
 
@@ -133,6 +132,24 @@ Stereo to surround upmixing (2ch to 5.0/5.1/7.1) using FFT-based spatial decompo
 @item @code{Bypass Transients} @tab Bool @tab On / Off @tab Off @tab - @tab Skip transient detection
 @item @code{Bypass All} @tab Bool @tab On / Off @tab Off @tab - @tab Pass audio through unprocessed
 @item @code{ML Detection} @tab Bool @tab On / Off @tab Off @tab - @tab Use ML model for source detect
+@end multitable
+
+
+@subsection Config
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Binaural Preview} @tab Bool @tab On / Off @tab Off @tab - @tab Preview surround output binaurally (headphone monitoring, changes output to 2ch)
+@end multitable
+
+
+@subsection Auto Gain
+
+@multitable @columnfractions .22 .18 .15 .10 .08 .27
+@headitem Parameter @tab Type @tab Range @tab Default @tab Unit @tab Description
+@item @code{Auto Gain} @tab Bool @tab On / Off @tab Off @tab - @tab Match rendered output loudness to the stereo input
+@item @code{AG Max} @tab Float @tab 0 .. 24 @tab 12 @tab dB @tab Maximum auto gain correction
+@item @code{AG Smoothing} @tab Float @tab 10 .. 500 @tab 100 @tab ms @tab Auto gain transition time
 @end multitable
 
 

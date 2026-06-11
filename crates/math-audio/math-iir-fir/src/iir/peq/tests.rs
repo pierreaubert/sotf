@@ -576,6 +576,121 @@ mod peq_tests {
         assert_eq!(row.gain, 6.0);
         assert_eq!(row.kind, "PK");
     }
+
+    #[test]
+    fn test_peq_loudness_gain_multiple_filters() {
+        let bq1 = Biquad::new(BiquadFilterType::Peak, 100.0, 48000.0, 1.0, 6.0);
+        let bq2 = Biquad::new(BiquadFilterType::Peak, 8000.0, 48000.0, 1.0, 6.0);
+        let peq = vec![(1.0, bq1), (1.0, bq2)];
+        let gain = peq_loudness_gain(&peq, "k");
+        // Multiple boosts should require more negative compensation
+        assert!(gain < 0.0);
+        assert!(gain > -60.0);
+    }
+
+    #[test]
+    fn test_peq_loudness_gain_unknown_weighting() {
+        let bq = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 6.0);
+        let peq = vec![(1.0, bq)];
+        let gain = peq_loudness_gain(&peq, "unknown");
+        // Unknown weighting defaults to 0.0 weight, so result should still be finite
+        assert!(gain.is_finite());
+    }
+
+    #[test]
+    fn test_peq_loudness_gain_clamped() {
+        // Extreme pathological filter: very large broadband boost
+        let pk1 = Biquad::new(BiquadFilterType::Peak, 500.0, 48000.0, 0.7, 120.0);
+        let pk2 = Biquad::new(BiquadFilterType::Peak, 2000.0, 48000.0, 0.7, 120.0);
+        let pk3 = Biquad::new(BiquadFilterType::Peak, 8000.0, 48000.0, 0.7, 120.0);
+        let peq = vec![(1.0, pk1), (1.0, pk2), (1.0, pk3)];
+        let gain = peq_loudness_gain(&peq, "k");
+        // Should be clamped to -60 dB (or within clamp range)
+        assert_eq!(gain, -60.0, "extreme boost should be clamped to -60 dB");
+    }
+
+    #[test]
+    fn test_biquad_to_rme_type_lowpass_highpass_edge_positions() {
+        assert_eq!(biquad_to_rme_type(BiquadFilterType::Lowpass, 1), 3.0);
+        assert_eq!(biquad_to_rme_type(BiquadFilterType::Lowpass, 3), 2.0);
+        assert_eq!(biquad_to_rme_type(BiquadFilterType::Lowpass, 9), 2.0);
+        assert_eq!(biquad_to_rme_type(BiquadFilterType::Lowpass, 5), -1.0);
+
+        assert_eq!(biquad_to_rme_type(BiquadFilterType::Highpass, 1), 2.0);
+        assert_eq!(biquad_to_rme_type(BiquadFilterType::Highpass, 3), 3.0);
+        assert_eq!(biquad_to_rme_type(BiquadFilterType::Highpass, 9), 3.0);
+        assert_eq!(biquad_to_rme_type(BiquadFilterType::Highpass, 7), -1.0);
+    }
+
+    #[test]
+    fn test_enforce_rme_room_filter_constraints_unsupported_types() {
+        // Notch and AllPass should be converted to Peak
+        let notch = Biquad::new(BiquadFilterType::Notch, 1000.0, 48000.0, 1.0, 0.0);
+        let ap = Biquad::new(BiquadFilterType::AllPass, 2000.0, 48000.0, 1.0, 0.0);
+        let peq = vec![(1.0, notch), (1.0, ap)];
+        let result = enforce_rme_room_filter_constraints(&peq);
+        assert_eq!(result.len(), 9);
+        // Both should have been converted to Peak
+        assert_eq!(result[0].1.filter_type, BiquadFilterType::Peak);
+        assert_eq!(result[1].1.filter_type, BiquadFilterType::Peak);
+    }
+
+    #[test]
+    fn test_enforce_rme_room_filter_constraints_lowpass_highpass() {
+        let lp = Biquad::new(BiquadFilterType::Lowpass, 100.0, 48000.0, 0.7, 0.0);
+        let hp = Biquad::new(BiquadFilterType::Highpass, 8000.0, 48000.0, 0.7, 0.0);
+        let pk = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 3.0);
+        let peq = vec![(1.0, pk), (1.0, lp), (1.0, hp)];
+        let result = enforce_rme_room_filter_constraints(&peq);
+        assert_eq!(result.len(), 9);
+        // Position 1: lowest freq non-PK → Lowpass at 100Hz
+        assert_eq!(result[0].1.filter_type, BiquadFilterType::Lowpass);
+        assert!((result[0].1.freq - 100.0).abs() < 1.0);
+        // Position 9: highest freq non-PK → Highpass at 8000Hz
+        assert_eq!(result[8].1.filter_type, BiquadFilterType::Highpass);
+        assert!((result[8].1.freq - 8000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_enforce_rme_room_filter_constraints_exactly_nine_pk() {
+        // Exactly 9 PK filters should fit without dropping
+        let mut peq = Vec::new();
+        for i in 0..9 {
+            let bq = Biquad::new(
+                BiquadFilterType::Peak,
+                100.0 + i as f64 * 100.0,
+                48000.0,
+                1.0,
+                1.0,
+            );
+            peq.push((1.0, bq));
+        }
+        let result = enforce_rme_room_filter_constraints(&peq);
+        assert_eq!(result.len(), 9);
+        for (_, bq) in &result {
+            assert_eq!(bq.filter_type, BiquadFilterType::Peak);
+        }
+    }
+
+    #[test]
+    fn test_enforce_rme_room_filter_constraints_ten_pk() {
+        // 10 PK filters: first 9 used, last one dropped
+        let mut peq = Vec::new();
+        for i in 0..10 {
+            let bq = Biquad::new(
+                BiquadFilterType::Peak,
+                100.0 + i as f64 * 100.0,
+                48000.0,
+                1.0,
+                1.0,
+            );
+            peq.push((1.0, bq));
+        }
+        let result = enforce_rme_room_filter_constraints(&peq);
+        assert_eq!(result.len(), 9);
+        assert_eq!(result[0].1.freq, 100.0);
+        assert_eq!(result[8].1.freq, 900.0);
+    }
 }
 
 #[cfg(test)]
@@ -1044,5 +1159,39 @@ mod format_tests {
         // Should only contain 9 bands
         assert!(rme_str.contains("REQ Band9 Freq"));
         assert!(!rme_str.contains("REQ Band10 Freq"));
+    }
+
+    #[test]
+    fn test_peq_format_rme_room_with_non_pk_filters() {
+        let ls = Biquad::new(BiquadFilterType::Lowshelf, 100.0, 48000.0, 0.7, 2.0);
+        let hs = Biquad::new(BiquadFilterType::Highshelf, 8000.0, 48000.0, 0.7, 1.5);
+        let pk = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 3.0);
+        let left = vec![(1.0, pk), (1.0, ls), (1.0, hs)];
+        let right: Peq = vec![];
+        let rme_str = peq_format_rme_room(&left, &right);
+
+        // Should contain room EQ tags
+        assert!(rme_str.contains("<Room EQ L>"));
+        assert!(rme_str.contains("<Room EQ R>"));
+        // Lowshelf should be at position 1 → type 1.0
+        assert!(rme_str.contains("1.00"));
+        // Highshelf should be at position 9 → type 1.0
+        // Peak should be at positions 2-8 → type 0.0
+        assert!(rme_str.contains("0.00"));
+        assert!(rme_str.contains("REQ Chan Gain"));
+    }
+
+    #[test]
+    fn test_peq_format_rme_room_empty_left_non_empty_right() {
+        let bq = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 3.0);
+        let left: Peq = vec![];
+        let right = vec![(1.0, bq)];
+        let rme_str = peq_format_rme_room(&left, &right);
+
+        // Left empty → constrained to 9 dummy bands
+        // Right non-empty → uses right's constrained bands
+        assert!(rme_str.contains("<Room EQ L>"));
+        assert!(rme_str.contains("<Room EQ R>"));
+        assert!(rme_str.contains("REQ Band1 Freq"));
     }
 }

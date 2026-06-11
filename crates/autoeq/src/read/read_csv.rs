@@ -413,4 +413,69 @@ frequency,spl,noise_floor_db
         assert_eq!(curve.spl.len(), 3);
         assert!(curve.noise_floor_db.is_none());
     }
+
+    #[test]
+    fn headerless_two_column_csv_loads() {
+        let csv = "20 0.0\n200 1.0\n2000 2.0\n";
+        let f = write_tmp(csv);
+        let result = load_driver_measurement(&f.path().to_path_buf()).unwrap();
+        assert_eq!(result.0.len(), 3);
+        assert_eq!(result.1.len(), 3);
+        assert!(result.2.is_none());
+    }
+
+    #[test]
+    fn empty_file_errors() {
+        let csv = "";
+        let f = write_tmp(csv);
+        let result = load_driver_measurement(&f.path().to_path_buf());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn comments_only_file_errors() {
+        let csv = "# comment\n// another comment\n";
+        let f = write_tmp(csv);
+        let result = load_driver_measurement(&f.path().to_path_buf());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn headerless_with_phase_loads() {
+        let csv = "20 0.0 10\n200 1.0 20\n2000 2.0 30\n";
+        let f = write_tmp(csv);
+        let result = load_driver_measurement(&f.path().to_path_buf()).unwrap();
+        assert_eq!(result.0.len(), 3);
+        assert!(result.2.is_some());
+        assert_eq!(result.2.as_ref().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn comma_separated_headerless_loads() {
+        let csv = "20,0.0\n200,1.0\n2000,2.0\n";
+        let f = write_tmp(csv);
+        let result = load_driver_measurement(&f.path().to_path_buf()).unwrap();
+        assert_eq!(result.0.len(), 3);
+        assert_eq!(result.1.len(), 3);
+    }
+
+    #[test]
+    fn header_with_coherence_and_noise_floor() {
+        let csv = "\
+freq,spl,phase,coherence,noise_floor_db
+20,0.0,10,0.95,-45
+200,1.0,20,0.98,-50
+2000,2.0,30,0.99,-55
+";
+        let f = write_tmp(csv);
+        let result = load_driver_measurement(&f.path().to_path_buf()).unwrap();
+        assert_eq!(result.0.len(), 3);
+        assert!(result.2.is_some());
+        assert!(result.3.is_some());
+        assert!(result.4.is_some());
+        let coh = result.3.unwrap();
+        assert!((coh[0] - 0.95).abs() < 1e-9);
+        let nf = result.4.unwrap();
+        assert!((nf[1] + 50.0).abs() < 1e-9);
+    }
 }

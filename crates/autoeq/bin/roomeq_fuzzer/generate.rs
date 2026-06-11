@@ -808,3 +808,91 @@ pub(super) fn generate_measurement_csv(
     fs::write(path, csv_content)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+
+    #[test]
+    fn generate_random_source_creates_single_measurement() {
+        let temp_dir = std::env::temp_dir();
+        let mut rng = ChaCha8Rng::seed_from_u64(42);
+        let (source, paths) =
+            generate_random_source(&mut rng, &temp_dir, 9999, "L", "main", 0, 1, None).unwrap();
+
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].exists(), "generated CSV should exist on disk");
+
+        match source {
+            autoeq::MeasurementSource::Single(single) => {
+                assert!(single.speaker_name.is_some());
+            }
+            _ => panic!("expected Single measurement source, got {:?}", source),
+        }
+
+        // Cleanup
+        let _ = std::fs::remove_file(&paths[0]);
+    }
+
+    #[test]
+    fn generate_random_source_forced_measurements_creates_multiple() {
+        let temp_dir = std::env::temp_dir();
+        let mut rng = ChaCha8Rng::seed_from_u64(43);
+        let (source, paths) =
+            generate_random_source(&mut rng, &temp_dir, 9998, "LFE", "sub", 0, 1, Some(3)).unwrap();
+
+        assert_eq!(paths.len(), 3);
+        for p in &paths {
+            assert!(p.exists(), "generated CSV should exist on disk");
+        }
+
+        match source {
+            autoeq::MeasurementSource::Multiple(multiple) => {
+                assert_eq!(multiple.measurements.len(), 3);
+                assert!(multiple.speaker_name.is_some());
+            }
+            _ => panic!("expected Multiple measurement source, got {:?}", source),
+        }
+
+        // Cleanup
+        for p in &paths {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    #[test]
+    fn generate_random_source_deterministic_with_same_seed() {
+        let temp_dir = std::env::temp_dir();
+        let mut rng1 = ChaCha8Rng::seed_from_u64(123);
+        let (_source1, paths1) =
+            generate_random_source(&mut rng1, &temp_dir, 9997, "L", "main", 0, 1, None).unwrap();
+
+        let mut rng2 = ChaCha8Rng::seed_from_u64(123);
+        let (_source2, paths2) =
+            generate_random_source(&mut rng2, &temp_dir, 9997, "L", "main", 0, 1, None).unwrap();
+
+        // Same seed should produce files with identical content
+        let content1 = std::fs::read_to_string(&paths1[0]).unwrap();
+        let content2 = std::fs::read_to_string(&paths2[0]).unwrap();
+        assert_eq!(content1, content2);
+
+        // Cleanup
+        let _ = std::fs::remove_file(&paths1[0]);
+        let _ = std::fs::remove_file(&paths2[0]);
+    }
+
+    #[test]
+    fn generate_random_source_csv_has_header() {
+        let temp_dir = std::env::temp_dir();
+        let mut rng = ChaCha8Rng::seed_from_u64(44);
+        let (_source, paths) =
+            generate_random_source(&mut rng, &temp_dir, 9996, "L", "main", 0, 1, None).unwrap();
+
+        let content = std::fs::read_to_string(&paths[0]).unwrap();
+        assert!(content.starts_with("freq,spl,phase\n"));
+
+        // Cleanup
+        let _ = std::fs::remove_file(&paths[0]);
+    }
+}

@@ -188,3 +188,220 @@ fn sub_passband_detected_on_raw_curve_not_hpf_corrected() {
         hpf_band.1
     );
 }
+
+#[test]
+fn process_single_speaker_low_latency_succeeds() {
+    let source = MeasurementSource::InMemory(flat_curve());
+    let config = single_speaker_config(ProcessingMode::LowLatency);
+    let output_dir = std::env::temp_dir();
+
+    let result = process_single_speaker(
+        "left",
+        &source,
+        &config,
+        48000.0,
+        &output_dir,
+        None,
+        None,
+        None,
+    );
+
+    assert!(
+        result.is_ok(),
+        "low-latency single speaker should succeed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn process_single_speaker_phase_linear_succeeds() {
+    let source = MeasurementSource::InMemory(flat_curve());
+    let mut config = single_speaker_config(ProcessingMode::PhaseLinear);
+    config.optimizer.fir = Some(crate::roomeq::types::FirConfig {
+        phase: "linear".to_string(),
+        ..Default::default()
+    });
+    let output_dir = std::env::temp_dir();
+
+    let result = process_single_speaker(
+        "left",
+        &source,
+        &config,
+        48000.0,
+        &output_dir,
+        None,
+        None,
+        None,
+    );
+
+    assert!(
+        result.is_ok(),
+        "phase-linear single speaker should succeed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn process_single_speaker_with_probe_arrival() {
+    let source = MeasurementSource::InMemory(flat_curve());
+    let config = single_speaker_config(ProcessingMode::LowLatency);
+    let output_dir = std::env::temp_dir();
+
+    let result = process_single_speaker(
+        "left",
+        &source,
+        &config,
+        48000.0,
+        &output_dir,
+        None,
+        Some(3.5),
+        None,
+    );
+
+    assert!(
+        result.is_ok(),
+        "single speaker with probe arrival should succeed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn process_single_speaker_with_shared_mean_spl() {
+    let source = MeasurementSource::InMemory(flat_curve());
+    let config = single_speaker_config(ProcessingMode::LowLatency);
+    let output_dir = std::env::temp_dir();
+
+    let result = process_single_speaker(
+        "left",
+        &source,
+        &config,
+        48000.0,
+        &output_dir,
+        None,
+        None,
+        Some(82.0),
+    );
+
+    assert!(
+        result.is_ok(),
+        "single speaker with shared mean SPL should succeed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn process_single_speaker_returns_chain_and_scores() {
+    let source = MeasurementSource::InMemory(flat_curve());
+    let config = single_speaker_config(ProcessingMode::LowLatency);
+    let output_dir = std::env::temp_dir();
+
+    let result = process_single_speaker(
+        "left",
+        &source,
+        &config,
+        48000.0,
+        &output_dir,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    // MixedModeResult = (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms, fir_coeffs)
+    assert!(
+        result.1 >= 0.0,
+        "pre_score should be non-negative, got {}",
+        result.1
+    );
+    assert!(
+        result.2 >= 0.0,
+        "post_score should be non-negative, got {}",
+        result.2
+    );
+}
+
+#[test]
+fn process_single_speaker_hybrid_mode_succeeds() {
+    let source = MeasurementSource::InMemory(flat_curve());
+    let mut config = single_speaker_config(ProcessingMode::Hybrid);
+    config.optimizer.num_filters = 2;
+    config.optimizer.fir = Some(crate::roomeq::types::FirConfig {
+        phase: "linear".to_string(),
+        ..Default::default()
+    });
+    let output_dir = std::env::temp_dir();
+
+    let result = process_single_speaker(
+        "left",
+        &source,
+        &config,
+        48000.0,
+        &output_dir,
+        None,
+        None,
+        None,
+    );
+
+    assert!(
+        result.is_ok(),
+        "hybrid mode single speaker should succeed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn process_single_speaker_mixed_phase_mode_succeeds() {
+    let source = MeasurementSource::InMemory(flat_curve());
+    let mut config = single_speaker_config(ProcessingMode::MixedPhase);
+    config.optimizer.num_filters = 2;
+    let output_dir = std::env::temp_dir();
+
+    let result = process_single_speaker(
+        "left",
+        &source,
+        &config,
+        48000.0,
+        &output_dir,
+        None,
+        None,
+        None,
+    );
+
+    assert!(
+        result.is_ok(),
+        "mixed-phase mode single speaker should succeed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn determine_optimization_bands_two_way() {
+    let mut config = single_speaker_config(ProcessingMode::LowLatency);
+    config.optimizer.min_freq = 20.0;
+    config.optimizer.max_freq = 20000.0;
+    let crossover = super::super::types::CrossoverConfig {
+        crossover_type: "LR24".to_string(),
+        frequency: Some(1000.0),
+        frequencies: None,
+        frequency_range: None,
+    };
+
+    let bands = determine_optimization_bands(2, &config, &crossover);
+    assert_eq!(bands.len(), 2);
+}
+
+#[test]
+fn determine_optimization_bands_with_frequencies() {
+    let mut config = single_speaker_config(ProcessingMode::LowLatency);
+    config.optimizer.min_freq = 20.0;
+    config.optimizer.max_freq = 20000.0;
+    let crossover = super::super::types::CrossoverConfig {
+        crossover_type: "LR24".to_string(),
+        frequency: None,
+        frequencies: Some(vec![200.0, 2000.0]),
+        frequency_range: None,
+    };
+
+    let bands = determine_optimization_bands(3, &config, &crossover);
+    assert_eq!(bands.len(), 3);
+}

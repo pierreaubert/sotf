@@ -757,3 +757,179 @@ fn test_process_in_place_step_known_output() {
     // After delay settles: output should be 1.0
     assert!((buffer[num_frames - 1] - 1.0).abs() < 1e-4);
 }
+
+// -------------------------------------------------------------------------
+// set_parameter focused tests (per-channel, allpass, clamping)
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_set_parameter_per_channel_delay_roundtrip() {
+    let mut p = DelayPlugin::new_per_channel(vec![5.0, 10.0]).unwrap();
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(ParameterId::from("delay_ms_0"), ParameterValue::Float(20.0))
+        .unwrap();
+    p.set_parameter(ParameterId::from("delay_ms_1"), ParameterValue::Float(30.0))
+        .unwrap();
+
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("delay_ms_0")),
+        Some(ParameterValue::Float(20.0))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("delay_ms_1")),
+        Some(ParameterValue::Float(30.0))
+    );
+}
+
+#[test]
+fn test_set_parameter_per_channel_invalid_id_errors() {
+    let mut p = DelayPlugin::new(2, 10.0, 0.0, 0.0);
+    p.initialize(48000).unwrap();
+    // Not in per-channel mode: delay_ms_0 is not a valid parameter
+    assert!(
+        p.set_parameter(ParameterId::from("delay_ms_0"), ParameterValue::Float(5.0))
+            .is_err()
+    );
+}
+
+#[test]
+fn test_set_parameter_allpass_feedback_false_resets_state() {
+    let mut p = DelayPlugin::new(1, 10.0, 0.5, 0.5);
+    p.initialize(48000).unwrap();
+
+    // Enable allpass feedback and warm up state
+    p.set_parameter(
+        ParameterId::from("allpass_feedback"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    let mut b1 = vec![0.0; 2000];
+    b1[0] = 1.0;
+    p.process_in_place(&mut b1, &ProcessContext::new(48000, 2000))
+        .unwrap();
+
+    // Disable allpass feedback (should reset internal state)
+    p.set_parameter(
+        ParameterId::from("allpass_feedback"),
+        ParameterValue::Bool(false),
+    )
+    .unwrap();
+
+    let mut b2 = vec![0.0; 2000];
+    b2[0] = 1.0;
+    p.process_in_place(&mut b2, &ProcessContext::new(48000, 2000))
+        .unwrap();
+
+    let diff: f32 = b1.iter().zip(b2.iter()).map(|(a, b)| (a - b).abs()).sum();
+    assert!(
+        diff > 1e-6,
+        "disabling allpass_feedback should reset state and change output, diff={}",
+        diff
+    );
+}
+
+#[test]
+fn test_set_parameter_allpass_coeff_boundaries() {
+    let mut p = DelayPlugin::new(1, 10.0, 0.0, 0.0);
+    p.initialize(48000).unwrap();
+
+    // Maximum valid value
+    p.set_parameter(
+        ParameterId::from("allpass_coeff"),
+        ParameterValue::Float(0.99),
+    )
+    .unwrap();
+    assert!(
+        (p.allpass_coeff - 0.99).abs() < 1e-6,
+        "allpass_coeff should accept 0.99, got {}",
+        p.allpass_coeff
+    );
+
+    // Minimum valid value
+    p.set_parameter(
+        ParameterId::from("allpass_coeff"),
+        ParameterValue::Float(0.0),
+    )
+    .unwrap();
+    assert!(
+        (p.allpass_coeff - 0.0).abs() < 1e-6,
+        "allpass_coeff should accept 0.0, got {}",
+        p.allpass_coeff
+    );
+
+    // Out of range should be rejected by validation
+    assert!(
+        p.set_parameter(
+            ParameterId::from("allpass_coeff"),
+            ParameterValue::Float(1.5)
+        )
+        .is_err()
+    );
+    assert!(
+        p.set_parameter(
+            ParameterId::from("allpass_coeff"),
+            ParameterValue::Float(-0.5)
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn test_set_parameter_per_channel_delay_affects_processing() {
+    let sr = 48000u32;
+    let mut p = DelayPlugin::new_per_channel(vec![5.0, 10.0]).unwrap();
+    p.initialize(sr).unwrap();
+    p.reset();
+
+    let num_frames = 1024;
+    let mut buf = vec![0.0f32; num_frames * 2];
+    buf[0] = 1.0;
+    buf[1] = 1.0;
+
+    p.process_in_place(&mut buf, &ProcessContext::new(sr, num_frames))
+        .unwrap();
+
+    // Change channel 0 delay from 5ms (240 samples) to 15ms (720 samples)
+    p.set_parameter(ParameterId::from("delay_ms_0"), ParameterValue::Float(15.0))
+        .unwrap();
+    p.reset(); // snap smoother to new target
+
+    let mut buf2 = vec![0.0f32; num_frames * 2];
+    buf2[0] = 1.0;
+    buf2[1] = 1.0;
+    p.process_in_place(&mut buf2, &ProcessContext::new(sr, num_frames))
+        .unwrap();
+
+    let peak_ch0_before = (10..num_frames)
+        .max_by(|&a, &b| buf[a * 2].abs().partial_cmp(&buf[b * 2].abs()).unwrap())
+        .unwrap();
+    let peak_ch0_after = (10..num_frames)
+        .max_by(|&a, &b| buf2[a * 2].abs().partial_cmp(&buf2[b * 2].abs()).unwrap())
+        .unwrap();
+
+    assert!(
+        (peak_ch0_before as i32 - 240).abs() <= 2,
+        "before: peak should be near 240, got {}",
+        peak_ch0_before
+    );
+    assert!(
+        (peak_ch0_after as i32 - 720).abs() <= 2,
+        "after: peak should be near 720, got {}",
+        peak_ch0_after
+    );
+}
+
+#[test]
+fn test_set_parameter_per_channel_rejects_non_finite() {
+    let mut p = DelayPlugin::new_per_channel(vec![5.0]).unwrap();
+    p.initialize(48000).unwrap();
+
+    assert!(
+        p.set_parameter(
+            ParameterId::from("delay_ms_0"),
+            ParameterValue::Float(f32::NAN)
+        )
+        .is_err()
+    );
+}
