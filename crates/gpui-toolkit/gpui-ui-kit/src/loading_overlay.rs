@@ -14,8 +14,8 @@
 use crate::ComponentTheme;
 use crate::spinner::{Spinner, SpinnerSize};
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Rgba, ElementId, SharedString, Window, App, Stateful, Div, div, MouseButton, FontWeight};
 
 /// Theme colors for loading overlay
 #[derive(Debug, Clone, ComponentTheme)]

@@ -5,7 +5,6 @@ use crate :: { Plugin } ;
 use crate :: { PluginDescriptor , PluginFormat , PluginScanStatus } ;
 # [cfg (any (target_os = "linux" , target_os = "macos" , target_os = "windows"))] use crate :: { ExternalPluginSandboxTiming , ExternalPluginTrust , ExternalPluginWorkerCommand , PluginSandboxGrantStore , PluginSandboxLaunchBackend } ;
 use std :: path :: { PathBuf } ;
-# [cfg (any (target_os = "linux" , target_os = "macos" , target_os = "windows"))] use std :: sync :: { OnceLock } ;
 use super::create::create_plugin;
 # [cfg (any (target_os = "linux" , target_os = "macos" , target_os = "windows"))]
 use super::create::create_plugin_with_sandbox_grants;
@@ -471,4 +470,3 @@ mod misc;
                 || err.contains("path")
         );
     }
-

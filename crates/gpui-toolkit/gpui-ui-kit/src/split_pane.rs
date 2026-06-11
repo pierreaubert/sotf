@@ -14,8 +14,8 @@
 
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
+use gpui::{Rgba, ElementId, AnyElement, Pixels, Window, App, px, Stateful, Div, div, relative, MouseButton};
 use gpui_design::DesignSystem;
 use std::cell::RefCell;
 use std::collections::HashMap;

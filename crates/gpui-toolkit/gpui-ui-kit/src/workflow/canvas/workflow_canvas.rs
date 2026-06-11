@@ -16,7 +16,7 @@ use super::super::state::{
 use super::super::theme::WorkflowTheme;
 use crate::menu::{Menu, MenuItem};
 use crate::theme::ThemeExt;
-use gpui::*;
+use gpui::{FocusHandle, Context, SharedString, Window, App, InteractiveElement, KeyDownEvent, Styled, Render, IntoElement, canvas, div, px, ParentElement, MouseButton, StatefulInteractiveElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ScrollWheelEvent, ScrollDelta};
 use std::collections::HashMap;
 use std::rc::Rc;
 use super::draw::draw_connection;

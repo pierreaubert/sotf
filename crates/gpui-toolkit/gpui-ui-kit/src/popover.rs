@@ -13,8 +13,8 @@
 
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{AnyElement, Rgba, ElementId, Pixels, Window, App, Div, div, MouseButton};
 use std::rc::Rc;
 
 /// Popover placement relative to the anchor

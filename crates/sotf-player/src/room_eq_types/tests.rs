@@ -36,10 +36,6 @@ use super::types::post_route_plugins_for_channel;
 use super::types::pre_route_plugins_for_route;
 use super::types::read_first_wav_channel_f32;
     use super::*;
-    use crate::recording_types::{
-        ChannelRecording, ChannelRecordingState, DelayProbeChannelResult, RecordingResult,
-    };
-    use super::{DspChainOutputExt, build_room_eq_plugin_graph_config};
     use autoeq::roomeq::{
         BassManagementReport, BassManagementRoute, BassManagementRoutingGraph,
         BassManagementSignalFlowEntry, HomeCinemaRole, OptimizationMetadata, PluginConfigWrapper,
@@ -53,12 +49,6 @@ use misc::assert_room_eq_matrix_nodes_have_width;
 use misc::collect_labels;
 use routed::routed_bass_output;
 use routed::routed_physical_sub_output;
-
-# [cfg (test)]
-use super::types::post_route_plugins_for_channel;
-
-# [cfg (test)]
-use super::types::pre_route_plugins_for_route;
 
 /// Legacy routed graph builder retained for regression comparisons against
 /// the current factored graph builder.
@@ -1100,4 +1090,3 @@ pub(super) fn is_bass_output_channel(
             collect_labels(&larger),
         );
     }
-

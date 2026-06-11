@@ -3,8 +3,8 @@
 use crate::button::{Button, ButtonSize, ButtonVariant};
 use crate::progress::{Progress, ProgressSize, ProgressVariant};
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{SharedString, Window, App, Div, div};
 use super::types::WizardTheme;
 
 /// Navigation buttons component for wizard screens

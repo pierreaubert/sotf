@@ -47,8 +47,8 @@
 
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
+use gpui::{ElementId, FocusHandle, Subscription, SharedString, Window, App, div, FontWeight, px, MouseButton, rgba, AnyElement, ClipboardItem};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -68,10 +68,9 @@ mod number_edit_state;
 mod number_input_size;
 mod types;
 
-pub use misc::*;
-pub use number_input_size::*;
-pub use types::*;
-
+pub use misc::{is_number_input_editing, cleanup_number_input_state};
+pub use number_input_size::{NumberInputSize};
+pub use types::{NumberInputTheme};
 use misc::keystroke_to_char;
 use number_edit_state::NumberEditState;
 

@@ -1,8 +1,8 @@
 //! Port component for workflow nodes
 
 use super::theme::WorkflowTheme;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, RenderOnce, Styled};
+use gpui::{ElementId, Window, App, Rgba, div, px, MouseButton};
 
 /// Port direction
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

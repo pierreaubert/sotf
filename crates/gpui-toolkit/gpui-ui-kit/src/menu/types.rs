@@ -2,8 +2,8 @@
 
 use crate::ComponentTheme;
 use crate::theme::glow_shadow;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, ParentElement, Styled};
+use gpui::{Rgba, SharedString, Stateful, Div, div, px, FontWeight};
 
 /// Theme colors for menu styling
 #[derive(Debug, Clone, ComponentTheme)]

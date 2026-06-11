@@ -10,8 +10,8 @@
 use crate::ComponentTheme;
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Rgba, Pixels, px, ElementId, SharedString, Window, App, Stateful, Div, div, FontWeight, MouseButton};
 use gpui_design::DesignSystem;
 use std::sync::Arc;
 

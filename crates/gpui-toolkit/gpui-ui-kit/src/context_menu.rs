@@ -16,8 +16,8 @@
 use crate::ComponentTheme;
 use crate::menu::{MenuItem, MenuTheme};
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Rgba, ElementId, Point, Pixels, FocusHandle, SharedString, Window, App, point, px, Div, div, MouseButton};
 use std::rc::Rc;
 
 /// Theme colors for context menu styling

@@ -15,8 +15,8 @@
 
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Rgba, ElementId, SharedString, Window, App, Stateful, Div, div, FontWeight, px, MouseButton};
 
 /// Notification variant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

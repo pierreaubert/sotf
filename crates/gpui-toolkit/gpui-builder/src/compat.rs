@@ -342,7 +342,10 @@ impl PluginLayoutTree {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        GroupDirection, KnobSize, Orientation, PluginColumnConstraint, PluginLayoutThresholds,
+        PluginLayoutTree, plugin_adaptations,
+    };
     use crate::solver::solve;
     use crate::types::LayoutPreferences;
 

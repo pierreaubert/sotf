@@ -2,7 +2,7 @@
 
 use super::super :: state :: { Connection , NodeId , WorkflowNodeData } ;
 use crate :: menu :: { MenuItem } ;
-use gpui::*;
+use gpui::{Window, App, SharedString};
 use std::rc::Rc;
 
 /// Callback type for node double-click events

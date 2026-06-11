@@ -34,7 +34,6 @@ impl PaginationState {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::PaginationState;
 
     #[test]
@@ -61,4 +60,3 @@ mod tests {
         assert_eq!(p.total_pages(), 3);
     }
 }
-

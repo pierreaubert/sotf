@@ -1,7 +1,7 @@
 //! Popover component tests
 
 use gpui::div;
-use gpui::prelude::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, Styled};
 use gpui_ui_kit::popover::{Popover, PopoverPlacement};
 
 #[test]

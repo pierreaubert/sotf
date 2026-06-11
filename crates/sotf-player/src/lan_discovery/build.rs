@@ -9,6 +9,7 @@ use super::dns::dns_name_bytes;
 # [cfg (any (not (target_os = "macos") , test))]
 use super::dns::dns_record;
 use super::misc::encode_dns_name;
+use super::sotf_service_descriptor::SotfServiceDescriptor;
 # [cfg (any (not (target_os = "macos") , test))]
 use super::txt::txt_record_bytes;
 
@@ -81,4 +82,3 @@ pub(super) fn build_mdns_query(service_name: &str) -> Vec<u8> {
     packet.extend_from_slice(&1u16.to_be_bytes());
     packet
 }
-

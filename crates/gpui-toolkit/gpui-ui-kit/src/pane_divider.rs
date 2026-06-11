@@ -7,8 +7,8 @@
 //! - Drag to resize (via parent tracking mouse state)
 
 use crate::ComponentTheme;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled};
+use gpui::{Rgba, SharedString, Window, App, Pixels, px, Stateful, Div, CursorStyle, div, MouseButton, canvas, TransformationMatrix, Hsla};
 
 /// Direction the divider collapses toward
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

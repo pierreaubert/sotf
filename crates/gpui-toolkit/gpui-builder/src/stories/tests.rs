@@ -5,7 +5,6 @@ use super::layout_scenario::LayoutScenario;
 use super::layout_story::LayoutStory;
 use super::layout_story_catalog::LayoutStoryCatalog;
 
-    use super::*;
     use crate::{ContainerNode, Sizing, SlotNode};
 
     fn sample_story<'a>(
@@ -141,4 +140,3 @@ use super::layout_story_catalog::LayoutStoryCatalog;
             )
         );
     }
-

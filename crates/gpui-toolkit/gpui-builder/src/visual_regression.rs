@@ -217,7 +217,7 @@ fn format_number(value: f32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{LayoutStoryCatalog, VisualColorScheme, VisualRegressionManifest};
     use crate::{Axis, ContainerNode, LayoutNode, LayoutScenario, LayoutStory, Sizing, SlotNode};
 
     #[test]

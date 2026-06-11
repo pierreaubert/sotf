@@ -5,7 +5,7 @@ use sotf_host::{ParameterValue, run_standard_tests};
 use sotf_plugin_upmixer::{UpmixerDiagnostics, UpmixerPlugin, UpmixerPluginParams};
 use std::f32::consts::PI;
 use std::fs::{self, File};
-use std :: io :: { BufWriter } ;
+use std :: io :: { BufWriter, Write } ;
 use std :: path :: { Path } ;
 use std :: process :: { self } ;
 use super::artifact_tracker;
@@ -460,4 +460,3 @@ pub(super) fn run_self_qa() {
 
     println!("\n[ALL PASS] Upmixer QA Complete.");
 }
-

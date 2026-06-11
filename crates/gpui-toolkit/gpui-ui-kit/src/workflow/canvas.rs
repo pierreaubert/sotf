@@ -9,5 +9,4 @@ mod misc;
 mod types;
 mod workflow_canvas;
 
-pub use workflow_canvas::*;
-
+pub use workflow_canvas::{WorkflowCanvas};

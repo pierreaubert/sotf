@@ -29,8 +29,8 @@
 use crate::ComponentTheme;
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
+use gpui::{AnyElement, Rgba, Rems, ElementId, SharedString, Window, App, Div, div, MouseButton, FontWeight, px};
 use std::rc::Rc;
 
 /// Factory function type for creating elements with dialog theme access

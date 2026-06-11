@@ -1,7 +1,7 @@
 //! Sidebar component tests
 
 use gpui::div;
-use gpui::prelude::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, Styled};
 use gpui_ui_kit::sidebar::{Sidebar, SidebarSide};
 
 #[test]

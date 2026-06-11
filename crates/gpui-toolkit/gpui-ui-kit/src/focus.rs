@@ -28,8 +28,8 @@
 //! By default, FocusGroup adds a visual focus ring to the currently focused
 //! child. Disable with `.focus_ring(false)`.
 
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
+use gpui::{ElementId, AnyElement, Pixels, FocusHandle, px, Window, App, div};
 
 /// Direction of focus navigation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

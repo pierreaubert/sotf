@@ -6,8 +6,7 @@ use super::plugin_controller::PluginController;
 use super::types::PluginUpdateEffect;
 
     use super::*;
-    use crate::PluginType;
-    use crate::plugin_graph::{NodePosition, PluginGraph};
+    use crate::plugin_graph::NodePosition;
 
     /// Build a controller with a single non-permanent EQ plugin and return
     /// its graph node id. Mirrors how the room-EQ-as-graph apply path leaves
@@ -304,4 +303,3 @@ use super::types::PluginUpdateEffect;
         assert!(matches!(effect, PluginUpdateEffect::Structural));
         assert_eq!(kautz_count(&ctrl), before);
     }
-

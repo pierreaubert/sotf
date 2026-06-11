@@ -25,7 +25,6 @@ pub(super) fn ease_in_out_cubic(t: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::clamped_scroll_range;
 
     #[test]
@@ -40,4 +39,3 @@ mod tests {
         assert_eq!(clamped_scroll_range(1, 0.5), 0.0);
     }
 }
-

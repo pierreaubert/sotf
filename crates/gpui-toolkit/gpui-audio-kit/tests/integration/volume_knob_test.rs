@@ -25,10 +25,15 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[path = "volume_knob_test/mute_toggle_test_view.rs"]
 mod mute_toggle_test_view;
+#[path = "volume_knob_test/test.rs"]
 mod test;
+#[path = "volume_knob_test/volume_change_test_view.rs"]
 mod volume_change_test_view;
+#[path = "volume_knob_test/volume_knob_keyboard_view.rs"]
 mod volume_knob_keyboard_view;
+#[path = "volume_knob_test/volume_knob_scroll_wheel_view.rs"]
 mod volume_knob_scroll_wheel_view;
+#[path = "volume_knob_test/volume_knob_test_view.rs"]
 mod volume_knob_test_view;
-

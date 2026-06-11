@@ -12,7 +12,6 @@ use super::sotf_remote_server_store::SotfRemoteServerStore;
 use super::sotf_remote_token_store::SotfRemoteTokenStore;
 
     use super::*;
-    use std::collections::BTreeMap;
     use std::net::Ipv4Addr;
 
     fn discovered_server() -> DiscoveredSotfApiServer {
@@ -193,4 +192,3 @@ use super::sotf_remote_token_store::SotfRemoteTokenStore;
         let url = server.pairing_url("FP:00", "NONCE1");
         assert!(url.contains("host=192.168.1.5"));
     }
-

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use autoeq::Curve;
-use autoeq :: roomeq :: { RoomConfig , RoomOptimizationResult } ;
+use autoeq::roomeq::RoomConfig;
 use super::option;
 use super::consts::qa_seed;
 use super::metric_scorecard::MetricScorecard;
@@ -10,9 +10,7 @@ use super::metric_scorecard::compare_scorecards;
 use super::validate::validate_target_tilt;
 
     use super::*;
-    use autoeq::roomeq::{
-        ChannelDspChain, ChannelOptimizationResult, OptimizationMetadata, RoomOptimizationResult,
-    };
+    use autoeq::roomeq::{ChannelDspChain, ChannelOptimizationResult, OptimizationMetadata, RoomOptimizationResult};
 
     fn curve_with_slope(slope_db_per_octave: f64) -> Curve {
         let freq = ndarray::arr1(&[100.0, 200.0, 400.0, 500.0]);
@@ -179,4 +177,3 @@ use super::validate::validate_target_tilt;
         assert_eq!(qa_seed("case:a"), qa_seed("case:a"));
         assert_ne!(qa_seed("case:a"), qa_seed("case:b"));
     }
-

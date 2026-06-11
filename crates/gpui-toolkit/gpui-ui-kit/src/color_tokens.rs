@@ -46,11 +46,10 @@ mod text_colors;
 #[cfg(test)]
 mod tests;
 
-pub use background_colors::*;
-pub use border_colors::*;
-pub use color_palette::*;
-pub use color_token::*;
-pub use misc::*;
-pub use semantic_colors::*;
-pub use text_colors::*;
-
+pub use background_colors::{BackgroundColors};
+pub use border_colors::{BorderColors};
+pub use color_palette::{ColorPalette};
+pub use color_token::{ColorToken};
+pub use misc::{with_alpha, lighten, darken, saturate, desaturate};
+pub use semantic_colors::{SemanticColors};
+pub use text_colors::{TextColors};

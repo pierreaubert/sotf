@@ -7,19 +7,18 @@
 
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::{ThemeExt, glow_shadow};
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
+use gpui::{ElementId, Pixels, FocusHandle, SharedString, Window, App, px, Stateful, Div, div, KeyDownEvent, MouseButton};
 
 mod menu_bar;
 mod menu_bar_item;
 mod menu_item;
 mod types;
 
-pub use menu_bar::*;
-pub use menu_bar_item::*;
+pub use menu_bar::{MenuBar};
+pub use menu_bar_item::{MenuBarItem};
 pub use menu_item::MenuItem;
-pub use types::*;
-
+pub use types::{MenuTheme, menu_bar_button};
 /// A dropdown menu containing menu items
 ///
 /// # Keyboard Navigation

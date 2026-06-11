@@ -4,6 +4,7 @@
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use crate :: recording_types :: { DelayProbeResults , RecordingResult } ;
+pub use autoeq :: roomeq :: DspChainOutput;
 pub use autoeq :: roomeq :: ChannelDspChain ;
 use super::identity::identity_matrix_parameters;
 use super::room_eq_crossover_type::RoomEqCrossoverType;
@@ -692,4 +693,3 @@ pub(super) fn route_owns_delay_plugin(
                     && delay_ms.abs() > 0.001)
         })
 }
-

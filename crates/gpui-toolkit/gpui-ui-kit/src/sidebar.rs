@@ -14,8 +14,8 @@
 
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
+use gpui::{AnyElement, Rgba, ElementId, Pixels, px, Stateful, Div, div, Window, App};
 use gpui_design::DesignSystem;
 use std::sync::Arc;
 

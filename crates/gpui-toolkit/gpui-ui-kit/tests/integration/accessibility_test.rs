@@ -3,9 +3,8 @@
 //! Verifies that components register themselves in the AccessibilityTree
 //! during render with correct roles, labels, and states.
 
-use gpui::*;
-use gpui::prelude::*;
-use gpui_ui_kit::accessibility::*;
+use gpui::{AppContext as _, Context, ElementId, IntoElement, ParentElement, Render, TestAppContext, Window, div};
+use gpui_ui_kit::accessibility::{AccessibilityExt, AccessibilityTree, AriaRole, AriaState};
 use gpui_ui_kit::{Button, Checkbox, Slider, Toggle};
 
 struct ButtonA11yView;

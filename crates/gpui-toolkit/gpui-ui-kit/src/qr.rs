@@ -21,6 +21,5 @@ mod misc;
 mod paint;
 mod qr_code;
 
-pub use animated_qr_code::*;
-pub use qr_code::*;
-
+pub use animated_qr_code::{AnimatedQrCode};
+pub use qr_code::{QrCode};

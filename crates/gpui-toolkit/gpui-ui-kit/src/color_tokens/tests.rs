@@ -8,8 +8,6 @@ use super::misc::lighten;
 use super::misc::with_alpha;
 use super::semantic_colors::SemanticColors;
 
-    use super::*;
-
     #[test]
     fn test_color_token_from_hex() {
         let token = ColorToken::from_hex(0x007acc);
@@ -85,4 +83,3 @@ use super::semantic_colors::SemanticColors;
         let hsla = Hsla::from(darker_color);
         assert!(hsla.l < 0.5);
     }
-

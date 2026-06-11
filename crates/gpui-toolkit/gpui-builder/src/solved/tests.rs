@@ -6,7 +6,6 @@ use super::layout_debug_warning::LayoutDebugWarning;
 use super::solved_node::SolvedNode;
 use super::types::LayoutDebugWarningKind;
 
-    use super::*;
     use crate::types::{ContainerNode, SlotNode};
 
     fn solved_slot(id: &str, width: f32, height: f32) -> SolvedNode {
@@ -161,4 +160,3 @@ use super::types::LayoutDebugWarningKind;
                 .contains("warnings:\n- root children use 125px")
         );
     }
-

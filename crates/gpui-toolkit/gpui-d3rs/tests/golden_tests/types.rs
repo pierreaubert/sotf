@@ -3,6 +3,7 @@
 
 use d3rs::examples;
 use d3rs :: geo :: { Orthographic , Projection } ;
+use d3rs::scale::Scale;
 use serde::Deserialize;
 use std::cmp::Ordering;
 use std::fs;
@@ -2371,4 +2372,3 @@ fn test_observable_star_map() {
     assert!(!result.graticule_path.commands().is_empty());
     assert!(!result.outline_path.commands().is_empty());
 }
-

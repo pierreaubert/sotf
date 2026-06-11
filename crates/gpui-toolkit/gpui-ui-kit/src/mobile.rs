@@ -154,7 +154,7 @@ impl WaveformScrubber {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ContextPreview, PullToRefreshState, WaveformScrubber};
 
     #[test]
     fn pull_to_refresh_progress_is_clamped() {

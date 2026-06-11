@@ -240,7 +240,8 @@ impl<'a> LayoutPreferenceSnapshot<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{LayoutAction, LayoutState};
+    use crate::Axis;
     use crate::solver::solve;
     use crate::types::{ContainerNode, DisplayTier, LayoutNode, Sizing, SlotNode};
 

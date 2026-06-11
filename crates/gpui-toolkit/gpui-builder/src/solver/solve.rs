@@ -204,9 +204,9 @@ fn solve_container(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use super::super::*;
-    use crate::types::{ContainerNode, DisplayTier, SlotNode};
+    use super::{solve, LayoutNode, LayoutPreferences};
+    use crate::solved::SolvedNode;
+    use crate::types::{Axis, ContainerNode, DisplayTier, Sizing, SlotNode};
 
     fn simple_slot<'a>(id: &'a str, sizing: Sizing<'a>) -> LayoutNode<'a> {
         LayoutNode::Slot(SlotNode {
@@ -948,4 +948,3 @@ mod tests {
         assert_eq!(solved.find("label").unwrap().height, 50.0);
     }
 }
-

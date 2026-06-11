@@ -10,7 +10,6 @@ use super::layout_preferences::LayoutPreferences;
 use super::sizing::Sizing;
 use super::slot_node::SlotNode;
 
-    use super::*;
     use crate::solve;
 
     #[test]
@@ -123,4 +122,3 @@ use super::slot_node::SlotNode;
             );
         }
     }
-

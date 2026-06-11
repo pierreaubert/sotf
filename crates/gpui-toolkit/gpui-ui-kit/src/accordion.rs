@@ -7,16 +7,15 @@
 
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::{ThemeExt, glow_shadow};
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{SharedString, Window, App, Div, div, Stateful, MouseButton, px, FontWeight, canvas, TransformationMatrix, Hsla, ElementId};
 
 mod accordion_item;
 mod misc;
 mod types;
 
-pub use accordion_item::*;
-pub use types::*;
-
+pub use accordion_item::{AccordionItem};
+pub use types::{AccordionTheme, AccordionMode, AccordionOrientation};
 use misc::rotated_side_label_svg;
 use misc::side_label_height;
 use types::AccordionChangeHandler;

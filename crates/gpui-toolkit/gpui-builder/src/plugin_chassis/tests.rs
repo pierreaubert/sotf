@@ -7,8 +7,6 @@ use super::types::HeaderSpec;
 use super::types::KnobSlot;
 use super::types::SectionSpec;
 
-    use super::*;
-
     fn knob(id: &str, param_idx: usize, label: &str) -> KnobSlot {
         KnobSlot {
             id: id.to_string(),
@@ -278,4 +276,3 @@ use super::types::SectionSpec;
             "total_width should equal sum of visible widths"
         );
     }
-

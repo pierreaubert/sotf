@@ -2,7 +2,7 @@
 
 use super::super::bezier::{ObstacleRect, connection_path, connection_path_avoiding};
 use super::super :: state :: { Position } ;
-use gpui::*;
+use gpui::{Window, Rgba, PathBuilder, px, point};
 
 /// Draw a connection line between two ports, shortened at both ends by port_radius.
 /// Routes around `obstacles` (other node bounding rects) when necessary.

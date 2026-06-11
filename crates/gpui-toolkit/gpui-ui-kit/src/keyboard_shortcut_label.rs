@@ -12,8 +12,8 @@
 //! ```
 
 use crate::theme::{Theme, ThemeExt};
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{SharedString, Div, px, div, FontWeight, Window, App};
 
 /// Size of keyboard shortcut labels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

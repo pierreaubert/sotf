@@ -15,8 +15,8 @@
 
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Rgba, ElementId, AnyElement, Pixels, px, Stateful, Div, div, Window, App};
 
 /// Position of the status bar
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

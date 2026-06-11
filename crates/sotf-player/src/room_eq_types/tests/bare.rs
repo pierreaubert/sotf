@@ -5,7 +5,6 @@ pub use autoeq::roomeq::{ChannelDspChain, DriverDspChain, DspChainOutput};
 use super::super::ctc;
 use super::super::build::build_room_eq_plugin_graph_config;
     use super::super::*;
-use super::super :: { build_room_eq_plugin_graph_config } ;
 use autoeq :: roomeq :: { BassManagementReport , BassManagementRoute , BassManagementRoutingGraph , OptimizationMetadata , PluginConfigWrapper } ;
 
     /// Build a bare `ChannelDspChain` with all optional curve/IR fields
@@ -780,4 +779,3 @@ use autoeq :: roomeq :: { BassManagementReport , BassManagementRoute , BassManag
             .unwrap_or_else(|err| panic!("node {} ({}) failed: {err}", node.id, node.plugin_type));
         }
     }
-

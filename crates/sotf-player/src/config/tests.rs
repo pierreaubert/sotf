@@ -34,7 +34,7 @@ use super::save::save_plugin_sandbox_grants;
 use super::save::save_remote_server_token;
 
     use super::*;
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::Mutex;
 
     fn plugin_sandbox_grants_test_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -428,4 +428,3 @@ use super::save::save_remote_server_token;
             PathBuf::from("/Users/alice/Library/Containers/org.spinorama.sotf/Data")
         );
     }
-

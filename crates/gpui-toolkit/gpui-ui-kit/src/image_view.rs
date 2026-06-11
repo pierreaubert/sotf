@@ -13,8 +13,8 @@
 
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Rgba, ElementId, SharedString, Pixels, Window, App, Stateful, Div, div, MouseButton};
 
 /// How the image should fit within its container
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

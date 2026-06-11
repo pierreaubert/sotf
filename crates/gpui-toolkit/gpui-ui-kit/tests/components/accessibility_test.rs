@@ -1,6 +1,6 @@
 //! Accessibility module unit tests
 
-use gpui_ui_kit::accessibility::*;
+use gpui_ui_kit::accessibility::{AccessibilityExt, AccessibilityNode, AccessibilityTree, AriaLive, AriaProps, AriaRole, AriaState};
 
 #[test]
 fn test_aria_role_default_is_none() {

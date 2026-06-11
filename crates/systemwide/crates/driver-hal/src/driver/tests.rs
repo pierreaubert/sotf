@@ -3,6 +3,7 @@
 use driver_common :: { AudioDriver , ConfigResult , DriverConfig } ;
 use std :: path :: { PathBuf } ;
 use std :: sync :: { atomic :: { Ordering } } ;
+use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use crate :: shared_memory :: { SharedAudioBuffer } ;
@@ -10,9 +11,6 @@ use super::consts::DAEMON_HEARTBEAT_INTERVAL;
 use super::hal_driver::HalDriver;
 
     use super::*;
-    use std::sync::atomic::Ordering;
-    use std::thread;
-    use std::time::{Duration, Instant};
 
     use tempfile::NamedTempFile;
 
@@ -220,4 +218,3 @@ use super::hal_driver::HalDriver;
 
         assert!(matches!(result, ConfigResult::Error(_)));
     }
-

@@ -2,6 +2,7 @@
 
 use sotf_audio_player :: { MusicLibrary } ;
 use super::fixtures;
+use std::io::Write;
 
 pub(super) fn write_minimal_wav(path: &std::path::Path) {
     let channels = 2u16;
@@ -183,4 +184,3 @@ fn test_incremental_scan_preserves_skipped_folder_album_counts() {
         .expect("scan history for test root");
     assert_eq!((*tracks, *albums), (5, 2));
 }
-

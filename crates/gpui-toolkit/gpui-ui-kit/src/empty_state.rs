@@ -11,8 +11,8 @@
 //! ```
 
 use crate::theme::{Theme, ThemeExt};
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{SharedString, AnyElement, Div, div, FontWeight, Window, App};
 
 /// An empty state placeholder component
 #[derive(IntoElement)]

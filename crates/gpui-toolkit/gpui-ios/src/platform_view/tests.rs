@@ -12,8 +12,6 @@ use super::types::PlatformViewBounds;
 use super::types::PlatformViewParams;
 
     use super::*;
-    use std::sync::Mutex;
-
     struct TestView {
         id: PlatformViewId,
         disposed: Mutex<bool>,
@@ -102,4 +100,3 @@ use super::types::PlatformViewParams;
         assert_eq!(PlatformViewKind::WebView.as_str(), "webview");
         assert!("unknown".parse::<PlatformViewKind>().is_err());
     }
-

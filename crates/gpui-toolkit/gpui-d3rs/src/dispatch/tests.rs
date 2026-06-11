@@ -2,6 +2,7 @@
 
 use std :: sync :: atomic :: { Ordering } ;
 use std :: sync :: { Arc } ;
+use std :: sync :: atomic :: { AtomicUsize } ;
 use super::event;
 use super::types;
 use super::dispatcher::Dispatcher;
@@ -10,8 +11,6 @@ use super::event::Event;
 use super::listener_id::ListenerId;
 
     use super::*;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn test_dispatcher_on() {
@@ -320,4 +319,3 @@ use super::listener_id::ListenerId;
         assert_eq!(cloned.type_, "test");
         assert!(cloned.data.is_none());
     }
-

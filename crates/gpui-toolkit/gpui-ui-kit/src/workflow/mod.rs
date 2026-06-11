@@ -24,13 +24,9 @@ mod tests;
 
 // Re-export main types
 pub use canvas::WorkflowCanvas;
-pub use history::{Command, HistoryManager};
+pub use history::{Command, AddNodeCommand, RemoveNodeCommand, MoveNodesCommand, AddConnectionCommand, RemoveConnectionCommand, ChangePortCountsCommand, CompositeCommand, HistoryManager};
 pub use hit_test::{HitTestResult, HitTester};
-pub use node::{NodeContent, WorkflowNode};
-pub use port::{Port, PortDirection};
-pub use state::{
-    BoxSelection, BulkConnectDrag, CanvasState, Connection, ConnectionDrag, ConnectionId,
-    InteractionMode, LinkType, NodeDragState, NodeId, Position, SelectionState, ViewportState,
-    WorkflowGraph, WorkflowNodeData,
-};
+pub use node::{NodeContent, DefaultNodeContent, WorkflowNode};
+pub use port::{PortDirection, Port};
+pub use state::{BoxSelection, CanvasState, Connection, Position, SelectionState, NodeId, ConnectionId, LinkType, InteractionMode, NodeDragState, ConnectionDrag, BulkConnectDrag, ContextMenuState, ViewportState, WorkflowGraph, WorkflowNodeData};
 pub use theme::WorkflowTheme;

@@ -7,7 +7,7 @@
 //! 2. A runtime tree can be queried by external code (future bridges, tests)
 //! 3. Tooltip fallbacks can use aria_label when no tooltip is set
 
-use gpui::*;
+use gpui::{SharedString, ElementId, Global, App};
 use std::collections::HashMap;
 
 /// WAI-ARIA roles for UI components

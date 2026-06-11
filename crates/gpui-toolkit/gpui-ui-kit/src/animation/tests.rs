@@ -11,8 +11,6 @@ use super::keyframe_animation::evaluate_keyframes;
 use super::spring::Spring;
 use super::types::Easing;
 
-    use super::*;
-
     #[test]
     fn test_linear_easing() {
         assert_eq!(ease(Easing::Linear, 0.0), 0.0);
@@ -162,4 +160,3 @@ use super::types::Easing;
         assert!(result.is_some());
         assert!((result.unwrap() - 75.0).abs() < 0.1);
     }
-

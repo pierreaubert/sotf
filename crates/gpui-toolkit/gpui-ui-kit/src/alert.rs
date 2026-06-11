@@ -4,8 +4,8 @@
 
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::{Theme, ThemeExt};
-use gpui::prelude::*;
-use gpui::{Component, *};
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Component, Rgba, ElementId, SharedString, Window, App, Stateful, Div, div, FontWeight, MouseButton};
 
 /// Alert variant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

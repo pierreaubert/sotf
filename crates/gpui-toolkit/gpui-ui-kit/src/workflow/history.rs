@@ -306,7 +306,8 @@ impl HistoryManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{AddNodeCommand, CompositeCommand, HistoryManager, MoveNodesCommand};
+    use super::super::{Position, WorkflowGraph, WorkflowNodeData};
 
     #[test]
     fn test_add_node_undo_redo() {

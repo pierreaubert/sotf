@@ -6,7 +6,6 @@ use super::inspect::inspect_solved;
 use super::types::DisplayTierInspection;
 use super::types::LayoutInspectionKind;
 
-    use super::*;
     use crate::{ContainerNode, LayoutPreferences, SlotNode, solve};
 
     static TIERS: &[DisplayTier<'_>] = &[
@@ -190,4 +189,3 @@ use super::types::LayoutInspectionKind;
             )
         );
     }
-

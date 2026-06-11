@@ -16,7 +16,6 @@ use super::misc::PARTITION_SIZE;
 use super::types::ConvolutionPluginParams;
 use super::types::ConvolutionState;
     use super::*;
-    use sotf_host::plugin::{InPlacePlugin, ProcessContext};
     use std::fs;
 
 mod misc;
@@ -46,4 +45,3 @@ mod misc;
         assert!(err.contains("IO:"), "unexpected error: {err}");
         assert!(plugin.state.load().is_none());
     }
-

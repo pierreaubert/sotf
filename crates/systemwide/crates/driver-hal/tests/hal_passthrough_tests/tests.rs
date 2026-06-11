@@ -3,6 +3,7 @@
 use driver_hal::SharedAudioBuffer;
 use sotf_plugins::{
     BiquadFilterConfig, EqPlugin, EqPluginParams, InPlacePluginAdapter, Plugin, ProcessContext,
+    InPlacePlugin,
 };
 use sotf_plugins :: { GainPlugin , GainPluginParams } ;
 use super::misc::generate_test_audio;
@@ -450,4 +451,3 @@ fn test_eq_zero_gain_preserves_full_scale() {
         );
     }
 }
-

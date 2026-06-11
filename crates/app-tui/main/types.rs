@@ -8,6 +8,7 @@ use sotf_audio_player_tui :: events :: { AppEvent , handle_events , handle_key_e
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::ui;
 use std :: path :: { PathBuf } ;
+use std::sync::mpsc;
 use std::time::Duration;
 use super::misc::handle_player_command;
 use super::misc::loudness_redraw_signature;
@@ -459,4 +460,3 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
 
     Ok(())
 }
-

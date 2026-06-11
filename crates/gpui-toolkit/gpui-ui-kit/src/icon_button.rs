@@ -6,8 +6,8 @@
 use crate::ComponentTheme;
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::{ThemeExt, glow_shadow};
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
+use gpui::{ElementId, FocusHandle, App, Rgba, Rems, rems, SharedString, AnyElement, Pixels, ClickEvent, Window, Stateful, Div, div, px, KeyDownEvent, KeyboardClickEvent};
 use gpui_design::DesignSystem;
 use std::cell::RefCell;
 use std::collections::HashMap;

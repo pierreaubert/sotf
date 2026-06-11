@@ -17,8 +17,8 @@
 
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Rgba, SharedString, AnyElement, Pixels, px, ElementId, Stateful, Div, div, FontWeight, Window, App};
 
 /// Theme colors for settings form styling
 #[derive(Debug, Clone, ComponentTheme)]

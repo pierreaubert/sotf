@@ -30,23 +30,41 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+#[path = "vertical_slider_test/drag_callback_test_view.rs"]
 mod drag_callback_test_view;
+#[path = "vertical_slider_test/reset_callback_test_view.rs"]
 mod reset_callback_test_view;
+#[path = "vertical_slider_test/select_callback_test_view.rs"]
 mod select_callback_test_view;
+#[path = "vertical_slider_test/slider_change_test_view.rs"]
 mod slider_change_test_view;
+#[path = "vertical_slider_test/slider_click_step_view.rs"]
 mod slider_click_step_view;
+#[path = "vertical_slider_test/slider_disabled_view.rs"]
 mod slider_disabled_view;
+#[path = "vertical_slider_test/slider_drag_start_view.rs"]
 mod slider_drag_start_view;
+#[path = "vertical_slider_test/slider_keyboard_view.rs"]
 mod slider_keyboard_view;
+#[path = "vertical_slider_test/slider_log_scale_view.rs"]
 mod slider_log_scale_view;
+#[path = "vertical_slider_test/slider_percentage_view.rs"]
 mod slider_percentage_view;
+#[path = "vertical_slider_test/slider_reset_view.rs"]
 mod slider_reset_view;
+#[path = "vertical_slider_test/slider_scroll_wheel_disabled_view.rs"]
 mod slider_scroll_wheel_disabled_view;
+#[path = "vertical_slider_test/slider_scroll_wheel_log_view.rs"]
 mod slider_scroll_wheel_log_view;
+#[path = "vertical_slider_test/slider_scroll_wheel_view.rs"]
 mod slider_scroll_wheel_view;
+#[path = "vertical_slider_test/slider_select_and_drag_view.rs"]
 mod slider_select_and_drag_view;
+#[path = "vertical_slider_test/slider_select_interaction_view.rs"]
 mod slider_select_interaction_view;
+#[path = "vertical_slider_test/slider_track_click_view.rs"]
 mod slider_track_click_view;
+#[path = "vertical_slider_test/test.rs"]
 mod test;
+#[path = "vertical_slider_test/vertical_slider_test_view.rs"]
 mod vertical_slider_test_view;
-

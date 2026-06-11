@@ -3,8 +3,8 @@
 //! User avatars and profile images.
 
 use crate::theme::{Theme, ThemeExt};
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Pixels, px, SharedString, Rgba, rgb, Div, div, FontWeight, Window, App};
 
 /// Avatar size
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

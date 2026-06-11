@@ -7,6 +7,7 @@
 #![allow(clippy::type_complexity)]
 // Allow to_* methods that take self by reference - matches GPUI patterns
 #![allow(clippy::wrong_self_convention)]
+#![recursion_limit = "8192"]
 
 // Theme, animation, i18n, and accessibility
 pub mod accessibility;
@@ -93,130 +94,84 @@ pub mod showcase;
 // Re-export commonly used types
 
 // Buttons
-pub use button::{Button, ButtonSize, ButtonTheme, ButtonVariant};
-pub use button_set::{ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSetTheme};
-pub use icon_button::{IconButton, IconButtonSize, IconButtonTheme, IconButtonVariant};
-
+pub use button::{ButtonSize, ButtonVariant, ButtonTheme, Button};
+pub use button_set::{ButtonSetTheme, ButtonSetSize, ButtonSetOption, ButtonSet};
+pub use icon_button::{IconButtonTheme, IconButtonSize, IconButtonVariant, IconButton};
 // Containers
-pub use card::{Card, SlotFactory};
-pub use confirm_dialog::{ConfirmDialog, ConfirmDialogTheme, ConfirmDialogVariant};
-pub use context_menu::{ContextMenu, ContextMenuTheme};
-pub use dialog::{Dialog, DialogSize, DialogSlotFactory, DialogTheme};
-pub use popover::{Popover, PopoverPlacement, PopoverSlotFactory, PopoverTheme};
-
+pub use card::{SlotFactory, Card};
+pub use confirm_dialog::{ConfirmDialogVariant, ConfirmDialogTheme, ConfirmDialog};
+pub use context_menu::{ContextMenuTheme, ContextMenu};
+pub use dialog::{DialogSlotFactory, DialogTheme, DialogSize, Dialog};
+pub use popover::{PopoverPlacement, PopoverSlotFactory, PopoverTheme, Popover};
 // Navigation
-pub use accordion::{Accordion, AccordionItem, AccordionMode, AccordionTheme};
+pub use accordion::{AccordionItem, AccordionTheme, AccordionMode, AccordionOrientation, Accordion};
 pub use breadcrumbs::{BreadcrumbItem, BreadcrumbSeparator, Breadcrumbs};
-pub use menu::{Menu, MenuBar, MenuBarItem, MenuItem, MenuTheme, menu_bar_button};
-pub use tabs::{TabItem, TabVariant, Tabs, TabsTheme};
-pub use wizard::{
-    StepStatus, Wizard, WizardHeader, WizardNavigation, WizardStep, WizardTheme, WizardVariant,
-};
-
+pub use menu::{MenuBar, MenuBarItem, MenuItem, MenuTheme, menu_bar_button, Menu};
+pub use tabs::{TabItem, TabsTheme, TabVariant, IconFactory, Tabs};
+pub use wizard::{StepStatus, WizardTheme, WizardVariant, WizardHeader, WizardNavigation, WizardStep, Wizard};
 // Focus management
-pub use focus::{FocusDirection, FocusGroup};
-
+pub use focus::{FocusDirection, FocusGroup, FocusGroupExt};
 // Notifications
-pub use alert::{Alert, AlertVariant, InlineAlert};
-pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
-
+pub use alert::{AlertVariant, Alert, InlineAlert};
+pub use toast::{ToastVariant, ToastPosition, Toast, ToastContainer};
 // Form
-pub use checkbox::{Checkbox, CheckboxSize};
+pub use checkbox::{CheckboxTheme, CheckboxSize, Checkbox};
 pub use color::Color;
 pub use color_picker::{ColorPickerMode, ColorPickerView};
-pub use input::{
-    Input, InputSize, InputVariant, cleanup_input_state, cleanup_stale_input_states,
-    clear_all_input_states, input_state_count, is_input_editing,
-};
-pub use number_input::{
-    NumberInput, NumberInputSize, NumberInputTheme, cleanup_number_input_state,
-    is_number_input_editing,
-};
-pub use select::{Select, SelectOption, SelectSize, SelectTheme};
-pub use slider::{Slider, SliderSize, SliderTheme};
-pub use toggle::{Toggle, ToggleSize, ToggleStyle, ToggleTheme};
-
+pub use input::{cleanup_input_state, cleanup_stale_input_states, InputSize, is_input_editing, input_state_count, clear_all_input_states, InputTheme, InputVariant, Input};
+pub use number_input::{is_number_input_editing, cleanup_number_input_state, NumberInputSize, NumberInputTheme, NumberInput};
+pub use select::{SelectOption, SelectSize, SelectTheme, Select};
+pub use slider::{SliderSize, SliderTheme, Slider};
+pub use toggle::{ToggleSize, ToggleStyle, ToggleTheme, Toggle};
 // Data display
-pub use avatar::{Avatar, AvatarGroup, AvatarShape, AvatarSize, AvatarStatus};
-pub use badge::{Badge, BadgeDot, BadgeSize, BadgeVariant};
+pub use avatar::{AvatarSize, AvatarShape, Avatar, AvatarStatus, AvatarGroup};
+pub use badge::{BadgeVariant, BadgeSize, Badge, BadgeDot};
 pub use empty_state::EmptyState;
-pub use image_view::{ImageFit, ImageView, ImageViewTheme};
-pub use keyboard_shortcut_label::{KeyboardShortcutLabel, KeyboardShortcutSize};
-pub use progress::{CircularProgress, Progress, ProgressSize, ProgressVariant};
+pub use image_view::{ImageFit, ImageViewTheme, ImageView};
+pub use keyboard_shortcut_label::{KeyboardShortcutSize, KeyboardShortcutLabel};
+pub use progress::{ProgressVariant, ProgressSize, Progress, CircularProgress};
 pub use qr::QrCode;
-pub use spinner::{LoadingDots, Spinner, SpinnerSize};
-pub use step_indicator::{
-    StepIndicator, StepIndicatorSize, StepIndicatorTheme, StepItem, StepItemStatus, StepOrientation,
-};
-pub use table::{
-    Column, PaginationState, SelectionMode, SortDirection, SortState, Table, TableTheme,
-};
-pub use text::{Code, Heading, Link, Text, TextSize, TextWeight};
-
+pub use spinner::{SpinnerSize, Spinner, LoadingDots};
+pub use step_indicator::{StepItemStatus, StepOrientation, StepIndicatorSize, StepIndicatorTheme, StepItem, StepIndicator};
+pub use table::{Column, PaginationState, SortDirection, TableTheme, SortState, SelectionMode, Table};
+pub use text::{Code, Heading, Link, code_text_color, TextSize, TextWeight, Text};
 // Feedback
-pub use search_bar::{SearchBar, SearchBarSize, SearchBarTheme};
-pub use tooltip::{Tooltip, TooltipPlacement, WithTooltip};
-
+pub use search_bar::{SearchBarTheme, SearchBarSize, SearchBar};
+pub use tooltip::{TooltipPlacement, Tooltip, WithTooltip};
 // Layout
-pub use loading_overlay::{LoadingOverlay, LoadingOverlayTheme};
-pub use pane_divider::{CollapseDirection, PaneDivider, PaneDividerTheme};
-pub use settings_form::{SettingsForm, SettingsFormTheme, SettingsRow};
-pub use sidebar::{Sidebar, SidebarSide, SidebarSlotFactory, SidebarTheme};
-pub use split_pane::{SplitDirection, SplitPane, SplitPaneTheme};
-pub use stack::{
-    Divider, HStack, Spacer, StackAlign, StackJustify, StackOverflow, StackSize, StackSpacing,
-    VStack,
-};
-
+pub use loading_overlay::{LoadingOverlayTheme, LoadingOverlay};
+pub use pane_divider::{CollapseDirection, PaneDividerTheme, PaneDivider};
+pub use settings_form::{SettingsFormTheme, SettingsRow, SettingsForm};
+pub use sidebar::{SidebarSide, SidebarSlotFactory, SidebarTheme, Sidebar};
+pub use split_pane::{SplitDirection, SplitPaneTheme, SplitPane};
+pub use stack::{Divider, HStack, Spacer, StackSpacing, StackAlign, StackJustify, StackOverflow, StackSize, VStack};
 // Status bar
-pub use status_bar::{StatusBar, StatusBarPosition, StatusBarTheme};
-
+pub use status_bar::{StatusBarPosition, StatusBarTheme, StatusBar};
 // Animation
-pub use animation::{
-    Animation, Easing, Keyframe, KeyframeAnimation, Spring, ease, evaluate_keyframes, interpolate,
-    interpolate_color,
-};
-
+pub use animation::{ease, interpolate, interpolate_color, Keyframe, KeyframeAnimation, evaluate_keyframes, Spring, Easing, Animation};
 // Accessibility
-pub use accessibility::{
-    AccessibilityExt, AccessibilityNode, AccessibilityTree, AriaLive, AriaProps, AriaRole,
-    AriaState,
-};
+pub use accessibility::{AriaRole, AriaState, AriaLive, AriaProps, AccessibilityNode, AccessibilityTree, AccessibilityExt};
 pub use collection_diff::{CollectionPatch, diff_by_key, is_content_only_update};
-pub use mobile::{
-    ContextPreview, DynamicTypePolicy, EdgeInsets, PullToRefreshState, SwipeAction, SwipeDirection,
-    WaveformScrubber,
-};
-
+pub use mobile::{EdgeInsets, PullToRefreshState, SwipeDirection, SwipeAction, ContextPreview, DynamicTypePolicy, WaveformScrubber};
 // Theme and i18n
-pub use color_tokens::{
-    BackgroundColors, BorderColors, ColorPalette, ColorToken, SemanticColors, TextColors, darken,
-    desaturate, lighten, saturate, with_alpha,
-};
+pub use color_tokens::{BackgroundColors, BorderColors, ColorPalette, ColorToken, with_alpha, lighten, darken, saturate, desaturate, SemanticColors, TextColors};
 pub use gpui_design::{DesignExt, DesignSystem, DesignSystemState};
-pub use i18n::{I18nExt, I18nState, Language, TranslationKey, Translations};
-pub use theme::{Theme, ThemeExt, ThemeState, ThemeVariant};
-
+pub use i18n::{I18nExt, I18nState, Language, Translations, TranslationKey};
+pub use theme::{glow_shadow, ThemeExt, ThemeState, ThemeVariant, Theme};
 // Builder/layout solver integration
 pub mod layout_builder {
-    pub use gpui_builder::*;
+    pub use gpui_builder::{LayoutSnapshot, LayoutSnapshotMatrix, LayoutViewport, solve_snapshot_matrix, LayoutDebugReport, LayoutDebugWarning, LayoutDebugWarningKind, SolvedNode, solve};
 }
 
 // Workflow canvas
-pub use workflow::{
-    CanvasState, Command, Connection, ConnectionId, HistoryManager, HitTestResult, HitTester,
-    NodeContent, NodeId, Port, PortDirection, Position, SelectionState, ViewportState,
-    WorkflowCanvas, WorkflowGraph, WorkflowNode, WorkflowNodeData, WorkflowTheme,
-};
-
+pub use workflow::{WorkflowCanvas, Command, AddNodeCommand, RemoveNodeCommand, MoveNodesCommand, AddConnectionCommand, RemoveConnectionCommand, ChangePortCountsCommand, CompositeCommand, HistoryManager, HitTestResult, HitTester, NodeContent, DefaultNodeContent, WorkflowNode, PortDirection, Port, BoxSelection, CanvasState, Connection, Position, SelectionState, NodeId, ConnectionId, LinkType, InteractionMode, NodeDragState, ConnectionDrag, BulkConnectDrag, ContextMenuState, ViewportState, WorkflowGraph, WorkflowNodeData, WorkflowTheme};
 // Tier 3 components
-pub use command_palette::{CommandItem, CommandPalette, CommandPaletteTheme};
-pub use drag_list::{DragItem, DragList, DragListOrientation, DragListTheme};
-pub use notification::{Notification, NotificationTheme, NotificationVariant};
-pub use tag::{Tag, TagSize, TagTheme, TagVariant};
-pub use toolbar::{Toolbar, ToolbarItem, ToolbarTheme};
-pub use tree_view::{TreeNode, TreeView, TreeViewTheme};
-
+pub use command_palette::{CommandPaletteTheme, CommandItem, CommandPalette};
+pub use drag_list::{DragListTheme, DragItem, DragListOrientation, DragList};
+pub use notification::{NotificationVariant, NotificationTheme, Notification};
+pub use tag::{TagVariant, TagSize, TagTheme, Tag};
+pub use toolbar::{ToolbarTheme, ToolbarItem, Toolbar};
+pub use tree_view::{TreeViewTheme, TreeNode, TreeView};
 // Shared size definitions
 pub use size::ComponentSize;
 

@@ -15,8 +15,8 @@
 
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
+use gpui::{ElementId, Window, App, SharedString, Pixels, px, div, FontWeight, MouseButton, CursorStyle};
 use gpui_design::DesignSystem;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -26,11 +26,10 @@ mod pagination_state;
 mod sort_direction;
 mod types;
 
-pub use column::*;
-pub use pagination_state::*;
-pub use sort_direction::*;
-pub use types::*;
-
+pub use column::{Column};
+pub use pagination_state::{PaginationState};
+pub use sort_direction::{SortDirection};
+pub use types::{TableTheme, SortState, SelectionMode};
 /// Table component
 pub struct Table<T> {
     id: ElementId,

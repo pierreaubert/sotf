@@ -2,9 +2,11 @@
 
 use driver_hal::SharedAudioBuffer;
 use sotf_plugins :: { ProcessContext } ;
+use std::io::Write;
 use std::sync::atomic::{AtomicU32, AtomicU64};
 use tempfile::NamedTempFile;
 use sotf_plugins :: { GainPlugin } ;
+use sotf_plugins :: { InPlacePlugin } ;
 use super::SharedAudioHeader;
 use super::misc::SHARED_MEMORY_MAGIC;
 use super::misc::SHARED_MEMORY_VERSION;
@@ -256,4 +258,3 @@ fn test_volume_with_hal_pipeline() {
         );
     }
 }
-

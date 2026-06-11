@@ -74,9 +74,9 @@ test-proptest:
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest:
-	RUST_MIN_STACK=16777216 cargo test --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
+	RUST_MIN_STACK=67108864 CLANG_MODULE_CACHE_PATH=/private/tmp/clang-module-cache cargo test --test negative --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
 	PROPTEST_CASES=10000 cargo test --test proptest_tests --release --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
-	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --test-threads=1 --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
+	RUST_MIN_STACK=67108864 CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 CLANG_MODULE_CACHE_PATH=/private/tmp/clang-module-cache cargo nextest run --release --no-fail-fast --test-threads=1 --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
 
 # ----------------------------------------------------------------------
 # LINT
@@ -371,4 +371,5 @@ post-install-rust:
 post-install-python:
 	python3 -m venv venv
 	./venv/bin/pip install -U pip
-	./venv/bin/pip install -r ./scripts/requirements.txt
+	./venv/bin/pip install -r ./crates/autoeq/scripts/requirements.txt
+	./venv/bin/pip install -r ./crates/math-audio/math-dsp/ml/requirements.txt

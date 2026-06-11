@@ -18,7 +18,7 @@
 
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
-use gpui::*;
+use gpui::{IntoElement, ElementId, FocusHandle, SharedString, Window, App, Rgba, Styled, RenderOnce, InteractiveElement, div, px, ParentElement, MouseButton, StatefulInteractiveElement};
 use gpui_design::DesignSystem;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -38,9 +38,8 @@ thread_local! {
 mod slider_size;
 mod types;
 
-pub use slider_size::*;
-pub use types::*;
-
+pub use slider_size::{SliderSize};
+pub use types::{SliderTheme};
 /// A slider component for selecting numeric values
 ///
 /// Supports:

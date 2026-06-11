@@ -69,7 +69,7 @@ pub fn is_content_only_update<K>(patches: &[CollectionPatch<K>]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CollectionPatch, diff_by_key, is_content_only_update};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct Row {

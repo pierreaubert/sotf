@@ -4,8 +4,8 @@ use super::port::{Port, PortDirection};
 use super::state::{NodeId, Position, WorkflowNodeData};
 use super::theme::WorkflowTheme;
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{FluentBuilder as _, InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
+use gpui::{App, AnyElement, div, ElementId, Window, SharedString, px, MouseButton, FontWeight};
 
 /// Trait for custom node content rendering
 pub trait NodeContent: 'static {

@@ -7,8 +7,8 @@
 
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::{ThemeExt, glow_shadow};
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement, Styled};
+use gpui::{ElementId, FocusHandle, SharedString, ClickEvent, Window, App, Rgba, Pixels, px, Stateful, Div, div, KeyDownEvent, KeyboardClickEvent};
 use gpui_design::DesignSystem;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -24,9 +24,8 @@ mod button_size;
 mod misc;
 mod types;
 
-pub use button_size::*;
-pub use types::*;
-
+pub use button_size::{ButtonSize};
+pub use types::{ButtonVariant, ButtonTheme};
 use misc::button_focus_handle;
 
 /// A styled button component

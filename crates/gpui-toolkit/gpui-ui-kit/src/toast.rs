@@ -4,8 +4,8 @@
 
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaLive, AriaProps, AriaRole};
 use crate::theme::{Theme, ThemeExt};
-use gpui::prelude::*;
-use gpui::{Component, *};
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Component, Rgba, ElementId, SharedString, Window, App, Stateful, Div, div, px, FontWeight, MouseButton};
 
 /// Toast visual variant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

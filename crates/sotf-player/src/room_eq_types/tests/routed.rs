@@ -8,7 +8,6 @@ use super::super::ctc;
 use super::super::build::build_room_eq_plugin_graph_config;
 use super::super::misc::requires_room_eq_graph;
     use super::super::*;
-use super::super :: { build_room_eq_plugin_graph_config } ;
     use autoeq::roomeq::{
         BassManagementReport, BassManagementRoute, BassManagementRoutingGraph,
         BassManagementSignalFlowEntry, HomeCinemaRole, OptimizationMetadata, PluginConfigWrapper,
@@ -474,7 +473,7 @@ mod tests;
         let output = routed_bass_output();
 
         // Drive the legacy builder directly — same input, two outputs.
-        let legacy_graph = super::super::build_routed_room_eq_graph(
+        let legacy_graph = build_routed_room_eq_graph(
             &output,
             output
                 .metadata
@@ -653,4 +652,3 @@ mod tests;
             "L output channel must carry HP-filtered signal, peak={l_energy}"
         );
     }
-

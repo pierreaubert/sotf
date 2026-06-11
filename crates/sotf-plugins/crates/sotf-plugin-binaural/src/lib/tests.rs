@@ -4,8 +4,7 @@
 use realfft :: { RealFftPlanner } ;
 use rustfft::num_complex::Complex;
 use sotf_host :: parameters :: { ParameterId , ParameterValue } ;
-use sotf_host :: plugin :: { Plugin , ProcessContext } ;
-use sotf_host::sofa::SofaFile;
+use sotf_host::plugin::{Plugin, ProcessContext};
 use sotf_host :: speaker_config :: { get_speaker_config_by_channels } ;
 use std::sync::Arc;
 pub use super :: room :: { Reflection , RoomModel } ;
@@ -16,11 +15,6 @@ use super::params;
 use super::room;
 use super::binaural_decoder_plugin::BinauralDecoderPlugin;
 use super::types::BinauralState;
-    use super::*;
-    use sotf_host::plugin::ProcessContext;
-    use sotf_host::sofa::{SofaFile, SourcePosition};
-
-mod misc;
 
     #[test]
     fn test_binaural_decoder_creation() {
@@ -1138,4 +1132,3 @@ mod misc;
             "headphone_eq_enabled (unimplemented) must not be exposed in parameters()"
         );
     }
-

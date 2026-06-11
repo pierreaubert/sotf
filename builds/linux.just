@@ -29,5 +29,9 @@ install-ubuntu-common:
 			 libnetcdf-dev \
 			 libopencv-dev \
 			 libclang-dev
-
+			 librust-alsa-dev \
+			 librust-servo-fontconfig-dev \
+			 python3-venv \
+			 librust-libsqlite3-sys-dev \
+			 librust-xkbcommon-dev
 

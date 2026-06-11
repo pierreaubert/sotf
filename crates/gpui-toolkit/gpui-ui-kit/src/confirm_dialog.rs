@@ -18,8 +18,8 @@ use crate::ComponentTheme;
 use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::button::{Button, ButtonVariant};
 use crate::theme::ThemeExt;
-use gpui::prelude::*;
-use gpui::*;
+use gpui::prelude::{InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled};
+use gpui::{Rgba, ElementId, SharedString, Window, App, Div, div, MouseButton, Rems, FontWeight};
 use std::rc::Rc;
 
 /// Confirm dialog variant

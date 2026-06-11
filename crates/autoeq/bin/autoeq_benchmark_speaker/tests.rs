@@ -6,12 +6,7 @@ use super::misc::extract_pref_from_metadata_value;
 use super::misc::finite_diff;
 use super::misc::mean_std;
 use super::types::distribution_summary;
-
-    use super::{
-        CSV_HEADER, distribution_summary, extract_pref_from_metadata_value, finite_diff,
-        tied_best_mask,
-    };
-    use serde_json::json;
+use serde_json::json;
 
     #[test]
     fn metadata_pref_path_extracts() {
@@ -32,7 +27,7 @@ use super::types::distribution_summary;
     #[test]
     fn mean_std_basic() {
         let d = vec![1.0, 2.0, 3.0, 4.0];
-        let (m, s) = super::mean_std(&d).unwrap();
+        let (m, s) = mean_std(&d).unwrap();
         assert!((m - 2.5).abs() < 1e-12, "mean got {}", m);
         let expected_std = (5.0_f64 / 3.0).sqrt(); // sample std
         assert!((s - expected_std).abs() < 1e-12, "std got {}", s);
@@ -79,4 +74,3 @@ use super::types::distribution_summary;
             None
         );
     }
-

@@ -26,6 +26,7 @@ use crate::room_eq_types::{DspChainOutput, parse_eq_filters_from_json};
 use sotf_audio::engine::PluginGraphConfig;
 use sotf_audio::plugins::{PluginSettings, PluginType};
 use crate::EQFilter;
+use autoeq::roomeq::ChannelDspChain;
 
 mod misc;
 mod types;
@@ -579,4 +580,3 @@ mod tests {
         }
     }
 }
-
