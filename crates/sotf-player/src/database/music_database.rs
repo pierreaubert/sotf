@@ -97,7 +97,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 21;
+        const LATEST_VERSION: i64 = 22;
         let migrations = super::schema::get_migrations(self);
 
         // Apply migrations sequentially from current version to latest

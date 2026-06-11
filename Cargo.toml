@@ -309,6 +309,7 @@ driver-hal = { path = "crates/systemwide/crates/driver-hal" }  # macOS only
 cpal = "0.17"
 hound = "3.5"
 id3 = "1.16"
+lofty = "0.22"
 rubato = "1.0"
 audioadapter-buffers = "2.0"
 symphonia = { version = "0.6", default-features = false }

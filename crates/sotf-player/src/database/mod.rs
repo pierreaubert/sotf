@@ -7,6 +7,7 @@ mod analysis;
 mod federation;
 mod library;
 mod metadata;
+mod metadata_edit;
 mod playback;
 mod playlists;
 mod schema;

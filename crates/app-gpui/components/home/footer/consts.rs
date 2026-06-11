@@ -12,8 +12,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_audio_kit::VolumeKnob;
 use gpui_ui_kit::{
-    HStack, IconButton, IconButtonSize, IconButtonVariant, StackAlign, StackJustify, StackSpacing,
-    VStack,
+    Button, ButtonSize, ButtonVariant, HStack, IconButton, IconButtonSize, IconButtonVariant,
+    StackAlign, StackJustify, StackSpacing, VStack,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -96,6 +96,210 @@ const BREAKPOINT_HIDE_WAVEFORM_REMS: f32 = 43.75; // ~700px at 16px rem
 const BREAKPOINT_HIDE_TRACK_INFO_REMS: f32 = 34.375; // ~550px at 16px rem
 
 impl PlayerView {
+    pub(crate) fn render_scan_status_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let library_active = state.app.library_state.scan_in_progress;
+        let replay_gain_active = state.app.scan_ctrl.replay_gain_manager.in_progress;
+        let waveform_active = state.app.scan_ctrl.waveform_manager.in_progress;
+        let bliss_active = state.app.scan_ctrl.bliss_manager.in_progress;
+        let any_active = library_active || replay_gain_active || waveform_active || bliss_active;
+
+        if !any_active || state.app.scan_status_hidden {
+            return div().into_any_element();
+        }
+
+        div()
+            .flex()
+            .items_center()
+            .gap(d.gap_md)
+            .h(rems(1.75))
+            .px(d.card)
+            .bg(theme.text_primary)
+            .text_color(theme.background)
+            .border_t_1()
+            .border_color(theme.text_primary)
+            .when(any_active, |row| {
+                let tracks = state.app.library_state.scan_progress_tracks;
+                let total = state.app.scan_total_files;
+                let progress = if total > 0 {
+                    Some((tracks as f32 / total as f32).clamp(0.0, 1.0))
+                } else {
+                    None
+                };
+                row.child(self.render_scan_status_item(
+                    "Scan",
+                    progress,
+                    Self::format_library_scan_status(
+                        tracks,
+                        state.app.library_state.scan_progress_albums,
+                        total,
+                        state.app.scan_progress_elapsed_secs,
+                        state.app.scan_progress_tracks_per_sec,
+                        state.app.scan_progress_eta_secs,
+                        &state.app.scan_progress_phase,
+                    ),
+                    &theme,
+                ))
+            })
+            .when(any_active, |row| {
+                let mgr = &state.app.scan_ctrl.replay_gain_manager;
+                let (progress, detail) =
+                    if mgr.album_gain_total > 0 && mgr.album_gain_done < mgr.album_gain_total {
+                        (
+                            Some(mgr.album_gain_done as f32 / mgr.album_gain_total as f32),
+                            format!("albums {}/{}", mgr.album_gain_done, mgr.album_gain_total),
+                        )
+                    } else if mgr.total > 0 && mgr.processed >= mgr.total && !replay_gain_active {
+                        (Some(1.0), "done".to_string())
+                    } else if mgr.total > 0 {
+                        (
+                            Some((mgr.progress() / 100.0).clamp(0.0, 1.0)),
+                            format!("{}/{}", mgr.processed, mgr.total),
+                        )
+                    } else if replay_gain_active {
+                        (Some(0.0), "starting".to_string())
+                    } else {
+                        (Some(0.0), "pending".to_string())
+                    };
+                row.child(self.render_scan_status_item("ReplayGain", progress, detail, &theme))
+            })
+            .when(any_active, |row| {
+                let mgr = &state.app.scan_ctrl.waveform_manager;
+                let (progress, detail) = if mgr.total > 0 && mgr.processed >= mgr.total && !waveform_active {
+                    (Some(1.0), "done".to_string())
+                } else if mgr.total > 0 {
+                    (
+                        Some((mgr.progress() / 100.0).clamp(0.0, 1.0)),
+                        format!("{}/{}", mgr.processed, mgr.total),
+                    )
+                } else if waveform_active {
+                    (Some(0.0), "starting".to_string())
+                } else {
+                    (Some(0.0), "pending".to_string())
+                };
+                row.child(self.render_scan_status_item(
+                    "Wave",
+                    progress,
+                    detail,
+                    &theme,
+                ))
+            })
+            .when(any_active, |row| {
+                let mgr = &state.app.scan_ctrl.bliss_manager;
+                let (progress, detail) = if mgr.total > 0 && mgr.processed >= mgr.total && !bliss_active {
+                    (Some(1.0), "done".to_string())
+                } else if mgr.total > 0 {
+                    (
+                        Some((mgr.progress() / 100.0).clamp(0.0, 1.0)),
+                        format!("{}/{}", mgr.processed, mgr.total),
+                    )
+                } else if bliss_active {
+                    (Some(0.0), "starting".to_string())
+                } else {
+                    (Some(0.0), "pending".to_string())
+                };
+                row.child(self.render_scan_status_item(
+                    "Bliss",
+                    progress,
+                    detail,
+                    &theme,
+                ))
+            })
+            .child(div().flex_1())
+            .child(
+                Button::new("hide-scan-status", "Hide")
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::Xs)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                        view.state.update(cx, |state, _cx| {
+                            state.app.scan_status_hidden = true;
+                        });
+                        cx.notify();
+                    })),
+            )
+            .into_any_element()
+    }
+
+    fn render_scan_status_item(
+        &self,
+        label: &'static str,
+        progress: Option<f32>,
+        detail: String,
+        theme: &crate::theme::Theme,
+    ) -> impl IntoElement {
+        let progress = progress.map(|p| p.clamp(0.0, 1.0));
+        let fill_width = progress.unwrap_or(0.35);
+
+        div()
+            .flex()
+            .items_center()
+            .gap(rems(0.35))
+            .child(
+                div()
+                    .text_size(rems(0.72))
+                    .font_weight(FontWeight::BOLD)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .w(rems(5.5))
+                    .h(rems(0.36))
+                    .rounded_full()
+                    .overflow_hidden()
+                    .bg(theme.background_secondary)
+                    .child(
+                        div()
+                            .h_full()
+                            .w(rems(5.5 * fill_width))
+                            .rounded_full()
+                            .bg(theme.accent),
+                    ),
+            )
+            .child(div().text_size(rems(0.65)).child(detail))
+    }
+
+    fn format_library_scan_status(
+        tracks: usize,
+        albums: usize,
+        total: usize,
+        elapsed_secs: u64,
+        rate: f32,
+        eta_secs: Option<u64>,
+        phase: &str,
+    ) -> String {
+        let elapsed = Self::format_scan_duration(elapsed_secs);
+        let eta = eta_secs
+            .map(Self::format_scan_duration)
+            .unwrap_or_else(|| "--".to_string());
+        let phase = if phase.is_empty() { "Scanning" } else { phase };
+
+        if total > 0 {
+            format!(
+                "{phase}: {tracks}/{total} tracks | {albums} scanned albums | {rate:.1}/s | ETA {eta}"
+            )
+        } else {
+            format!(
+                "{phase}: {tracks} tracks | {albums} scanned albums | {rate:.1}/s | {elapsed} elapsed"
+            )
+        }
+    }
+
+    fn format_scan_duration(seconds: u64) -> String {
+        let hours = seconds / 3600;
+        let minutes = (seconds % 3600) / 60;
+        let secs = seconds % 60;
+        if hours > 0 {
+            format!("{hours}h {minutes}m")
+        } else if minutes > 0 {
+            format!("{minutes}m {secs}s")
+        } else {
+            format!("{secs}s")
+        }
+    }
+
     pub(crate) fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);

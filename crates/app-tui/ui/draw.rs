@@ -181,6 +181,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_channel_conflict_modal(f, app);
     }
 
+    if app.input_mode == InputMode::MetadataEditor {
+        draw_metadata_editor_modal(f, app);
+    }
+
     // Configure sub-screen modal (drawn when inside a sub-screen, not on the tab bar).
     // Skip when an overlay modal (file explorer, help, error, etc.) is active so the
     // configure wizard content doesn't paint over it.

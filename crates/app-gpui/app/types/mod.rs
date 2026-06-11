@@ -126,6 +126,8 @@ pub enum InputMode {
     ChannelConflict,
     /// Context menu is open (album, queue item, etc.)
     ContextMenu,
+    /// Modal for manual album/track metadata editing.
+    MetadataEditor,
     /// Tutorial dialog shown on first launch
     Tutorial,
     /// Contextual help guide for the current screen
@@ -146,6 +148,7 @@ impl InputMode {
                 | InputMode::LoadSofaFile
                 | InputMode::SpinoramaSpeakerSearch
                 | InputMode::HeadphoneSearch
+                | InputMode::MetadataEditor
         )
     }
 }
@@ -263,6 +266,205 @@ pub enum ContextMenuType {
     Directory,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetadataEditorScope {
+    Album,
+    Track,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MetadataEditorFields {
+    pub title: String,
+    pub artist: String,
+    pub album_artist: String,
+    pub year: String,
+    pub genre: String,
+    pub composer: String,
+    pub disc_number: String,
+    pub track_number: String,
+    pub conductor: String,
+    pub performer: String,
+    pub isrc: String,
+    pub ensemble: String,
+    pub edition: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct MetadataEditorState {
+    pub scope: MetadataEditorScope,
+    pub target: sotf_audio_player::MetadataTarget,
+    pub target_label: String,
+    pub fields: MetadataEditorFields,
+    pub preview: Option<sotf_audio_player::MetadataEditPreview>,
+    pub error: Option<String>,
+    pub search_query: String,
+    pub search_results: Vec<sotf_audio_player::MetadataImportCandidate>,
+    pub selected_result: usize,
+    pub search_error: Option<String>,
+    pub search_in_progress: bool,
+}
+
+impl MetadataEditorState {
+    pub fn for_album(album: &sotf_audio_player::Album) -> Result<Self, String> {
+        let album_id = album
+            .id
+            .ok_or_else(|| "Metadata editing requires a persisted album".to_string())?;
+        let first = album.tracks.first();
+        let artist = album.artist();
+        let album_artist = first
+            .and_then(|track| track.album_artist.clone())
+            .unwrap_or_else(|| artist.clone());
+        let title = album.title.clone();
+        Ok(Self {
+            scope: MetadataEditorScope::Album,
+            target: sotf_audio_player::MetadataTarget::AlbumId(album_id),
+            target_label: format!("Album \"{}\"", album.title),
+            fields: MetadataEditorFields {
+                title: title.clone(),
+                artist,
+                album_artist,
+                year: album.year.map(|year| year.to_string()).unwrap_or_default(),
+                genre: first
+                    .and_then(|track| track.genre.clone())
+                    .unwrap_or_default(),
+                composer: first
+                    .and_then(|track| track.composer.clone())
+                    .unwrap_or_default(),
+                disc_number: first
+                    .and_then(|track| track.disc_number)
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+                conductor: first
+                    .and_then(|track| track.conductor.clone())
+                    .unwrap_or_default(),
+                performer: first
+                    .and_then(|track| track.performer.clone())
+                    .unwrap_or_default(),
+                isrc: first
+                    .and_then(|track| track.isrc.clone())
+                    .unwrap_or_default(),
+                ensemble: first
+                    .and_then(|track| track.ensemble.clone())
+                    .unwrap_or_default(),
+                edition: album.edition.clone().unwrap_or_default(),
+                ..Default::default()
+            },
+            preview: None,
+            error: None,
+            search_query: format!("{} {}", album.artist(), title).trim().to_string(),
+            search_results: Vec::new(),
+            selected_result: 0,
+            search_error: None,
+            search_in_progress: false,
+        })
+    }
+
+    pub fn for_track(track: &sotf_audio_player::Track) -> Self {
+        let title = track
+            .title
+            .clone()
+            .unwrap_or_else(|| track.path.display().to_string());
+        let artist = track.artist.clone().unwrap_or_default();
+        Self {
+            scope: MetadataEditorScope::Track,
+            target: sotf_audio_player::MetadataTarget::TrackPath(track.path.clone()),
+            target_label: format!("Track \"{}\"", title),
+            fields: MetadataEditorFields {
+                title: title.clone(),
+                artist: artist.clone(),
+                album_artist: track.album_artist.clone().unwrap_or_default(),
+                year: String::new(),
+                genre: track.genre.clone().unwrap_or_default(),
+                composer: track.composer.clone().unwrap_or_default(),
+                disc_number: track
+                    .disc_number
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+                track_number: track
+                    .track_number
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+                conductor: track.conductor.clone().unwrap_or_default(),
+                performer: track.performer.clone().unwrap_or_default(),
+                isrc: track.isrc.clone().unwrap_or_default(),
+                ensemble: track.ensemble.clone().unwrap_or_default(),
+                edition: track.edition.clone().unwrap_or_default(),
+            },
+            preview: None,
+            error: None,
+            search_query: format!("{} {}", artist, title).trim().to_string(),
+            search_results: Vec::new(),
+            selected_result: 0,
+            search_error: None,
+            search_in_progress: false,
+        }
+    }
+
+    pub fn patch(&self) -> Result<sotf_audio_player::MetadataPatch, String> {
+        fn text(value: &str) -> Option<String> {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        }
+
+        fn number(label: &str, value: &str) -> Result<Option<u32>, String> {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            trimmed
+                .parse::<u32>()
+                .map(Some)
+                .map_err(|_| format!("{label} must be a positive number"))
+        }
+
+        Ok(sotf_audio_player::MetadataPatch {
+            title: (self.scope == MetadataEditorScope::Track)
+                .then(|| text(&self.fields.title))
+                .flatten(),
+            album_title: (self.scope == MetadataEditorScope::Album)
+                .then(|| text(&self.fields.title))
+                .flatten(),
+            artist: text(&self.fields.artist),
+            album_artist: text(&self.fields.album_artist),
+            year: number("Year", &self.fields.year)?,
+            genre: text(&self.fields.genre),
+            composer: text(&self.fields.composer),
+            disc_number: number("Disc", &self.fields.disc_number)?,
+            track_number: number("Track", &self.fields.track_number)?,
+            conductor: text(&self.fields.conductor),
+            performer: text(&self.fields.performer),
+            isrc: text(&self.fields.isrc),
+            ensemble: text(&self.fields.ensemble),
+            edition: text(&self.fields.edition),
+        })
+    }
+
+    pub fn apply_candidate(&mut self, candidate: sotf_audio_player::MetadataImportCandidate) {
+        if let Some(title) = candidate.title.or(candidate.album_title) {
+            self.fields.title = title;
+        }
+        if let Some(artist) = candidate.artist {
+            self.fields.artist = artist;
+        }
+        if let Some(album_artist) = candidate.album_artist {
+            self.fields.album_artist = album_artist;
+        }
+        if let Some(year) = candidate.year {
+            self.fields.year = year.to_string();
+        }
+        if let Some(track_number) = candidate.track_number {
+            self.fields.track_number = track_number.to_string();
+        }
+        if let Some(disc_number) = candidate.disc_number {
+            self.fields.disc_number = disc_number.to_string();
+        }
+        if let Some(isrc) = candidate.isrc {
+            self.fields.isrc = isrc;
+        }
+        self.search_error = None;
+    }
+}
+
 /// Type of plugin update needed for audio engine synchronization
 #[derive(Debug, Clone)]
 pub enum PluginUpdateType {
@@ -368,10 +570,10 @@ pub use room_eq::{
     RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqOptimizerConfig, RoomEqSpeakerConfig,
     RoomEqState, RoomEqStep, SpeakerConfigType, TargetCurveControlPoint,
 };
-pub use settings::{ScanProgressModal, ScanType, SettingsTab};
+pub use settings::SettingsTab;
 pub use spinorama_eq::{
     DirectivityCurve, SpinoramaBiquad, SpinoramaCurves, SpinoramaEqResult, SpinoramaEqState,
     SpinoramaOptimizationMode, SpinoramaStep, SpinoramaTargetCurve,
 };
 pub use stats::LibraryStats;
-pub use toast::{ToastMessage, ToastType};
+pub use toast::{ToastAction, ToastMessage, ToastType};

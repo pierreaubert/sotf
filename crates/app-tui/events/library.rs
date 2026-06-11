@@ -155,6 +155,18 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
             app.toggle_favorites_filter();
             None
         }
+        KeyCode::Char('m') => {
+            if let Some(album) = app.cached_filtered_albums.get(app.selected_album_index) {
+                match crate::app::MetadataEditorState::for_album(album) {
+                    Ok(editor) => {
+                        app.metadata_editor = Some(editor);
+                        app.input_mode = crate::app::InputMode::MetadataEditor;
+                    }
+                    Err(err) => app.status_message = Some(format!("Metadata: {err}")),
+                }
+            }
+            None
+        }
         KeyCode::Char('A') => {
             // Add selected album to the active playlist
             if let Some(active_id) = app.playlist_controller.active_playlist_id() {

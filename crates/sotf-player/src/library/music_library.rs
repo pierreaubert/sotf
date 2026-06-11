@@ -135,6 +135,11 @@ impl MusicLibrary {
         self.db.as_ref()
     }
 
+    /// Get a mutable reference to the database.
+    pub fn get_database_mut(&mut self) -> Option<&mut MusicDatabase> {
+        self.db.as_mut()
+    }
+
     /// Load library from database
     pub fn load_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let t_total = std::time::Instant::now();
@@ -590,6 +595,8 @@ impl MusicLibrary {
                 &mut dir_stats,
                 cancellation_token.clone(),
                 pause_flag.clone(),
+                total_tracks,
+                progress_callback,
             )?;
 
             // Check cancellation after each directory
@@ -785,7 +792,7 @@ impl MusicLibrary {
         Ok(removed)
     }
 
-    pub(super) fn scan_directory(
+    pub(super) fn scan_directory<F>(
         &self,
         dir: &Path,
         album_map: &mut HashMap<String, Album>,
@@ -793,7 +800,12 @@ impl MusicLibrary {
         dir_stats: &mut HashMap<PathBuf, (usize, std::collections::HashSet<String>)>,
         cancellation_token: Option<Arc<AtomicBool>>,
         pause_flag: Option<Arc<AtomicBool>>,
-    ) -> Result<(usize, usize), Box<dyn std::error::Error>> {
+        progress_base_tracks: usize,
+        progress_callback: &mut F,
+    ) -> Result<(usize, usize), Box<dyn std::error::Error>>
+    where
+        F: FnMut(usize, usize),
+    {
         let mut total_tracks = 0;
         let mut scanned_tracks = 0;
 
@@ -838,6 +850,7 @@ impl MusicLibrary {
                 let ext = ext.to_string_lossy().to_lowercase();
                 if is_supported_audio_extension(&ext) {
                     total_tracks += 1;
+                    progress_callback(progress_base_tracks + total_tracks, album_map.len());
 
                     // Update stats for the parent directory of this file.
                     // Album keys are stitched in below (post-scan) once each

@@ -1,21 +1,55 @@
 //! Background library scanner for non-blocking UI updates
 
-use crate::library::MusicLibrary;
+use crate::library::{MusicLibrary, is_supported_audio_extension};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+use walkdir::WalkDir;
+
+const PROGRESS_UPDATE_TRACK_INTERVAL: usize = 5;
+const PROGRESS_UPDATE_TIME_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Message sent by the library scanner thread
 #[derive(Debug, Clone)]
 pub enum LibraryScanMessage {
     /// Progress update during scanning
-    Progress { tracks: usize, albums: usize },
+    Progress {
+        tracks: usize,
+        albums: usize,
+        total_files: usize,
+        phase: &'static str,
+    },
     /// Scanning completed successfully
     Complete { tracks: usize, albums: usize },
     /// Scanning failed
     Error { message: String },
+}
+
+fn count_supported_audio_files(directories: &[PathBuf], cancellation_token: &AtomicBool) -> usize {
+    let mut total = 0;
+    for directory in directories {
+        for entry in WalkDir::new(directory).follow_links(true).into_iter() {
+            if cancellation_token.load(Ordering::Relaxed) {
+                return total;
+            }
+            let Ok(entry) = entry else {
+                continue;
+            };
+            if entry.file_type().is_file()
+                && entry
+                    .path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(is_supported_audio_extension)
+            {
+                total += 1;
+            }
+        }
+    }
+    total
 }
 
 /// Background library scanner
@@ -84,6 +118,20 @@ impl LibraryScanner {
                 log::info!("[LibraryScanner] Starting incremental background scan");
             }
 
+            let _ = message_tx.send(LibraryScanMessage::Progress {
+                tracks: 0,
+                albums: 0,
+                total_files: 0,
+                phase: "Counting files",
+            });
+            let total_files = count_supported_audio_files(&directories, &cancellation_token_clone);
+            let _ = message_tx.send(LibraryScanMessage::Progress {
+                tracks: 0,
+                albums: 0,
+                total_files,
+                phase: "Scanning metadata",
+            });
+
             // Create a new library with database for scanning
             let mut library = match MusicLibrary::with_database() {
                 Ok(lib) => lib,
@@ -110,6 +158,7 @@ impl LibraryScanner {
             // Track progress
             let message_tx_clone = message_tx.clone();
             let last_track_count = Arc::new(Mutex::new(0usize));
+            let last_progress_at = Arc::new(Mutex::new(Instant::now()));
             let scan_token = cancellation_token_clone.clone();
 
             // Run the scan with progress callback and pause support
@@ -119,11 +168,19 @@ impl LibraryScanner {
                 Some(scan_token),
                 pause_flag_clone,
                 &mut move |tracks, albums| {
-                    // Update UI every 500 tracks
+                    // Keep the footer scan strip responsive without sending
+                    // a message for every decoded file in very large
+                    // libraries.
                     let should_update = {
                         let mut last = last_track_count.lock().unwrap();
-                        if tracks >= *last + 500 {
+                        let mut last_at = last_progress_at.lock().unwrap();
+                        let now = Instant::now();
+                        if tracks >= *last + PROGRESS_UPDATE_TRACK_INTERVAL {
                             *last = tracks;
+                            *last_at = now;
+                            true
+                        } else if now.duration_since(*last_at) >= PROGRESS_UPDATE_TIME_INTERVAL {
+                            *last_at = now;
                             true
                         } else {
                             false
@@ -131,8 +188,12 @@ impl LibraryScanner {
                     };
 
                     if should_update {
-                        let _ =
-                            message_tx_clone.send(LibraryScanMessage::Progress { tracks, albums });
+                        let _ = message_tx_clone.send(LibraryScanMessage::Progress {
+                            tracks,
+                            albums,
+                            total_files,
+                            phase: "Scanning metadata",
+                        });
                     }
                 },
             );

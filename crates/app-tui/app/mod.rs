@@ -21,10 +21,10 @@ pub use types::{
     ArtistNode, ChannelConflictChoice, ChannelFilter, ChannelGroup, ChannelInfo,
     ConfigureSubScreen, FederationEditState, FederationMode, FederationTuiState, FilePickerMode,
     FilePickerOrigin, HEADPHONE_TARGET_PRESETS, HeadphoneEqStep, HeadphoneEqTuiState, InputMode,
-    LibrarySortOrder, LibraryViewMode, MatrixEditMode, PendingParameterUpdate, PlaylistMode,
-    QueueEntry, QueueItem, RecordingTuiState, ReplayGainMode, RoomEqTuiState, Screen,
-    ServerSection, ServersTuiState, SpinUpdateSubStep, SpinoramaEqTuiState, SpinoramaStep,
-    TreeItem,
+    LibrarySortOrder, LibraryViewMode, MatrixEditMode, MetadataEditorFields, MetadataEditorScope,
+    MetadataEditorState, PendingParameterUpdate, PlaylistMode, QueueEntry, QueueItem,
+    RecordingTuiState, ReplayGainMode, RoomEqTuiState, Screen, ServerSection, ServersTuiState,
+    SpinUpdateSubStep, SpinoramaEqTuiState, SpinoramaStep, TreeItem,
 };
 // Allow access to types submodule for full detail (SOURCE_TYPE_NAMES, etc.)
 pub(crate) use types::{

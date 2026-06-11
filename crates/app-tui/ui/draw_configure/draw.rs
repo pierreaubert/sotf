@@ -197,6 +197,11 @@ pub(crate) fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
             "7",
             "Servers            – SOTF API, MPD and DLNA settings",
         ),
+        (
+            ConfigureSubScreen::MetadataServices,
+            "8",
+            "Metadata Services  – MusicBrainz and tag provider settings",
+        ),
     ];
 
     let items: Vec<ListItem> = options
@@ -281,6 +286,7 @@ pub(crate) fn draw_configure_modal(f: &mut Frame, app: &App) {
         ConfigureSubScreen::SpinoramaEq => " Spinorama EQ ",
         ConfigureSubScreen::FederationSources => " Library Sources ",
         ConfigureSubScreen::Servers => " Servers ",
+        ConfigureSubScreen::MetadataServices => " Metadata Services ",
     };
 
     let outer = Block::default()
@@ -316,7 +322,53 @@ pub(crate) fn draw_configure_modal(f: &mut Frame, app: &App) {
         ConfigureSubScreen::SpinoramaEq => draw_spinorama_eq_screen(f, inner, app),
         ConfigureSubScreen::FederationSources => draw_federation_screen(f, inner, app),
         ConfigureSubScreen::Servers => draw_servers_screen(f, inner, app),
+        ConfigureSubScreen::MetadataServices => draw_metadata_services_screen(f, inner, app),
     }
+}
+
+fn draw_metadata_services_screen(f: &mut Frame, area: Rect, app: &App) {
+    let config = sotf_audio_player::config::load_metadata_services_config()
+        .unwrap_or_else(|_| sotf_audio_player::MetadataServicesConfig::default());
+    let provider = config.providers.first().cloned().unwrap_or_default();
+    let account = provider
+        .username
+        .as_deref()
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("Anonymous");
+    let auth_status = if provider.has_stored_credentials {
+        "Credentials saved"
+    } else {
+        "Anonymous search enabled"
+    };
+    let lines = vec![
+        Line::from(vec![Span::styled(
+            "MusicBrainz",
+            Style::default()
+                .fg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(format!("Endpoint: {}", provider.endpoint)),
+        Line::from(format!("Account: {account}")),
+        Line::from(format!("Status: {auth_status}")),
+        Line::from(format!("User-Agent: {}", config.user_agent)),
+        Line::from(""),
+        Line::from("Manual album/track metadata edits use the shared metadata controller."),
+        Line::from("MusicBrainz search/import is anonymous by default; login is optional."),
+    ];
+    let paragraph = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(app.theme.border_color))
+                .title(" Metadata Services "),
+        )
+        .style(
+            Style::default()
+                .fg(app.theme.fg_primary)
+                .bg(app.theme.bg_primary),
+        );
+    f.render_widget(paragraph, area);
 }
 
 pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {

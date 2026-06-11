@@ -4,9 +4,17 @@ use super::home_album_ext::HomeAlbumExt;
 use crate::ui::PlayerView;
 use sotf_audio_player::Album;
 
-pub(super) const COLLAPSED_ALBUM_LIMIT: usize = 8;
+const HOME_SHELF_CONTENT_RESERVE_PX: f32 = 192.0;
+const HOME_SHELF_CARD_WIDTH_PX: f32 = 180.0;
+const HOME_SHELF_CARD_GAP_PX: f32 = 12.0;
 
 pub(super) const EXPANDED_ALBUM_LIMIT: usize = 24;
+
+pub(super) fn collapsed_album_limit_for_width(window_width: f32) -> usize {
+    let available = (window_width - HOME_SHELF_CONTENT_RESERVE_PX).max(HOME_SHELF_CARD_WIDTH_PX);
+    let slot = HOME_SHELF_CARD_WIDTH_PX + HOME_SHELF_CARD_GAP_PX;
+    (((available + HOME_SHELF_CARD_GAP_PX) / slot).floor() as usize).max(1)
+}
 
 pub(super) fn add_home_album_to_queue(
     state: &mut crate::app::AppState,
@@ -31,9 +39,39 @@ pub(super) fn add_home_album_to_queue(
             Ok(Some(path)) => PlayerView::play_track(state, path),
             Ok(None) => {}
             Err(e) => {
-                state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(e));
+                if e.starts_with("None of the files") {
+                    remove_home_album_from_view(state, album);
+                    state.app.ui_state.toast_message = Some(
+                        crate::app::ToastMessage::persistent(e, crate::app::ToastType::Warning)
+                            .with_action(crate::app::ToastAction::new("Rescan", "rescan-library")),
+                    );
+                } else {
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(e));
+                }
             }
         }
+    }
+}
+
+fn remove_home_album_from_view(state: &mut crate::app::AppState, album: &Album) {
+    let before = state.app.library_state.library.albums.len();
+    state.app.library_state.library.albums.retain(|candidate| {
+        if let (Some(candidate_id), Some(album_id)) = (candidate.id, album.id) {
+            candidate_id != album_id
+        } else {
+            candidate.title != album.title || candidate.artist() != album.artist()
+        }
+    });
+
+    if state.app.library_state.library.albums.len() != before {
+        state.app.library_state.invalidate_cache();
+        let len = state.app.filtered_albums().len();
+        if len == 0 {
+            state.app.library_state.selected_index = 0;
+        } else if state.app.library_state.selected_index >= len {
+            state.app.library_state.selected_index = len - 1;
+        }
+        state.app.invalidate_library_stats();
     }
 }
 

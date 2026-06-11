@@ -1270,5 +1270,34 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         },
     );
+    migrations.insert(
+        22,
+        Migration {
+            description: "Add edition columns for editable album and track metadata",
+            apply: |db| {
+                let has_album_edition = db
+                    .conn
+                    .prepare("SELECT edition FROM albums LIMIT 1")
+                    .is_ok();
+                if !has_album_edition {
+                    db.conn
+                        .execute("ALTER TABLE albums ADD COLUMN edition TEXT", [])?;
+                    log::info!("Added edition column to albums table");
+                }
+
+                let has_track_edition = db
+                    .conn
+                    .prepare("SELECT edition FROM tracks LIMIT 1")
+                    .is_ok();
+                if !has_track_edition {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN edition TEXT", [])?;
+                    log::info!("Added edition column to tracks table");
+                }
+
+                Ok(())
+            },
+        },
+    );
     migrations
 }

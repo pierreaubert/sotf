@@ -19,11 +19,14 @@ use super::qa::qa_room_eq;
 use super::qa::qa_room_eq_export_json;
 use super::types::HttpRequest;
 use super::with::health_payload;
+use super::with::with_app_state;
+use crate::app::{InputMode, MetadataEditorState, Screen};
 use anyhow::{Result, anyhow};
 use gpui::{
     AnyWindowHandle, App, AsyncApp, Keystroke, MouseButton, MouseDownEvent, MouseUpEvent,
     PlatformInput, Point,
 };
+use serde_json::Value;
 use std::sync::mpsc::{self, Receiver};
 
 pub(super) async fn consume_commands(
@@ -165,10 +168,14 @@ pub(super) fn dispatch_click(selector: &str, window: AnyWindowHandle, cx: &mut A
 
 pub(super) fn dispatch_action(
     name: &str,
-    payload: Option<serde_json::Value>,
+    payload: Option<Value>,
     window: AnyWindowHandle,
     cx: &mut App,
 ) -> Result<()> {
+    if dispatch_metadata_action(name, payload.clone(), window, cx)? {
+        return Ok(());
+    }
+
     // Resolve via the gpui action registry. Action names are namespaced
     // (e.g. `player_ui::PlayPause`); we accept either the full name or the
     // bare name and try to disambiguate by suffix match against registered
@@ -184,6 +191,239 @@ pub(super) fn dispatch_action(
         })
         .map_err(|e| anyhow!("window.update failed: {e:#}"))?;
     Ok(())
+}
+
+fn dispatch_metadata_action(
+    name: &str,
+    payload: Option<Value>,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Result<bool> {
+    match name {
+        "MetadataSeedAlbum" => {
+            with_app_state(window, cx, |state| {
+                state.app.library_state.library.albums = vec![metadata_fixture_album()];
+                state.app.library_state.selected_index = 0;
+                state.app.library_state.invalidate_cache();
+                state.app.ui_state.current_screen = Screen::Library;
+                state.app.ui_state.input_mode = InputMode::Normal;
+                state.app.metadata_editor = None;
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "MetadataOpenAlbumEditor" => {
+            with_app_state(window, cx, |state| {
+                let album = state
+                    .app
+                    .library_state
+                    .selected_album()
+                    .cloned()
+                    .or_else(|| state.app.library_state.library.albums.first().cloned())
+                    .ok_or_else(|| anyhow!("no album available for metadata editor"))?;
+                state.app.metadata_editor = Some(
+                    MetadataEditorState::for_album(&album)
+                        .map_err(|err| anyhow!("metadata editor unavailable: {err}"))?,
+                );
+                state.app.ui_state.input_mode = InputMode::MetadataEditor;
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "MetadataSetField" => {
+            with_app_state(window, cx, |state| {
+                let editor = state
+                    .app
+                    .metadata_editor
+                    .as_mut()
+                    .ok_or_else(|| anyhow!("metadata editor is not open"))?;
+                let field = payload_str(&payload, "field")?;
+                let value = payload_str(&payload, "value")?;
+                set_metadata_field(editor, field, value.to_string())?;
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "MetadataPreview" => {
+            with_app_state(window, cx, |state| {
+                let (target, patch) = {
+                    let editor = state
+                        .app
+                        .metadata_editor
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("metadata editor is not open"))?;
+                    (
+                        editor.target.clone(),
+                        editor
+                            .patch()
+                            .map_err(|err| anyhow!("invalid metadata patch: {err}"))?,
+                    )
+                };
+                let result = state.app.library_state.preview_metadata_edit(target, patch);
+                let editor = state
+                    .app
+                    .metadata_editor
+                    .as_mut()
+                    .ok_or_else(|| anyhow!("metadata editor is not open"))?;
+                match result {
+                    Ok(preview) => {
+                        editor.preview = Some(preview);
+                        editor.error = None;
+                    }
+                    Err(err) => {
+                        editor.error = Some(err.to_string());
+                        return Err(anyhow!(err.to_string()));
+                    }
+                }
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "MetadataInjectCandidate" => {
+            with_app_state(window, cx, |state| {
+                let editor = state
+                    .app
+                    .metadata_editor
+                    .as_mut()
+                    .ok_or_else(|| anyhow!("metadata editor is not open"))?;
+                editor
+                    .search_results
+                    .push(metadata_candidate_from_payload(payload.as_ref()));
+                editor.selected_result = editor.search_results.len().saturating_sub(1);
+                editor.search_error = None;
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "MetadataImportCandidate" => {
+            with_app_state(window, cx, |state| {
+                let editor = state
+                    .app
+                    .metadata_editor
+                    .as_mut()
+                    .ok_or_else(|| anyhow!("metadata editor is not open"))?;
+                let candidate = editor
+                    .search_results
+                    .get(editor.selected_result)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("no metadata candidate selected"))?;
+                editor.apply_candidate(candidate);
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "MetadataClose" => {
+            with_app_state(window, cx, |state| {
+                state.app.metadata_editor = None;
+                state.app.ui_state.input_mode = InputMode::Normal;
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+fn metadata_fixture_album() -> sotf_audio_player::Album {
+    let track_path = std::env::temp_dir()
+        .join("sotf-dev-driver")
+        .join("metadata-scenario")
+        .join("scenario-track.flac");
+    sotf_audio_player::Album {
+        id: Some(7),
+        title: "Scenario Album".to_string(),
+        year: Some(1999),
+        tracks: vec![sotf_audio_player::Track {
+            path: track_path,
+            title: Some("Scenario Track".to_string()),
+            artist: Some("Scenario Artist".to_string()),
+            album_artist: Some("Scenario Artist".to_string()),
+            track_number: Some(1),
+            sample_rate: Some(44_100),
+            channels: Some(2),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+fn payload_str<'a>(payload: &'a Option<Value>, key: &str) -> Result<&'a str> {
+    payload
+        .as_ref()
+        .and_then(|value| value.get(key))
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("metadata action payload needs string `{key}`"))
+}
+
+fn payload_u32(payload: Option<&Value>, key: &str, default: u32) -> u32 {
+    payload
+        .and_then(|value| value.get(key))
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .unwrap_or(default)
+}
+
+fn payload_u8(payload: Option<&Value>, key: &str, default: u8) -> u8 {
+    payload
+        .and_then(|value| value.get(key))
+        .and_then(Value::as_u64)
+        .and_then(|value| u8::try_from(value).ok())
+        .unwrap_or(default)
+}
+
+fn set_metadata_field(editor: &mut MetadataEditorState, field: &str, value: String) -> Result<()> {
+    match field {
+        "title" => editor.fields.title = value,
+        "artist" => editor.fields.artist = value,
+        "album_artist" => editor.fields.album_artist = value,
+        "year" => editor.fields.year = value,
+        "genre" => editor.fields.genre = value,
+        "composer" => editor.fields.composer = value,
+        "disc" | "disc_number" => editor.fields.disc_number = value,
+        "track" | "track_number" => editor.fields.track_number = value,
+        "conductor" => editor.fields.conductor = value,
+        "performer" => editor.fields.performer = value,
+        "isrc" => editor.fields.isrc = value,
+        "ensemble" => editor.fields.ensemble = value,
+        "edition" => editor.fields.edition = value,
+        other => return Err(anyhow!("unknown metadata field `{other}`")),
+    }
+    editor.preview = None;
+    editor.error = None;
+    Ok(())
+}
+
+fn payload_string(payload: Option<&Value>, key: &str, default: &str) -> Option<String> {
+    payload
+        .and_then(|value| value.get(key))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| Some(default.to_string()))
+}
+
+fn metadata_candidate_from_payload(
+    payload: Option<&Value>,
+) -> sotf_audio_player::MetadataImportCandidate {
+    sotf_audio_player::MetadataImportCandidate {
+        provider_id: "musicbrainz".to_string(),
+        provider_entity_id: payload
+            .and_then(|value| value.get("provider_entity_id"))
+            .and_then(Value::as_str)
+            .unwrap_or("scenario-release")
+            .to_string(),
+        title: payload_string(payload, "title", "Imported Track"),
+        artist: payload_string(payload, "artist", "Imported Artist"),
+        album_artist: payload_string(payload, "album_artist", "Imported Artist"),
+        album_title: payload_string(payload, "album_title", "Imported Album"),
+        year: Some(payload_u32(payload, "year", 2024)),
+        track_number: Some(payload_u32(payload, "track_number", 1)),
+        disc_number: Some(payload_u32(payload, "disc_number", 1)),
+        isrc: payload
+            .and_then(|value| value.get("isrc"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        score: payload_u8(payload, "score", 96),
+    }
 }
 
 pub(super) fn dispatch_request(req: &HttpRequest, tx: &mpsc::Sender<DevCommand>) -> String {

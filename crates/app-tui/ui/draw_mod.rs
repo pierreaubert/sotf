@@ -2,10 +2,10 @@
 
 use super::misc::get_keybindings_for_screen;
 pub(crate) use super::utilities::wrap_text;
-pub(crate) use crate::app::{App, Screen};
+pub(crate) use crate::app::{App, MetadataEditorState, Screen};
 pub(crate) use ratatui::{
     Frame,
-    layout::{Alignment, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
@@ -236,6 +236,190 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
         .wrap(Wrap { trim: false });
 
     f.render_widget(paragraph, inner);
+}
+
+pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
+    let Some(editor) = &app.metadata_editor else {
+        return;
+    };
+
+    let area = f.area();
+    let modal_width = (area.width as f32 * 0.82) as u16;
+    let modal_height = (area.height as f32 * 0.82) as u16;
+    let modal_area = Rect {
+        x: (area.width.saturating_sub(modal_width)) / 2,
+        y: (area.height.saturating_sub(modal_height)) / 2,
+        width: modal_width.max(60),
+        height: modal_height.max(20),
+    };
+
+    f.render_widget(Clear, modal_area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .style(
+            Style::default()
+                .bg(app.theme.bg_primary)
+                .fg(app.theme.fg_primary),
+        )
+        .title(" Edit Metadata ");
+    f.render_widget(block, modal_area);
+
+    let inner = Rect {
+        x: modal_area.x + 2,
+        y: modal_area.y + 1,
+        width: modal_area.width.saturating_sub(4),
+        height: modal_area.height.saturating_sub(2),
+    };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(10),
+            Constraint::Length(5),
+            Constraint::Length(5),
+            Constraint::Length(2),
+        ])
+        .split(inner);
+
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(vec![
+                Span::styled("Target: ", Style::default().fg(app.theme.accent_primary)),
+                Span::raw(editor.target_label.clone()),
+            ]),
+            Line::from(""),
+        ]),
+        chunks[0],
+    );
+
+    let mut field_lines = Vec::new();
+    for index in 0..MetadataEditorState::FIELD_COUNT {
+        let selected = index == editor.selected_field;
+        let marker = if selected { ">" } else { " " };
+        let value = if selected && editor.editing {
+            editor.edit_buffer.as_str()
+        } else {
+            editor.field_value(index)
+        };
+        let style = if selected {
+            Style::default()
+                .fg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.fg_primary)
+        };
+        field_lines.push(Line::from(vec![
+            Span::styled(marker, style),
+            Span::raw(" "),
+            Span::styled(
+                format!("{:<13}", MetadataEditorState::field_label(index)),
+                Style::default().fg(app.theme.title_color),
+            ),
+            Span::styled(value.to_string(), style),
+        ]));
+    }
+    f.render_widget(
+        Paragraph::new(field_lines).wrap(Wrap { trim: true }),
+        chunks[1],
+    );
+
+    let preview_lines = if let Some(preview) = &editor.preview {
+        let mut lines = vec![Line::from(vec![
+            Span::styled("Preview: ", Style::default().fg(app.theme.accent_primary)),
+            Span::raw(format!(
+                "{} file(s), {} unsupported, sidecar {}",
+                preview.affected_files.len(),
+                preview.unsupported_writes.len(),
+                if preview.sidecar_path.is_some() {
+                    "yes"
+                } else {
+                    "no"
+                }
+            )),
+        ])];
+        for file in preview.unsupported_writes.iter().take(2) {
+            lines.push(Line::from(vec![
+                Span::styled("Warning: ", Style::default().fg(Color::Yellow)),
+                Span::raw(format!(
+                    "{}: {}",
+                    file.path.display(),
+                    file.reason.as_deref().unwrap_or("unsupported")
+                )),
+            ]));
+        }
+        lines
+    } else {
+        vec![Line::from("Preview: press p before saving")]
+    };
+    let mut preview_lines = preview_lines;
+    if let Some(error) = &editor.error {
+        preview_lines.push(Line::from(vec![
+            Span::styled("Error: ", Style::default().fg(Color::Red)),
+            Span::raw(error.clone()),
+        ]));
+    }
+    f.render_widget(
+        Paragraph::new(preview_lines).wrap(Wrap { trim: true }),
+        chunks[2],
+    );
+
+    let mut mb_lines = vec![Line::from(vec![
+        Span::styled(
+            "MusicBrainz: ",
+            Style::default().fg(app.theme.accent_primary),
+        ),
+        Span::raw(editor.search_query.clone()),
+    ])];
+    if let Some(error) = &editor.search_error {
+        mb_lines.push(Line::from(vec![
+            Span::styled("Search error: ", Style::default().fg(Color::Red)),
+            Span::raw(error.clone()),
+        ]));
+    }
+    for (idx, candidate) in editor.search_results.iter().take(3).enumerate() {
+        let selected = idx == editor.selected_result;
+        mb_lines.push(Line::from(vec![
+            Span::styled(
+                if selected { "> " } else { "  " },
+                Style::default().fg(app.theme.accent_primary),
+            ),
+            Span::raw(format!(
+                "{}  {} - {} ({})",
+                candidate.score,
+                candidate
+                    .album_title
+                    .as_deref()
+                    .or(candidate.title.as_deref())
+                    .unwrap_or("Untitled"),
+                candidate
+                    .album_artist
+                    .as_deref()
+                    .or(candidate.artist.as_deref())
+                    .unwrap_or("Unknown"),
+                candidate
+                    .year
+                    .map(|year| year.to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            )),
+        ]));
+    }
+    f.render_widget(
+        Paragraph::new(mb_lines).wrap(Wrap { trim: true }),
+        chunks[3],
+    );
+
+    let help = if editor.editing {
+        " Type value | Enter=confirm | Esc=cancel"
+    } else {
+        " ↑↓ field | Enter edit | p preview | s save | b MusicBrainz | i import | ←→ candidate | Esc close"
+    };
+    f.render_widget(
+        Paragraph::new(help)
+            .style(Style::default().fg(app.theme.title_color))
+            .alignment(Alignment::Center),
+        chunks[4],
+    );
 }
 
 pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {

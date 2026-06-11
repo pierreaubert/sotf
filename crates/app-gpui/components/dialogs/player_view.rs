@@ -11,8 +11,9 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Dialog, DialogSize, HStack, Heading, Spinner, SpinnerSize, StackAlign,
-    StackJustify, StackSize, StackSpacing, Text, TextSize, TextWeight, ToastVariant, VStack,
+    Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Dialog, DialogSize, HStack, Input,
+    InputSize, StackAlign, StackJustify, StackSize, StackSpacing, Text, TextSize, TextWeight,
+    ToastVariant, VStack,
 };
 use sotf_audio_player::QueuePlaybackEffect;
 
@@ -595,12 +596,16 @@ impl PlayerView {
 
             let items = match menu.menu_type {
                 crate::app::ContextMenuType::Album => vec![
-                    gpui_ui_kit::MenuItem::new("add-to-queue", "Add to Queue"),
                     gpui_ui_kit::MenuItem::new("play-now", "Play Now"),
+                    gpui_ui_kit::MenuItem::new("add-to-queue", "Add to Queue"),
+                    gpui_ui_kit::MenuItem::separator(),
+                    gpui_ui_kit::MenuItem::new("edit-metadata", "Edit Metadata"),
                 ],
                 crate::app::ContextMenuType::QueueItem => vec![
-                    gpui_ui_kit::MenuItem::new("remove-from-queue", "Remove from Queue"),
                     gpui_ui_kit::MenuItem::new("play-from-here", "Play from Here"),
+                    gpui_ui_kit::MenuItem::new("remove-from-queue", "Remove from Queue"),
+                    gpui_ui_kit::MenuItem::separator(),
+                    gpui_ui_kit::MenuItem::new("edit-metadata", "Edit Metadata"),
                 ],
                 crate::app::ContextMenuType::Plugin => vec![
                     gpui_ui_kit::MenuItem::new("toggle-enabled", "Toggle Enabled"),
@@ -631,6 +636,43 @@ impl PlayerView {
                                 state.app.ui_state.context_menu = None;
                                 state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                 match (menu_type, id.as_ref()) {
+                                    (crate::app::ContextMenuType::Album, "edit-metadata") => {
+                                        if let Some(album) =
+                                            state.app.library_state.selected_album().cloned()
+                                        {
+                                            match crate::app::MetadataEditorState::for_album(&album)
+                                            {
+                                                Ok(editor) => {
+                                                    state.app.metadata_editor = Some(editor);
+                                                    state.app.ui_state.input_mode =
+                                                        crate::app::InputMode::MetadataEditor;
+                                                }
+                                                Err(err) => {
+                                                    state.app.ui_state.toast_message = Some(
+                                                        crate::app::ToastMessage::error(err),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    (
+                                        crate::app::ContextMenuType::QueueItem,
+                                        "edit-metadata",
+                                    ) => {
+                                        if let Some(queue_item) =
+                                            state.app.queue_state.get(item_idx)
+                                            && let Some(track) = queue_item
+                                                .current_track()
+                                                .or_else(|| queue_item.album.tracks.first())
+                                        {
+                                            state.app.metadata_editor =
+                                                Some(crate::app::MetadataEditorState::for_track(
+                                                    track,
+                                                ));
+                                            state.app.ui_state.input_mode =
+                                                crate::app::InputMode::MetadataEditor;
+                                        }
+                                    }
                                     (crate::app::ContextMenuType::Album, "add-to-queue") => {
                                         match state.app.add_album_to_queue() {
                                             Ok(Some(path)) => Self::play_track(state, path),
@@ -702,6 +744,555 @@ impl PlayerView {
         } else {
             div()
         }
+    }
+
+    pub(crate) fn render_metadata_editor_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let Some(editor) = state.app.metadata_editor.clone() else {
+            return div().into_any_element();
+        };
+
+        let preview = editor.preview.clone();
+        let unsupported_count = preview
+            .as_ref()
+            .map(|preview| preview.unsupported_writes.len())
+            .unwrap_or(0);
+        let can_apply = preview.as_ref().is_some_and(|preview| preview.can_apply());
+        let button_theme = theme.to_button_theme();
+
+        Dialog::new("metadata-editor-dialog")
+            .title("Edit Metadata")
+            .size(DialogSize::Xl)
+            .close_on_backdrop(false)
+            .on_close({
+                let state = self.state.clone();
+                move |_window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.metadata_editor = None;
+                        state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                    });
+                }
+            })
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(
+                        Text::caption(format!("Target: {}", editor.target_label))
+                            .color(theme.text_secondary),
+                    )
+                    .child(
+                        div()
+                            .grid()
+                            .grid_cols(2)
+                            .gap(d.gap)
+                            .child(self.render_metadata_input(
+                                "Title",
+                                "title",
+                                editor.fields.title.clone(),
+                                "Title",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Artist",
+                                "artist",
+                                editor.fields.artist.clone(),
+                                "Artist",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Album Artist",
+                                "album_artist",
+                                editor.fields.album_artist.clone(),
+                                "Album artist",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Year",
+                                "year",
+                                editor.fields.year.clone(),
+                                "YYYY",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Genre",
+                                "genre",
+                                editor.fields.genre.clone(),
+                                "Genre",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Composer",
+                                "composer",
+                                editor.fields.composer.clone(),
+                                "Composer",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Disc",
+                                "disc_number",
+                                editor.fields.disc_number.clone(),
+                                "Disc",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Track",
+                                "track_number",
+                                editor.fields.track_number.clone(),
+                                "Track",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Conductor",
+                                "conductor",
+                                editor.fields.conductor.clone(),
+                                "Conductor",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Performer",
+                                "performer",
+                                editor.fields.performer.clone(),
+                                "Performer",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "ISRC",
+                                "isrc",
+                                editor.fields.isrc.clone(),
+                                "ISRC",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Ensemble",
+                                "ensemble",
+                                editor.fields.ensemble.clone(),
+                                "Ensemble",
+                                cx,
+                            ))
+                            .child(self.render_metadata_input(
+                                "Edition",
+                                "edition",
+                                editor.fields.edition.clone(),
+                                "Edition",
+                                cx,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(d.grid)
+                            .p(d.pad_x)
+                            .rounded(d.r_md)
+                            .bg(theme.background_secondary)
+                            .border_1()
+                            .border_color(theme.border)
+                            .child(Text::section_header("Preview"))
+                            .when_some(preview.clone(), |el, preview| {
+                                el.child(Text::caption(format!(
+                                    "{} file(s), {} unsupported, sidecar {}",
+                                    preview.affected_files.len(),
+                                    preview.unsupported_writes.len(),
+                                    if preview.sidecar_path.is_some() {
+                                        "yes"
+                                    } else {
+                                        "no"
+                                    }
+                                )))
+                                .children(
+                                    preview.unsupported_writes.iter().take(3).map(|file| {
+                                        Text::caption(format!(
+                                            "{}: {}",
+                                            file.path.display(),
+                                            file.reason
+                                                .as_deref()
+                                                .unwrap_or("tag writing unsupported")
+                                        ))
+                                        .color(theme.warning)
+                                        .into_any_element()
+                                    }),
+                                )
+                            })
+                            .when(preview.is_none(), |el| {
+                                el.child(Text::caption("Preview before applying changes"))
+                            })
+                            .when_some(editor.error.clone(), |el, error| {
+                                el.child(Text::caption(error).color(theme.error))
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(d.grid)
+                            .p(d.pad_x)
+                            .rounded(d.r_md)
+                            .bg(theme.background_secondary)
+                            .border_1()
+                            .border_color(theme.border)
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .child(
+                                        Input::new("musicbrainz-query")
+                                            .value(SharedString::from(editor.search_query.clone()))
+                                            .placeholder("Search MusicBrainz")
+                                            .size(InputSize::Sm)
+                                            .bg_color(theme.surface)
+                                            .text_color(theme.text_primary)
+                                            .placeholder_color(theme.text_muted)
+                                            .on_text_change({
+                                                let state = self.state.clone();
+                                                move |value, _window, cx| {
+                                                    state.update(cx, |state, _cx| {
+                                                        if let Some(editor) =
+                                                            &mut state.app.metadata_editor
+                                                        {
+                                                            editor.search_query = value;
+                                                            editor.search_error = None;
+                                                        }
+                                                    });
+                                                }
+                                            }),
+                                    )
+                                    .child(
+                                        Button::new(
+                                            "metadata-search-musicbrainz",
+                                            "Search MusicBrainz",
+                                        )
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Sm)
+                                        .disabled(editor.search_in_progress)
+                                        .theme(button_theme.clone())
+                                        .on_click_event(
+                                            cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                                view.search_metadata_musicbrainz(cx);
+                                            }),
+                                        ),
+                                    ),
+                            )
+                            .when(editor.search_in_progress, |el| {
+                                el.child(Text::caption("Searching MusicBrainz..."))
+                            })
+                            .when_some(editor.search_error.clone(), |el, error| {
+                                el.child(Text::caption(error).color(theme.error))
+                            })
+                            .children(editor.search_results.iter().enumerate().map(
+                                |(idx, candidate)| {
+                                    let selected = idx == editor.selected_result;
+                                    let label = format!(
+                                        "{}  {} - {} ({})",
+                                        candidate.score,
+                                        candidate
+                                            .album_title
+                                            .as_deref()
+                                            .or(candidate.title.as_deref())
+                                            .unwrap_or("Untitled"),
+                                        candidate
+                                            .album_artist
+                                            .as_deref()
+                                            .or(candidate.artist.as_deref())
+                                            .unwrap_or("Unknown"),
+                                        candidate
+                                            .year
+                                            .map(|year| year.to_string())
+                                            .unwrap_or_else(|| "unknown".to_string())
+                                    );
+                                    Button::new(
+                                        SharedString::from(format!("metadata-candidate-{idx}")),
+                                        label,
+                                    )
+                                    .variant(if selected {
+                                        ButtonVariant::Primary
+                                    } else {
+                                        ButtonVariant::Ghost
+                                    })
+                                    .size(ButtonSize::Sm)
+                                    .theme(button_theme.clone())
+                                    .on_click_event(cx.listener(
+                                        move |view, _: &ClickEvent, _window, cx| {
+                                            view.import_metadata_candidate(idx, cx);
+                                        },
+                                    ))
+                                    .into_any_element()
+                                },
+                            )),
+                    ),
+            )
+            .footer(
+                HStack::new()
+                    .width(StackSize::Full)
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        Text::caption(if unsupported_count > 0 {
+                            "Unsupported files must be fixed before applying"
+                        } else {
+                            "Backups are created beside edited files"
+                        })
+                        .color(if unsupported_count > 0 {
+                            theme.warning
+                        } else {
+                            theme.text_secondary
+                        }),
+                    )
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                Button::new("metadata-preview", "Preview")
+                                    .variant(ButtonVariant::Secondary)
+                                    .size(ButtonSize::Sm)
+                                    .theme(button_theme.clone())
+                                    .on_click_event(cx.listener(
+                                        |view, _: &ClickEvent, _window, cx| {
+                                            view.refresh_metadata_preview(cx);
+                                        },
+                                    )),
+                            )
+                            .child(
+                                Button::new("metadata-cancel", "Cancel")
+                                    .variant(ButtonVariant::Secondary)
+                                    .size(ButtonSize::Sm)
+                                    .theme(button_theme.clone())
+                                    .on_click_event(cx.listener(
+                                        |view, _: &ClickEvent, _window, cx| {
+                                            view.close_metadata_editor(cx);
+                                        },
+                                    )),
+                            )
+                            .child(
+                                Button::new("metadata-apply", "Apply Changes")
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Sm)
+                                    .disabled(!can_apply)
+                                    .theme(button_theme)
+                                    .on_click_event(cx.listener(
+                                        |view, _: &ClickEvent, _window, cx| {
+                                            view.apply_metadata_editor(cx);
+                                        },
+                                    )),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_metadata_input(
+        &self,
+        label: &'static str,
+        field: &'static str,
+        value: String,
+        placeholder: &'static str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+
+        VStack::new()
+            .spacing(StackSpacing::Xs)
+            .child(Text::label(label))
+            .child(
+                Input::new(SharedString::from(format!("metadata-field-{field}")))
+                    .value(SharedString::from(value))
+                    .placeholder(placeholder)
+                    .size(InputSize::Sm)
+                    .bg_color(theme.surface)
+                    .text_color(theme.text_primary)
+                    .placeholder_color(theme.text_muted)
+                    .on_text_change({
+                        let state = self.state.clone();
+                        move |value, _window, cx| {
+                            state.update(cx, |state, _cx| {
+                                let Some(editor) = &mut state.app.metadata_editor else {
+                                    return;
+                                };
+                                match field {
+                                    "title" => editor.fields.title = value,
+                                    "artist" => editor.fields.artist = value,
+                                    "album_artist" => editor.fields.album_artist = value,
+                                    "year" => editor.fields.year = value,
+                                    "genre" => editor.fields.genre = value,
+                                    "composer" => editor.fields.composer = value,
+                                    "disc_number" => editor.fields.disc_number = value,
+                                    "track_number" => editor.fields.track_number = value,
+                                    "conductor" => editor.fields.conductor = value,
+                                    "performer" => editor.fields.performer = value,
+                                    "isrc" => editor.fields.isrc = value,
+                                    "ensemble" => editor.fields.ensemble = value,
+                                    "edition" => editor.fields.edition = value,
+                                    _ => {}
+                                }
+                                editor.preview = None;
+                                editor.error = None;
+                            });
+                        }
+                    }),
+            )
+            .into_any_element()
+    }
+
+    pub(crate) fn close_metadata_editor(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.metadata_editor = None;
+            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn refresh_metadata_preview(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            let Some(editor) = state.app.metadata_editor.clone() else {
+                return;
+            };
+            let result = editor.patch().and_then(|patch| {
+                state
+                    .app
+                    .library_state
+                    .preview_metadata_edit(editor.target.clone(), patch)
+                    .map_err(|err| err.to_string())
+            });
+            if let Some(current) = &mut state.app.metadata_editor {
+                match result {
+                    Ok(preview) => {
+                        current.preview = Some(preview);
+                        current.error = None;
+                    }
+                    Err(err) => {
+                        current.preview = None;
+                        current.error = Some(err);
+                    }
+                }
+            }
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn apply_metadata_editor(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            let Some(editor) = state.app.metadata_editor.clone() else {
+                return;
+            };
+            let result = editor.patch().and_then(|patch| {
+                state
+                    .app
+                    .library_state
+                    .apply_metadata_edit(editor.target.clone(), patch)
+                    .map_err(|err| err.to_string())
+            });
+            match result {
+                Ok(preview) => {
+                    state.app.metadata_editor = None;
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                    state.app.ui_state.toast_message =
+                        Some(crate::app::ToastMessage::success(format!(
+                            "Metadata updated for {} file(s)",
+                            preview.affected_files.len()
+                        )));
+                    state.app.invalidate_library_stats();
+                }
+                Err(err) => {
+                    if let Some(current) = &mut state.app.metadata_editor {
+                        current.error = Some(err);
+                    }
+                }
+            }
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn search_metadata_musicbrainz(&mut self, cx: &mut Context<Self>) {
+        let (scope, query) = self
+            .state
+            .update(cx, |state, _cx| {
+                let Some(editor) = &mut state.app.metadata_editor else {
+                    return None;
+                };
+                let query = editor.search_query.trim().to_string();
+                if query.is_empty() {
+                    editor.search_error = Some("Enter a MusicBrainz search query".to_string());
+                    return None;
+                }
+                editor.search_in_progress = true;
+                editor.search_error = None;
+                Some((editor.scope, query))
+            })
+            .unwrap_or((crate::app::MetadataEditorScope::Track, String::new()));
+
+        if query.is_empty() {
+            cx.notify();
+            return;
+        }
+
+        let state_entity = self.state.clone();
+        cx.spawn(async move |_: WeakEntity<PlayerView>, cx| {
+            use sotf_audio_player::metadata::MetadataProvider;
+
+            let config = sotf_audio_player::config::load_metadata_services_config()
+                .unwrap_or_else(|_| sotf_audio_player::MetadataServicesConfig::default());
+            let provider_config = config
+                .providers
+                .iter()
+                .find(|provider| provider.provider_id == "musicbrainz")
+                .cloned()
+                .unwrap_or_default();
+            let result = if !provider_config.enabled {
+                Err(sotf_audio_player::MetadataError::Provider(
+                    "MusicBrainz is disabled in Metadata settings".to_string(),
+                ))
+            } else {
+                match sotf_audio_player::MusicBrainzProvider::with_endpoint(
+                    provider_config.endpoint,
+                    config.user_agent,
+                ) {
+                    Ok(provider) => match scope {
+                        crate::app::MetadataEditorScope::Album => {
+                            provider.search_album(None, &query).await
+                        }
+                        crate::app::MetadataEditorScope::Track => {
+                            provider.search_track(None, &query).await
+                        }
+                    },
+                    Err(err) => Err(err),
+                }
+            };
+
+            state_entity.update(cx, |state, cx| {
+                if let Some(editor) = &mut state.app.metadata_editor {
+                    editor.search_in_progress = false;
+                    match result {
+                        Ok(candidates) => {
+                            editor.search_results = candidates;
+                            editor.selected_result = 0;
+                            editor.search_error = None;
+                        }
+                        Err(err) => {
+                            editor.search_results.clear();
+                            editor.search_error = Some(err.to_string());
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    pub(crate) fn import_metadata_candidate(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            let Some(editor) = &mut state.app.metadata_editor else {
+                return;
+            };
+            let Some(candidate) = editor.search_results.get(index).cloned() else {
+                return;
+            };
+            editor.selected_result = index;
+            editor.apply_candidate(candidate);
+            editor.preview = None;
+        });
+        self.refresh_metadata_preview(cx);
     }
 
     pub(crate) fn render_apo_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1036,250 +1627,6 @@ impl PlayerView {
             }))
             .build()
             .min_w(rems(16.25))
-    }
-
-    /// Render the scan progress modal
-    pub(crate) fn render_scan_progress_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let d = Ds::from_cx(cx);
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-
-        // Get the active modal info
-        let modal = match &state.app.scan_progress_modal {
-            Some(m) if m.visible => m.clone(),
-            _ => return div().into_any_element(),
-        };
-
-        // Get progress info based on scan type
-        let (progress, processed, total, succeeded, failed) = match modal.scan_type {
-            crate::app::types::ScanType::Library => {
-                let albums = state.app.library_state.scan_progress_albums;
-                let tracks = state.app.library_state.scan_progress_tracks;
-                // For library scan, we don't have a total count upfront
-                (0.0, tracks, 0usize, albums, 0usize)
-            }
-            crate::app::types::ScanType::ReplayGain => {
-                let mgr = &state.app.scan_ctrl.replay_gain_manager;
-                (
-                    mgr.progress(),
-                    mgr.processed,
-                    mgr.total,
-                    mgr.succeeded,
-                    mgr.failed,
-                )
-            }
-            crate::app::types::ScanType::Bliss => {
-                let mgr = &state.app.scan_ctrl.bliss_manager;
-                (
-                    mgr.progress(),
-                    mgr.processed,
-                    mgr.total,
-                    mgr.succeeded,
-                    mgr.failed,
-                )
-            }
-            crate::app::types::ScanType::Waveform => {
-                let mgr = &state.app.scan_ctrl.waveform_manager;
-                (
-                    mgr.progress(),
-                    mgr.processed,
-                    mgr.total,
-                    mgr.succeeded,
-                    mgr.failed,
-                )
-            }
-        };
-
-        let scan_type = modal.scan_type;
-        let is_library_scan = matches!(scan_type, crate::app::types::ScanType::Library);
-
-        // Check if scan is complete
-        let is_complete = match scan_type {
-            crate::app::types::ScanType::Library => !state.app.library_state.scan_in_progress,
-            crate::app::types::ScanType::ReplayGain => {
-                !state.app.scan_ctrl.replay_gain_manager.in_progress
-            }
-            crate::app::types::ScanType::Bliss => !state.app.scan_ctrl.bliss_manager.in_progress,
-            crate::app::types::ScanType::Waveform => {
-                !state.app.scan_ctrl.waveform_manager.in_progress
-            }
-        };
-
-        // Library scans don't have an upfront total, so we can't render a
-        // determinate progress bar — show an indeterminate Spinner instead
-        // (see the conditional `.child` on the progress widget below). For
-        // other scan types we have a real fraction; clamp it.
-        let show_indeterminate = !is_complete && is_library_scan;
-        let progress_width = if is_complete {
-            100.0
-        } else {
-            progress.clamp(0.0, 100.0)
-        };
-
-        // Status text
-        let status_text = if is_complete {
-            if is_library_scan {
-                format!("Complete: {} albums, {} tracks found", succeeded, processed)
-            } else {
-                format!("Complete: {} succeeded, {} failed", succeeded, failed)
-            }
-        } else if is_library_scan {
-            format!("{} albums, {} tracks found", succeeded, processed)
-        } else if total > 0 {
-            format!(
-                "{} / {} processed ({} succeeded, {} failed)",
-                processed, total, succeeded, failed
-            )
-        } else {
-            "Initializing...".to_string()
-        };
-
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(theme.overlay_bg)
-            .child(
-                div()
-                    .w(rems(25.0))
-                    .bg(theme.surface)
-                    .border_1()
-                    .border_color(theme.border)
-                    .rounded(d.r_lg)
-                    .shadow_lg()
-                    .p(d.section_lg)
-                    .flex()
-                    .flex_col()
-                    .gap(d.section)
-                    // Title
-                    .child(Heading::h4(scan_type.title()))
-                    // Description
-                    .child(
-                        Text::new(scan_type.description())
-                            .size(TextSize::Xs)
-                            .color(theme.text_secondary),
-                    )
-                    // Progress indicator: an indeterminate Spinner for
-                    // library scans (no upfront total), or a determinate
-                    // bar driven by `progress_width` for the other scan
-                    // types where we have a real fraction.
-                    .child(if show_indeterminate {
-                        div()
-                            .flex()
-                            .justify_center()
-                            .child(Spinner::new().size(SpinnerSize::Md))
-                            .into_any_element()
-                    } else {
-                        div()
-                            .w_full()
-                            .h(rems(0.5))
-                            .bg(theme.background_secondary)
-                            .rounded_full()
-                            .overflow_hidden()
-                            .child(
-                                div()
-                                    .h_full()
-                                    // Calculate width as a fraction of the container
-                                    // 400px modal - 48px padding (24px each side) = 352px container
-                                    .w(px(352.0 * (progress_width / 100.0))) // intentional: progress-bar width computed from runtime percentage
-                                    .bg(theme.accent)
-                                    .rounded_full(),
-                            )
-                            .into_any_element()
-                    })
-                    // Status text
-                    .child(Text::caption(status_text))
-                    // Buttons
-                    .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Sm)
-                            .justify(StackJustify::End)
-                            .when(!is_complete, |stack| {
-                                stack
-                                    .child(
-                                        gpui_ui_kit::Button::new("scan-cancel", "Cancel")
-                                            .variant(gpui_ui_kit::ButtonVariant::Secondary)
-                                            .size(gpui_ui_kit::ButtonSize::Sm)
-                                            .theme(theme.to_button_theme())
-                                            .on_click_event(cx.listener(
-                                                move |view, _: &ClickEvent, _window, cx| {
-                                                    view.cancel_scan(scan_type, cx);
-                                                },
-                                            )),
-                                    )
-                                    .child(
-                                        gpui_ui_kit::Button::new("scan-background", "Background")
-                                            .variant(gpui_ui_kit::ButtonVariant::Secondary)
-                                            .size(gpui_ui_kit::ButtonSize::Sm)
-                                            .theme(theme.to_button_theme())
-                                            .on_click_event(cx.listener(
-                                                move |view, _: &ClickEvent, _window, cx| {
-                                                    view.dismiss_scan_modal(cx);
-                                                },
-                                            )),
-                                    )
-                            })
-                            .child(
-                                gpui_ui_kit::Button::new("scan-done", "Done")
-                                    .variant(gpui_ui_kit::ButtonVariant::Primary)
-                                    .size(gpui_ui_kit::ButtonSize::Sm)
-                                    .disabled(!is_complete)
-                                    .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(
-                                        move |view, _: &ClickEvent, _window, cx| {
-                                            view.close_scan_modal(cx);
-                                        },
-                                    )),
-                            ),
-                    ),
-            )
-            .into_any_element()
-    }
-
-    /// Cancel the active scan
-    pub(super) fn cancel_scan(
-        &mut self,
-        scan_type: crate::app::types::ScanType,
-        cx: &mut Context<Self>,
-    ) {
-        self.state.update(cx, |state, _cx| {
-            match scan_type {
-                crate::app::types::ScanType::Library => {
-                    state.app.cancel_library_scan();
-                }
-                crate::app::types::ScanType::ReplayGain => {
-                    state.app.scan_ctrl.replay_gain_manager.stop();
-                }
-                crate::app::types::ScanType::Bliss => {
-                    state.app.scan_ctrl.bliss_manager.stop();
-                }
-                crate::app::types::ScanType::Waveform => {
-                    state.app.scan_ctrl.waveform_manager.stop();
-                }
-            }
-            state.app.scan_progress_modal = None;
-        });
-        cx.notify();
-    }
-
-    /// Dismiss the scan modal but keep the scan running in background
-    pub(super) fn dismiss_scan_modal(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            if let Some(modal) = &mut state.app.scan_progress_modal {
-                modal.visible = false;
-            }
-        });
-        cx.notify();
-    }
-
-    /// Close the scan modal completely (used when scan is done)
-    pub(super) fn close_scan_modal(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            state.app.scan_progress_modal = None;
-        });
-        cx.notify();
     }
 
     pub(crate) fn render_channel_conflict_dialog(

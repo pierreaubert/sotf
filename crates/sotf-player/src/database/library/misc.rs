@@ -34,7 +34,7 @@ impl MusicDatabase {
         // but we don't use it - artist is now derived from tracks
         let mut albums_stmt = self.conn.prepare(
             "SELECT id, title, year, album_art_path, album_art_thumbnail,
-                    COALESCE(is_favorite, 0), uuid
+                    COALESCE(is_favorite, 0), uuid, edition
              FROM albums ORDER BY title",
         )?;
 
@@ -48,6 +48,7 @@ impl MusicDatabase {
                 row.get::<_, Option<Vec<u8>>>(4)?, // album_art_thumbnail
                 row.get::<_, i64>(5)?,             // is_favorite
                 row.get::<_, Option<String>>(6)?,  // uuid
+                row.get::<_, Option<String>>(7)?,  // edition
             ))
         })?;
 
@@ -70,7 +71,7 @@ impl MusicDatabase {
                     t.sample_rate, t.bit_depth,
                     t.replay_gain, t.replay_peak, t.album_gain, t.album_peak, t.waveform,
                     t.genre, t.composer, t.disc_number, t.conductor, t.performer,
-                    t.isrc, t.album_artist, t.ensemble,
+                    t.isrc, t.album_artist, t.ensemble, t.edition,
                     COALESCE(t.is_favorite, 0), t.uuid,
                     (SELECT ts.audio_source_json FROM track_sources ts
                      WHERE ts.track_id = t.id AND ts.audio_source_json IS NOT NULL
@@ -90,12 +91,13 @@ impl MusicDatabase {
             album_art_thumbnail,
             album_is_favorite,
             album_uuid,
+            album_edition,
         ) in album_data
         {
             let tracks = tracks_stmt
                 .query_map(params![album_id], |row| {
                     let path_str = row.get::<_, String>(0)?;
-                    let is_fav = row.get::<_, i64>(21)? != 0;
+                    let is_fav = row.get::<_, i64>(22)? != 0;
                     let play_count = track_play_counts.get(&path_str).copied().unwrap_or(0);
                     let waveform = row
                         .get::<_, Option<Vec<u8>>>(12)?
@@ -122,13 +124,13 @@ impl MusicDatabase {
                         isrc: row.get::<_, Option<String>>(18)?,
                         album_artist: row.get::<_, Option<String>>(19)?,
                         ensemble: row.get::<_, Option<String>>(20)?,
-                        edition: None,
+                        edition: row.get::<_, Option<String>>(21)?,
                         is_favorite: is_fav,
                         play_count,
                         source: row
-                            .get::<_, Option<String>>(23)?
+                            .get::<_, Option<String>>(24)?
                             .and_then(|json| serde_json::from_str(&json).ok()),
-                        uuid: row.get::<_, Option<String>>(22)?,
+                        uuid: row.get::<_, Option<String>>(23)?,
                     })
                 })?
                 .collect::<SqlResult<Vec<_>>>()?;
@@ -143,7 +145,7 @@ impl MusicDatabase {
                 album_art_path: album_art_path.map(PathBuf::from),
                 album_art_thumbnail,
                 play_count,
-                edition: None,
+                edition: album_edition,
                 dynamic_range: None,
                 is_favorite: album_is_favorite != 0,
                 uuid: album_uuid,
@@ -192,12 +194,13 @@ impl MusicDatabase {
             // Insert or update album
             // Note: We still insert artist for backwards compatibility, but it's derived from tracks
             tx.execute(
-                "INSERT INTO albums (artist, title, year, album_art_path, album_art_thumbnail, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                "INSERT INTO albums (artist, title, year, album_art_path, album_art_thumbnail, edition, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(artist, title) DO UPDATE SET
                  year = excluded.year,
                  album_art_path = excluded.album_art_path,
                  album_art_thumbnail = COALESCE(excluded.album_art_thumbnail, album_art_thumbnail),
+                 edition = excluded.edition,
                  updated_at = excluded.updated_at",
                 params![
                     &album_artist,
@@ -208,6 +211,7 @@ impl MusicDatabase {
                         .as_ref()
                         .map(|p| p.to_string_lossy().to_string()),
                     album.album_art_thumbnail.as_ref(),
+                    album.edition,
                     now,
                     now,
                 ],
@@ -232,8 +236,8 @@ impl MusicDatabase {
                                         sample_rate, bit_depth,
                                         file_mtime, scanned_at, created_at, updated_at, waveform,
                                         genre, composer, disc_number, conductor, performer,
-                                        isrc, album_artist, ensemble)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+                                        isrc, album_artist, ensemble, edition)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
                      ON CONFLICT(path) DO UPDATE SET
                      album_id = excluded.album_id,
                      title = excluded.title,
@@ -254,7 +258,8 @@ impl MusicDatabase {
                      performer = excluded.performer,
                      isrc = excluded.isrc,
                      album_artist = excluded.album_artist,
-                     ensemble = excluded.ensemble",
+                     ensemble = excluded.ensemble,
+                     edition = excluded.edition",
                     params![
                         album_id,
                         &path_str,
@@ -278,6 +283,7 @@ impl MusicDatabase {
                         track.isrc,
                         track.album_artist,
                         track.ensemble,
+                        track.edition,
                     ],
                 )?;
 

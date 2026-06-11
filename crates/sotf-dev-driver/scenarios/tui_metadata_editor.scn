@@ -1,0 +1,33 @@
+# Metadata editor form flow for the terminal UI, using the same dev-api actions
+# as GPUI so the form-heavy behavior stays comparable.
+focus library
+action MetadataSeedAlbum
+assert screen.focused == "Library"
+assert input_mode == "Normal"
+assert library.album_count == 1
+assert library.track_count == 1
+
+action MetadataOpenAlbumEditor
+assert input_mode == "MetadataEditor"
+assert metadata.editor_open == true
+assert metadata.target == "Album \"Scenario Album\""
+assert metadata.title == "Scenario Album"
+
+action MetadataSetField {"field":"title","value":"Scenario Album Remastered"}
+action MetadataSetField {"field":"year","value":"2026"}
+assert metadata.title == "Scenario Album Remastered"
+assert metadata.year == "2026"
+
+action MetadataPreview
+assert metadata.preview_files == 1
+assert metadata.unsupported_count == 0
+
+action MetadataInjectCandidate {"album_title":"Imported Album","album_artist":"Imported Artist","year":2024,"score":97}
+assert metadata.candidate_count == 1
+action MetadataImportCandidate
+assert metadata.title == "Imported Album"
+assert metadata.year == "2024"
+
+action MetadataClose
+assert input_mode == "Normal"
+assert metadata.editor_open == false

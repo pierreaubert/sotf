@@ -105,7 +105,7 @@ impl App {
             use sotf_audio_player::LibraryScanMessage;
 
             match msg {
-                LibraryScanMessage::Progress { tracks, albums } => {
+                LibraryScanMessage::Progress { tracks, albums, .. } => {
                     self.scan_progress_tracks = tracks;
                     self.scan_progress_albums = albums;
                     self.status_message = Some(format!(

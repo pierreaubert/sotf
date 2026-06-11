@@ -330,10 +330,10 @@ pub(super) fn process_dev_command(
     match cmd {
         DevCommand::Action {
             name,
-            payload: _,
+            payload,
             reply,
         } => {
-            let result = dispatch_tui_action(app, &name);
+            let result = dispatch_tui_action(app, &name, payload);
             let dev_reply = match result {
                 Ok(()) => DevReply::ok(),
                 Err(e) => DevReply::err(format!("{e:#}")),
@@ -389,8 +389,13 @@ pub(super) fn process_dev_command(
 }
 
 #[cfg(feature = "dev-api")]
-pub(super) fn dispatch_tui_action(app: &mut App, name: &str) -> anyhow::Result<()> {
-    use sotf_audio_player_tui::app::Screen;
+pub(super) fn dispatch_tui_action(
+    app: &mut App,
+    name: &str,
+    payload: Option<serde_json::Value>,
+) -> anyhow::Result<()> {
+    use sotf_audio_player::MetadataController;
+    use sotf_audio_player_tui::app::{MetadataEditorState, Screen};
 
     match name {
         "PlayPause" => {
@@ -432,9 +437,205 @@ pub(super) fn dispatch_tui_action(app: &mut App, name: &str) -> anyhow::Result<(
             app.current_screen = Screen::Playlists;
             app.input_mode = InputMode::Normal;
         }
+        "MetadataSeedAlbum" => {
+            app.library.albums = vec![metadata_fixture_album()];
+            app.selected_album_index = 0;
+            app.request_filter_update();
+            let _ = app.filtered_albums();
+            app.current_screen = Screen::Library;
+            app.input_mode = InputMode::Normal;
+            app.metadata_editor = None;
+        }
+        "MetadataOpenAlbumEditor" => {
+            let index = app.selected_album_index;
+            let album = app
+                .filtered_albums()
+                .get(index)
+                .cloned()
+                .or_else(|| app.library.albums.first().cloned())
+                .ok_or_else(|| anyhow::anyhow!("no album available for metadata editor"))?;
+            app.metadata_editor = Some(
+                MetadataEditorState::for_album(&album)
+                    .map_err(|err| anyhow::anyhow!("metadata editor unavailable: {err}"))?,
+            );
+            app.input_mode = InputMode::MetadataEditor;
+        }
+        "MetadataSetField" => {
+            let editor = app
+                .metadata_editor
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
+            let field = payload_str(&payload, "field")?;
+            let value = payload_str(&payload, "value")?;
+            let field_index = metadata_field_index(field)
+                .ok_or_else(|| anyhow::anyhow!("unknown metadata field `{field}`"))?;
+            editor.set_field_value(field_index, value.to_string());
+        }
+        "MetadataPreview" => {
+            let (target, patch) = {
+                let editor = app
+                    .metadata_editor
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
+                (
+                    editor.target.clone(),
+                    editor
+                        .patch()
+                        .map_err(|err| anyhow::anyhow!("invalid metadata patch: {err}"))?,
+                )
+            };
+            let result = MetadataController::preview_edit(&app.library, target, patch);
+            let editor = app
+                .metadata_editor
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
+            match result {
+                Ok(preview) => {
+                    editor.preview = Some(preview);
+                    editor.error = None;
+                }
+                Err(err) => {
+                    editor.error = Some(err.to_string());
+                    return Err(anyhow::anyhow!(err.to_string()));
+                }
+            }
+        }
+        "MetadataInjectCandidate" => {
+            let editor = app
+                .metadata_editor
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
+            editor
+                .search_results
+                .push(metadata_candidate_from_payload(payload.as_ref()));
+            editor.selected_result = editor.search_results.len().saturating_sub(1);
+            editor.search_error = None;
+        }
+        "MetadataImportCandidate" => {
+            let editor = app
+                .metadata_editor
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
+            let candidate = editor
+                .search_results
+                .get(editor.selected_result)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("no metadata candidate selected"))?;
+            editor.apply_candidate(candidate);
+        }
+        "MetadataClose" => {
+            app.metadata_editor = None;
+            app.input_mode = InputMode::Normal;
+        }
         _ => return Err(anyhow::anyhow!("unknown action: `{name}`")),
     }
     Ok(())
+}
+
+#[cfg(feature = "dev-api")]
+fn metadata_fixture_album() -> sotf_audio_player::Album {
+    let track_path = std::env::temp_dir()
+        .join("sotf-dev-driver")
+        .join("metadata-scenario")
+        .join("scenario-track.flac");
+    sotf_audio_player::Album {
+        id: Some(7),
+        title: "Scenario Album".to_string(),
+        year: Some(1999),
+        tracks: vec![sotf_audio_player::Track {
+            path: track_path,
+            title: Some("Scenario Track".to_string()),
+            artist: Some("Scenario Artist".to_string()),
+            album_artist: Some("Scenario Artist".to_string()),
+            track_number: Some(1),
+            sample_rate: Some(44_100),
+            channels: Some(2),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+#[cfg(feature = "dev-api")]
+fn payload_str<'a>(payload: &'a Option<serde_json::Value>, key: &str) -> anyhow::Result<&'a str> {
+    payload
+        .as_ref()
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("metadata action payload needs string `{key}`"))
+}
+
+#[cfg(feature = "dev-api")]
+fn payload_u32(payload: Option<&serde_json::Value>, key: &str, default: u32) -> u32 {
+    payload
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .unwrap_or(default)
+}
+
+#[cfg(feature = "dev-api")]
+fn payload_u8(payload: Option<&serde_json::Value>, key: &str, default: u8) -> u8 {
+    payload
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u8::try_from(value).ok())
+        .unwrap_or(default)
+}
+
+#[cfg(feature = "dev-api")]
+fn payload_string(payload: Option<&serde_json::Value>, key: &str, default: &str) -> Option<String> {
+    payload
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .or_else(|| Some(default.to_string()))
+}
+
+#[cfg(feature = "dev-api")]
+fn metadata_field_index(field: &str) -> Option<usize> {
+    match field {
+        "title" => Some(0),
+        "artist" => Some(1),
+        "album_artist" => Some(2),
+        "year" => Some(3),
+        "genre" => Some(4),
+        "composer" => Some(5),
+        "disc" | "disc_number" => Some(6),
+        "track" | "track_number" => Some(7),
+        "conductor" => Some(8),
+        "performer" => Some(9),
+        "isrc" => Some(10),
+        "ensemble" => Some(11),
+        "edition" => Some(12),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "dev-api")]
+fn metadata_candidate_from_payload(
+    payload: Option<&serde_json::Value>,
+) -> sotf_audio_player::MetadataImportCandidate {
+    sotf_audio_player::MetadataImportCandidate {
+        provider_id: "musicbrainz".to_string(),
+        provider_entity_id: payload
+            .and_then(|value| value.get("provider_entity_id"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("scenario-release")
+            .to_string(),
+        title: payload_string(payload, "title", "Imported Track"),
+        artist: payload_string(payload, "artist", "Imported Artist"),
+        album_artist: payload_string(payload, "album_artist", "Imported Artist"),
+        album_title: payload_string(payload, "album_title", "Imported Album"),
+        year: Some(payload_u32(payload, "year", 2024)),
+        track_number: Some(payload_u32(payload, "track_number", 1)),
+        disc_number: Some(payload_u32(payload, "disc_number", 1)),
+        isrc: payload
+            .and_then(|value| value.get("isrc"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        score: payload_u8(payload, "score", 96),
+    }
 }
 
 #[cfg(feature = "dev-api")]

@@ -62,6 +62,7 @@ uuid = { workspace = true }
 crossbeam = { workspace = true }
 rand = { workspace = true }
 socket2 = { workspace = true }
+lofty = { workspace = true }
 
 # Image processing for album art thumbnails
 image = { workspace = true }

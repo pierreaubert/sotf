@@ -124,6 +124,13 @@ impl App {
         self.library_state.scan_in_progress = true;
         self.library_state.scan_progress_tracks = 0;
         self.library_state.scan_progress_albums = 0;
+        self.scan_total_files = 0;
+        self.scan_started_at = Some(std::time::Instant::now());
+        self.scan_progress_elapsed_secs = 0;
+        self.scan_progress_eta_secs = None;
+        self.scan_progress_tracks_per_sec = 0.0;
+        self.scan_progress_phase = "Starting".to_string();
+        self.scan_status_hidden = false;
 
         let directories: Vec<std::path::PathBuf> = self
             .library_state
@@ -145,6 +152,8 @@ impl App {
                 "Failed to start ReplayGain scan: {}",
                 e
             )));
+        } else if self.scan_ctrl.replay_gain_manager.in_progress {
+            self.scan_status_hidden = false;
         }
     }
 
@@ -155,6 +164,8 @@ impl App {
                 "Failed to start bliss analysis scan: {}",
                 e
             )));
+        } else if self.scan_ctrl.bliss_manager.in_progress {
+            self.scan_status_hidden = false;
         }
     }
 
@@ -165,6 +176,8 @@ impl App {
                 "Failed to start waveform analysis: {}",
                 e
             )));
+        } else if self.scan_ctrl.waveform_manager.in_progress {
+            self.scan_status_hidden = false;
         }
     }
 
@@ -264,6 +277,13 @@ impl App {
         self.library_state.scan_in_progress = true;
         self.library_state.scan_progress_tracks = 0;
         self.library_state.scan_progress_albums = 0;
+        self.scan_total_files = 0;
+        self.scan_started_at = Some(std::time::Instant::now());
+        self.scan_progress_elapsed_secs = 0;
+        self.scan_progress_eta_secs = None;
+        self.scan_progress_tracks_per_sec = 0.0;
+        self.scan_progress_phase = "Starting".to_string();
+        self.scan_status_hidden = false;
 
         let directories: Vec<std::path::PathBuf> = self
             .library_state
@@ -282,19 +302,33 @@ impl App {
     pub fn update_library_scan(&mut self) {
         let mut reload_needed = false;
 
-        if let Some(scanner) = &self.library_scanner {
+        if let Some(scanner) = self.library_scanner.take() {
             let mut done = false;
             while let Some(msg) = scanner.try_recv() {
                 match msg {
-                    sotf_audio_player::LibraryScanMessage::Progress { tracks, albums } => {
+                    sotf_audio_player::LibraryScanMessage::Progress {
+                        tracks,
+                        albums,
+                        total_files,
+                        phase,
+                    } => {
                         self.library_state.scan_progress_tracks = tracks;
                         self.library_state.scan_progress_albums = albums;
+                        self.scan_total_files = total_files;
+                        self.scan_progress_phase = phase.to_string();
+                        self.update_library_scan_timing();
                     }
                     sotf_audio_player::LibraryScanMessage::Complete { tracks, albums } => {
                         self.library_state.scan_progress_tracks = tracks;
                         self.library_state.scan_progress_albums = albums;
+                        if self.scan_total_files == 0 {
+                            self.scan_total_files = tracks;
+                        }
+                        self.update_library_scan_timing();
+                        self.scan_progress_eta_secs = Some(0);
+                        self.scan_progress_phase = "Complete".to_string();
                         self.ui_state.toast_message = Some(ToastMessage::success(format!(
-                            "Scan complete. Found {} tracks in {} albums.",
+                            "Scan complete. Library now has {} tracks in {} albums.",
                             tracks, albums
                         )));
                         done = true;
@@ -310,10 +344,16 @@ impl App {
             }
 
             if done {
-                self.library_scanner = None;
                 self.library_state.scan_in_progress = false;
                 self.needs_rescan = false;
+                self.scan_started_at = None;
+            } else {
+                self.library_scanner = Some(scanner);
             }
+        }
+
+        if self.library_state.scan_in_progress {
+            self.update_library_scan_timing();
         }
 
         if reload_needed && let Err(e) = self.load_library_from_database() {
@@ -322,6 +362,32 @@ impl App {
                 "Scan complete but failed to reload library.",
             ));
         }
+    }
+
+    fn update_library_scan_timing(&mut self) {
+        let Some(started_at) = self.scan_started_at else {
+            return;
+        };
+        let elapsed = started_at.elapsed().as_secs();
+        self.scan_progress_elapsed_secs = elapsed;
+
+        if elapsed == 0 {
+            self.scan_progress_tracks_per_sec = 0.0;
+            self.scan_progress_eta_secs = None;
+            return;
+        }
+
+        let tracks = self.library_state.scan_progress_tracks;
+        self.scan_progress_tracks_per_sec = tracks as f32 / elapsed as f32;
+        self.scan_progress_eta_secs =
+            if self.scan_total_files > tracks && self.scan_progress_tracks_per_sec > 0.0 {
+                Some(
+                    ((self.scan_total_files - tracks) as f32 / self.scan_progress_tracks_per_sec)
+                        as u64,
+                )
+            } else {
+                None
+            };
     }
 
     /// Get flattened directory tree for display

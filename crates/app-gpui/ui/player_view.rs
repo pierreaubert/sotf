@@ -1011,11 +1011,6 @@ impl PlayerView {
                     "Scan failed: {}",
                     e
                 )));
-            } else {
-                // Show progress modal
-                state.app.scan_progress_modal = Some(crate::app::types::ScanProgressModal::new(
-                    crate::app::types::ScanType::Library,
-                ));
             }
             // Save directories to config after successful scan
             let layout = state.layout.read(_cx);

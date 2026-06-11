@@ -159,6 +159,11 @@ pub fn get_server_config_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("servers.json"))
 }
 
+/// Get the path to metadata provider configuration.
+pub fn get_metadata_services_config_path() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| dir.join("metadata_services.json"))
+}
+
 /// Get the path to the native remote server store.
 pub fn get_remote_servers_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("remote_servers.json"))

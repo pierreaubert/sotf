@@ -12,13 +12,14 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 fn configure_sub_screen_prev(s: ConfigureSubScreen) -> ConfigureSubScreen {
     match s {
-        ConfigureSubScreen::Directories => ConfigureSubScreen::Servers,
+        ConfigureSubScreen::Directories => ConfigureSubScreen::MetadataServices,
         ConfigureSubScreen::Recording => ConfigureSubScreen::Directories,
         ConfigureSubScreen::RoomEq => ConfigureSubScreen::Recording,
         ConfigureSubScreen::HeadphoneEq => ConfigureSubScreen::RoomEq,
         ConfigureSubScreen::SpinoramaEq => ConfigureSubScreen::HeadphoneEq,
         ConfigureSubScreen::FederationSources => ConfigureSubScreen::SpinoramaEq,
         ConfigureSubScreen::Servers => ConfigureSubScreen::FederationSources,
+        ConfigureSubScreen::MetadataServices => ConfigureSubScreen::Servers,
     }
 }
 
@@ -30,7 +31,8 @@ fn configure_sub_screen_next(s: ConfigureSubScreen) -> ConfigureSubScreen {
         ConfigureSubScreen::HeadphoneEq => ConfigureSubScreen::SpinoramaEq,
         ConfigureSubScreen::SpinoramaEq => ConfigureSubScreen::FederationSources,
         ConfigureSubScreen::FederationSources => ConfigureSubScreen::Servers,
-        ConfigureSubScreen::Servers => ConfigureSubScreen::Directories,
+        ConfigureSubScreen::Servers => ConfigureSubScreen::MetadataServices,
+        ConfigureSubScreen::MetadataServices => ConfigureSubScreen::Directories,
     }
 }
 
@@ -70,6 +72,10 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
                     super::conf_federation::handle_federation_keys(app, key)
                 }
                 InputMode::ConfigureServers => super::conf_servers::handle_server_keys(app, key),
+                InputMode::ConfigureMetadataServices => {
+                    app.input_mode = InputMode::Configure;
+                    None
+                }
                 _ => None,
             };
         }
@@ -93,6 +99,7 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
                     super::conf_federation::handle_federation_keys(app, key)
                 }
                 InputMode::ConfigureServers => super::conf_servers::handle_server_keys(app, key),
+                InputMode::ConfigureMetadataServices => None,
                 _ => None,
             };
         }
@@ -118,6 +125,7 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
             super::conf_federation::handle_federation_keys(app, key)
         }
         InputMode::ConfigureServers => super::conf_servers::handle_server_keys(app, key),
+        InputMode::ConfigureMetadataServices => None,
         _ => None,
     }
 }
@@ -154,6 +162,7 @@ pub(super) fn handle_tab_bar_keys(app: &mut App, key: KeyEvent) -> Option<Player
         KeyCode::Char('5') => enter_sub_screen(app, ConfigureSubScreen::SpinoramaEq),
         KeyCode::Char('6') => enter_sub_screen(app, ConfigureSubScreen::FederationSources),
         KeyCode::Char('7') => enter_sub_screen(app, ConfigureSubScreen::Servers),
+        KeyCode::Char('8') => enter_sub_screen(app, ConfigureSubScreen::MetadataServices),
         _ => {}
     }
     None

@@ -2,6 +2,7 @@
 
 use super::app_config::AppConfig;
 use super::app_config::migrate_app_config;
+use super::get::get_metadata_services_config_path;
 use super::get::get_microphone_presets_path;
 use super::get::get_plugin_sandbox_grants_path;
 use super::get::get_remote_server_tokens_path;
@@ -56,6 +57,22 @@ pub fn load_server_config()
             Ok(serde_json::from_str(&json)?)
         } else {
             Ok(crate::federation_config::ServerConfig::default())
+        }
+    } else {
+        Err("Could not determine config directory".into())
+    }
+}
+
+/// Load metadata provider configuration from disk.
+pub fn load_metadata_services_config()
+-> Result<crate::metadata::MetadataServicesConfig, Box<dyn std::error::Error>> {
+    if let Some(path) = get_metadata_services_config_path() {
+        if path.exists() {
+            crate::security::validate_config_read_path(&path)?;
+            let json = std::fs::read_to_string(&path)?;
+            Ok(serde_json::from_str(&json)?)
+        } else {
+            Ok(crate::metadata::MetadataServicesConfig::default())
         }
     } else {
         Err("Could not determine config directory".into())

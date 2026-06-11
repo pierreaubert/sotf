@@ -3,6 +3,7 @@ mod audio_device;
 mod federation;
 mod keybindings;
 mod library;
+mod metadata;
 mod plugins;
 mod release_channel;
 mod servers;

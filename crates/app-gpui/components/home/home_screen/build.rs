@@ -12,7 +12,7 @@ use super::types::top_genre_shelves;
 use sotf_audio_player::{Album, sotf_api_client::SotfApiAlbum};
 use std::collections::BTreeSet;
 
-pub(super) fn build_home_shelves(albums: &[Album]) -> Vec<HomeShelf> {
+pub(super) fn build_home_shelves(albums: &[Album], collapsed_limit: usize) -> Vec<HomeShelf> {
     let favorite = prioritize_covers(sort_by_listening(
         albums
             .iter()
@@ -26,10 +26,10 @@ pub(super) fn build_home_shelves(albums: &[Album]) -> Vec<HomeShelf> {
     } else {
         favorite
     };
-    let favorite_row = row_album_keys(&favorite_albums);
+    let favorite_row = row_album_keys(&favorite_albums, collapsed_limit);
     let recommended = prioritize_covers(build_recommended(albums, &favorite_row));
     let mut first_two_rows = favorite_row.clone();
-    first_two_rows.extend(row_album_keys(&recommended));
+    first_two_rows.extend(row_album_keys(&recommended, collapsed_limit));
     let discover = prioritize_covers(build_discover(albums, &first_two_rows));
 
     let mut shelves = vec![

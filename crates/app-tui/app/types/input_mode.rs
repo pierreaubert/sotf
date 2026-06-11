@@ -17,6 +17,8 @@ pub enum InputMode {
     ShowError,
     /// Shown when a multichannel file conflicts with the upmixer plugin
     ChannelConflict,
+    /// Album/track metadata editor modal
+    MetadataEditor,
     /// Level meters pane is focused
     LevelMeters,
     /// Configure tab bar is focused
@@ -35,6 +37,8 @@ pub enum InputMode {
     ConfigureFederationSources,
     /// Configure sub-screen: Servers
     ConfigureServers,
+    /// Configure sub-screen: Metadata Services
+    ConfigureMetadataServices,
 }
 
 impl InputMode {
@@ -50,6 +54,7 @@ impl InputMode {
                 | InputMode::ConfigureSpinoramaEq
                 | InputMode::ConfigureFederationSources
                 | InputMode::ConfigureServers
+                | InputMode::ConfigureMetadataServices
         )
     }
 
@@ -64,6 +69,7 @@ impl InputMode {
                 | InputMode::ConfigureSpinoramaEq
                 | InputMode::ConfigureFederationSources
                 | InputMode::ConfigureServers
+                | InputMode::ConfigureMetadataServices
         )
     }
 
@@ -77,6 +83,7 @@ impl InputMode {
             ConfigureSubScreen::SpinoramaEq => InputMode::ConfigureSpinoramaEq,
             ConfigureSubScreen::FederationSources => InputMode::ConfigureFederationSources,
             ConfigureSubScreen::Servers => InputMode::ConfigureServers,
+            ConfigureSubScreen::MetadataServices => InputMode::ConfigureMetadataServices,
         }
     }
 
@@ -90,6 +97,7 @@ impl InputMode {
             InputMode::ConfigureSpinoramaEq => Some(ConfigureSubScreen::SpinoramaEq),
             InputMode::ConfigureFederationSources => Some(ConfigureSubScreen::FederationSources),
             InputMode::ConfigureServers => Some(ConfigureSubScreen::Servers),
+            InputMode::ConfigureMetadataServices => Some(ConfigureSubScreen::MetadataServices),
             _ => None,
         }
     }

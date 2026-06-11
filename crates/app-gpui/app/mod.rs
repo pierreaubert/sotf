@@ -40,6 +40,7 @@ pub use theme::{CommunityThemeId, Theme, ThemeId};
 pub use crate::components::plugins::get_param_count;
 pub use types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ChannelInfo, ContextMenuState, ContextMenuType,
-    InputMode, LayoutMode, LayoutOrientation, LibrarySortOrder, MeterDisplayMode, PluginViewMode,
-    QueueItem, RackDisplayMode, ReplayGainMode, Screen, SettingsTab, ToastMessage, ToastType,
+    InputMode, LayoutMode, LayoutOrientation, LibrarySortOrder, MetadataEditorFields,
+    MetadataEditorScope, MetadataEditorState, MeterDisplayMode, PluginViewMode, QueueItem,
+    RackDisplayMode, ReplayGainMode, Screen, SettingsTab, ToastAction, ToastMessage, ToastType,
 };

@@ -24,6 +24,7 @@ pub mod lan_discovery;
 pub mod level_meter;
 pub mod library;
 pub mod library_scanner;
+pub mod metadata;
 pub mod peq_filter;
 pub mod play_tracker;
 pub mod player;
@@ -61,6 +62,11 @@ pub use library::{
 };
 pub use library_scanner::{LibraryScanMessage, LibraryScanner};
 pub use library_stats::{LibraryStats, format_channel_count};
+pub use metadata::{
+    AlbumMetadataSidecar, MetadataAffectedFile, MetadataController, MetadataEditPreview,
+    MetadataError, MetadataImportCandidate, MetadataPatch, MetadataProviderConfig,
+    MetadataServicesConfig, MetadataTarget, MusicBrainzProvider,
+};
 pub use play_tracker::PlayTracker;
 pub use player::{PlaybackState, Player};
 pub use plugin_graph::{

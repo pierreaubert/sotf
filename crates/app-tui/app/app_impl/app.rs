@@ -43,6 +43,7 @@ pub struct App {
     pub album_list_offset: usize,
     pub status_message: Option<String>, // For displaying save/load status
     pub error_message: Option<String>,  // For displaying decode/playback errors in a modal
+    pub metadata_editor: Option<super::super::types::MetadataEditorState>,
 
     // Channel conflict dialog state
     pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>, // Source pending playback
@@ -280,6 +281,7 @@ impl App {
             album_list_offset: 0,
             status_message: None,
             error_message: None,
+            metadata_editor: None,
             channel_conflict_path: None,
             channel_conflict_selection: 0,
             channel_conflict_track_channels: 2,

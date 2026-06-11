@@ -21,6 +21,11 @@ path = "crates/sotf-dev-driver/scenarios/tui_library.scn"
 timeout = "10s"
 
 [[scenario]]
+name = "tui-metadata-editor"
+path = "crates/sotf-dev-driver/scenarios/tui_metadata_editor.scn"
+timeout = "10s"
+
+[[scenario]]
 name = "tui-queue"
 path = "crates/sotf-dev-driver/scenarios/tui_queue.scn"
 timeout = "10s"

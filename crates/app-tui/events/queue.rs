@@ -109,6 +109,21 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             app.toggle_current_queue_album_favorite();
             None
         }
+        KeyCode::Char('m') => {
+            let Some(entry) = app.queue.get(app.selected_queue_index) else {
+                return None;
+            };
+            let target_track = app
+                .selected_queue_track_index
+                .and_then(|idx| entry.item.album.tracks.get(idx))
+                .or_else(|| entry.item.current_track())
+                .or_else(|| entry.item.album.tracks.first());
+            if let Some(track) = target_track {
+                app.metadata_editor = Some(crate::app::MetadataEditorState::for_track(track));
+                app.input_mode = crate::app::InputMode::MetadataEditor;
+            }
+            None
+        }
         KeyCode::Char('A') => {
             // Add to the active playlist. If a track is selected within an
             // expanded album, add just that track; otherwise add the whole

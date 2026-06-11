@@ -8,6 +8,8 @@ use super::misc::send_keys;
 use crate::app::{ConfigureSubScreen, InputMode, Screen, SpinoramaStep};
 use crossterm::event::KeyCode;
 use sotf_audio_player::room_eq_types::RoomEqStep;
+use sotf_audio_player::{Album, MetadataImportCandidate, Track};
+use std::path::PathBuf;
 
 #[path = "tests/app_mod.rs"]
 mod app_mod;
@@ -132,6 +134,85 @@ fn esc_from_library_quits() {
     assert!(app.should_quit);
     assert_eq!(app.current_screen, Screen::Library);
     assert_eq!(app.input_mode, InputMode::Normal);
+}
+
+#[test]
+fn metadata_editor_opens_edits_previews_imports_and_closes() {
+    let mut app = app_on_library();
+    app.library.albums = vec![metadata_test_album()];
+    app.needs_filter_update = true;
+    app.filtered_albums();
+
+    send_keys(&mut app, &[KeyCode::Char('m')]);
+    assert_eq!(app.input_mode, InputMode::MetadataEditor);
+    assert!(app.metadata_editor.is_some());
+
+    send_keys(
+        &mut app,
+        &[
+            KeyCode::Down,
+            KeyCode::Down,
+            KeyCode::Down,
+            KeyCode::Enter,
+            KeyCode::Backspace,
+            KeyCode::Backspace,
+            KeyCode::Backspace,
+            KeyCode::Backspace,
+            KeyCode::Char('2'),
+            KeyCode::Char('0'),
+            KeyCode::Char('2'),
+            KeyCode::Char('4'),
+            KeyCode::Enter,
+        ],
+    );
+    assert_eq!(
+        app.metadata_editor.as_ref().unwrap().fields.year.as_str(),
+        "2024"
+    );
+    assert!(app.metadata_editor.as_ref().unwrap().preview.is_some());
+
+    app.metadata_editor
+        .as_mut()
+        .unwrap()
+        .search_results
+        .push(MetadataImportCandidate {
+            provider_id: "musicbrainz".to_string(),
+            provider_entity_id: "release-1".to_string(),
+            title: None,
+            artist: None,
+            album_artist: Some("Imported Artist".to_string()),
+            album_title: Some("Imported Album".to_string()),
+            year: Some(2026),
+            track_number: None,
+            disc_number: None,
+            isrc: None,
+            score: 95,
+        });
+    send_keys(&mut app, &[KeyCode::Char('i')]);
+    let editor = app.metadata_editor.as_ref().unwrap();
+    assert_eq!(editor.fields.title, "Imported Album");
+    assert_eq!(editor.fields.album_artist, "Imported Artist");
+    assert!(editor.preview.is_some());
+
+    send_keys(&mut app, &[KeyCode::Esc]);
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(app.metadata_editor.is_none());
+}
+
+fn metadata_test_album() -> Album {
+    Album {
+        id: Some(7),
+        title: "Original Album".to_string(),
+        year: Some(1999),
+        tracks: vec![Track {
+            path: PathBuf::from("/tmp/sotf-tui-metadata-test.flac"),
+            title: Some("Original Track".to_string()),
+            artist: Some("Original Artist".to_string()),
+            album_artist: Some("Original Artist".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
 }
 
 #[test]

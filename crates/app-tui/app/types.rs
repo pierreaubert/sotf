@@ -17,6 +17,7 @@ mod federation_tui_state;
 mod headphone_eq_step;
 mod headphone_eq_tui_state;
 mod input_mode;
+mod metadata_editor_state;
 mod queue_entry;
 mod recording;
 mod recording_tui_state;
@@ -31,6 +32,7 @@ pub use federation_tui_state::*;
 pub use headphone_eq_step::*;
 pub use headphone_eq_tui_state::*;
 pub use input_mode::*;
+pub use metadata_editor_state::*;
 pub use queue_entry::*;
 pub use recording::*;
 pub use recording_tui_state::*;
@@ -84,6 +86,7 @@ pub enum ConfigureSubScreen {
     SpinoramaEq,
     FederationSources,
     Servers,
+    MetadataServices,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

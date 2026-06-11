@@ -255,16 +255,7 @@ impl PlayerView {
                                     .on_click_event(cx.listener(
                                         |view, _: &ClickEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
-                                                if state.app.rescan_library().is_ok()
-                                                    && state.app.library_state.scan_in_progress
-                                                {
-                                                    // Show progress modal
-                                                    state.app.scan_progress_modal = Some(
-                                                        crate::app::types::ScanProgressModal::new(
-                                                            crate::app::types::ScanType::Library,
-                                                        ),
-                                                    );
-                                                }
+                                                let _ = state.app.rescan_library();
                                             });
                                             cx.notify();
                                         },
@@ -463,19 +454,6 @@ impl PlayerView {
                                             cx.listener(|view, _: &ClickEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.scan_replay_gain();
-                                                    // Show progress modal if scan started
-                                                    if state
-                                                        .app
-                                                        .scan_ctrl
-                                                        .replay_gain_manager
-                                                        .in_progress
-                                                    {
-                                                        state.app.scan_progress_modal = Some(
-                                                        crate::app::types::ScanProgressModal::new(
-                                                            crate::app::types::ScanType::ReplayGain,
-                                                        ),
-                                                    );
-                                                    }
                                                 });
                                                 cx.notify();
                                             }),
@@ -543,15 +521,6 @@ impl PlayerView {
                                             cx.listener(|view, _: &ClickEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.scan_bliss();
-                                                    // Show progress modal if scan started
-                                                    if state.app.scan_ctrl.bliss_manager.in_progress
-                                                    {
-                                                        state.app.scan_progress_modal = Some(
-                                                        crate::app::types::ScanProgressModal::new(
-                                                            crate::app::types::ScanType::Bliss,
-                                                        ),
-                                                    );
-                                                    }
                                                 });
                                                 cx.notify();
                                             }),
@@ -595,19 +564,6 @@ impl PlayerView {
                                             cx.listener(|view, _: &ClickEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.compute_waveform();
-                                                    // Show progress modal if scan started
-                                                    if state
-                                                        .app
-                                                        .scan_ctrl
-                                                        .waveform_manager
-                                                        .in_progress
-                                                    {
-                                                        state.app.scan_progress_modal = Some(
-                                                        crate::app::types::ScanProgressModal::new(
-                                                            crate::app::types::ScanType::Waveform,
-                                                        ),
-                                                    );
-                                                    }
                                                 });
                                                 cx.notify();
                                             }),

@@ -32,7 +32,6 @@ just qa-plugin
 
 ## Building with the magic script
 
-It may work:
 ```
 ./scripts/build-release.sh --help
 ```
@@ -40,22 +39,21 @@ If not, then do it step by step, see below.
 
 ## Building ARM binaries
 
-On a ARM Mac M1-M5, you need docker:
+On a ARM Mac M1-M5, in order to build binaries for Linux and Windows, you need docker:
 
 ```
-just cross-macos-arm64
-just cross-linux-arm64
-just cross-windows-arm64
+just docker-linux-arm64
+just docker-windows-arm64
 ```
 
 All the files land in `./dist`.
 
-## Building ARM binaries
+## Building X86 binaries
 
 On a Linux X86 machine, you need docker:
 ```
-just cross-linux-x86
-just cross-windows-86
+just docker-linux-x86
+just docker-windows-86
 ```
 All the files land in `./dist`.
 

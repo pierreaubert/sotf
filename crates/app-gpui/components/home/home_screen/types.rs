@@ -4,9 +4,9 @@
 use super::album::album_genres;
 use super::build::build_home_shelves;
 use super::build::build_remote_home_shelves;
-use super::misc::COLLAPSED_ALBUM_LIMIT;
 use super::misc::EXPANDED_ALBUM_LIMIT;
 use super::misc::add_home_album_to_queue;
+use super::misc::collapsed_album_limit_for_width;
 use super::misc::prioritize_covers;
 use super::misc::slug;
 use super::misc::sort_by_listening;
@@ -55,9 +55,10 @@ impl PlayerView {
         let (theme, shelves, expanded_sections) = {
             let state = self.state.read(cx);
             let albums = state.app.library_state.library.albums.clone();
+            let collapsed_limit = collapsed_album_limit_for_width(state.app.ui_state.window_width);
             (
                 state.app.ui_state.theme.clone(),
-                build_home_shelves(&albums),
+                build_home_shelves(&albums, collapsed_limit),
                 state.app.ui_state.expanded_home_sections.clone(),
             )
         };
@@ -163,13 +164,15 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let collapsed_limit = collapsed_album_limit_for_width(state.app.ui_state.window_width);
         let limit = if is_expanded {
             EXPANDED_ALBUM_LIMIT
         } else {
-            COLLAPSED_ALBUM_LIMIT
+            collapsed_limit
         };
-        let can_expand = shelf.albums.len() > COLLAPSED_ALBUM_LIMIT;
+        let can_expand = shelf.albums.len() > collapsed_limit;
         let shelf_id = shelf.id.clone();
         let state_for_toggle = self.state.clone();
 
@@ -256,13 +259,15 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let collapsed_limit = collapsed_album_limit_for_width(state.app.ui_state.window_width);
         let limit = if is_expanded {
             EXPANDED_ALBUM_LIMIT
         } else {
-            COLLAPSED_ALBUM_LIMIT
+            collapsed_limit
         };
-        let can_expand = shelf.albums.len() > COLLAPSED_ALBUM_LIMIT;
+        let can_expand = shelf.albums.len() > collapsed_limit;
         let shelf_id = shelf.id.clone();
         let state_for_toggle = self.state.clone();
 
@@ -353,6 +358,7 @@ impl PlayerView {
     ) -> AnyElement {
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let album_for_click = album.clone();
+        let album_for_menu = album.clone();
         let state_entity = self.state.clone();
 
         div()
@@ -367,6 +373,30 @@ impl PlayerView {
                     add_home_album_to_queue(state, &album_for_click, event.click_count() >= 2);
                 });
             }))
+            .on_mouse_up(
+                MouseButton::Right,
+                cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        if let Some(id) = album_for_menu.id
+                            && let Some(filtered_idx) = state
+                                .app
+                                .filtered_albums()
+                                .iter()
+                                .position(|candidate| candidate.id == Some(id))
+                        {
+                            state.app.library_state.selected_index = filtered_idx;
+                            state.app.ui_state.input_mode = crate::app::InputMode::ContextMenu;
+                            state.app.ui_state.context_menu = Some(crate::app::ContextMenuState {
+                                menu_type: crate::app::ContextMenuType::Album,
+                                position_x: event.position.x.into(),
+                                position_y: event.position.y.into(),
+                                item_index: filtered_idx,
+                            });
+                        }
+                    });
+                    cx.notify();
+                }),
+            )
             .child(
                 AlbumCard::new(Arc::new(album), idx, false, theme)
                     .mode(AlbumCardMode::Grid)

@@ -45,6 +45,7 @@ pub fn settings_tab_icon_name(tab: SettingsTab) -> IconName {
         SettingsTab::Misc => IconName::SlidersHorizontal,
         SettingsTab::Federation => IconName::Plug,
         SettingsTab::Servers => IconName::Plug,
+        SettingsTab::Metadata => IconName::Album,
         SettingsTab::ReleaseChannel => IconName::AudioWaveform,
     }
 }
@@ -59,6 +60,7 @@ pub fn settings_tab_label(tab: SettingsTab, translations: &Translations) -> &'st
         SettingsTab::Misc => "Resources",
         SettingsTab::Federation => translations.settings_tab_federation,
         SettingsTab::Servers => translations.settings_tab_servers,
+        SettingsTab::Metadata => "Metadata",
         SettingsTab::ReleaseChannel => translations.settings_tab_release_channel,
     }
 }
@@ -140,6 +142,9 @@ impl PlayerView {
                 .into_any_element(),
             crate::app::SettingsTab::Servers => {
                 self.render_servers_settings_content(cx).into_any_element()
+            }
+            crate::app::SettingsTab::Metadata => {
+                self.render_metadata_settings_content(cx).into_any_element()
             }
             crate::app::SettingsTab::ReleaseChannel => self
                 .render_release_channel_settings_content(cx)

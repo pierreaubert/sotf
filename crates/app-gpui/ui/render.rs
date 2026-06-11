@@ -524,6 +524,14 @@ impl Render for PlayerView {
                             _ => {}
                         }
                     }
+                    crate::app::InputMode::MetadataEditor => {
+                        cx.stop_propagation();
+                        match event.keystroke.key.as_str() {
+                            "escape" => view.close_metadata_editor(cx),
+                            "enter" => view.refresh_metadata_preview(cx),
+                            _ => {}
+                        }
+                    }
                     crate::app::InputMode::Normal
                         if current_screen == crate::app::Screen::Settings
                             && view
@@ -604,6 +612,7 @@ impl Render for PlayerView {
                                 self.state.read(cx).app.federation.scan_progress.is_some(),
                                 |div| div.child(self.render_federation_scan_progress(cx)),
                             )
+                            .child(self.render_scan_status_row(cx))
                             .child(self.render_footer(cx)),
                     ),
             )
@@ -652,8 +661,10 @@ impl Render for PlayerView {
                 input_mode == crate::app::InputMode::ChannelConflict,
                 |div| div.child(self.render_channel_conflict_dialog(cx)),
             )
-            // Scan progress modal
-            .child(self.render_scan_progress_modal(cx))
+            .when(
+                input_mode == crate::app::InputMode::MetadataEditor,
+                |div| div.child(self.render_metadata_editor_dialog(cx)),
+            )
             // Migration modal for recording format conversion
             .when(show_migration_modal, |div| div.child(self.render_migration_modal(cx)))
             // Move-microphones-to-next-position modal (multi-position recording)

@@ -9,6 +9,7 @@ pub mod file_explorer;
 pub mod level_meters;
 pub mod library;
 pub mod media_control;
+pub mod metadata;
 pub mod playlists;
 pub mod plugins;
 pub mod queue;
@@ -49,6 +50,7 @@ pub(super) fn cycle_string(current: &str, options: &[&str], delta: i32) -> Strin
 use devices::handle_devices_keys;
 use file_explorer::handle_file_explorer_mode;
 use library::handle_library_keys;
+use metadata::handle_metadata_editor_mode;
 use plugins::{
     handle_add_plugin_mode, handle_edit_plugin_mode, handle_load_apo_file_mode,
     handle_load_plugins_mode, handle_load_sofa_file_mode, handle_plugins_keys,
@@ -103,6 +105,7 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         InputMode::ShowHelp => handle_help_mode(app, key),
         InputMode::ShowError => handle_error_mode(app, key),
         InputMode::ChannelConflict => handle_channel_conflict_mode(app, key),
+        InputMode::MetadataEditor => handle_metadata_editor_mode(app, key),
         InputMode::LevelMeters => level_meters::handle_level_meters_keys(app, key),
         InputMode::Configure
         | InputMode::ConfigureDirectories
@@ -111,7 +114,8 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         | InputMode::ConfigureHeadphoneEq
         | InputMode::ConfigureSpinoramaEq
         | InputMode::ConfigureFederationSources
-        | InputMode::ConfigureServers => conf::handle_configure_mode(app, key),
+        | InputMode::ConfigureServers
+        | InputMode::ConfigureMetadataServices => conf::handle_configure_mode(app, key),
         InputMode::Normal => handle_normal_mode(app, key),
     }
 }

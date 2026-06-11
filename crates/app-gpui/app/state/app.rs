@@ -87,8 +87,11 @@ pub struct App {
     pub library_stats_computing: bool,
     pub pending_library_stats: Arc<parking_lot::Mutex<Option<LibraryStats>>>,
 
-    // Scan progress modal (for library, bliss, waveform, replaygain scans)
-    pub scan_progress_modal: Option<crate::app::types::ScanProgressModal>,
+    // Footer scan status row (hidden by the user while scans continue)
+    pub scan_status_hidden: bool,
+
+    // Shared album/track metadata editor modal state
+    pub metadata_editor: Option<crate::app::MetadataEditorState>,
 
     // Layout configuration is now managed via AppState.layout entity
     pub divider_click_start: Option<std::time::Instant>,
@@ -101,6 +104,11 @@ pub struct App {
 
     // Scan progress for threaded scanning
     pub scan_total_files: usize,
+    pub scan_started_at: Option<std::time::Instant>,
+    pub scan_progress_elapsed_secs: u64,
+    pub scan_progress_eta_secs: Option<u64>,
+    pub scan_progress_tracks_per_sec: f32,
+    pub scan_progress_phase: String,
 
     // Drag states (None = not dragging)
     pub volume_drag: Option<VolumeDragState>,
@@ -219,13 +227,19 @@ impl App {
             is_loading_initial_data: true,
             library_stats_computing: false,
             pending_library_stats: Arc::new(parking_lot::Mutex::new(None)),
-            scan_progress_modal: None,
+            scan_status_hidden: false,
+            metadata_editor: None,
             divider_click_start: None,
             // 3-Panel Layout defaults
             layout_orientation: LayoutOrientation::default(),
             rack_display_mode: RackDisplayMode::default(),
             hide_queue_meters_for_rack: false,
             scan_total_files: 0,
+            scan_started_at: None,
+            scan_progress_elapsed_secs: 0,
+            scan_progress_eta_secs: None,
+            scan_progress_tracks_per_sec: 0.0,
+            scan_progress_phase: String::new(),
             volume_drag: None,
             knob_drag: None,
             expanded_settings_sections: vec!["library".to_string()],
@@ -488,9 +502,17 @@ impl App {
     /// Override this to add custom action_id handlers for different toast actions.
     pub fn handle_toast_action(&mut self, action_id: &str) {
         log::info!("Toast action triggered: {}", action_id);
-        // Add domain-specific action handlers here as needed, e.g.:
-        // "retry-plugin-update" => self.retry_last_plugin_update(),
-        log::warn!("Unhandled toast action: {}", action_id);
+        match action_id {
+            "rescan-library" => {
+                if let Err(err) = self.scan_library() {
+                    self.ui_state.toast_message =
+                        Some(ToastMessage::error(format!("Scan failed: {err}")));
+                }
+            }
+            _ => {
+                log::warn!("Unhandled toast action: {}", action_id);
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

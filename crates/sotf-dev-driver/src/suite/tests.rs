@@ -63,7 +63,7 @@ fn checked_in_suites_parse() {
     assert_eq!(roomeq.scenarios.len(), 24);
 
     let tui: SuiteFile = toml::from_str(include_str!("../../suites/tui.toml")).unwrap();
-    assert_eq!(tui.scenarios.len(), 18);
+    assert_eq!(tui.scenarios.len(), 19);
 
     let full: SuiteFile = toml::from_str(include_str!("../../suites/full_matrix.toml")).unwrap();
     assert_eq!(full.scenarios.len(), 15);

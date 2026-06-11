@@ -5,9 +5,14 @@
 
 use std::path::PathBuf;
 
-use sotf_audio_player::QueuePlaybackEffect;
+use sotf_audio_player::{Album, QueuePlaybackEffect};
 
 use super::state::App;
+use super::types::{ToastAction, ToastMessage, ToastType};
+
+fn is_missing_album_files_error(message: &str) -> bool {
+    message.starts_with("None of the files")
+}
 
 impl App {
     /// Sync playback.current_queue_index from queue.current_index.
@@ -23,7 +28,9 @@ impl App {
         let was_not_playing = !self.playback.is_playing;
 
         let albums = self.filtered_albums();
-        let selected_album = albums.get(self.library_state.selected_index).copied();
+        let selected_album = albums
+            .get(self.library_state.selected_index)
+            .map(|album| (*album).clone());
 
         if let Some(album) = selected_album {
             if album.id.is_some_and(|id| {
@@ -34,7 +41,13 @@ impl App {
                 return Ok(None);
             }
 
-            self.queue_state.add_album(album.clone())?;
+            if let Err(err) = self.queue_state.add_album(album.clone()) {
+                if is_missing_album_files_error(&err) {
+                    self.remove_stale_album_from_view(&album, err);
+                    return Ok(None);
+                }
+                return Err(err);
+            }
 
             if was_empty || was_not_playing {
                 return Ok(self.start_queue());
@@ -46,7 +59,9 @@ impl App {
     /// Add album to queue and immediately jump to it and start playing
     pub fn play_album_now(&mut self) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
         let albums = self.filtered_albums();
-        let selected_album = albums.get(self.library_state.selected_index).copied();
+        let selected_album = albums
+            .get(self.library_state.selected_index)
+            .map(|album| (*album).clone());
 
         if let Some(album) = selected_album {
             if let Some(existing_index) = album.id.and_then(|id| {
@@ -64,7 +79,16 @@ impl App {
                 return Ok(None);
             }
 
-            let effect = self.queue_state.play_album_now(album.clone())?;
+            let effect = match self.queue_state.play_album_now(album.clone()) {
+                Ok(effect) => effect,
+                Err(err) => {
+                    if is_missing_album_files_error(&err) {
+                        self.remove_stale_album_from_view(&album, err);
+                        return Ok(None);
+                    }
+                    return Err(err);
+                }
+            };
             self.sync_queue_index();
 
             if let QueuePlaybackEffect::Play(source) = effect {
@@ -73,6 +97,33 @@ impl App {
             }
         }
         Ok(None)
+    }
+
+    fn remove_stale_album_from_view(&mut self, album: &Album, message: String) {
+        let before = self.library_state.library.albums.len();
+        self.library_state.library.albums.retain(|candidate| {
+            if let (Some(candidate_id), Some(album_id)) = (candidate.id, album.id) {
+                candidate_id != album_id
+            } else {
+                candidate.title != album.title || candidate.artist() != album.artist()
+            }
+        });
+
+        if self.library_state.library.albums.len() != before {
+            self.library_state.invalidate_cache();
+            let len = self.filtered_albums().len();
+            if len == 0 {
+                self.library_state.selected_index = 0;
+            } else if self.library_state.selected_index >= len {
+                self.library_state.selected_index = len - 1;
+            }
+            self.invalidate_library_stats();
+        }
+
+        self.ui_state.toast_message = Some(
+            ToastMessage::persistent(message, ToastType::Warning)
+                .with_action(ToastAction::new("Rescan", "rescan-library")),
+        );
     }
 
     pub fn start_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
