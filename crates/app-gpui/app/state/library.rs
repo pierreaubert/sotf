@@ -4,9 +4,13 @@
 //! Manager trait and the `library_columns` UI field.
 
 use std::ops::{Deref, DerefMut};
+use std::path::PathBuf;
 
 use crate::app::manager::{Manager, ManagerError};
-use sotf_audio_player::{LibraryController, MusicLibrary};
+use sotf_audio_player::{
+    LibraryController, MetadataEditPreview, MetadataError, MetadataImportCandidate, MetadataPatch,
+    MetadataTarget, MusicLibrary,
+};
 
 pub use sotf_audio_player::{ChannelFilter, LibrarySortOrder};
 
@@ -58,6 +62,8 @@ pub struct LibraryState {
 
     /// Number of columns in grid layout (UI-specific, not in controller)
     pub library_columns: usize,
+    /// Bumped when the underlying local album/track data changes.
+    content_generation: u64,
 }
 
 impl Deref for LibraryState {
@@ -84,6 +90,7 @@ impl LibraryState {
         Self {
             ctrl: LibraryController::new(),
             library_columns: 4,
+            content_generation: 0,
         }
     }
 
@@ -91,6 +98,7 @@ impl LibraryState {
         Self {
             ctrl: LibraryController::with_library(library),
             library_columns: 4,
+            content_generation: 0,
         }
     }
 
@@ -98,7 +106,93 @@ impl LibraryState {
         Self {
             ctrl: LibraryController::new_for_test(),
             library_columns: 4,
+            content_generation: 0,
         }
+    }
+
+    pub fn content_generation(&self) -> u64 {
+        self.content_generation
+    }
+
+    pub fn invalidate_cache(&mut self) {
+        self.ctrl.invalidate_cache();
+        self.bump_content_generation();
+    }
+
+    pub fn preview_metadata_edit(
+        &self,
+        target: MetadataTarget,
+        patch: MetadataPatch,
+    ) -> Result<MetadataEditPreview, MetadataError> {
+        self.ctrl.preview_metadata_edit(target, patch)
+    }
+
+    pub fn apply_metadata_edit(
+        &mut self,
+        target: MetadataTarget,
+        patch: MetadataPatch,
+    ) -> Result<MetadataEditPreview, MetadataError> {
+        let result = self.ctrl.apply_metadata_edit(target, patch);
+        if result.is_ok() {
+            self.bump_content_generation();
+        }
+        result
+    }
+
+    pub fn import_metadata_candidate(
+        &mut self,
+        target: MetadataTarget,
+        candidate: MetadataImportCandidate,
+    ) -> Result<MetadataEditPreview, MetadataError> {
+        let result = self.ctrl.import_metadata_candidate(target, candidate);
+        if result.is_ok() {
+            self.bump_content_generation();
+        }
+        result
+    }
+
+    pub fn scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let result = self.ctrl.scan();
+        if result.is_ok() {
+            self.bump_content_generation();
+        }
+        result
+    }
+
+    pub fn load_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let result = self.ctrl.load_from_database();
+        if result.is_ok() {
+            self.bump_content_generation();
+        }
+        result
+    }
+
+    pub fn clean_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        let result = self.ctrl.clean_database();
+        if result.as_ref().is_ok_and(|removed| *removed > 0) {
+            self.bump_content_generation();
+        }
+        result
+    }
+
+    pub fn clear_library_content(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        let result = self.ctrl.clear_library_content();
+        if result.is_ok() {
+            self.bump_content_generation();
+        }
+        result
+    }
+
+    pub fn remove_directory(&mut self, index: usize) -> Option<PathBuf> {
+        let removed = self.ctrl.remove_directory(index);
+        if removed.is_some() {
+            self.bump_content_generation();
+        }
+        removed
+    }
+
+    fn bump_content_generation(&mut self) {
+        self.content_generation = self.content_generation.wrapping_add(1);
     }
 }
 

@@ -26,6 +26,10 @@ path = "src/lib.rs"
 name = "sotf-bliss-scan"
 path = "src/bin/bliss_scan.rs"
 
+[[bin]]
+name = "sotf-album-art-gen"
+path = "src/bin/album_art_gen.rs"
+
 [dependencies]
 math-iir-fir = { workspace = true }
 math-optimisation = { workspace = true }
@@ -44,6 +48,7 @@ num-complex = { workspace = true }
 
 # common stuff
 anyhow = { workspace = true }
+base64 = { workspace = true }
 sha2 = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }

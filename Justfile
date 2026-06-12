@@ -9,21 +9,21 @@ _default:
 import 'builds/install.just'
 import 'builds/updates.just'
 import 'builds/docs.just'
-import 'builds/aggregates.just'
 import 'builds/cross.just'
 import 'builds/macos.just'
 import 'builds/windows.just'
 import 'builds/linux.just'
 import 'builds/ios.just'
 import 'builds/tvos.just'
-import 'build/dev-driver.just'
+import 'builds/dev-driver.just'
 
 import 'crates/math-audio/Justfile'
 import 'crates/autoeq/Justfile'
-import 'crates/gpui-toolkit/Justfile'
 import 'crates/sotf-plugins/Justfile'
 import 'crates/sotf-engine/Justfile'
 import 'crates/sotf-tools/Justfile'
+
+import 'builds/aggregates.just'
 
 # ----------------------------------------------------------------------
 # VARIABLES
@@ -145,47 +145,6 @@ fmt:
 	cargo fmt --all
 
 # ----------------------------------------------------------------------
-# PROD
-# ----------------------------------------------------------------------
-
-[group('build')]
-prod-generate-audio-tests:
-	cargo build --release --bin generate-audio-tests -p sotf-tools
-
-[group('build')]
-prod-workspace: prod-plot-bins
-	cargo build --release --workspace
-
-# Binaries gated by `required-features = ["plotly"]` are silently skipped by
-# `cargo build --workspace`; build them explicitly so a `prod-workspace` run
-# produces the full set of artifacts.
-[group('build')]
-prod-plot-bins:
-	cargo build --release --bin roomeq-fuzzer -p autoeq --features plotly
-	cargo build --release --bin plot-functions -p math-test-functions --features plotly
-	cargo build --release --bin plot-de -p math-optimisation --features plotly
-
-[group('build')]
-prod-sotf-player: prod-sotf-tui prod-sotf-gpui
-
-[group('build')]
-prod-sotf-gpui:
-	cargo build --release --bin sotf-desktop -p sotf-gpui --features onnx
-
-[group('build')]
-prod-sotf-tui:
-	cargo build --release --bin sotf-tui -p sotf-tui --features "onnx, streaming, hls"
-
-[group('build')]
-prod-sotf-recorder:
-	cargo build --release --bin sotf-recorder-cli -p app-cli
-
-[group('build')]
-prod-roomeq:
-	cargo build --release --bin roomeq
-	cargo build --release --bin roomeq-fuzzer -p autoeq --features plotly
-
-# ----------------------------------------------------------------------
 # DIST — release-cut profile (fat LTO + codegen-units = 1)
 # ----------------------------------------------------------------------
 # Builds land in `target/dist/` (NOT `target/release/`). Compile time is
@@ -224,27 +183,31 @@ dist-plot-bins:
 dist-workspace: dist-plot-bins
 	cargo build --profile dist --workspace
 
+# ----------------------------------------------------------------------
+# BUILD
+# ----------------------------------------------------------------------
+
 # shortcuts
 [group('build')]
 [macos]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx, hal, iamf, dev-api, streaming, hls"
+	cargo run --release --bin sotf-tui -p sotf-tui {{test_features_macos}}
 
 [group('build')]
 [linux]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx,hal,iamf,streaming,hls"
+	cargo run --release --bin sotf-tui -p sotf-tui {{test_features_linux}}
 
 [group('build')]
 [windows]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx,hal,iamf,streaming,hls"
+	cargo run --release --bin sotf-tui -p sotf-tui {{test_features_windows}}
 
 alias terminal := gpui
 
 [group('build')]
 gpui:
-	cargo run --release --bin sotf-desktop -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d,iamf"
+	cargo run --release --bin sotf-desktop -p sotf-gpui {{prod_features}}
 
 alias desktop := gpui
 alias native := gpui
@@ -257,23 +220,3 @@ clean:
 	cargo clean
 	find . -name '*~' -exec rm {} \; -print
 	find . -name 'Cargo.lock' -exec rm {} \; -print
-
-# ----------------------------------------------------------------------
-# DEV
-# ----------------------------------------------------------------------
-
-# Workspace debug build. Also builds sotf-desktop with the `dev-api` feature so
-# scripted scenarios (sotf-dev-driver) can drive the running app.
-# Release builds (`prod-*`, `run-gpui-release`) intentionally omit `dev-api`.
-dev:
-	cargo build --workspace
-	cargo build -p sotf-gpui --bin sotf-desktop --features "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
-	cargo build -p sotf-dev-driver
-	# Plotly-gated bins are skipped by `cargo build --workspace`; build them.
-	cargo build --bin roomeq-fuzzer -p autoeq --features plotly
-	cargo build --bin plot-functions -p math-test-functions --features plotly
-	cargo build --bin plot-de -p math-optimisation --features plotly
-
-[group('dev')]
-systemwide-lab:
-	SOTF_SYSTEMWIDE_DRIVER=lab SOTF_SYSTEMWIDE_RUNTIME_DIR="${SOTF_SYSTEMWIDE_RUNTIME_DIR:-/tmp/sotf-systemwide-lab-$USER}" cargo run -p sotf-daemon --bin sotf-daemon --features hal

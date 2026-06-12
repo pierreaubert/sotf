@@ -4,6 +4,7 @@ use super::home_album_ext::HomeAlbumExt;
 use crate::ui::PlayerView;
 use crate::ui::{ALBUM_CARD_GAP_REMS, ALBUM_CARD_WIDTH_REMS};
 use sotf_audio_player::Album;
+use std::sync::Arc;
 
 const HOME_SHELF_CONTENT_RESERVE_PX: f32 = 192.0;
 const HOME_SHELF_BASE_REM_PX: f32 = 16.0;
@@ -77,7 +78,7 @@ fn remove_home_album_from_view(state: &mut crate::app::AppState, album: &Album) 
     }
 }
 
-pub(super) fn sort_by_listening(mut albums: Vec<Album>) -> Vec<Album> {
+pub(super) fn sort_album_refs_by_listening<'a>(mut albums: Vec<&'a Album>) -> Vec<&'a Album> {
     albums.sort_by(|a, b| {
         b.play_count
             .cmp(&a.play_count)
@@ -87,7 +88,7 @@ pub(super) fn sort_by_listening(mut albums: Vec<Album>) -> Vec<Album> {
     albums
 }
 
-pub(super) fn prioritize_covers(mut albums: Vec<Album>) -> Vec<Album> {
+pub(super) fn prioritize_cover_refs<'a>(mut albums: Vec<&'a Album>) -> Vec<&'a Album> {
     albums.sort_by(|a, b| {
         b.has_cover()
             .cmp(&a.has_cover())
@@ -96,6 +97,14 @@ pub(super) fn prioritize_covers(mut albums: Vec<Album>) -> Vec<Album> {
             .then_with(|| a.title.cmp(&b.title))
     });
     albums
+}
+
+pub(super) fn arc_album_refs(albums: &[&Album], limit: usize) -> Vec<Arc<Album>> {
+    albums
+        .iter()
+        .take(limit)
+        .map(|album| Arc::new((*album).clone()))
+        .collect()
 }
 
 pub(super) fn stable_album_hash(album: &Album) -> u64 {

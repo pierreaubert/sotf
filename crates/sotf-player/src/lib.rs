@@ -1,4 +1,5 @@
 #![allow(clippy::collapsible_if)]
+pub mod album_art_generation;
 pub mod audio_device;
 pub mod autoeq;
 pub mod bliss;

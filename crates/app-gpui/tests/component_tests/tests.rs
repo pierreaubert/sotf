@@ -856,6 +856,19 @@ fn test_library_state_search_query_default_empty() {
 }
 
 #[test]
+fn test_library_state_content_generation_tracks_content_invalidations() {
+    use sotf_audio_player_gpui::app::state::library::LibraryState;
+    let mut state = LibraryState::new_for_test();
+
+    let initial = state.content_generation();
+    state.set_search_query("view-only filter".to_string());
+    assert_eq!(state.content_generation(), initial);
+
+    state.invalidate_cache();
+    assert_ne!(state.content_generation(), initial);
+}
+
+#[test]
 fn test_input_mode_is_text_input_search() {
     assert!(InputMode::Search.is_text_input());
 }

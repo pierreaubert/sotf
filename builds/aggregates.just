@@ -6,18 +6,13 @@
 bench: plugins-bench bench-autoeq bench-math
 
 [group('demo')]
-demo: demo-d3rs demo-px demo-ui-kit demo-headphone-loss
+demo: demo-headphone-loss
 
 [group('examples')]
-examples: examples-autoeq examples-math examples-ui-kit
+examples: examples-autoeq examples-math
 
 [group('download')]
 download-once: download-sofa download-speakers generate-audio-tests generate-ml-dataset-muslan generate-ml-dataset-ava
-
-alias build := prod
-
-[group('build')]
-prod: prod-workspace prod-sotf-player prod-sotf-recorder prod-generate-audio-tests prod-autoeq prod-roomeq prod-math
 
 [group('publish')]
 publish: publish-autoeq publish-math
@@ -26,8 +21,6 @@ publish: publish-autoeq publish-math
 qa: qa-autoeq \
 	qa-math \
 	qa-roomeq \
-	qa-gpui-obvious \
-	qa-gpui-conformance \
 	qa-plugins \
 	qa-engine \
 	qa-bridge \

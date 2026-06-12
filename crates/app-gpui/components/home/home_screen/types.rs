@@ -6,10 +6,11 @@ use super::build::build_home_shelves;
 use super::build::build_remote_home_shelves;
 use super::misc::EXPANDED_ALBUM_LIMIT;
 use super::misc::add_home_album_to_queue;
+use super::misc::arc_album_refs;
 use super::misc::collapsed_album_limit_for_width;
-use super::misc::prioritize_covers;
+use super::misc::prioritize_cover_refs;
 use super::misc::slug;
-use super::misc::sort_by_listening;
+use super::misc::sort_album_refs_by_listening;
 use crate::components::design::Ds;
 use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
 use crate::components::icons::{Icon, IconName, IconSize};
@@ -20,6 +21,7 @@ use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant,
 };
 use sotf_audio_player::{Album, sotf_api_client::SotfApiAlbum};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -27,7 +29,8 @@ use std::sync::Arc;
 pub(super) struct HomeShelf {
     pub(super) id: String,
     pub(super) title: String,
-    pub(super) albums: Vec<Album>,
+    pub(super) total_count: usize,
+    pub(super) albums: Vec<Arc<Album>>,
 }
 
 #[derive(Clone)]
@@ -35,6 +38,53 @@ pub(super) struct RemoteHomeShelf {
     pub(super) id: String,
     pub(super) title: String,
     pub(super) albums: Vec<SotfApiAlbum>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct HomeShelvesCacheKey {
+    content_generation: u64,
+    album_count: usize,
+    album_storage: usize,
+    collapsed_limit: usize,
+}
+
+#[derive(Clone)]
+struct HomeShelvesCacheEntry {
+    key: HomeShelvesCacheKey,
+    shelves: Vec<HomeShelf>,
+}
+
+std::thread_local! {
+    static HOME_SHELVES_CACHE: RefCell<Option<HomeShelvesCacheEntry>> = const { RefCell::new(None) };
+}
+
+fn cached_home_shelves(
+    albums: &[Album],
+    content_generation: u64,
+    collapsed_limit: usize,
+) -> Vec<HomeShelf> {
+    let key = HomeShelvesCacheKey {
+        content_generation,
+        album_count: albums.len(),
+        album_storage: albums.as_ptr() as usize,
+        collapsed_limit,
+    };
+
+    HOME_SHELVES_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(entry) = cache.as_ref()
+            && entry.key == key
+        {
+            return entry.shelves.clone();
+        }
+
+        let shelves = build_home_shelves(albums, collapsed_limit);
+        *cache = Some(HomeShelvesCacheEntry {
+            key,
+            shelves: shelves.clone(),
+        });
+        shelves
+    })
 }
 
 impl PlayerView {
@@ -54,11 +104,14 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let (theme, shelves, expanded_sections) = {
             let state = self.state.read(cx);
-            let albums = state.app.library_state.library.albums.clone();
             let collapsed_limit = collapsed_album_limit_for_width(state.app.ui_state.window_width);
             (
                 state.app.ui_state.theme.clone(),
-                build_home_shelves(&albums, collapsed_limit),
+                cached_home_shelves(
+                    &state.app.library_state.library.albums,
+                    state.app.library_state.content_generation(),
+                    collapsed_limit,
+                ),
                 state.app.ui_state.expanded_home_sections.clone(),
             )
         };
@@ -167,12 +220,13 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let collapsed_limit = collapsed_album_limit_for_width(state.app.ui_state.window_width);
+        let expanded_limit = EXPANDED_ALBUM_LIMIT.max(collapsed_limit);
         let limit = if is_expanded {
-            EXPANDED_ALBUM_LIMIT
+            expanded_limit
         } else {
             collapsed_limit
         };
-        let can_expand = shelf.albums.len() > collapsed_limit;
+        let can_expand = shelf.total_count > collapsed_limit;
         let shelf_id = shelf.id.clone();
         let state_for_toggle = self.state.clone();
 
@@ -262,8 +316,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let collapsed_limit = collapsed_album_limit_for_width(state.app.ui_state.window_width);
+        let expanded_limit = EXPANDED_ALBUM_LIMIT.max(collapsed_limit);
         let limit = if is_expanded {
-            EXPANDED_ALBUM_LIMIT
+            expanded_limit
         } else {
             collapsed_limit
         };
@@ -352,13 +407,13 @@ impl PlayerView {
 
     pub(super) fn render_home_album_card(
         &self,
-        album: Album,
+        album: Arc<Album>,
         idx: usize,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = self.state.read(cx).app.ui_state.theme.clone();
-        let album_for_click = album.clone();
-        let album_for_menu = album.clone();
+        let album_for_click = Arc::clone(&album);
+        let album_for_menu = Arc::clone(&album);
         let state_entity = self.state.clone();
 
         div()
@@ -398,7 +453,7 @@ impl PlayerView {
                 }),
             )
             .child(
-                AlbumCard::new(Arc::new(album), idx, false, theme)
+                AlbumCard::new(album, idx, false, theme)
                     .mode(AlbumCardMode::Grid)
                     .state(state_entity),
             )
@@ -535,11 +590,11 @@ impl PlayerView {
     }
 }
 
-pub(super) fn top_genre_shelves(albums: &[Album]) -> Vec<HomeShelf> {
-    let mut by_genre: BTreeMap<String, Vec<Album>> = BTreeMap::new();
+pub(super) fn top_genre_shelves(albums: &[Album], display_limit: usize) -> Vec<HomeShelf> {
+    let mut by_genre: BTreeMap<String, Vec<&Album>> = BTreeMap::new();
     for album in albums {
         for genre in album_genres(album) {
-            by_genre.entry(genre).or_default().push(album.clone());
+            by_genre.entry(genre).or_default().push(album);
         }
     }
 
@@ -554,10 +609,14 @@ pub(super) fn top_genre_shelves(albums: &[Album]) -> Vec<HomeShelf> {
     genres
         .into_iter()
         .take(3)
-        .map(|(genre, albums)| HomeShelf {
-            id: format!("genre-{}", slug(&genre)),
-            title: genre,
-            albums: prioritize_covers(sort_by_listening(albums)),
+        .map(|(genre, albums)| {
+            let albums = prioritize_cover_refs(sort_album_refs_by_listening(albums));
+            HomeShelf {
+                id: format!("genre-{}", slug(&genre)),
+                title: genre,
+                total_count: albums.len(),
+                albums: arc_album_refs(&albums, display_limit),
+            }
         })
         .collect()
 }

@@ -3,8 +3,12 @@
 use sotf_audio_player::Album;
 use std::collections::BTreeSet;
 
-pub(super) fn row_album_keys(albums: &[Album], limit: usize) -> BTreeSet<String> {
-    albums.iter().take(limit).map(album_key).collect()
+pub(super) fn row_album_keys(albums: &[&Album], limit: usize) -> BTreeSet<String> {
+    albums
+        .iter()
+        .take(limit)
+        .map(|album| album_key(album))
+        .collect()
 }
 
 pub(super) fn album_key(album: &Album) -> String {

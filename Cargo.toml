@@ -85,19 +85,6 @@ members = [
     "crates/sotf-server/crates/sotf-federation",
     "crates/sotf-server/crates/sotf-tls",
     "crates/sofa-reader",
-    "crates/gpui-toolkit/gpui-ios",
-    "crates/gpui-toolkit/gpui-au",
-    "crates/gpui-toolkit/gpui-audio-kit",
-    "crates/gpui-toolkit/gpui-builder",
-    "crates/gpui-toolkit/gpui-component-lab",
-    "crates/gpui-toolkit/gpui-design",
-    "crates/gpui-toolkit/gpui-design-tools",
-    "crates/gpui-toolkit/gpui-keybinding",
-    "crates/gpui-toolkit/gpui-pretext",
-    "crates/gpui-toolkit/gpui-python-runtime",
-    "crates/gpui-toolkit/gpui-themes",
-    # iOS/tvOS app shells — compile on macOS (cargo check) but only link for iOS/tvOS targets
-    "crates/gpui-toolkit/gpui-ui-kit/ios",
     "crates/app-ios",
     "crates/app-tvos",
     "crates/sotf-docs-gen",
@@ -221,22 +208,22 @@ math-rir = { path = "crates/math-audio/math-rir", version = "0.5" }
 
 autoeq = { version = "0.4", path = "crates/autoeq" }
 
-# using git version
-gpui-d3rs = { version = "0.7", path = "crates/gpui-toolkit/gpui-d3rs", default-features = false }
-gpui-px = { version = "0.7", path = "crates/gpui-toolkit/gpui-px", default-features = false }
-gpui-audio-kit = { version = "0.7", path = "crates/gpui-toolkit/gpui-audio-kit" }
-gpui-component-lab = { version = "0.7", path = "crates/gpui-toolkit/gpui-component-lab" }
-gpui-design-tools = { version = "0.7", path = "crates/gpui-toolkit/gpui-design-tools" }
-gpui-ui-kit ={ version = "0.7", path = "crates/gpui-toolkit/gpui-ui-kit" }
-gpui-ui-kit-macros = { version = "0.7", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
-gpui-themes = { version = "0.7", path = "crates/gpui-toolkit/gpui-themes" }
-gpui-miniapp = { path = "crates/gpui-toolkit/gpui-miniapp" }
-gpui-ios = { version = "0.7", path = "crates/gpui-toolkit/gpui-ios" }
-gpui-au = { version = "0.7", path = "crates/gpui-toolkit/gpui-au" }
-gpui-builder = { version = "0.7", path = "crates/gpui-toolkit/gpui-builder" }
-gpui-design = { version = "0.7", path = "crates/gpui-toolkit/gpui-design" }
-gpui-keybinding = { version = "0.7", path = "crates/gpui-toolkit/gpui-keybinding" }
-gpui-pretext = { version = "0.7", path = "crates/gpui-toolkit/gpui-pretext" }
+# GPUI toolkit
+gpui-d3rs = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7", default-features = false }
+gpui-px = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7", default-features = false }
+gpui-audio-kit = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-component-lab = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-design-tools = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-ui-kit = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-ui-kit-macros = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-themes = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-miniapp = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-ios = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-au = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-builder = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-design = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-keybinding = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
+gpui-pretext = { version = "0.7", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "0.7" }
 
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }
