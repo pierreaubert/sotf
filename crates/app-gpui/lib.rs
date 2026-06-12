@@ -12,6 +12,8 @@ compile_error!(
     "The app-gpui dev-api is QA/debug-only and must not be compiled in release/prod builds."
 );
 
+pub mod queue_render;
+
 #[cfg(test)]
 mod test_harness {
     #[test]

@@ -362,7 +362,10 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let (theme, queue_items, expanded_idx) = {
+        // Extract only the tiny bits of queue data needed to build the
+        // accordion. Previously this cloned the entire `Vec<QueueItem>`
+        // (including every Track in every album) on every render.
+        let (theme, queue_len, expanded_idx, summaries) = {
             let state = self.state.read(cx);
             let queue_len = state.app.queue_state.len();
             let selected_idx = if queue_len == 0 {
@@ -377,40 +380,32 @@ impl PlayerView {
                 .filter(|idx| *idx < queue_len)
                 .or(selected_idx);
 
-            (
-                state.app.ui_state.theme.clone(),
-                state.app.queue_state.iter().cloned().collect::<Vec<_>>(),
-                expanded_idx,
-            )
+            let theme = state.app.ui_state.theme.clone();
+            let summaries =
+                crate::queue_render::queue_accordion_summaries(&state.app.queue_state);
+
+            (theme, queue_len, expanded_idx, summaries)
         };
+
+        let accordion_items = summaries
+            .into_iter()
+            .map(|summary| {
+                AccordionItem::new(format!("queue-album-{}", summary.idx), summary.title)
+                    .trailing(summary.track_position)
+                    .content(self.render_queue_album_detail(summary.idx, translations, cx))
+            })
+            .collect::<Vec<_>>();
 
         let expanded_ids: Vec<SharedString> = expanded_idx
             .map(|idx| SharedString::from(format!("queue-album-{idx}")))
             .into_iter()
             .collect();
 
-        let accordion_items = queue_items
-            .iter()
-            .enumerate()
-            .map(|(idx, item)| {
-                let title = format!("{} - {}", item.album.title, item.album.artist());
-                let track_position = format!(
-                    "Track {}/{}",
-                    item.current_track_index + 1,
-                    item.album.tracks.len()
-                );
-                AccordionItem::new(format!("queue-album-{idx}"), title)
-                    .trailing(track_position)
-                    .content(self.render_queue_album_detail(idx, translations, cx))
-            })
-            .collect::<Vec<_>>();
-
         let accordion_theme = theme.to_accordion_theme();
         let state_handle = self.state.clone();
         let state_for_home = self.state.clone();
         let text_muted = theme.text_muted;
         let surface_hover = theme.surface_hover;
-        let queue_len = queue_items.len();
 
         div()
             .flex()
@@ -465,7 +460,7 @@ impl PlayerView {
                     .id("queue-accordion-scroll")
                     .flex_1()
                     .overflow_y_scroll()
-                    .when(queue_items.is_empty(), |el| {
+                    .when(queue_len == 0, |el| {
                         el.flex().items_center().justify_center().child(
                             VStack::new()
                                 .spacing(StackSpacing::Xs)
@@ -478,7 +473,7 @@ impl PlayerView {
                                 .build(),
                         )
                     })
-                    .when(!queue_items.is_empty(), |el| {
+                    .when(queue_len > 0, |el| {
                         el.child(
                             Accordion::new()
                                 .items(accordion_items)
