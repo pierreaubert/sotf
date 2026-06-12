@@ -2,7 +2,7 @@
 
 use crate::library::{MusicLibrary, is_supported_audio_extension};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -11,6 +11,41 @@ use walkdir::WalkDir;
 
 const PROGRESS_UPDATE_TRACK_INTERVAL: usize = 5;
 const PROGRESS_UPDATE_TIME_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Throttles progress messages so the UI is updated periodically without
+/// allocating on every decoded file.
+struct ProgressThrottler {
+    last_track_count: AtomicUsize,
+    last_progress_at: Mutex<Instant>,
+}
+
+impl ProgressThrottler {
+    fn new() -> Self {
+        Self {
+            last_track_count: AtomicUsize::new(0),
+            last_progress_at: Mutex::new(Instant::now()),
+        }
+    }
+
+    /// Returns `true` if enough progress has elapsed to warrant a new message.
+    fn should_update(&self, tracks: usize) -> bool {
+        let last = self.last_track_count.load(Ordering::Relaxed);
+        if tracks >= last + PROGRESS_UPDATE_TRACK_INTERVAL {
+            self.last_track_count.store(tracks, Ordering::Relaxed);
+            *self.last_progress_at.lock().unwrap() = Instant::now();
+            return true;
+        }
+
+        let now = Instant::now();
+        let mut last_at = self.last_progress_at.lock().unwrap();
+        if now.duration_since(*last_at) >= PROGRESS_UPDATE_TIME_INTERVAL {
+            *last_at = now;
+            true
+        } else {
+            false
+        }
+    }
+}
 
 /// Message sent by the library scanner thread
 #[derive(Debug, Clone)]
@@ -157,8 +192,7 @@ impl LibraryScanner {
 
             // Track progress
             let message_tx_clone = message_tx.clone();
-            let last_track_count = Arc::new(Mutex::new(0usize));
-            let last_progress_at = Arc::new(Mutex::new(Instant::now()));
+            let throttler = Arc::new(ProgressThrottler::new());
             let scan_token = cancellation_token_clone.clone();
 
             // Run the scan with progress callback and pause support
@@ -171,23 +205,7 @@ impl LibraryScanner {
                     // Keep the footer scan strip responsive without sending
                     // a message for every decoded file in very large
                     // libraries.
-                    let should_update = {
-                        let mut last = last_track_count.lock().unwrap();
-                        let mut last_at = last_progress_at.lock().unwrap();
-                        let now = Instant::now();
-                        if tracks >= *last + PROGRESS_UPDATE_TRACK_INTERVAL {
-                            *last = tracks;
-                            *last_at = now;
-                            true
-                        } else if now.duration_since(*last_at) >= PROGRESS_UPDATE_TIME_INTERVAL {
-                            *last_at = now;
-                            true
-                        } else {
-                            false
-                        }
-                    };
-
-                    if should_update {
+                    if throttler.should_update(tracks) {
                         let _ = message_tx_clone.send(LibraryScanMessage::Progress {
                             tracks,
                             albums,
@@ -240,5 +258,46 @@ impl LibraryScanner {
     /// Try to receive a message without blocking
     pub fn try_recv(&self) -> Option<LibraryScanMessage> {
         self.message_rx.lock().ok()?.try_recv().ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_throttler_updates_every_track_interval() {
+        let throttler = ProgressThrottler::new();
+
+        assert!(
+            !throttler.should_update(0),
+            "initial zero-track call should not fire until interval or time elapses"
+        );
+        assert!(!throttler.should_update(1));
+        assert!(!throttler.should_update(4));
+        assert!(
+            throttler.should_update(5),
+            "exactly one interval past the last count should fire"
+        );
+        assert!(!throttler.should_update(6));
+        assert!(
+            throttler.should_update(10),
+            "two intervals past the last count should fire"
+        );
+    }
+
+    #[test]
+    fn progress_throttler_updates_on_time_interval() {
+        let throttler = ProgressThrottler::new();
+        assert!(!throttler.should_update(0));
+
+        // Simulate a long delay without enough new tracks.
+        *throttler.last_progress_at.lock().unwrap() =
+            Instant::now() - PROGRESS_UPDATE_TIME_INTERVAL - Duration::from_millis(10);
+
+        assert!(
+            throttler.should_update(1),
+            "time-based update should fire even with fewer than 5 new tracks"
+        );
     }
 }

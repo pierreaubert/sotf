@@ -9,6 +9,10 @@
 //! with a running `CFRunLoop`). Command wiring in `MediaControls::new` is
 //! therefore rejected off-main. Later metadata/playback writes are marshalled
 //! onto `dispatch_get_main_queue` via `dispatch2::DispatchQueue::main().exec_async`.
+//!
+//! Incoming command events are forwarded through a lock-free `std::sync::mpsc`
+//! channel to a dedicated handler thread, avoiding the previous
+//! `Arc<Mutex<Option<EventHandler>>>` pattern that serialized every OS callback.
 
 #![allow(
     unsafe_code,
@@ -16,7 +20,8 @@
 )]
 
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use block2::RcBlock;
@@ -37,10 +42,12 @@ use crate::{
     types::PlatformConfig,
 };
 
-/// Shared event-dispatch handle. Cloned into every Objective-C block so the
-/// blocks (which the OS holds for the lifetime of the process) can call back
-/// into the user closure even after `attach()` swaps it.
-type SharedHandler = Arc<Mutex<Option<EventHandler>>>;
+/// Commands sent from the Objective-C blocks / public API to the handler thread.
+enum HandlerCmd {
+    SetHandler(EventHandler),
+    Event(MediaControlEvent),
+    Shutdown,
+}
 
 /// Concrete metadata-dictionary type expected by `MPNowPlayingInfoCenter`.
 type InfoDict = NSMutableDictionary<NSString, AnyObject>;
@@ -99,7 +106,13 @@ thread_local! {
 }
 
 pub(crate) struct MacosBackend {
-    handler: SharedHandler,
+    /// Channel to the handler thread. Cloned into every Objective-C block so
+    /// the blocks (which the OS holds for the lifetime of the process) can
+    /// forward events even after `attach()` swaps the handler.
+    cmd_tx: Sender<HandlerCmd>,
+    /// Handle for the handler thread. Joined on drop so the user closure is
+    /// dropped before the backend disappears.
+    handler_thread: Option<JoinHandle<()>>,
     /// Commands + target tokens for the wired `MPRemoteCommandCenter`
     /// selectors. Held alive for the lifetime of the backend so the OS
     /// can keep dispatching events; detached in `Drop` via `removeTarget:`.
@@ -113,16 +126,28 @@ impl MacosBackend {
                 "macOS media controls must be constructed on the main thread".to_string(),
             ));
         };
-        let handler: SharedHandler = Arc::new(Mutex::new(None));
-        // SAFETY: we just proved we are on the main thread, and `handler`
-        // is owned by the returned backend until `Drop` removes the targets.
-        let wired = unsafe { wire_commands(&handler) };
-        Ok(Self { handler, wired })
+
+        let (cmd_tx, cmd_rx) = mpsc::channel::<HandlerCmd>();
+        let handler_thread = thread::Builder::new()
+            .name("sotf-macos-media-events".to_string())
+            .spawn(move || run_handler_thread(cmd_rx))
+            .map_err(|e| Error::Init(format!("spawn macos media event thread: {e}")))?;
+
+        // SAFETY: we just proved we are on the main thread, and `cmd_tx`
+        // clones captured by the blocks are dropped in `Drop` before the
+        // backend is destroyed.
+        let wired = unsafe { wire_commands(&cmd_tx) };
+        Ok(Self {
+            cmd_tx,
+            handler_thread: Some(handler_thread),
+            wired,
+        })
     }
 
     pub(crate) fn attach(&mut self, handler: EventHandler) -> Result<(), Error> {
-        *self.handler.lock().unwrap() = Some(handler);
-        Ok(())
+        self.cmd_tx
+            .send(HandlerCmd::SetHandler(handler))
+            .map_err(|e| Error::Attach(format!("macos attach: {e}")))
     }
 
     pub(crate) fn set_metadata(&mut self, metadata: MediaMetadata<'_>) -> Result<(), Error> {
@@ -173,6 +198,13 @@ impl MacosBackend {
 
 impl Drop for MacosBackend {
     fn drop(&mut self) {
+        // Signal the handler thread to exit and wait for it so the user
+        // closure is dropped before the backend disappears.
+        let _ = self.cmd_tx.send(HandlerCmd::Shutdown);
+        if let Some(handle) = self.handler_thread.take() {
+            let _ = handle.join();
+        }
+
         // Detach every registered block from the shared command center so
         // future `MediaControls` instances don't double-dispatch through
         // ghost blocks. `removeTarget:` must run on the main thread; we
@@ -199,17 +231,36 @@ impl Drop for MacosBackend {
     }
 }
 
+/// Thread body that owns the user event handler.
+///
+/// Only this thread calls the `FnMut`, so no lock is needed. Commands are
+/// received through a channel from the Objective-C blocks and `attach()`.
+fn run_handler_thread(cmd_rx: Receiver<HandlerCmd>) {
+    let mut handler: Option<EventHandler> = None;
+    while let Ok(cmd) = cmd_rx.recv() {
+        match cmd {
+            HandlerCmd::SetHandler(h) => handler = Some(h),
+            HandlerCmd::Event(ev) => {
+                if let Some(ref mut h) = handler {
+                    h(ev);
+                }
+            }
+            HandlerCmd::Shutdown => break,
+        }
+    }
+}
+
 /// Wire every command we care about and return the retained command/target
 /// pairs.
 ///
 /// # Safety
 ///
 /// Caller must run this on the main thread and guarantee that the
-/// `SharedHandler` outlives the registered blocks. The current design ties
-/// that lifetime to the `MacosBackend`, whose `Drop` impl detaches the
-/// blocks before the `Arc` ref-count can drop to zero on the data the blocks
-/// captured.
-unsafe fn wire_commands(handler: &SharedHandler) -> Vec<WiredCommand> {
+/// `Sender<HandlerCmd>` clones captured by the blocks outlive the registered
+/// targets. The current design ties that lifetime to the `MacosBackend`,
+/// whose `Drop` impl removes the targets before the last `cmd_tx` clone can
+/// drop.
+unsafe fn wire_commands(cmd_tx: &Sender<HandlerCmd>) -> Vec<WiredCommand> {
     let mut wired: Vec<WiredCommand> = Vec::with_capacity(8);
     // SAFETY: this function is only called on the main thread.
     let center = unsafe { MPRemoteCommandCenter::sharedCommandCenter() };
@@ -229,11 +280,11 @@ unsafe fn wire_commands(handler: &SharedHandler) -> Vec<WiredCommand> {
     ];
 
     for (event, accessor) in simple {
-        let h = handler.clone();
+        let tx = cmd_tx.clone();
         let event = event.clone();
         let block = RcBlock::new(
             move |_event_ptr: std::ptr::NonNull<MPRemoteCommandEvent>| -> MPRemoteCommandHandlerStatus {
-                dispatch(&h, event.clone());
+                dispatch(&tx, event.clone());
                 MPRemoteCommandHandlerStatus::Success
             },
         );
@@ -252,7 +303,7 @@ unsafe fn wire_commands(handler: &SharedHandler) -> Vec<WiredCommand> {
     // `MPRemoteCommand`. Up-cast via `Retained::into_super` so the
     // wired-command store can be uniformly typed.
     {
-        let h = handler.clone();
+        let tx = cmd_tx.clone();
         let block = RcBlock::new(
             move |event_ptr: std::ptr::NonNull<MPRemoteCommandEvent>| -> MPRemoteCommandHandlerStatus {
                 // SAFETY: the OS only invokes this block for
@@ -269,7 +320,7 @@ unsafe fn wire_commands(handler: &SharedHandler) -> Vec<WiredCommand> {
                 // forwards bogus drag-end events, and
                 // `Duration::from_secs_f64(NaN)` panics.
                 let position = MediaPosition::from_secs_f64(pos_secs);
-                dispatch(&h, MediaControlEvent::SetPosition(position));
+                dispatch(&tx, MediaControlEvent::SetPosition(position));
                 MPRemoteCommandHandlerStatus::Success
             },
         );
@@ -286,27 +337,9 @@ unsafe fn wire_commands(handler: &SharedHandler) -> Vec<WiredCommand> {
     wired
 }
 
-/// Invoke the user closure with the handler mutex released.
-///
-/// `FnMut` requires `&mut`, so we `take()` the boxed closure out of the
-/// shared slot, run it without holding the lock, then put it back. This
-/// lets the user closure safely re-enter `MediaControls::set_metadata` /
-/// `set_playback` (which queue work via the OS callback path) without
-/// self-deadlock.
-fn dispatch(handler: &SharedHandler, event: MediaControlEvent) {
-    let taken = match handler.lock() {
-        Ok(mut guard) => guard.take(),
-        Err(_) => return,
-    };
-    let Some(mut h) = taken else { return };
-    h(event);
-    if let Ok(mut guard) = handler.lock() {
-        // If an `attach` slid in while the user closure ran, keep the
-        // newer one — otherwise restore the boxed closure.
-        if guard.is_none() {
-            *guard = Some(h);
-        }
-    }
+/// Forward an event to the handler thread without locking.
+fn dispatch(cmd_tx: &Sender<HandlerCmd>, event: MediaControlEvent) {
+    let _ = cmd_tx.send(HandlerCmd::Event(event));
 }
 
 /// Build a full now-playing dictionary from owned metadata.
@@ -414,5 +447,31 @@ mod tests {
     fn macos_position_from_nan_does_not_panic() {
         let p = MediaPosition::from_secs_f64(f64::NAN);
         assert_eq!(p.0, Duration::ZERO);
+    }
+
+    /// Regression guard: the handler thread receives events from the
+    /// Objective-C blocks through a channel and calls the attached handler
+    /// without locking.
+    #[test]
+    fn handler_thread_routes_events_without_locking() {
+        let (cmd_tx, cmd_rx) = mpsc::channel::<HandlerCmd>();
+        let (done_tx, done_rx) = mpsc::channel::<()>();
+
+        let _worker = thread::spawn(move || run_handler_thread(cmd_rx));
+
+        cmd_tx
+            .send(HandlerCmd::SetHandler(Box::new(move |ev| {
+                if matches!(ev, MediaControlEvent::Play) {
+                    let _ = done_tx.send(());
+                }
+            })))
+            .unwrap();
+        cmd_tx
+            .send(HandlerCmd::Event(MediaControlEvent::Play))
+            .unwrap();
+
+        done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("handler should have been called for the Play event");
     }
 }

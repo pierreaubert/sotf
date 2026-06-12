@@ -1,6 +1,7 @@
 //! Plugin configuration types for serialization/deserialization.
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Plugin configuration for serialization/deserialization
@@ -25,16 +26,16 @@ impl PluginConfig {
     pub fn try_new(
         plugin_type: impl Into<String>,
         parameters: serde_json::Value,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Cow<'static, str>> {
         let config = Self::new(plugin_type, parameters);
         config.validate()?;
         Ok(config)
     }
 
     /// Validate plugin config invariants that serde cannot express.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), Cow<'static, str>> {
         if self.plugin_type.trim().is_empty() {
-            return Err("plugin_type must not be empty".to_string());
+            return Err(Cow::Borrowed("plugin_type must not be empty"));
         }
 
         Ok(())
@@ -56,19 +57,22 @@ impl PluginGraphConfig {
     pub fn try_new(
         nodes: Vec<PluginGraphNodeConfig>,
         edges: Vec<PluginGraphEdgeConfig>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Cow<'static, str>> {
         let config = Self { nodes, edges };
         config.validate()?;
         Ok(config)
     }
 
     /// Validate graph invariants: unique nodes, valid endpoints, and acyclicity.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), Cow<'static, str>> {
         let mut node_ids = HashSet::with_capacity(self.nodes.len());
         for node in &self.nodes {
             node.validate()?;
             if !node_ids.insert(node.id) {
-                return Err(format!("duplicate plugin graph node id {}", node.id));
+                return Err(Cow::Owned(format!(
+                    "duplicate plugin graph node id {}",
+                    node.id
+                )));
             }
         }
 
@@ -77,20 +81,21 @@ impl PluginGraphConfig {
 
         for edge in &self.edges {
             if !node_ids.contains(&edge.from_node) {
-                return Err(format!(
+                return Err(Cow::Owned(format!(
                     "plugin graph edge references missing from_node {}",
                     edge.from_node
-                ));
+                )));
             }
             if !node_ids.contains(&edge.to_node) {
-                return Err(format!(
+                return Err(Cow::Owned(format!(
                     "plugin graph edge references missing to_node {}",
                     edge.to_node
-                ));
+                )));
             }
         }
 
-        let mut outgoing_edges: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut outgoing_edges: HashMap<usize, Vec<usize>> =
+            HashMap::with_capacity(self.edges.len());
         for edge in &self.edges {
             outgoing_edges
                 .entry(edge.from_node)
@@ -112,15 +117,15 @@ fn validate_graph_topology(
     outgoing_edges: &HashMap<usize, Vec<usize>>,
     mut incoming_counts: HashMap<usize, usize>,
     num_nodes: usize,
-) -> Result<(), String> {
+) -> Result<(), Cow<'static, str>> {
     for edge in edges {
         if let Some(count) = incoming_counts.get_mut(&edge.to_node) {
             *count += 1;
         } else {
-            return Err(format!(
+            return Err(Cow::Owned(format!(
                 "internal error: incoming count missing for node {}",
                 edge.to_node
-            ));
+            )));
         }
     }
 
@@ -140,17 +145,17 @@ fn validate_graph_topology(
                         ready.push_back(target);
                     }
                 } else {
-                    return Err(format!(
+                    return Err(Cow::Owned(format!(
                         "internal error: incoming count missing for node {}",
                         target
-                    ));
+                    )));
                 }
             }
         }
     }
 
     if visited != num_nodes {
-        return Err("plugin graph must be acyclic".to_string());
+        return Err(Cow::Borrowed("plugin graph must be acyclic"));
     }
 
     Ok(())
@@ -174,7 +179,7 @@ impl PluginGraphNodeConfig {
         plugin_type: impl Into<String>,
         parameters: serde_json::Value,
         input_channels: usize,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Cow<'static, str>> {
         let config = Self {
             id,
             plugin_type: plugin_type.into(),
@@ -186,18 +191,18 @@ impl PluginGraphNodeConfig {
     }
 
     /// Validate node-local invariants.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), Cow<'static, str>> {
         if self.plugin_type.trim().is_empty() {
-            return Err(format!(
+            return Err(Cow::Owned(format!(
                 "plugin graph node {} plugin_type is empty",
                 self.id
-            ));
+            )));
         }
         if self.input_channels == 0 {
-            return Err(format!(
+            return Err(Cow::Owned(format!(
                 "plugin graph node {} input_channels must be greater than 0",
                 self.id
-            ));
+            )));
         }
 
         Ok(())
@@ -236,6 +241,10 @@ mod tests {
     fn plugin_config_rejects_empty_type() {
         let error = PluginConfig::try_new(" ", json!({})).unwrap_err();
         assert!(error.contains("plugin_type"));
+        assert!(
+            matches!(error, Cow::Borrowed(_)),
+            "static validation errors should not allocate"
+        );
     }
 
     #[test]
@@ -278,6 +287,10 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("acyclic"));
+        assert!(
+            matches!(error, Cow::Borrowed(_)),
+            "static validation errors should not allocate"
+        );
     }
 
     #[test]

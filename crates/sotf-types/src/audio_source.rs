@@ -1,6 +1,7 @@
 //! Audio source identification types.
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -54,17 +55,20 @@ pub enum AudioSource {
 
 impl AudioSource {
     /// A short human-readable name for display in logs and UI.
-    pub fn display_name(&self) -> String {
+    ///
+    /// Returns a `Cow<str>` so callers that only need to display the name (e.g.
+    /// in `format!` or logging) avoid a heap allocation for the common cases.
+    pub fn display_name(&self) -> Cow<'_, str> {
         match self {
             AudioSource::File(path) => path
                 .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.to_string_lossy().to_string()),
-            AudioSource::Url { url, .. } => url.clone(),
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_else(|| path.to_string_lossy()),
+            AudioSource::Url { url, .. } => Cow::Borrowed(url.as_str()),
             AudioSource::ServiceStream { service, track_id } => {
-                format!("{}:{}", service, track_id)
+                Cow::Owned(format!("{}:{}", service, track_id))
             }
-            AudioSource::Driver => "driver".to_string(),
+            AudioSource::Driver => Cow::Borrowed("driver"),
         }
     }
 
@@ -168,11 +172,22 @@ mod tests {
             seekable: false,
         };
         assert_eq!(url_source.display_name(), "http://example.com/stream");
+        assert!(
+            matches!(url_source.display_name(), Cow::Borrowed(_)),
+            "URL display names should be borrowed, not allocated"
+        );
 
         let service_source = AudioSource::ServiceStream {
             service: ServiceId::Spotify,
             track_id: "abc123".to_string(),
         };
         assert_eq!(service_source.display_name(), "Spotify:abc123");
+
+        let driver_source = AudioSource::Driver;
+        assert_eq!(driver_source.display_name(), "driver");
+        assert!(
+            matches!(driver_source.display_name(), Cow::Borrowed(_)),
+            "Driver display name should be borrowed, not allocated"
+        );
     }
 }

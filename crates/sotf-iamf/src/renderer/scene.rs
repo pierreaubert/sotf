@@ -30,6 +30,8 @@ pub struct SceneRenderer {
     substream_count: usize,
     /// Pre-allocated reassembly buffer (avoids per-render allocation)
     ambi_buf: Vec<f32>,
+    /// Pre-allocated substream reassembly buffer for projection mode
+    ss_buf: Vec<f32>,
 }
 
 impl SceneRenderer {
@@ -62,6 +64,7 @@ impl SceneRenderer {
             coupled_substream_count: config.coupled_substream_count as usize,
             substream_count: config.substream_count as usize,
             ambi_buf: Vec::new(), // sized on first render
+            ss_buf: Vec::new(),   // sized on first projection render
         })
     }
 
@@ -125,7 +128,9 @@ impl SceneRenderer {
                 let uncoupled_ch = self.substream_count - self.coupled_substream_count;
                 let ss_channels = coupled_ch + uncoupled_ch;
 
-                let mut ss_buf = vec![0.0_f32; num_frames * ss_channels];
+                let ss_len = num_frames * ss_channels;
+                self.ss_buf.resize(ss_len, 0.0);
+                self.ss_buf[..ss_len].fill(0.0);
 
                 let mut ch_idx = 0;
                 for (ss_idx, pcm) in substream_pcm.iter().enumerate().take(self.substream_count) {
@@ -135,7 +140,7 @@ impl SceneRenderer {
                         for c in 0..n_ch {
                             let src = frame * n_ch + c;
                             if src < pcm.len() && ch_idx + c < ss_channels {
-                                ss_buf[frame * ss_channels + ch_idx + c] = pcm[src];
+                                self.ss_buf[frame * ss_channels + ch_idx + c] = pcm[src];
                             }
                         }
                     }
@@ -150,7 +155,7 @@ impl SceneRenderer {
                             let matrix_idx = acn * ss_channels + ss_ch;
                             if matrix_idx < self.demixing_matrix.len() {
                                 sum += self.demixing_matrix[matrix_idx]
-                                    * ss_buf[frame * ss_channels + ss_ch];
+                                    * self.ss_buf[frame * ss_channels + ss_ch];
                             }
                         }
                         self.ambi_buf[frame * self.ambi_channels + acn] = sum;
@@ -314,6 +319,35 @@ mod tests {
         for &level in &non_lfe {
             assert!(level.abs() > 0.01, "Expected non-zero output, got {level}");
         }
+    }
+
+    #[test]
+    fn test_scene_renderer_reuses_ss_buf() {
+        let config = AmbisonicsConfig {
+            ambisonics_mode: AmbisonicsMode::Projection,
+            output_channel_count: 4,
+            substream_count: 4,
+            coupled_substream_count: 0,
+            channel_mapping: vec![0, 1, 2, 3],
+            demixing_matrix: vec![
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+        };
+
+        let target = get_speaker_config("5.1").unwrap();
+        let mut renderer = SceneRenderer::new(&config, target).unwrap();
+
+        let substream_pcm: Vec<Vec<f32>> = vec![vec![1.0], vec![0.0], vec![0.0], vec![0.0]];
+        let mut output = vec![0.0_f32; 6];
+        renderer.render(&substream_pcm, &mut output, 1).unwrap();
+        let first_cap = renderer.ss_buf.capacity();
+
+        renderer.render(&substream_pcm, &mut output, 1).unwrap();
+        assert_eq!(
+            renderer.ss_buf.capacity(),
+            first_cap,
+            "projection ss_buf should be reused, not reallocated, on same-size renders"
+        );
     }
 
     #[test]

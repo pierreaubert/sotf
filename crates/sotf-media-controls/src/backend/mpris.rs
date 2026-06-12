@@ -5,7 +5,7 @@
 //! marshalling commands in via an `mpsc` channel and events out via the
 //! caller-supplied `EventHandler`.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -19,7 +19,14 @@ use crate::{
     backend::EventHandler, types::PlatformConfig,
 };
 
-type SharedHandler = Arc<Mutex<Option<EventHandler>>>;
+/// Commands sent from the public API into the runtime thread.
+enum Cmd {
+    SetMetadata(OwnedMetadata),
+    SetPlayback(MediaPlayback),
+    AttachHandler(EventHandler),
+    DispatchEvent(MediaControlEvent),
+    Shutdown,
+}
 
 /// Owned snapshot of metadata so we can send it across threads.
 #[derive(Default, Debug, Clone)]
@@ -43,40 +50,30 @@ impl OwnedMetadata {
     }
 }
 
-/// Commands sent from the public API into the runtime thread.
-enum Cmd {
-    SetMetadata(OwnedMetadata),
-    SetPlayback(MediaPlayback),
-    Shutdown,
-}
-
 pub(crate) struct MprisBackend {
-    handler: SharedHandler,
     cmd_tx: mpsc::UnboundedSender<Cmd>,
     runtime_thread: Option<JoinHandle<()>>,
 }
 
 impl MprisBackend {
     pub(crate) fn new(config: &PlatformConfig<'_>) -> Result<Self, Error> {
-        let handler: SharedHandler = Arc::new(Mutex::new(None));
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<Cmd>();
         // Hand-off channel so `new()` can surface init errors synchronously.
         let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
 
         let dbus_name = format!("org.mpris.MediaPlayer2.{}", config.dbus_name);
         let identity = config.display_name.to_owned();
-        let handler_for_thread = handler.clone();
+        let cmd_tx_for_thread = cmd_tx.clone();
 
         let runtime_thread = std::thread::Builder::new()
             .name("sotf-mpris".to_string())
             .spawn(move || {
-                run_mpris_thread(dbus_name, identity, handler_for_thread, cmd_rx, init_tx);
+                run_mpris_thread(dbus_name, identity, cmd_tx_for_thread, cmd_rx, init_tx);
             })
             .map_err(|e| Error::Init(format!("spawn mpris thread: {e}")))?;
 
         match init_rx.recv() {
             Ok(Ok(())) => Ok(Self {
-                handler,
                 cmd_tx,
                 runtime_thread: Some(runtime_thread),
             }),
@@ -86,8 +83,9 @@ impl MprisBackend {
     }
 
     pub(crate) fn attach(&mut self, handler: EventHandler) -> Result<(), Error> {
-        *self.handler.lock().unwrap() = Some(handler);
-        Ok(())
+        self.cmd_tx
+            .send(Cmd::AttachHandler(handler))
+            .map_err(|e| Error::Attach(format!("mpris attach: {e}")))
     }
 
     pub(crate) fn set_metadata(&mut self, metadata: MediaMetadata<'_>) -> Result<(), Error> {
@@ -115,7 +113,7 @@ impl Drop for MprisBackend {
 fn run_mpris_thread(
     dbus_name: String,
     identity: String,
-    handler: SharedHandler,
+    cmd_tx: mpsc::UnboundedSender<Cmd>,
     mut cmd_rx: mpsc::UnboundedReceiver<Cmd>,
     init_tx: std::sync::mpsc::SyncSender<Result<(), String>>,
 ) {
@@ -135,7 +133,7 @@ fn run_mpris_thread(
     // `LocalSet` rather than the bare current-thread runtime.
     let local = tokio::task::LocalSet::new();
     local.block_on(&runtime, async move {
-        let player = match build_player(&dbus_name, &identity, handler).await {
+        let player = match build_player(&dbus_name, &identity, cmd_tx).await {
             Ok(p) => p,
             Err(e) => {
                 let _ = init_tx.send(Err(format!("build player: {e}")));
@@ -153,10 +151,17 @@ fn run_mpris_thread(
 
         let _ = init_tx.send(Ok(()));
 
+        let mut handler: Option<EventHandler> = None;
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
                 Cmd::SetMetadata(m) => apply_metadata(&player, m).await,
                 Cmd::SetPlayback(pb) => apply_playback(&player, pb).await,
+                Cmd::AttachHandler(h) => handler = Some(h),
+                Cmd::DispatchEvent(ev) => {
+                    if let Some(ref mut h) = handler {
+                        h(ev);
+                    }
+                }
                 Cmd::Shutdown => break,
             }
         }
@@ -168,7 +173,7 @@ fn run_mpris_thread(
 async fn build_player(
     dbus_name: &str,
     identity: &str,
-    handler: SharedHandler,
+    cmd_tx: mpsc::UnboundedSender<Cmd>,
 ) -> Result<Player, Box<dyn std::error::Error + Send + Sync>> {
     let player = Player::builder(dbus_name)
         .identity(identity.to_string())
@@ -181,54 +186,39 @@ async fn build_player(
         .build()
         .await?;
 
-    // Invoke the user closure with the mutex released so callers can
-    // safely re-enter `MediaControls::set_metadata` / `set_playback` from
-    // inside the handler without self-deadlock. The `take`/restore dance
-    // temporarily removes ownership of the boxed FnMut while it runs;
-    // concurrent dispatchers during that window drop their events, which
-    // matches the "best-effort, low-rate" contract.
-    let dispatch_ev = move |handler: &SharedHandler, ev: MediaControlEvent| {
-        let taken = match handler.lock() {
-            Ok(mut guard) => guard.take(),
-            Err(_) => return,
-        };
-        let Some(mut h) = taken else { return };
-        h(ev);
-        if let Ok(mut guard) = handler.lock() {
-            // If an `attach` slid in while the user closure ran, keep the
-            // newer one — otherwise restore the boxed closure.
-            if guard.is_none() {
-                *guard = Some(h);
-            }
-        }
+    // Send control events back through the same command channel. This avoids
+    // the previous `Arc<Mutex<Option<EventHandler>>>` pattern that serialized
+    // every OS callback through a single mutex.
+    let dispatch = move |ev: MediaControlEvent| {
+        let _ = cmd_tx.send(Cmd::DispatchEvent(ev));
     };
 
     {
-        let h = handler.clone();
-        player.connect_play(move |_| dispatch_ev(&h, MediaControlEvent::Play));
+        let d = dispatch.clone();
+        player.connect_play(move |_| d(MediaControlEvent::Play));
     }
     {
-        let h = handler.clone();
-        player.connect_pause(move |_| dispatch_ev(&h, MediaControlEvent::Pause));
+        let d = dispatch.clone();
+        player.connect_pause(move |_| d(MediaControlEvent::Pause));
     }
     {
-        let h = handler.clone();
-        player.connect_play_pause(move |_| dispatch_ev(&h, MediaControlEvent::Toggle));
+        let d = dispatch.clone();
+        player.connect_play_pause(move |_| d(MediaControlEvent::Toggle));
     }
     {
-        let h = handler.clone();
-        player.connect_stop(move |_| dispatch_ev(&h, MediaControlEvent::Stop));
+        let d = dispatch.clone();
+        player.connect_stop(move |_| d(MediaControlEvent::Stop));
     }
     {
-        let h = handler.clone();
-        player.connect_next(move |_| dispatch_ev(&h, MediaControlEvent::Next));
+        let d = dispatch.clone();
+        player.connect_next(move |_| d(MediaControlEvent::Next));
     }
     {
-        let h = handler.clone();
-        player.connect_previous(move |_| dispatch_ev(&h, MediaControlEvent::Previous));
+        let d = dispatch.clone();
+        player.connect_previous(move |_| d(MediaControlEvent::Previous));
     }
     {
-        let h = handler.clone();
+        let d = dispatch.clone();
         player.connect_seek(move |_, time: Time| {
             // MPRIS Seek offset is signed micros.
             let micros = time.as_micros();
@@ -238,37 +228,36 @@ async fn build_player(
             } else {
                 SeekDirection::Backward
             };
-            dispatch_ev(&h, MediaControlEvent::SeekBy(dir, abs));
+            d(MediaControlEvent::SeekBy(dir, abs));
         });
     }
     {
-        let h = handler.clone();
+        let d = dispatch.clone();
         player.connect_set_position(move |_, _track: &TrackId, time: Time| {
             let micros = nonnegative_time_micros(time);
-            dispatch_ev(
-                &h,
-                MediaControlEvent::SetPosition(MediaPosition(Duration::from_micros(micros))),
-            );
+            d(MediaControlEvent::SetPosition(MediaPosition(
+                Duration::from_micros(micros),
+            )));
         });
     }
     {
-        let h = handler.clone();
+        let d = dispatch.clone();
         player.connect_set_volume(move |_, vol: Volume| {
-            dispatch_ev(&h, MediaControlEvent::SetVolume(vol.clamp(0.0, 1.0)));
+            d(MediaControlEvent::SetVolume(vol.clamp(0.0, 1.0)));
         });
     }
     {
-        let h = handler.clone();
-        player.connect_raise(move |_| dispatch_ev(&h, MediaControlEvent::Raise));
+        let d = dispatch.clone();
+        player.connect_raise(move |_| d(MediaControlEvent::Raise));
     }
     {
-        let h = handler.clone();
-        player.connect_quit(move |_| dispatch_ev(&h, MediaControlEvent::Quit));
+        let d = dispatch.clone();
+        player.connect_quit(move |_| d(MediaControlEvent::Quit));
     }
     {
-        let h = handler.clone();
+        let d = dispatch.clone();
         player.connect_open_uri(move |_, uri: &str| {
-            dispatch_ev(&h, MediaControlEvent::OpenUri(uri.to_owned()));
+            d(MediaControlEvent::OpenUri(uri.to_owned()));
         });
     }
 
