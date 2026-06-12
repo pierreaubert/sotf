@@ -193,13 +193,17 @@ pub extern "C" fn sotf_tvos_remote_toggle_play_pause() {
         return;
     };
 
-    let p = player.lock();
-    if p.is_playing() {
+    // Release the lock between is_playing() and pause()/resume() so that
+    // any re-entrant callback (e.g. audio interruption reaching back through
+    // the engine state observer) does not deadlock — `parking_lot::Mutex` is
+    // not reentrant. The tiny TOCTOU window is harmless for a UI toggle.
+    let is_playing = player.lock().is_playing();
+    if is_playing {
         log::info!("[tvOS] Remote: pause");
-        let _ = p.pause();
+        let _ = player.lock().pause();
     } else {
         log::info!("[tvOS] Remote: play");
-        let _ = p.resume();
+        let _ = player.lock().resume();
     }
 }
 

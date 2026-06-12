@@ -10384,6 +10384,7 @@ name = "sotf-ios"
 version = "0.5.3"
 dependencies = [
  "anyhow",
+ "crossbeam",
  "gpui",
  "gpui-ios",
  "gpui-ui-kit",

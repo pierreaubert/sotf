@@ -19,6 +19,7 @@ sotf-engine = { workspace = true, features = ["streaming"] }
 
 log = { workspace = true }
 parking_lot = { workspace = true }
+crossbeam = { workspace = true }
 rust-embed = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }

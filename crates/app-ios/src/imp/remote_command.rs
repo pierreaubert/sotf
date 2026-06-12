@@ -5,11 +5,11 @@ use super::types::RemoteCommand;
 
 /// Push a remote command for the GPUI loop to drain.
 pub(super) fn push_remote_command(cmd: RemoteCommand) {
-    pending_queue().lock().push_back(cmd);
+    pending_queue().push(cmd);
 }
 
 /// Drain pending remote commands. Intended for the GPUI tick consumer (TODO).
 #[allow(dead_code)]
 pub fn drain_pending_remote_commands() -> Vec<RemoteCommand> {
-    pending_queue().lock().drain(..).collect()
+    std::iter::from_fn(|| pending_queue().pop()).collect()
 }
