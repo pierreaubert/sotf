@@ -193,6 +193,11 @@ impl AudioEngine {
         self.manager.get_state()
     }
 
+    /// Get just the current playback state without cloning the full engine state.
+    pub fn get_playback_state(&self) -> PlaybackState {
+        self.manager.get_playback_state()
+    }
+
     /// Get the latest isolated external plugin worker statuses.
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     pub fn get_isolated_external_plugin_worker_statuses(

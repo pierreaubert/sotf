@@ -37,6 +37,17 @@ fn test_engine_initial_state() {
 
 #[test]
 #[serial]
+fn test_engine_get_playback_state_returns_playback_state_without_cloning() {
+    super::common::skip_without_device!();
+
+    let config = super::common::test_engine_config();
+    let engine = AudioEngine::new(config).unwrap();
+
+    assert_eq!(engine.get_playback_state(), PlaybackState::Stopped);
+}
+
+#[test]
+#[serial]
 fn test_engine_play_file() {
     super::common::skip_without_device!();
 

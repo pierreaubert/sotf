@@ -671,6 +671,15 @@ impl AudioEngineManager {
         StreamingState::from_u8(self.state.load(Ordering::Relaxed))
     }
 
+    /// Get the engine's playback state without cloning the full engine state.
+    pub fn get_playback_state(&self) -> PlaybackState {
+        if let Some(engine) = &*self.engine.load() {
+            engine.get_playback_state()
+        } else {
+            PlaybackState::Stopped
+        }
+    }
+
     /// Get current audio file info
     pub fn get_audio_info(&self) -> Option<AudioFileInfo> {
         lock_recover(&self.current_audio_info, "current_audio_info").clone()

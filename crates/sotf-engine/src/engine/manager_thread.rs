@@ -116,6 +116,11 @@ impl ManagerThread {
         (**self.state.load()).clone()
     }
 
+    /// Get just the current playback state without cloning the full state.
+    pub fn get_playback_state(&self) -> PlaybackState {
+        self.state.load().playback_state.clone()
+    }
+
     /// Get cached plugin data directly (no command round-trip).
     /// The processing thread updates this cache after every frame.
     pub fn get_cached_plugin_data(&self, index: usize) -> Option<Arc<dyn Any + Send + Sync>> {
