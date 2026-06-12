@@ -174,6 +174,9 @@ pub struct UpmixerPlugin {
 
     // Frequency resolution for ERB band analysis
     pub(super) frequency_resolution: String,
+    /// Cached value of `analysis_smoothing_scale()` to avoid allocating a
+    /// normalization `String` on every process block.
+    pub(super) cached_analysis_smoothing_scale: f32,
 
     // Decorrelation
     pub(super) decorrelation_filter_left: Vec<Complex<f32>>,
@@ -649,6 +652,10 @@ impl UpmixerPlugin {
 
             // Frequency resolution for ERB band analysis
             frequency_resolution: default_frequency_resolution(),
+            cached_analysis_smoothing_scale: Self::compute_analysis_smoothing_scale(
+                &default_frequency_resolution(),
+                fft_size,
+            ),
 
             subharmonic_phase: 0.0,
             subharmonic_envelope: 0.0,
@@ -905,20 +912,31 @@ impl UpmixerPlugin {
         }
     }
 
-    pub(super) fn analysis_smoothing_scale(&self) -> f32 {
-        let resolution_scale =
-            match Self::canonical_frequency_resolution(&self.frequency_resolution) {
-                "fine_erb" => 0.65,
-                "per_bin" => 0.45,
-                _ => 1.0,
-            };
-        let latency_scale = if self.fft_size > 1024 { 0.70 } else { 1.0 };
+    /// Compute the analysis smoothing scale from a canonical frequency-resolution
+    /// string. Kept as a standalone helper so it can be used during construction
+    /// before `self` is fully built.
+    pub(super) fn compute_analysis_smoothing_scale(
+        canonical_frequency_resolution: &str,
+        fft_size: usize,
+    ) -> f32 {
+        let resolution_scale = match canonical_frequency_resolution {
+            "fine_erb" => 0.65,
+            "per_bin" => 0.45,
+            _ => 1.0,
+        };
+        let latency_scale = if fft_size > 1024 { 0.70 } else { 1.0 };
         resolution_scale * latency_scale
+    }
+
+    pub(super) fn analysis_smoothing_scale(&self) -> f32 {
+        self.cached_analysis_smoothing_scale
     }
 
     pub(super) fn reset_analysis_state_for_current_resolution(&mut self) {
         let canonical = Self::canonical_frequency_resolution(&self.frequency_resolution);
         self.frequency_resolution = canonical.to_string();
+        self.cached_analysis_smoothing_scale =
+            Self::compute_analysis_smoothing_scale(&self.frequency_resolution, self.fft_size);
 
         if self.sample_rate == 0 || self.fft_size == 0 {
             return;
@@ -1092,6 +1110,8 @@ impl UpmixerPlugin {
             36 => {
                 self.frequency_resolution =
                     Self::frequency_resolution_from_index(value as usize).to_string();
+                self.cached_analysis_smoothing_scale =
+                    Self::compute_analysis_smoothing_scale(&self.frequency_resolution, self.fft_size);
             }
             37 => self.bypass_decorrelation = value > 0.5,
             38 => self.bypass_transient_detection = value > 0.5,
@@ -1629,6 +1649,10 @@ impl Plugin for UpmixerPlugin {
         // Cache sub-harmonic envelope coefficients that depend on sample_rate
         self.recache_subharmonic_coeffs();
 
+        // Cache analysis smoothing scale to avoid allocating in the hot path.
+        self.cached_analysis_smoothing_scale =
+            Self::compute_analysis_smoothing_scale(&self.frequency_resolution, self.fft_size);
+
         // Initialize MFCC extractor (needed if ML is toggled on later)
         #[cfg(feature = "onnx")]
         {
@@ -1967,7 +1991,6 @@ impl Plugin for UpmixerPlugin {
                 self.process_fft_block(&temp_input, &mut output_block);
 
                 self.temp_input_block = temp_input;
-
                 // Guard: ensure the new block fits in the ring buffer before writing.
                 // Ring capacity is 4*fft_size frames; each block adds hop_size frames.
                 debug_assert!(

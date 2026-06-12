@@ -378,6 +378,7 @@ impl UpmixerPlugin {
                 }
             }
         }
+
         let strength = (1.0 - self.dialogue_spatial_control * 0.7).clamp(0.05, 1.0);
         self.decorrelation_strength = strength;
 

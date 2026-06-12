@@ -89,7 +89,6 @@ fn test_compressor_zero_alloc() {
 
 #[test]
 #[serial]
-#[ignore = "Known pre-existing alloc on hot path (1/call); requires DSP audit"]
 fn test_upmixer_zero_alloc() {
     let mut plugin = UpmixerPlugin::new(
         2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
