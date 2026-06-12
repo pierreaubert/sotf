@@ -6,6 +6,7 @@
 
 use gpui_audio_kit::db_to_position;
 use sotf_audio_player::{ChannelInfo, LoudnessData};
+use std::sync::OnceLock;
 
 /// Pre-computed per-channel meter data. Extracting this while the state
 /// read lock is held lets `render_meters_panel` avoid cloning the entire
@@ -72,6 +73,47 @@ pub fn build_channel_meter_data(
         .collect()
 }
 
+/// Static labels for the vertical dB legend ticks.
+///
+/// Returns `None` for values outside the standard legend set so callers can
+/// choose a fallback while the common path stays allocation-free.
+pub fn db_tick_label(db: i32) -> Option<&'static str> {
+    Some(match db {
+        0 => "0",
+        -6 => "-6",
+        -12 => "-12",
+        -18 => "-18",
+        -24 => "-24",
+        -30 => "-30",
+        -40 => "-40",
+        -50 => "-50",
+        -60 => "-60",
+        _ => return None,
+    })
+}
+
+static WIDTH_PERCENT_LABELS: OnceLock<Vec<&'static str>> = OnceLock::new();
+
+fn width_percent_labels() -> &'static [&'static str] {
+    WIDTH_PERCENT_LABELS.get_or_init(|| {
+        (0..=100)
+            .map(|i| {
+                let label = format!("{}%", i);
+                // Leak a bounded set of 101 small strings once; this removes
+                // per-frame heap allocation from the width-bar label.
+                Box::leak(label.into_boxed_str()) as &'static str
+            })
+            .collect()
+    })
+}
+
+/// Format a stereo-width ratio (0.0 = mono, 1.0 = wide) as a pre-cached,
+/// heap-allocation-free percentage label.
+pub fn format_width_percent(width: f64) -> &'static str {
+    let pct = (width * 100.0).round().clamp(0.0, 100.0) as usize;
+    width_percent_labels()[pct]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +161,23 @@ mod tests {
         assert_eq!(data.len(), 1);
         assert_eq!(data[0].fill_ratio, db_to_position(-60.0));
         assert!(data[0].peak_hold_ratio.is_none());
+    }
+
+    #[test]
+    fn db_tick_label_returns_static_strings_for_legend_ticks() {
+        assert_eq!(db_tick_label(0), Some("0"));
+        assert_eq!(db_tick_label(-6), Some("-6"));
+        assert_eq!(db_tick_label(-60), Some("-60"));
+        assert_eq!(db_tick_label(3), None);
+    }
+
+    #[test]
+    fn format_width_percent_uses_cached_labels_and_clamps() {
+        assert_eq!(format_width_percent(0.0), "0%");
+        assert_eq!(format_width_percent(0.5), "50%");
+        assert_eq!(format_width_percent(1.0), "100%");
+        assert_eq!(format_width_percent(0.123), "12%");
+        assert_eq!(format_width_percent(-0.5), "0%");
+        assert_eq!(format_width_percent(1.5), "100%");
     }
 }

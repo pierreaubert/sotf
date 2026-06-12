@@ -8,7 +8,9 @@ use super::misc::should_use_peak_spread;
 use crate::app::ChannelGroup;
 use crate::app::constants::spacing;
 use crate::components::design::Ds;
-use crate::level_meter_render::{ChannelMeterData, GroupMeterData, build_channel_meter_data};
+use crate::level_meter_render::{
+    ChannelMeterData, GroupMeterData, build_channel_meter_data, db_tick_label, format_width_percent,
+};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -646,11 +648,14 @@ impl PlayerView {
                                     px(0.0) // No additional offset
                                 };
 
+                                let label_text = db_tick_label(db)
+                                    .map(|s| s.into())
+                                    .unwrap_or_else(|| format!("{}", db));
                                 let label = div()
                                     .text_size(rems(0.5625))
                                     .text_color(text_muted)
                                     .mt(label_offset)
-                                    .child(format!("{}", db));
+                                    .child(label_text);
 
                                 let tick = div().w(px(4.0)).h(px(1.0)).bg(border);
 
@@ -980,7 +985,7 @@ impl PlayerView {
             "W",
             ratio,
             meter_theme.color_info,
-            format!("{:.0}%", width * 100.0),
+            format_width_percent(width),
             horizontal_theme,
         )
     }

@@ -3,6 +3,7 @@
 use anyhow::anyhow;
 use gpui::*;
 use rust_embed::RustEmbed;
+use sotf_audio_player_gpui::asset_cache::cached_asset_list;
 use std::borrow::Cow;
 
 /// Embedded assets including Lucide SVG icons and brand images
@@ -68,14 +69,6 @@ impl gpui::AssetSource for Assets {
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        Ok(Self::iter()
-            .filter_map(|p| {
-                if p.starts_with(path) {
-                    Some(SharedString::from(p.to_string()))
-                } else {
-                    None
-                }
-            })
-            .collect())
+        Ok(cached_asset_list(path, Assets::iter()))
     }
 }

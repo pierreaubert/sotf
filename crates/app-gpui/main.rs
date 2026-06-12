@@ -411,6 +411,12 @@ fn main() {
                     }
 
                     let layout = cx.new(|_| layout_state);
+                    // TODO(performance): `Player` is currently wrapped in `Arc<Mutex<...>>`
+                    // and shared with the UI. Any blocking engine API call (e.g. a command
+                    // with a multi-second timeout) can therefore block the main thread.
+                    // Converting this to non-blocking command sends would require a
+                    // `PlayerHandle` wrapper and updating ~30 call sites; defer to a
+                    // dedicated refactor.
                     #[allow(clippy::arc_with_non_send_sync)]
                     let player_arc = Arc::new(parking_lot::Mutex::new(player));
 

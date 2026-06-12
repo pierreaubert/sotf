@@ -12,6 +12,7 @@ compile_error!(
     "The app-gpui dev-api is QA/debug-only and must not be compiled in release/prod builds."
 );
 
+pub mod asset_cache;
 pub mod level_meter_render;
 pub mod queue_render;
 
