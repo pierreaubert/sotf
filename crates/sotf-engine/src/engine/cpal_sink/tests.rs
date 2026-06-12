@@ -88,21 +88,58 @@ fn fallback_output_format_prefers_device_default_when_available() {
 }
 
 #[test]
+fn stall_check_does_not_use_mutex() {
+    let source = include_str!("../cpal_sink.rs");
+    assert!(
+        !source.contains("Mutex<StallCheckState>"),
+        "CpalSink stall_check must not be wrapped in a Mutex (real-time safety)"
+    );
+    assert!(
+        !source.contains("stall_check.lock()"),
+        "CpalSink stall_check methods must not acquire a mutex"
+    );
+}
+
+#[test]
 fn is_stalled_updates_observed_callback_count_without_external_polling() {
     let mut sink = CpalSink::new();
     let state = Arc::new(CpalPlaybackState::new(128));
     sink.state = Some(Arc::clone(&state));
-    {
-        let mut stall_check = sink.stall_check.lock().unwrap();
-        stall_check.last_callback_check =
-            std::time::Instant::now() - std::time::Duration::from_secs(4);
-    }
+
+    // Simulate that the last successful callback check happened 4 seconds ago.
+    let epoch_nanos = sink.stall_check.epoch.elapsed().as_nanos() as u64;
+    sink.stall_check
+        .last_callback_check_nanos
+        .store(epoch_nanos.saturating_sub(4_000_000_000), Ordering::Relaxed);
 
     state.callback_count.store(1, Ordering::Relaxed);
 
     assert!(!sink.is_stalled());
-    let stall_check = sink.stall_check.lock().unwrap();
-    assert_eq!(stall_check.last_callback_count, 1);
+    assert_eq!(
+        sink.stall_check
+            .last_callback_count
+            .load(Ordering::Relaxed),
+        1
+    );
+}
+
+#[test]
+fn is_stalled_returns_true_when_callback_count_is_unchanged_for_three_seconds() {
+    let mut sink = CpalSink::new();
+    let state = Arc::new(CpalPlaybackState::new(128));
+    sink.state = Some(Arc::clone(&state));
+
+    // Place the epoch 10 s in the past so the atomic timestamps are meaningful
+    // without having to sleep in the test.
+    sink.stall_check = super::stall_check_state::StallCheckState {
+        epoch: std::time::Instant::now() - std::time::Duration::from_secs(10),
+        last_callback_count: std::sync::atomic::AtomicU64::new(5),
+        last_callback_check_nanos: std::sync::atomic::AtomicU64::new(6_000_000_000),
+    };
+
+    state.callback_count.store(5, Ordering::Relaxed);
+
+    assert!(sink.is_stalled());
 }
 
 #[test]

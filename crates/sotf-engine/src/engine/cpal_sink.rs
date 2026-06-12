@@ -8,7 +8,7 @@ use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::{Producer, RingBuffer};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 mod apply;
 mod build;
@@ -45,7 +45,7 @@ pub struct CpalSink {
     channels: usize,
     event_tx: Option<Sender<ThreadEvent>>,
     allow_virtual_output: bool,
-    stall_check: Mutex<StallCheckState>,
+    stall_check: StallCheckState,
 }
 
 impl Default for CpalSink {
@@ -68,14 +68,12 @@ impl CpalSink {
             channels: 0,
             event_tx: None,
             allow_virtual_output: false,
-            stall_check: Mutex::new(StallCheckState::default()),
+            stall_check: StallCheckState::default(),
         }
     }
 
     fn reset_stall_check(&self) {
-        if let Ok(mut stall_check) = self.stall_check.lock() {
-            *stall_check = StallCheckState::default();
-        }
+        self.stall_check.reset();
     }
 
     /// Select the output device based on the config.
@@ -412,15 +410,28 @@ impl AudioSink for CpalSink {
             return false;
         };
         let current = state.callback_count.load(Ordering::Relaxed);
-        let Ok(mut stall_check) = self.stall_check.lock() else {
-            return false;
-        };
-        if current != stall_check.last_callback_count {
-            stall_check.last_callback_count = current;
-            stall_check.last_callback_check = std::time::Instant::now();
+        let last_count = self
+            .stall_check
+            .last_callback_count
+            .load(Ordering::Relaxed);
+
+        if current != last_count {
+            self.stall_check
+                .last_callback_count
+                .store(current, Ordering::Relaxed);
+            self.stall_check.last_callback_check_nanos.store(
+                self.stall_check.epoch.elapsed().as_nanos() as u64,
+                Ordering::Relaxed,
+            );
             return false;
         }
-        stall_check.last_callback_check.elapsed() > std::time::Duration::from_secs(3)
+
+        let now_nanos = self.stall_check.epoch.elapsed().as_nanos() as u64;
+        let last_check_nanos = self
+            .stall_check
+            .last_callback_check_nanos
+            .load(Ordering::Relaxed);
+        now_nanos.saturating_sub(last_check_nanos) > 3_000_000_000
     }
 
     fn device_name(&self) -> &str {
@@ -436,19 +447,6 @@ impl AudioSink for CpalSink {
 }
 
 impl CpalSink {
-    /// Update the stall detection timer. Called from the playback thread loop.
-    pub fn update_stall_check(&mut self) {
-        if let Some(state) = &self.state {
-            let current = state.callback_count.load(Ordering::Relaxed);
-            if let Ok(mut stall_check) = self.stall_check.lock()
-                && current != stall_check.last_callback_count
-            {
-                stall_check.last_callback_count = current;
-                stall_check.last_callback_check = std::time::Instant::now();
-            }
-        }
-    }
-
     /// Get diagnostic info for periodic logging.
     pub fn diagnostics(&self) -> Option<SinkDiagnostics> {
         let state = self.state.as_ref()?;
