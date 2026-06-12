@@ -9,6 +9,11 @@ use super::isolated::isolated_external_plugin_status;
 use super::misc::send_or_interrupt;
 use sotf_plugins::{Host, PluginHost};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
+use std::sync::Arc;
+
+/// Spin timeout when the decoder queue is empty.
+/// Keep this well under a millisecond to avoid burning the latency budget.
+const SPIN_US_SLEEP_PROCESSING: u64 = 100;
 
 /// Processing state
 pub(super) struct ProcessingState {
@@ -73,7 +78,7 @@ impl ProcessingState {
             total_output_samples: 0,
             first_frame_time: None,
             sample_rate,
-            spare_cache_arc: None,
+            spare_cache_arc: Some(Arc::new(Vec::new())),
             cache_fallback_count: 0,
             cache_reuse_count: 0,
             max_frame_duration: std::time::Duration::ZERO,
@@ -240,6 +245,11 @@ pub(super) fn handle_processing_command(
 
             state.channels = output_channels;
 
+            // Pre-size the spare cache Arc so analyzer data updates never need to
+            // allocate on the audio hot path, even on the first frame.
+            let plugin_count = state.host.plugin_count();
+            state.spare_cache_arc = Some(Arc::new(vec![None; plugin_count]));
+
             let latency_samples = state.host.total_latency_samples();
             response_tx
                 .send(ProcessingResponse::PluginChainUpdated {
@@ -339,6 +349,58 @@ pub(super) fn handle_processing_command(
     false
 }
 
+/// Update the shared plugin-data cache with the latest analyzer results.
+///
+/// Uses a spare `Arc` so that, when no UI reader holds the old cache, the
+/// update is a zero-allocation in-place mutation.  When the UI is currently
+/// reading the spare Arc, the update is skipped rather than allocating a new
+/// buffer.
+///
+/// Returns `true` if the cache was updated this frame.
+pub(super) fn update_plugin_data_cache(
+    state: &mut ProcessingState,
+    plugin_data_cache: &super::super::PluginDataCache,
+) -> bool {
+    let analyzer_indices = state.host.analyzer_indices();
+    if analyzer_indices.is_empty() {
+        return false;
+    }
+
+    let plugin_count = state.host.plugin_count();
+
+    if let Some(mut spare) = state.spare_cache_arc.take() {
+        if let Some(vec) = Arc::get_mut(&mut spare) {
+            // Sole owner — mutate in place, zero allocations.
+            state.cache_reuse_count += 1;
+            if vec.len() != plugin_count {
+                vec.resize(plugin_count, None);
+            }
+            for &i in analyzer_indices {
+                vec[i] = state.host.get_plugin_data(i);
+            }
+            let old = plugin_data_cache.swap(spare);
+            state.spare_cache_arc = Some(old);
+            true
+        } else {
+            // Contention: UI thread still holds this Arc. Keep the spare for
+            // the next attempt and skip this update — no allocation.
+            state.spare_cache_arc = Some(spare);
+            false
+        }
+    } else {
+        // Defensive bootstrap (should not happen after init because the spare
+        // is pre-sized at build time). Count it so diagnostics can spot it.
+        state.cache_fallback_count += 1;
+        let mut new_cache = vec![None; plugin_count];
+        for &i in analyzer_indices {
+            new_cache[i] = state.host.get_plugin_data(i);
+        }
+        let old_arc = plugin_data_cache.swap(Arc::new(new_cache));
+        state.spare_cache_arc = Some(old_arc);
+        true
+    }
+}
+
 /// Main processing thread function
 #[allow(clippy::too_many_arguments)] // thread entrypoint receives all channel endpoints from constructor
 pub(super) fn run_processing_thread(
@@ -433,50 +495,7 @@ pub(super) fn run_processing_thread(
 
                         // Update shared plugin data cache so the UI can read
                         // analyzer results without blocking the audio pipeline.
-                        //
-                        // Spare Arc reuse: after swap, keep the old Arc. Next frame,
-                        // if refcount==1 (no active UI reader), Arc::get_mut lets us
-                        // mutate in place — zero allocations.
-                        //
-                        // On contention (UI holds the spare), we skip the update
-                        // rather than allocating. The UI sees one frame of stale
-                        // analyzer data (~21ms) — imperceptible for spectrum/loudness.
-                        {
-                            let analyzer_indices = state.host.analyzer_indices();
-                            if !analyzer_indices.is_empty() {
-                                let plugin_count = state.host.plugin_count();
-
-                                if let Some(mut spare) = state.spare_cache_arc.take() {
-                                    if let Some(vec) = std::sync::Arc::get_mut(&mut spare) {
-                                        // Sole owner — mutate in place, zero allocations
-                                        state.cache_reuse_count += 1;
-                                        if vec.len() != plugin_count {
-                                            vec.resize(plugin_count, None);
-                                        }
-                                        for &i in analyzer_indices {
-                                            vec[i] = state.host.get_plugin_data(i);
-                                        }
-                                        let old = plugin_data_cache.swap(spare);
-                                        state.spare_cache_arc = Some(old);
-                                    } else {
-                                        // Contention: UI thread still holds this Arc.
-                                        // Keep spare for next attempt, skip this update.
-                                        state.cache_fallback_count += 1;
-                                        state.spare_cache_arc = Some(spare);
-                                    }
-                                } else {
-                                    // First frame: allocate once to bootstrap the spare.
-                                    state.cache_fallback_count += 1;
-                                    let mut new_cache = vec![None; plugin_count];
-                                    for &i in analyzer_indices {
-                                        new_cache[i] = state.host.get_plugin_data(i);
-                                    }
-                                    let old_arc =
-                                        plugin_data_cache.swap(std::sync::Arc::new(new_cache));
-                                    state.spare_cache_arc = Some(old_arc);
-                                }
-                            }
-                        }
+                        let _ = update_plugin_data_cache(&mut state, &plugin_data_cache);
 
                         // Track timing for effective rate measurement
                         if state.first_frame_time.is_none() {
@@ -648,8 +667,9 @@ pub(super) fn run_processing_thread(
                 }
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
-                // No data, sleep briefly to avoid 100% CPU
-                std::thread::sleep(std::time::Duration::from_millis(1));
+                // No data, sleep briefly to avoid 100% CPU while staying well
+                // under the per-frame latency budget.
+                std::thread::sleep(std::time::Duration::from_micros(SPIN_US_SLEEP_PROCESSING));
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 log::debug!("[Processing Thread] Decoder queue disconnected");

@@ -5,6 +5,7 @@ use super::consts::SPIN_MS_SLEEP_DECODER;
 use super::decoder_state::DecoderState;
 use sotf_types::DsdOutputMode;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
@@ -46,8 +47,14 @@ pub(super) fn run_decoder_thread(
         let command = if is_active {
             command_rx.try_recv().ok()
         } else {
-            // Blocking wait when stopped/paused
-            command_rx.recv().ok()
+            // Bounded wait when stopped/paused.  This keeps shutdown latency low
+            // and lets us detect a dropped command sender promptly instead of
+            // blocking forever on a channel that will never receive a command.
+            match command_rx.recv_timeout(Duration::from_millis(SPIN_MS_SLEEP_DECODER)) {
+                Ok(cmd) => Some(cmd),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
         };
 
         if let Some(cmd) = command {

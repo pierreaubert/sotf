@@ -11,8 +11,11 @@ use super::isolated::isolated_external_plugin_sandbox_backend;
 use super::isolated::isolated_external_plugin_status;
 use super::misc::create_plugin;
 use super::misc::send_or_interrupt;
-use super::processing_state::ProcessingState;
+use super::processing_state::{ProcessingState, update_plugin_data_cache};
+use super::super::PluginDataCache;
 use crate::plugins::{PluginSettings, PluginType};
+use arc_swap::ArcSwap;
+use std::sync::Arc;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_plugins::ExternalPluginProcessEvent;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -399,5 +402,90 @@ fn test_isolated_external_plugin_event_and_status_mappings() {
     assert_eq!(
         isolated_external_plugin_sandbox_backend(PluginSandboxBackendCode::MacosAppSandboxHelper),
         IsolatedExternalPluginSandboxBackend::MacosAppSandboxHelper
+    );
+}
+
+/// Regression test for the analyzer-cache fallback allocation path.
+///
+/// When a UI reader holds the current cache Arc, the processing thread must
+/// skip the update rather than count the contention as a fallback allocation.
+#[test]
+fn plugin_cache_update_skips_under_ui_contention_without_fallback() {
+    let sample_rate = 48_000;
+    let config = PluginConfig::new("spectrum_analyzer", serde_json::json!(null));
+    let (mut host, warnings) = build_plugin_host(std::slice::from_ref(&config), sample_rate, 2)
+        .expect("spectrum analyzer host should build");
+    assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+    host.build().expect("host should build");
+    assert!(
+        !host.analyzer_indices().is_empty(),
+        "spectrum analyzer must register as an analyzer"
+    );
+
+    let plugin_count = host.plugin_count();
+
+    let mut state = ProcessingState::new(
+        host.output_channels(),
+        sample_rate,
+        #[cfg(feature = "streaming")]
+        None,
+    );
+    state.host = host;
+
+    // Pre-size both the published cache and the spare so no bootstrap resize
+    // is needed.  This mirrors what UpdateHost does in the real thread.
+    let plugin_data_cache: PluginDataCache =
+        Arc::new(ArcSwap::from_pointee(vec![None; plugin_count]));
+    state.spare_cache_arc = Some(Arc::new(vec![None; plugin_count]));
+
+    // Simulate a UI reader that keeps a clone of the current cache Arc.
+    let _ui_holder = Arc::clone(&*plugin_data_cache.load());
+
+    // Run enough updates that some will hit contention (the UI holds the Arc
+    // that becomes the spare after the first successful swap).
+    let mut updated_frames = 0;
+    for _ in 0..20 {
+        if update_plugin_data_cache(&mut state, &plugin_data_cache) {
+            updated_frames += 1;
+        }
+    }
+
+    assert!(
+        updated_frames > 0,
+        "at least one cache update should succeed before the UI clone causes contention"
+    );
+    assert!(
+        updated_frames < 20,
+        "some updates should be skipped due to simulated UI contention"
+    );
+    assert_eq!(
+        state.cache_fallback_count, 0,
+        "UI contention must not be reported as a cache fallback allocation"
+    );
+}
+
+#[test]
+fn processing_thread_idle_sleep_is_sub_millisecond() {
+    let source = include_str!("processing_state.rs");
+    assert!(
+        source.contains("from_micros(SPIN_US_SLEEP_PROCESSING)"),
+        "processing thread empty-queue sleep should use a microsecond spin constant"
+    );
+    assert!(
+        !source.contains("Duration::from_millis(1)"),
+        "processing thread should not burn a full millisecond when the decoder queue is empty"
+    );
+}
+
+#[test]
+fn recycle_queue_prefill_is_generous() {
+    let source = include_str!("../manager_thread/config_update_queue.rs");
+    assert!(
+        source.contains("queue_capacity * 4"),
+        "recycle queues should be pre-filled with a generous multiple of queue capacity"
+    );
+    assert!(
+        source.contains("frame_size * 64"),
+        "recycle buffers should be sized for high channel counts and resampler headroom"
     );
 }

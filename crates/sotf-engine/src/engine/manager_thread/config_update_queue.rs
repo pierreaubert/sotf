@@ -221,9 +221,12 @@ pub(super) fn run_manager_thread(
 
     // Pre-fill recycle queues to avoid initial allocations in the hot path.
     // We use a safe upper bound for sample count: frame_size * max_channels.
-    // Systemwide HAL can advertise up to 32 channels.
-    let prefill_samples = config.frame_size * 32;
-    for _ in 0..queue_capacity * 2 {
+    // Systemwide HAL can advertise up to 32 channels; use 64 to leave headroom
+    // for resampler ratio growth and future channel counts.
+    let prefill_samples = config.frame_size * 64;
+    // Seed more buffers so the processing thread almost never has to fall back
+    // to a fresh Vec allocation outside of pathological stalls.
+    for _ in 0..queue_capacity * 4 {
         let _ = recycle_tx.send(vec![0.0; prefill_samples]);
         let _ = decoder_recycle_tx.send(vec![0.0; prefill_samples]);
     }

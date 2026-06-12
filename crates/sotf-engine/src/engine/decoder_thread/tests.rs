@@ -7,9 +7,11 @@ use super::hal_input_guard_trip::guard_hal_input_block;
 #[cfg(any(test, all(target_os = "macos", feature = "hal")))]
 use super::misc::frames_to_sample_count;
 use super::sample_queue::SampleQueue;
+use super::types::run_decoder_thread;
 use sotf_types::DsdOutputMode;
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 #[test]
 fn send_or_interrupt_returns_unsent_message_with_interrupting_command() {
@@ -193,6 +195,61 @@ fn silent_source_fallback_uses_configured_channel_count() {
     assert_eq!(frame.num_channels, 6);
     assert_eq!(frame.data.len(), 128 * 6);
     assert!(frame.data.iter().all(|&sample| sample == 0.0));
+}
+
+/// Regression test for the decoder thread blocking on `recv()` when inactive.
+///
+/// When the thread is paused and the command sender is dropped, it must exit
+/// promptly instead of waiting forever for the next command.
+#[test]
+fn paused_decoder_thread_exits_on_disconnected_sender() {
+    let (message_tx, _message_rx) = std::sync::mpsc::sync_channel(4);
+    let (event_tx, _event_rx) = std::sync::mpsc::channel();
+    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let (recycle_tx, recycle_rx) = std::sync::mpsc::channel();
+
+    // Keep the recycle sender alive so the decoder thread does not exit for
+    // an unrelated reason.
+    let _recycle_guard = recycle_tx;
+
+    let (command_tx, command_rx) = std::sync::mpsc::channel();
+
+    let handle = std::thread::Builder::new()
+        .name("decoder-disconnect-test".into())
+        .spawn(move || {
+            run_decoder_thread(
+                message_tx,
+                command_rx,
+                response_tx,
+                event_tx,
+                48_000,
+                1024,
+                recycle_rx,
+                DsdOutputMode::Disabled,
+            )
+        })
+        .expect("spawn decoder thread");
+
+    // Pause the thread so its next command wait is on the inactive path.
+    command_tx.send(DecoderCommand::Pause).unwrap();
+    let pause_response = response_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("pause command should be acknowledged");
+    assert!(matches!(pause_response, super::super::DecoderResponse::Ok));
+
+    // Drop the only command sender.  The inactive decoder thread must notice
+    // the disconnect and exit instead of blocking on recv() indefinitely.
+    drop(command_tx);
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = handle.join();
+        done_tx.send(()).ok();
+    });
+
+    done_rx
+        .recv_timeout(Duration::from_millis(250))
+        .expect("paused decoder thread should exit after command sender is dropped");
 }
 
 /// Regression test for the upmixer silence bug with cross-rate resampling.
