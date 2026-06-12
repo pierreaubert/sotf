@@ -426,7 +426,7 @@ fn test_upmixer_insert_and_config_change_during_playback() {
         );
 
         engine
-            .update_plugin_chain(vec![upmixer_plugin(speaker_config)])
+            .update_plugin_chain(&vec![upmixer_plugin(speaker_config)])
             .unwrap_or_else(|e| panic!("Failed to switch to {}: {}", speaker_config, e));
 
         // Wait for config change to take effect
@@ -466,7 +466,7 @@ fn test_upmixer_insert_and_config_change_during_playback() {
     // Step 2: Remove upmixer (back to stereo passthrough)
     println!("\n  --- Removing upmixer (stereo passthrough) ---");
     engine
-        .update_plugin_chain(vec![])
+        .update_plugin_chain(&vec![])
         .expect("Failed to remove plugins");
 
     std::thread::sleep(Duration::from_millis(500));
@@ -636,7 +636,7 @@ fn test_upmixer_dynamic_add_remove() {
     // Dynamically add upmixer (simulates TUI plugin update)
     println!("  Adding upmixer 5.1...");
     manager
-        .update_plugin_chain(vec![upmixer_plugin("5.1")])
+        .update_plugin_chain(&vec![upmixer_plugin("5.1")])
         .unwrap();
 
     std::thread::sleep(Duration::from_millis(500));
@@ -660,7 +660,7 @@ fn test_upmixer_dynamic_add_remove() {
 
     // Remove upmixer
     println!("  Removing upmixer...");
-    manager.update_plugin_chain(vec![]).unwrap();
+    manager.update_plugin_chain(&vec![]).unwrap();
 
     std::thread::sleep(Duration::from_millis(500));
     let state = manager.get_engine_state();

@@ -143,9 +143,13 @@ impl AudioEngine {
         self.send_expect_ok(ManagerCommand::Mute(muted))
     }
 
-    /// Update the plugin chain (hot-reload with crossfade)
-    pub fn update_plugin_chain(&self, plugins: Vec<PluginConfig>) -> Result<(), String> {
-        self.send_expect_ok(ManagerCommand::UpdatePluginChain(plugins))
+    /// Update the plugin chain (hot-reload with crossfade).
+    ///
+    /// Takes a slice so callers can keep their owned `Vec` for other uses
+    /// (e.g. crash-recovery snapshots); the engine clones what it needs to
+    /// send across the manager thread boundary.
+    pub fn update_plugin_chain(&self, plugins: &[PluginConfig]) -> Result<(), String> {
+        self.send_expect_ok(ManagerCommand::UpdatePluginChain(plugins.to_vec()))
     }
 
     /// Update the plugin graph (DAG topology for multi-driver crossovers)

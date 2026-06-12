@@ -839,7 +839,7 @@ impl AudioDaemon {
 
         let result = {
             let manager = self.manager.lock();
-            manager.update_plugin_chain(plan.runtime_plugins.clone())
+            manager.update_plugin_chain(&plan.runtime_plugins)
         };
 
         match result {

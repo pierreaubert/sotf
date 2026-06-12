@@ -156,7 +156,7 @@ impl Player {
         self.engine_restarted_flag = false;
         self.engine_fatal_flag = false;
 
-        self.manager.update_plugin_chain(plugins)?;
+        self.manager.update_plugin_chain(&plugins)?;
         self.manager.switch_source_at(source, position)?;
 
         Ok(())
@@ -167,7 +167,7 @@ impl Player {
         plugins: Vec<PluginConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("[Player] update_plugins: {} plugins", plugins.len(),);
-        match self.manager.update_plugin_chain(plugins.clone()) {
+        match self.manager.update_plugin_chain(&plugins) {
             Ok(()) => {
                 // Update saved config so crash recovery uses latest plugins.
                 if let Some(ref mut config) = self.saved_config {

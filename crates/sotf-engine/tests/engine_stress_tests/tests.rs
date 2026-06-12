@@ -264,7 +264,7 @@ fn stress_plugin_chain_updates() {
             })
             .collect();
 
-        engine.update_plugin_chain(plugins).ok();
+        engine.update_plugin_chain(&plugins).ok();
         thread::sleep(Duration::from_millis(50));
     }
 
@@ -367,7 +367,7 @@ fn stress_bypass_toggle() {
         "gain",
         serde_json::json!({"gain_db": -3.0}),
     )];
-    engine.update_plugin_chain(plugins).ok();
+    engine.update_plugin_chain(&plugins).ok();
 
     let temp_file = super::common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -515,7 +515,7 @@ fn stress_empty_plugin_chain_updates() {
             )]
         };
 
-        engine.update_plugin_chain(plugins).ok();
+        engine.update_plugin_chain(&plugins).ok();
         thread::sleep(Duration::from_millis(50));
     }
 

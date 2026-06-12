@@ -226,7 +226,7 @@ fn test_engine_update_plugin_chain() {
         }),
     )];
 
-    let result = engine.update_plugin_chain(plugins);
+    let result = engine.update_plugin_chain(&plugins);
     assert!(result.is_ok(), "Failed to update plugin chain");
 
     std::thread::sleep(Duration::from_millis(100));
@@ -257,7 +257,7 @@ fn test_engine_update_plugin_chain_allows_upmixer_channel_increase() {
         }),
     )];
 
-    let result = engine.update_plugin_chain(plugins);
+    let result = engine.update_plugin_chain(&plugins);
     assert!(
         result.is_ok(),
         "Upmixer update should succeed, got: {:?}",
@@ -563,11 +563,11 @@ fn test_engine_remove_plugin_during_playback() {
         "gain",
         serde_json::json!({"gain_db": -3.0}),
     )];
-    engine.update_plugin_chain(plugins).unwrap();
+    engine.update_plugin_chain(&plugins).unwrap();
     std::thread::sleep(Duration::from_millis(200));
 
     // Remove it (empty chain)
-    engine.update_plugin_chain(vec![]).unwrap();
+    engine.update_plugin_chain(&vec![]).unwrap();
     std::thread::sleep(Duration::from_millis(200));
 
     let state = engine.get_state();
@@ -612,11 +612,11 @@ fn test_engine_remove_all_plugins_during_playback() {
         PluginConfig::new("gain", serde_json::json!({"gain_db": -3.0})),
         PluginConfig::new("gain", serde_json::json!({"gain_db": -6.0})),
     ];
-    engine.update_plugin_chain(plugins).unwrap();
+    engine.update_plugin_chain(&plugins).unwrap();
     std::thread::sleep(Duration::from_millis(200));
 
     // Remove all plugins at once
-    engine.update_plugin_chain(vec![]).unwrap();
+    engine.update_plugin_chain(&vec![]).unwrap();
     std::thread::sleep(Duration::from_millis(200));
 
     let state = engine.get_state();
@@ -644,7 +644,7 @@ fn test_engine_rapid_plugin_updates_during_playback() {
             "gain",
             serde_json::json!({"gain_db": gain}),
         )];
-        let result = engine.update_plugin_chain(plugins);
+        let result = engine.update_plugin_chain(&plugins);
         assert!(
             result.is_ok(),
             "Update {} should succeed, got: {:?}",
@@ -688,7 +688,7 @@ fn test_engine_update_preserves_playback_after_channel_change() {
         "upmixer",
         serde_json::json!({"speaker_config": "5.0"}),
     )];
-    engine.update_plugin_chain(plugins).unwrap();
+    engine.update_plugin_chain(&plugins).unwrap();
     std::thread::sleep(Duration::from_millis(300));
 
     let state = engine.get_state();
@@ -696,7 +696,7 @@ fn test_engine_update_preserves_playback_after_channel_change() {
     assert_eq!(state.playback_state, PlaybackState::Playing);
 
     // Remove upmixer (back to 2ch)
-    engine.update_plugin_chain(vec![]).unwrap();
+    engine.update_plugin_chain(&vec![]).unwrap();
     std::thread::sleep(Duration::from_millis(300));
 
     let state = engine.get_state();
