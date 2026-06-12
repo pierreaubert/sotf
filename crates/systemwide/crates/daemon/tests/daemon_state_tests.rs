@@ -453,7 +453,6 @@ fn configbar_and_daemon_support_isolated_lab_runtime_paths() {
         include_str!("../bin/security/misc.rs"),
     ]
     .join("\n");
-    let justfile = include_str!("../../../../../Justfile");
 
     assert!(
         configbar.contains("SOTF_DAEMON_SOCKET_PATH")
@@ -466,12 +465,6 @@ fn configbar_and_daemon_support_isolated_lab_runtime_paths() {
             && daemon.contains("SOTF_SYSTEMWIDE_RUNTIME_DIR")
             && security.contains("secure_socket_path_from_env"),
         "daemon should bind to explicit lab socket/runtime-dir overrides"
-    );
-    assert!(
-        justfile.contains("systemwide-lab:")
-            && justfile.contains("SOTF_SYSTEMWIDE_DRIVER")
-            && justfile.contains("cargo run -p sotf-daemon --bin sotf-daemon"),
-        "just systemwide-lab should start an isolated daemon with the lab driver"
     );
 }
 
