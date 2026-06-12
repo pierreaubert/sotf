@@ -13,6 +13,19 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalOutputWriter;
 
+// Static error messages used on the audio hot path. Using constants avoids
+// re-formatting a fresh `String` every time an error is reported.
+const ERR_INVALID_CHANNEL_COUNT: &str =
+    "Invalid channel count. Must be between 1 and 16";
+#[cfg(all(target_os = "macos", feature = "hal"))]
+const ERR_HAL_DAEMON_NOT_INITIALIZED: &str =
+    "HAL driver not initialized. Ensure daemon initialized HAL before creating plugins";
+const ERR_HAL_UNSUPPORTED_PLATFORM: &str =
+    "HAL output plugin is only supported on macOS with 'hal' feature enabled";
+const ERR_NO_ADJUSTABLE_PARAMETERS: &str = "HAL output has no adjustable parameters";
+#[cfg(all(target_os = "macos", feature = "hal"))]
+const ERR_HAL_WRITER_NOT_AVAILABLE: &str = "HAL writer not available";
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -69,10 +82,7 @@ impl HalOutputPlugin {
     pub fn new(channels: usize) -> Result<Self, String> {
         // Validate channels
         if channels == 0 || channels > 16 {
-            return Err(format!(
-                "Invalid channel count: {}. Must be between 1 and 16",
-                channels
-            ));
+            return Err(ERR_INVALID_CHANNEL_COUNT.to_string());
         }
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -80,9 +90,7 @@ impl HalOutputPlugin {
             let writer = HalOutputWriter::new();
 
             if writer.is_none() {
-                return Err(
-                    "HAL driver not initialized. Ensure daemon initialized HAL before creating plugins".to_string()
-                );
+                return Err(ERR_HAL_DAEMON_NOT_INITIALIZED.to_string());
             }
 
             Ok(Self {
@@ -102,10 +110,7 @@ impl HalOutputPlugin {
 
         #[cfg(not(all(target_os = "macos", feature = "hal")))]
         {
-            Err(
-                "HAL output plugin is only supported on macOS with 'hal' feature enabled"
-                    .to_string(),
-            )
+            Err(ERR_HAL_UNSUPPORTED_PLATFORM.to_string())
         }
     }
 
@@ -176,7 +181,7 @@ impl Plugin for HalOutputPlugin {
     }
 
     fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
-        Err("HAL output has no adjustable parameters".to_string())
+        Err(ERR_NO_ADJUSTABLE_PARAMETERS.to_string())
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
@@ -243,7 +248,7 @@ impl Plugin for HalOutputPlugin {
                     }
                 }
             } else {
-                return Err("HAL writer not available".to_string());
+                return Err(ERR_HAL_WRITER_NOT_AVAILABLE.to_string());
             }
         }
 
@@ -384,6 +389,24 @@ mod tests {
         let mut output = vec![];
         let err = plugin.process(&input, &mut output, &ctx).unwrap_err();
         assert!(err.contains("mismatch"), "unexpected error message: {err}");
+    }
+
+    #[test]
+    fn set_parameter_returns_static_no_adjustable_params_error() {
+        let mut plugin = make_test_plugin();
+        let err = plugin
+            .set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(0.0))
+            .unwrap_err();
+        assert_eq!(err, ERR_NO_ADJUSTABLE_PARAMETERS);
+    }
+
+    #[test]
+    fn new_rejects_invalid_channel_count_with_static_error() {
+        let err = match HalOutputPlugin::new(0) {
+            Err(e) => e,
+            Ok(_) => panic!("expected error for 0 channels"),
+        };
+        assert_eq!(err, ERR_INVALID_CHANNEL_COUNT);
     }
 
     /// Build a `HalOutputPlugin` directly (without the HAL writer) so tests

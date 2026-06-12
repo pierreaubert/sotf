@@ -551,3 +551,34 @@ fn test_max_bands_constant_matches_too_many_bands_error() {
     let result = BandSplitPlugin::new_multiband(1, &[200.0, 500.0, 2000.0, 8000.0], "LR24");
     assert!(result.is_err());
 }
+
+/// Dynamic frequency and per-band gain parameter IDs must be cached at
+/// construction and reused by `rebuild_cached_parameters`.
+#[test]
+fn test_param_keys_are_cached_and_reused() {
+    let mut p = BandSplitPlugin::new_multiband(1, &[200.0, 2000.0, 10000.0], "LR24").unwrap();
+
+    // 3 frequencies -> frequency_2, frequency_3 cached; 4 bands -> band_0..band_3 gain keys.
+    assert_eq!(p.dynamic_param_keys.len(), 2);
+    assert_eq!(p.dynamic_param_keys[0].0, ParameterId::from("frequency_2"));
+    assert_eq!(p.dynamic_param_keys[0].1, "Frequency 2");
+    assert_eq!(p.dynamic_param_keys[1].0, ParameterId::from("frequency_3"));
+    assert_eq!(p.band_gain_param_keys.len(), 4);
+    assert_eq!(p.band_gain_param_keys[0].0, ParameterId::from("band_0_gain_db"));
+    assert_eq!(p.band_gain_param_keys[0].1, "Band 1 Gain (dB)");
+    assert_eq!(p.band_gain_param_keys[3].0, ParameterId::from("band_3_gain_db"));
+
+    let keys_before = (
+        p.dynamic_param_keys.clone(),
+        p.band_gain_param_keys.clone(),
+    );
+    p.rebuild_cached_parameters();
+    assert_eq!(
+        (p.dynamic_param_keys.clone(), p.band_gain_param_keys.clone()),
+        keys_before
+    );
+
+    let params = p.parameters();
+    assert!(params.iter().any(|param| param.id == ParameterId::from("frequency_2")));
+    assert!(params.iter().any(|param| param.id == ParameterId::from("band_2_gain_db")));
+}

@@ -26,6 +26,11 @@ pub struct BandSplitPlugin {
     /// Crossover type string for param_bridge (Choice index <-> string)
     pub(super) crossover_type_index: usize,
     pub(super) cached_parameters: Vec<sotf_host::parameters::Parameter>,
+    /// Pre-built parameter IDs and display names for the dynamic frequency and
+    /// per-band gain parameters, so `rebuild_cached_parameters` does not
+    /// re-format them on every call.
+    pub(super) dynamic_param_keys: Vec<(ParameterId, String)>,
+    pub(super) band_gain_param_keys: Vec<(ParameterId, String)>,
     /// Pre-allocated flat scratch buffer: [num_bands * input_channels] for per-frame band output.
     pub(super) band_flat: Vec<f32>,
 }
@@ -73,6 +78,8 @@ impl BandSplitPlugin {
         ];
 
         let crossover_type_index = parse_crossover_type_index(crossover_type);
+        let (dynamic_param_keys, band_gain_param_keys) =
+            Self::build_param_keys(num_bands, frequencies.len());
 
         let mut p = Self {
             input_channels,
@@ -85,10 +92,33 @@ impl BandSplitPlugin {
             band_gain_smoothers: gain_smoothers,
             crossover_type_index,
             cached_parameters: Vec::new(),
+            dynamic_param_keys,
+            band_gain_param_keys,
             band_flat: vec![0.0f32; num_bands * input_channels],
         };
         p.rebuild_cached_parameters();
         Ok(p)
+    }
+
+    fn build_param_keys(
+        num_bands: usize,
+        num_frequencies: usize,
+    ) -> (Vec<(ParameterId, String)>, Vec<(ParameterId, String)>) {
+        let dynamic_param_keys: Vec<_> = (1..num_frequencies)
+            .map(|i| {
+                let id = format!("frequency_{}", i + 1);
+                let name = format!("Frequency {}", i + 1);
+                (ParameterId::from(id.as_str()), name)
+            })
+            .collect();
+        let band_gain_param_keys: Vec<_> = (0..num_bands)
+            .map(|i| {
+                let id = format!("band_{}_gain_db", i);
+                let name = format!("Band {} Gain (dB)", i + 1);
+                (ParameterId::from(id.as_str()), name)
+            })
+            .collect();
+        (dynamic_param_keys, band_gain_param_keys)
     }
 
     pub fn from_params(
@@ -155,25 +185,27 @@ impl BandSplitPlugin {
         // Start with the static PARAMS entries (frequency, crossover_type)
         let mut params = param_bridge::build_parameters(BS, |i| self.param_value(i));
         // Add dynamic frequency parameters (frequency_2, frequency_3, ...)
-        for (i, smoother) in self.freq_smoothers.iter().enumerate().skip(1) {
-            let key = format!("frequency_{}", i + 1);
-            let label = format!("Frequency {}", i + 1);
+        for ((_i, smoother), (id, name)) in self
+            .freq_smoothers
+            .iter()
+            .enumerate()
+            .skip(1)
+            .zip(self.dynamic_param_keys.iter())
+        {
             params.push(sotf_host::parameters::Parameter::new_float(
-                &key,
-                &label,
+                &id.0,
+                name,
                 smoother.target(),
                 20.0,
                 20000.0,
             ));
         }
         // Add dynamic per-band gain parameters
-        for i in 0..self.num_bands {
-            let key = format!("band_{}_gain_db", i);
-            let label = format!("Band {} Gain (dB)", i + 1);
+        for (i, (id, name)) in self.band_gain_param_keys.iter().enumerate() {
             params.push(
                 sotf_host::parameters::Parameter::new_float(
-                    &key,
-                    &label,
+                    &id.0,
+                    name,
                     self.band_gains_db[i],
                     -24.0,
                     24.0,

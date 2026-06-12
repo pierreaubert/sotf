@@ -34,6 +34,9 @@ pub struct GainPlugin {
     channel_gains_smoothers: Vec<Smoother>,
     param_gain_db: ParameterId,
     param_smoothing_ms: ParameterId,
+    /// Pre-built per-channel parameter IDs and display names so
+    /// `rebuild_cached_parameters` does not re-format them on every call.
+    channel_param_keys: Vec<(ParameterId, String)>,
     cached_gains: Vec<f32>,
     smoothing_ms: f32,
     cached_parameters: Vec<Parameter>,
@@ -57,12 +60,23 @@ impl GainPlugin {
             channel_gains_smoothers: Vec::with_capacity(channels),
             param_gain_db: ParameterId::from("gain_db"),
             param_smoothing_ms: ParameterId::from("smoothing_ms"),
+            channel_param_keys: Self::build_channel_param_keys(channels),
             cached_gains: vec![0.0; channels],
             smoothing_ms,
             cached_parameters: Vec::new(),
         };
         p.rebuild_cached_parameters();
         p
+    }
+
+    fn build_channel_param_keys(channels: usize) -> Vec<(ParameterId, String)> {
+        (0..channels)
+            .map(|ch| {
+                let id = format!("gain_db_{}", ch);
+                let name = format!("Gain Ch {}", ch + 1);
+                (ParameterId::from(id.as_str()), name)
+            })
+            .collect()
     }
 
     pub fn new_per_channel(channel_gains: Vec<f32>) -> Result<Self, String> {
@@ -85,6 +99,7 @@ impl GainPlugin {
             channel_gains_smoothers: cgs,
             param_gain_db: ParameterId::from("gain_db"),
             param_smoothing_ms: ParameterId::from("smoothing_ms"),
+            channel_param_keys: Self::build_channel_param_keys(channels),
             cached_gains: vec![0.0; channels],
             smoothing_ms: 20.0,
             cached_parameters: Vec::new(),
@@ -106,10 +121,10 @@ impl GainPlugin {
         ];
 
         if self.is_per_channel() {
-            for ch in 0..self.channels {
+            for (ch, (id, name)) in self.channel_param_keys.iter().enumerate() {
                 params.push(Parameter::new_float(
-                    &format!("gain_db_{}", ch),
-                    &format!("Gain Ch {}", ch + 1),
+                    &id.0,
+                    name,
                     self.channel_gains_db[ch],
                     pk(GN, "gain_db").min_f64() as f32,
                     pk(GN, "gain_db").max_f64() as f32,
@@ -610,5 +625,33 @@ mod tests {
             p.get_parameter(&ParameterId::from("gain_db_0")),
             Some(ParameterValue::Float(5.0))
         );
+    }
+
+    /// Per-channel parameter IDs and display names must be cached at
+    /// construction and reused by `rebuild_cached_parameters`, avoiding a
+    /// per-rebuild `format!` for every channel.
+    #[test]
+    fn test_per_channel_param_keys_are_cached_and_reused() {
+        let mut p = GainPlugin::new_per_channel(vec![1.0f32, 2.0, 3.0]).unwrap();
+        assert_eq!(p.channel_param_keys.len(), 3);
+        assert_eq!(p.channel_param_keys[0].0, ParameterId::from("gain_db_0"));
+        assert_eq!(p.channel_param_keys[0].1, "Gain Ch 1");
+        assert_eq!(p.channel_param_keys[2].0, ParameterId::from("gain_db_2"));
+        assert_eq!(p.channel_param_keys[2].1, "Gain Ch 3");
+
+        // Mutate a channel gain and rebuild; the keys must stay the same.
+        p.set_channel_gain_db(1, -6.0).unwrap();
+        let keys_before = p.channel_param_keys.clone();
+        p.rebuild_cached_parameters();
+        assert_eq!(p.channel_param_keys, keys_before);
+
+        let params = p.parameters();
+        let ch_params: Vec<_> = params
+            .iter()
+            .filter(|param| param.id.as_str().starts_with("gain_db_"))
+            .collect();
+        assert_eq!(ch_params.len(), 3);
+        assert_eq!(ch_params[0].id, ParameterId::from("gain_db_0"));
+        assert_eq!(ch_params[0].name, "Gain Ch 1");
     }
 }
