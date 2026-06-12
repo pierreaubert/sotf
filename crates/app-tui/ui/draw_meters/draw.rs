@@ -179,7 +179,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                         height: 1,
                     },
                 );
-                if zero_pos > 0 && inner.x + zero_pos + 1 <= inner.x + inner.width {
+                if zero_pos > 0 && zero_pos < inner.width {
                     f.render_widget(
                         Paragraph::new("0").style(scale_style),
                         Rect {
@@ -190,7 +190,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                         },
                     );
                 }
-                if inner.x + max_pos + 2 <= inner.x + inner.width {
+                if max_pos + 1 < inner.width {
                     f.render_widget(
                         Paragraph::new("+6").style(scale_style),
                         Rect {
