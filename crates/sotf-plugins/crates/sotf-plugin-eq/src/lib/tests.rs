@@ -1514,3 +1514,38 @@ fn test_get_parameter_band_order() {
     let val = InPlacePlugin::get_parameter(&p, &ParameterId::from("band_0_order"));
     assert_eq!(val, Some(ParameterValue::Int(2)));
 }
+
+#[test]
+fn test_validate_sample_rate_returns_static_error() {
+    use super::validate::validate_sample_rate;
+    assert_eq!(validate_sample_rate(f64::NAN).unwrap_err(), "Invalid sample rate");
+    assert_eq!(validate_sample_rate(0.0).unwrap_err(), "Invalid sample rate");
+    assert_eq!(validate_sample_rate(-48000.0).unwrap_err(), "Invalid sample rate");
+    assert!(validate_sample_rate(48000.0).is_ok());
+}
+
+#[test]
+fn test_validate_freq_q_gain_returns_static_error() {
+    use super::validate::validate_freq_q_gain;
+    assert_eq!(
+        validate_freq_q_gain(f64::NAN, 1.0, 0.0).unwrap_err(),
+        "Invalid filter frequency"
+    );
+    assert_eq!(
+        validate_freq_q_gain(0.0, 1.0, 0.0).unwrap_err(),
+        "Invalid filter frequency"
+    );
+    assert_eq!(
+        validate_freq_q_gain(1000.0, f64::NAN, 0.0).unwrap_err(),
+        "Invalid filter Q"
+    );
+    assert_eq!(
+        validate_freq_q_gain(1000.0, 0.0, 0.0).unwrap_err(),
+        "Invalid filter Q"
+    );
+    assert_eq!(
+        validate_freq_q_gain(1000.0, 1.0, f64::NAN).unwrap_err(),
+        "Invalid filter gain"
+    );
+    assert!(validate_freq_q_gain(1000.0, 1.0, 0.0).is_ok());
+}

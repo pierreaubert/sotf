@@ -21,7 +21,8 @@ use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, Mutex};
+use std::sync::OnceLock;
 use symphonia::core::audio::{Audio, GenericAudioBufferRef};
 use symphonia::core::codecs::CodecParameters;
 use symphonia::core::codecs::audio::AudioDecoderOptions;
@@ -30,6 +31,47 @@ use symphonia::core::formats::probe::{Hint, Probe};
 use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
+
+struct IrLoadRequest {
+    path: String,
+    channels: usize,
+    sample_rate: u32,
+    use_nupc: bool,
+    zero_latency_head: bool,
+    head_taps: usize,
+    result_tx: std::sync::mpsc::Sender<Result<IrLoadResult, String>>,
+}
+
+static IR_LOADER: OnceLock<mpsc::Sender<IrLoadRequest>> = OnceLock::new();
+
+fn get_ir_loader() -> &'static mpsc::Sender<IrLoadRequest> {
+    IR_LOADER.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<IrLoadRequest>();
+        // Bound the pool so rapid IR switches do not exhaust the OS thread budget.
+        let num_workers = rayon::current_num_threads().clamp(1, 4);
+        let rx = Arc::new(Mutex::new(rx));
+        for i in 0..num_workers {
+            let rx = Arc::clone(&rx);
+            std::thread::Builder::new()
+                .name(format!("convolution-ir-load-{i}"))
+                .spawn(move || {
+                    while let Ok(req) = rx.lock().unwrap().recv() {
+                        let result = ConvolutionPlugin::build_ir_state(
+                            &req.path,
+                            req.channels,
+                            req.sample_rate,
+                            req.use_nupc,
+                            req.zero_latency_head,
+                            req.head_taps,
+                        );
+                        let _ = req.result_tx.send(result);
+                    }
+                })
+                .expect("failed to spawn convolution IR loader thread");
+        }
+        tx
+    })
+}
 
 pub struct ConvolutionPlugin {
     pub(super) channels: usize,
@@ -535,25 +577,17 @@ impl InPlacePlugin for ConvolutionPlugin {
                 self.ir_file = path.clone();
                 let (result_tx, result_rx) = std::sync::mpsc::channel();
                 self.ir_load_result_rx = Some(result_rx);
-                let channels = self.channels;
-                let sample_rate = self.sample_rate;
-                let use_nupc = self.use_nupc;
-                let zero_latency_head = self.zero_latency_head;
-                let head_taps = self.head_taps;
-                std::thread::Builder::new()
-                    .name("convolution-ir-load".to_string())
-                    .spawn(move || {
-                        let result = Self::build_ir_state(
-                            &path,
-                            channels,
-                            sample_rate,
-                            use_nupc,
-                            zero_latency_head,
-                            head_taps,
-                        );
-                        let _ = result_tx.send(result);
+                get_ir_loader()
+                    .send(IrLoadRequest {
+                        path,
+                        channels: self.channels,
+                        sample_rate: self.sample_rate,
+                        use_nupc: self.use_nupc,
+                        zero_latency_head: self.zero_latency_head,
+                        head_taps: self.head_taps,
+                        result_tx,
                     })
-                    .map_err(|e| format!("Failed to spawn IR load thread: {e}"))?;
+                    .map_err(|e| format!("Failed to enqueue IR load: {e}"))?;
             }
             self.rebuild_cached_parameters();
             return Ok(());
@@ -574,27 +608,19 @@ impl InPlacePlugin for ConvolutionPlugin {
         self.mix.set_time(20.0, sr);
         self.gain_linear.set_time(20.0, sr);
         if old_sr != sr && !self.ir_file.is_empty() {
-            let path = self.ir_file.clone();
             let (result_tx, result_rx) = std::sync::mpsc::channel();
             self.ir_load_result_rx = Some(result_rx);
-            let channels = self.channels;
-            let use_nupc = self.use_nupc;
-            let zero_latency_head = self.zero_latency_head;
-            let head_taps = self.head_taps;
-            std::thread::Builder::new()
-                .name("convolution-ir-load".to_string())
-                .spawn(move || {
-                    let result = Self::build_ir_state(
-                        &path,
-                        channels,
-                        sr,
-                        use_nupc,
-                        zero_latency_head,
-                        head_taps,
-                    );
-                    let _ = result_tx.send(result);
+            get_ir_loader()
+                .send(IrLoadRequest {
+                    path: self.ir_file.clone(),
+                    channels: self.channels,
+                    sample_rate: sr,
+                    use_nupc: self.use_nupc,
+                    zero_latency_head: self.zero_latency_head,
+                    head_taps: self.head_taps,
+                    result_tx,
                 })
-                .map_err(|e| format!("Failed to spawn IR load thread: {e}"))?;
+                .map_err(|e| format!("Failed to enqueue IR load: {e}"))?;
         }
         Ok(())
     }
@@ -774,12 +800,10 @@ impl InPlacePlugin for ConvolutionPlugin {
                         let channels = self.channels;
                         let ir_partitions = &state.partitions[ir_ch];
 
-                        if self.rayon_accum_pool.is_empty() {
-                            let n_threads = rayon::current_num_threads().max(1);
-                            self.rayon_accum_pool = (0..n_threads)
-                                .map(|_| vec![Complex::new(0.0, 0.0); FFT_SIZE])
-                                .collect();
-                        }
+                        // The pool is pre-built by build_ir_state and atomically
+                        // swapped in by apply_ir_state, so it must never be empty
+                        // when we reach the parallel path.
+                        debug_assert!(!self.rayon_accum_pool.is_empty());
                         let pool = &mut self.rayon_accum_pool;
                         if pool.len() > num_partitions {
                             pool.truncate(num_partitions);
