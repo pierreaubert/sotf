@@ -834,3 +834,49 @@ fn test_latency_update_skips_position_shift_when_sample_rate_zero() {
     assert_eq!(s.plugin_latency_samples, 4800);
     assert!((s.position - 10.0).abs() < 1e-9);
 }
+
+#[test]
+fn test_update_engine_state_mutates_snapshot_in_place() {
+    let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+        playback_state: PlaybackState::Playing,
+        sample_rate: 96_000,
+        ..AudioEngineState::default()
+    }));
+
+    super::state_helpers::update_engine_state(&state, |new_state| {
+        new_state.last_error = Some("boom".to_string());
+        new_state.playback_state = PlaybackState::Stopped;
+    });
+
+    let s = state.load();
+    assert_eq!(s.last_error.as_deref(), Some("boom"));
+    assert_eq!(s.playback_state, PlaybackState::Stopped);
+    // Unrelated fields must be preserved.
+    assert_eq!(s.sample_rate, 96_000);
+}
+
+#[test]
+fn test_manager_thread_init_failure_records_error_without_full_state_clone() {
+    // DSD bitstream required is unavailable on every platform, so
+    // run_manager_thread will fail before spawning worker threads.
+    let config = EngineConfig {
+        dsd_output: sotf_types::DsdOutputMode::DopRequired,
+        ..EngineConfig::default()
+    };
+
+    let manager = super::ManagerThread::new(config).expect("manager thread should spawn");
+    // Give the manager thread time to exit and write the error state.
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    let state = manager.get_state();
+    assert_eq!(state.playback_state, PlaybackState::Stopped);
+    let error = state.last_error.expect("last_error should be set");
+    assert!(
+        error.contains("Engine initialization failed"),
+        "unexpected error: {error}"
+    );
+    assert!(
+        error.contains("DSD") || error.contains("bitstream") || error.contains("DoP"),
+        "unexpected error: {error}"
+    );
+}

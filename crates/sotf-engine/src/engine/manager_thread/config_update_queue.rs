@@ -483,9 +483,17 @@ pub(super) fn run_manager_thread(
                 config.oversampling_policy,
             ) {
                 log::error!("[Manager Thread] Failed to apply config update: {}", e);
-                let mut new_state = (**state.load()).clone();
-                new_state.last_error = Some(e.to_string());
-                state.store(Arc::new(new_state));
+                // Avoid cloning the whole state when the same error is reported
+                // repeatedly. Only perform the in-place update when the error
+                // actually changes.
+                let error_string = e.to_string();
+                let current = state.load();
+                if current.last_error.as_deref() != Some(error_string.as_str()) {
+                    drop(current);
+                    super::state_helpers::update_engine_state(&state, |new_state| {
+                        new_state.last_error = Some(error_string);
+                    });
+                }
             }
             config_update_queue.complete_processing();
         }

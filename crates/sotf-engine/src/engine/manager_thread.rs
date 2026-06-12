@@ -18,6 +18,7 @@ mod error;
 mod estimate;
 mod handle;
 mod misc;
+mod state_helpers;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -60,11 +61,13 @@ impl ManagerThread {
                 ) {
                     log::error!("[Manager Thread] Initialization failed: {}", e);
                     // Store the error in the shared state so callers can see it
-                    // via get_engine_state() even after the thread exits
-                    let mut new_state = (**state_clone.load()).clone();
-                    new_state.last_error = Some(format!("Engine initialization failed: {}", e));
-                    new_state.playback_state = PlaybackState::Stopped;
-                    state_clone.store(Arc::new(new_state));
+                    // via get_engine_state() even after the thread exits.
+                    // Use the lock-free in-place update to avoid a full state copy.
+                    state_helpers::update_engine_state(&state_clone, |new_state| {
+                        new_state.last_error =
+                            Some(format!("Engine initialization failed: {}", e));
+                        new_state.playback_state = PlaybackState::Stopped;
+                    });
                 }
             })
             .map_err(|e| format!("Failed to spawn manager thread: {}", e))?;
