@@ -833,13 +833,18 @@ impl App {
             self.library_state.library.albums.len(),
         );
 
-        // Check if library is empty
-        if self.library_state.library.albums.is_empty() {
+        if self.should_prompt_for_empty_local_library() {
             // Show modal prompting to scan for music
             self.ui_state.input_mode = InputMode::EmptyLibraryPrompt;
         }
 
         self.is_loading_initial_data = false;
+    }
+
+    /// Whether startup should block Home/Search with the local-empty-library prompt.
+    pub fn should_prompt_for_empty_local_library(&self) -> bool {
+        self.library_state.library.albums.is_empty()
+            && self.remote.server_store.selected_server_id.is_none()
     }
 
     /// Update directory scan times from database

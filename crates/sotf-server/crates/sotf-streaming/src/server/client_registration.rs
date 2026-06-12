@@ -2,6 +2,7 @@
 
 use super::client_message::serve_stream;
 use super::consts::CLIENT_READ_TIMEOUT_MS;
+use super::consts::CLIENT_THREAD_STACK_SIZE_BYTES;
 use super::consts::read_http_request;
 use super::misc::parse_request_line;
 use super::pcm_stream_stats::index_json;
@@ -30,11 +31,15 @@ pub(super) fn accept_pending_clients(
                 log::debug!("[PCM Stream] Connection from {}", peer);
                 let tx = client_tx.clone();
                 let stats = Arc::clone(&stats);
-                let _ = thread::Builder::new()
+                if let Err(e) = thread::Builder::new()
                     .name("pcm-stream-client".to_string())
+                    .stack_size(CLIENT_THREAD_STACK_SIZE_BYTES)
                     .spawn(move || {
                         handle_client(stream, tx, stats, client_queue_capacity);
-                    });
+                    })
+                {
+                    log::warn!("[PCM Stream] Failed to spawn client handler: {}", e);
+                }
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
             Err(e) => {

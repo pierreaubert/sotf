@@ -2,12 +2,15 @@
 
 use super::pcm_stream_format::PcmStreamFormat;
 use super::pcm_stream_format::build_wav_stream_header_f32;
+use super::pcm_stream_handle::PcmStreamHandle;
 use super::pcm_stream_server::PcmStreamServer;
 use super::pcm_stream_server_config::PcmStreamServerConfig;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::thread::{self};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+const SERVER_ATTEMPTS: usize = 5;
 
 fn start_test_server() -> Option<PcmStreamServer> {
     match PcmStreamServer::start(PcmStreamServerConfig {
@@ -24,28 +27,111 @@ fn start_test_server() -> Option<PcmStreamServer> {
     }
 }
 
-fn read_response(mut stream: &TcpStream) -> String {
+fn contains_bytes(bytes: &[u8], needle: &[u8]) -> bool {
+    bytes.windows(needle.len()).any(|window| window == needle)
+}
+
+fn wait_until<F>(timeout: Duration, mut condition: F) -> bool
+where
+    F: FnMut() -> bool,
+{
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if condition() {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    condition()
+}
+
+fn read_until<F>(stream: &mut TcpStream, timeout: Duration, mut done: F) -> Vec<u8>
+where
+    F: FnMut(&[u8]) -> bool,
+{
     stream
-        .set_read_timeout(Some(Duration::from_millis(500)))
+        .set_read_timeout(Some(Duration::from_millis(20)))
         .unwrap();
+    let deadline = Instant::now() + timeout;
     let mut bytes = Vec::new();
     let mut buf = [0u8; 4096];
-    loop {
+    while Instant::now() < deadline {
         match stream.read(&mut buf) {
             Ok(0) => break,
-            Ok(n) => bytes.extend_from_slice(&buf[..n]),
+            Ok(n) => {
+                bytes.extend_from_slice(&buf[..n]);
+                if done(&bytes) {
+                    break;
+                }
+            }
             Err(e)
                 if matches!(
                     e.kind(),
                     io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
                 ) =>
             {
-                break;
+                continue;
             }
             Err(e) => panic!("read failed: {e}"),
         }
     }
-    String::from_utf8_lossy(&bytes).into_owned()
+    bytes
+}
+
+fn request_response(addr: std::net::SocketAddr, request: &[u8], expected_status: &str) -> Vec<u8> {
+    let mut last_response = Vec::new();
+    for _ in 0..SERVER_ATTEMPTS {
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream.write_all(request).unwrap();
+        let bytes = read_until(&mut stream, Duration::from_secs(2), |bytes| {
+            contains_bytes(bytes, expected_status.as_bytes())
+        });
+        if String::from_utf8_lossy(&bytes).starts_with(expected_status) {
+            return bytes;
+        }
+        last_response = bytes;
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    panic!(
+        "expected {expected_status}, got: {:?}",
+        String::from_utf8_lossy(&last_response)
+    );
+}
+
+fn open_registered_stream<F>(
+    server: &PcmStreamServer,
+    handle: &PcmStreamHandle,
+    request: &[u8],
+    mut header_ready: F,
+) -> (TcpStream, Vec<u8>)
+where
+    F: FnMut(&[u8]) -> bool,
+{
+    let mut last_response = Vec::new();
+    for _ in 0..SERVER_ATTEMPTS {
+        let baseline_clients = handle.stats().client_count;
+        let mut stream = TcpStream::connect(server.local_addr()).unwrap();
+        stream.write_all(request).unwrap();
+        let bytes = read_until(&mut stream, Duration::from_secs(2), |bytes| {
+            header_ready(bytes)
+        });
+        let header_seen = header_ready(&bytes);
+        if header_seen
+            && wait_until(Duration::from_secs(2), || {
+                handle.stats().client_count > baseline_clients
+            })
+        {
+            return (stream, bytes);
+        }
+        last_response = bytes;
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    panic!(
+        "streaming client was not registered before publishing; last response: {:?}",
+        String::from_utf8_lossy(&last_response)
+    );
 }
 
 #[test]
@@ -70,11 +156,12 @@ fn status_endpoint_reports_server_state() {
         return;
     };
 
-    let mut stream = TcpStream::connect(server.local_addr()).unwrap();
-    stream
-        .write_all(b"GET /status HTTP/1.1\r\nHost: localhost\r\n\r\n")
-        .unwrap();
-    let response = read_response(&stream);
+    let bytes = request_response(
+        server.local_addr(),
+        b"GET /status HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        "HTTP/1.1 200 OK",
+    );
+    let response = String::from_utf8_lossy(&bytes);
     assert!(response.starts_with("HTTP/1.1 200 OK"));
     assert!(response.contains("\"status\":\"ok\""));
     assert!(response.contains("\"sample_rate\":48000"));
@@ -90,19 +177,28 @@ fn wav_stream_receives_header_and_published_audio() {
     };
     let handle = server.handle();
 
-    let mut stream = TcpStream::connect(server.local_addr()).unwrap();
-    stream
-        .write_all(b"GET /stream.wav HTTP/1.1\r\nHost: localhost\r\n\r\n")
-        .unwrap();
+    let (mut stream, mut bytes) = open_registered_stream(
+        &server,
+        &handle,
+        b"GET /stream.wav HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        |bytes| contains_bytes(bytes, b"RIFF") && contains_bytes(bytes, b"WAVE"),
+    );
 
-    thread::sleep(Duration::from_millis(50));
-    assert!(handle.publish(&[0.25, -0.25, 0.5, -0.5], 2, 2, 48_000));
-
-    let response = read_response(&stream);
+    let samples = [0.25, -0.25, 0.5, -0.5];
+    assert!(handle.publish(&samples, 2, 2, 48_000));
+    let sample_bytes: Vec<u8> = samples
+        .iter()
+        .flat_map(|sample| f32::to_le_bytes(*sample))
+        .collect();
+    bytes.extend(read_until(&mut stream, Duration::from_secs(2), |bytes| {
+        contains_bytes(bytes, &sample_bytes)
+    }));
+    let response = String::from_utf8_lossy(&bytes);
     assert!(response.starts_with("HTTP/1.1 200 OK"));
     assert!(response.contains("Content-Type: audio/wav"));
-    assert!(response.as_bytes().windows(4).any(|w| w == b"RIFF"));
-    assert!(response.as_bytes().windows(4).any(|w| w == b"WAVE"));
+    assert!(contains_bytes(&bytes, b"RIFF"));
+    assert!(contains_bytes(&bytes, b"WAVE"));
+    assert!(contains_bytes(&bytes, &sample_bytes));
     assert!(handle.stats().published_chunks >= 1);
 
     server.shutdown();

@@ -11,6 +11,10 @@ pub(super) const ACCEPT_POLL_MS: u64 = 10;
 
 pub(super) const CLIENT_READ_TIMEOUT_MS: u64 = 2_000;
 
+pub(super) const SERVER_THREAD_STACK_SIZE_BYTES: usize = 256 * 1024;
+
+pub(super) const CLIENT_THREAD_STACK_SIZE_BYTES: usize = 256 * 1024;
+
 pub(super) const MAX_HTTP_REQUEST_BYTES: usize = 16 * 1024;
 
 pub(super) const STREAM_DATA_SIZE: u32 = u32::MAX - 36;

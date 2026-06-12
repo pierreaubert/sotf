@@ -348,6 +348,19 @@ fn app_keeps_current_remote_album_page_when_server_query_and_version_match() {
 }
 
 #[test]
+fn empty_local_library_prompt_is_suppressed_for_selected_remote_server() {
+    let mut app = App::new();
+
+    assert!(app.should_prompt_for_empty_local_library());
+
+    app.remote
+        .add_manual_server_record("Desk", "http://desk.local:8732")
+        .unwrap();
+
+    assert!(!app.should_prompt_for_empty_local_library());
+}
+
+#[test]
 fn remote_library_identity_change_invalidates_disposable_cache() {
     let mut state = RemoteState::default();
     let identity = RemoteLibraryIdentity {
