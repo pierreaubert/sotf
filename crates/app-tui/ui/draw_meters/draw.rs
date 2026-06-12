@@ -64,6 +64,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
 
     if let Some(ref loudness) = app.loudness_info {
         let mut y_offset = 0;
+        // Reused stack buffer for all short numeric gauge labels in this box.
         let mut label_buf = MeterLabelBuf::new();
 
         // ============================================================================
@@ -132,17 +133,18 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                         .bg(Color::Black)
                 };
 
-                // Format label showing the dBTP value
-                let label = if true_peak_dbtp.is_finite() {
-                    format!("{:>5.1}", true_peak_dbtp)
+                // Format label showing the dBTP value into the reused stack buffer.
+                label_buf.len = 0;
+                if true_peak_dbtp.is_finite() {
+                    let _ = write!(&mut label_buf, "{:>5.1}", true_peak_dbtp);
                 } else {
-                    "  -∞".to_string()
-                };
+                    let _ = write!(&mut label_buf, "  -∞");
+                }
 
                 use ratatui::widgets::Gauge;
                 let gauge = Gauge::default()
                     .ratio(ratio)
-                    .label(label)
+                    .label(label_buf.as_str())
                     .gauge_style(gauge_style)
                     .use_unicode(true);
 
@@ -158,40 +160,47 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                 y_offset += 1;
             }
 
-            // Scale labels: "-60" at left, "0" at 60/66 position, "+6" at right
+            // Scale labels: "-60" at left, "0" at 60/66 position, "+6" at right.
+            // Rendered as separate static spans instead of building a whitespace string.
             if y_offset < inner.height {
                 let width = inner.width as usize;
                 // True peak scale: -60 dBTP to +6 dBTP (total range 66 dB)
                 // Position of 0 dBTP: 60/66 ≈ 0.909
-                let zero_pos = ((60.0 / 66.0) * width as f64) as usize;
-                let max_pos = width.saturating_sub(2); // "+6" is 2 chars
+                let zero_pos = ((60.0 / 66.0) * width as f64) as u16;
+                let max_pos = width.saturating_sub(2).min(inner.width as usize) as u16; // "+6" is 2 chars
 
-                let mut scale = String::with_capacity(width);
-                scale.push_str("-60");
-
-                // Add spaces until zero position (accounting for "-60" = 3 chars)
-                let spaces_before_zero = zero_pos.saturating_sub(3 + 1); // -1 for the "0" char
-                if spaces_before_zero > 0 {
-                    scale.push_str(&" ".repeat(spaces_before_zero));
-                }
-                scale.push('0');
-
-                // Add spaces until "+6" position
-                let current_len = scale.len();
-                if max_pos > current_len {
-                    scale.push_str(&" ".repeat(max_pos - current_len));
-                }
-                scale.push_str("+6");
-
+                let scale_style = Style::default().fg(app.theme.fg_muted);
                 f.render_widget(
-                    Paragraph::new(scale).style(Style::default().fg(app.theme.fg_muted)),
+                    Paragraph::new("-60").style(scale_style),
                     Rect {
                         x: inner.x,
                         y: inner.y + y_offset,
-                        width: inner.width,
+                        width: 3,
                         height: 1,
                     },
                 );
+                if zero_pos > 0 && inner.x + zero_pos + 1 <= inner.x + inner.width {
+                    f.render_widget(
+                        Paragraph::new("0").style(scale_style),
+                        Rect {
+                            x: inner.x + zero_pos,
+                            y: inner.y + y_offset,
+                            width: 1,
+                            height: 1,
+                        },
+                    );
+                }
+                if inner.x + max_pos + 2 <= inner.x + inner.width {
+                    f.render_widget(
+                        Paragraph::new("+6").style(scale_style),
+                        Rect {
+                            x: inner.x + max_pos,
+                            y: inner.y + y_offset,
+                            width: 2,
+                            height: 1,
+                        },
+                    );
+                }
                 y_offset += 1;
             }
         }
@@ -213,93 +222,117 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
             y_offset += 1;
         }
 
-        // Helper function to draw LUFS bar using Gauge widget
-        let draw_lufs_bar = |f: &mut Frame, y: u16, label_char: &str, lufs: f64| {
-            // Map -60 to 0 LUFS as 0% to 100%
-            let ratio = if lufs.is_finite() {
-                ((lufs + 60.0) / 60.0).clamp(0.0, 1.0)
-            } else {
-                0.0
+        // Helper function to draw LUFS bar using Gauge widget.
+        // Borrows the shared stack label buffer to avoid per-bar `format!` calls.
+        let draw_lufs_bar =
+            |f: &mut Frame, label_buf: &mut MeterLabelBuf, y: u16, label_char: &str, lufs: f64| {
+                // Map -60 to 0 LUFS as 0% to 100%
+                let ratio = if lufs.is_finite() {
+                    ((lufs + 60.0) / 60.0).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+
+                // Choose color: green → orange → red based on level
+                // bg sets the label text color on the filled portion (fg/bg are swapped for labels)
+                let gauge_style = if lufs > -1.0 {
+                    Style::default().fg(app.theme.accent_error).bg(Color::White)
+                } else if lufs > -10.0 {
+                    Style::default()
+                        .fg(app.theme.accent_warning)
+                        .bg(Color::Black)
+                } else {
+                    Style::default()
+                        .fg(app.theme.accent_success)
+                        .bg(Color::Black)
+                };
+
+                // Format label: "M -15.0" into the reused stack buffer.
+                label_buf.len = 0;
+                let _ = write!(label_buf, "{} ", label_char);
+                if lufs.is_finite() {
+                    let _ = write!(label_buf, "{:>5.1}", lufs);
+                } else {
+                    let _ = write!(label_buf, "  -∞");
+                }
+
+                use ratatui::widgets::Gauge;
+                let gauge = Gauge::default()
+                    .ratio(ratio)
+                    .label(label_buf.as_str())
+                    .gauge_style(gauge_style)
+                    .use_unicode(true);
+
+                f.render_widget(
+                    gauge,
+                    Rect {
+                        x: inner.x,
+                        y,
+                        width: inner.width,
+                        height: 1,
+                    },
+                );
             };
-
-            // Choose color: green → orange → red based on level
-            // bg sets the label text color on the filled portion (fg/bg are swapped for labels)
-            let gauge_style = if lufs > -1.0 {
-                Style::default().fg(app.theme.accent_error).bg(Color::White)
-            } else if lufs > -10.0 {
-                Style::default()
-                    .fg(app.theme.accent_warning)
-                    .bg(Color::Black)
-            } else {
-                Style::default()
-                    .fg(app.theme.accent_success)
-                    .bg(Color::Black)
-            };
-
-            // Format label: "M -15.0"
-            let value_str = if lufs.is_finite() {
-                format!("{:>5.1}", lufs)
-            } else {
-                "  -∞".to_string()
-            };
-            let label = format!("{} {}", label_char, value_str);
-
-            use ratatui::widgets::Gauge;
-            let gauge = Gauge::default()
-                .ratio(ratio)
-                .label(label)
-                .gauge_style(gauge_style)
-                .use_unicode(true);
-
-            f.render_widget(
-                gauge,
-                Rect {
-                    x: inner.x,
-                    y,
-                    width: inner.width,
-                    height: 1,
-                },
-            );
-        };
 
         // M (Momentary)
         if y_offset < inner.height {
-            draw_lufs_bar(f, inner.y + y_offset, "M", loudness.momentary_lufs);
+            draw_lufs_bar(
+                f,
+                &mut label_buf,
+                inner.y + y_offset,
+                "M",
+                loudness.momentary_lufs,
+            );
             y_offset += 1;
         }
 
         // S (Short-term)
         if y_offset < inner.height {
-            draw_lufs_bar(f, inner.y + y_offset, "S", loudness.shortterm_lufs);
+            draw_lufs_bar(
+                f,
+                &mut label_buf,
+                inner.y + y_offset,
+                "S",
+                loudness.shortterm_lufs,
+            );
             y_offset += 1;
         }
 
         // I (Integrated)
         if y_offset < inner.height {
-            draw_lufs_bar(f, inner.y + y_offset, "I", loudness.integrated_lufs);
+            draw_lufs_bar(
+                f,
+                &mut label_buf,
+                inner.y + y_offset,
+                "I",
+                loudness.integrated_lufs,
+            );
             y_offset += 1;
         }
 
         // Scale labels: "-60" at left, "0" at right
         if y_offset < inner.height {
-            let width = inner.width as usize;
-            let mut scale = String::with_capacity(width);
-            scale.push_str("-60");
-
-            // Add spaces until "0" at the right edge (0 is 1 char)
-            let spaces = width.saturating_sub(4); // 3 for "-60", 1 for "0"
-            scale.push_str(&" ".repeat(spaces));
-            scale.push('0');
-
+            let scale_style = Style::default().fg(app.theme.fg_muted);
             f.render_widget(
-                Paragraph::new(scale).style(Style::default().fg(app.theme.fg_muted)),
+                Paragraph::new("-60").style(scale_style),
                 Rect {
                     x: inner.x,
                     y: inner.y + y_offset,
-                    width: inner.width,
+                    width: 3,
                     height: 1,
                 },
             );
+            if inner.width >= 2 {
+                f.render_widget(
+                    Paragraph::new("0").style(scale_style),
+                    Rect {
+                        x: inner.x + inner.width - 1,
+                        y: inner.y + y_offset,
+                        width: 1,
+                        height: 1,
+                    },
+                );
+            }
             y_offset += 1;
         }
 
@@ -343,11 +376,12 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                         .bg(Color::Black)
                 };
 
-                let label = format!("{:>4.2}", stereo_width);
+                label_buf.len = 0;
+                let _ = write!(&mut label_buf, "{:>4.2}", stereo_width);
 
                 let gauge = Gauge::default()
                     .ratio(ratio)
-                    .label(label)
+                    .label(label_buf.as_str())
                     .gauge_style(gauge_style)
                     .use_unicode(true);
 
@@ -365,24 +399,27 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
 
             // Scale labels: "0" at left, "1" at right
             if y_offset < inner.height {
-                let width = inner.width as usize;
-                let mut scale = String::with_capacity(width);
-                scale.push('0');
-
-                // Add spaces until "1" at the right edge
-                let spaces = width.saturating_sub(2); // 1 for "0", 1 for "1"
-                scale.push_str(&" ".repeat(spaces));
-                scale.push('1');
-
+                let scale_style = Style::default().fg(app.theme.fg_muted);
                 f.render_widget(
-                    Paragraph::new(scale).style(Style::default().fg(app.theme.fg_muted)),
+                    Paragraph::new("0").style(scale_style),
                     Rect {
                         x: inner.x,
                         y: inner.y + y_offset,
-                        width: inner.width,
+                        width: 1,
                         height: 1,
                     },
                 );
+                if inner.width >= 2 {
+                    f.render_widget(
+                        Paragraph::new("1").style(scale_style),
+                        Rect {
+                            x: inner.x + inner.width - 1,
+                            y: inner.y + y_offset,
+                            width: 1,
+                            height: 1,
+                        },
+                    );
+                }
             }
         }
     } else {
@@ -897,5 +934,62 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 
         // Advance by group width + 1 space between groups
         x_offset += group_width + 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::App;
+    use crate::theme::Theme;
+    use ratatui::{backend::TestBackend, Terminal};
+    use sotf_audio::LoudnessData;
+    use std::sync::Arc;
+
+    fn test_app_with_loudness() -> App {
+        let mut app = App::new(Theme::default(), /* read_only */ true);
+        app.loudness_info = Some(LoudnessData {
+            momentary_lufs: -10.5,
+            shortterm_lufs: -12.0,
+            integrated_lufs: -14.0,
+            peak: 0.5,
+            channel_peaks: Arc::new(vec![0.5, 0.3]),
+            true_peaks_dbtp: Arc::new(vec![-3.5, -6.0]),
+            correlation_lr: Some(0.8),
+            correlation_matrix: Arc::new(Vec::new()),
+            correlation_samples_seen: 0,
+        });
+        app
+    }
+
+    /// Smoke / regression test: `draw_lufs_box` must render the loudness box
+    /// without relying on per-frame `String` allocations for labels or scale
+    /// strings. We verify that the expected sections are written into the
+    /// terminal buffer.
+    #[test]
+    fn draw_lufs_box_renders_all_sections() {
+        let backend = TestBackend::new(40, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let app = test_app_with_loudness();
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_lufs_box(f, area, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content: String = buffer.content.iter().map(|c| c.symbol()).collect();
+        assert!(
+            content.contains("True Peak"),
+            "expected True Peak header; got {:?}",
+            content
+        );
+        assert!(content.contains("LUFS"), "expected LUFS section; got {:?}", content);
+        assert!(
+            content.contains("Stereo width"),
+            "expected Stereo width section; got {:?}",
+            content
+        );
     }
 }
