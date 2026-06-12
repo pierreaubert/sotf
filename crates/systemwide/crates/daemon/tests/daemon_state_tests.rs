@@ -70,7 +70,7 @@ fn daemon_plugin_reload_uses_hot_update_path() {
         "daemon should build the injected metering chain in one shared helper"
     );
     assert!(
-        reload_body.contains("manager.update_plugin_chain(plan.runtime_plugins.clone())"),
+        reload_body.contains("manager.update_plugin_chain(&plan.runtime_plugins)"),
         "plugin add/remove/update/reorder should hot-update the running engine"
     );
     assert!(
