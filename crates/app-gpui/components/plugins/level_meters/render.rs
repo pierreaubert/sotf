@@ -8,6 +8,7 @@ use super::misc::should_use_peak_spread;
 use crate::app::ChannelGroup;
 use crate::app::constants::spacing;
 use crate::components::design::Ds;
+use crate::level_meter_render::{ChannelMeterData, GroupMeterData, build_channel_meter_data};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -594,7 +595,8 @@ impl PlayerView {
         align_right: bool,
     ) -> impl IntoElement {
         let ticks = [0, -6, -12, -18, -24, -30, -40, -50, -60];
-        let theme = theme.clone();
+        let text_muted = theme.text_muted;
+        let border = theme.border;
         let text_xs = d.text_xs;
         let grid = d.grid;
 
@@ -646,11 +648,11 @@ impl PlayerView {
 
                                 let label = div()
                                     .text_size(rems(0.5625))
-                                    .text_color(theme.text_muted)
+                                    .text_color(text_muted)
                                     .mt(label_offset)
                                     .child(format!("{}", db));
 
-                                let tick = div().w(px(4.0)).h(px(1.0)).bg(theme.border);
+                                let tick = div().w(px(4.0)).h(px(1.0)).bg(border);
 
                                 let container = div()
                                     .absolute()
@@ -715,6 +717,7 @@ impl PlayerView {
     }
 
     /// Render a single meter group with M/S/D buttons below the channels
+    /// Render a single meter group with M/S/D buttons below the channels
     pub fn render_meter_group(
         &self,
         group: &ChannelGroup,
@@ -725,55 +728,25 @@ impl PlayerView {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let channel_data = build_channel_meter_data(&group.channels, loudness, peak_hold);
+        self.render_meter_group_data(group_idx, group.muted, group.soloed, group.dimmed, channel_data, theme, cx)
+    }
+
+    /// Render a meter group from pre-computed channel data. This avoids
+    /// cloning the full `ChannelGroup` / `peak_hold` vectors in callers
+    /// such as `render_meters_panel`.
+    fn render_meter_group_data(
+        &self,
+        group_idx: usize,
+        muted: bool,
+        soloed: bool,
+        dimmed: bool,
+        channel_data: Vec<ChannelMeterData>,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let muted = group.muted;
-        let soloed = group.soloed;
-        let dimmed = group.dimmed;
-
-        // Pre-compute channel data to avoid closure issues with cx
-        let channel_data: Vec<_> = group
-            .channels
-            .iter()
-            .map(|channel| {
-                let peak = loudness
-                    .and_then(|l| l.channel_peaks.get(channel.index))
-                    .copied()
-                    .unwrap_or(0.0);
-
-                let peak_db = if peak > 0.0001 {
-                    20.0 * peak.log10()
-                } else {
-                    -60.0
-                };
-
-                // Get peak hold value for this channel
-                let peak_hold_value = peak_hold.get(channel.index).copied().unwrap_or(0.0);
-                let peak_hold_db = if peak_hold_value > 0.0001 {
-                    20.0 * peak_hold_value.log10()
-                } else {
-                    -60.0
-                };
-                let peak_hold_ratio = if peak_hold_value > 0.0001 {
-                    Some(db_to_position(peak_hold_db))
-                } else {
-                    None
-                };
-
-                let fill_ratio = db_to_position(peak_db);
-                let yellow_threshold = db_to_position(-6.0);
-                let red_threshold = db_to_position(-1.0);
-
-                (
-                    fill_ratio,
-                    yellow_threshold,
-                    red_threshold,
-                    peak_hold_ratio,
-                    channel.name.clone(),
-                )
-            })
-            .collect();
-
-        let theme_c = theme.clone();
+        let background_secondary = theme.background_secondary;
         div()
             .flex()
             .flex_col()
@@ -781,22 +754,20 @@ impl PlayerView {
             .min_h(rems(17.5))
             .p_0p5()
             // Removed rounded_md and selection background logic
-            .bg(theme_c.background_secondary)
+            .bg(background_secondary)
             // Channel meters
             .child(div().flex().gap_px().flex_1().min_h(rems(12.5)).children(
-                channel_data.into_iter().map(
-                    |(fill_ratio, yellow_threshold, red_threshold, peak_hold_ratio, name)| {
-                        render_gradient_meter(
-                            &d,
-                            fill_ratio,
-                            yellow_threshold,
-                            red_threshold,
-                            peak_hold_ratio,
-                            name,
-                            theme,
-                        )
-                    },
-                ),
+                channel_data.into_iter().map(|data| {
+                    render_gradient_meter(
+                        &d,
+                        data.fill_ratio,
+                        data.yellow_threshold,
+                        data.red_threshold,
+                        data.peak_hold_ratio,
+                        data.name,
+                        theme,
+                    )
+                }),
             ))
             // M/S/D buttons vertical column below meters, centered
             .child(
@@ -899,16 +870,29 @@ impl PlayerView {
     /// Render separate Meters panel (for queue screen)
     pub fn render_meters_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        // Extract all data from state first to avoid borrow issues
-        let (theme, loudness, groups, selected_group, peak_hold) = {
+        // Pre-compute only the render data while the state read lock is held.
+        // Previously this cloned the full `groups`, `peak_hold`, `loudness`
+        // and `theme` values on every frame.
+        let (theme, groups_data) = {
             let state = self.state.read(cx);
-            (
-                state.app.ui_state.theme.clone(),
-                state.app.playback.loudness_info.clone(),
-                state.app.level_meters.groups.clone(),
-                state.app.level_meters.selected_group,
-                state.app.level_meters.peak_hold.clone(),
-            )
+            let theme = state.app.ui_state.theme.clone();
+            let loudness = state.app.playback.loudness_info.as_ref();
+            let peak_hold = &state.app.level_meters.peak_hold;
+            let groups = &state.app.level_meters.groups;
+
+            let groups_data: Vec<GroupMeterData> = groups
+                .iter()
+                .enumerate()
+                .map(|(group_idx, group)| GroupMeterData {
+                    group_idx,
+                    muted: group.muted,
+                    soloed: group.soloed,
+                    dimmed: group.dimmed,
+                    channels: build_channel_meter_data(&group.channels, loudness, peak_hold),
+                })
+                .collect();
+
+            (theme, groups_data)
         };
         div()
             .flex()
@@ -936,15 +920,14 @@ impl PlayerView {
                         .into_any_element(),
                 );
 
-                for (idx, group) in groups.iter().enumerate() {
-                    let is_selected = idx == selected_group;
+                for group_data in groups_data {
                     meter_elements.push(
-                        self.render_meter_group(
-                            group,
-                            idx,
-                            is_selected,
-                            loudness.as_ref(),
-                            &peak_hold,
+                        self.render_meter_group_data(
+                            group_data.group_idx,
+                            group_data.muted,
+                            group_data.soloed,
+                            group_data.dimmed,
+                            group_data.channels,
                             &theme,
                             cx,
                         )
