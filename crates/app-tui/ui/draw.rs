@@ -15,8 +15,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    // Ensure filtered albums cache is updated
-    app.filtered_albums();
+    // Only refresh the filtered-album cache when the library view is actually
+    // visible. Computing the cache is cheap when `needs_filter_update` is false,
+    // but skipping the call entirely on non-library screens avoids touching the
+    // library state every frame.
+    let window_height = f.area().height;
+    let show_dual_view = window_height >= DUAL_VIEW_HEIGHT_THRESHOLD
+        && (app.current_screen == Screen::Library || app.current_screen == Screen::Queue);
+    if app.current_screen == Screen::Library || show_dual_view {
+        app.filtered_albums();
+    }
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -54,7 +62,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Check window height for responsive layout
     let window_width = f.area().width;
-    let window_height = f.area().height;
     let use_three_columns = window_height < 40;
 
     let main_chunks = if use_three_columns {
@@ -88,10 +95,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             .split(chunks[1])
     };
 
-    // Check if window is tall enough for dual view (library + queue)
-    let show_dual_view = window_height >= DUAL_VIEW_HEIGHT_THRESHOLD
-        && (app.current_screen == Screen::Library || app.current_screen == Screen::Queue);
-
+    // `show_dual_view` was computed earlier to gate the filtered-album cache.
     if show_dual_view {
         // Split main area vertically to show both library and queue
         let dual_chunks = Layout::default()

@@ -9,6 +9,8 @@ mod handle;
 mod misc;
 mod poll;
 mod room;
+#[cfg(test)]
+mod tests;
 
 pub use auto::*;
 pub use handle::*;

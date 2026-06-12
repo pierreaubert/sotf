@@ -1,5 +1,6 @@
 use super::app_impl::App;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 impl App {
     /// Start library scan (non-blocking background scan)
@@ -87,21 +88,20 @@ impl App {
             return;
         }
 
-        // Collect messages first to avoid borrow issues
-        let messages: Vec<_> = {
-            let scanner = match &self.library_scanner {
-                Some(s) => s,
-                None => return,
-            };
-            let mut msgs = Vec::new();
-            while let Some(msg) = scanner.try_recv() {
-                msgs.push(msg);
-            }
-            msgs
+        // Drain messages one at a time instead of collecting them into a Vec.
+        // This bounds memory usage when the UI thread falls behind the scanner.
+        let scanner = match &self.library_scanner {
+            Some(s) => s,
+            None => return,
         };
 
-        // Process collected messages
-        for msg in messages {
+        enum Completion {
+            Complete,
+            Error,
+        }
+        let mut completion = None;
+
+        while let Some(msg) = scanner.try_recv() {
             use sotf_audio_player::LibraryScanMessage;
 
             match msg {
@@ -115,8 +115,9 @@ impl App {
                 }
                 LibraryScanMessage::Complete { tracks, albums } => {
                     self.scan_in_progress = false;
-                    self.library_scanner = None;
                     self.needs_rescan = false;
+                    self.scan_progress_tracks = tracks;
+                    self.scan_progress_albums = albums;
                     self.status_message = Some(format!(
                         "Scan complete: {} tracks in {} albums",
                         tracks, albums
@@ -126,33 +127,47 @@ impl App {
                         tracks,
                         albums
                     );
-
-                    // Reload library from database to get the new data
-                    if let Err(e) = self.library.load_from_database() {
-                        log::error!("Failed to reload library after scan: {}", e);
-                    }
-                    self.rebuild_artist_tree();
-                    self.request_filter_update();
-
-                    // Start background scans for new tracks.
-                    // Bliss scan will auto-start when waveform completes to avoid
-                    // excessive memory usage from concurrent full-file decodings.
-                    if let Err(e) = self.start_replay_gain_scan() {
-                        log::warn!("Failed to start replay gain scan: {}", e);
-                    }
-                    if let Err(e) = self.start_waveform_scan() {
-                        log::warn!("Failed to start waveform scan: {}", e);
-                    }
-                    self.clear_pause_override_if_idle();
+                    completion = Some(Completion::Complete);
                 }
                 LibraryScanMessage::Error { message } => {
                     self.scan_in_progress = false;
-                    self.library_scanner = None;
                     self.status_message = Some(format!("Scan failed: {}", message));
                     log::error!("Library scan failed: {}", message);
-                    self.clear_pause_override_if_idle();
+                    completion = Some(Completion::Error);
                 }
             }
+        }
+
+        // Drop the scanner borrow before running completion side effects that
+        // need to mutate other fields of `self`.
+        if completion.is_some() {
+            self.library_scanner = None;
+        }
+
+        match completion {
+            Some(Completion::Complete) => {
+                // Reload library from database to get the new data
+                if let Err(e) = self.library.load_from_database() {
+                    log::error!("Failed to reload library after scan: {}", e);
+                }
+                self.rebuild_artist_tree();
+                self.request_filter_update();
+
+                // Start background scans for new tracks.
+                // Bliss scan will auto-start when waveform completes to avoid
+                // excessive memory usage from concurrent full-file decodings.
+                if let Err(e) = self.start_replay_gain_scan() {
+                    log::warn!("Failed to start replay gain scan: {}", e);
+                }
+                if let Err(e) = self.start_waveform_scan() {
+                    log::warn!("Failed to start waveform scan: {}", e);
+                }
+                self.clear_pause_override_if_idle();
+            }
+            Some(Completion::Error) => {
+                self.clear_pause_override_if_idle();
+            }
+            None => {}
         }
     }
 
@@ -162,10 +177,11 @@ impl App {
         self.scan_progress_albums = 0;
         self.status_message = Some("Scanning library...".to_string());
 
-        // Create shared progress state
-        let progress_tracks = Arc::new(Mutex::new(0usize));
-        let progress_albums = Arc::new(Mutex::new(0usize));
-        let last_update_tracks = Arc::new(Mutex::new(0usize));
+        // Create shared progress state using atomics to avoid locking on every
+        // progress tick.
+        let progress_tracks = Arc::new(AtomicUsize::new(0));
+        let progress_albums = Arc::new(AtomicUsize::new(0));
+        let last_update_tracks = Arc::new(AtomicUsize::new(0));
 
         let progress_tracks_clone = Arc::clone(&progress_tracks);
         let progress_albums_clone = Arc::clone(&progress_albums);
@@ -173,33 +189,20 @@ impl App {
 
         // Use progress callback to update shared progress
         let result = self.library.scan_with_progress(move |tracks, albums| {
-            let should_update = if let Ok(last) = last_update_clone.lock() {
-                tracks - *last >= 1000 || tracks == 0
-            } else {
-                false
-            };
+            let last = last_update_clone.load(Ordering::Relaxed);
+            let should_update = tracks.saturating_sub(last) >= 1000 || tracks == 0;
 
             if should_update {
-                if let Ok(mut pt) = progress_tracks_clone.lock() {
-                    *pt = tracks;
-                }
-                if let Ok(mut pa) = progress_albums_clone.lock() {
-                    *pa = albums;
-                }
-                if let Ok(mut last) = last_update_clone.lock() {
-                    *last = tracks;
-                }
+                progress_tracks_clone.store(tracks, Ordering::Relaxed);
+                progress_albums_clone.store(albums, Ordering::Relaxed);
+                last_update_clone.store(tracks, Ordering::Relaxed);
                 log::info!("Scan progress: {} tracks, {} albums found", tracks, albums);
             }
         });
 
         // Update app state with final progress
-        if let Ok(pt) = progress_tracks.lock() {
-            self.scan_progress_tracks = *pt;
-        }
-        if let Ok(pa) = progress_albums.lock() {
-            self.scan_progress_albums = *pa;
-        }
+        self.scan_progress_tracks = progress_tracks.load(Ordering::Relaxed);
+        self.scan_progress_albums = progress_albums.load(Ordering::Relaxed);
 
         self.scan_in_progress = false;
         self.needs_rescan = false;

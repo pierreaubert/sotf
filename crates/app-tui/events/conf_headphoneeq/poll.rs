@@ -31,9 +31,9 @@ pub fn poll_headphone_eq_optimization(app: &mut App) -> bool {
                 app.headphone_eq.post_loss = r.final_loss;
                 app.headphone_eq.filters = r
                     .biquads
-                    .iter()
+                    .into_iter()
                     .map(|b| HeadphoneEqBiquad {
-                        filter_type: format!("{:?}", b.filter_type),
+                        filter_type: b.filter_type.long_name().to_string(),
                         freq: b.freq,
                         q: b.q,
                         db_gain: b.db_gain,

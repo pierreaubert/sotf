@@ -106,15 +106,17 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         app.room_eq.opt_iteration = p.iteration;
         app.room_eq.opt_max_iter = p.max_iterations;
         app.room_eq.opt_loss = p.loss;
-        app.room_eq.opt_current_speaker = p.current_speaker.clone();
+        // Move the owned strings out of the progress slot instead of cloning
+        // them; the slot value is consumed here.
+        app.room_eq.opt_current_speaker = p.current_speaker;
         app.room_eq.opt_total_speakers = p.total_speakers;
-        app.room_eq.opt_status_message = p.message.clone();
+        app.room_eq.opt_status_message = p.message;
         if p.loss > 0.0 {
             // Use running index as X so the chart shows all iterations across all speakers
             let idx = app.room_eq.loss_history.len();
             app.room_eq.loss_history.push((idx, p.loss));
         }
-        if let Some(msg) = p.message {
+        if let Some(ref msg) = app.room_eq.opt_status_message {
             for line in msg.lines() {
                 app.room_eq.opt_log_lines.push_back(line.to_string());
             }
@@ -126,7 +128,10 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         if p.iteration > 0 && p.iteration % 100 == 0 {
             let msg = format!(
                 "[{}] iter {}/{} loss={:.6}",
-                p.current_speaker, p.iteration, p.max_iterations, p.loss
+                app.room_eq.opt_current_speaker,
+                p.iteration,
+                p.max_iterations,
+                p.loss
             );
             app.room_eq.opt_log_lines.push_back(msg);
             while app.room_eq.opt_log_lines.len() > 300 {

@@ -27,3 +27,58 @@ pub(crate) fn headphone_eq_step_next(
         HeadphoneEqStep::UpdatePlugin => HeadphoneEqStep::UpdatePlugin, // no wrap
     }
 }
+
+
+#[cfg(test)]
+mod poll_tests {
+    use std::sync::{Arc, Mutex};
+
+    use crate::app::{App, HeadphoneEqStep};
+    use crate::events::poll_headphone_eq_optimization;
+    use crate::theme::Theme;
+    use sotf_audio_player::autoeq::HeadphoneOptimizationResult;
+    use sotf_audio_player::room_eq_types::OptimizationStatus;
+
+    use super::super::consts::HEADPHONE_OPT_RESULT;
+
+    fn make_result() -> HeadphoneOptimizationResult {
+        HeadphoneOptimizationResult {
+            biquads: vec![math_audio_iir_fir::Biquad::new(
+                math_audio_iir_fir::BiquadFilterType::Peak,
+                1000.0,
+                48000.0,
+                1.5,
+                3.0,
+            )],
+            frequencies: Vec::new(),
+            input_curve: Vec::new(),
+            target_curve: Vec::new(),
+            deviation_curve: Vec::new(),
+            filter_response: Vec::new(),
+            error_curve: Vec::new(),
+            corrected_curve: Vec::new(),
+            individual_filter_responses: Vec::new(),
+            output_path: String::new(),
+            optimization_history: Vec::new(),
+            initial_loss: 1.0,
+            final_loss: 0.5,
+        }
+    }
+
+    #[test]
+    fn test_poll_headphone_eq_optimization_maps_filter_type_to_long_name() {
+        let mut app = App::new(Theme::default(), false);
+        app.headphone_eq.opt_status = OptimizationStatus::Running;
+        app.headphone_eq.step = HeadphoneEqStep::Optimize;
+
+        let slot = HEADPHONE_OPT_RESULT
+            .get_or_init(|| Arc::new(Mutex::new(None)))
+            .clone();
+        *slot.lock().unwrap() = Some(Ok(make_result()));
+
+        assert!(poll_headphone_eq_optimization(&mut app));
+        assert_eq!(app.headphone_eq.filters.len(), 1);
+        assert_eq!(app.headphone_eq.filters[0].filter_type, "Peak");
+        assert_eq!(app.headphone_eq.opt_status, OptimizationStatus::Completed);
+    }
+}

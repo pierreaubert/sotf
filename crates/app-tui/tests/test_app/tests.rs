@@ -926,3 +926,74 @@ fn test_apply_spinorama_to_plugins_empty_filters_returns_error() {
     let result = app.apply_spinorama_to_plugins();
     assert!(result.is_err());
 }
+
+
+#[cfg(test)]
+mod draw_tests {
+    use crate::app::{App, Screen};
+    use crate::theme::Theme;
+    use crate::ui;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    #[test]
+    fn test_draw_skips_filtered_album_cache_on_non_library_screens() {
+        let mut app = App::new(Theme::default(), false);
+        app.current_screen = Screen::Configure;
+        app.needs_filter_update = true;
+
+        let backend = TestBackend::new(80, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui::draw(f, &mut app)).unwrap();
+
+        assert!(
+            app.needs_filter_update,
+            "filtered_albums() should not run on the configure screen"
+        );
+
+        app.current_screen = Screen::Library;
+        terminal.draw(|f| ui::draw(f, &mut app)).unwrap();
+
+        assert!(
+            !app.needs_filter_update,
+            "filtered_albums() should run on the library screen"
+        );
+    }
+}
+
+
+#[cfg(test)]
+mod scanner_tests {
+    use crate::app::App;
+    use crate::theme::Theme;
+    use sotf_audio_player::DirectoryInfo;
+    use std::path::PathBuf;
+
+    fn empty_directory() -> DirectoryInfo {
+        DirectoryInfo {
+            path: PathBuf::new(),
+            file_count: 0,
+            album_count: 0,
+            last_scanned: None,
+            expanded: false,
+            subdirectories: vec![],
+            children_loaded: false,
+        }
+    }
+
+    #[test]
+    fn test_scan_library_uses_atomic_progress_counters() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut app = App::new(Theme::default(), false);
+        app.library.directories.clear();
+        app.library.directories.push(DirectoryInfo {
+            path: temp_dir.path().to_path_buf(),
+            ..empty_directory()
+        });
+
+        let result = app.scan_library();
+
+        assert!(result.is_ok());
+        assert!(!app.scan_in_progress);
+    }
+}
