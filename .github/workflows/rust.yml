@@ -47,6 +47,21 @@ jobs:
       - name: Run tests
         run: just test
 
+      - name: Install coverage tooling
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov
+
+      - name: Generate coverage report
+        run: just coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov.info
+          path: target/lcov.info
+          if-no-files-found: error
+
       - name: Build UI kit examples
         run: just test-examples
 

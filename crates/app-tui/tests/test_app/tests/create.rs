@@ -5,6 +5,7 @@ use crate::app::*;
 use crate::theme::Theme;
 use sotf_audio::devices::{AudioConfig, AudioDevice};
 use sotf_audio_player::{Album, DirectoryInfo, Track};
+use std::fs;
 use std::path::PathBuf;
 
 fn create_test_directory_info(path: &str) -> DirectoryInfo {
@@ -963,6 +964,55 @@ fn test_start_queue() {
     assert!(path.is_some());
     assert_eq!(app.current_queue_index, Some(0));
     assert!(app.is_playing);
+}
+
+#[test]
+fn test_add_album_to_queue_does_not_start_playback() {
+    let mut app = App::new(Theme::default(), false);
+    let temp_dir = tempfile::tempdir().unwrap();
+    for i in 0..2 {
+        fs::write(temp_dir.path().join(format!("track{}.flac", i)), b"").unwrap();
+    }
+
+    let album = create_test_album(
+        "Artist",
+        "Album",
+        temp_dir.path().to_str().unwrap(),
+        2,
+    );
+    app.library.albums.push(album);
+    app.request_filter_update();
+
+    let source = app.add_album_to_queue().unwrap();
+
+    assert!(source.is_none());
+    assert_eq!(app.queue.len(), 1);
+    assert!(app.current_queue_index.is_none());
+    assert!(!app.is_playing);
+
+    let duplicate_source = app.add_album_to_queue().unwrap();
+    assert!(duplicate_source.is_none());
+    assert_eq!(app.queue.len(), 1);
+}
+
+#[test]
+fn test_add_tree_selection_to_queue_does_not_start_playback() {
+    let mut app = App::new(Theme::default(), false);
+
+    let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+    let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+    app.library.albums.push(album1);
+    app.library.albums.push(album2);
+    app.rebuild_artist_tree();
+    app.library_view_mode = LibraryViewMode::TreeView;
+    app.selected_tree_index = 0;
+
+    let source = app.add_tree_selection_to_queue();
+
+    assert!(source.is_none());
+    assert_eq!(app.queue.len(), 2);
+    assert!(app.current_queue_index.is_none());
+    assert!(!app.is_playing);
 }
 
 #[test]

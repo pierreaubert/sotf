@@ -4,12 +4,18 @@
 // Verifies that chains containing multiple FFT-based plugins (Upmixer, Denoiser, etc.)
 // correctly handle arbitrary frame sizes and STFT latency without drift or glitches.
 
-use sotf_audio::engine::{AudioEngine, EngineConfig};
+use sotf_audio::engine::AudioEngine;
 use sotf_audio::plugins::{PluginChain, PluginSettings, PluginType};
 use std::time::Duration;
 
+mod common;
+
 #[test]
 fn test_fft_chain_arbitrary_frame_sizes() {
+    // Audio engine tests need a virtual audio device (BlackHole / SotF HAL).
+    // Opening the system default device can hang in headless environments.
+    common::skip_without_device!();
+
     // 1. Setup a chain with Upmixer and Denoiser
     // This chain changes channel count (2 -> 6) and has multiple STFT windows.
     let mut chain = PluginChain::new();
@@ -37,24 +43,13 @@ fn test_fft_chain_arbitrary_frame_sizes() {
 
     // 2. Create Engine with a specific non-power-of-two frame size
     // This often happens in practice due to resampling or hardware constraints.
-    let config = EngineConfig {
-        version: 2,
-        frame_size: 1115, // Arbitrary non-power-of-two size
-        buffer_ms: 100,
-        output_sample_rate: sample_rate,
-        input_channels: 2,
-        output_channels: 6,
-        output_device: None,
-        plugins: configs,
-        volume: 1.0,
-        muted: false,
-        config_path: None,
-        watch_config: false,
-        driver_mode: false,
-        allow_virtual_output: true,
-        sink_type: Default::default(),
-        ..EngineConfig::default()
-    };
+    let mut config = common::try_test_engine_config().expect("virtual device required");
+    config.frame_size = 1115; // Arbitrary non-power-of-two size
+    config.buffer_ms = 100;
+    config.output_sample_rate = sample_rate;
+    config.input_channels = 2;
+    config.output_channels = 6;
+    config.plugins = configs;
 
     let engine = AudioEngine::new(config).expect("Failed to create engine");
 

@@ -6,9 +6,9 @@ use super::audio_sink::{AudioSink, SinkConfig, SinkOpenResult};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::{Producer, RingBuffer};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Sender;
-use std::sync::Arc;
 
 mod apply;
 mod build;
@@ -29,7 +29,7 @@ use misc::playback_buffer_capacity;
 use misc::send_thread_event;
 use misc::should_fallback_from_virtual_default;
 use misc::write_chunk_bulk;
-use pick::choose_output_format;
+use pick::{choose_output_format, choose_wider_hardware_retry};
 use stall_check_state::StallCheckState;
 
 /// cpal-based audio output sink.
@@ -169,6 +169,7 @@ impl CpalSink {
     fn build_stream(
         device: &Device,
         config: &StreamConfig,
+        logical_channels: usize,
         buffer_capacity: usize,
         output_format: SampleFormat,
         event_tx: Sender<ThreadEvent>,
@@ -179,6 +180,7 @@ impl CpalSink {
         let stream = build_output_stream(
             device,
             config,
+            logical_channels,
             Arc::clone(&state),
             event_tx,
             consumer,
@@ -213,38 +215,77 @@ impl AudioSink for CpalSink {
         };
 
         let (output_format, hw_channels) = choose_output_format(&device, &stream_config);
-        if hw_channels != config.channels as u16 {
+        let logical_channels = if hw_channels < config.channels as u16 {
             log::warn!(
                 "[CpalSink] Adjusting channels from {} to {} (device limitation)",
                 config.channels,
                 hw_channels
             );
             stream_config.channels = hw_channels;
-        }
+            hw_channels as usize
+        } else {
+            config.channels
+        };
 
-        let channels = hw_channels as usize;
         let buffer_capacity =
-            playback_buffer_capacity(config.sample_rate, channels, config.buffer_ms);
+            playback_buffer_capacity(config.sample_rate, logical_channels, config.buffer_ms);
 
-        let (producer, state, stream) = Self::build_stream(
+        let (producer, state, stream, actual_config, actual_format) = match Self::build_stream(
             &device,
             &stream_config,
+            logical_channels,
             buffer_capacity,
             output_format,
             event_tx.clone(),
-        )?;
+        ) {
+            Ok((producer, state, stream)) => {
+                (producer, state, stream, stream_config, output_format)
+            }
+            Err(first_err) => {
+                if stream_config.channels as usize != logical_channels {
+                    return Err(first_err);
+                }
+
+                let Some((retry_format, retry_channels)) =
+                    choose_wider_hardware_retry(&device, &stream_config)
+                else {
+                    return Err(first_err);
+                };
+
+                let mut retry_config = stream_config;
+                retry_config.channels = retry_channels;
+                log::warn!(
+                    "[CpalSink] {}ch stream failed ({}); retrying at {} hardware channels while keeping {} logical channels",
+                    logical_channels,
+                    first_err,
+                    retry_channels,
+                    logical_channels
+                );
+
+                let (producer, state, stream) = Self::build_stream(
+                    &device,
+                    &retry_config,
+                    logical_channels,
+                    buffer_capacity,
+                    retry_format,
+                    event_tx.clone(),
+                )?;
+                (producer, state, stream, retry_config, retry_format)
+            }
+        };
 
         send_thread_event(
             &event_tx,
-            ThreadEvent::PlaybackChannelsChanged(channels),
+            ThreadEvent::PlaybackChannelsChanged(logical_channels),
             "open channel update",
         );
 
         log::info!(
-            "[CpalSink] Opened - {}Hz, {}ch, format: {:?}, device: '{}'",
+            "[CpalSink] Opened - {}Hz, {} logical channels ({} hardware channels), format: {:?}, device: '{}'",
             config.sample_rate,
-            channels,
-            output_format,
+            logical_channels,
+            actual_config.channels,
+            actual_format,
             self.device_name,
         );
 
@@ -252,14 +293,14 @@ impl AudioSink for CpalSink {
         self.stream = Some(stream);
         self.producer = Some(producer);
         self.state = Some(state);
-        self.config = Some(stream_config);
-        self.output_format = output_format;
+        self.config = Some(actual_config);
+        self.output_format = actual_format;
         self.buffer_capacity = buffer_capacity;
-        self.channels = channels;
+        self.channels = logical_channels;
         self.reset_stall_check();
 
         Ok(SinkOpenResult {
-            channels,
+            channels: logical_channels,
             buffer_capacity,
         })
     }
@@ -340,52 +381,101 @@ impl AudioSink for CpalSink {
         };
 
         let (output_format, hw_channels) = choose_output_format(device, &stream_config);
-        if hw_channels != config.channels as u16 {
+        let logical_channels = if hw_channels < config.channels as u16 {
             log::warn!(
                 "[CpalSink] Adjusting rebuild channels from {} to {}",
                 config.channels,
                 hw_channels
             );
             stream_config.channels = hw_channels;
-        }
+            hw_channels as usize
+        } else {
+            config.channels
+        };
 
-        let channels = hw_channels as usize;
         let buffer_capacity =
-            playback_buffer_capacity(config.sample_rate, channels, config.buffer_ms);
+            playback_buffer_capacity(config.sample_rate, logical_channels, config.buffer_ms);
 
-        let (producer, state, stream) = match Self::build_stream(
+        let (producer, state, stream, actual_config, actual_format) = match Self::build_stream(
             device,
             &stream_config,
+            logical_channels,
             buffer_capacity,
             output_format,
             event_tx.clone(),
         ) {
-            Ok(parts) => parts,
-            Err(err) => {
-                if old_stream_paused
-                    && let Some(ref stream) = self.stream
-                    && let Err(resume_err) = stream.play()
-                {
-                    log::warn!(
-                        "[CpalSink] Failed to resume old stream after reconfigure failure: {}",
-                        resume_err
-                    );
+            Ok((producer, state, stream)) => {
+                (producer, state, stream, stream_config, output_format)
+            }
+            Err(first_err) => {
+                let retry = if stream_config.channels as usize == logical_channels {
+                    choose_wider_hardware_retry(device, &stream_config)
+                } else {
+                    None
+                };
+
+                let Some((retry_format, retry_channels)) = retry else {
+                    if old_stream_paused
+                        && let Some(ref stream) = self.stream
+                        && let Err(resume_err) = stream.play()
+                    {
+                        log::warn!(
+                            "[CpalSink] Failed to resume old stream after reconfigure failure: {}",
+                            resume_err
+                        );
+                    }
+                    return Err(first_err);
+                };
+
+                let mut retry_config = stream_config;
+                retry_config.channels = retry_channels;
+                log::warn!(
+                    "[CpalSink] {}ch rebuild failed ({}); retrying at {} hardware channels while keeping {} logical channels",
+                    logical_channels,
+                    first_err,
+                    retry_channels,
+                    logical_channels
+                );
+
+                match Self::build_stream(
+                    device,
+                    &retry_config,
+                    logical_channels,
+                    buffer_capacity,
+                    retry_format,
+                    event_tx.clone(),
+                ) {
+                    Ok((producer, state, stream)) => {
+                        (producer, state, stream, retry_config, retry_format)
+                    }
+                    Err(err) => {
+                        if old_stream_paused
+                            && let Some(ref stream) = self.stream
+                            && let Err(resume_err) = stream.play()
+                        {
+                            log::warn!(
+                                "[CpalSink] Failed to resume old stream after reconfigure failure: {}",
+                                resume_err
+                            );
+                        }
+                        return Err(err);
+                    }
                 }
-                return Err(err);
             }
         };
 
         send_thread_event(
             &event_tx,
-            ThreadEvent::PlaybackChannelsChanged(channels),
+            ThreadEvent::PlaybackChannelsChanged(logical_channels),
             "reconfigure channel update",
         );
 
         log::info!(
-            "[CpalSink] Reconfigured - {}Hz, {}ch, format: {:?}",
+            "[CpalSink] Reconfigured - {}Hz, {} logical channels ({} hardware channels), format: {:?}",
             config.sample_rate,
-            channels,
-            output_format,
+            logical_channels,
+            actual_config.channels,
+            actual_format,
         );
 
         // Drop old stream before replacing
@@ -393,14 +483,14 @@ impl AudioSink for CpalSink {
         self.producer = Some(producer);
         self.state = Some(state);
         self.stream = Some(stream);
-        self.config = Some(stream_config);
-        self.output_format = output_format;
+        self.config = Some(actual_config);
+        self.output_format = actual_format;
         self.buffer_capacity = buffer_capacity;
-        self.channels = channels;
+        self.channels = logical_channels;
         self.reset_stall_check();
 
         Ok(SinkOpenResult {
-            channels,
+            channels: logical_channels,
             buffer_capacity,
         })
     }
@@ -410,10 +500,7 @@ impl AudioSink for CpalSink {
             return false;
         };
         let current = state.callback_count.load(Ordering::Relaxed);
-        let last_count = self
-            .stall_check
-            .last_callback_count
-            .load(Ordering::Relaxed);
+        let last_count = self.stall_check.last_callback_count.load(Ordering::Relaxed);
 
         if current != last_count {
             self.stall_check

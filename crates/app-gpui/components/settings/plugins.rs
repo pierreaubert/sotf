@@ -4,7 +4,10 @@ use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, NumberInput, NumberInputSize, StackSpacing, Text, TextSize, VStack};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, HStack, NumberInput, NumberInputSize, StackSpacing, Text,
+    TextSize, VStack,
+};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_audio_player::config::plugin_sandbox_runtime_status;
 
@@ -53,6 +56,55 @@ impl PlayerView {
                                 ))
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
+                            )
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(
+                                        Button::new(
+                                            "activate-external-plugins",
+                                            "Activate External Plugins",
+                                        )
+                                        .variant(ButtonVariant::Primary)
+                                        .size(ButtonSize::Xs)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(cx.listener(|view, _, _, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state
+                                                    .app
+                                                    .install_external_plugin_runtime_sandbox();
+                                            });
+                                            cx.notify();
+                                        })),
+                                    )
+                                    .child(
+                                        Button::new(
+                                            "scan-external-plugins",
+                                            "Scan External Plugins",
+                                        )
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Xs)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(cx.listener(|view, _, _, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                let mut scanner = sotf_plugins::PluginScanner::new();
+                                                scanner.scan_all();
+                                                state.app.plugin_state.scanned_external_plugins =
+                                                    scanner.plugins.clone();
+                                                state
+                                                    .app
+                                                    .ui_state
+                                                    .toast_message = Some(crate::app::ToastMessage::success(
+                                                    format!(
+                                                        "Found {} external plugins",
+                                                        state.app.plugin_state.scanned_external_plugins.len()
+                                                    ),
+                                                ));
+                                            });
+                                            cx.notify();
+                                        })),
+                                    )
+                                    .build(),
                             )
                             .build()
                             .into_any_element()

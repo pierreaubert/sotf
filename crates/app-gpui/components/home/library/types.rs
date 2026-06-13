@@ -529,7 +529,11 @@ impl PlayerView {
                 state.app.remote.current_album_page.clone(),
                 state.app.library_state.selected_index,
                 state.app.ui_state.theme.clone(),
-                state.app.remote.cache_refresh_in_progress
+                state
+                    .app
+                    .remote
+                    .cache_refresh_requests_in_progress
+                    .visible_album_page
                     || state.app.remote.refresh_requests.visible_album_page,
                 state.app.library_state.search_query.clone(),
                 selected

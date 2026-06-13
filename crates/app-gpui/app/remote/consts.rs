@@ -690,6 +690,7 @@ impl App {
         let (tx, rx) = std::sync::mpsc::channel();
         self.remote.cache_refresh_receiver = Some(rx);
         self.remote.cache_refresh_in_progress = true;
+        self.remote.cache_refresh_requests_in_progress = requests;
 
         std::thread::Builder::new()
             .name("sotf-remote-cache".into())

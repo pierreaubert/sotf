@@ -718,6 +718,19 @@ fn test_engine_update_preserves_playback_after_channel_change() {
 
 #[test]
 #[serial]
+fn test_manager_idle_volume_and_mute_are_persisted() {
+    let manager = AudioEngineManager::new();
+
+    manager.set_volume(0.65).unwrap();
+    manager.set_mute(true).unwrap();
+
+    assert_eq!(manager.get_state(), StreamingState::Idle);
+    assert_eq!(manager.get_volume(), 0.65);
+    assert!(manager.is_muted());
+}
+
+#[test]
+#[serial]
 fn test_engine_auto_advance_after_end_of_stream() {
     super::common::skip_without_device!();
 
@@ -746,8 +759,16 @@ fn test_engine_auto_advance_after_end_of_stream() {
     }
     assert!(got_eos, "Should receive EndOfStream within 5s");
 
-    // Simulate auto-advance: stop (which was previously failing with IO error)
-    // then load and play a new file
+    // Simulate the TUI auto-advance path: persist volume before the old engine
+    // is stopped, then stop and start the next track. After EOS the manager is
+    // Idle, but the old engine handle is still present until stop().
+    let volume_result = manager.set_volume(0.65);
+    assert!(
+        volume_result.is_ok(),
+        "set_volume() after end-of-stream should only persist the next volume, got: {:?}",
+        volume_result.err()
+    );
+
     let stop_result = manager.stop();
     assert!(
         stop_result.is_ok(),
@@ -763,4 +784,5 @@ fn test_engine_auto_advance_after_end_of_stream() {
     std::thread::sleep(Duration::from_millis(100));
 
     assert_eq!(manager.get_state(), StreamingState::Playing);
+    assert_eq!(manager.get_volume(), 0.65);
 }

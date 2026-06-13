@@ -64,8 +64,7 @@ impl ManagerThread {
                     // via get_engine_state() even after the thread exits.
                     // Use the lock-free in-place update to avoid a full state copy.
                     state_helpers::update_engine_state(&state_clone, |new_state| {
-                        new_state.last_error =
-                            Some(format!("Engine initialization failed: {}", e));
+                        new_state.last_error = Some(format!("Engine initialization failed: {}", e));
                         new_state.playback_state = PlaybackState::Stopped;
                     });
                 }
@@ -136,10 +135,10 @@ impl ManagerThread {
         if let Err(e) = self.send_command(ManagerCommand::Shutdown) {
             log::trace!("[Manager Thread] Shutdown command receiver dropped: {}", e);
         }
-        if let Some(handle) = self.thread_handle.take()
-            && let Err(e) = handle.join()
-        {
-            log::warn!("[Manager Thread] Thread panicked during shutdown: {:?}", e);
+        if let Some(handle) = self.thread_handle.take() {
+            if let Err(()) = super::join_timeout(handle, std::time::Duration::from_secs(10)) {
+                log::warn!("[Manager Thread] Shutdown join timed out; thread left detached");
+            }
         }
     }
 }

@@ -74,4 +74,7 @@ pub use config_watcher_stub::{ConfigEvent, ConfigWatcher};
 mod gc_thread;
 pub use gc_thread::{GcSender, GcThread};
 
+mod thread_join;
+pub(crate) use thread_join::join_timeout;
+
 mod rt_priority;

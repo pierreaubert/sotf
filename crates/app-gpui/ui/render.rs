@@ -883,7 +883,7 @@ impl PlayerView {
                 el.child(self.render_sidebar_screen_item(
                     "nav-headphone-eq",
                     translations.screen_headphone_eq,
-                    IconName::Speaker,
+                    IconName::Headphones,
                     Screen::HeadphoneEq,
                     current_screen == Screen::HeadphoneEq,
                     collapsed,
@@ -895,7 +895,7 @@ impl PlayerView {
                 el.child(self.render_sidebar_screen_item(
                     "nav-spinorama",
                     translations.screen_spinorama,
-                    IconName::AudioWaveform,
+                    IconName::Speaker,
                     Screen::Spinorama,
                     current_screen == Screen::Spinorama,
                     collapsed,
@@ -905,7 +905,45 @@ impl PlayerView {
             })
             .child(div().flex_1())
             .child(self.render_sidebar_separator(&theme))
-            .child(self.render_sidebar_group_label("Devices", collapsed, &theme, &d))
+            .child({
+                let state_entity = self.state.clone();
+                div()
+                    .h(if collapsed { rems(0.25) } else { rems(1.5) })
+                    .px(d.pad_y)
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .when(!collapsed, |el| {
+                        el.child(
+                            div()
+                                .text_size(d.text_xs)
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(theme.text_muted)
+                                .child("Preferences"),
+                        )
+                        .child(
+                            div()
+                                .id("nav-preferences-button")
+                                .cursor_pointer()
+                                .text_color(theme.text_muted)
+                                .hover({
+                                    let theme = theme.clone();
+                                    move |s| s.text_color(theme.text_primary)
+                                })
+                                .child(Icon::new(IconName::Settings).xs())
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    move |_event, window, cx| {
+                                        window.dispatch_action(Box::new(OpenConfig), cx);
+                                        state_entity.update(cx, |state, _cx| {
+                                            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                                        });
+                                    },
+                                ),
+                        )
+                    })
+                    .into_any_element()
+            })
             .child(self.render_sidebar_devices_item(collapsed, &theme, &d))
             .when(!collapsed, |el| {
                 el.child(self.render_sidebar_device_actions(

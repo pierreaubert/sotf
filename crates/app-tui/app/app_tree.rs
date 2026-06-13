@@ -79,8 +79,6 @@ impl App {
             return None;
         }
 
-        let was_empty = self.queue.is_empty();
-        let was_not_playing = !self.is_playing;
         let tree_items = self.get_tree_items();
         let filtered_indices = self.filtered_album_indices();
 
@@ -99,10 +97,6 @@ impl App {
                                         .push(QueueEntry::new(QueueItem::new(album.clone())));
                                 }
                             }
-                            // Auto-play if queue was empty OR if nothing was playing
-                            if was_empty || was_not_playing {
-                                return self.start_queue();
-                            }
                             return None;
                         }
                     }
@@ -112,11 +106,6 @@ impl App {
                     if let Some(album) = self.library.albums.get(*index) {
                         self.queue
                             .push(QueueEntry::new(QueueItem::new(album.clone())));
-
-                        // Auto-play if queue was empty OR if nothing was playing
-                        if was_empty || was_not_playing {
-                            return self.start_queue();
-                        }
                     }
                 }
             }

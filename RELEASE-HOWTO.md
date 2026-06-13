@@ -11,6 +11,7 @@ is your friend, it will list a long list of commands to get stuff done.
 
 ```
 just ntest
+just itest
 ```
 
 needs to work cleanly.

@@ -3,7 +3,6 @@
 use super::album::album_genres;
 use super::album::album_key;
 use super::album::row_album_keys;
-use super::misc::EXPANDED_ALBUM_LIMIT;
 use super::misc::arc_album_refs;
 use super::misc::prioritize_cover_refs;
 use super::misc::sort_album_refs_by_listening;
@@ -14,8 +13,12 @@ use super::types::top_genre_shelves;
 use sotf_audio_player::{Album, sotf_api_client::SotfApiAlbum};
 use std::collections::BTreeSet;
 
-pub(super) fn build_home_shelves(albums: &[Album], collapsed_limit: usize) -> Vec<HomeShelf> {
-    let display_limit = EXPANDED_ALBUM_LIMIT.max(collapsed_limit);
+pub(super) fn build_home_shelves(
+    albums: &[Album],
+    collapsed_limit: usize,
+    expanded_limit: usize,
+) -> Vec<HomeShelf> {
+    let display_limit = expanded_limit.max(collapsed_limit);
     let favorite = prioritize_cover_refs(sort_album_refs_by_listening(
         albums.iter().filter(|album| album.is_favorite).collect(),
     ));

@@ -449,10 +449,56 @@ fn remote_cache_refresh_reset_reenables_background_updates() {
     state.cache_updates_disabled = true;
     state.cache_refresh_failures = RemoteState::CACHE_REFRESH_FAILURE_DISABLE_THRESHOLD;
     state.cache_last_error = Some("network unstable".to_string());
+    state.cache_refresh_in_progress = true;
+    state.cache_refresh_requests_in_progress = RemoteRefreshRequests {
+        state: false,
+        queue: true,
+        visible_album_page: false,
+    };
 
     state.reset_remote_cache_updater();
 
     assert!(!state.cache_updates_disabled);
     assert_eq!(state.cache_refresh_failures, 0);
     assert!(state.cache_last_error.is_none());
+    assert!(!state.cache_refresh_in_progress);
+    assert!(state.cache_refresh_requests_in_progress.is_empty());
+}
+
+#[test]
+fn remote_cache_refresh_success_and_failure_clear_in_flight_request_kind() {
+    let mut state = RemoteState {
+        cache_refresh_in_progress: true,
+        cache_refresh_requests_in_progress: RemoteRefreshRequests {
+            state: false,
+            queue: true,
+            visible_album_page: false,
+        },
+        ..RemoteState::default()
+    };
+
+    state.record_remote_cache_refresh_success();
+
+    assert!(!state.cache_refresh_in_progress);
+    assert!(state.cache_refresh_requests_in_progress.is_empty());
+
+    state.cache_refresh_in_progress = true;
+    state.cache_refresh_requests_in_progress = RemoteRefreshRequests {
+        state: false,
+        queue: false,
+        visible_album_page: true,
+    };
+
+    state.record_remote_cache_refresh_failure(RemoteCacheRefreshError {
+        requests: RemoteRefreshRequests {
+            state: false,
+            queue: false,
+            visible_album_page: true,
+        },
+        message: "timeout".to_string(),
+    });
+
+    assert!(!state.cache_refresh_in_progress);
+    assert!(state.cache_refresh_requests_in_progress.is_empty());
+    assert!(state.refresh_requests.visible_album_page);
 }

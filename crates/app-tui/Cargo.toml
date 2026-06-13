@@ -12,6 +12,8 @@ repository.workspace = true
 autotests = false
 
 [features]
+gpu-2d = []
+gpu-3d = []
 default = ["streaming", "hls"]
 hal = ["sotf-engine/hal", "sotf-player/hal"]
 onnx = ["sotf-plugins/onnx"]
@@ -21,6 +23,7 @@ hls = ["streaming", "sotf-engine/hls", "sotf-player/hls"]
 tidal = ["dep:sotf-services", "sotf-services/tidal"]
 spotify = ["dep:sotf-services", "sotf-services/spotify"]
 # QA/debug-only HTTP API for scripted E2E testing.
+qa = []
 dev-api = []
 
 [dependencies]

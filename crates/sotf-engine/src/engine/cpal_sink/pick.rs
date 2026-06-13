@@ -138,3 +138,51 @@ pub(super) fn pick_format_any_channels(
             .any(|c| c.0 == *fmt && c.2 <= sample_rate && c.3 >= sample_rate)
     })
 }
+
+/// Pick the smallest hardware channel count above the requested logical width.
+///
+/// Some CoreAudio/aggregate/pro interfaces advertise only a large native stream
+/// width. If CPAL rejects the logical stream width, the sink can retry at this
+/// hardware width while still consuming and reporting the logical channel count.
+pub(super) fn pick_wider_hardware_format(
+    candidates: &[(SampleFormat, u16, cpal::SampleRate, cpal::SampleRate)],
+    requested_channels: u16,
+    sample_rate: cpal::SampleRate,
+) -> Option<(SampleFormat, u16)> {
+    let mut wider_channels: Vec<u16> = candidates
+        .iter()
+        .filter(|candidate| {
+            candidate.1 > requested_channels
+                && candidate.2 <= sample_rate
+                && candidate.3 >= sample_rate
+        })
+        .map(|candidate| candidate.1)
+        .collect();
+    wider_channels.sort_unstable();
+    wider_channels.dedup();
+
+    wider_channels.into_iter().find_map(|channels| {
+        pick_preferred_output_format(candidates, channels, sample_rate)
+            .map(|format| (format, channels))
+    })
+}
+
+pub(super) fn choose_wider_hardware_retry(
+    device: &Device,
+    config: &StreamConfig,
+) -> Option<(SampleFormat, u16)> {
+    let candidates: Vec<_> = device
+        .supported_output_configs()
+        .ok()?
+        .map(|c| {
+            (
+                c.sample_format(),
+                c.channels(),
+                c.min_sample_rate(),
+                c.max_sample_rate(),
+            )
+        })
+        .collect();
+
+    pick_wider_hardware_format(&candidates, config.channels, config.sample_rate)
+}

@@ -30,6 +30,7 @@
 //! ```
 
 pub mod assertions;
+pub mod device;
 pub mod driver;
 pub mod factories;
 pub mod pages;

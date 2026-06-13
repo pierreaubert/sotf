@@ -13,9 +13,35 @@ mod tests {
     use cpal::HostId;
     use cpal::traits::{DeviceTrait, HostTrait};
 
+    const VIRTUAL_OUTPUT_DEVICES: &[&str] = &[
+        "SotF Virtual Audio",
+        "SotF Virtual Device",
+        "SotF Virtual Output",
+        "BlackHole 2ch",
+        "BlackHole 16ch",
+        "BlackHole 64ch",
+    ];
+
     /// Get all available host IDs on the system
     fn available_hosts() -> Vec<HostId> {
         cpal::platform::available_hosts()
+    }
+
+    fn virtual_output_device(host: &cpal::Host) -> Option<cpal::Device> {
+        let devices = host.output_devices().ok()?;
+        for device in devices {
+            let Ok(description) = device.description() else {
+                continue;
+            };
+            let name = description.name().to_string();
+            if VIRTUAL_OUTPUT_DEVICES
+                .iter()
+                .any(|virtual_name| name.contains(virtual_name))
+            {
+                return Some(device);
+            }
+        }
+        None
     }
 
     /// Test: Enumerate available Windows audio backends
@@ -68,8 +94,19 @@ mod tests {
         println!("Output devices: {}", output_devices.len());
         println!("Input devices: {}", input_devices.len());
 
-        // At least one output device should be available
-        assert!(!output_devices.is_empty(), "No output devices found");
+        let has_virtual_output = output_devices.iter().any(|device| {
+            device.description().ok().is_some_and(|description| {
+                let name = description.name();
+                VIRTUAL_OUTPUT_DEVICES
+                    .iter()
+                    .any(|virtual_name| name.contains(virtual_name))
+            })
+        });
+
+        assert!(
+            has_virtual_output,
+            "No virtual output device found; install SotF Virtual Audio or BlackHole"
+        );
     }
 
     /// Test: Device format support
@@ -77,16 +114,15 @@ mod tests {
     fn test_device_formats() {
         let host = cpal::default_host();
 
-        let device = host
-            .default_output_device()
-            .expect("No default output device");
+        let device = virtual_output_device(&host)
+            .expect("No virtual output device found; install SotF Virtual Audio or BlackHole");
 
         let name = device
             .description()
             .map(|d| d.name())
             .unwrap_or_else(|_| "Unknown".to_string());
 
-        println!("Default output device: {}", name);
+        println!("Virtual output device: {}", name);
 
         // Check supported configs
         let supported_configs = device
@@ -104,9 +140,8 @@ mod tests {
     fn test_common_sample_rates() {
         let host = cpal::default_host();
 
-        let device = host
-            .default_output_device()
-            .expect("No default output device");
+        let device = virtual_output_device(&host)
+            .expect("No virtual output device found; install SotF Virtual Audio or BlackHole");
 
         let supported = device
             .supported_output_configs()
@@ -136,9 +171,8 @@ mod tests {
     fn test_buffer_sizes() {
         let host = cpal::default_host();
 
-        let device = host
-            .default_output_device()
-            .expect("No default output device");
+        let device = virtual_output_device(&host)
+            .expect("No virtual output device found; install SotF Virtual Audio or BlackHole");
 
         let supported = device
             .supported_output_configs()
@@ -175,15 +209,14 @@ mod tests {
     fn test_stream_config() {
         let host = cpal::default_host();
 
-        let device = host
-            .default_output_device()
-            .expect("No default output device");
+        let device = virtual_output_device(&host)
+            .expect("No virtual output device found; install SotF Virtual Audio or BlackHole");
 
         let config = device
             .default_output_config()
             .expect("Failed to get default output config");
 
-        println!("Default output config:");
+        println!("Virtual output config:");
         println!("  Sample rate: {}Hz", config.sample_rate().0);
         println!("  Channels: {}", config.channels());
         println!("  Sample format: {:?}", config.sample_format());

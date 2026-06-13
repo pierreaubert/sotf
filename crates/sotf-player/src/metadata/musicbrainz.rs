@@ -284,3 +284,78 @@ fn recordings_to_candidates(recordings: Vec<MbRecording>) -> Vec<MetadataImportC
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    fn fixture_endpoint(body: &'static str) -> (String, mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = mpsc::channel();
+
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let bytes = stream.read(&mut request).unwrap();
+            let request = String::from_utf8_lossy(&request[..bytes]);
+            let request_line = request.lines().next().unwrap_or_default().to_string();
+            tx.send(request_line).unwrap();
+
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        (format!("http://{addr}"), rx)
+    }
+
+    #[tokio::test]
+    async fn search_album_uses_configured_endpoint_and_maps_release_json() {
+        let body = r#"{"releases":[{"id":"release-1","title":"Kind of Blue","date":"1959-08-17","score":"98","artist-credit":[{"name":"Miles Davis"}]}]}"#;
+        let (endpoint, request_rx) = fixture_endpoint(body);
+        let provider = MusicBrainzProvider::with_endpoint(endpoint, "SOTF test").unwrap();
+
+        let candidates = provider
+            .search_album(Some("Miles Davis"), "Kind of Blue")
+            .await
+            .unwrap();
+
+        let request = request_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(request.starts_with("GET /release?"));
+        assert!(request.contains("fmt=json"));
+        assert!(request.contains("limit=10"));
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].provider_entity_id, "release-1");
+        assert_eq!(candidates[0].album_title.as_deref(), Some("Kind of Blue"));
+        assert_eq!(candidates[0].album_artist.as_deref(), Some("Miles Davis"));
+        assert_eq!(candidates[0].year, Some(1959));
+        assert_eq!(candidates[0].score, 98);
+    }
+
+    #[tokio::test]
+    async fn fetch_release_uses_mock_endpoint_instead_of_musicbrainz() {
+        let body = r#"{"id":"release-2","title":"Blue Train","date":"1958","artist-credit":[{"name":"John Coltrane"}]}"#;
+        let (endpoint, request_rx) = fixture_endpoint(body);
+        let provider = MusicBrainzProvider::with_endpoint(endpoint, "SOTF test").unwrap();
+
+        let candidate = provider.fetch_release("release-2").await.unwrap();
+
+        let request = request_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(request.starts_with("GET /release/release-2?"));
+        assert!(request.contains("fmt=json"));
+        assert!(request.contains("inc=artist-credits"));
+        assert_eq!(candidate.provider_entity_id, "release-2");
+        assert_eq!(candidate.album_title.as_deref(), Some("Blue Train"));
+        assert_eq!(candidate.album_artist.as_deref(), Some("John Coltrane"));
+        assert_eq!(candidate.year, Some(1958));
+        assert_eq!(candidate.score, 100);
+    }
+}

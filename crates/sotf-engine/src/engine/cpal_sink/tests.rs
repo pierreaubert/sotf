@@ -9,6 +9,7 @@ use super::misc::playback_buffer_capacity;
 use super::misc::should_fallback_from_virtual_default;
 use super::pick::pick_format_any_channels;
 use super::pick::pick_preferred_output_format;
+use super::pick::pick_wider_hardware_format;
 use cpal::SampleFormat;
 use rtrb::RingBuffer;
 use std::sync::Arc;
@@ -80,6 +81,40 @@ fn pick_format_any_channels_prefers_float_without_inflating_channels() {
 }
 
 #[test]
+fn pick_wider_hardware_format_uses_smallest_compatible_width() {
+    let candidates = vec![
+        (SampleFormat::I16, 94, 44_100, 96_000),
+        (SampleFormat::F32, 12, 44_100, 96_000),
+        (SampleFormat::I32, 32, 44_100, 96_000),
+    ];
+
+    assert_eq!(
+        pick_wider_hardware_format(&candidates, 10, 48_000),
+        Some((SampleFormat::F32, 12))
+    );
+}
+
+#[test]
+fn pick_wider_hardware_format_ignores_exact_and_lower_widths() {
+    let candidates = vec![
+        (SampleFormat::F32, 2, 44_100, 96_000),
+        (SampleFormat::F32, 1, 44_100, 96_000),
+    ];
+
+    assert_eq!(pick_wider_hardware_format(&candidates, 2, 48_000), None);
+}
+
+#[test]
+fn mapped_hardware_output_preserves_logical_channels_and_zeros_extras() {
+    let logical = [1.0, 2.0, 3.0, 4.0];
+    let mut hardware = [9.0; 8];
+
+    super::build::write_logical_to_hardware_f32(&logical, &mut hardware, 2, 4);
+
+    assert_eq!(hardware, [1.0, 2.0, 0.0, 0.0, 3.0, 4.0, 0.0, 0.0]);
+}
+
+#[test]
 fn fallback_output_format_prefers_device_default_when_available() {
     assert_eq!(
         fallback_output_format(Some((SampleFormat::U16, 6)), 2),
@@ -116,9 +151,7 @@ fn is_stalled_updates_observed_callback_count_without_external_polling() {
 
     assert!(!sink.is_stalled());
     assert_eq!(
-        sink.stall_check
-            .last_callback_count
-            .load(Ordering::Relaxed),
+        sink.stall_check.last_callback_count.load(Ordering::Relaxed),
         1
     );
 }

@@ -311,9 +311,6 @@ impl App {
     pub fn add_album_to_queue(
         &mut self,
     ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
-        let was_empty = self.queue.is_empty();
-        let was_not_playing = !self.is_playing;
-
         // Use a local copy to avoid borrow issues while mutating queue
         let index = self.selected_album_index;
         let album = match self.filtered_albums().get(index) {
@@ -335,50 +332,18 @@ impl App {
             ));
         }
 
-        // Remove any existing entry for the same album (by artist + title)
         let artist = album.artist();
         let title = &album.title;
-        let removed_was_current = self.remove_duplicate_album(&artist, title);
-
-        self.queue.push(QueueEntry::new(QueueItem::new(album)));
-
-        // Auto-play if queue was empty, nothing was playing, or we removed the currently playing album
-        if was_empty || was_not_playing || removed_was_current {
-            return Ok(self.start_queue());
-        }
-        Ok(None)
-    }
-
-    /// Remove an album from the queue by artist + title match.
-    /// Returns true if the removed entry was the currently playing one.
-    pub(super) fn remove_duplicate_album(&mut self, artist: &str, title: &str) -> bool {
-        if let Some(pos) = self
+        let already_queued = self
             .queue
             .iter()
-            .position(|e| e.item.album.artist() == artist && e.item.album.title == title)
-        {
-            self.queue.remove(pos);
-            let was_current = self.current_queue_index == Some(pos);
-
-            // Adjust current_queue_index after removal
-            if let Some(idx) = self.current_queue_index {
-                if pos < idx {
-                    self.current_queue_index = Some(idx - 1);
-                } else if pos == idx {
-                    // Currently playing album was removed; will be re-added at end
-                    self.current_queue_index = None;
-                }
-            }
-
-            // Adjust selected_queue_index after removal
-            if pos < self.selected_queue_index && self.selected_queue_index > 0 {
-                self.selected_queue_index -= 1;
-            }
-
-            was_current
-        } else {
-            false
+            .any(|e| e.item.album.artist() == artist && e.item.album.title == *title);
+        if already_queued {
+            return Ok(None);
         }
+
+        self.queue.push(QueueEntry::new(QueueItem::new(album)));
+        Ok(None)
     }
 
     pub fn remove_from_queue(&mut self, index: usize) -> QueuePlaybackEffect {

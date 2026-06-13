@@ -157,7 +157,14 @@ fn probe_loopback_available(
 #[test]
 fn test_eq_sweep_loopback_verification() {
     // 1. Setup Devices
-    let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
+    let device_names = [
+        "BlackHole 2ch",
+        "BlackHole 16ch",
+        "BlackHole 64ch",
+        "SotF Virtual Audio",
+        "SotF Virtual Device",
+        "SotF Virtual Output",
+    ];
     let mut output_setup = None;
     let mut input_setup = None;
 
@@ -173,7 +180,7 @@ fn test_eq_sweep_loopback_verification() {
     }
 
     if output_setup.is_none() || input_setup.is_none() {
-        println!("SKIPPING test: BlackHole device not found.");
+        println!("SKIPPING test: virtual audio device not found.");
         return;
     }
 
@@ -183,7 +190,7 @@ fn test_eq_sweep_loopback_verification() {
     // 1b. Probe loopback: send a short burst and check we capture non-silence
     if !probe_loopback_available(&out_device, &out_config, &in_device, &in_config) {
         println!(
-            "SKIPPING test: BlackHole device found but loopback is not functional \
+            "SKIPPING test: virtual audio device found but loopback is not functional \
              (no audio captured). Check that audio routing is configured."
         );
         return;
@@ -450,7 +457,7 @@ fn test_eq_sweep_loopback_verification() {
 
     // Check error metric
     // NMSE < 0.05 (5%) is acceptable for loopback with i16 quantization, dithering,
-    // potential minor resampling, and BlackHole latency jitter
+    // potential minor resampling, and virtual-device latency jitter
     assert!(
         nmse < 0.05,
         "EQ Verification Failed! Signal mismatch too high (NMSE: {:.6})",

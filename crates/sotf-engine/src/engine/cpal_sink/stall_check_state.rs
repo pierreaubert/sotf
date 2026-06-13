@@ -26,9 +26,7 @@ impl StallCheckState {
     /// Reset the stall detection baseline to "just checked, zero callbacks".
     pub(super) fn reset(&self) {
         self.last_callback_count.store(0, Ordering::Relaxed);
-        self.last_callback_check_nanos.store(
-            self.epoch.elapsed().as_nanos() as u64,
-            Ordering::Relaxed,
-        );
+        self.last_callback_check_nanos
+            .store(self.epoch.elapsed().as_nanos() as u64, Ordering::Relaxed);
     }
 }

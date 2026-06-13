@@ -25,6 +25,7 @@ tidal = ["dep:sotf-services", "sotf-services/tidal"]
 spotify = ["dep:sotf-services", "sotf-services/spotify"]
 # QA/debug-only HTTP API for scripted E2E testing. Compile errors in release builds
 # and only starts at runtime when `sotf-desktop --qa <dir>` is used.
+qa = []
 dev-api = []
 
 [dependencies]

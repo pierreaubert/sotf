@@ -44,7 +44,14 @@ fn find_device(
 
 #[test]
 fn test_limiter_loopback_verification() {
-    let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
+    let device_names = [
+        "BlackHole 2ch",
+        "BlackHole 16ch",
+        "BlackHole 64ch",
+        "SotF Virtual Audio",
+        "SotF Virtual Device",
+        "SotF Virtual Output",
+    ];
     let mut output_setup = None;
     let mut input_setup = None;
 
@@ -60,7 +67,7 @@ fn test_limiter_loopback_verification() {
     }
 
     if output_setup.is_none() || input_setup.is_none() {
-        println!("SKIPPING test: BlackHole device not found.");
+        println!("SKIPPING test: virtual audio device not found.");
         return;
     }
 
@@ -182,7 +189,7 @@ fn test_limiter_loopback_verification() {
 
     if max_peak < 0.001 {
         println!(
-            "SKIPPING test: No signal detected in loopback capture (BlackHole may not be routing audio)."
+            "SKIPPING test: No signal detected in loopback capture (virtual audio device may not be routing audio)."
         );
         return;
     }

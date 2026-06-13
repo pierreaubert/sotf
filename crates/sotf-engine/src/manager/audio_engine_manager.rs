@@ -705,6 +705,11 @@ impl AudioEngineManager {
         self.current_volume
             .store(volume.to_bits(), Ordering::Relaxed);
 
+        if self.get_state() == StreamingState::Idle {
+            return Ok(());
+        }
+
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         if let Some(engine) = &*self.engine.load() {
             engine
                 .set_volume(volume)
@@ -727,6 +732,11 @@ impl AudioEngineManager {
         // Store mute state so it's preserved
         self.current_muted.store(muted, Ordering::Relaxed);
 
+        if self.get_state() == StreamingState::Idle {
+            return Ok(());
+        }
+
+        let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         if let Some(engine) = &*self.engine.load() {
             engine.set_mute(muted).map_err(AudioDecoderError::IoError)?;
         }

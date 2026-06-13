@@ -24,9 +24,6 @@ impl App {
     pub fn add_album_to_queue(
         &mut self,
     ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
-        let was_empty = self.queue_state.is_empty();
-        let was_not_playing = !self.playback.is_playing;
-
         let albums = self.filtered_albums();
         let selected_album = albums
             .get(self.library_state.selected_index)
@@ -47,10 +44,6 @@ impl App {
                     return Ok(None);
                 }
                 return Err(err);
-            }
-
-            if was_empty || was_not_playing {
-                return Ok(self.start_queue());
             }
         }
         Ok(None)

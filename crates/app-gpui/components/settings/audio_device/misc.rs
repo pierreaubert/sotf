@@ -3,6 +3,12 @@
 /// Helper to get brand image path from device name
 pub(super) fn get_brand_image_path(device_name: &str) -> Option<&'static str> {
     let lower_name = device_name.to_lowercase();
+    if lower_name.contains("dolby") {
+        return Some("brands/dolby-audio.png");
+    }
+    if lower_name.contains("sotf") || lower_name.contains("virtual audio") {
+        return Some("sotf.png");
+    }
     if lower_name.contains("mac") || lower_name.contains("apple") {
         return Some("brands/apple-mac-mini.png");
     }

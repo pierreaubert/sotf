@@ -10374,6 +10374,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-testkit"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "hound",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
+ "sotf-engine",
+ "sotf-host",
+ "tempfile",
+]
+
+[[package]]
 name = "sotf-tls"
 version = "0.6.8"
 dependencies = [

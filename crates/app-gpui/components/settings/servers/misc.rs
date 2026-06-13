@@ -32,17 +32,14 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                    .child("Connections"),
+                    .child("Server"),
             )
             .child(
                 div()
                     .text_size(d.text_xs)
                     .text_color(theme.text_secondary)
-                    .child("Connect to other SOTF players and configure how this device is shared on your network."),
+                    .child("Configure how this device is shared on your network."),
             )
-            .child(settings_section_label("Remote Devices", &theme, &d))
-            // Native SOTF remote control targets
-            .child(self.render_remote_sotf_section(&theme, &d, cx))
             .child(settings_section_label("This Device as Server", &theme, &d))
             // SOTF API section
             .child(self.render_sotf_api_section(&server_config, &theme, &d, cx))
@@ -777,7 +774,7 @@ impl PlayerView {
         section
     }
 
-    pub(super) fn render_remote_sotf_section(
+    pub(crate) fn render_remote_sotf_section(
         &self,
         theme: &crate::app::theme::Theme,
         d: &Ds,
@@ -999,7 +996,7 @@ impl PlayerView {
         section
     }
 
-    pub(super) fn render_scan_sotf_qr_button(
+    pub(crate) fn render_scan_sotf_qr_button(
         &self,
         theme: &crate::app::theme::Theme,
         _d: &Ds,
@@ -1029,7 +1026,7 @@ impl PlayerView {
         }
     }
 
-    pub(super) fn render_remote_sotf_server_row(
+    pub(crate) fn render_remote_sotf_server_row(
         &self,
         server: sotf_audio_player::SotfRemoteServer,
         is_selected: bool,
@@ -1200,7 +1197,7 @@ impl PlayerView {
     }
 }
 
-fn settings_section_label(
+pub(crate) fn settings_section_label(
     label: &'static str,
     theme: &crate::app::theme::Theme,
     d: &Ds,
@@ -1213,7 +1210,7 @@ fn settings_section_label(
         .child(label)
 }
 
-fn server_editable_field(
+pub(crate) fn server_editable_field(
     id: &str,
     label: &str,
     value: &str,

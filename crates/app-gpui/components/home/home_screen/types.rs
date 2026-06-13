@@ -4,10 +4,10 @@
 use super::album::album_genres;
 use super::build::build_home_shelves;
 use super::build::build_remote_home_shelves;
-use super::misc::EXPANDED_ALBUM_LIMIT;
 use super::misc::add_home_album_to_queue;
 use super::misc::arc_album_refs;
 use super::misc::collapsed_album_limit_for_width;
+use super::misc::expanded_album_limit_for_dimensions;
 use super::misc::prioritize_cover_refs;
 use super::misc::slug;
 use super::misc::sort_album_refs_by_listening;
@@ -46,6 +46,7 @@ struct HomeShelvesCacheKey {
     album_count: usize,
     album_storage: usize,
     collapsed_limit: usize,
+    expanded_limit: usize,
 }
 
 #[derive(Clone)]
@@ -62,12 +63,14 @@ fn cached_home_shelves(
     albums: &[Album],
     content_generation: u64,
     collapsed_limit: usize,
+    expanded_limit: usize,
 ) -> Vec<HomeShelf> {
     let key = HomeShelvesCacheKey {
         content_generation,
         album_count: albums.len(),
         album_storage: albums.as_ptr() as usize,
         collapsed_limit,
+        expanded_limit,
     };
 
     HOME_SHELVES_CACHE.with(|cache| {
@@ -78,7 +81,7 @@ fn cached_home_shelves(
             return entry.shelves.clone();
         }
 
-        let shelves = build_home_shelves(albums, collapsed_limit);
+        let shelves = build_home_shelves(albums, collapsed_limit, expanded_limit);
         *cache = Some(HomeShelvesCacheEntry {
             key,
             shelves: shelves.clone(),
@@ -104,15 +107,24 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let (theme, shelves, expanded_sections) = {
             let state = self.state.read(cx);
-            let collapsed_limit = collapsed_album_limit_for_width(state.app.ui_state.window_width);
+            let ui = &state.app.ui_state;
+            let collapsed_limit = collapsed_album_limit_for_width(ui.window_width);
+            let expanded_limit = expanded_album_limit_for_dimensions(
+                ui.window_width,
+                ui.window_height,
+                ui.font_scale,
+                ui.min_font_size_px,
+                ui.max_font_size_px,
+            );
             (
-                state.app.ui_state.theme.clone(),
+                ui.theme.clone(),
                 cached_home_shelves(
                     &state.app.library_state.library.albums,
                     state.app.library_state.content_generation(),
                     collapsed_limit,
+                    expanded_limit,
                 ),
-                state.app.ui_state.expanded_home_sections.clone(),
+                ui.expanded_home_sections.clone(),
             )
         };
 
@@ -157,7 +169,11 @@ impl PlayerView {
                 state.app.ui_state.theme.clone(),
                 state.app.remote.current_album_page.clone(),
                 state.app.ui_state.expanded_home_sections.clone(),
-                state.app.remote.cache_refresh_in_progress
+                state
+                    .app
+                    .remote
+                    .cache_refresh_requests_in_progress
+                    .visible_album_page
                     || state.app.remote.refresh_requests.visible_album_page,
                 state
                     .app
@@ -218,9 +234,16 @@ impl PlayerView {
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let collapsed_limit = collapsed_album_limit_for_width(state.app.ui_state.window_width);
-        let expanded_limit = EXPANDED_ALBUM_LIMIT.max(collapsed_limit);
+        let ui = &state.app.ui_state;
+        let theme = ui.theme.clone();
+        let collapsed_limit = collapsed_album_limit_for_width(ui.window_width);
+        let expanded_limit = expanded_album_limit_for_dimensions(
+            ui.window_width,
+            ui.window_height,
+            ui.font_scale,
+            ui.min_font_size_px,
+            ui.max_font_size_px,
+        );
         let limit = if is_expanded {
             expanded_limit
         } else {
@@ -314,9 +337,16 @@ impl PlayerView {
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let collapsed_limit = collapsed_album_limit_for_width(state.app.ui_state.window_width);
-        let expanded_limit = EXPANDED_ALBUM_LIMIT.max(collapsed_limit);
+        let ui = &state.app.ui_state;
+        let theme = ui.theme.clone();
+        let collapsed_limit = collapsed_album_limit_for_width(ui.window_width);
+        let expanded_limit = expanded_album_limit_for_dimensions(
+            ui.window_width,
+            ui.window_height,
+            ui.font_scale,
+            ui.min_font_size_px,
+            ui.max_font_size_px,
+        );
         let limit = if is_expanded {
             expanded_limit
         } else {

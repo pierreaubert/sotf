@@ -1,0 +1,28 @@
+[package]
+name = "sotf-testkit"
+description = "Shared test fixtures and helpers for the SOTF workspace"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish = false
+
+[features]
+default = []
+engine = ["dep:sotf-engine", "dep:cpal"]
+plugin = ["dep:sotf-host"]
+
+[dependencies]
+hound = { workspace = true }
+tempfile = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+
+sotf-engine = { workspace = true, optional = true }
+cpal = { workspace = true, optional = true }
+sotf-host = { workspace = true, optional = true }
+
+[lints]
+workspace = true

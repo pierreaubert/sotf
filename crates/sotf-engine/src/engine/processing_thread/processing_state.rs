@@ -8,8 +8,8 @@ use super::super::{
 use super::isolated::isolated_external_plugin_status;
 use super::misc::send_or_interrupt;
 use sotf_plugins::{Host, PluginHost};
-use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
 /// Spin timeout when the decoder queue is empty.
 /// Keep this well under a millisecond to avoid burning the latency budget.

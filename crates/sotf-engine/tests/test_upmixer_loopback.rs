@@ -47,9 +47,16 @@ fn find_device(
 #[test]
 fn test_upmixer_real_audio_loopback() {
     // 1. Setup Devices
-    // We need BlackHole 6ch (or 16ch/64ch) to support 5.1
-    // Prioritize 16ch or 64ch as they are more common for multi-channel work
-    let device_names = ["BlackHole 16ch", "BlackHole 64ch", "BlackHole 6ch"];
+    // We need a 6ch-capable virtual audio device to support 5.1
+    // Prioritize known multi-channel virtual devices first
+    let device_names = [
+        "BlackHole 16ch",
+        "BlackHole 64ch",
+        "BlackHole 6ch",
+        "SotF Virtual Audio",
+        "SotF Virtual Device",
+        "SotF Virtual Output",
+    ];
 
     let mut output_setup = None;
     let mut input_setup = None;
@@ -67,7 +74,7 @@ fn test_upmixer_real_audio_loopback() {
 
     if output_setup.is_none() || input_setup.is_none() {
         println!(
-            "SKIPPING test: BlackHole device with 6+ channels not found. Install BlackHole 16ch or 64ch."
+            "SKIPPING test: virtual audio device with 6+ channels not found. Install SotF Virtual Audio or BlackHole 16ch/64ch."
         );
         return;
     }

@@ -219,18 +219,6 @@ pub(super) fn run_manager_thread(
     let (recycle_tx, recycle_rx) = sync_channel(queue_capacity * 2);
     let (decoder_recycle_tx, decoder_recycle_rx) = sync_channel(queue_capacity * 2);
 
-    // Pre-fill recycle queues to avoid initial allocations in the hot path.
-    // We use a safe upper bound for sample count: frame_size * max_channels.
-    // Systemwide HAL can advertise up to 32 channels; use 64 to leave headroom
-    // for resampler ratio growth and future channel counts.
-    let prefill_samples = config.frame_size * 64;
-    // Seed more buffers so the processing thread almost never has to fall back
-    // to a fresh Vec allocation outside of pathological stalls.
-    for _ in 0..queue_capacity * 4 {
-        let _ = recycle_tx.send(vec![0.0; prefill_samples]);
-        let _ = decoder_recycle_tx.send(vec![0.0; prefill_samples]);
-    }
-
     // Create GC thread for off-audio-thread deallocation
     let mut gc_thread = GcThread::new()?;
     let gc_tx = gc_thread.sender();
@@ -261,10 +249,20 @@ pub(super) fn run_manager_thread(
         plugin_data_cache,
         gc_tx,
         recycle_rx,
-        decoder_recycle_tx,
+        decoder_recycle_tx.clone(),
         #[cfg(feature = "streaming")]
         network_stream_tap,
     )?;
+
+    // Pre-fill recycle queues to avoid initial allocations in the hot path.
+    // This must happen after the decoder/processing threads are started so the
+    // receivers exist, and it must be non-blocking because the threads may not
+    // be consuming the queues yet.
+    let prefill_samples = config.frame_size * 64;
+    for _ in 0..queue_capacity * 4 {
+        let _ = recycle_tx.try_send(vec![0.0; prefill_samples]);
+        let _ = decoder_recycle_tx.try_send(vec![0.0; prefill_samples]);
+    }
 
     // Determine actual output channel count by loading plugin chain first
     let mut actual_output_channels = if !config.plugins.is_empty() {

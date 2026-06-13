@@ -66,6 +66,34 @@ ntest:
 itest:
 	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --tests {{release_test_features}}
 
+[group('test')]
+atest: test-negative test-proptest ntest itest
+
+# ----------------------------------------------------------------------
+# COVERAGE
+# ----------------------------------------------------------------------
+
+# Requires: cargo install cargo-llvm-cov
+# Generates an LCOV report for CI / Codecov upload.
+[group('coverage')]
+coverage:
+	cargo llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --lcov --output-path target/lcov.info
+
+# Generates an HTML coverage report and opens it.
+[group('coverage')]
+coverage-html:
+	cargo llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --html --open
+
+# Prints a text summary to stdout (fastest coverage recipe).
+[group('coverage')]
+coverage-summary:
+	cargo llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --summary
+
+# Removes stale coverage artifacts.
+[group('coverage')]
+coverage-clean:
+	cargo llvm-cov clean
+
 # ----------------------------------------------------------------------
 # LINT
 # ----------------------------------------------------------------------
@@ -193,7 +221,7 @@ alias terminal := gpui
 
 [group('build')]
 gpui:
-	cargo run --release --bin sotf-desktop -p sotf-gpui {{prod_features}}
+	cargo run --release --bin sotf-desktop -p sotf-gpui {{test_features_macos}}
 
 alias desktop := gpui
 alias native := gpui

@@ -21,7 +21,7 @@ pub use plugins::{
 };
 
 use crate::app::types::PluginUpdateType;
-use crate::app::{Screen, SettingsTab};
+use crate::app::SettingsTab;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::plugins::editing::PluginEditingManager;
@@ -153,9 +153,6 @@ impl PlayerView {
 
         // Tabs are now custom-rendered to avoid context issues
 
-        // Clone state for home button click handler
-        let state_for_home = self.state.clone();
-        let text_muted = theme.text_muted;
         let text_secondary = theme.text_secondary;
 
         div()
@@ -166,7 +163,7 @@ impl PlayerView {
             .bg(theme.background)
             .text_color(theme.text_primary)
             .child(
-                // Tab Header with Home button on left, tabs centered
+                // Tab Header with centered tabs
                 div()
                     .w_full()
                     .bg(theme.surface)
@@ -177,32 +174,6 @@ impl PlayerView {
                     .flex()
                     .items_center()
                     .gap(d.gap)
-                    // Home button on the left
-                    .child(
-                        div()
-                            .id("settings-home-button")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .w(rems(2.5))
-                            .h(rems(2.0))
-                            .cursor_pointer()
-                            .rounded(d.r_md)
-                            .border_1()
-                            .border_color(theme.border)
-                            .hover(move |s| s.bg(theme.surface_hover))
-                            .child(
-                                Icon::new(IconName::Home)
-                                    .size(IconSize::Sm)
-                                    .color(text_muted),
-                            )
-                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                                state_for_home.update(cx, |state, _cx| {
-                                    state.app.set_screen(Screen::NowPlaying, "SettingsHome");
-                                });
-                            }),
-                    )
-                    // Centered tabs (flex-1 with centered content)
                     .child(div().flex_1().min_w_0().child({
                         // Custom tab rendering to avoid context issues
                         let state_entity = self.state.clone();
@@ -283,9 +254,7 @@ impl PlayerView {
                         }
 
                         tabs_container
-                    }))
-                    // Spacer on the right to balance the home button
-                    .child(div().w(rems(2.5))),
+                    })),
             )
             // Content with vertical scroll
             .child(

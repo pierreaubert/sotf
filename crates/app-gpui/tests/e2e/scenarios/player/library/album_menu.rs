@@ -119,6 +119,10 @@ impl TestScenario for AlbumContextMenuScenario {
         if queue_len == 0 {
             return Err("Album should be added to queue via context menu".into());
         }
+        let is_playing = driver.read_app(|app| app.playback.is_playing);
+        if is_playing {
+            return Err("Add to Queue should enqueue without starting playback".into());
+        }
 
         // ===== Test 3: Verify queue has album =====
         let queue_tracks = driver.read_app(|app| {

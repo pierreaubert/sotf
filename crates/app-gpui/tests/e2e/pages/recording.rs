@@ -93,29 +93,7 @@ impl<'a, 'b> RecordingPage<'a, 'b> {
 
     /// Tries to find a suitable loopback device name
     pub fn find_loopback_device(&mut self) -> Option<String> {
-        let (inputs, outputs) = self.get_available_devices();
-
-        let candidates = [
-            "BlackHole",
-            "Loopback",
-            "VB-Cable",
-            "Cable",
-            "Null",
-            "Dummy",
-            "Stereo Mix",
-        ];
-
-        for candidate in candidates {
-            // Find one that exists in BOTH lists
-            let in_match = inputs.iter().find(|n| n.contains(candidate));
-            let out_match = outputs.iter().find(|n| n.contains(candidate));
-
-            if let (Some(in_name), Some(_out_name)) = (in_match, out_match) {
-                // They must be somewhat similar or the same device
-                return Some(in_name.clone());
-            }
-        }
-        None
+        crate::device::find_loopback_device()
     }
 
     pub fn select_devices(&mut self, device_name: &str) {

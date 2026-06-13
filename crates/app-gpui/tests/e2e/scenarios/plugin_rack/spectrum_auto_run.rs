@@ -1,3 +1,4 @@
+use crate::device::find_virtual_output_device;
 use crate::driver::AppDriver;
 use crate::pages::plugin_rack::PluginRackPage;
 use crate::runner::{E2ERunner, TestScenario};
@@ -5,48 +6,6 @@ use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use sotf_audio::plugins::PluginType;
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
-
-fn available_virtual_output_device() -> Option<String> {
-    use cpal::traits::{DeviceTrait, HostTrait};
-
-    let host = cpal::default_host();
-    let devices: Vec<String> = host
-        .output_devices()
-        .map(|devices| {
-            devices
-                .filter_map(|device| {
-                    device
-                        .description()
-                        .ok()
-                        .map(|description| description.name().to_string())
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    if let Ok(requested) = std::env::var("AEQ_E2E_DEVICE")
-        && !requested.is_empty()
-    {
-        return devices
-            .iter()
-            .find(|name| *name == &requested || name.contains(&requested))
-            .cloned();
-    }
-
-    [
-        "BlackHole 2ch",
-        "BlackHole 16ch",
-        "BlackHole 64ch",
-        "SotF Virtual Audio",
-    ]
-    .into_iter()
-    .find_map(|candidate| {
-        devices
-            .iter()
-            .find(|name| name.contains(candidate))
-            .cloned()
-    })
-}
 
 pub struct SpectrumAutoRunScenario;
 
@@ -63,7 +22,7 @@ impl TestScenario for SpectrumAutoRunScenario {
         let mut driver = AppDriver::new(cx, window);
 
         // Direct audio to a virtual device to avoid sending sound to speakers.
-        let output_device = available_virtual_output_device();
+        let output_device = find_virtual_output_device();
         if let Some(output_device) = output_device.clone() {
             driver.update_app(|app, _| {
                 app.audio_device_state.current_output_device_name = Some(output_device);

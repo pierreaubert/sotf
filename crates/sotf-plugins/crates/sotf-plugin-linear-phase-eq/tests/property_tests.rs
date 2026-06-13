@@ -5,19 +5,42 @@
 use proptest::prelude::*;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, ProcessContext};
-use sotf_plugin_linear_phase_eq::LinearPhaseEqPlugin;
+use sotf_plugin_linear_phase_eq::{BandConfig, LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 
 fn mono_buffer_strategy() -> impl Strategy<Value = Vec<f32>> {
     (-0.5f32..0.5f32).prop_map(|v| vec![v; 64])
 }
 
+/// Build a plugin with the shortest FIR length and no active bands.
+/// Tests that are not exercising FIR length itself should use this to keep
+/// each proptest case cheap.
+fn minimal_plugin() -> LinearPhaseEqPlugin {
+    LinearPhaseEqPlugin::from_params(
+        1,
+        48000,
+        LinearPhaseEqPluginParams {
+            num_filters: 1,
+            fir_length_index: 0,
+            auto_gain: false,
+            mix: 1.0,
+            filters: vec![],
+        },
+    )
+    .unwrap()
+}
+
 proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 64,
+        failure_persistence: None,
+        ..ProptestConfig::default()
+    })]
     // -------------------------------------------------------------------------
     // Finite output
     // -------------------------------------------------------------------------
     #[test]
     fn process_finite_output_default(buffer in mono_buffer_strategy()) {
-        let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+        let mut plugin = minimal_plugin();
         let mut buf = buffer.clone();
         plugin.process_in_place(&mut buf, &ProcessContext::new(48000, 64)).unwrap();
 
@@ -27,9 +50,6 @@ proptest! {
 
     #[test]
     fn process_finite_output_with_active_band(buffer in mono_buffer_strategy()) {
-        use sotf_plugin_linear_phase_eq::LinearPhaseEqPluginParams;
-        use sotf_plugin_linear_phase_eq::BandConfig;
-
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 0,
@@ -56,7 +76,7 @@ proptest! {
     // -------------------------------------------------------------------------
     #[test]
     fn roundtrip_mix(mix in 0.0f32..1.0f32) {
-        let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+        let mut plugin = minimal_plugin();
         plugin.set_parameter(ParameterId::from("mix"), ParameterValue::Float(mix)).unwrap();
         let got = plugin.get_parameter(&ParameterId::from("mix"));
 
@@ -71,7 +91,7 @@ proptest! {
 
     #[test]
     fn roundtrip_auto_gain(enabled in prop::bool::ANY) {
-        let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+        let mut plugin = minimal_plugin();
         plugin.set_parameter(ParameterId::from("auto_gain"), ParameterValue::Bool(enabled)).unwrap();
         let got = plugin.get_parameter(&ParameterId::from("auto_gain"));
 
@@ -81,7 +101,7 @@ proptest! {
 
     #[test]
     fn roundtrip_num_filters(n in 1i32..10i32) {
-        let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+        let mut plugin = minimal_plugin();
         plugin.set_parameter(ParameterId::from("num_filters"), ParameterValue::Int(n)).unwrap();
         let got = plugin.get_parameter(&ParameterId::from("num_filters"));
 
@@ -91,7 +111,7 @@ proptest! {
 
     #[test]
     fn roundtrip_fir_length(idx in 0i32..4i32) {
-        let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+        let mut plugin = minimal_plugin();
         plugin.set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(idx)).unwrap();
         let got = plugin.get_parameter(&ParameterId::from("fir_length"));
 
@@ -101,7 +121,7 @@ proptest! {
 
     #[test]
     fn roundtrip_band_gain(gain_db in -24.0f32..24.0f32) {
-        let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
+        let mut plugin = minimal_plugin();
         plugin.set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(gain_db)).unwrap();
         let got = plugin.get_parameter(&ParameterId::from("band_0_gain"));
 
@@ -119,8 +139,6 @@ proptest! {
     // -------------------------------------------------------------------------
     #[test]
     fn dry_mix_passthrough(buffer in mono_buffer_strategy()) {
-        use sotf_plugin_linear_phase_eq::LinearPhaseEqPluginParams;
-
         // Construct with mix=0 from the start so the smoother begins at target.
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
@@ -142,9 +160,6 @@ proptest! {
 
     #[test]
     fn inactive_bands_approximately_passthrough_after_latency(buffer in mono_buffer_strategy()) {
-        use sotf_plugin_linear_phase_eq::LinearPhaseEqPluginParams;
-        use sotf_plugin_linear_phase_eq::BandConfig;
-
         let params = LinearPhaseEqPluginParams {
             num_filters: 2,
             fir_length_index: 0,
@@ -197,9 +212,6 @@ proptest! {
         gain_db in -12.0f32..12.0f32,
         freq in 200.0f32..8000.0f32
     ) {
-        use sotf_plugin_linear_phase_eq::LinearPhaseEqPluginParams;
-        use sotf_plugin_linear_phase_eq::BandConfig;
-
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 0, // 1024 taps

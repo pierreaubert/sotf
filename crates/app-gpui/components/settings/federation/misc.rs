@@ -4,6 +4,7 @@
 use crate::app::constants::spacing;
 use crate::app::federation::test_federation_connection;
 use crate::components::design::Ds;
+use crate::components::settings::settings_section_label;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -34,13 +35,13 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                    .child("Library Sources"),
+                    .child("Streaming"),
             )
             .child(
                 div()
                     .text_size(d.text_xs)
                     .text_color(theme.text_secondary)
-                    .child("Configure remote libraries, streaming services, and radio stations."),
+                    .child("Configure streaming services, radio stations, and remote players."),
             )
             // Add Source buttons
             .child(
@@ -53,7 +54,7 @@ impl PlayerView {
                             .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
-                            .child(format!("Sources ({})", sources.len())),
+                            .child(format!("Sources ({})", sources.len()))
                     )
                     .child(
                         HStack::new()
@@ -61,12 +62,13 @@ impl PlayerView {
                             .child(self.add_source_button("subsonic", "Subsonic", &theme, cx))
                             .child(self.add_source_button("mpd", "MPD", &theme, cx))
                             .child(self.add_source_button("dlna", "DLNA", &theme, cx))
-                            .child(self.add_source_button("peer", "Peer", &theme, cx))
                             .child(self.add_source_button("tidal", "Tidal", &theme, cx))
                             .child(self.add_source_button("spotify", "Spotify", &theme, cx))
                             .child(self.add_source_button("icy_radio", "Radio", &theme, cx)),
                     ),
-            );
+            )
+            .child(settings_section_label("Remote Devices", &theme, &d))
+            .child(self.render_remote_sotf_section(&theme, &d, cx));
 
         if sources.is_empty() {
             content = content.child(

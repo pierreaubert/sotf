@@ -1,8 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
-use sotf_audio::{AudioEngine, EngineConfig, PluginConfig};
+use sotf_audio::{AudioEngine, PluginConfig};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
+
+mod common;
 
 // ============================================================================
 // Counting Allocator
@@ -69,8 +71,12 @@ fn get_playback_alloc_count() -> usize {
 
 #[test]
 fn test_engine_hotpath_allocations() {
+    // Audio engine tests need a virtual audio device (BlackHole / SotF HAL).
+    // Opening the system default device can hang in headless environments.
+    common::skip_without_device!();
+
     // Start engine with driver_mode to force continuous processing of silence
-    let mut config = EngineConfig::default();
+    let mut config = common::try_test_engine_config().expect("virtual device required");
     config.driver_mode = true;
     config.plugins = vec![PluginConfig::new(
         "gain",

@@ -80,6 +80,8 @@ pub struct PluginState {
     /// Rack-level plugin theme + per-plugin overrides (UI-only, persisted to
     /// gpui state file separately from engine config).
     pub rack_theme_state: RackThemeState,
+    /// Plugins discovered by scanning external plugin directories.
+    pub scanned_external_plugins: Vec<sotf_plugins::PluginDescriptor>,
 }
 
 impl Deref for PluginState {
@@ -203,6 +205,7 @@ impl Default for PluginState {
             soloed_plugin_index: None,
             pre_solo_enabled_states: Vec::new(),
             rack_theme_state: RackThemeState::default(),
+            scanned_external_plugins: Vec::new(),
         }
     }
 }

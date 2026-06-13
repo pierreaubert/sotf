@@ -30,7 +30,7 @@ What can you do with it?
 
 Stable desktop releases are on the platform stores. Beta releases and command-line artifacts are on [GitHub Releases](https://github.com/pierreaubert/sotf/releases), with another copy on our [website](https://sotf.spinorama.org).
 
-If you like it, star the directory please. If you dont, please let us know why? All feedback is welcome: you can leave a comment on [github](https://github.com/pierreaubert/sotf/discussions/116) or on [AudioScienceReview](https://www.audiosciencereview.com/forum/index.php?threads/autoeq-for-speaker-and-headphone.66460/).
+If you like it, please star the directory on GitHub. If you dont, please let us know why? All feedback is welcome: you can leave a comment on [github](https://github.com/pierreaubert/sotf/discussions/116) or on [AudioScienceReview](https://www.audiosciencereview.com/forum/index.php?threads/autoeq-for-speaker-and-headphone.66460/).
 
 ### Main functions
 
@@ -116,15 +116,13 @@ In order to publish them, you need to have an Apple developper ID:
 
 ## Where is the code?
 
-The code is in three parts:
-
 ### SotF
 
 This repository [sotf](https://github.com/pierreaubert/sotf) which is mostly an audio backend and the UI and TUI. The backend audio has a few components:
 
-- an [audio engine](crates/engine/README.md) : an audio engine (process streams or files and output pcm to your audio device)
-- an [audio player](crates/player/README.md): a library doing track management and 3 players, a CLI for testing, a TUI (terminal) based one and a desktop one with a native UI.
-- a set of audio [plugins](crates/plugins/README.md):
+- an [audio engine](crates/sotf-engine/README.md) : an audio engine (process streams or files and output pcm to your audio device)
+- an [audio player](crates/sotf-player/README.md): a library doing track management and 3 players, a CLI for testing, a TUI (terminal) based one and a desktop one with a native UI.
+- a set of audio [plugins](crates/sotf-plugins/README.md):
 
   - host: a mini DAW that can run plugins in a list (like a rack) or in a graph (like a DAW) visualisation: loudness, spectrum, lufs
   - classical: iir and fir EQ, compressor (and multi-band compressor), limiter, gain, matrix, resampler, multi-band expander, convolution, delay, crossover, loudness compensation
@@ -155,18 +153,6 @@ The automatic EQ crates now live in their own repository:
 
 The following related crates remain in this repository:
 
-#### autoeq-cea2034
-
-[CEA2034/Spinorama](./crates/autoeq-cea2034/README.md) calculations (listening window, early reflections, predicted in-room response, speaker scores)
-
-#### autoeq-roomsim
-
-WASM-targeted [room acoustic simulator](./crates/autoeq-roomsim/README.md) using BEM (boundary element method)
-
-#### autoeq-datagen
-
-Generate room data from the FEM and BEM package to test roomEQ.
-
 ### Symphonia add-ons
 
 The Symphonia-compatible SACD, DSD, DST, and WavPack decoder/format crates now live in their own repository:
@@ -176,37 +162,7 @@ The Symphonia-compatible SACD, DSD, DST, and WavPack decoder/format crates now l
 
 ### GPUI toolkit
 
-#### gpui-ui-kit
-
-A comprehensive UI component library with 40+ components including:
-- **Core**: Button, Card, Dialog, Menu, Tabs, Toast
-- **Forms**: Input, NumberInput, Checkbox, Toggle, Select, Slider, ColorPicker
-- **Data Display**: Badge, Progress, Spinner, Avatar, Typography
-- **Audio Controls**: Potentiometer, VerticalSlider, VolumeKnob
-
-See the [gpui-ui-kit README](./crates/gpui-ui-kit/README.md) for usage examples.
-
-#### gpui-d3rs
-
-A port of D3.js concepts to Rust with idiomatic builder patterns:
-- **Scales**: Linear, Log with automatic tick generation
-- **Shapes**: Lines, Bars, Areas, Arcs, Pies, Scatter plots
-- **Colors**: RGB/HSL, interpolation, categorical schemes
-- **Geographic**: Mercator, Orthographic projections
-- **Spatial**: QuadTree, Delaunay triangulation, Voronoi
-- **Animation**: Transitions, easing functions, timers
-
-See the [gpui-d3rs README](./crates/gpui-d3rs/README.md) for the full feature list and examples.
-
-### gpui-px
-
-High-level charting API inspired by Plotly Express:
-- 6 chart types: Scatter, Line, Bar, Heatmap, Contour, Isoline
-- Fluent builder API
-- Color scales: Viridis, Plasma, Inferno, Magma, Heat, Coolwarm
-- Logarithmic scale support
-
-See the [gpui-px README](./crates/gpui-px/README.md) for quick start examples.
+GPUI is a portable UI library written by the team behind the Zed editor. The toolkit [gpui README](https://github.com/pierreaubert/gpui-toolkit) provides everything to build complex applications. Linux, MacOS and Windows are supported. The support for iOS is progressing (working), AU plugins (working), tvOS (in progress), Android (not yet supported).
 
 
 ## FAQ
@@ -219,7 +175,7 @@ Why did you not reuse more code? The goal was to learn Rust and to learn other t
 - Did LLM model progress enough to help building a complex app? Answer is yes since Opus 4.5 and Gemini 3.0. It is of course not perfect.
 - Can I reuse my old c++ code with audio plugin? Answer is also yes, I translated most of them in Rust now. I am still unclear if I will be able to build AU plugins with GPUI but it is working for CLAP and VST3. I also get the plugins to work as AUplugin with some hacking and a bit of Swift.
 
-### MacOS specific: daemon and driver-hal
+### MacOS specific: systemwide
 
 On MacOS the sound managent system does not make it easy to route audio between applications.
 
@@ -227,8 +183,6 @@ We added a few components:
 - driver-hal: a HAL (Hardware Abstraction Layer) to route audio between applications. It is similar to BlackHole (https://github.com/BlackHoleSound/BlackHole) but it allow to route the audio through a DAW with plugins.
 - daemon: a Rust deamon software that read audio from the HAL driver, apply a chain of plugins (typically to correct the sound of your headphone or software) and then send it to a hardware audio interface.
 - toolbar: a software that allow to configure the daemon and HAL driver. It sits in the macos toolbar.
-
-Status: almost working.
 
 ## More pictures
 

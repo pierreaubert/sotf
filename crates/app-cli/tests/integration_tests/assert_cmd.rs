@@ -6,17 +6,29 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::path::PathBuf;
+use std::time::Duration;
+
+/// Maximum time any CLI integration test is allowed to run before being killed.
+///
+/// The `play_*_parses` tests exercise argument parsing and plugin wiring only;
+/// they do not require real audio hardware. A short timeout prevents CI runners
+/// from hanging indefinitely when cpal cannot open the default device.
+const TEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Build a `player-cli` command with logging redirected away from the crate
 /// directory so tests do not leave `sotf_cli_player.log` behind.
 fn player_cmd() -> Command {
     let mut cmd = Command::cargo_bin("player-cli").expect("player-cli binary available");
     cmd.env("SOTF_CLI_LOG", "/dev/null");
+    cmd.timeout(TEST_TIMEOUT);
     cmd
 }
 
 fn recorder_cmd() -> Command {
-    Command::cargo_bin("sotf-recorder-cli").expect("sotf-recorder-cli binary available")
+    let mut cmd =
+        Command::cargo_bin("sotf-recorder-cli").expect("sotf-recorder-cli binary available");
+    cmd.timeout(TEST_TIMEOUT);
+    cmd
 }
 
 fn fixture_wav() -> PathBuf {

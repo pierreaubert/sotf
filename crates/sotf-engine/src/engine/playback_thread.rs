@@ -92,10 +92,10 @@ impl PlaybackThread {
         if let Err(e) = self.send_command(PlaybackCommand::Shutdown) {
             log::trace!("[Playback Thread] Shutdown command receiver dropped: {}", e);
         }
-        if let Some(handle) = self.thread_handle.take()
-            && let Err(e) = handle.join()
-        {
-            log::warn!("[Playback Thread] Thread panicked during shutdown: {:?}", e);
+        if let Some(handle) = self.thread_handle.take() {
+            if let Err(()) = super::join_timeout(handle, std::time::Duration::from_secs(5)) {
+                log::warn!("[Playback Thread] Shutdown join timed out; thread left detached");
+            }
         }
     }
 }

@@ -42,6 +42,8 @@ pub struct RemoteState {
         Option<std::sync::mpsc::Receiver<RemoteAlbumQueueCommandResult>>,
     /// Whether a quiet remote cache refresh job is currently running.
     pub cache_refresh_in_progress: bool,
+    /// Requests covered by the currently running quiet remote cache refresh.
+    pub cache_refresh_requests_in_progress: RemoteRefreshRequests,
     /// Consecutive quiet cache refresh failures for the selected remote.
     pub cache_refresh_failures: u8,
     /// Disable quiet cache refreshes after repeated network failures.
@@ -212,6 +214,7 @@ impl RemoteState {
     pub fn reset_remote_cache_updater(&mut self) {
         self.cache_refresh_receiver = None;
         self.cache_refresh_in_progress = false;
+        self.cache_refresh_requests_in_progress = RemoteRefreshRequests::default();
         self.cache_refresh_failures = 0;
         self.cache_updates_disabled = false;
         self.cache_last_error = None;
@@ -219,6 +222,7 @@ impl RemoteState {
 
     pub fn record_remote_cache_refresh_success(&mut self) {
         self.cache_refresh_in_progress = false;
+        self.cache_refresh_requests_in_progress = RemoteRefreshRequests::default();
         self.cache_refresh_receiver = None;
         self.cache_refresh_failures = 0;
         self.cache_last_error = None;
@@ -226,6 +230,7 @@ impl RemoteState {
 
     pub fn record_remote_cache_refresh_failure(&mut self, err: RemoteCacheRefreshError) {
         self.cache_refresh_in_progress = false;
+        self.cache_refresh_requests_in_progress = RemoteRefreshRequests::default();
         self.cache_refresh_receiver = None;
         self.cache_last_error = Some(err.message);
         self.cache_refresh_failures = self.cache_refresh_failures.saturating_add(1);
