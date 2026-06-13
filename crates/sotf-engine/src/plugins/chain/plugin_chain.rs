@@ -2155,4 +2155,181 @@ mod tests {
             }
         }
     }
+
+    // =======================================================================
+    // Explicit coverage for highest-risk untested functions
+    // =======================================================================
+
+    #[test]
+    fn test_find_processing_insert_index() {
+        // Empty chain: insert at end
+        let chain = PluginChain::new();
+        assert_eq!(chain.find_processing_insert_index(), 0);
+
+        // Only processing plugins: insert at end
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::EQ);
+        chain.add_plugin(&PluginType::Compressor);
+        assert_eq!(chain.find_processing_insert_index(), 2);
+
+        // Processing plugin followed by monitor: insert before monitor
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::EQ);
+        chain.add_plugin(&PluginType::LoudnessMonitor);
+        assert_eq!(chain.find_processing_insert_index(), 1);
+
+        // Monitor first: insert at 0
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::SpectrumAnalyzer);
+        chain.add_plugin(&PluginType::EQ);
+        assert_eq!(chain.find_processing_insert_index(), 0);
+    }
+
+    #[test]
+    fn test_input_monitor_engine_index() {
+        let chain = PluginChain::with_default_rack();
+        assert_eq!(chain.input_monitor_engine_index(), Some(0));
+
+        // Disabled input monitor is not in engine
+        let mut chain = PluginChain::with_default_rack();
+        if let Some(p) = chain.get_plugin_mut(0) {
+            p.enabled = false;
+        }
+        assert_eq!(chain.input_monitor_engine_index(), None);
+
+        // No loudness monitor at all
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::EQ);
+        assert_eq!(chain.input_monitor_engine_index(), None);
+    }
+
+    #[test]
+    fn test_output_monitor_engine_index() {
+        let chain = PluginChain::with_default_rack();
+        // Engine order: InputLM(0), Matrix(1), OutputLM(2)
+        assert_eq!(chain.output_monitor_engine_index(), Some(2));
+
+        // Single loudness monitor: not an output monitor
+        let mut chain = PluginChain::new();
+        chain.add_permanent_plugin(&PluginType::LoudnessMonitor);
+        assert_eq!(chain.output_monitor_engine_index(), None);
+
+        // Disabled output monitor
+        let mut chain = PluginChain::with_default_rack();
+        if let Some(p) = chain.get_plugin_mut(3) {
+            p.enabled = false;
+        }
+        assert_eq!(chain.output_monitor_engine_index(), None);
+    }
+
+    #[test]
+    fn test_get_engine_index_disabled_input_monitor_shifts_processing() {
+        let mut chain = PluginChain::with_default_rack();
+        // Disable input monitor
+        if let Some(p) = chain.get_plugin_mut(0) {
+            p.enabled = false;
+        }
+
+        // With no input monitor, Matrix shifts to engine index 0
+        assert_eq!(chain.get_engine_index(2), Some(0));
+        // Output monitor follows
+        assert_eq!(chain.get_engine_index(3), Some(1));
+    }
+
+    #[test]
+    fn test_get_engine_index_suspended_plugin_skipped() {
+        let mut chain = PluginChain::with_default_rack();
+        // Suspend the matrix
+        if let Some(p) = chain.get_plugin_mut(2) {
+            p.suspended = true;
+        }
+
+        // Matrix is skipped
+        assert_eq!(chain.get_engine_index(2), None);
+        // Output monitor still comes after input monitor
+        assert_eq!(chain.get_engine_index(3), Some(1));
+    }
+
+    #[test]
+    fn test_get_engine_index_spectrum_analyzer_as_monitor() {
+        let mut chain = PluginChain::with_default_rack();
+        // Add a spectrum analyzer as a user plugin after Matrix
+        chain.insert_plugin(3, &PluginType::SpectrumAnalyzer);
+
+        // Engine order: InputLM(0), Matrix(1), OutputLM(2), Spectrum(3)
+        assert_eq!(chain.get_engine_index(4), Some(3));
+    }
+
+    #[test]
+    fn test_get_engine_index_compressor_processing_plugin() {
+        let mut chain = PluginChain::with_default_rack();
+        let insert_idx = chain.user_plugin_insert_index();
+        chain.insert_plugin(insert_idx, &PluginType::Compressor);
+
+        // Engine order: InputLM(0), Compressor(1), Matrix(2), OutputLM(3)
+        assert_eq!(chain.get_engine_index(insert_idx), Some(1));
+    }
+
+    #[test]
+    fn test_output_channels_for_input_aae_and_ambisonics() {
+        // AAE plugin
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::AAE);
+        if let Some(p) = chain.get_plugin_mut(0)
+            && let PluginSettings::AAE { speaker_config, .. } = &mut p.settings
+        {
+            *speaker_config = "7.1".to_string();
+        }
+        assert_eq!(chain.output_channels_for_input(2), 8);
+
+        // AmbisonicsDecoder plugin
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::AmbisonicsDecoder);
+        if let Some(p) = chain.get_plugin_mut(0)
+            && let PluginSettings::AmbisonicsDecoder { target_layout, .. } = &mut p.settings
+        {
+            *target_layout = "5.1".to_string();
+        }
+        assert_eq!(chain.output_channels_for_input(4), 6);
+    }
+
+    #[test]
+    fn test_output_channels_for_input_unknown_speaker_config_defaults_to_5_1() {
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::Upmixer);
+        if let Some(p) = chain.get_plugin_mut(0)
+            && let PluginSettings::Upmixer { speaker_config, .. } = &mut p.settings
+        {
+            *speaker_config = "not-a-real-config".to_string();
+        }
+        assert_eq!(chain.output_channels_for_input(2), 6);
+    }
+
+    #[test]
+    fn test_adapt_matrix_to_input_aae_before_matrix() {
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::AAE);
+        if let Some(p) = chain.get_plugin_mut(0)
+            && let PluginSettings::AAE { speaker_config, .. } = &mut p.settings
+        {
+            *speaker_config = "7.1".to_string();
+        }
+        chain.add_plugin(&PluginType::Matrix);
+        chain.adapt_matrix_to_input(2);
+        assert_eq!(get_matrix_dims(&chain), Some((8, 8)));
+    }
+
+    #[test]
+    fn test_adapt_matrix_to_input_ambisonics_before_matrix() {
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&PluginType::AmbisonicsDecoder);
+        if let Some(p) = chain.get_plugin_mut(0)
+            && let PluginSettings::AmbisonicsDecoder { target_layout, .. } = &mut p.settings
+        {
+            *target_layout = "5.1.4".to_string();
+        }
+        chain.add_plugin(&PluginType::Matrix);
+        chain.adapt_matrix_to_input(4);
+        assert_eq!(get_matrix_dims(&chain), Some((10, 10)));
+    }
 }

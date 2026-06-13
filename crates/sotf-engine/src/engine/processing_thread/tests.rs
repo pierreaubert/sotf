@@ -465,15 +465,15 @@ fn plugin_cache_update_skips_under_ui_contention_without_fallback() {
 }
 
 #[test]
-fn processing_thread_idle_sleep_is_sub_millisecond() {
+fn processing_thread_idle_wait_blocks_instead_of_micro_spinning() {
     let source = include_str!("processing_state.rs");
     assert!(
-        source.contains("from_micros(SPIN_US_SLEEP_PROCESSING)"),
-        "processing thread empty-queue sleep should use a microsecond spin constant"
+        source.contains("decoder_stream_active"),
+        "processing thread empty-queue path should distinguish active playback from idle"
     );
     assert!(
-        !source.contains("Duration::from_millis(1)"),
-        "processing thread should not burn a full millisecond when the decoder queue is empty"
+        source.contains("from_millis(IDLE_EMPTY_SLEEP_PROCESSING_MS)"),
+        "processing thread should use a coarser wait after the decoder has gone idle"
     );
 }
 

@@ -123,6 +123,131 @@ pub(super) fn validate_plugin_configs(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sotf_types::PluginConfig;
+
+    fn config_with_params(plugin_type: &str, params: serde_json::Value) -> PluginConfig {
+        PluginConfig {
+            plugin_type: plugin_type.to_string(),
+            parameters: params,
+        }
+    }
+
+    #[test]
+    fn empty_config_validates() {
+        assert!(validate_plugin_configs(&[]).is_ok());
+    }
+
+    #[test]
+    fn unknown_plugin_type_fails() {
+        let configs = vec![config_with_params(
+            "not_a_real_plugin",
+            serde_json::json!({"gain_db": 0.0}),
+        )];
+        let err = validate_plugin_configs(&configs).unwrap_err();
+        assert!(format!("{err}").contains("Unknown plugin type"));
+    }
+
+    #[test]
+    fn null_parameters_fails() {
+        let configs = vec![PluginConfig {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::Value::Null,
+        }];
+        let err = validate_plugin_configs(&configs).unwrap_err();
+        assert!(format!("{err}").contains("missing parameters"));
+    }
+
+    #[test]
+    fn gain_without_gain_db_fails() {
+        let configs = vec![config_with_params("gain", serde_json::json!({}))];
+        let err = validate_plugin_configs(&configs).unwrap_err();
+        assert!(format!("{err}").contains("gain_db"));
+    }
+
+    #[test]
+    fn gain_with_invalid_gain_db_type_fails() {
+        let configs = vec![config_with_params(
+            "gain",
+            serde_json::json!({"gain_db": "loud"}),
+        )];
+        let err = validate_plugin_configs(&configs).unwrap_err();
+        assert!(format!("{err}").contains("gain_db"));
+    }
+
+    #[test]
+    fn valid_gain_config_passes() {
+        let configs = vec![config_with_params(
+            "gain",
+            serde_json::json!({"gain_db": -3.0}),
+        )];
+        assert!(validate_plugin_configs(&configs).is_ok());
+    }
+
+    #[test]
+    fn eq_filters_must_be_array() {
+        let configs = vec![config_with_params(
+            "eq",
+            serde_json::json!({"filters": "not an array"}),
+        )];
+        let err = validate_plugin_configs(&configs).unwrap_err();
+        assert!(format!("{err}").contains("filters"));
+    }
+
+    #[test]
+    fn valid_eq_config_passes() {
+        let configs = vec![config_with_params(
+            "eq",
+            serde_json::json!({
+                "filters": [
+                    {"filter_type": "peak", "frequency": 1000.0, "q": 1.0, "gain_db": 2.0}
+                ]
+            }),
+        )];
+        assert!(validate_plugin_configs(&configs).is_ok());
+    }
+
+    #[test]
+    fn upmixer_mode_must_be_string() {
+        let configs = vec![config_with_params(
+            "upmixer",
+            serde_json::json!({"mode": 42}),
+        )];
+        let err = validate_plugin_configs(&configs).unwrap_err();
+        assert!(format!("{err}").contains("mode"));
+    }
+
+    #[test]
+    fn valid_upmixer_config_passes() {
+        let configs = vec![config_with_params(
+            "upmixer",
+            serde_json::json!({"mode": "5_1"}),
+        )];
+        assert!(validate_plugin_configs(&configs).is_ok());
+    }
+
+    #[test]
+    fn multiple_valid_plugins_pass() {
+        let configs = vec![
+            config_with_params("gain", serde_json::json!({"gain_db": 0.0})),
+            config_with_params("eq", serde_json::json!({"filters": []})),
+        ];
+        assert!(validate_plugin_configs(&configs).is_ok());
+    }
+
+    #[test]
+    fn first_error_is_reported() {
+        let configs = vec![
+            config_with_params("gain", serde_json::json!({})),
+            config_with_params("eq", serde_json::json!({"filters": "bad"})),
+        ];
+        let err = validate_plugin_configs(&configs).unwrap_err();
+        assert!(format!("{err}").contains("Plugin 0 validation failed"));
+    }
+}
+
 pub(super) fn validate_gapless_source_compatible(
     source: &crate::decoder::AudioSource,
     expected_channels: usize,

@@ -281,4 +281,111 @@ mod tests {
 
         assert!(matrix.is_empty());
     }
+
+    #[test]
+    fn upmixer_output_channels_maps_known_configs() {
+        let cases = [
+            ("2.0", 2),
+            ("2.1", 3),
+            ("2.2", 4),
+            ("5.0", 5),
+            ("5.1", 6),
+            ("7.1", 8),
+            ("9.1", 8),
+            ("5.1.2", 8),
+            ("5.1.4", 10),
+            ("7.1.2", 10),
+            ("7.1.4", 12),
+            ("9.1.2", 12),
+            ("9.1.4", 14),
+            ("9.1.6", 16),
+        ];
+        for (config, expected) in cases {
+            assert_eq!(
+                upmixer_output_channels(config),
+                expected,
+                "config {} should map to {} channels",
+                config,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn upmixer_output_channels_unknown_defaults_to_5_1() {
+        assert_eq!(upmixer_output_channels("not-a-config"), 6);
+    }
+
+    #[test]
+    fn apply_matrix_preset_identity() {
+        let mut matrix = vec![0.0f32; 9];
+        apply_matrix_preset(3, 3, &mut matrix, "Identity");
+        assert_eq!(detect_matrix_preset(3, 3, &matrix), "Identity");
+    }
+
+    #[test]
+    fn apply_matrix_preset_swap_lr() {
+        let mut matrix = vec![0.0f32; 4];
+        apply_matrix_preset(2, 2, &mut matrix, "Swap L/R");
+        assert_eq!(detect_matrix_preset(2, 2, &matrix), "Swap L/R");
+    }
+
+    #[test]
+    fn apply_matrix_preset_mono_mix() {
+        let mut matrix = vec![0.0f32; 4];
+        apply_matrix_preset(2, 2, &mut matrix, "Mono Mix");
+        assert_eq!(detect_matrix_preset(2, 2, &matrix), "Mono Mix");
+        // All cells should be 0.5 for stereo
+        assert!(matrix.iter().all(|&v| (v - 0.5).abs() < 0.001));
+    }
+
+    #[test]
+    fn apply_matrix_preset_ms_encode() {
+        let mut matrix = vec![0.0f32; 4];
+        apply_matrix_preset(2, 2, &mut matrix, "M/S Encode");
+        assert_eq!(detect_matrix_preset(2, 2, &matrix), "M/S Encode");
+    }
+
+    #[test]
+    fn apply_matrix_preset_ms_decode() {
+        let mut matrix = vec![0.0f32; 4];
+        apply_matrix_preset(2, 2, &mut matrix, "M/S Decode");
+        assert_eq!(detect_matrix_preset(2, 2, &matrix), "M/S Decode");
+    }
+
+    #[test]
+    fn apply_matrix_preset_unknown_falls_back_to_identity() {
+        let mut matrix = vec![0.0f32; 4];
+        apply_matrix_preset(2, 2, &mut matrix, "Totally Unknown Preset");
+        assert_eq!(detect_matrix_preset(2, 2, &matrix), "Identity");
+    }
+
+    #[test]
+    fn apply_matrix_preset_non_square_identity_passes_through_extra_channels() {
+        // 3 inputs, 2 outputs: identity should map in0->out0, in1->out1, ignore in2
+        let mut matrix = vec![0.0f32; 6];
+        apply_matrix_preset(3, 2, &mut matrix, "Identity");
+        assert_eq!(detect_matrix_preset(3, 2, &matrix), "Identity");
+    }
+
+    #[test]
+    fn apply_matrix_preset_swap_lr_ignores_channels_below_two() {
+        // Swap L/R requires at least 2 channels
+        let mut matrix = vec![0.0f32; 4];
+        apply_matrix_preset(1, 2, &mut matrix, "Swap L/R");
+        // Should fall back to identity-like for the single channel
+        assert!(matrix.iter().all(|&v| v == 0.0 || v == 1.0));
+    }
+
+    #[test]
+    fn apply_matrix_preset_ms_requires_two_channels() {
+        // M/S encode/decode requires at least 2 channels
+        let mut matrix = vec![0.0f32; 4];
+        apply_matrix_preset(1, 2, &mut matrix, "M/S Encode");
+        assert!(matrix.iter().all(|&v| v == 0.0 || v == 1.0));
+
+        let mut matrix = vec![0.0f32; 4];
+        apply_matrix_preset(1, 2, &mut matrix, "M/S Decode");
+        assert!(matrix.iter().all(|&v| v == 0.0 || v == 1.0));
+    }
 }

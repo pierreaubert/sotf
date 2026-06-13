@@ -11,9 +11,10 @@ use sotf_plugins::{Host, PluginHost};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
-/// Spin timeout when the decoder queue is empty.
-/// Keep this well under a millisecond to avoid burning the latency budget.
-const SPIN_US_SLEEP_PROCESSING: u64 = 100;
+/// Short wait used while audio is active and the decoder queue briefly runs dry.
+const ACTIVE_EMPTY_SLEEP_PROCESSING_US: u64 = 100;
+/// Coarser wait once the decoder has been quiet long enough to be considered idle.
+const IDLE_EMPTY_SLEEP_PROCESSING_MS: u64 = 1;
 
 /// Processing state
 pub(super) struct ProcessingState {
@@ -443,19 +444,28 @@ pub(super) fn run_processing_thread(
         channels
     );
 
+    let mut decoder_stream_active = false;
+
     loop {
         // Check for commands (non-blocking)
-        if let Ok(command) = command_rx.try_recv()
-            && handle_processing_command(command, &mut state, &response_tx, &event_tx)
-        {
-            break;
+        if let Ok(command) = command_rx.try_recv() {
+            if matches!(
+                command,
+                ProcessingCommand::Stop | ProcessingCommand::Shutdown
+            ) {
+                decoder_stream_active = false;
+            }
+            if handle_processing_command(command, &mut state, &response_tx, &event_tx) {
+                break;
+            }
         }
 
-        // Process audio from decoder
+        // Process audio from decoder.
         let message = decoder_rx.try_recv();
 
         match message {
             Ok(DecoderMessage::Frame(frame)) => {
+                decoder_stream_active = true;
                 let output_channels = state.output_channels();
 
                 // Query plugin chain for actual output size (accounts for resampler)
@@ -622,6 +632,7 @@ pub(super) fn run_processing_thread(
                 }
             }
             Ok(DecoderMessage::EndOfStream) => {
+                decoder_stream_active = false;
                 let mut pending_msg = Some(ProcessingMessage::EndOfStream);
                 while let Some(msg) = pending_msg.take() {
                     match send_or_interrupt(&message_tx, &command_rx, msg) {
@@ -667,9 +678,16 @@ pub(super) fn run_processing_thread(
                 }
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
-                // No data, sleep briefly to avoid 100% CPU while staying well
-                // under the per-frame latency budget.
-                std::thread::sleep(std::time::Duration::from_micros(SPIN_US_SLEEP_PROCESSING));
+                // During active playback, keep wakeup latency low enough to
+                // avoid starving the playback ring. Once EOS or an explicit
+                // stop marks the stream inactive, back off to a millisecond-
+                // scale idle wait so stopped engines do not burn CPU.
+                let sleep = if decoder_stream_active {
+                    std::time::Duration::from_micros(ACTIVE_EMPTY_SLEEP_PROCESSING_US)
+                } else {
+                    std::time::Duration::from_millis(IDLE_EMPTY_SLEEP_PROCESSING_MS)
+                };
+                std::thread::sleep(sleep);
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 log::debug!("[Processing Thread] Decoder queue disconnected");

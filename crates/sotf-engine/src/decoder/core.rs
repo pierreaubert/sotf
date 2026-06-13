@@ -483,4 +483,109 @@ mod tests {
             Some("flac")
         ));
     }
+
+    #[test]
+    fn test_create_decoder_from_source_with_metadata_file() {
+        let (temp, _mono) = sotf_testkit::audio::temp_sine_wav(0.1, 48_000, 2, 440.0).unwrap();
+        let source = AudioSource::File(temp.path().to_path_buf());
+
+        let result = create_decoder_from_source_with_dsd_mode_and_metadata(
+            &source,
+            DsdOutputMode::Disabled,
+        );
+
+        let (decoder, metadata_rx) = result.expect("WAV file source should decode");
+        assert_eq!(decoder.spec().sample_rate, 48_000);
+        assert_eq!(decoder.spec().channels, 2);
+        assert!(metadata_rx.is_none(), "local files have no live metadata receiver");
+    }
+
+    #[test]
+    fn test_create_decoder_from_source_unsupported_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.unsupported");
+        std::fs::write(&path, b"").unwrap();
+
+        let source = AudioSource::File(path);
+        let result = create_decoder_from_source(&source);
+
+        assert!(
+            matches!(result, Err(AudioDecoderError::UnsupportedFormat(_))),
+            "unexpected result"
+        );
+    }
+
+    #[test]
+    fn test_create_decoder_from_source_service_stream() {
+        let source = AudioSource::ServiceStream {
+            service: sotf_types::ServiceId::Spotify,
+            track_id: "test-track".to_string(),
+        };
+
+        let result = create_decoder_from_source(&source);
+
+        assert!(
+            matches!(result, Err(AudioDecoderError::ServiceError(_))),
+            "unexpected result"
+        );
+    }
+
+    #[test]
+    fn test_create_decoder_from_source_driver() {
+        let result = create_decoder_from_source(&AudioSource::Driver);
+
+        assert!(
+            matches!(result, Err(AudioDecoderError::ConfigError(_))),
+            "unexpected result"
+        );
+    }
+
+    #[test]
+    fn test_create_decoder_from_source_dsd_disabled_rejects_dsf() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.dsf");
+        std::fs::write(&path, b"").unwrap();
+
+        let source = AudioSource::File(path);
+        let result = create_decoder_from_source_with_dsd_mode(&source, DsdOutputMode::Disabled);
+
+        assert!(matches!(
+            result,
+            Err(AudioDecoderError::UnsupportedFormat(message))
+                if message.contains("DSD output is disabled")
+        ));
+    }
+
+    #[test]
+    fn test_create_decoder_from_source_dsd_dop_required_rejects_dsf() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.dsf");
+        std::fs::write(&path, b"").unwrap();
+
+        let source = AudioSource::File(path);
+        let result = create_decoder_from_source_with_dsd_mode(&source, DsdOutputMode::DopRequired);
+
+        assert!(matches!(
+            result,
+            Err(AudioDecoderError::UnsupportedFormat(message))
+                if message.contains("cannot carry bit-perfect DoP frames")
+        ));
+    }
+
+    #[test]
+    fn test_create_decoder_from_source_dsd_native_required_rejects_dsf() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.dsf");
+        std::fs::write(&path, b"").unwrap();
+
+        let source = AudioSource::File(path);
+        let result =
+            create_decoder_from_source_with_dsd_mode(&source, DsdOutputMode::NativeRequired);
+
+        assert!(matches!(
+            result,
+            Err(AudioDecoderError::UnsupportedFormat(message))
+                if message.contains("cannot carry native DSD frames")
+        ));
+    }
 }

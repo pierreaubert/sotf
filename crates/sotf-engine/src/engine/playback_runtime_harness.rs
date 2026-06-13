@@ -502,3 +502,178 @@ fn drain_recycled(recycle_rx: &Receiver<Vec<f32>>) -> usize {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::engine::{
+        DecoderCommand, DecoderThread, DsdOutputMode, GcThread, ProcessingMessage,
+        ProcessingThread, ThreadEvent,
+    };
+    use arc_swap::ArcSwap;
+    use sotf_testkit::audio;
+    use std::sync::{Arc, mpsc::sync_channel};
+    use std::time::Duration;
+
+    /// Mock output sink: receives processed frames and signals end-of-stream.
+    fn run_mock_sink(
+        rx: std::sync::mpsc::Receiver<ProcessingMessage>,
+        done_tx: std::sync::mpsc::Sender<MockSinkReport>,
+    ) {
+        let mut frames = 0usize;
+        let mut got_eos = false;
+
+        while let Ok(msg) = rx.recv() {
+            match msg {
+                ProcessingMessage::Frame(_) => {
+                    frames += 1;
+                }
+                ProcessingMessage::EndOfStream => {
+                    got_eos = true;
+                    break;
+                }
+                ProcessingMessage::Flush => {}
+            }
+        }
+
+        let _ = done_tx.send(MockSinkReport { frames, got_eos });
+    }
+
+    #[derive(Debug)]
+    struct MockSinkReport {
+        frames: usize,
+        got_eos: bool,
+    }
+
+    #[cfg(feature = "streaming")]
+    fn spawn_processing_thread(
+        decoder_rx: std::sync::mpsc::Receiver<crate::engine::DecoderMessage>,
+        message_tx: std::sync::mpsc::SyncSender<ProcessingMessage>,
+        event_tx: std::sync::mpsc::Sender<ThreadEvent>,
+        sample_rate: u32,
+        channels: usize,
+        plugin_data_cache: crate::engine::PluginDataCache,
+        gc_tx: crate::engine::GcSender,
+        recycle_rx: std::sync::mpsc::Receiver<Vec<f32>>,
+        decoder_recycle_tx: std::sync::mpsc::SyncSender<Vec<f32>>,
+    ) -> ProcessingThread {
+        ProcessingThread::new(
+            decoder_rx,
+            message_tx,
+            event_tx,
+            sample_rate,
+            channels,
+            plugin_data_cache,
+            gc_tx,
+            recycle_rx,
+            decoder_recycle_tx,
+            None,
+        )
+        .expect("processing thread should spawn")
+    }
+
+    #[cfg(not(feature = "streaming"))]
+    fn spawn_processing_thread(
+        decoder_rx: std::sync::mpsc::Receiver<crate::engine::DecoderMessage>,
+        message_tx: std::sync::mpsc::SyncSender<ProcessingMessage>,
+        event_tx: std::sync::mpsc::Sender<ThreadEvent>,
+        sample_rate: u32,
+        channels: usize,
+        plugin_data_cache: crate::engine::PluginDataCache,
+        gc_tx: crate::engine::GcSender,
+        recycle_rx: std::sync::mpsc::Receiver<Vec<f32>>,
+        decoder_recycle_tx: std::sync::mpsc::SyncSender<Vec<f32>>,
+    ) -> ProcessingThread {
+        ProcessingThread::new(
+            decoder_rx,
+            message_tx,
+            event_tx,
+            sample_rate,
+            channels,
+            plugin_data_cache,
+            gc_tx,
+            recycle_rx,
+            decoder_recycle_tx,
+        )
+        .expect("processing thread should spawn")
+    }
+
+    /// End-to-end pipeline test: decode → process → mock sink, with no real
+    /// audio hardware.
+    #[test]
+    fn decode_process_mock_sink_no_hardware() {
+        let sample_rate = 48_000;
+        let channels = 2;
+        let frame_size = 512;
+
+        // Short synthetic stereo WAV file.
+        let (temp_wav, _mono) = audio::temp_sine_wav(0.2, sample_rate, channels as u16, 440.0)
+            .expect("should create temp sine WAV");
+
+        // Decoder → processing channel.
+        let (decoder_tx, decoder_rx) = sync_channel::<crate::engine::DecoderMessage>(64);
+        // Processing → mock sink channel.
+        let (sink_tx, sink_rx) = sync_channel::<ProcessingMessage>(64);
+        // Shared event bus.
+        let (event_tx, _event_rx) = std::sync::mpsc::channel::<ThreadEvent>();
+        // Recycle channel: processing thread sends buffers back to decoder.
+        let (decoder_recycle_tx, decoder_recycle_rx) = sync_channel::<Vec<f32>>(64);
+        // Recycle channel: mock sink → processing thread (left empty; allocations
+        // fall back to the recycle-miss path).
+        let (_playback_recycle_tx, playback_recycle_rx) = sync_channel::<Vec<f32>>(64);
+
+        let decoder = DecoderThread::new(
+            decoder_tx,
+            event_tx.clone(),
+            sample_rate,
+            frame_size,
+            decoder_recycle_rx,
+            DsdOutputMode::Disabled,
+        )
+        .expect("decoder thread should spawn");
+
+        let gc = GcThread::new().expect("gc thread should spawn");
+
+        let plugin_data_cache: crate::engine::PluginDataCache =
+            Arc::new(ArcSwap::from_pointee(Vec::new()));
+
+        let processing = spawn_processing_thread(
+            decoder_rx,
+            sink_tx,
+            event_tx,
+            sample_rate,
+            channels,
+            plugin_data_cache,
+            gc.sender(),
+            playback_recycle_rx,
+            decoder_recycle_tx,
+        );
+
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let sink_handle = std::thread::spawn(move || run_mock_sink(sink_rx, done_tx));
+
+        decoder
+            .send_command(DecoderCommand::Play(
+                temp_wav.path().to_path_buf().into(),
+            ))
+            .expect("Play command should send");
+
+        let report = done_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("mock sink should report within timeout");
+
+        // Dropping the threads sends shutdown commands and joins.
+        drop(processing);
+        drop(decoder);
+        drop(gc);
+        let _ = sink_handle.join();
+
+        assert!(
+            report.frames > 0,
+            "mock sink should receive at least one frame, got {report:?}"
+        );
+        assert!(
+            report.got_eos,
+            "mock sink should receive end-of-stream, got {report:?}"
+        );
+    }
+}
