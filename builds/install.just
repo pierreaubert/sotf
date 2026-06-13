@@ -40,5 +40,3 @@ post-install-rust:
 post-install-python:
 	python3 -m venv venv
 	./venv/bin/pip install -U pip
-	./venv/bin/pip install -r ./crates/autoeq/scripts/requirements.txt
-	./venv/bin/pip install -r ./crates/math-audio/math-dsp/lm/requirements.txt

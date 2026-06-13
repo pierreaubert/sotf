@@ -156,7 +156,8 @@ fn sotf_api_capabilities_are_public_and_media_aware() {
 pub(super) fn test_state() -> Arc<ServerState> {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let tmp = std::env::temp_dir().join(format!("sotf_test_tls_{n}"));
+    let pid = std::process::id();
+    let tmp = std::env::temp_dir().join(format!("sotf_test_tls_{pid}_{n}"));
     std::fs::create_dir_all(&tmp).ok();
     Arc::new(ServerState {
             player: Mutex::new(Player::new()),

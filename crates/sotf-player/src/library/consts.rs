@@ -48,8 +48,10 @@ pub(super) fn generate_thumbnail(image_path: &Path) -> Option<Vec<u8>> {
     use image::ImageReader;
     use std::io::Cursor;
 
-    // Load the image
-    let img = match ImageReader::open(image_path) {
+    // Load the image, guessing the real format from the file contents rather
+    // than relying on the extension. This handles cover files that are named
+    // e.g. `cover.png` but actually contain JPEG data.
+    let img = match ImageReader::open(image_path).and_then(|r| r.with_guessed_format()) {
         Ok(reader) => match reader.decode() {
             Ok(img) => img,
             Err(e) => {

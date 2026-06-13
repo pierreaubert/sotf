@@ -1,3 +1,0 @@
-[submodule "src/dsd_reader"]
-	path = src/dsd_reader
-	url = https://github.com/clone206/dsd-reader.git

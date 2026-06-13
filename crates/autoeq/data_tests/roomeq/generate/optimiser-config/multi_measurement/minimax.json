@@ -1,7 +1,0 @@
-{
-  "optimizer": {
-    "multi_measurement": {
-      "strategy": "minimax"
-    }
-  }
-}

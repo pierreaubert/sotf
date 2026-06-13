@@ -413,6 +413,28 @@ fn test_find_album_art_no_images() {
 }
 
 #[test]
+fn test_generate_thumbnail_handles_misnamed_jpeg() {
+    use std::fs::File;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let cover_path = temp_dir.path().join("cover.png");
+
+    // Write a JPEG-encoded image to a file with a .png extension.
+    let img = image::DynamicImage::new_rgb8(4, 4);
+    let mut file = File::create(&cover_path).unwrap();
+    img.write_to(&mut file, image::ImageFormat::Jpeg)
+        .unwrap();
+
+    let thumbnail = super::consts::generate_thumbnail(&cover_path);
+    assert!(
+        thumbnail.is_some(),
+        "thumbnail generation should succeed even when extension does not match content"
+    );
+    assert!(thumbnail.unwrap().starts_with(b"\x89PNG"));
+}
+
+#[test]
 fn test_clean_album_title_edge_cases() {
     // Empty string
     assert_eq!(clean_album_title(""), "");

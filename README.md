@@ -116,7 +116,7 @@ In order to publish them, you need to have an Apple developper ID:
 
 ## Where is the code?
 
-The code is in four parts:
+The code is in three parts:
 
 ### SotF
 
@@ -134,74 +134,26 @@ This repository [sotf](https://github.com/pierreaubert/sotf) which is mostly an 
 
 ### Math related audio toolkit
 
-#### math-testfunctions
+The math related crates (`math-test-functions`, `math-optimisation`, `math-iir-fir`, `math-dsp`, `math-rir`, `math-delaunay`) now live in their own repository:
 
-A [set of functions](math-test-functions/README.md) for testing non linear optimisation algorithms used in the next crate.
+- [math-audio](https://github.com/pierreaubert/math-audio)
 
-#### math-optimisation
+### SOFA reader
 
-A implementation of [differential evolution algorithm](math-optimisation/README.md) (forked from Scipy) with an interface to NLopt and MetaHeuristics two libraries that also provide various optimisation algorithms. DE support linear and non-linear constraints and implement other features like JADE or adaptative behaviour.
+The pure-Rust SOFA/HRTF reader now lives in its own repository:
 
-Status: good for speaker equalisation. Not tested enough for other use cases.
-
-#### math-iir-fir
-
-An [IIR and FIR filters](./crates/math-iir-fir/README.md) implementation in Rust. Does what you expect. Compatible with Equalizer APO. It can generate various output formats.
-
-Status: stable and working well.
-
-#### math-dsp
-
-A [DSP library](./crates/math-dsp/README.md) implementing test signals and fft based analysis.
-
-Status: new.
-
-#### math-solvers
-
-A set of [classical solvers](./crates/math-solvers/README.md) with preconditionners that use LAPACK, BLAS and rayon for parallelisation. Support sparse matrices.
-Also can work in WASM which is convenient for web demos.
-
-Status: correct and relatively fast but not optimised to death. WASM needs rust nightly to run in parallel.
-
-#### math-wave
-
-A set of functions to compute [known analytical solutions of the wave equation](./crates/math-wave/README.md).
-
-Status: correct.
-
-#### math-xem-common
-
-Implement BEM and FEM for the Helmotz and wave equations. Support multigrid for both systems. XEM holds the common code.
-
-Status: unknown, results match analytical results on simple mesh. Needs more testing especially for the advance features.
-
-#### math-convexhull3d
-
-This crate computes a [convex hull in 3d](./crates/math-convexhull3d/README.md).
-
-Status: good quality aka no known bug.
-
-#### math-bem
-
-This crate implements a BEM (Boundary Element Method) solver, see [BEM README](crates/math-bem/README.md)
-
-Status: ok-ish
-
-#### math-fem
-
-This crate implements a FEM (Finite Element Method) solver, see [FEM README](crates/math-fem/README.md)
-
-Status: ok-ish
-
+- [sofa-reader](https://github.com/pierreaubert/sofa-reader)
 
 ### Automatic EQ
 
-#### autoeq
+The automatic EQ crates now live in their own repository:
 
-[Main crate](./crates/autoeq/README.md) with CLI binaries and optimization logic: it allow to optimise the sound from:
-- [autoeq](./crates/autoeq/README.md): optimise anechoic data for speakers and data from a headphone
-- convert-recording: automatically migrate old recordings to latest format.
-- [roomeq](./crates/autoeq/bin/roomeq/README.md): optimise a set of speakers in room. The [input](./crates/autoeq/bin/roomeq/INPUT_FORMAT.md) and [ouput](./crates/autoeq/bin/roomeq/OUTPUT_FORMAT.md) formats are documented.
+- [autoeq](https://github.com/pierreaubert/autoeq) with CLI binaries and optimization logic: it allows optimising the sound from:
+  - `autoeq`: optimise anechoic data for speakers and data from a headphone.
+  - `convert-recording`: automatically migrate old recordings to the latest format.
+  - `roomeq`: optimise a set of speakers in a room.
+
+The following related crates remain in this repository:
 
 #### autoeq-cea2034
 
@@ -214,6 +166,12 @@ WASM-targeted [room acoustic simulator](./crates/autoeq-roomsim/README.md) using
 #### autoeq-datagen
 
 Generate room data from the FEM and BEM package to test roomEQ.
+
+### Symphonia add-ons
+
+The Symphonia-compatible SACD, DSD, DST, and WavPack decoder/format crates now live in their own repository:
+
+- [symphonia-add-ons](https://github.com/pierreaubert/symphonia-add-ons)
 
 
 ### GPUI toolkit

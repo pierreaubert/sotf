@@ -17,8 +17,6 @@ import 'builds/ios.just'
 import 'builds/tvos.just'
 import 'builds/dev-driver.just'
 
-import 'crates/math-audio/Justfile'
-import 'crates/autoeq/Justfile'
 import 'crates/sotf-plugins/Justfile'
 import 'crates/sotf-engine/Justfile'
 import 'crates/sotf-tools/Justfile'
@@ -150,9 +148,9 @@ fmt:
 # Builds land in `target/dist/` (NOT `target/release/`). Compile time is
 # noticeably longer than `prod-*`; only run these for actual release cuts.
 
-# Top-level umbrella — builds everything that ships, including the plot bins.
+# Top-level umbrella — builds everything that ships.
 [group('dist')]
-dist: dist-sotf-gpui dist-sotf-tui dist-sotf-recorder dist-roomeq dist-plot-bins
+dist: dist-sotf-gpui dist-sotf-tui dist-sotf-recorder
 
 [group('dist')]
 dist-sotf-gpui:
@@ -166,21 +164,9 @@ dist-sotf-tui:
 dist-sotf-recorder:
 	cargo build --profile dist --bin sotf-recorder-cli -p app-cli
 
-[group('dist')]
-dist-roomeq:
-	cargo build --profile dist --bin roomeq
-	cargo build --profile dist --bin roomeq-fuzzer -p autoeq --features plotly
-
-# Plotly-gated bins (skipped by `--workspace` because of required-features).
-[group('dist')]
-dist-plot-bins:
-	cargo build --profile dist --bin roomeq-fuzzer -p autoeq --features plotly
-	cargo build --profile dist --bin plot-functions -p math-test-functions --features plotly
-	cargo build --profile dist --bin plot-de -p math-optimisation --features plotly
-
 # Whole workspace under the dist profile (slow — 10+ minutes typical).
 [group('dist')]
-dist-workspace: dist-plot-bins
+dist-workspace:
 	cargo build --profile dist --workspace
 
 # ----------------------------------------------------------------------
