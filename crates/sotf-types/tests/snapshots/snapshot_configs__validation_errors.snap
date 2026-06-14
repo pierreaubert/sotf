@@ -1,0 +1,11 @@
+---
+source: crates/sotf-types/tests/snapshot_configs.rs
+expression: "[cycle.unwrap_err().to_string(), duplicate_ids.unwrap_err().to_string(),\nmissing_endpoint.unwrap_err().to_string(),\nzero_channels.unwrap_err().to_string(), empty_type.unwrap_err().to_string(),]"
+---
+[
+    "plugin graph must be acyclic",
+    "duplicate plugin graph node id 0",
+    "plugin graph edge references missing to_node 99",
+    "plugin graph node 0 input_channels must be greater than 0",
+    "plugin graph node 0 plugin_type is empty",
+]

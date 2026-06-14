@@ -1,0 +1,52 @@
+---
+source: crates/sotf-player/tests/snapshot_configs.rs
+expression: configs
+---
+[
+  {
+    "type": "Subsonic",
+    "url": "https://demo.subsonic.org",
+    "username": "demo",
+    "password": "demo",
+    "legacy_auth": false
+  },
+  {
+    "type": "Mpd",
+    "host": "localhost",
+    "port": 6600,
+    "auth_mode": {
+      "auth_type": "password"
+    },
+    "password": "secret",
+    "httpd_port": 6601
+  },
+  {
+    "type": "Dlna",
+    "location_url": "http://192.168.1.10:8200",
+    "friendly_name": "Living Room"
+  },
+  {
+    "type": "Peer",
+    "host": "peer.example.com",
+    "port": 8732,
+    "accepted_fingerprint": "ab:cd:ef",
+    "auth_token": "token"
+  },
+  {
+    "type": "Tidal",
+    "access_token": "tidal-token",
+    "quality": "HI_RES",
+    "country_code": "FR"
+  },
+  {
+    "type": "Spotify",
+    "username": "user",
+    "password": "pass",
+    "quality": "VeryHigh"
+  },
+  {
+    "type": "IcyRadio",
+    "url": "http://stream.example/radio",
+    "name": "Example Radio"
+  }
+]

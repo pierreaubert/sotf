@@ -1,0 +1,5 @@
+---
+source: crates/sotf-server/crates/sotf-mpd/tests/snapshots.rs
+expression: resp.format()
+---
+ACK [5@0] {not_a_command} unknown command "not_a_command"

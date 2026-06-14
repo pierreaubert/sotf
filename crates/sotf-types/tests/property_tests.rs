@@ -203,6 +203,59 @@ proptest! {
             "Serialization round-trip should preserve validation result"
         );
     }
+
+    // INVARIANT: Disconnected nodes (no edges) still form a valid graph.
+    #[test]
+    fn disconnected_nodes_accept(
+        nodes in prop::collection::vec(plugin_graph_node_strategy(0), 1..12),
+    ) {
+        let nodes: Vec<PluginGraphNodeConfig> = nodes
+            .into_iter()
+            .enumerate()
+            .map(|(i, mut node)| {
+                node.id = i;
+                node
+            })
+            .collect();
+        let result = PluginGraphConfig::try_new(nodes, vec![]);
+        prop_assert!(result.is_ok(), "Disconnected nodes should validate: {:?}", result);
+    }
+
+    // INVARIANT: A node with input_channels == 0 is rejected.
+    #[test]
+    fn zero_input_channels_reject(
+        mut graph in valid_dag_strategy(),
+        node_idx in 0usize..12,
+    ) {
+        if node_idx < graph.nodes.len() {
+            graph.nodes[node_idx].input_channels = 0;
+            let result = graph.validate();
+            prop_assert!(result.is_err(), "Zero input_channels should be rejected");
+            prop_assert!(result.unwrap_err().contains("input_channels"));
+        }
+    }
+
+    // INVARIANT: Adding an edge that creates a cycle via a longer path is rejected.
+    #[test]
+    fn cycle_via_longer_path_rejects(
+        graph in valid_dag_with_edge_strategy(),
+        chain_len in 2usize..8,
+    ) {
+        if graph.nodes.len() >= chain_len {
+            let mut graph = graph;
+            let path: Vec<usize> = (0..chain_len).collect();
+            for window in path.windows(2) {
+                graph.edges.push(PluginGraphEdgeConfig::new(window[0], window[1]));
+            }
+            // Close the cycle.
+            graph
+                .edges
+                .push(PluginGraphEdgeConfig::new(path[path.len() - 1], path[0]));
+            let result = graph.validate();
+            prop_assert!(result.is_err(), "Cycle should be rejected");
+            prop_assert!(result.unwrap_err().contains("acyclic"));
+        }
+    }
 }
 
 // ============================================================================

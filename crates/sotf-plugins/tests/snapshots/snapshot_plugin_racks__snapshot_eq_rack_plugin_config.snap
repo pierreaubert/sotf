@@ -1,0 +1,23 @@
+---
+source: crates/sotf-plugins/tests/snapshot_plugin_racks.rs
+expression: config
+---
+{
+  "plugin_type": "eq",
+  "parameters": {
+    "filters": [
+      {
+        "filter_type": "peak",
+        "frequency": 1000.0,
+        "gain_db": 3.0,
+        "q": 1.5
+      },
+      {
+        "filter_type": "lowshelf",
+        "frequency": 80.0,
+        "gain_db": -2.0,
+        "q": 0.7
+      }
+    ]
+  }
+}

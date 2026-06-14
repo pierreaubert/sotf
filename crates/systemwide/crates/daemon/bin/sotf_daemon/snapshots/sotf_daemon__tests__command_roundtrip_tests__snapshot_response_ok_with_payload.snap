@@ -1,0 +1,11 @@
+---
+source: crates/systemwide/crates/daemon/bin/sotf_daemon/tests.rs
+expression: resp
+---
+{
+  "success": true,
+  "data": {
+    "name": "test",
+    "x": 1
+  }
+}

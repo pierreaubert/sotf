@@ -245,8 +245,10 @@ dependencies = [
  "serde_yaml",
  "signal-hook 0.4.4",
  "sotf-engine",
+ "sotf-player",
  "sotf-plugins",
  "sotf-test",
+ "sotf-testkit",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",
@@ -9366,15 +9368,19 @@ dependencies = [
  "driver-common",
  "driver-hal",
  "env_logger",
+ "insta",
  "libc",
  "log",
  "objc2-core-audio",
  "objc2-core-foundation",
  "parking_lot",
+ "proptest 1.11.0",
  "serde",
  "serde_json",
+ "serial_test",
  "sotf-engine",
  "sotf-plugins",
+ "tempfile",
  "tokio",
 ]
 
@@ -9397,6 +9403,7 @@ version = "0.1.0"
 dependencies = [
  "env_logger",
  "log",
+ "proptest 1.11.0",
  "tokio",
  "uuid",
 ]
@@ -9481,6 +9488,7 @@ name = "sotf-federation"
 version = "0.5.1"
 dependencies = [
  "log",
+ "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-engine",
@@ -9668,6 +9676,7 @@ name = "sotf-mpd"
 version = "0.5.1"
 dependencies = [
  "env_logger",
+ "insta",
  "log",
  "proptest 1.11.0",
  "sotf-tls",
@@ -9689,6 +9698,7 @@ dependencies = [
  "directories",
  "env_logger",
  "image",
+ "insta",
  "lofty",
  "log",
  "math-dsp",
@@ -9698,6 +9708,7 @@ dependencies = [
  "num-complex 0.4.6",
  "num_cpus",
  "parking_lot",
+ "proptest 1.11.0",
  "rand 0.9.4",
  "reqwest 0.13.3",
  "rubato",
@@ -10331,6 +10342,7 @@ dependencies = [
  "sotf-plugin-upmixer",
  "sotf-plugin-xtc",
  "sotf-test",
+ "sotf-types",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",
@@ -10372,10 +10384,12 @@ name = "sotf-streaming"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "insta",
  "log",
  "m3u8-rs",
  "proptest 1.11.0",
  "reqwest 0.13.3",
+ "serde_json",
  "symphonia-core 0.6.0",
  "url",
 ]
@@ -10513,6 +10527,7 @@ dependencies = [
 name = "sotf-types"
 version = "0.6.8"
 dependencies = [
+ "insta",
  "log",
  "proptest 1.11.0",
  "serde",

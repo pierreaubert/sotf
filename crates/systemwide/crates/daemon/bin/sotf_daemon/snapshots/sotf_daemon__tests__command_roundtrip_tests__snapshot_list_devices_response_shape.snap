@@ -1,0 +1,21 @@
+---
+source: crates/systemwide/crates/daemon/bin/sotf_daemon/tests.rs
+expression: resp
+---
+{
+  "success": true,
+  "data": {
+    "devices": [
+      {
+        "is_default": true,
+        "name": "Built-in Output"
+      },
+      {
+        "channels": 2,
+        "is_default": false,
+        "name": "ADAM Audio D3V",
+        "sample_rate": 48000
+      }
+    ]
+  }
+}

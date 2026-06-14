@@ -41,3 +41,5 @@ objc2-core-foundation = { workspace = true, features = ["std", "CFString"], defa
 [dev-dependencies]
 serial_test = { workspace = true }
 tempfile = { workspace = true }
+insta = { workspace = true }
+proptest = { workspace = true }

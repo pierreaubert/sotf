@@ -1,0 +1,26 @@
+---
+source: crates/sotf-types/tests/snapshot_configs.rs
+expression: config
+---
+{
+  "version": 2,
+  "frame_size": 1024,
+  "buffer_ms": 200,
+  "output_sample_rate": 48000,
+  "input_channels": 2,
+  "output_channels": 2,
+  "plugins": [],
+  "volume": 1.0,
+  "muted": false,
+  "driver_mode": false,
+  "allow_virtual_output": false,
+  "latency_compensation": "enabled",
+  "output_access": "shared",
+  "dsd_output": "disabled",
+  "oversampling_policy": "plugin_preferred",
+  "network_endpoint": {
+    "mode": "disabled",
+    "bind_addr": "0.0.0.0",
+    "port": 17890
+  }
+}

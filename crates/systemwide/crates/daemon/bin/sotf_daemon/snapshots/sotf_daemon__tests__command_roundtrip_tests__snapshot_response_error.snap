@@ -1,0 +1,8 @@
+---
+source: crates/systemwide/crates/daemon/bin/sotf_daemon/tests.rs
+expression: resp
+---
+{
+  "success": false,
+  "error": "something went wrong"
+}

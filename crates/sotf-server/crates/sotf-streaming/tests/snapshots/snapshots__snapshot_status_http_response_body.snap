@@ -1,0 +1,15 @@
+---
+source: crates/sotf-server/crates/sotf-streaming/tests/snapshots.rs
+expression: value
+---
+{
+  "bind_addr": "127.0.0.1:<port>",
+  "channels": 2,
+  "clients": 0,
+  "dropped_chunks": 0,
+  "published_bytes": 0,
+  "published_chunks": 0,
+  "published_frames": 0,
+  "sample_rate": 48000,
+  "status": "ok"
+}

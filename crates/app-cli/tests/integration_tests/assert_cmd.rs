@@ -67,6 +67,56 @@ fn ensure_fixture_wav() {
     write_wav_file(&path, &signal, 48000, 1).expect("failed to write fixture WAV");
 }
 
+/// Seed a temporary library database with a small, predictable set of albums
+/// and tracks for the `library`/`status` CLI tests.
+fn seed_library_db(db_path: &std::path::Path) {
+    use sotf_audio_player::{Album, MusicLibrary, Track};
+
+    let mut lib = MusicLibrary::with_custom_database_for_testing(db_path)
+        .expect("failed to open test library database");
+
+    let albums = vec![
+        Album {
+            title: "Seeded Album One".to_string(),
+            tracks: vec![
+                Track {
+                    path: std::path::PathBuf::from("/tmp/sotf-seed/track1.wav"),
+                    title: Some("First Track".to_string()),
+                    artist: Some("Seeded Artist A".to_string()),
+                    album_artist: Some("Seeded Artist A".to_string()),
+                    duration_secs: Some(180),
+                    ..Default::default()
+                },
+                Track {
+                    path: std::path::PathBuf::from("/tmp/sotf-seed/track2.wav"),
+                    title: Some("Second Track".to_string()),
+                    artist: Some("Seeded Artist A".to_string()),
+                    album_artist: Some("Seeded Artist A".to_string()),
+                    duration_secs: Some(200),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        },
+        Album {
+            title: "Seeded Album Two".to_string(),
+            tracks: vec![Track {
+                path: std::path::PathBuf::from("/tmp/sotf-seed/track3.wav"),
+                title: Some("Third Track".to_string()),
+                artist: Some("Seeded Artist B".to_string()),
+                album_artist: Some("Seeded Artist B".to_string()),
+                duration_secs: Some(240),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    ];
+
+    if let Some(db) = lib.get_database_mut() {
+        db.save_albums(&albums).expect("failed to seed albums");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // player-cli: help / version / device enumeration
 // ---------------------------------------------------------------------------
@@ -403,6 +453,66 @@ fn player_cli_status_runs_without_panicking() {
 }
 
 // ---------------------------------------------------------------------------
+// player-cli: library / status commands (temp DB)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn player_cli_library_reports_empty_db() {
+    let (_dir, db_path) = sotf_testkit::db::temp_sqlite_db();
+
+    player_cmd()
+        .args(["library", "--db", db_path.to_str().unwrap(), "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Tracks: 0"))
+        .stdout(predicate::str::contains("Albums: 0"))
+        .stdout(predicate::str::contains("Artists: 0"))
+        .stdout(predicate::str::contains("Total duration: 0s"));
+}
+
+#[test]
+fn player_cli_library_lists_seeded_db() {
+    let (_dir, db_path) = sotf_testkit::db::temp_sqlite_db();
+    seed_library_db(&db_path);
+
+    player_cmd()
+        .args(["library", "--db", db_path.to_str().unwrap(), "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Tracks: 3"))
+        .stdout(predicate::str::contains("Albums: 2"))
+        .stdout(predicate::str::contains("Artists: 2"))
+        .stdout(predicate::str::contains("Total duration: 620s"));
+}
+
+#[test]
+fn player_cli_library_search_finds_matches() {
+    let (_dir, db_path) = sotf_testkit::db::temp_sqlite_db();
+    seed_library_db(&db_path);
+
+    player_cmd()
+        .args(["library", "--db", db_path.to_str().unwrap(), "search", "Seeded Artist A"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Matching album IDs:"));
+}
+
+#[test]
+fn player_cli_status_reports_summary() {
+    let (_dir, db_path) = sotf_testkit::db::temp_sqlite_db();
+    seed_library_db(&db_path);
+
+    player_cmd()
+        .args(["status", "--db", db_path.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("3 tracks"))
+        .stdout(predicate::str::contains("2 albums"))
+        .stdout(predicate::str::contains("2 artists"))
+        .stdout(predicate::str::contains("620s total"));
+}
+
+// ---------------------------------------------------------------------------
 // sotf-recorder-cli: help / version / device enumeration
 // ---------------------------------------------------------------------------
 
@@ -624,4 +734,101 @@ fn recorder_cli_custom_sample_rate_parses() {
         "--hwaudio-record-from",
         "0",
     ]);
+}
+
+// ---------------------------------------------------------------------------
+// WAV property assertions on a generated fixture
+// ---------------------------------------------------------------------------
+
+#[test]
+fn recorder_output_wav_has_expected_properties() {
+    use sotf_audio::signal_recorder::{SignalParams, SignalType, generate_signal, write_wav_file};
+
+    let tmp = std::env::var("CARGO_TARGET_TMPDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir().join("sotf-recorder-tests"));
+    let _ = std::fs::create_dir_all(&tmp);
+    let wav_path = tmp.join("phase3_2_generated_48000_float.wav");
+
+    let duration_s = 0.5f32;
+    let sample_rate = 48000u32;
+    let channels = 1u16;
+    let signal = generate_signal(
+        SignalType::Tone,
+        &SignalParams::Tone {
+            freq: 1000.0,
+            amp: 0.5,
+        },
+        duration_s,
+        sample_rate,
+    )
+    .expect("failed to generate tone signal");
+
+    write_wav_file(&wav_path, &signal, sample_rate, channels).expect("failed to write WAV file");
+
+    let header = std::fs::read(&wav_path).expect("failed to read generated WAV");
+    assert!(
+        header.len() >= 44,
+        "generated WAV is too short to contain a standard header"
+    );
+
+    // RIFF / WAVE magic
+    assert_eq!(&header[0..4], b"RIFF");
+    assert_eq!(&header[8..12], b"WAVE");
+    assert_eq!(&header[12..16], b"fmt ");
+
+    // Little-endian helpers
+    let u16_le = |offset: usize| u16::from_le_bytes([header[offset], header[offset + 1]]);
+    let u32_le = |offset: usize| {
+        u32::from_le_bytes([
+            header[offset],
+            header[offset + 1],
+            header[offset + 2],
+            header[offset + 3],
+        ])
+    };
+
+    let fmt_chunk_size = u32_le(16);
+    let fmt_tag = u16_le(20);
+    let channel_count = u16_le(22);
+    let header_sample_rate = u32_le(24);
+    let bits_per_sample = u16_le(34);
+
+    // hound writes 32-bit float as either WAVE_FORMAT_IEEE_FLOAT (3) or
+    // WAVE_FORMAT_EXTENSIBLE (0xFFFE) with a KSDATAFORMAT_SUBTYPE_IEEE_FLOAT
+    // sub-format GUID. Both mean 32-bit float samples.
+    let is_float = fmt_tag == 0x0003
+        || (fmt_tag == 0xFFFE
+            && header.len() >= 46
+            && u16_le(44) == 0x0003);
+    assert!(is_float, "expected 32-bit float format (tag {fmt_tag})");
+    assert_eq!(channel_count, channels, "channel count mismatch");
+    assert_eq!(header_sample_rate, sample_rate, "sample rate mismatch");
+    assert_eq!(bits_per_sample, 32, "expected 32-bit samples");
+
+    // Find the "data" chunk after the fmt chunk (and any extension bytes).
+    let data_offset = 12 + 8 + fmt_chunk_size as usize;
+    assert!(
+        header.len() >= data_offset + 8,
+        "WAV header too short for data chunk"
+    );
+    assert_eq!(&header[data_offset..data_offset + 4], b"data");
+    let data_chunk_size = u32_le(data_offset + 4);
+    let expected_samples = (duration_s * sample_rate as f32) as u32;
+    let expected_data_size = expected_samples * channel_count as u32 * 4;
+    assert_eq!(
+        data_chunk_size, expected_data_size,
+        "data chunk size inconsistent with duration"
+    );
+
+    // RIFF chunk size should be file size minus the 8-byte RIFF header.
+    let riff_chunk_size = u32_le(4);
+    let expected_file_size = 8 + riff_chunk_size;
+    let actual_file_size = std::fs::metadata(&wav_path)
+        .expect("failed to stat WAV file")
+        .len() as u32;
+    assert_eq!(
+        actual_file_size, expected_file_size,
+        "RIFF chunk size inconsistent with file size"
+    );
 }

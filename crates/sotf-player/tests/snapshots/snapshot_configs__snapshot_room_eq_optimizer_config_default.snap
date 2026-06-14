@@ -1,0 +1,142 @@
+---
+source: crates/sotf-player/tests/snapshot_configs.rs
+expression: config
+---
+{
+  "mode": "Iir",
+  "fir": {
+    "taps": 4096,
+    "phase": "kirkeby",
+    "correct_excess_phase": false,
+    "phase_smoothing": 0.167,
+    "pre_ringing": null
+  },
+  "multi_speaker_mode": "Combined",
+  "algorithm": "autoeq:cmaes",
+  "strategy": "lshade",
+  "de_f": 0.8,
+  "de_cr": 0.9,
+  "adaptive_weight_f": 0.8,
+  "adaptive_weight_cr": 0.7,
+  "spacing_weight": 1.0,
+  "min_spacing_oct": 0.08,
+  "sample_rate": 48000,
+  "num_filters": 7,
+  "min_q": 0.5,
+  "max_q": 6.0,
+  "min_db": -12.0,
+  "max_db": 4.0,
+  "min_freq": 20.0,
+  "max_freq": 1600.0,
+  "max_iter": 50000,
+  "peq_model": "pk",
+  "population": 300,
+  "bo_initial_samples": 0,
+  "bo_batch_size": 0,
+  "bo_posterior_std_threshold": 0.0,
+  "bo_acquisition": "qei",
+  "bo_ehvi": false,
+  "refine": false,
+  "local_algo": "cobyla",
+  "loss_type": "flat",
+  "psychoacoustic": true,
+  "asymmetric_loss": true,
+  "smooth": false,
+  "smooth_n": 6,
+  "tolerance": 0.00001,
+  "atolerance": 0.00001,
+  "target_curve": "flat",
+  "system_type": "stereo",
+  "allow_delay": false,
+  "seed": null,
+  "vog": {
+    "enabled": false,
+    "reference_channel": "C"
+  },
+  "mixed_config": {
+    "crossover_freq": 300.0,
+    "crossover_type": "LR24",
+    "fir_band": "low"
+  },
+  "mixed_phase": {
+    "max_fir_length_ms": 10.0,
+    "pre_ringing_threshold_db": -30.0,
+    "min_spatial_depth": 0.5,
+    "phase_smoothing_octaves": 0.167
+  },
+  "target_response": {
+    "enabled": true,
+    "shape": "harman",
+    "slope_db_per_octave": -0.8,
+    "reference_freq": 1000.0,
+    "bass_shelf_db": 0.0,
+    "bass_shelf_freq": 200.0,
+    "treble_shelf_db": 0.0,
+    "treble_shelf_freq": 8000.0,
+    "broadband_precorrection": false
+  },
+  "excursion_protection": {
+    "enabled": false,
+    "auto_detect_f3": true,
+    "manual_f3_hz": 40.0,
+    "f3_reference_min_hz": 100.0,
+    "f3_reference_max_hz": 200.0,
+    "filter_order": 4,
+    "filter_type": "lr",
+    "margin_octaves": 0.25
+  },
+  "schroeder_split": {
+    "enabled": false,
+    "schroeder_freq": 300.0,
+    "low_freq_max_q": 10.0,
+    "low_freq_allow_boost": false,
+    "low_freq_max_db": null,
+    "high_freq_max_q": 1.0,
+    "high_freq_shelving_only": false
+  },
+  "phase_alignment": {
+    "enabled": false,
+    "min_freq": 60.0,
+    "max_freq": 100.0,
+    "optimize_polarity": true,
+    "max_delay_ms": 30.0
+  },
+  "multi_seat": {
+    "enabled": false,
+    "strategy": "variance",
+    "primary_seat": 0,
+    "max_deviation_db": 6.0,
+    "all_channel_enabled": true,
+    "all_channel_strategy": "spatial_robustness",
+    "primary_seat_weight": 2.0
+  },
+  "multi_measurement": {
+    "enabled": false,
+    "strategy": "average",
+    "variance_lambda": 1.0,
+    "weights": []
+  },
+  "sub_config": {
+    "enabled": false,
+    "num_filters": 10,
+    "max_db": 18.0,
+    "min_db": -18.0,
+    "min_q": 0.5,
+    "max_q": 10.0
+  },
+  "channel_matching": {
+    "enabled": false,
+    "threshold_db": 1.5,
+    "max_filters": 3
+  },
+  "epa_temporal_masking": {
+    "enabled": true,
+    "weight": 0.15,
+    "profile": "mixed",
+    "ir_enabled": true,
+    "ir_weight": 0.05,
+    "pre_mask_ms": 3.0,
+    "post_mask_ms": 120.0
+  },
+  "imported_from_file": false
+}

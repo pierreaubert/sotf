@@ -1,0 +1,10 @@
+---
+source: crates/sotf-server/crates/sotf-mpd/tests/snapshots.rs
+expression: resp.format()
+---
+file: music/a.flac
+Title: Alpha
+Artist: Artist A
+Pos: 0
+Id: 1
+OK

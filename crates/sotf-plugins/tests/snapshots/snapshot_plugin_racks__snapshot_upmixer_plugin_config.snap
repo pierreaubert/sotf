@@ -1,0 +1,12 @@
+---
+source: crates/sotf-plugins/tests/snapshot_plugin_racks.rs
+expression: config
+---
+{
+  "plugin_type": "upmixer",
+  "parameters": {
+    "center_focus": 0.5,
+    "mode": "5.1",
+    "width": 1.0
+  }
+}

@@ -1,0 +1,92 @@
+---
+source: crates/sotf-player/tests/snapshot_configs.rs
+expression: cases
+---
+[
+    (
+        "no header",
+        Ok(
+            None,
+        ),
+    ),
+    (
+        "full range",
+        Ok(
+            Some(
+                (
+                    0,
+                    99,
+                ),
+            ),
+        ),
+    ),
+    (
+        "open ended",
+        Ok(
+            Some(
+                (
+                    10,
+                    99,
+                ),
+            ),
+        ),
+    ),
+    (
+        "suffix",
+        Ok(
+            Some(
+                (
+                    90,
+                    99,
+                ),
+            ),
+        ),
+    ),
+    (
+        "end beyond file",
+        Ok(
+            Some(
+                (
+                    0,
+                    99,
+                ),
+            ),
+        ),
+    ),
+    (
+        "missing bytes prefix",
+        Err(
+            (),
+        ),
+    ),
+    (
+        "multiple ranges",
+        Err(
+            (),
+        ),
+    ),
+    (
+        "start at length",
+        Err(
+            (),
+        ),
+    ),
+    (
+        "end before start",
+        Err(
+            (),
+        ),
+    ),
+    (
+        "zero suffix",
+        Err(
+            (),
+        ),
+    ),
+    (
+        "zero file length",
+        Err(
+            (),
+        ),
+    ),
+]

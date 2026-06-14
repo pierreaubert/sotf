@@ -1,0 +1,26 @@
+---
+source: crates/systemwide/crates/daemon/bin/sotf_daemon/tests.rs
+expression: data
+---
+{
+  "channels": 2,
+  "input_channels": 2,
+  "last_error": null,
+  "muted": false,
+  "output_channels": 2,
+  "pipeline_applied_output_device": null,
+  "pipeline_generation": null,
+  "playback_buffer_fill_percent": 0,
+  "playback_callback_count": 0,
+  "playback_effective_sample_rate": 0,
+  "playback_frames_dropped": 0,
+  "playback_frames_received": 0,
+  "playback_frames_written": 0,
+  "playback_output_device": null,
+  "playback_stream_error_count": 0,
+  "sample_rate": 48000,
+  "selected_device": null,
+  "state": "Idle",
+  "underruns": 0,
+  "volume": 1.0
+}

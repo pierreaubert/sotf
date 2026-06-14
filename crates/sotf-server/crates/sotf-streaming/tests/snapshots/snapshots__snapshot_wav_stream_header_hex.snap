@@ -1,0 +1,5 @@
+---
+source: crates/sotf-server/crates/sotf-streaming/tests/snapshots.rs
+expression: hex
+---
+52 49 46 46 ff ff ff ff 57 41 56 45 66 6d 74 20 10 00 00 00 03 00 02 00 80 bb 00 00 00 dc 05 00 08 00 20 00 64 61 74 61 db ff ff ff
