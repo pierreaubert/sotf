@@ -436,7 +436,8 @@ pub(super) fn dispatch_tui_action(
             app.input_mode = InputMode::Normal;
         }
         "MetadataSeedAlbum" => {
-            app.library.albums = vec![metadata_fixture_album()];
+            app.library.albums =
+                vec![sotf_audio_player::dev_api_fixtures::metadata_fixture_album()];
             app.selected_album_index = 0;
             app.request_filter_update();
             let _ = app.filtered_albums();
@@ -528,30 +529,6 @@ pub(super) fn dispatch_tui_action(
         _ => return Err(anyhow::anyhow!("unknown action: `{name}`")),
     }
     Ok(())
-}
-
-#[cfg(feature = "dev-api")]
-fn metadata_fixture_album() -> sotf_audio_player::Album {
-    let track_path = std::env::temp_dir()
-        .join("sotf-dev-driver")
-        .join("metadata-scenario")
-        .join("scenario-track.flac");
-    sotf_audio_player::Album {
-        id: Some(7),
-        title: "Scenario Album".to_string(),
-        year: Some(1999),
-        tracks: vec![sotf_audio_player::Track {
-            path: track_path,
-            title: Some("Scenario Track".to_string()),
-            artist: Some("Scenario Artist".to_string()),
-            album_artist: Some("Scenario Artist".to_string()),
-            track_number: Some(1),
-            sample_rate: Some(44_100),
-            channels: Some(2),
-            ..Default::default()
-        }],
-        ..Default::default()
-    }
 }
 
 #[cfg(feature = "dev-api")]

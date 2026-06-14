@@ -1,6 +1,6 @@
 use super::misc::theme_to_vertical_slider_theme;
 use super::param_section_style::ParamSectionStyle;
-use super::transfer_curve_element::TransferCurveElement;
+use super::TransferCurveElement;
 use crate::app::AppState;
 use crate::app::constants::spacing;
 use crate::app::state::app::KnobDragState;

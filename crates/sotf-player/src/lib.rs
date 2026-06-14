@@ -17,6 +17,8 @@ pub mod config;
 /// - Bliss audio analysis (`bliss`)
 /// - Music recommendation engine (`recommendation`)
 pub mod controllers;
+#[cfg(feature = "dev-api")]
+pub mod dev_api_fixtures;
 pub mod database;
 pub mod federation_config;
 pub mod federation_scan;
@@ -48,6 +50,7 @@ pub mod sotf_api_client;
 pub mod sotf_remote;
 pub mod sotf_server_event;
 pub mod streams;
+pub mod ui_models;
 pub mod ui_params;
 pub mod waveform_scanner;
 

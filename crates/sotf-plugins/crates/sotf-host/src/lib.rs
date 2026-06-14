@@ -32,6 +32,7 @@ pub mod param_bridge;
 pub mod param_registry;
 pub mod param_specs;
 pub mod parameters;
+pub mod parametric_plugin;
 pub mod plugin;
 pub mod plugin_layout;
 pub mod plugin_params;
@@ -141,6 +142,9 @@ pub use oversampling::{
     planar_to_interleaved,
 };
 pub use parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+pub use parametric_plugin::{
+    ParameterSchema, ParameterSet, ParametricPlugin, ParametricPluginAdapter,
+};
 pub use plugin::{
     InPlacePlugin, InPlacePluginAdapter, LoopRange, MidiEvent, MidiMessage, Plugin, PluginInfo,
     PluginResult, ProcessContext, TimeSignature, TransportInfo,

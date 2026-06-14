@@ -7,6 +7,7 @@ pub mod params;
 use crate::params::PARAMS as GN;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet, ParametricPlugin};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{apply_gain_simd, apply_per_channel_gain_simd};
 use sotf_host::smoothing::Smoother;
@@ -245,78 +246,157 @@ impl GainPlugin {
     }
 }
 
+impl ParametricPlugin for GainPlugin {
+    fn plugin_info(&self) -> PluginInfo {
+        PluginInfo::new("Gain", "1.2.0", "Sotf")
+    }
+
+    fn input_channels(&self) -> usize {
+        self.channels
+    }
+
+    fn output_channels(&self) -> usize {
+        self.channels
+    }
+
+    fn parameter_schema(&self) -> ParameterSchema {
+        let mut params = vec![
+            Parameter::new_float(
+                "gain_db",
+                "Gain",
+                self.global_gain_db,
+                pk(GN, "gain_db").min_f64() as f32,
+                pk(GN, "gain_db").max_f64() as f32,
+            ),
+            Parameter::new_float("smoothing_ms", "Smoothing", self.smoothing_ms, 0.0, 200.0),
+        ];
+
+        for (ch, (id, name)) in self.channel_param_keys.iter().enumerate() {
+            let db = if self.is_per_channel() {
+                self.channel_gains_db[ch]
+            } else {
+                self.global_gain_db
+            };
+            params.push(Parameter::new_float(
+                &id.0,
+                name,
+                db,
+                pk(GN, "gain_db").min_f64() as f32,
+                pk(GN, "gain_db").max_f64() as f32,
+            ));
+        }
+
+        params
+    }
+
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(
+            self.param_gain_db.clone(),
+            ParameterValue::Float(self.global_gain_db),
+        );
+        values.insert(
+            self.param_smoothing_ms.clone(),
+            ParameterValue::Float(self.smoothing_ms),
+        );
+        for (ch, (id, _)) in self.channel_param_keys.iter().enumerate() {
+            let db = if self.is_per_channel() {
+                self.channel_gains_db[ch]
+            } else {
+                self.global_gain_db
+            };
+            values.insert(id.clone(), ParameterValue::Float(db));
+        }
+        values
+    }
+
+    fn parametric_validate_parameter(
+        &self,
+        id: &ParameterId,
+        value: &ParameterValue,
+    ) -> PluginResult<()> {
+        // Give a clearer error for out-of-range per-channel gain indices before
+        // falling back to the generic schema lookup.
+        if let Some(s) = id.as_str().strip_prefix("gain_db_")
+            && let Ok(ch) = s.parse::<usize>()
+            && ch >= self.channels
+        {
+            return Err(format!(
+                "Channel gain out of bounds: {} (channels: {})",
+                id, self.channels
+            ));
+        }
+        if let Some(param) = self.parameter_schema().iter().find(|p| &p.id == id) {
+            param.validate(value).map_err(|e| format!("{}: {}", id, e))
+        } else {
+            Err(format!("Unknown parameter: {}", id))
+        }
+    }
+
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            match id.as_str() {
+                "gain_db" => {
+                    let Some(v) = value.as_float().filter(|v| v.is_finite()) else {
+                        return Err(format!("Invalid value for {}", id));
+                    };
+                    self.set_gain_db(v);
+                }
+                "smoothing_ms" => {
+                    let Some(v) = value.as_float().filter(|v| v.is_finite()) else {
+                        return Err(format!("Invalid value for {}", id));
+                    };
+                    self.smoothing_ms = v.clamp(0.0, 200.0);
+                    self.global_gain_smoother
+                        .set_time(self.smoothing_ms, self.sample_rate);
+                    for s in &mut self.channel_gains_smoothers {
+                        s.set_time(self.smoothing_ms, self.sample_rate);
+                    }
+                }
+                key => {
+                    let Some(s) = key.strip_prefix("gain_db_") else {
+                        return Err(format!("Unknown parameter: {}", id));
+                    };
+                    let Ok(ch) = s.parse::<usize>() else {
+                        return Err(format!("Unknown parameter: {}", id));
+                    };
+                    let Some(v) = value.as_float().filter(|v| v.is_finite()) else {
+                        return Err(format!("Invalid value for {}", id));
+                    };
+                    self.set_channel_gain_db(ch, v)?;
+                }
+            }
+        }
+        self.rebuild_cached_parameters();
+        Ok(())
+    }
+
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        output.copy_from_slice(input);
+        self.process_in_place(output, context)
+    }
+}
+
 impl InPlacePlugin for GainPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Gain", "1.2.0", "Sotf")
+        ParametricPlugin::plugin_info(self)
     }
     fn channels(&self) -> usize {
         self.channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        self.cached_parameters.clone()
+        ParametricPlugin::parametric_parameters(self)
     }
     fn set_parameter(&mut self, id: ParameterId, val: ParameterValue) -> PluginResult<()> {
-        // Validate against parameter definitions
-        // For per-channel gains, we might need a template since they are dynamic
-        if id == self.param_gain_db {
-            // Use spec-derived range so validation matches what rebuild_cached_parameters advertises.
-            let min = pk(GN, "gain_db").min_f64() as f32;
-            let max = pk(GN, "gain_db").max_f64() as f32;
-            Parameter::new_float("gain_db", "Gain", 0.0, min, max).validate(&val)?;
-            if let Some(v) = val.as_float()
-                && v.is_finite()
-            {
-                self.set_gain_db(v);
-                self.rebuild_cached_parameters();
-                return Ok(());
-            }
-        }
-
-        if id == self.param_smoothing_ms {
-            Parameter::new_float("smoothing_ms", "Smoothing", 20.0, 0.0, 200.0).validate(&val)?;
-            if let Some(v) = val.as_float()
-                && v.is_finite()
-            {
-                self.smoothing_ms = v.clamp(0.0, 200.0);
-                self.global_gain_smoother
-                    .set_time(self.smoothing_ms, self.sample_rate);
-                for s in &mut self.channel_gains_smoothers {
-                    s.set_time(self.smoothing_ms, self.sample_rate);
-                }
-                self.rebuild_cached_parameters();
-                return Ok(());
-            }
-        }
-
-        if let Some(s) = id.as_str().strip_prefix("gain_db_")
-            && let Ok(ch) = s.parse::<usize>()
-        {
-            // Use spec-derived range for per-channel gains — same range as global gain.
-            let min = pk(GN, "gain_db").min_f64() as f32;
-            let max = pk(GN, "gain_db").max_f64() as f32;
-            Parameter::new_float("gain_db_ch", "Gain Ch", 0.0, min, max).validate(&val)?;
-            if let Some(v) = val.as_float()
-                && v.is_finite()
-            {
-                self.set_channel_gain_db(ch, v)?;
-                self.rebuild_cached_parameters();
-                return Ok(());
-            }
-        }
-        Err(format!("Invalid or unknown parameter: {}", id))
+        ParametricPlugin::parametric_set_parameter(self, id, val)
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_gain_db {
-            Some(ParameterValue::Float(self.global_gain_db))
-        } else if id == &self.param_smoothing_ms {
-            Some(ParameterValue::Float(self.smoothing_ms))
-        } else {
-            id.as_str()
-                .strip_prefix("gain_db_")
-                .and_then(|s| s.parse::<usize>().ok())
-                .and_then(|ch| self.channel_gain_db(ch))
-                .map(ParameterValue::Float)
-        }
+        ParametricPlugin::parametric_get_parameter(self, id)
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;

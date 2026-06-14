@@ -77,6 +77,7 @@ Workspace runner: `just` (install with `cargo install just`). See `justfile`.
 ## Code rules
 
 - **Never use `unsafe` without asking.**
+- **Struct field budget:** Any struct with more than 30 fields requires approval and a documented decomposition plan. Prefer splitting into focused sub-structs. Run `python3 scripts/check_struct_sizes.py` to check; new offenders must be added to the allowlist with a documented plan.
 - Business logic goes in `player/src` (or the relevant `math-*` / `autoeq` crate). App crates (`player-tui`, `player-gpui`) are thin UI wrappers — never duplicate logic across them.
 - Before editing a Rust file, verify it is actively compiled (not commented out, not behind a disabled feature flag, not dead code). Check `mod` declarations and Cargo features.
 - Read `GPUI.md` before any `player-gpui/` work.

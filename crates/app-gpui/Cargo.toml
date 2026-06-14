@@ -26,7 +26,7 @@ spotify = ["dep:sotf-services", "sotf-services/spotify"]
 # QA/debug-only HTTP API for scripted E2E testing. Compile errors in release builds
 # and only starts at runtime when `sotf-desktop --qa <dir>` is used.
 qa = []
-dev-api = []
+dev-api = ["sotf-player/dev-api"]
 
 [dependencies]
 # GPUI framework
@@ -49,6 +49,7 @@ sotf-midi = { workspace = true }
 sotf-cast = { workspace = true }
 sotf-tls = { workspace = true }
 sotf-services = { workspace = true, optional = true }
+plugins-gpui = { workspace = true }
 # math libraries
 math-iir-fir = { workspace = true }
 autoeq = { workspace = true }

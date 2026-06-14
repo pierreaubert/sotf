@@ -1,6 +1,6 @@
 use super::*;
-use sotf_host::host::DawHost;
-use sotf_host::plugin::{PluginInfo, ProcessContext};
+use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::plugin::{Plugin, ProcessContext};
 
 mod latency_passthrough;
 mod misc;
@@ -663,3 +663,433 @@ fn test_band_mask_active_triggers_at_narrowed_range() {
     );
 }
 
+// ============================================================================
+// Additional tests for process, set_parameter, get_parameter, difference_mode,
+// phase_invert, band_mask, invalid sizes, binary mode, validate_parameter,
+// has_empty_paths, can_use_empty_path_fast_path, latency_samples.
+// ============================================================================
+
+#[test]
+fn test_difference_mode() {
+    let params = ABComparePluginParams {
+        path_a: PathConfig::Plugin {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"gain_db": 0.0}),
+        },
+        path_b: PathConfig::Plugin {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"gain_db": 0.0}),
+        },
+        difference_mode: true,
+        auto_gain_enabled: false,
+        ..Default::default()
+    };
+    let mut plugin = ABComparePlugin::from_params(2, params).unwrap();
+    plugin.initialize(48000).unwrap();
+    let input = vec![1.0_f32; 4800 * 2];
+    let mut output = vec![0.0_f32; 4800 * 2];
+    let context = ProcessContext::new(48000, 4800);
+    for _ in 0..5 {
+        plugin.process(&input, &mut output, &context).unwrap();
+    }
+    let max_val = output.iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
+    assert!(
+        max_val < 0.01,
+        "Difference mode on identical paths should be near silence, got max={}",
+        max_val
+    );
+}
+
+#[test]
+fn test_phase_invert_a() {
+    let params = ABComparePluginParams {
+        path_a: PathConfig::Plugin {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"gain_db": 0.0}),
+        },
+        path_b: PathConfig::None,
+        mix: -1.0,
+        phase_invert_a: true,
+        auto_gain_enabled: false,
+        ..Default::default()
+    };
+    let mut plugin = ABComparePlugin::from_params(2, params).unwrap();
+    plugin.initialize(48000).unwrap();
+    let input = vec![0.5_f32; 4800 * 2];
+    let mut output = vec![0.0_f32; 4800 * 2];
+    let context = ProcessContext::new(48000, 4800);
+    for _ in 0..5 {
+        plugin.process(&input, &mut output, &context).unwrap();
+    }
+    let last = output[output.len() - 1];
+    assert!(
+        (last + 0.5).abs() < 0.1,
+        "Phase invert A should flip sign, got {}",
+        last
+    );
+}
+
+#[test]
+fn test_phase_invert_b() {
+    let params = ABComparePluginParams {
+        path_a: PathConfig::None,
+        path_b: PathConfig::Plugin {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"gain_db": 0.0}),
+        },
+        mix: 1.0,
+        phase_invert_b: true,
+        auto_gain_enabled: false,
+        ..Default::default()
+    };
+    let mut plugin = ABComparePlugin::from_params(2, params).unwrap();
+    plugin.initialize(48000).unwrap();
+    let input = vec![0.5_f32; 4800 * 2];
+    let mut output = vec![0.0_f32; 4800 * 2];
+    let context = ProcessContext::new(48000, 4800);
+    for _ in 0..5 {
+        plugin.process(&input, &mut output, &context).unwrap();
+    }
+    let last = output[output.len() - 1];
+    assert!(
+        (last + 0.5).abs() < 0.1,
+        "Phase invert B should flip sign, got {}",
+        last
+    );
+}
+
+#[test]
+fn test_band_mask_active_processing() {
+    let params = ABComparePluginParams {
+        path_a: PathConfig::None,
+        path_b: PathConfig::None,
+        band_mask_low_hz: 500.0,
+        band_mask_high_hz: 2000.0,
+        auto_gain_enabled: false,
+        ..Default::default()
+    };
+    let mut plugin = ABComparePlugin::from_params(2, params).unwrap();
+    plugin.initialize(48000).unwrap();
+    let input = vec![0.3_f32; 512 * 2];
+    let mut output = vec![0.0_f32; 512 * 2];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48000, 512))
+        .unwrap();
+}
+
+#[test]
+fn test_process_invalid_input_size() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48000).unwrap();
+    let input = vec![0.0_f32; 100];
+    let mut output = vec![0.0_f32; 200];
+    let ctx = ProcessContext::new(48000, 100);
+    let res = plugin.process(&input, &mut output, &ctx);
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_process_invalid_output_size() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48000).unwrap();
+    let input = vec![0.0_f32; 200];
+    let mut output = vec![0.0_f32; 100];
+    let ctx = ProcessContext::new(48000, 100);
+    let res = plugin.process(&input, &mut output, &ctx);
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_binary_mode_mix_transition() {
+    let params = ABComparePluginParams {
+        mix_mode: MixMode::Binary,
+        selected_path: 0,
+        path_a: PathConfig::Plugin {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"gain_db": -6.0}),
+        },
+        path_b: PathConfig::Plugin {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"gain_db": -6.0}),
+        },
+        auto_gain_enabled: false,
+        ..Default::default()
+    };
+    let mut plugin = ABComparePlugin::from_params(2, params).unwrap();
+    plugin.initialize(48000).unwrap();
+    plugin
+        .set_parameter(
+            ParameterId("selected_path".to_string()),
+            ParameterValue::Int(1),
+        )
+        .unwrap();
+    let input = vec![1.0_f32; 4800 * 2];
+    let mut output = vec![0.0_f32; 4800 * 2];
+    let context = ProcessContext::new(48000, 4800);
+    for _ in 0..5 {
+        plugin.process(&input, &mut output, &context).unwrap();
+    }
+}
+
+#[test]
+fn test_validate_parameter_unknown() {
+    let plugin = ABComparePlugin::new(2).unwrap();
+    let res = plugin.validate_parameter(
+        &ParameterId("unknown".to_string()),
+        &ParameterValue::Float(0.0),
+    );
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_get_parameter_unknown() {
+    let plugin = ABComparePlugin::new(2).unwrap();
+    assert!(
+        plugin
+            .get_parameter(&ParameterId("unknown".to_string()))
+            .is_none()
+    );
+}
+
+#[test]
+fn test_has_empty_paths() {
+    let plugin = ABComparePlugin::new(2).unwrap();
+    assert!(plugin.has_empty_paths());
+}
+
+#[test]
+fn test_can_use_empty_path_fast_path() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48000).unwrap();
+    assert!(plugin.can_use_empty_path_fast_path());
+    plugin
+        .set_parameter(
+            ParameterId("phase_invert_a".to_string()),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    assert!(!plugin.can_use_empty_path_fast_path());
+}
+
+#[test]
+fn test_recompute_empty_path_fast_gain() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48000).unwrap();
+    let before = plugin.empty_path_fast_gain;
+    plugin
+        .set_parameter(ParameterId("mix".to_string()), ParameterValue::Float(1.0))
+        .unwrap();
+    plugin.mix_smoother.reset(1.0);
+    plugin.recompute_empty_path_fast_gain();
+    let after = plugin.empty_path_fast_gain;
+    assert!((after - before).abs() > 1e-6);
+}
+
+#[test]
+fn test_latency_samples_with_paths() {
+    let params = ABComparePluginParams {
+        path_a: PathConfig::Plugin {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"gain_db": 0.0}),
+        },
+        path_b: PathConfig::Plugin {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"gain_db": 0.0}),
+        },
+        ..Default::default()
+    };
+    let mut plugin = ABComparePlugin::from_params(2, params).unwrap();
+    plugin.initialize(48000).unwrap();
+    assert_eq!(plugin.latency_samples(), 0);
+}
+
+// ============================================================================
+// Additional unit tests for untested helper functions
+// ============================================================================
+
+#[test]
+fn test_delay_line_set_delay_process_reset() {
+    use super::delay_line::DelayLine;
+
+    let mut dl = DelayLine::new();
+    assert_eq!(dl.len, 0);
+
+    // Set a 5-sample delay for 1 channel
+    dl.set_delay(5, 1);
+    assert_eq!(dl.len, 5);
+
+    // Process a sequence: first 5 samples should be zeros (delay), then input emerges
+    let mut data = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    dl.process(&mut data);
+    // First 5 outputs should be 0 (initial buffer is zero)
+    for i in 0..5 {
+        assert_eq!(data[i], 0.0, "delayed sample {} should be 0", i);
+    }
+    // Next 5 outputs should be the original first 5 inputs
+    for i in 5..10 {
+        assert_eq!(data[i], (i - 4) as f32, "sample {} should be {}", i, i - 4);
+    }
+
+    // Reset should clear the buffer but keep the length
+    dl.reset();
+    assert_eq!(dl.len, 5);
+    assert_eq!(dl.pos, 0);
+    let mut data2 = vec![1.0_f32; 5];
+    dl.process(&mut data2);
+    for &v in &data2 {
+        assert_eq!(v, 0.0, "after reset, delay line should output zeros");
+    }
+}
+
+#[test]
+fn test_factory_create_plugin_builtin_each_type() {
+    use super::factory::build_path_from_config;
+
+    let supported_plugins = [
+        ("eq", serde_json::json!({"filters": []})),
+        ("gain", serde_json::json!({"gain_db": -6.0})),
+        ("compressor", serde_json::json!({"threshold_db": -12.0})),
+        ("limiter", serde_json::json!({"threshold_db": -1.0})),
+        ("gate", serde_json::json!({"threshold_db": -40.0})),
+        ("delay", serde_json::json!({"delay_ms": 100.0})),
+    ];
+
+    for (plugin_type, parameters) in supported_plugins {
+        let config = PathConfig::Plugin {
+            plugin_type: plugin_type.to_string(),
+            parameters,
+        };
+        let host = build_path_from_config(&config, 2, 48000);
+        assert!(
+            host.is_ok(),
+            "{} creation failed: {:?}",
+            plugin_type,
+            host.err()
+        );
+    }
+
+    let unknown_config = PathConfig::Plugin {
+        plugin_type: "unknown".to_string(),
+        parameters: serde_json::json!({}),
+    };
+    let unknown = build_path_from_config(&unknown_config, 2, 48000);
+    assert!(unknown.is_err());
+}
+
+#[test]
+fn test_factory_build_graph() {
+    use super::config::GraphNodeConfig;
+    use super::factory::build_path_from_config;
+
+    let config = PathConfig::Graph {
+        nodes: vec![GraphNodeConfig {
+            id: "gain1".to_string(),
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"gain_db": -6.0}),
+        }],
+        edges: vec![],
+    };
+
+    let host = build_path_from_config(&config, 2, 48000);
+    assert!(host.is_ok(), "Graph build failed: {:?}", host.err());
+}
+
+#[test]
+fn test_rebuild_path_a_and_b() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Set path A to a gain plugin
+    plugin.path_a_config = PathConfig::Plugin {
+        plugin_type: "gain".to_string(),
+        parameters: serde_json::json!({"gain_db": -6.0}),
+    };
+    assert!(plugin.rebuild_path_a().is_ok());
+
+    // Set path B to a delay plugin
+    plugin.path_b_config = PathConfig::Plugin {
+        plugin_type: "delay".to_string(),
+        parameters: serde_json::json!({"delay_ms": 50.0}),
+    };
+    assert!(plugin.rebuild_path_b().is_ok());
+}
+
+#[test]
+fn test_update_latency_compensation_both_paths_empty() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Both paths empty -> no latency difference
+    plugin.path_a_config = PathConfig::None;
+    plugin.path_b_config = PathConfig::None;
+
+    plugin.rebuild_path_a().unwrap();
+    plugin.rebuild_path_b().unwrap();
+
+    // Both delays should be zero when both paths have zero latency
+    assert_eq!(plugin.delay_a.len, 0);
+    assert_eq!(plugin.delay_b.len, 0);
+}
+
+#[test]
+fn test_rebuild_band_mask_filters() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    let _original_low = plugin.band_mask_low_hz;
+    let _original_high = plugin.band_mask_high_hz;
+
+    // Change the band mask range and rebuild
+    plugin.band_mask_low_hz = 500.0;
+    plugin.band_mask_high_hz = 2000.0;
+    plugin.rebuild_band_mask_filters();
+
+    // Filters should be updated (coefficients changed internally)
+    assert_eq!(plugin.band_mask_hp.len(), 2);
+    assert_eq!(plugin.band_mask_lp.len(), 2);
+
+    // Rebuilding again with same values should not panic
+    plugin.rebuild_band_mask_filters();
+}
+
+#[test]
+fn test_plugin_info() {
+    let plugin = ABComparePlugin::new(2).unwrap();
+    let info = plugin.info();
+    assert_eq!(info.name, "A/B Compare");
+}
+
+#[test]
+fn test_process_empty_path_fast() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48000).unwrap();
+    plugin.auto_gain.set_enabled(false);
+
+    let input = vec![0.5_f32; 512 * 2];
+    let mut output = vec![0.0_f32; 512 * 2];
+
+    // Directly call the fast path
+    plugin
+        .process_empty_path_fast(&input, &mut output, 512)
+        .unwrap();
+
+    // With default mix=0.0, equal-power gain is sqrt(2)/2 + sqrt(2)/2 = sqrt(2)
+    let expected = 0.5 * std::f32::consts::SQRT_2;
+    for (i, &sample) in output.iter().enumerate() {
+        assert!(
+            (sample - expected).abs() < 1e-5,
+            "output[{}] = {} expected ~{}",
+            i,
+            sample,
+            expected
+        );
+    }
+}
+
+#[test]
+fn test_validate_parameter_known() {
+    let plugin = ABComparePlugin::new(2).unwrap();
+    let res =
+        plugin.validate_parameter(&ParameterId("mix".to_string()), &ParameterValue::Float(0.0));
+    assert!(res.is_ok());
+}

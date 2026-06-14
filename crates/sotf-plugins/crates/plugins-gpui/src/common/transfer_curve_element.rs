@@ -11,20 +11,20 @@ use gpui::*;
 /// - Grid lines with dB scale
 /// - Unity gain reference line (diagonal)
 /// - Animated operating point dot
-pub(super) struct TransferCurveElement {
-    pub(super) width: f32,
-    pub(super) height: f32,
-    pub(super) threshold_db: f64,
-    pub(super) ratio: f64,
-    pub(super) knee_db: f64,
-    pub(super) is_limiter: bool,
-    pub(super) input_level_db: Option<f64>,
-    pub(super) accent: Rgba,
-    pub(super) compressed_color: Rgba,
-    pub(super) operating_point_color: Rgba,
-    pub(super) bg: Rgba,
-    pub(super) grid_color: Rgba,
-    pub(super) text_color: Rgba,
+pub struct TransferCurveElement {
+    pub width: f32,
+    pub height: f32,
+    pub threshold_db: f64,
+    pub ratio: f64,
+    pub knee_db: f64,
+    pub is_limiter: bool,
+    pub input_level_db: Option<f64>,
+    pub accent: Rgba,
+    pub compressed_color: Rgba,
+    pub operating_point_color: Rgba,
+    pub bg: Rgba,
+    pub grid_color: Rgba,
+    pub text_color: Rgba,
 }
 
 impl IntoElement for TransferCurveElement {

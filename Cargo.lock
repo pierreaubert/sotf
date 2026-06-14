@@ -9534,6 +9534,7 @@ dependencies = [
  "ndarray 0.17.2",
  "num-complex 0.4.6",
  "parking_lot",
+ "plugins-gpui",
  "proptest 1.11.0",
  "rand 0.9.4",
  "reqwest 0.13.3",

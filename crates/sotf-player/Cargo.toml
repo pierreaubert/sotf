@@ -13,6 +13,8 @@ repository.workspace = true
 default = []
 # Enable this feature to bypass security validation in tests (for integration tests)
 testing = []
+# Fixtures used by the `dev-api` server feature in UI shells.
+dev-api = []
 # Enable HAL audio input support (macOS only)
 hal = ["sotf-engine/hal"]
 streaming = ["sotf-engine/streaming"]

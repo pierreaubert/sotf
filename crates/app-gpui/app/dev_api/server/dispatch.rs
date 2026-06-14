@@ -200,7 +200,8 @@ fn dispatch_metadata_action(
     match name {
         "MetadataSeedAlbum" => {
             with_app_state(window, cx, |state| {
-                state.app.library_state.library.albums = vec![metadata_fixture_album()];
+                state.app.library_state.library.albums =
+                    vec![sotf_audio_player::dev_api_fixtures::metadata_fixture_album()];
                 state.app.library_state.selected_index = 0;
                 state.app.library_state.invalidate_cache();
                 state.app.ui_state.current_screen = Screen::Library;
@@ -319,29 +320,6 @@ fn dispatch_metadata_action(
             Ok(true)
         }
         _ => Ok(false),
-    }
-}
-
-fn metadata_fixture_album() -> sotf_audio_player::Album {
-    let track_path = std::env::temp_dir()
-        .join("sotf-dev-driver")
-        .join("metadata-scenario")
-        .join("scenario-track.flac");
-    sotf_audio_player::Album {
-        id: Some(7),
-        title: "Scenario Album".to_string(),
-        year: Some(1999),
-        tracks: vec![sotf_audio_player::Track {
-            path: track_path,
-            title: Some("Scenario Track".to_string()),
-            artist: Some("Scenario Artist".to_string()),
-            album_artist: Some("Scenario Artist".to_string()),
-            track_number: Some(1),
-            sample_rate: Some(44_100),
-            channels: Some(2),
-            ..Default::default()
-        }],
-        ..Default::default()
     }
 }
 

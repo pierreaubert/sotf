@@ -24,7 +24,7 @@ tidal = ["dep:sotf-services", "sotf-services/tidal"]
 spotify = ["dep:sotf-services", "sotf-services/spotify"]
 # QA/debug-only HTTP API for scripted E2E testing.
 qa = []
-dev-api = []
+dev-api = ["sotf-player/dev-api"]
 
 [dependencies]
 # Shared audio player library (provides business logic, database, plugins, etc.)
