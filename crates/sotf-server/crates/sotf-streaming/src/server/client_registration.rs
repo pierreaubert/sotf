@@ -56,6 +56,10 @@ pub(super) fn handle_client(
     stats: Arc<SharedStats>,
     client_queue_capacity: usize,
 ) {
+    // The listener is non-blocking so the server loop can poll for shutdown and
+    // chunks, but accepted sockets inherit that flag on Unix. Force the client
+    // socket back into blocking mode so request/body reads behave predictably.
+    let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(Duration::from_millis(CLIENT_READ_TIMEOUT_MS)));
     let request = match read_http_request(&mut stream) {
         Ok(request) => request,

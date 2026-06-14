@@ -8,15 +8,19 @@ use super::configured::configured_output_device_from_value;
 use super::consts::{MAX_HAL_CHANNELS, MAX_IPC_COMMAND_BYTES};
 use super::driver_manager::DriverManager;
 use super::loudness::{loudness_data_to_json, loudness_info_to_json};
-use super::misc::{build_driver_plugin_chain, is_safe_output_device_name, parameter_descriptor_to_json};
 use super::misc::push_metering_faults;
 use super::misc::sanitize_user_plugins;
 use super::misc::transport_snapshot_and_faults;
+use super::misc::{
+    build_driver_plugin_chain, is_safe_output_device_name, parameter_descriptor_to_json,
+};
 use super::pipeline_reconfigure_outcome::handle_driver_config_change;
 use super::pipeline_reconfigure_outcome::reconfigure_audio_pipeline;
 use super::pipeline_spec::{PipelineSpec, pipeline_spec_to_json};
 use super::pipeline_supervisor::PipelineSupervisor;
-use super::plugin::{plugin_parameter_descriptors, plugin_type_category, plugin_type_to_engine_str};
+use super::plugin::{
+    plugin_parameter_descriptors, plugin_type_category, plugin_type_to_engine_str,
+};
 use super::response::Response;
 use super::response::serialize_response_safely;
 use super::security::{KeyManager, PeerClass};
@@ -113,7 +117,10 @@ fn plugin_type_to_engine_str_maps_all_variants() {
     assert_eq!(plugin_type_to_engine_str(&PluginType::EQ), "eq");
     assert_eq!(plugin_type_to_engine_str(&PluginType::Gain), "gain");
     assert_eq!(plugin_type_to_engine_str(&PluginType::Upmixer), "upmixer");
-    assert_eq!(plugin_type_to_engine_str(&PluginType::Compressor), "compressor");
+    assert_eq!(
+        plugin_type_to_engine_str(&PluginType::Compressor),
+        "compressor"
+    );
     assert_eq!(
         plugin_type_to_engine_str(&PluginType::MultibandCompressor),
         "multiband_compressor"
@@ -126,10 +133,22 @@ fn plugin_type_to_engine_str_maps_all_variants() {
         plugin_type_to_engine_str(&PluginType::LoudnessMonitor),
         "loudness_monitor"
     );
-    assert_eq!(plugin_type_to_engine_str(&PluginType::ChannelMuteSolo), "channel_mute_solo");
-    assert_eq!(plugin_type_to_engine_str(&PluginType::ABCompare), "ab_compare");
-    assert_eq!(plugin_type_to_engine_str(&PluginType::MonoToStereo), "mono_to_stereo");
-    assert_eq!(plugin_type_to_engine_str(&PluginType::LinearPhaseEq), "linear_phase_eq");
+    assert_eq!(
+        plugin_type_to_engine_str(&PluginType::ChannelMuteSolo),
+        "channel_mute_solo"
+    );
+    assert_eq!(
+        plugin_type_to_engine_str(&PluginType::ABCompare),
+        "ab_compare"
+    );
+    assert_eq!(
+        plugin_type_to_engine_str(&PluginType::MonoToStereo),
+        "mono_to_stereo"
+    );
+    assert_eq!(
+        plugin_type_to_engine_str(&PluginType::LinearPhaseEq),
+        "linear_phase_eq"
+    );
 }
 
 #[test]
@@ -137,10 +156,16 @@ fn plugin_type_category_groups_are_consistent() {
     assert_eq!(plugin_type_category(&PluginType::EQ), "EQ & Tone");
     assert_eq!(plugin_type_category(&PluginType::Gain), "Utility");
     assert_eq!(plugin_type_category(&PluginType::Compressor), "Dynamics");
-    assert_eq!(plugin_type_category(&PluginType::Upmixer), "Spatial & Routing");
+    assert_eq!(
+        plugin_type_category(&PluginType::Upmixer),
+        "Spatial & Routing"
+    );
     assert_eq!(plugin_type_category(&PluginType::Convolution), "Effects");
     assert_eq!(plugin_type_category(&PluginType::Denoiser), "Restoration");
-    assert_eq!(plugin_type_category(&PluginType::LoudnessMonitor), "Monitoring");
+    assert_eq!(
+        plugin_type_category(&PluginType::LoudnessMonitor),
+        "Monitoring"
+    );
 }
 
 #[test]
@@ -154,7 +179,10 @@ fn sanitize_user_plugins_strips_daemon_owned_types() {
     ];
     let sanitized = sanitize_user_plugins(plugins);
     assert_eq!(
-        sanitized.iter().map(|p| p.plugin_type.as_str()).collect::<Vec<_>>(),
+        sanitized
+            .iter()
+            .map(|p| p.plugin_type.as_str())
+            .collect::<Vec<_>>(),
         vec!["eq", "gain"]
     );
 }
@@ -167,7 +195,10 @@ fn build_driver_plugin_chain_wraps_user_plugins_with_monitors() {
     assert_eq!(input_idx, 0);
     assert_eq!(output_idx, 3);
     assert_eq!(
-        runtime.iter().map(|p| p.plugin_type.as_str()).collect::<Vec<_>>(),
+        runtime
+            .iter()
+            .map(|p| p.plugin_type.as_str())
+            .collect::<Vec<_>>(),
         vec!["loudness_monitor", "eq", "gain", "loudness_monitor"]
     );
 }
@@ -184,8 +215,14 @@ fn empty_loudness_json_clamps_channels_and_shapes_defaults() {
     assert!(zero["correlation_lr"].is_null());
 
     let many = super::consts::empty_loudness_json(64);
-    assert_eq!(many["channel_peaks"].as_array().unwrap().len(), MAX_HAL_CHANNELS);
-    assert_eq!(many["true_peaks_dbtp"].as_array().unwrap().len(), MAX_HAL_CHANNELS);
+    assert_eq!(
+        many["channel_peaks"].as_array().unwrap().len(),
+        MAX_HAL_CHANNELS
+    );
+    assert_eq!(
+        many["true_peaks_dbtp"].as_array().unwrap().len(),
+        MAX_HAL_CHANNELS
+    );
 }
 
 #[test]
@@ -283,20 +320,37 @@ fn command_name_covers_all_variants() {
         (Command::Seek { position: 0.0 }, "seek"),
         (Command::SetVolume { volume: 0.5 }, "set_volume"),
         (Command::ListDevices, "list_devices"),
-        (Command::SetDevice { device: String::new() }, "set_device"),
-        (Command::SetInputChannels { channels: 2 }, "set_input_channels"),
+        (
+            Command::SetDevice {
+                device: String::new(),
+            },
+            "set_device",
+        ),
+        (
+            Command::SetInputChannels { channels: 2 },
+            "set_input_channels",
+        ),
         (Command::GetLoudness, "get_loudness"),
         (Command::GetMetering, "get_metering"),
         (Command::GetPlugins, "get_plugins"),
         (Command::GetAvailablePlugins, "get_available_plugins"),
-        (Command::AddPlugin { plugin: test_plugin("eq"), index: None }, "add_plugin"),
+        (
+            Command::AddPlugin {
+                plugin: test_plugin("eq"),
+                index: None,
+            },
+            "add_plugin",
+        ),
         (Command::RemovePlugin { index: 0 }, "remove_plugin"),
         (Command::ReorderPlugins { order: vec![] }, "reorder_plugins"),
         (Command::SetEncryption { enabled: true }, "set_encryption"),
         (Command::EncryptionStatus, "encryption_status"),
         (Command::RotateEncryptionKey, "rotate_encryption_key"),
         (Command::SetSampleRate { rate: 48_000 }, "set_sample_rate"),
-        (Command::SetBufferFrames { frames: 512 }, "set_buffer_frames"),
+        (
+            Command::SetBufferFrames { frames: 512 },
+            "set_buffer_frames",
+        ),
         (Command::GetDriverConfig, "get_driver_config"),
     ];
     for (cmd, expected) in cases {
@@ -313,8 +367,8 @@ fn default_channel_counts_match_definitions() {
 #[test]
 fn parameter_descriptor_to_json_maps_float_spec() {
     use sotf_plugins::param_specs::ParamSpec;
-    let spec = ParamSpec::float("Gain", "gain_db", 0.0, -60.0, 12.0, 0.1, "dB", "Level")
-        .doc("Gain in dB");
+    let spec =
+        ParamSpec::float("Gain", "gain_db", 0.0, -60.0, 12.0, 0.1, "dB", "Level").doc("Gain in dB");
     let json = parameter_descriptor_to_json(&spec);
     assert_eq!(json["key"], "gain_db");
     assert_eq!(json["name"], "Gain");
@@ -1060,5 +1114,575 @@ mod ipc_safety_tests {
         let (actual, result) = state.last_ack.as_ref().expect("config ack");
         assert_eq!(actual.channel_count, 10);
         assert!(matches!(result, ConfigResult::Accepted));
+    }
+
+    #[test]
+    fn testkit_unix_ipc_status_roundtrip() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"status"}"#);
+
+        assert_eq!(response["success"], true);
+        assert!(response["data"]["state"].is_string());
+        assert!(response["data"]["volume"].is_number());
+    }
+
+    #[test]
+    fn testkit_unix_ipc_get_plugins_roundtrip() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"get_plugins"}"#);
+
+        assert_eq!(response["success"], true);
+        assert!(response["data"]["plugins"].is_array());
+    }
+
+    #[test]
+    fn testkit_unix_ipc_get_available_plugins_roundtrip() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"get_available_plugins"}"#);
+
+        assert_eq!(response["success"], true);
+        let plugins = response["data"]["plugins"]
+            .as_array()
+            .expect("plugins array");
+        assert!(!plugins.is_empty());
+        assert!(plugins[0]["type"].is_string());
+    }
+
+    #[test]
+    fn testkit_unix_ipc_get_metering_roundtrip() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"get_metering"}"#);
+
+        assert_eq!(response["success"], true);
+        assert!(response["data"]["input"].is_object());
+        assert!(response["data"]["output"].is_object());
+        assert!(response["data"]["sources"]["input"].is_object());
+        assert!(response["data"]["sources"]["output"].is_object());
+    }
+
+    #[test]
+    fn testkit_unix_ipc_get_driver_config_roundtrip() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"get_driver_config"}"#);
+
+        assert_eq!(response["success"], true);
+        assert!(response["data"]["sample_rate"].is_number());
+        assert!(response["data"]["buffer_frames"].is_number());
+        assert!(response["data"]["channel_count"].is_number());
+    }
+
+    #[test]
+    fn testkit_unix_ipc_set_volume_roundtrip() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"set_volume","volume":0.42}"#);
+
+        assert_eq!(response["success"], true);
+        assert!((daemon.manager.lock().get_volume() - 0.42).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn testkit_unix_ipc_set_encryption_roundtrip() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response =
+            send_owner_ipc_command(&daemon, r#"{"command":"set_encryption","enabled":true}"#);
+
+        assert_eq!(response["success"], true);
+        assert!(response["data"]["enabled"].is_boolean());
+        assert!(response["data"]["fingerprint"].is_string());
+    }
+
+    #[test]
+    fn testkit_unix_ipc_shutdown_roundtrip() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(&daemon, r#"{"command":"shutdown"}"#);
+
+        assert_eq!(response["success"], true);
+        assert!(!*daemon.running.lock());
+    }
+}
+
+/// Phase 4.2: full command/response round-trips without a real audio device.
+///
+/// These tests exercise JSON parsing for every `Command` variant and direct
+/// `AudioDaemon::handle_command` invocation. They run serially because some
+/// mutating commands start the engine's cpal output stream, and contending for
+/// the default output device across tests would be flaky.
+#[cfg(unix)]
+mod command_roundtrip_tests {
+    use super::*;
+    use serial_test::serial;
+
+    fn parse(json: &str) -> Command {
+        serde_json::from_str(json).expect("valid command JSON")
+    }
+
+    fn run_command(cmd: Command) -> Response {
+        let daemon = AudioDaemon::new();
+        daemon.runtime.block_on(daemon.handle_command(cmd))
+    }
+
+    fn response_value(resp: &Response) -> Value {
+        serde_json::to_value(resp).expect("response serializes to JSON")
+    }
+
+    #[test]
+    fn parse_all_command_variants() {
+        assert!(matches!(parse(r#"{"command":"status"}"#), Command::Status));
+        assert!(matches!(
+            parse(r#"{"command":"get_snapshot"}"#),
+            Command::GetSnapshot
+        ));
+        assert!(matches!(
+            parse(r#"{"command":"snapshot"}"#),
+            Command::GetSnapshot
+        ));
+        assert!(matches!(
+            parse(r#"{"command":"dump_state"}"#),
+            Command::DumpState
+        ));
+
+        let cmd = parse(r#"{"command":"load","path":"/tmp/test.wav"}"#);
+        assert!(matches!(cmd, Command::Load { path } if path == "/tmp/test.wav"));
+
+        assert!(matches!(parse(r#"{"command":"play"}"#), Command::Play));
+        assert!(matches!(parse(r#"{"command":"pause"}"#), Command::Pause));
+        assert!(matches!(parse(r#"{"command":"stop"}"#), Command::Stop));
+
+        let cmd = parse(r#"{"command":"seek","position":12.5}"#);
+        assert!(
+            matches!(cmd, Command::Seek { position } if (position - 12.5).abs() < f64::EPSILON)
+        );
+
+        let cmd = parse(r#"{"command":"set_volume","volume":0.5}"#);
+        assert!(
+            matches!(cmd, Command::SetVolume { volume } if (volume - 0.5).abs() < f32::EPSILON)
+        );
+
+        assert!(matches!(
+            parse(r#"{"command":"list_devices"}"#),
+            Command::ListDevices
+        ));
+
+        let cmd = parse(r#"{"command":"set_device","device":"Built-in Output"}"#);
+        assert!(matches!(cmd, Command::SetDevice { device } if device == "Built-in Output"));
+
+        let cmd = parse(
+            r#"{"command":"load_plugins","plugins":[{"plugin_type":"eq","parameters":{}}],"input_channels":2,"output_channels":2}"#,
+        );
+        assert!(
+            matches!(cmd, Command::LoadPlugins { plugins, input_channels, output_channels } if plugins.len() == 1 && input_channels == 2 && output_channels == 2)
+        );
+
+        let cmd = parse(r#"{"command":"load_plugin_artifact","artifact":{"plugins":[]}}"#);
+        assert!(matches!(cmd, Command::LoadPluginArtifact { .. }));
+
+        let cmd = parse(r#"{"command":"set_input_channels","channels":4}"#);
+        assert!(matches!(cmd, Command::SetInputChannels { channels } if channels == 4));
+
+        let cmd = parse(r#"{"command":"set_output_channels","channels":6}"#);
+        assert!(matches!(cmd, Command::SetOutputChannels { channels } if channels == 6));
+
+        let cmd =
+            parse(r#"{"command":"set_pipeline_channels","input_channels":4,"output_channels":6}"#);
+        assert!(matches!(
+            cmd,
+            Command::SetPipelineChannels {
+                input_channels: Some(4),
+                output_channels: Some(6),
+            }
+        ));
+
+        assert!(matches!(
+            parse(r#"{"command":"get_loudness"}"#),
+            Command::GetLoudness
+        ));
+        assert!(matches!(
+            parse(r#"{"command":"get_metering"}"#),
+            Command::GetMetering
+        ));
+        assert!(matches!(
+            parse(r#"{"command":"get_plugins"}"#),
+            Command::GetPlugins
+        ));
+        assert!(matches!(
+            parse(r#"{"command":"get_available_plugins"}"#),
+            Command::GetAvailablePlugins
+        ));
+
+        let cmd =
+            parse(r#"{"command":"add_plugin","plugin":{"plugin_type":"eq","parameters":{}}}"#);
+        assert!(matches!(cmd, Command::AddPlugin { index: None, .. }));
+
+        let cmd = parse(
+            r#"{"command":"add_plugin","plugin":{"plugin_type":"eq","parameters":{}},"index":1}"#,
+        );
+        assert!(matches!(cmd, Command::AddPlugin { index: Some(1), .. }));
+
+        let cmd = parse(r#"{"command":"remove_plugin","index":0}"#);
+        assert!(matches!(cmd, Command::RemovePlugin { index } if index == 0));
+
+        let cmd = parse(r#"{"command":"update_plugin","index":0,"parameters":{"gain_db":3.0}}"#);
+        assert!(matches!(cmd, Command::UpdatePlugin { index, .. } if index == 0));
+
+        let cmd = parse(r#"{"command":"reorder_plugins","order":[1,0]}"#);
+        assert!(matches!(cmd, Command::ReorderPlugins { order } if order == vec![1, 0]));
+
+        assert!(matches!(
+            parse(r#"{"command":"driver_status"}"#),
+            Command::DriverStatus
+        ));
+        assert!(matches!(
+            parse(r#"{"command":"hal_status"}"#),
+            Command::DriverStatus
+        ));
+        assert!(matches!(
+            parse(r#"{"command":"shutdown"}"#),
+            Command::Shutdown
+        ));
+
+        let cmd = parse(r#"{"command":"set_encryption","enabled":true}"#);
+        assert!(matches!(cmd, Command::SetEncryption { enabled: true }));
+
+        assert!(matches!(
+            parse(r#"{"command":"encryption_status"}"#),
+            Command::EncryptionStatus
+        ));
+        assert!(matches!(
+            parse(r#"{"command":"rotate_encryption_key"}"#),
+            Command::RotateEncryptionKey
+        ));
+
+        let cmd = parse(r#"{"command":"set_sample_rate","rate":48000}"#);
+        assert!(matches!(cmd, Command::SetSampleRate { rate } if rate == 48_000));
+
+        let cmd = parse(r#"{"command":"set_buffer_frames","frames":512}"#);
+        assert!(matches!(cmd, Command::SetBufferFrames { frames } if frames == 512));
+
+        assert!(matches!(
+            parse(r#"{"command":"get_driver_config"}"#),
+            Command::GetDriverConfig
+        ));
+        assert!(matches!(
+            parse(r#"{"command":"get_hal_config"}"#),
+            Command::GetDriverConfig
+        ));
+    }
+
+    #[test]
+    fn command_name_matches_parsed_variant() {
+        let cases: Vec<(&str, &str)> = vec![
+            (r#"{"command":"status"}"#, "status"),
+            (r#"{"command":"get_snapshot"}"#, "get_snapshot"),
+            (r#"{"command":"snapshot"}"#, "get_snapshot"),
+            (r#"{"command":"dump_state"}"#, "dump_state"),
+            (r#"{"command":"load","path":"x"}"#, "load"),
+            (r#"{"command":"play"}"#, "play"),
+            (r#"{"command":"pause"}"#, "pause"),
+            (r#"{"command":"stop"}"#, "stop"),
+            (r#"{"command":"seek","position":0.0}"#, "seek"),
+            (r#"{"command":"set_volume","volume":1.0}"#, "set_volume"),
+            (r#"{"command":"list_devices"}"#, "list_devices"),
+            (r#"{"command":"set_device","device":"x"}"#, "set_device"),
+            (r#"{"command":"load_plugins","plugins":[]}"#, "load_plugins"),
+            (
+                r#"{"command":"load_plugin_artifact","artifact":{}}"#,
+                "load_plugin_artifact",
+            ),
+            (
+                r#"{"command":"set_input_channels","channels":2}"#,
+                "set_input_channels",
+            ),
+            (
+                r#"{"command":"set_output_channels","channels":2}"#,
+                "set_output_channels",
+            ),
+            (
+                r#"{"command":"set_pipeline_channels","input_channels":2}"#,
+                "set_pipeline_channels",
+            ),
+            (r#"{"command":"get_loudness"}"#, "get_loudness"),
+            (r#"{"command":"get_metering"}"#, "get_metering"),
+            (r#"{"command":"get_plugins"}"#, "get_plugins"),
+            (
+                r#"{"command":"get_available_plugins"}"#,
+                "get_available_plugins",
+            ),
+            (
+                r#"{"command":"add_plugin","plugin":{"plugin_type":"eq","parameters":{}}}"#,
+                "add_plugin",
+            ),
+            (r#"{"command":"remove_plugin","index":0}"#, "remove_plugin"),
+            (
+                r#"{"command":"update_plugin","index":0,"parameters":{}}"#,
+                "update_plugin",
+            ),
+            (
+                r#"{"command":"reorder_plugins","order":[]}"#,
+                "reorder_plugins",
+            ),
+            (r#"{"command":"driver_status"}"#, "driver_status"),
+            (r#"{"command":"hal_status"}"#, "driver_status"),
+            (r#"{"command":"shutdown"}"#, "shutdown"),
+            (
+                r#"{"command":"set_encryption","enabled":false}"#,
+                "set_encryption",
+            ),
+            (r#"{"command":"encryption_status"}"#, "encryption_status"),
+            (
+                r#"{"command":"rotate_encryption_key"}"#,
+                "rotate_encryption_key",
+            ),
+            (
+                r#"{"command":"set_sample_rate","rate":48000}"#,
+                "set_sample_rate",
+            ),
+            (
+                r#"{"command":"set_buffer_frames","frames":512}"#,
+                "set_buffer_frames",
+            ),
+            (r#"{"command":"get_driver_config"}"#, "get_driver_config"),
+            (r#"{"command":"get_hal_config"}"#, "get_driver_config"),
+        ];
+        for (json, expected) in cases {
+            let cmd = parse(json);
+            assert_eq!(cmd.name(), expected, "{json}");
+        }
+    }
+
+    #[test]
+    fn handle_status_returns_expected_fields() {
+        let resp = run_command(Command::Status);
+        assert!(resp.success);
+        let data = resp.data.expect("status data");
+        assert!(data.get("state").is_some());
+        assert!(data.get("volume").is_some());
+        assert!(data.get("selected_device").is_some());
+        assert!(data.get("input_channels").is_some());
+        assert!(data.get("output_channels").is_some());
+        assert!(data.get("playback_output_device").is_some());
+    }
+
+    #[test]
+    fn handle_get_snapshot_returns_expected_fields() {
+        let resp = run_command(Command::GetSnapshot);
+        assert!(resp.success);
+        let data = resp.data.expect("snapshot data");
+        assert_eq!(data["schema_version"], 1);
+        assert!(data.get("desired").is_some());
+        assert!(data.get("observed").is_some());
+        assert!(data.get("diagnostics").is_some());
+        assert!(data["diagnostics"].get("health").is_some());
+        assert!(data["diagnostics"]["faults"].is_array());
+    }
+
+    #[test]
+    fn handle_dump_state_returns_snapshot_and_plugins() {
+        let resp = run_command(Command::DumpState);
+        assert!(resp.success);
+        let data = resp.data.expect("dump_state data");
+        assert!(data.get("snapshot").is_some());
+        assert!(data["snapshot"]["schema_version"].is_u64());
+        assert!(data.get("plugins").is_some());
+        assert!(data["plugins"].is_array());
+    }
+
+    #[test]
+    fn handle_get_plugins_returns_plugins_array() {
+        let resp = run_command(Command::GetPlugins);
+        assert!(resp.success);
+        let data = resp.data.expect("get_plugins data");
+        assert!(data["plugins"].is_array());
+    }
+
+    #[test]
+    fn handle_get_available_plugins_returns_plugins_array() {
+        let resp = run_command(Command::GetAvailablePlugins);
+        assert!(resp.success);
+        let data = resp.data.expect("get_available_plugins data");
+        let plugins = data["plugins"].as_array().expect("plugins array");
+        assert!(!plugins.is_empty());
+        assert!(plugins[0].get("type").is_some());
+        assert!(plugins[0].get("default_parameters").is_some());
+    }
+
+    #[test]
+    fn handle_driver_status_returns_driver_info() {
+        let resp = run_command(Command::DriverStatus);
+        assert!(resp.success);
+        let data = resp.data.expect("driver_status data");
+        assert!(data.get("platform_supported").is_some());
+        assert!(data.get("driver_installed").is_some());
+        assert!(data.get("sample_rate").is_some());
+        assert!(data.get("channel_count").is_some());
+        assert!(data.get("buffer_frames").is_some());
+        assert!(data.get("driver_name").is_some());
+        assert!(data.get("ready").is_some());
+    }
+
+    #[test]
+    fn handle_get_driver_config_returns_config() {
+        let resp = run_command(Command::GetDriverConfig);
+        assert!(resp.success);
+        let data = resp.data.expect("get_driver_config data");
+        assert!(data.get("sample_rate").is_some());
+        assert!(data.get("buffer_frames").is_some());
+        assert!(data.get("channel_count").is_some());
+        assert!(data.get("driver_installed").is_some());
+        assert!(data.get("platform_supported").is_some());
+    }
+
+    #[test]
+    fn handle_get_loudness_returns_valid_response() {
+        let resp = run_command(Command::GetLoudness);
+        let value = response_value(&resp);
+        assert!(value.get("success").is_some());
+        if resp.success {
+            assert!(value["data"].get("momentary").is_some());
+        } else {
+            assert!(value.get("error").is_some());
+        }
+    }
+
+    #[test]
+    fn handle_get_metering_returns_metering() {
+        let resp = run_command(Command::GetMetering);
+        assert!(resp.success);
+        let data = resp.data.expect("metering data");
+        assert!(data.get("input").is_some());
+        assert!(data.get("output").is_some());
+        assert!(data.get("sources").is_some());
+        assert!(data["sources"].get("input").is_some());
+        assert!(data["sources"].get("output").is_some());
+    }
+
+    #[test]
+    fn handle_list_devices_returns_valid_response() {
+        let resp = run_command(Command::ListDevices);
+        let value = response_value(&resp);
+        assert!(value.get("success").is_some());
+        if resp.success {
+            assert!(value["data"]["devices"].is_array());
+        } else {
+            assert!(value.get("error").is_some());
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn handle_set_volume_succeeds() {
+        let resp = run_command(Command::SetVolume { volume: 0.75 });
+        assert!(resp.success, "{:?}", resp.error);
+    }
+
+    #[test]
+    #[serial]
+    fn handle_set_input_channels_succeeds() {
+        let resp = run_command(Command::SetInputChannels { channels: 4 });
+        assert!(resp.success, "{:?}", resp.error);
+    }
+
+    #[test]
+    #[serial]
+    fn handle_set_output_channels_succeeds() {
+        let resp = run_command(Command::SetOutputChannels { channels: 6 });
+        assert!(resp.success, "{:?}", resp.error);
+    }
+
+    #[test]
+    #[serial]
+    fn handle_set_pipeline_channels_succeeds() {
+        let resp = run_command(Command::SetPipelineChannels {
+            input_channels: Some(4),
+            output_channels: Some(6),
+        });
+        assert!(resp.success, "{:?}", resp.error);
+    }
+
+    /// Switch to the lab fake driver for the duration of `f`, then restore
+    /// the previous `SOTF_SYSTEMWIDE_DRIVER` value.
+    ///
+    /// # Safety
+    ///
+    /// Mutates process environment. Safe here because the caller tests are
+    /// marked `#[serial]` and no other thread reads this daemon-specific
+    /// override concurrently.
+    fn with_lab_driver<T>(f: impl FnOnce() -> T) -> T {
+        let prev = std::env::var("SOTF_SYSTEMWIDE_DRIVER").ok();
+        unsafe {
+            std::env::set_var("SOTF_SYSTEMWIDE_DRIVER", "lab");
+        }
+        let result = f();
+        match prev {
+            Some(v) => unsafe { std::env::set_var("SOTF_SYSTEMWIDE_DRIVER", v) },
+            None => unsafe { std::env::remove_var("SOTF_SYSTEMWIDE_DRIVER") },
+        }
+        result
+    }
+
+    #[test]
+    #[serial]
+    fn handle_set_sample_rate_succeeds() {
+        // The default NullDriver rejects config changes; use the lab fake
+        // driver so this test does not require a real HAL installation.
+        let resp = with_lab_driver(|| run_command(Command::SetSampleRate { rate: 48_000 }));
+        assert!(resp.success, "{:?}", resp.error);
+        let data = resp.data.expect("sample_rate data");
+        assert_eq!(data["sample_rate"], 48_000);
+    }
+
+    #[test]
+    #[serial]
+    fn handle_set_buffer_frames_succeeds() {
+        let resp = with_lab_driver(|| run_command(Command::SetBufferFrames { frames: 512 }));
+        assert!(resp.success, "{:?}", resp.error);
+        let data = resp.data.expect("buffer_frames data");
+        assert_eq!(data["buffer_frames"], 512);
+    }
+
+    #[test]
+    #[serial]
+    fn handle_set_encryption_succeeds() {
+        let resp = run_command(Command::SetEncryption { enabled: true });
+        assert!(resp.success, "{:?}", resp.error);
+        let data = resp.data.expect("encryption data");
+        assert!(data.get("enabled").is_some());
+        assert!(data.get("fingerprint").is_some());
+    }
+
+    #[test]
+    #[serial]
+    fn handle_load_plugins_empty_succeeds() {
+        let resp = run_command(Command::LoadPlugins {
+            plugins: vec![],
+            input_channels: 2,
+            output_channels: 2,
+        });
+        assert!(resp.success, "{:?}", resp.error);
+    }
+
+    #[test]
+    fn handle_shutdown_returns_ok_and_stops_daemon() {
+        let daemon = AudioDaemon::new();
+        let resp = daemon
+            .runtime
+            .block_on(daemon.handle_command(Command::Shutdown));
+        assert!(resp.success);
+        assert!(!*daemon.running.lock());
     }
 }

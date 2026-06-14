@@ -373,3 +373,269 @@ impl SourceConnectionConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn all_configs() -> Vec<SourceConnectionConfig> {
+        vec![
+            SourceConnectionConfig::Subsonic {
+                url: "https://".to_string(),
+                username: String::new(),
+                password: String::new(),
+                legacy_auth: false,
+            },
+            SourceConnectionConfig::Mpd {
+                host: "localhost".to_string(),
+                port: 6600,
+                auth_mode: MpdClientAuthMode::default(),
+                password: None,
+                httpd_port: 6601,
+            },
+            SourceConnectionConfig::Dlna {
+                location_url: None,
+                friendly_name: None,
+            },
+            SourceConnectionConfig::Peer {
+                host: String::new(),
+                port: default_sotf_api_port(),
+                accepted_fingerprint: None,
+                auth_token: None,
+            },
+            SourceConnectionConfig::Tidal {
+                access_token: String::new(),
+                quality: default_tidal_quality(),
+                country_code: default_country_code(),
+            },
+            SourceConnectionConfig::Spotify {
+                username: String::new(),
+                password: String::new(),
+                quality: default_spotify_quality(),
+            },
+            SourceConnectionConfig::IcyRadio {
+                url: String::new(),
+                name: String::new(),
+            },
+        ]
+    }
+
+    fn source_keys() -> Vec<&'static str> {
+        vec![
+            "subsonic", "mpd", "dlna", "peer", "tidal", "spotify", "icy_radio",
+        ]
+    }
+
+    fn test_value(config: &SourceConnectionConfig, index: usize) -> &'static str {
+        match config {
+            SourceConnectionConfig::Subsonic { .. } => match index {
+                0 => "https://example.com",
+                1 => "user",
+                2 => "secret123",
+                3 => "true",
+                _ => "",
+            },
+            SourceConnectionConfig::Mpd { .. } => match index {
+                0 => "192.168.1.1",
+                1 => "6601",
+                2 => "Password",
+                3 => "hunter2",
+                4 => "6602",
+                _ => "",
+            },
+            SourceConnectionConfig::Dlna { .. } => match index {
+                0 => "http://dlna.local",
+                1 => "My DLNA",
+                _ => "",
+            },
+            SourceConnectionConfig::Peer { .. } => match index {
+                0 => "peer.local",
+                1 => "8733",
+                2 => "ab:cd",
+                3 => "api-token",
+                _ => "",
+            },
+            SourceConnectionConfig::Tidal { .. } => match index {
+                0 => "tidal-token",
+                1 => "HI_RES",
+                2 => "FR",
+                _ => "",
+            },
+            SourceConnectionConfig::Spotify { .. } => match index {
+                0 => "spotify-user",
+                1 => "spotify-pass",
+                2 => "VeryHigh",
+                _ => "",
+            },
+            SourceConnectionConfig::IcyRadio { .. } => match index {
+                0 => "http://stream.local",
+                1 => "Station",
+                _ => "",
+            },
+        }
+    }
+
+    fn expected_display(config: &SourceConnectionConfig, index: usize, set_value: &str) -> String {
+        let masked = |s: &str| "*".repeat(s.len().min(8));
+
+        match config {
+            SourceConnectionConfig::Subsonic { .. } => match index {
+                0 | 1 => set_value.to_string(),
+                2 => masked(set_value),
+                3 => set_value.to_string(),
+                _ => String::new(),
+            },
+            SourceConnectionConfig::Mpd { .. } => match index {
+                0 => set_value.trim().to_string(),
+                1 => set_value.trim().to_string(),
+                2 => set_value.to_string(),
+                3 => masked(set_value),
+                4 => set_value.trim().to_string(),
+                _ => String::new(),
+            },
+            SourceConnectionConfig::Dlna { .. } => match index {
+                0 | 1 => set_value.to_string(),
+                _ => String::new(),
+            },
+            SourceConnectionConfig::Peer { .. } => match index {
+                0 => set_value.trim().to_string(),
+                1 => set_value.trim().to_string(),
+                2 => set_value.trim().to_string(),
+                3 => masked(set_value.trim()),
+                _ => String::new(),
+            },
+            SourceConnectionConfig::Tidal { .. } => match index {
+                0 => masked(set_value),
+                1 | 2 => set_value.to_string(),
+                _ => String::new(),
+            },
+            SourceConnectionConfig::Spotify { .. } => match index {
+                0 => set_value.to_string(),
+                1 => masked(set_value),
+                2 => set_value.to_string(),
+                _ => String::new(),
+            },
+            SourceConnectionConfig::IcyRadio { .. } => match index {
+                0 | 1 => set_value.to_string(),
+                _ => String::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn default_for_type_matches_source_type_keys() {
+        for key in source_keys() {
+            let config = SourceConnectionConfig::default_for_type(key);
+            assert_eq!(
+                config.source_type_key(),
+                key,
+                "default_for_type({key:?}) returned wrong variant"
+            );
+            assert!(!config.field_names().is_empty(), "{key:?} has no fields");
+        }
+    }
+
+    #[test]
+    fn default_for_type_unknown_falls_back_to_mpd() {
+        let config = SourceConnectionConfig::default_for_type("unknown");
+        assert_eq!(config.source_type_key(), "mpd");
+        assert_eq!(config.type_name(), "MPD");
+    }
+
+    #[test]
+    fn field_names_len_matches_field_value_and_set_field_value() {
+        for config in all_configs() {
+            let names = config.field_names();
+            let len = names.len();
+            assert!(len > 0, "{} has no field names", config.source_type_key());
+
+            // field_value must return a value for every valid index.
+            for i in 0..len {
+                let _ = config.field_value(i);
+            }
+
+            // set_field_value must accept every valid index without panicking.
+            let mut clone = config.clone();
+            for i in 0..len {
+                clone.set_field_value(i, "test");
+            }
+        }
+    }
+
+    #[test]
+    fn field_value_round_trips_after_set() {
+        for config in all_configs() {
+            let len = config.field_names().len();
+            for i in 0..len {
+                let mut clone = config.clone();
+                let value = test_value(&config, i);
+                clone.set_field_value(i, value);
+                let expected = expected_display(&config, i, value);
+                let actual = clone.field_value(i);
+                assert_eq!(
+                    actual, expected,
+                    "{} field {i} round-trip failed (set {value:?}, expected {expected:?})",
+                    config.source_type_key()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn empty_string_clears_optional_fields() {
+        let mut mpd = SourceConnectionConfig::Mpd {
+            host: "localhost".to_string(),
+            port: 6600,
+            auth_mode: MpdClientAuthMode::None,
+            password: Some("secret".to_string()),
+            httpd_port: 6601,
+        };
+        mpd.set_field_value(3, "");
+        assert_eq!(mpd.field_value(3), String::new());
+
+        let mut dlna = SourceConnectionConfig::Dlna {
+            location_url: Some("url".to_string()),
+            friendly_name: Some("name".to_string()),
+        };
+        dlna.set_field_value(0, "");
+        dlna.set_field_value(1, "");
+        assert_eq!(dlna.field_value(0), String::new());
+        assert_eq!(dlna.field_value(1), String::new());
+
+        let mut peer = SourceConnectionConfig::Peer {
+            host: String::new(),
+            port: 8732,
+            accepted_fingerprint: Some("fp".to_string()),
+            auth_token: Some("token".to_string()),
+        };
+        peer.set_field_value(2, "");
+        peer.set_field_value(3, "");
+        assert_eq!(peer.field_value(2), String::new());
+        assert_eq!(peer.field_value(3), String::new());
+    }
+
+    #[test]
+    fn serde_json_round_trips() {
+        for config in all_configs() {
+            let json = serde_json::to_string(&config).expect("serialize");
+            let decoded: SourceConnectionConfig = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(decoded, config, "{} JSON round-trip failed", config.source_type_key());
+        }
+    }
+
+    #[test]
+    fn invalid_field_indices_are_handled_gracefully() {
+        for config in all_configs() {
+            let len = config.field_names().len();
+            let out_of_range = len + 10;
+
+            // Reading returns an empty string.
+            assert_eq!(config.field_value(out_of_range), String::new());
+
+            // Writing is a no-op and does not panic.
+            let mut clone = config.clone();
+            clone.set_field_value(out_of_range, "should-not-change-anything");
+            assert_eq!(clone, config);
+        }
+    }
+}

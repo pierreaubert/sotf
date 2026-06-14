@@ -37,3 +37,7 @@ libc = { workspace = true }
 driver-hal = { workspace = true, optional = true }
 objc2-core-audio = { workspace = true, features = ["std", "objc2-core-audio-types", "AudioHardware"], default-features = false }
 objc2-core-foundation = { workspace = true, features = ["std", "CFString"], default-features = false }
+
+[dev-dependencies]
+serial_test = { workspace = true }
+tempfile = { workspace = true }

@@ -5,12 +5,14 @@ use super::pcm_stream_format::build_wav_stream_header_f32;
 use super::pcm_stream_handle::PcmStreamHandle;
 use super::pcm_stream_server::PcmStreamServer;
 use super::pcm_stream_server_config::PcmStreamServerConfig;
+use std::collections::HashSet;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
+use std::sync::Mutex;
 use std::thread::{self};
 use std::time::{Duration, Instant};
 
-const SERVER_ATTEMPTS: usize = 5;
+const SERVER_ATTEMPTS: usize = 10;
 
 fn start_test_server() -> Option<PcmStreamServer> {
     match PcmStreamServer::start(PcmStreamServerConfig {
@@ -78,19 +80,64 @@ where
     bytes
 }
 
+fn parse_content_length(headers: &[u8]) -> Option<usize> {
+    let lower = headers.to_ascii_lowercase();
+    let key = b"content-length:";
+    let pos = lower.windows(key.len()).position(|w| w == key)?;
+    let rest = &headers[pos + key.len()..];
+    let line_end = rest.iter().position(|&b| b == b'\r')?;
+    std::str::from_utf8(&rest[..line_end])
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+fn read_response(stream: &mut TcpStream, timeout: Duration) -> Vec<u8> {
+    let mut bytes = read_until(stream, timeout, |b| {
+        b.windows(4).any(|w| w == b"\r\n\r\n")
+    });
+    let Some(header_end) = bytes
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|p| p + 4)
+    else {
+        return bytes;
+    };
+    let Some(content_length) = parse_content_length(&bytes[..header_end]) else {
+        return bytes;
+    };
+    let total = header_end + content_length;
+    if bytes.len() < total {
+        let missing = total - bytes.len();
+        let body = read_until(stream, timeout, |b| b.len() >= missing);
+        bytes.extend(body.iter().take(missing));
+    }
+    bytes
+}
+
 fn request_response(addr: std::net::SocketAddr, request: &[u8], expected_status: &str) -> Vec<u8> {
     let mut last_response = Vec::new();
-    for _ in 0..SERVER_ATTEMPTS {
-        let mut stream = TcpStream::connect(addr).unwrap();
-        stream.write_all(request).unwrap();
-        let bytes = read_until(&mut stream, Duration::from_secs(2), |bytes| {
-            contains_bytes(bytes, expected_status.as_bytes())
-        });
+    for attempt in 0..SERVER_ATTEMPTS {
+        if attempt > 0 {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let mut stream = match TcpStream::connect(addr) {
+            Ok(s) => s,
+            Err(e) => {
+                last_response = format!("connect failed: {e}").into_bytes();
+                continue;
+            }
+        };
+        if let Err(e) = stream.write_all(request) {
+            last_response = format!("write failed: {e}").into_bytes();
+            continue;
+        }
+        let bytes = read_response(&mut stream, Duration::from_secs(2));
         if String::from_utf8_lossy(&bytes).starts_with(expected_status) {
             return bytes;
         }
         last_response = bytes;
-        thread::sleep(Duration::from_millis(20));
     }
 
     panic!(
@@ -152,7 +199,7 @@ fn wav_stream_header_is_float_pcm() {
 
 #[test]
 fn status_endpoint_reports_server_state() {
-    let Some(mut server) = start_test_server() else {
+    let Some(server) = start_test_server() else {
         return;
     };
 
@@ -167,12 +214,13 @@ fn status_endpoint_reports_server_state() {
     assert!(response.contains("\"sample_rate\":48000"));
     assert!(response.contains("\"channels\":2"));
 
-    server.shutdown();
+    // `PcmStreamServer` implements `Drop`, so the server is shut down even if
+    // an assertion above panics.
 }
 
 #[test]
 fn wav_stream_receives_header_and_published_audio() {
-    let Some(mut server) = start_test_server() else {
+    let Some(server) = start_test_server() else {
         return;
     };
     let handle = server.handle();
@@ -201,12 +249,13 @@ fn wav_stream_receives_header_and_published_audio() {
     assert!(contains_bytes(&bytes, &sample_bytes));
     assert!(handle.stats().published_chunks >= 1);
 
-    server.shutdown();
+    // `PcmStreamServer` implements `Drop`, so the server is shut down even if
+    // an assertion above panics.
 }
 
 #[test]
 fn publish_rejects_invalid_shape() {
-    let Some(mut server) = start_test_server() else {
+    let Some(server) = start_test_server() else {
         return;
     };
     let handle = server.handle();
@@ -214,5 +263,39 @@ fn publish_rejects_invalid_shape() {
     assert!(!handle.publish(&[0.0, 1.0, 2.0], 2, 2, 48_000));
     assert_eq!(handle.stats().dropped_chunks, 1);
 
-    server.shutdown();
+    // `PcmStreamServer` implements `Drop`, so the server is shut down even if
+    // an assertion above panics.
+}
+
+#[test]
+fn parallel_server_starts_use_distinct_ports() {
+    const N: usize = 16;
+    let addrs = Mutex::new(Vec::with_capacity(N));
+
+    thread::scope(|s| {
+        for _ in 0..N {
+            s.spawn(|| {
+                let Some(server) = start_test_server() else {
+                    return;
+                };
+                addrs.lock().unwrap().push(server.local_addr());
+                // The server is dropped here when the scope ends, releasing its
+                // port. Each `local_addr()` was captured before the drop.
+            });
+        }
+    });
+
+    let addrs = addrs.into_inner().unwrap();
+    assert_eq!(
+        addrs.len(),
+        N,
+        "expected {N} servers to start, got {}: {addrs:?}",
+        addrs.len()
+    );
+    let unique: HashSet<_> = addrs.iter().copied().collect();
+    assert_eq!(
+        unique.len(),
+        N,
+        "servers reused a port: {addrs:?}",
+    );
 }
