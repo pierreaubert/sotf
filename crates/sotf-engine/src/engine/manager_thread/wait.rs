@@ -2,7 +2,7 @@ use super::super::{DecoderThread, ProcessingThread};
 use super::consts::SPIN_MS_SLEEP_MANAGER;
 use super::error::ConfigError;
 
-pub(super) fn wait_for_processing_ack(
+pub(in crate::engine::manager_thread) fn wait_for_processing_ack(
     processing: &ProcessingThread,
     timeout: std::time::Duration,
 ) -> Result<(), String> {
@@ -26,7 +26,7 @@ pub(super) fn wait_for_processing_ack(
     ))
 }
 
-pub(super) fn wait_for_plugin_chain_update(
+pub(in crate::engine::manager_thread) fn wait_for_plugin_chain_update(
     processing: &ProcessingThread,
     timeout: std::time::Duration,
 ) -> Result<(usize, usize), ConfigError> {
@@ -57,7 +57,7 @@ pub(super) fn wait_for_plugin_chain_update(
     })
 }
 
-pub(super) fn wait_for_decoder_ack(
+pub(in crate::engine::manager_thread) fn wait_for_decoder_ack(
     decoder: &DecoderThread,
     timeout: std::time::Duration,
 ) -> Result<(), String> {

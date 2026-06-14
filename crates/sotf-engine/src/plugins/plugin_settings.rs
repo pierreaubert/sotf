@@ -1455,67 +1455,14 @@ impl PluginSettings {
     }
 
     pub fn to_plugin_config(&self, sample_rate: f64) -> PluginConfig {
+        let wire_type = self.plugin_type().wire_name();
+        if let Some(config) = super::plugin_config_converter::PluginConfigConverterRegistry::global()
+            .convert(wire_type, self, sample_rate)
+        {
+            return config;
+        }
+
         match self {
-            Self::Crossfeed {
-                mode,
-                preset,
-                enabled,
-                mix,
-                bauer_fcut_hz,
-                bauer_feed_db,
-                meier_level,
-                mb_low_freq_hz,
-                mb_mid_high_freq_hz,
-                mb_low_feed_db,
-                mb_mid_feed_db,
-                mb_high_feed_db,
-                itd_delay_ms,
-                autogain_enabled,
-                autogain_target_lufs,
-                autogain_max_gain_db,
-                autogain_smoothing_ms,
-            } => PluginConfig::new(
-                "crossfeed",
-                json!({
-                    "mode": mode,
-                    "preset": preset,
-                    "enabled": enabled,
-                    "mix": mix,
-                    "bauer_fcut_hz": bauer_fcut_hz,
-                    "bauer_feed_db": bauer_feed_db,
-                    "meier_level": meier_level,
-                    "mb_low_freq_hz": mb_low_freq_hz,
-                    "mb_mid_high_freq_hz": mb_mid_high_freq_hz,
-                    "mb_low_feed_db": mb_low_feed_db,
-                    "mb_mid_feed_db": mb_mid_feed_db,
-                    "mb_high_feed_db": mb_high_feed_db,
-                    "itd_delay_ms": itd_delay_ms,
-                    "autogain_enabled": autogain_enabled,
-                    "autogain_target_lufs": autogain_target_lufs,
-                    "autogain_max_gain_db": autogain_max_gain_db,
-                    "autogain_smoothing_ms": autogain_smoothing_ms,
-                }),
-            ),
-            Self::Delay {
-                delay_ms,
-                feedback,
-                mix,
-                lfo_rate_hz,
-                lfo_depth_ms,
-                allpass_feedback,
-                allpass_coeff,
-            } => PluginConfig::new(
-                "delay",
-                json!({
-                    "delay_ms": delay_ms,
-                    "feedback": feedback,
-                    "mix": mix,
-                    "lfo_rate_hz": lfo_rate_hz,
-                    "lfo_depth_ms": lfo_depth_ms,
-                    "allpass_feedback": allpass_feedback,
-                    "allpass_coeff": allpass_coeff,
-                }),
-            ),
             Self::Aec {
                 echo_tail_ms,
                 step_size,
@@ -1762,121 +1709,6 @@ impl PluginSettings {
                     "delta_listen": delta_listen,
                     "adaptive_threshold": adaptive_threshold,
                     "adaptive_offset_db": adaptive_offset_db,
-                }),
-            ),
-            Self::EQ {
-                channels,
-                filters,
-                channel_filters,
-                per_channel_mode,
-                max_filters: _,
-                tdf2,
-                topology: _,
-            } => {
-                // Helper to convert filters with mute/solo logic.
-                // Standard biquads emit the legacy four-field JSON. Warped /
-                // Kautz filters add `topology`, optional `lambda`, and the
-                // Kautz section list so the plugin's `BiquadFilterConfig`
-                // deserializer reconstructs the right runtime topology.
-                let convert_filters = |filters: &[EQFilter]| -> Vec<serde_json::Value> {
-                    use sotf_plugins::plugin_eq::EqFilterTopology;
-
-                    let any_soloed = filters.iter().any(|f| f.solo);
-                    filters
-                        .iter()
-                        .filter(|f| {
-                            if f.muted {
-                                return false;
-                            }
-                            if any_soloed && !f.solo {
-                                return false;
-                            }
-                            true
-                        })
-                        .map(|f| {
-                            let bq = f.to_biquad(sample_rate);
-                            let mut value = json!({
-                                "filter_type": bq.filter_type.long_name().to_lowercase(),
-                                "freq": bq.freq,
-                                "q": bq.q,
-                                "db_gain": bq.db_gain,
-                            });
-                            if !matches!(f.topology, EqFilterTopology::Biquad) {
-                                let obj = value.as_object_mut().expect("json! object");
-                                match f.topology {
-                                    EqFilterTopology::Biquad => unreachable!(),
-                                    EqFilterTopology::WarpedBiquad => {
-                                        obj.insert("topology".into(), json!("warped_biquad"));
-                                        if let Some(lambda) = f.lambda {
-                                            obj.insert("lambda".into(), json!(lambda));
-                                        }
-                                    }
-                                    EqFilterTopology::KautzFilter => {
-                                        obj.insert("topology".into(), json!("kautz_filter"));
-                                        if !f.kautz_sections.is_empty() {
-                                            obj.insert(
-                                                "kautz_sections".into(),
-                                                serde_json::to_value(&f.kautz_sections)
-                                                    .unwrap_or(serde_json::Value::Null),
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            value
-                        })
-                        .collect()
-                };
-
-                if *per_channel_mode {
-                    // Per-channel mode: send channel_filters to the plugin
-                    if let Some(ch_filters) = channel_filters {
-                        let channel_filter_configs: Vec<Vec<serde_json::Value>> =
-                            ch_filters.iter().map(|f| convert_filters(f)).collect();
-
-                        PluginConfig::new(
-                            "eq",
-                            json!({
-                                "channels": channels,
-                                "channel_filters": channel_filter_configs,
-                                "tdf2": tdf2,
-                            }),
-                        )
-                    } else {
-                        // Fallback to global filters if channel_filters is None
-                        let filter_configs = convert_filters(filters);
-                        PluginConfig::new(
-                            "eq",
-                            json!({
-                                "channels": channels,
-                                "filters": filter_configs,
-                                "tdf2": tdf2,
-                            }),
-                        )
-                    }
-                } else {
-                    // Global mode: all channels share same EQ
-                    let filter_configs = convert_filters(filters);
-                    PluginConfig::new(
-                        "eq",
-                        json!({
-                            "channels": channels,
-                            "filters": filter_configs,
-                            "tdf2": tdf2,
-                        }),
-                    )
-                }
-            }
-            Self::Gain {
-                channels,
-                gain_db,
-                smoothing_ms,
-            } => PluginConfig::new(
-                "gain",
-                json!({
-                    "channels": channels,
-                    "gain_db": gain_db,
-                    "smoothing_ms": smoothing_ms,
                 }),
             ),
             Self::Upmixer {
@@ -2717,6 +2549,10 @@ impl PluginSettings {
                     "solo_early": solo_early,
                     "solo_late": solo_late,
                 }),
+            ),
+            _ => unreachable!(
+                "plugin type {} should be handled by the converter registry",
+                wire_type
             ),
         }
     }

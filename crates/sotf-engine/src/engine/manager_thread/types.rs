@@ -1,6 +1,6 @@
 /// Priority for config updates
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum ConfigUpdatePriority {
+pub(in crate::engine::manager_thread) enum ConfigUpdatePriority {
     FileWatcher = 1,  // Lowest priority - automatic file watching
     SignalReload = 2, // Medium priority - SIGHUP signal
     UserDirect = 3,   // Highest priority - direct API/command

@@ -1,46 +1,12 @@
 #![allow(clippy::field_reassign_with_default)]
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use serde_json::json;
 use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-fn find_device(
-    name_part: &str,
-    input: bool,
-) -> Option<(cpal::Device, cpal::SupportedStreamConfig)> {
-    let host = cpal::default_host();
-    let devices = if input {
-        host.input_devices().ok()?
-    } else {
-        host.output_devices().ok()?
-    };
-    for device in devices {
-        if let Ok(desc) = device.description() {
-            let name = desc.name().to_string();
-            if name.contains(name_part) {
-                if input {
-                    if let Ok(configs) = device.supported_input_configs() {
-                        for config in configs {
-                            if config.channels() >= 2 {
-                                return Some((device, config.with_max_sample_rate()));
-                            }
-                        }
-                    }
-                } else {
-                    if let Ok(configs) = device.supported_output_configs() {
-                        for config in configs {
-                            if config.channels() >= 2 {
-                                return Some((device, config.with_max_sample_rate()));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
-}
+mod common;
+use common::find_device;
 
 #[test]
 #[ignore = "Hardware loopback test — requires a virtual audio device with no other audio routing in flight; run manually with --ignored"]

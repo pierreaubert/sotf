@@ -95,6 +95,54 @@ impl PluginType {
         }
     }
 
+    /// Wire / serde-friendly identifier used in `PluginConfig.plugin_type` and the factory.
+    pub fn wire_name(&self) -> &'static str {
+        match self {
+            Self::EQ => "eq",
+            Self::Gain => "gain",
+            Self::Upmixer => "upmixer",
+            Self::AAE => "aae",
+            Self::Compressor => "compressor",
+            Self::Limiter => "limiter",
+            Self::Gate => "gate",
+            Self::Expander => "expander",
+            Self::MultibandCompressor => "multiband_compressor",
+            Self::MultibandExpander => "multiband_expander",
+            Self::LoudnessCompensation => "loudness_compensation",
+            Self::FletcherMunson => "fletcher_munson",
+            Self::BinauralDecoder => "binaural_decoder",
+            Self::Convolution => "convolution",
+            Self::LoudnessMonitor => "loudness_monitor",
+            Self::SpectrumAnalyzer => "spectrum_analyzer",
+            Self::ChannelMuteSolo => "channel_mute_solo",
+            Self::Matrix => "matrix",
+            Self::XTC => "xtc",
+            Self::Denoiser => "denoiser",
+            Self::Declick => "declick",
+            Self::HissReducer => "hiss_reducer",
+            Self::SpeechDenoiser => "speech_denoiser",
+            Self::Pnd => "pnd",
+            Self::ABCompare => "ab_compare",
+            Self::BandSplit => "band_split",
+            Self::BandMerge => "band_merge",
+            Self::Downmix => "downmix",
+            Self::MonoToStereo => "mono_to_stereo",
+            Self::Crossfeed => "crossfeed",
+            Self::Delay => "delay",
+            Self::Aec => "aec",
+            Self::Beamformer => "beamformer",
+            Self::AmbisonicsDecoder => "ambisonics_decoder",
+            Self::StereoImager => "stereo_imager",
+            Self::DeEsser => "de_esser",
+            Self::TransientShaper => "transient_shaper",
+            Self::Saturation => "saturation",
+            Self::DynamicEq => "dynamic_eq",
+            Self::FirDesigner => "fir_designer",
+            Self::LinearPhaseEq => "linear_phase_eq",
+            Self::SpectralCompressor => "spectral_compressor",
+        }
+    }
+
     pub fn description(&self) -> &str {
         match self {
             Self::EQ => "Parametric Equalizer IIR",

@@ -1,68 +1,13 @@
 #![allow(clippy::field_reassign_with_default)]
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde_json::json;
 use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-// Helper to find device (copied from previous test to avoid external dependencies on test modules)
-/// Preferred sample rates in order of priority.
-const PREFERRED_SAMPLE_RATES: [u32; 4] = [48000, 44100, 96000, 192000];
-
-/// Pick a `SupportedStreamConfig` at a sensible sample rate (prefer 48kHz).
-/// Falls back to the minimum supported rate if none of the preferred rates are in range.
-fn pick_config_at_preferred_rate(
-    config: cpal::SupportedStreamConfigRange,
-) -> cpal::SupportedStreamConfig {
-    let min = config.min_sample_rate();
-    let max = config.max_sample_rate();
-    for &rate in &PREFERRED_SAMPLE_RATES {
-        if rate >= min && rate <= max {
-            return config.with_sample_rate(rate);
-        }
-    }
-    config.with_sample_rate(min)
-}
-
-fn find_device(
-    name_part: &str,
-    input: bool,
-) -> Option<(cpal::Device, cpal::SupportedStreamConfig)> {
-    let host = cpal::default_host();
-    let devices = if input {
-        host.input_devices().ok()?
-    } else {
-        host.output_devices().ok()?
-    };
-
-    for device in devices {
-        if let Ok(desc) = device.description() {
-            let name = desc.name().to_string();
-            if name.contains(name_part) {
-                let configs: Vec<cpal::SupportedStreamConfigRange> = if input {
-                    device
-                        .supported_input_configs()
-                        .ok()
-                        .map(|c| c.collect())
-                        .unwrap_or_default()
-                } else {
-                    device
-                        .supported_output_configs()
-                        .ok()
-                        .map(|c| c.collect())
-                        .unwrap_or_default()
-                };
-                for config in configs {
-                    if config.channels() >= 2 {
-                        return Some((device, pick_config_at_preferred_rate(config)));
-                    }
-                }
-            }
-        }
-    }
-    None
-}
+mod common;
+use common::find_device;
 
 /// Send a short 1kHz tone through the loopback device and check that we capture
 /// non-silent audio. Returns `true` if audio flows through the device pair.

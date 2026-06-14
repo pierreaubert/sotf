@@ -7,6 +7,11 @@
 //! when no virtual device is available (e.g. in sandboxed CI environments).
 
 #![allow(dead_code)] // Test utilities may not be used in all test files
+#![allow(unused_imports)]
+#![allow(unused_macros)]
+
+mod find_device_impl;
+pub use find_device_impl::find_device;
 
 use hound::{WavSpec, WavWriter};
 use sotf_audio::engine::EngineConfig;

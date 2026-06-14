@@ -448,6 +448,7 @@ sotf_plugins::serde_param_default! {
 pub mod chain;
 pub mod eq;
 pub mod matrix;
+pub mod plugin_config_converter;
 pub mod utility;
 
 mod default;

@@ -1,6 +1,6 @@
 /// Metrics for config update operations
 #[derive(Default, Debug, Clone)]
-pub(super) struct ConfigUpdateMetrics {
+pub(in crate::engine::manager_thread) struct ConfigUpdateMetrics {
     /// Total number of update attempts
     pub(super) total_updates: u64,
     /// Number of successful updates
@@ -38,7 +38,7 @@ impl ConfigUpdateMetrics {
         self.failed_updates += 1;
     }
 
-    pub(super) fn record_rejection(&mut self) {
+    pub(in crate::engine::manager_thread) fn record_rejection(&mut self) {
         self.rejected_updates += 1;
     }
 

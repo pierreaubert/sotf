@@ -28,15 +28,15 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 
 /// Config update queue manager
-pub(super) struct ConfigUpdateQueue {
-    pub(super) queue: VecDeque<PendingConfigUpdate>,
-    pub(super) update_in_progress: bool,
-    pub(super) last_working_config: Option<Vec<super::super::PluginConfig>>,
-    pub(super) metrics: ConfigUpdateMetrics,
+pub(in crate::engine::manager_thread) struct ConfigUpdateQueue {
+    pub(in crate::engine::manager_thread) queue: VecDeque<PendingConfigUpdate>,
+    pub(in crate::engine::manager_thread) update_in_progress: bool,
+    pub(in crate::engine::manager_thread) last_working_config: Option<Vec<super::super::PluginConfig>>,
+    pub(in crate::engine::manager_thread) metrics: ConfigUpdateMetrics,
 }
 
 impl ConfigUpdateQueue {
-    pub(super) fn new() -> Self {
+    pub(in crate::engine::manager_thread) fn new() -> Self {
         Self {
             queue: VecDeque::new(),
             update_in_progress: false,
@@ -52,7 +52,7 @@ impl ConfigUpdateQueue {
 
     /// Add a config update to the queue with priority-based management
     /// Returns true if added, false if rejected
-    pub(super) fn enqueue(
+    pub(in crate::engine::manager_thread) fn enqueue(
         &mut self,
         plugins: Vec<super::super::PluginConfig>,
         priority: ConfigUpdatePriority,
@@ -139,7 +139,7 @@ impl ConfigUpdateQueue {
     }
 
     /// Check if currently processing an update
-    pub(super) fn is_processing(&self) -> bool {
+    pub(in crate::engine::manager_thread) fn is_processing(&self) -> bool {
         self.update_in_progress
     }
 

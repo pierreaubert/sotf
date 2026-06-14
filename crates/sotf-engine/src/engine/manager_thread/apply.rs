@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 /// Apply a plugin update with proper synchronization and rollback on failure.
 /// Waits for confirmation from processing thread and updates playback thread if needed.
-pub(super) fn apply_plugin_update(
+pub(in crate::engine::manager_thread) fn apply_plugin_update(
     processing: &mut ProcessingThread,
 
     playback: &mut PlaybackThread,
@@ -194,7 +194,7 @@ pub(super) fn apply_plugin_update(
 /// Build a DawHost from a graph config and convert to a linear `Vec<PluginConfig>` isn't
 /// possible for graph topologies. Instead, build the host directly and send it to the
 /// processing thread. This reuses the same host-swap mechanism as `apply_plugin_update`.
-pub(super) fn apply_plugin_graph_update(
+pub(in crate::engine::manager_thread) fn apply_plugin_graph_update(
     processing: &mut ProcessingThread,
     playback: &mut PlaybackThread,
     state: &Arc<ArcSwap<AudioEngineState>>,

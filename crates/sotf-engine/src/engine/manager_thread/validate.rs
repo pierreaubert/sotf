@@ -1,7 +1,7 @@
 use super::error::ConfigError;
 
 /// Validate plugin configurations before applying
-pub(super) fn validate_plugin_configs(
+pub(in crate::engine::manager_thread) fn validate_plugin_configs(
     configs: &[super::super::PluginConfig],
 ) -> Result<(), ConfigError> {
     log::debug!(

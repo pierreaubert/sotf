@@ -96,6 +96,7 @@ pub(super) fn run_decoder_thread(
                             ))
                             .ok();
                     } else {
+                        event_tx.send(ThreadEvent::SeekComplete).ok();
                         response_tx.send(DecoderResponse::Ok).ok();
                     }
                 }
@@ -251,6 +252,7 @@ pub(super) fn run_decoder_thread(
                                         ))
                                         .ok();
                                 } else {
+                                    event_tx.send(ThreadEvent::SeekComplete).ok();
                                     response_tx.send(DecoderResponse::Ok).ok();
                                 }
                             }
@@ -360,6 +362,7 @@ pub(super) fn run_decoder_thread(
                                     ))
                                     .ok();
                             } else {
+                                event_tx.send(ThreadEvent::SeekComplete).ok();
                                 response_tx.send(DecoderResponse::Ok).ok();
                             }
                         }

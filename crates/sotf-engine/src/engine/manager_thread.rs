@@ -7,6 +7,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
 mod apply;
+mod commands;
 mod config_error;
 mod config_update_metrics;
 mod config_update_queue;
