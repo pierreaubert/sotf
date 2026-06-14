@@ -19,6 +19,7 @@ mod misc;
 mod state_helpers;
 #[cfg(test)]
 mod tests;
+mod thread_event_visitor;
 mod types;
 mod validate;
 mod wait;

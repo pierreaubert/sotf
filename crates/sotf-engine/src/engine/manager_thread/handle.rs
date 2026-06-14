@@ -1,175 +1,22 @@
 use super::super::{
-    AudioEngineState, ConfigEvent, DecoderCommand, DecoderThread, EngineConfig, ManagerCommand,
-    ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread, ProcessingCommand,
-    ProcessingThread, ThreadEvent,
+    AudioEngineState, ConfigEvent, DecoderThread, EngineConfig, ManagerCommand, ManagerResponse,
+    PlaybackState, PlaybackThread, ProcessingThread, ThreadEvent,
 };
-use super::apply::apply_plugin_graph_update;
 use super::commands;
 use super::commands::ManagerCommandHandler;
 use super::config_error::load_config_file;
 use super::config_update_queue::ConfigUpdateQueue;
-use super::consts::DECODER_COMMAND_TIMEOUT_MS;
-use super::consts::PROCESSING_COMMAND_TIMEOUT_MS;
 use super::types::ConfigUpdatePriority;
-use super::validate::validate_gapless_source_compatible;
 use super::validate::validate_plugin_configs;
-use super::wait::wait_for_decoder_ack;
-use super::wait::wait_for_processing_ack;
 use arc_swap::ArcSwap;
 use std::sync::Arc;
 
-/// Handle a thread event
-pub(super) fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>>) {
-    match event {
-        ThreadEvent::DecoderEndOfStream => {
-            log::debug!("[Manager Thread] Decoder end of stream (waiting for playback drain)");
-            // Don't set Stopped here - wait for PlaybackDrained so remaining
-            // audio in the ring buffer gets played to hardware first.
-        }
-        ThreadEvent::DecoderGaplessTransition(source) => {
-            log::info!(
-                "[Manager Thread] Gapless transition to: {}",
-                source.display_name()
-            );
-            let mut new_state = (**state.load()).clone();
-            new_state.current_file = source.as_path().map(|p| p.to_path_buf());
-            new_state.current_source = Some(source);
-            new_state.position = 0.0;
-            // playback_state stays Playing — no interruption
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::PlaybackChannelsChanged(channels) => {
-            let mut new_state = (**state.load()).clone();
-            new_state.num_channels = channels;
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::PlaybackOutputDeviceChanged(device_name) => {
-            let mut new_state = (**state.load()).clone();
-            new_state.playback_output_device = Some(device_name);
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::PlaybackOutputAccessChanged(status) => {
-            let mut new_state = (**state.load()).clone();
-            new_state.output_access_status = status;
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::PlaybackStats {
-            callback_count,
-            buffer_fill_percent,
-            stream_error_count,
-            frames_received,
-            frames_written,
-            frames_dropped,
-            effective_sample_rate,
-        } => {
-            let mut new_state = (**state.load()).clone();
-            new_state.playback_callback_count = callback_count;
-            new_state.playback_buffer_fill_percent = buffer_fill_percent;
-            new_state.playback_stream_error_count = stream_error_count;
-            new_state.playback_frames_received = frames_received;
-            new_state.playback_frames_written = frames_written;
-            new_state.playback_frames_dropped = frames_dropped;
-            new_state.playback_effective_sample_rate = effective_sample_rate;
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::PlaybackDrained => {
-            log::debug!("[Manager Thread] Playback drained - all audio played");
-            let mut new_state = (**state.load()).clone();
-            new_state.playback_state = PlaybackState::Stopped;
-            new_state.last_error = None;
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::DecoderError(err) => {
-            log::debug!("[Manager Thread] Decoder error: {}", err);
-            let mut new_state = (**state.load()).clone();
-            new_state.playback_state = PlaybackState::Stopped;
-            new_state.last_error = Some(err);
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::StreamMetadataChanged(stream_metadata) => {
-            let mut new_state = (**state.load()).clone();
-            new_state.stream_metadata = stream_metadata;
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::PlaybackUnderrun(underruns) => {
-            let mut new_state = (**state.load()).clone();
-            new_state.underruns = underruns;
-            if underruns == 1 || (underruns <= 1000 && underruns.is_multiple_of(100)) {
-                log::warn!("[Manager Thread] Playback underrun count: {}", underruns);
-            } else if underruns.is_multiple_of(10000) {
-                log::debug!("[Manager Thread] Playback underrun count: {}", underruns);
-            }
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::ProcessingError(err) => {
-            log::debug!("[Manager Thread] Processing error: {}", err);
-            let mut new_state = (**state.load()).clone();
-            new_state.playback_state = PlaybackState::Stopped;
-            new_state.last_error = Some(err);
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::ProcessingWarning(warning) => {
-            log::warn!("[Manager Thread] Processing warning: {}", warning);
-            let mut new_state = (**state.load()).clone();
-            new_state.last_error = Some(warning);
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::ThreadPanic(thread_name) => {
-            log::debug!("[Manager Thread] Thread panicked: {}", thread_name);
-            let mut new_state = (**state.load()).clone();
-            new_state.playback_state = PlaybackState::Stopped;
-            new_state.last_error = Some(format!("Thread panicked: {}", thread_name));
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::PositionUpdate(position) => {
-            let current = state.load();
-            if current.playback_state != PlaybackState::Stopped && !current.seeking {
-                let mut new_state = (**current).clone();
-                // Compensate for plugin chain latency: the decoder position
-                // is ahead of actual playback by the total pipeline latency.
-                // When processing is bypassed, audio passes through without
-                // plugin processing, so effective latency is 0.
-                let latency_sec = if new_state.sample_rate > 0
-                    && new_state.latency_compensation_enabled
-                    && !new_state.processing_bypassed
-                {
-                    new_state.plugin_latency_samples as f64 / new_state.sample_rate as f64
-                } else {
-                    0.0
-                };
-                new_state.position = (position - latency_sec).max(0.0);
-                state.store(Arc::new(new_state));
-            }
-        }
-        ThreadEvent::PluginLatencyUpdate(latency_samples) => {
-            let mut new_state = (**state.load()).clone();
-            let old_latency = new_state.plugin_latency_samples;
-            new_state.plugin_latency_samples = latency_samples;
-            // Adjust displayed position to compensate for the latency delta,
-            // preventing a visible position jump when plugins change mid-stream.
-            if new_state.sample_rate > 0
-                && new_state.latency_compensation_enabled
-                && old_latency != latency_samples
-            {
-                let delta_sec =
-                    (latency_samples as f64 - old_latency as f64) / new_state.sample_rate as f64;
-                new_state.position = (new_state.position - delta_sec).max(0.0);
-            }
-            state.store(Arc::new(new_state));
-        }
-        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-        ThreadEvent::IsolatedExternalPluginWorkerStatuses(reports) => {
-            let mut new_state = (**state.load()).clone();
-            new_state.isolated_external_plugin_worker_statuses = reports;
-            state.store(Arc::new(new_state));
-        }
-        ThreadEvent::SeekComplete => {
-            log::debug!("[Manager Thread] Seek complete");
-            let mut new_state = (**state.load()).clone();
-            new_state.seeking = false;
-            state.store(Arc::new(new_state));
-        }
-    }
+/// Handle a thread event by dispatching it through the thread-event visitor.
+pub(super) fn handle_thread_event(
+    event: ThreadEvent,
+    state: &Arc<ArcSwap<AudioEngineState>>,
+) {
+    super::thread_event_visitor::update_state_with_event(event, state);
 }
 
 #[cfg(test)]
@@ -452,341 +299,57 @@ pub(super) fn handle_command(
     config: &EngineConfig,
     config_queue: &mut ConfigUpdateQueue,
 ) -> ManagerResponse {
+    let mut ctx = commands::ManagerContext {
+        decoder,
+        processing,
+        playback,
+        state,
+        config,
+        config_queue,
+    };
+
     match command {
-        ManagerCommand::Play(source) => {
-            let mut ctx = commands::ManagerContext {
-                decoder,
-                processing,
-                playback,
-                state,
-                config,
-                config_queue,
-            };
-            commands::PlayCommand(source).execute(&mut ctx)
-        }
+        ManagerCommand::Play(source) => commands::PlayCommand(source).execute(&mut ctx),
         ManagerCommand::PlayAt(source, position) => {
-            let mut ctx = commands::ManagerContext {
-                decoder,
-                processing,
-                playback,
-                state,
-                config,
-                config_queue,
-            };
             commands::PlayAtCommand(source, position).execute(&mut ctx)
         }
-        ManagerCommand::Pause => {
-            let mut ctx = commands::ManagerContext {
-                decoder,
-                processing,
-                playback,
-                state,
-                config,
-                config_queue,
-            };
-            commands::PauseCommand.execute(&mut ctx)
-        }
-        ManagerCommand::Resume => {
-            let mut ctx = commands::ManagerContext {
-                decoder,
-                processing,
-                playback,
-                state,
-                config,
-                config_queue,
-            };
-            commands::ResumeCommand.execute(&mut ctx)
-        }
-        ManagerCommand::Stop => {
-            let mut ctx = commands::ManagerContext {
-                decoder,
-                processing,
-                playback,
-                state,
-                config,
-                config_queue,
-            };
-            commands::StopCommand.execute(&mut ctx)
-        }
-        ManagerCommand::Seek(position) => {
-            let mut ctx = commands::ManagerContext {
-                decoder,
-                processing,
-                playback,
-                state,
-                config,
-                config_queue,
-            };
-            commands::SeekCommand(position).execute(&mut ctx)
-        }
-        ManagerCommand::QueueNext(source) => {
-            log::debug!("[Manager Thread] QueueNext: {}", source.display_name());
-
-            if let Err(e) = validate_gapless_source_compatible(&source, config.input_channels) {
-                return ManagerResponse::Error(e);
-            }
-
-            if let Err(e) = decoder.send_command(DecoderCommand::QueueNext(source)) {
-                return ManagerResponse::Error(e);
-            }
-
-            match wait_for_decoder_ack(
-                decoder,
-                std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
-            ) {
-                Ok(()) => ManagerResponse::Ok,
-                Err(e) => ManagerResponse::Error(e),
-            }
-        }
-        ManagerCommand::CancelNext => {
-            log::debug!("[Manager Thread] CancelNext");
-
-            if let Err(e) = decoder.send_command(DecoderCommand::CancelNext) {
-                return ManagerResponse::Error(e);
-            }
-
-            match wait_for_decoder_ack(
-                decoder,
-                std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
-            ) {
-                Ok(()) => ManagerResponse::Ok,
-                Err(e) => ManagerResponse::Error(e),
-            }
-        }
-        ManagerCommand::SetVolume(volume) => {
-            log::debug!("[Manager Thread] Set volume: {:.2}", volume);
-
-            {
-                let mut new_state = (**state.load()).clone();
-                new_state.volume = volume;
-                state.store(Arc::new(new_state));
-            }
-
-            // Best-effort: the playback thread may have already exited after
-            // end-of-stream drain. The volume is stored in state and will be
-            // applied when the next engine starts.
-            if let Err(e) = playback.send_command(PlaybackCommand::SetVolume(volume)) {
-                log::debug!(
-                    "[Manager Thread] SetVolume send failed (playback ended): {}",
-                    e
-                );
-            }
-
-            ManagerResponse::Ok
-        }
-        ManagerCommand::Mute(muted) => {
-            log::debug!("[Manager Thread] Mute: {}", muted);
-
-            {
-                let mut new_state = (**state.load()).clone();
-                new_state.muted = muted;
-                state.store(Arc::new(new_state));
-            }
-
-            if let Err(e) = playback.send_command(PlaybackCommand::Mute(muted)) {
-                log::debug!("[Manager Thread] Mute send failed (playback ended): {}", e);
-            }
-
-            ManagerResponse::Ok
-        }
+        ManagerCommand::Pause => commands::PauseCommand.execute(&mut ctx),
+        ManagerCommand::Resume => commands::ResumeCommand.execute(&mut ctx),
+        ManagerCommand::Stop => commands::StopCommand.execute(&mut ctx),
+        ManagerCommand::Seek(position) => commands::SeekCommand(position).execute(&mut ctx),
+        ManagerCommand::QueueNext(source) => commands::QueueNextCommand(source).execute(&mut ctx),
+        ManagerCommand::CancelNext => commands::CancelNextCommand.execute(&mut ctx),
+        ManagerCommand::SetVolume(volume) => commands::SetVolumeCommand(volume).execute(&mut ctx),
+        ManagerCommand::Mute(muted) => commands::MuteCommand(muted).execute(&mut ctx),
         ManagerCommand::UpdatePluginChain(plugins) => {
-            let mut ctx = commands::ManagerContext {
-                decoder,
-                processing,
-                playback,
-                state,
-                config,
-                config_queue,
-            };
             commands::UpdatePluginChainCommand(plugins).execute(&mut ctx)
         }
         ManagerCommand::UpdatePluginGraph(graph_config) => {
-            log::debug!(
-                "[Manager Thread] Update plugin graph ({} nodes, {} edges)",
-                graph_config.nodes.len(),
-                graph_config.edges.len()
-            );
-
-            match apply_plugin_graph_update(
-                processing,
-                playback,
-                state,
-                graph_config,
-                config.output_sample_rate,
-                config.input_channels,
-                config.oversampling_policy,
-            ) {
-                Ok(()) => {
-                    let mut new_state = (**state.load()).clone();
-                    new_state.last_error = None;
-                    state.store(Arc::new(new_state));
-                    ManagerResponse::Ok
-                }
-                Err(e) => {
-                    let message = e.to_string();
-                    let mut new_state = (**state.load()).clone();
-                    new_state.last_error = Some(message.clone());
-                    state.store(Arc::new(new_state));
-                    ManagerResponse::Error(message)
-                }
-            }
+            commands::UpdatePluginGraphCommand(graph_config).execute(&mut ctx)
         }
         ManagerCommand::SetPluginParameter {
             plugin_index,
             param_id,
             value,
-        } => {
-            log::info!(
-                "[Manager Thread] Set plugin {} parameter {} = {}",
-                plugin_index,
-                param_id,
-                value
-            );
-
-            if let Err(e) = processing.send_command(ProcessingCommand::SetParameter {
-                plugin_index,
-                param_id,
-                value,
-            }) {
-                return ManagerResponse::Error(e);
-            }
-
-            match wait_for_processing_ack(
-                processing,
-                std::time::Duration::from_millis(PROCESSING_COMMAND_TIMEOUT_MS),
-            ) {
-                Ok(()) => ManagerResponse::Ok,
-                Err(e) => ManagerResponse::Error(e),
-            }
+        } => commands::SetPluginParameterCommand {
+            plugin_index,
+            param_id,
+            value,
         }
+        .execute(&mut ctx),
         ManagerCommand::BypassProcessing(bypass) => {
-            log::debug!("[Manager Thread] Bypass processing: {}", bypass);
-
-            if let Err(e) = processing.send_command(ProcessingCommand::Bypass(bypass)) {
-                return ManagerResponse::Error(e);
-            }
-
-            match wait_for_processing_ack(
-                processing,
-                std::time::Duration::from_millis(PROCESSING_COMMAND_TIMEOUT_MS),
-            ) {
-                Ok(()) => {
-                    let mut new_state = (**state.load()).clone();
-                    new_state.processing_bypassed = bypass;
-                    state.store(Arc::new(new_state));
-                    ManagerResponse::Ok
-                }
-                Err(e) => ManagerResponse::Error(e),
-            }
+            commands::BypassProcessingCommand(bypass).execute(&mut ctx)
         }
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         ManagerCommand::MaintainIsolatedExternalPluginWorkers => {
-            log::trace!("[Manager Thread] Manual external plugin worker status poll requested");
-
-            if let Err(e) =
-                processing.send_command(ProcessingCommand::PollIsolatedExternalPluginWorkers)
-            {
-                return ManagerResponse::Error(e);
-            }
-            ManagerResponse::Ok
+            commands::MaintainIsolatedExternalPluginWorkersCommand.execute(&mut ctx)
         }
-        ManagerCommand::GetState => ManagerResponse::State((**state.load()).clone()),
-        ManagerCommand::GetPosition => ManagerResponse::Position(state.load().position),
+        ManagerCommand::GetState => commands::GetStateCommand.execute(&mut ctx),
+        ManagerCommand::GetPosition => commands::GetPositionCommand.execute(&mut ctx),
         ManagerCommand::GetPluginData(index) => {
-            if let Err(e) = processing.send_command(ProcessingCommand::GetPluginData(index)) {
-                return ManagerResponse::Error(e);
-            }
-
-            // Wait for response from processing thread with timeout
-            // GetPluginData is time-sensitive for UI, so we wait briefly
-            let start = std::time::Instant::now();
-            let timeout = std::time::Duration::from_millis(100);
-
-            loop {
-                if let Some(response) = processing.try_recv_response() {
-                    match response {
-                        super::super::ProcessingResponse::PluginData(data) => {
-                            return ManagerResponse::PluginData(data);
-                        }
-                        super::super::ProcessingResponse::Error(e) => {
-                            return ManagerResponse::Error(e);
-                        }
-                        _ => {
-                            // Ignore unexpected responses (e.g. from previous timed out requests)
-                            continue;
-                        }
-                    }
-                }
-
-                if start.elapsed() > timeout {
-                    return ManagerResponse::Error("Timeout waiting for plugin data".to_string());
-                }
-
-                std::thread::yield_now();
-            }
+            commands::GetPluginDataCommand(index).execute(&mut ctx)
         }
-        ManagerCommand::ReloadConfig => {
-            log::debug!("[Manager Thread] Reload config requested");
-
-            // If we have a config path, reload from file
-            if let Some(config_path) = config.config_path.as_ref() {
-                log::debug!("[Manager Thread] Reloading config from: {:?}", config_path);
-
-                // Load and parse config file
-                match load_config_file(config_path) {
-                    Ok(new_config) => {
-                        // Validate config before queuing
-                        match validate_plugin_configs(&new_config.plugins) {
-                            Ok(_) => {
-                                log::debug!(
-                                    "[Manager Thread] Config validated, enqueuing plugin update"
-                                );
-                                // Use SignalReload priority for explicit reloads
-                                config_queue
-                                    .enqueue(new_config.plugins, ConfigUpdatePriority::UserDirect);
-                                ManagerResponse::Ok
-                            }
-                            Err(e) => {
-                                log::warn!("[Manager Thread] Config validation failed: {}", e);
-                                config_queue.metrics.record_rejection();
-                                ManagerResponse::Error(format!("Config validation failed: {}", e))
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("[Manager Thread] Config parse failed: {}", e);
-                        ManagerResponse::Error(format!("Config parse failed: {}", e))
-                    }
-                }
-            } else {
-                log::debug!("[Manager Thread] No config path set, cannot reload config");
-                ManagerResponse::Error("No config path configured".to_string())
-            }
-        }
-        ManagerCommand::Shutdown => {
-            log::debug!("[Manager Thread] Shutdown requested");
-
-            {
-                let mut new_state = (**state.load()).clone();
-                new_state.playback_state = PlaybackState::Stopped;
-                state.store(Arc::new(new_state));
-            }
-
-            // Signal threads to shutdown
-            if let Err(e) = decoder.send_command(DecoderCommand::Shutdown) {
-                log::trace!("[Manager Thread] Decoder shutdown command dropped: {}", e);
-            }
-            if let Err(e) = processing.send_command(ProcessingCommand::Shutdown) {
-                log::trace!(
-                    "[Manager Thread] Processing shutdown command dropped: {}",
-                    e
-                );
-            }
-            if let Err(e) = playback.send_command(PlaybackCommand::Shutdown) {
-                log::trace!("[Manager Thread] Playback shutdown command dropped: {}", e);
-            }
-
-            ManagerResponse::Shutdown
-        }
+        ManagerCommand::ReloadConfig => commands::ReloadConfigCommand.execute(&mut ctx),
+        ManagerCommand::Shutdown => commands::ShutdownCommand.execute(&mut ctx),
     }
 }
