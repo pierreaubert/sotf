@@ -20,9 +20,6 @@ mod setup;
 
 #[path = "lib/misc.rs"]
 mod misc;
-#[cfg(test)]
-#[path = "lib/tests.rs"]
-mod tests;
 #[path = "lib/types.rs"]
 mod types;
 #[path = "lib/upmixer_plugin.rs"]

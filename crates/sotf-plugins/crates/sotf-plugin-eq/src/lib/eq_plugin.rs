@@ -18,8 +18,11 @@ use math_audio_iir_fir::{Biquad, BiquadCoefficients, SvfFilter, SvfFilterType};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData};
 use sotf_host::oversampling::Oversampler;
+use sotf_host::parametric_plugin::{
+    ParametricPlugin, ParameterSchema, ParameterSet, ParametricPluginAdapter,
+};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{InPlacePlugin, Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use std::any::Any;
 use std::sync::Arc;
@@ -521,6 +524,80 @@ impl EqPlugin {
                 }
             }
         }
+    }
+
+    /// Wrap this EQ plugin in a `Box<dyn Plugin>` using the parametric adapter.
+    pub fn into_boxed_plugin(self) -> Box<dyn Plugin> {
+        Box::new(ParametricPluginAdapter::new(self))
+    }
+}
+
+impl ParametricPlugin for EqPlugin {
+    fn plugin_info(&self) -> PluginInfo {
+        InPlacePlugin::info(self)
+    }
+
+    fn input_channels(&self) -> usize {
+        self.num_channels
+    }
+
+    fn output_channels(&self) -> usize {
+        self.num_channels
+    }
+
+    fn parameter_schema(&self) -> ParameterSchema {
+        InPlacePlugin::parameters(self)
+    }
+
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        for param in &self.cached_parameters {
+            if let Some(value) = InPlacePlugin::get_parameter(self, &param.id) {
+                values.insert(param.id.clone(), value);
+            }
+        }
+        values
+    }
+
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            InPlacePlugin::set_parameter(self, id, value)?;
+        }
+        Ok(())
+    }
+
+    fn as_any(&self) -> Option<&dyn Any> {
+        Some(self)
+    }
+
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
+        Some(self)
+    }
+
+    fn plugin_initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        InPlacePlugin::initialize(self, sample_rate)
+    }
+
+    fn plugin_reset(&mut self) {
+        InPlacePlugin::reset(self)
+    }
+
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        output.copy_from_slice(input);
+        InPlacePlugin::process_in_place(self, output, context)
+    }
+
+    fn latency_samples(&self) -> usize {
+        InPlacePlugin::latency_samples(self)
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        InPlacePlugin::get_data(self)
     }
 }
 

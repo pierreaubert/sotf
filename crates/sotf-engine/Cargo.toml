@@ -93,7 +93,7 @@ rand = { workspace = true }
 criterion = { workspace = true }
 serial_test = { workspace = true }
 sofa-reader = { workspace = true }
-sotf-testkit = { workspace = true }
+sotf-testkit = { workspace = true, features = ["engine"] }
 sotf-test = { workspace = true }
 
 [[bench]]

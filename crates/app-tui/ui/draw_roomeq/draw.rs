@@ -39,7 +39,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
     let tab_titles: Vec<Line> = steps
         .iter()
         .map(|st| {
-            let style = if *st == s.step {
+            let style = if *st == s.model.step {
                 Style::default()
                     .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD)
@@ -57,7 +57,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .border_style(Style::default().fg(step_tab_border_color))
                 .title("Room EQ"),
         )
-        .select(s.step.index())
+        .select(s.model.step.index())
         .highlight_style(Style::default().fg(app.theme.accent_primary));
     f.render_widget(tabs, outer[0]);
 
@@ -74,7 +74,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         height: outer[1].height.saturating_sub(2),
     };
 
-    match s.step {
+    match s.model.step {
         RoomEqStep::LoadData => {
             let inner = Layout::default()
                 .direction(Direction::Vertical)
@@ -107,9 +107,9 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     .style(Style::default().fg(app.theme.accent_error))
                     .block(Block::default().borders(Borders::ALL).title("Error"));
                 f.render_widget(err_para, inner[1]);
-            } else if !s.channel_measurements.is_empty() {
+            } else if !s.model.channel_measurements.is_empty() {
                 let status =
-                    Paragraph::new(format!(" {} channels loaded", s.channel_measurements.len()))
+                    Paragraph::new(format!(" {} channels loaded", s.model.channel_measurements.len()))
                         .style(Style::default().fg(app.theme.accent_success))
                         .block(Block::default().borders(Borders::ALL).title("Status"));
                 f.render_widget(status, inner[1]);
@@ -121,8 +121,9 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             }
 
             // Loaded channels list
-            if !s.channel_measurements.is_empty() {
+            if !s.model.channel_measurements.is_empty() {
                 let rows: Vec<Row> = s
+                    .model
                     .channel_measurements
                     .iter()
                     .map(|m| {
@@ -188,7 +189,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
         RoomEqStep::Process => {
             use sotf_audio_player::room_eq_types::RoomEqWizardMode;
-            let mode = app.room_eq.wizard_mode;
+            let mode = app.room_eq.model.wizard_mode;
             let inner = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -248,7 +249,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         }
 
         RoomEqStep::Configure => {
-            let c = &s.config;
+            let c = &s.model.optimizer_config;
             let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
 
             let rows: Vec<(Option<usize>, &str, String)> = vec![
@@ -334,10 +335,11 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ),
             ];
 
-            let channels_info = if s.channel_measurements.is_empty() {
+            let channels_info = if s.model.channel_measurements.is_empty() {
                 "No data".to_string()
             } else {
                 let names: Vec<&str> = s
+                    .model
                     .channel_measurements
                     .iter()
                     .map(|m| m.channel_name.as_str())
@@ -391,7 +393,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             }
 
             // Add slope recommendation line
-            if let Some((slope, rec_min, rec_max)) = s.compute_lr_slope() {
+            if let Some((slope, rec_min, rec_max)) = s.model.compute_lr_slope() {
                 lines.push(Line::from(Span::styled(
                     format!(
                         "  Slope: {:.2} dB/oct  |  Rec: [{:.2}, {:.2}] dB/oct",
@@ -430,7 +432,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(content);
 
-            let (status_text, status_style) = match &s.opt_status {
+            let (status_text, status_style) = match &s.model.optimization_status {
                 OptimizationStatus::Idle => (
                     "Ready to optimize. Press Enter to start.".to_string(),
                     Style::default().fg(app.theme.fg_secondary),
@@ -439,12 +441,15 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     // Post-processing phases set iteration=0 and max_iterations=0
                     // with a descriptive status message. Show that instead of
                     // the frozen "iter 0/0 | loss: 0.0000".
-                    if s.opt_iteration == 0 && s.opt_max_iter == 0 {
-                        if let Some(msg) = &s.opt_status_message {
-                            (msg.clone(), Style::default().fg(app.theme.accent_primary))
-                        } else if !s.opt_current_speaker.is_empty() {
+                    if s.model.current_iteration == 0 && s.opt_max_iter == 0 {
+                        if !s.model.status_message.is_empty() {
                             (
-                                format!("{}...", s.opt_current_speaker),
+                                s.model.status_message.clone(),
+                                Style::default().fg(app.theme.accent_primary),
+                            )
+                        } else if s.model.current_channel.as_ref().is_some_and(|n| !n.is_empty()) {
+                            (
+                                format!("{}...", s.model.current_channel.as_deref().unwrap_or("")),
                                 Style::default().fg(app.theme.accent_primary),
                             )
                         } else {
@@ -454,16 +459,16 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                             )
                         }
                     } else {
-                        let speaker_info = if !s.opt_current_speaker.is_empty() {
-                            if s.opt_total_speakers > 1 {
+                        let speaker_info = if s.model.current_channel.as_ref().is_some_and(|n| !n.is_empty()) {
+                            if s.opt_total_speakers() > 1 {
                                 format!(
                                     " | {}/{} {}",
-                                    s.opt_total_speakers.min(s.channel_results.len() + 1),
-                                    s.opt_total_speakers,
-                                    s.opt_current_speaker
+                                    s.opt_total_speakers().min(s.model.channel_results.len() + 1),
+                                    s.opt_total_speakers(),
+                                    s.model.current_channel.as_deref().unwrap_or("")
                                 )
                             } else {
-                                format!(" | {}", s.opt_current_speaker)
+                                format!(" | {}", s.model.current_channel.as_deref().unwrap_or(""))
                             }
                         } else {
                             String::new()
@@ -471,20 +476,20 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         (
                             format!(
                                 "Optimizing... iter {}/{} | loss: {:.4}{}",
-                                s.opt_iteration, s.opt_max_iter, s.opt_loss, speaker_info
+                                s.model.current_iteration, s.opt_max_iter, s.model.current_loss, speaker_info
                             ),
                             Style::default().fg(app.theme.accent_primary),
                         )
                     }
                 }
                 OptimizationStatus::Completed => (
-                    format!("Completed! {} channel results", s.channel_results.len()),
+                    format!("Completed! {} channel results", s.model.channel_results.len()),
                     Style::default().fg(app.theme.accent_success),
                 ),
                 OptimizationStatus::Failed => (
                     format!(
                         "Failed: {}",
-                        s.opt_error.as_deref().unwrap_or("unknown error")
+                        s.model.error_message.as_deref().unwrap_or("unknown error")
                     ),
                     Style::default().fg(app.theme.accent_error),
                 ),
@@ -500,7 +505,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(status_para, inner[0]);
 
             // Progress bar
-            let pct = (s.opt_progress * 100.0) as u16;
+            let pct = (s.model.overall_progress * 100.0) as u16;
             let gauge = Gauge::default()
                 .block(Block::default().borders(Borders::ALL).title("Progress"))
                 .gauge_style(Style::default().fg(app.theme.accent_primary))
@@ -512,7 +517,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 let history: Vec<_> = s.loss_history.iter().map(|(i, l)| (*i, *l, None)).collect();
                 draw_loss_chart(f, inner[2], app, &history);
             } else {
-                let chart_hint = match &s.opt_status {
+                let chart_hint = match &s.model.optimization_status {
                     OptimizationStatus::Idle => "Waiting for optimization...",
                     OptimizationStatus::Running => "Waiting for loss data...",
                     _ => "No loss data recorded",
@@ -559,7 +564,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Hint line
             let hint = if s.opt_log_lines.is_empty() {
-                match &s.opt_status {
+                match &s.model.optimization_status {
                     OptimizationStatus::Idle => " Enter=start  BackTab=configure",
                     OptimizationStatus::Running => " Optimization running...",
                     OptimizationStatus::Completed => {
@@ -577,7 +582,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         }
 
         RoomEqStep::Review => {
-            if s.channel_results.is_empty() {
+            if s.model.channel_results.is_empty() {
                 let placeholder =
                     Paragraph::new("No optimization results yet. Go to Optimize step first.")
                         .style(Style::default().fg(app.theme.fg_secondary))
@@ -609,6 +614,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             );
 
             let rows: Vec<Row> = s
+                .model
                 .channel_results
                 .iter()
                 .enumerate()
@@ -648,7 +654,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(ch_table, inner[0]);
 
             // Selected channel filters
-            if let Some(ch) = s.channel_results.get(s.selected_channel) {
+            if let Some(ch) = s.model.channel_results.get(s.selected_channel) {
                 let filt_header = Row::new(vec![
                     Cell::from("#"),
                     Cell::from("Type"),
@@ -702,7 +708,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             // the linear rack or needs graph routing — same heuristic the
             // GPUI app uses to swap the "Apply to Rack" / "Apply as Graph"
             // buttons.
-            let apply_hint = match s.dsp_output.as_ref() {
+            let apply_hint = match s.model.dsp_output.as_ref() {
                 Some(out) => {
                     use sotf_audio_player::room_eq_types::DspChainOutputExt;
                     if out.is_rack_compatible() {
@@ -806,7 +812,7 @@ fn draw_delay_detection_step(f: &mut Frame, content: Rect, app: &App) {
     use sotf_audio_player::room_eq_types::DelayDetectionStatus;
 
     let s = &app.room_eq;
-    let dd = &s.delay_detection;
+    let dd = &s.model.delay_detection;
     let has_results = dd.results.is_some() && matches!(dd.status, DelayDetectionStatus::Complete);
 
     let inner = Layout::default()

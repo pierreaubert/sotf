@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 pub fn poll_room_eq_optimization(app: &mut App) -> bool {
     use sotf_audio_player::room_eq_types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
 
-    if app.room_eq.opt_status != OptimizationStatus::Running {
+    if app.room_eq.model.optimization_status != OptimizationStatus::Running {
         return false;
     }
 
@@ -23,7 +23,7 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         match result {
             Ok(r) => {
                 // Convert autoeq results to TUI ChannelOptResult
-                app.room_eq.channel_results = r
+                app.room_eq.model.channel_results = r
                     .channel_results
                     .iter()
                     .map(|(name, ch)| ChannelOptResult {
@@ -85,13 +85,13 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
                 // Capture the full DSP chain output so the "Apply to
                 // chain" action (rack/graph) can run the same algorithm
                 // the GPUI app uses.
-                app.room_eq.dsp_output = Some(r.to_dsp_chain_output());
-                app.room_eq.opt_status = OptimizationStatus::Completed;
-                app.room_eq.opt_progress = 1.0;
+                app.room_eq.model.dsp_output = Some(r.to_dsp_chain_output());
+                app.room_eq.model.optimization_status = OptimizationStatus::Completed;
+                app.room_eq.model.overall_progress = 1.0;
             }
             Err(e) => {
-                app.room_eq.opt_status = OptimizationStatus::Failed;
-                app.room_eq.opt_error = Some(e);
+                app.room_eq.model.optimization_status = OptimizationStatus::Failed;
+                app.room_eq.model.error_message = Some(e);
             }
         }
         return true;
@@ -100,22 +100,21 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
     if let Ok(mut guard) = progress_slot.lock()
         && let Some(p) = guard.take()
     {
-        app.room_eq.opt_progress = p.overall_progress as f32;
-        app.room_eq.opt_iteration = p.iteration;
+        app.room_eq.model.overall_progress = p.overall_progress as f32;
+        app.room_eq.model.current_iteration = p.iteration;
         app.room_eq.opt_max_iter = p.max_iterations;
-        app.room_eq.opt_loss = p.loss;
+        app.room_eq.model.current_loss = p.loss;
         // Move the owned strings out of the progress slot instead of cloning
         // them; the slot value is consumed here.
-        app.room_eq.opt_current_speaker = p.current_speaker;
-        app.room_eq.opt_total_speakers = p.total_speakers;
-        app.room_eq.opt_status_message = p.message;
+        app.room_eq.model.current_channel = Some(p.current_speaker);
+        app.room_eq.model.status_message = p.message.unwrap_or_default();
         if p.loss > 0.0 {
             // Use running index as X so the chart shows all iterations across all speakers
             let idx = app.room_eq.loss_history.len();
             app.room_eq.loss_history.push((idx, p.loss));
         }
-        if let Some(ref msg) = app.room_eq.opt_status_message {
-            for line in msg.lines() {
+        if !app.room_eq.model.status_message.is_empty() {
+            for line in app.room_eq.model.status_message.lines() {
                 app.room_eq.opt_log_lines.push_back(line.to_string());
             }
             while app.room_eq.opt_log_lines.len() > 300 {
@@ -126,7 +125,7 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         if p.iteration > 0 && p.iteration % 100 == 0 {
             let msg = format!(
                 "[{}] iter {}/{} loss={:.6}",
-                app.room_eq.opt_current_speaker,
+                app.room_eq.model.current_channel.clone().unwrap_or_default(),
                 p.iteration,
                 p.max_iterations,
                 p.loss

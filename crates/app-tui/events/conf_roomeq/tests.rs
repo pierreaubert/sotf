@@ -14,7 +14,7 @@ mod poll_tests {
     #[test]
     fn test_poll_room_eq_optimization_moves_strings_without_cloning() {
         let mut app = App::new(Theme::default(), false);
-        app.room_eq.opt_status = OptimizationStatus::Running;
+        app.room_eq.model.optimization_status = OptimizationStatus::Running;
 
         let progress = RoomOptimizationProgress {
             current_speaker: "Left".to_string(),
@@ -36,16 +36,13 @@ mod poll_tests {
         *slot.lock().unwrap() = Some(progress);
 
         assert!(poll_room_eq_optimization(&mut app));
-        assert_eq!(app.room_eq.opt_progress, 0.1f32);
-        assert_eq!(app.room_eq.opt_current_speaker, "Left");
-        assert_eq!(
-            app.room_eq.opt_status_message.as_deref(),
-            Some("Optimizing Left")
-        );
+        assert_eq!(app.room_eq.model.overall_progress, 0.1f32);
+        assert_eq!(app.room_eq.model.current_channel.clone().unwrap_or_default(), "Left");
+        assert_eq!(app.room_eq.model.status_message.as_str(), "Optimizing Left");
         assert_eq!(
             app.room_eq.opt_log_lines.back().map(String::as_str),
             Some("Optimizing Left")
         );
-        assert_eq!(app.room_eq.opt_iteration, 50);
+        assert_eq!(app.room_eq.model.current_iteration, 50);
     }
 }

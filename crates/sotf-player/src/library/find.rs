@@ -10,18 +10,11 @@ use std::path::{Path, PathBuf};
 /// 3. If only one image file exists in the directory, use it
 /// 4. Check subdirectories named "Artwork" or "Covers" (case-insensitive)
 pub(super) fn find_album_art(dir: &Path) -> Option<PathBuf> {
-    // Strategy 1: Look for common album art filenames in the main directory
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                if let Some(filename) = path.file_name() {
-                    let filename_lower = filename.to_string_lossy().to_lowercase();
-                    if ALBUM_ART_FILENAMES.contains(&filename_lower.as_str()) {
-                        return Some(path);
-                    }
-                }
-            }
+    // Strategy 1: Look for common album art filenames in priority order.
+    for name in ALBUM_ART_FILENAMES {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
         }
     }
 
@@ -84,18 +77,11 @@ pub(super) fn find_album_art(dir: &Path) -> Option<PathBuf> {
 /// Find album art in a subdirectory (used for Artwork/Covers folders)
 /// Uses the same strategies but doesn't recurse further
 pub(super) fn find_album_art_in_subdir(dir: &Path) -> Option<PathBuf> {
-    // Strategy 1: Look for common filenames
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                if let Some(filename) = path.file_name() {
-                    let filename_lower = filename.to_string_lossy().to_lowercase();
-                    if ALBUM_ART_FILENAMES.contains(&filename_lower.as_str()) {
-                        return Some(path);
-                    }
-                }
-            }
+    // Strategy 1: Look for common filenames in priority order.
+    for name in ALBUM_ART_FILENAMES {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
         }
     }
 
@@ -136,38 +122,76 @@ pub(super) fn find_album_art_in_subdir(dir: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Find album art and generate thumbnail for an album based on its tracks
+/// Return the deepest directory that contains every path in `paths`.
+fn common_ancestor(paths: &[&Path]) -> Option<PathBuf> {
+    if paths.is_empty() {
+        return None;
+    }
+
+    let first_components: Vec<_> = paths[0].components().collect();
+    let mut common_len = first_components.len();
+
+    for path in &paths[1..] {
+        let components: Vec<_> = path.components().collect();
+        let mut i = 0;
+        while i < common_len && i < components.len() && first_components[i] == components[i] {
+            i += 1;
+        }
+        common_len = i;
+        if common_len == 0 {
+            return None;
+        }
+    }
+
+    Some(first_components[..common_len].iter().collect())
+}
+
+/// Find album art and generate thumbnail for an album based on its tracks.
+///
+/// The search starts at the deepest directory shared by all tracks, then
+/// walks one level up so that cover art placed at the album root is found
+/// even when tracks live in disc subdirectories (e.g. `CD1/`).
 pub fn find_and_generate_album_thumbnail(album: &mut Album) {
-    // Skip if we already have a thumbnail
-    if album.album_art_thumbnail.is_some() {
+    if album.tracks.is_empty() {
         return;
     }
 
-    // Get the directory from the first track
-    let track_dir = match album.tracks.first() {
-        Some(track) => track.path.parent(),
-        None => return,
+    let track_dirs: Vec<&Path> = album.tracks.iter().filter_map(|t| t.path.parent()).collect();
+    if track_dirs.is_empty() {
+        return;
+    }
+
+    let Some(common_dir) = common_ancestor(&track_dirs) else {
+        return;
     };
 
-    let track_dir = match track_dir {
-        Some(dir) => dir,
-        None => return,
-    };
+    let mut search_dirs = vec![common_dir.clone()];
+    if let Some(parent) = common_dir.parent() {
+        search_dirs.push(parent.to_path_buf());
+    }
 
-    // Find album art in the directory
-    if let Some(art_path) = find_album_art(track_dir) {
-        // Update album art path
-        album.album_art_path = Some(art_path.clone());
+    let mut found_art = None;
+    for dir in &search_dirs {
+        if let Some(art) = find_album_art(dir) {
+            found_art = Some(art);
+            break;
+        }
+    }
 
-        // Generate thumbnail
-        if let Some(thumbnail) = generate_thumbnail(&art_path) {
-            log::debug!(
-                "Generated thumbnail for {} - {} ({} bytes)",
-                album.artist(),
-                album.title,
-                thumbnail.len()
-            );
-            album.album_art_thumbnail = Some(thumbnail);
+    if let Some(art_path) = found_art {
+        let changed = album.album_art_path.as_ref() != Some(&art_path);
+        if changed || album.album_art_thumbnail.is_none() {
+            album.album_art_path = Some(art_path.clone());
+
+            if let Some(thumbnail) = generate_thumbnail(&art_path) {
+                log::debug!(
+                    "Generated thumbnail for {} - {} ({} bytes)",
+                    album.artist(),
+                    album.title,
+                    thumbnail.len()
+                );
+                album.album_art_thumbnail = Some(thumbnail);
+            }
         }
     }
 }

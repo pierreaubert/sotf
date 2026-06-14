@@ -15,22 +15,23 @@ pub(super) static ROOM_OPT_PROGRESS: std::sync::OnceLock<
 > = std::sync::OnceLock::new();
 
 pub(super) fn spawn_room_eq_optimization(app: &mut App) {
-    if app.room_eq.channel_measurements.is_empty() {
-        app.room_eq.opt_status = OptimizationStatus::Failed;
-        app.room_eq.opt_error = Some("No measurements loaded".to_string());
+    if app.room_eq.model.channel_measurements.is_empty() {
+        app.room_eq.model.optimization_status = OptimizationStatus::Failed;
+        app.room_eq.model.error_message = Some("No measurements loaded".to_string());
         return;
     }
 
-    app.room_eq.opt_status = OptimizationStatus::Running;
-    app.room_eq.opt_error = None;
-    app.room_eq.opt_progress = 0.0;
-    app.room_eq.opt_iteration = 0;
-    app.room_eq.opt_loss = 0.0;
-    app.room_eq.opt_current_speaker = String::new();
-    app.room_eq.opt_total_speakers = 0;
-    app.room_eq.opt_status_message = None;
-    app.room_eq.channel_results.clear();
-    app.room_eq.dsp_output = None;
+    app.room_eq.model.optimization_status = OptimizationStatus::Running;
+    app.room_eq.model.error_message = None;
+    app.room_eq.model.overall_progress = 0.0;
+    app.room_eq.model.current_iteration = 0;
+    app.room_eq.model.current_loss = 0.0;
+    app.room_eq.model.current_channel = None;
+    app.room_eq.model.channel_results.clear();
+    app.room_eq.model.dsp_output = None;
+    app.room_eq.model.status_message = String::new();
+
+    app.room_eq.opt_max_iter = 0;
     app.room_eq.apply_status = None;
     app.room_eq.apply_error = None;
     app.room_eq.loss_history.clear();
@@ -38,14 +39,14 @@ pub(super) fn spawn_room_eq_optimization(app: &mut App) {
     app.room_eq.opt_log_scroll = 0;
 
     // Build curves from loaded measurements
-    let measurements = app.room_eq.channel_measurements.clone();
-    let config = app.room_eq.config.clone();
+    let measurements = app.room_eq.model.channel_measurements.clone();
+    let config = app.room_eq.model.optimizer_config.clone();
     // Probe-based arrival times from the Delay Detection step (None if the
     // user skipped that step; in that case the optimizer falls back to
     // WAV-onset detection for each channel).
-    let probe_arrivals = app.room_eq.delay_detection.probe_arrival_map();
-    let ctc_config = app.room_eq.ctc_config.clone();
-    let ctc_measurements = app.room_eq.ctc_measurements.clone();
+    let probe_arrivals = app.room_eq.model.delay_detection.probe_arrival_map();
+    let ctc_config = app.room_eq.model.ctc_config.clone();
+    let ctc_measurements = app.room_eq.model.ctc_measurements.clone();
 
     let result_slot = ROOM_OPT_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))

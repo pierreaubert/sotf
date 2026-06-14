@@ -120,7 +120,7 @@ fn test_load_from_recording_marks_ctc_fallback_as_measured() {
     let mut room_eq = RoomEqState::default();
     room_eq.load_from_recording(&recording);
 
-    let ctc = room_eq.ctc_config.expect("ctc config");
+    let ctc = room_eq.ctc_config.as_ref().expect("ctc config");
     assert_eq!(ctc.matrix_source, "measured");
     assert!(ctc.reference_sweep.is_none());
     assert!(

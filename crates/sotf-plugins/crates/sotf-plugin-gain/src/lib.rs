@@ -36,11 +36,10 @@ pub struct GainPlugin {
     param_gain_db: ParameterId,
     param_smoothing_ms: ParameterId,
     /// Pre-built per-channel parameter IDs and display names so
-    /// `rebuild_cached_parameters` does not re-format them on every call.
+    /// `parameter_schema` does not re-format them on every call.
     channel_param_keys: Vec<(ParameterId, String)>,
     cached_gains: Vec<f32>,
     smoothing_ms: f32,
-    cached_parameters: Vec<Parameter>,
 }
 
 impl GainPlugin {
@@ -52,7 +51,7 @@ impl GainPlugin {
         // Placeholder rate; real rate is set in initialize()
         let sr = 48000;
         let gain_linear = Self::db_to_linear(gain_db);
-        let mut p = Self {
+        Self {
             channels,
             sample_rate: sr,
             global_gain_db: gain_db,
@@ -64,10 +63,7 @@ impl GainPlugin {
             channel_param_keys: Self::build_channel_param_keys(channels),
             cached_gains: vec![0.0; channels],
             smoothing_ms,
-            cached_parameters: Vec::new(),
-        };
-        p.rebuild_cached_parameters();
-        p
+        }
     }
 
     fn build_channel_param_keys(channels: usize) -> Vec<(ParameterId, String)> {
@@ -91,7 +87,7 @@ impl GainPlugin {
             .iter()
             .map(|&db| Smoother::new(Self::db_to_linear(db), 20.0, sr))
             .collect();
-        let mut p = Self {
+        Ok(Self {
             channels,
             sample_rate: sr,
             global_gain_db: 0.0,
@@ -103,37 +99,7 @@ impl GainPlugin {
             channel_param_keys: Self::build_channel_param_keys(channels),
             cached_gains: vec![0.0; channels],
             smoothing_ms: 20.0,
-            cached_parameters: Vec::new(),
-        };
-        p.rebuild_cached_parameters();
-        Ok(p)
-    }
-
-    fn rebuild_cached_parameters(&mut self) {
-        let mut params = vec![
-            Parameter::new_float(
-                "gain_db",
-                "Gain",
-                self.global_gain_db,
-                pk(GN, "gain_db").min_f64() as f32,
-                pk(GN, "gain_db").max_f64() as f32,
-            ),
-            Parameter::new_float("smoothing_ms", "Smoothing", self.smoothing_ms, 0.0, 200.0),
-        ];
-
-        if self.is_per_channel() {
-            for (ch, (id, name)) in self.channel_param_keys.iter().enumerate() {
-                params.push(Parameter::new_float(
-                    &id.0,
-                    name,
-                    self.channel_gains_db[ch],
-                    pk(GN, "gain_db").min_f64() as f32,
-                    pk(GN, "gain_db").max_f64() as f32,
-                ));
-            }
-        }
-
-        self.cached_parameters = params;
+        })
     }
 
     pub fn from_params(channels: usize, params: GainPluginParams) -> Result<Self, String> {
@@ -244,6 +210,33 @@ impl GainPlugin {
             apply_per_channel_gain_simd(frame, frame.len(), gains);
         }
     }
+
+    fn process_in_place(
+        &mut self,
+        buffer: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
+        let nf = context.num_frames;
+        if self.is_per_channel() {
+            for frame in 0..nf {
+                for ch in 0..self.channels {
+                    self.cached_gains[ch] = self.channel_gains_smoothers[ch].advance();
+                }
+                let off = frame * self.channels;
+                Self::apply_frame_channel_gains(
+                    &mut buffer[off..off + self.channels],
+                    &self.cached_gains,
+                );
+            }
+        } else {
+            for frame in 0..nf {
+                let g = self.global_gain_smoother.advance();
+                let off = frame * self.channels;
+                Self::apply_frame_gain(&mut buffer[off..off + self.channels], g);
+            }
+        }
+        Ok(nf)
+    }
 }
 
 impl ParametricPlugin for GainPlugin {
@@ -268,7 +261,13 @@ impl ParametricPlugin for GainPlugin {
                 pk(GN, "gain_db").min_f64() as f32,
                 pk(GN, "gain_db").max_f64() as f32,
             ),
-            Parameter::new_float("smoothing_ms", "Smoothing", self.smoothing_ms, 0.0, 200.0),
+            Parameter::new_float(
+                "smoothing_ms",
+                "Smoothing",
+                self.smoothing_ms,
+                pk(GN, "smoothing_ms").min_f64() as f32,
+                pk(GN, "smoothing_ms").max_f64() as f32,
+            ),
         ];
 
         for (ch, (id, name)) in self.channel_param_keys.iter().enumerate() {
@@ -346,7 +345,10 @@ impl ParametricPlugin for GainPlugin {
                     let Some(v) = value.as_float().filter(|v| v.is_finite()) else {
                         return Err(format!("Invalid value for {}", id));
                     };
-                    self.smoothing_ms = v.clamp(0.0, 200.0);
+                    self.smoothing_ms = v.clamp(
+                        pk(GN, "smoothing_ms").min_f64() as f32,
+                        pk(GN, "smoothing_ms").max_f64() as f32,
+                    );
                     self.global_gain_smoother
                         .set_time(self.smoothing_ms, self.sample_rate);
                     for s in &mut self.channel_gains_smoothers {
@@ -367,7 +369,16 @@ impl ParametricPlugin for GainPlugin {
                 }
             }
         }
-        self.rebuild_cached_parameters();
+        Ok(())
+    }
+
+    fn plugin_initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        self.sample_rate = sample_rate;
+        self.global_gain_smoother
+            .set_time(self.smoothing_ms, sample_rate);
+        for s in &mut self.channel_gains_smoothers {
+            s.set_time(self.smoothing_ms, sample_rate);
+        }
         Ok(())
     }
 
@@ -399,38 +410,14 @@ impl InPlacePlugin for GainPlugin {
         ParametricPlugin::parametric_get_parameter(self, id)
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
-        self.sample_rate = sr;
-        self.global_gain_smoother.set_time(self.smoothing_ms, sr);
-        for s in &mut self.channel_gains_smoothers {
-            s.set_time(self.smoothing_ms, sr);
-        }
-        Ok(())
+        ParametricPlugin::plugin_initialize(self, sr)
     }
     fn process_in_place(
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
-        let nf = context.num_frames;
-        if self.is_per_channel() {
-            for frame in 0..nf {
-                for ch in 0..self.channels {
-                    self.cached_gains[ch] = self.channel_gains_smoothers[ch].advance();
-                }
-                let off = frame * self.channels;
-                Self::apply_frame_channel_gains(
-                    &mut buffer[off..off + self.channels],
-                    &self.cached_gains,
-                );
-            }
-        } else {
-            for frame in 0..nf {
-                let g = self.global_gain_smoother.advance();
-                let off = frame * self.channels;
-                Self::apply_frame_gain(&mut buffer[off..off + self.channels], g);
-            }
-        }
-        Ok(nf)
+        self.process_in_place(buffer, context)
     }
 }
 
@@ -708,8 +695,8 @@ mod tests {
     }
 
     /// Per-channel parameter IDs and display names must be cached at
-    /// construction and reused by `rebuild_cached_parameters`, avoiding a
-    /// per-rebuild `format!` for every channel.
+    /// construction and reused by `parameter_schema`, avoiding a per-call
+    /// `format!` for every channel.
     #[test]
     fn test_per_channel_param_keys_are_cached_and_reused() {
         let mut p = GainPlugin::new_per_channel(vec![1.0f32, 2.0, 3.0]).unwrap();
@@ -719,13 +706,12 @@ mod tests {
         assert_eq!(p.channel_param_keys[2].0, ParameterId::from("gain_db_2"));
         assert_eq!(p.channel_param_keys[2].1, "Gain Ch 3");
 
-        // Mutate a channel gain and rebuild; the keys must stay the same.
+        // Mutate a channel gain; the cached keys must stay the same.
         p.set_channel_gain_db(1, -6.0).unwrap();
         let keys_before = p.channel_param_keys.clone();
-        p.rebuild_cached_parameters();
+        let params = p.parameters();
         assert_eq!(p.channel_param_keys, keys_before);
 
-        let params = p.parameters();
         let ch_params: Vec<_> = params
             .iter()
             .filter(|param| param.id.as_str().starts_with("gain_db_"))
@@ -733,5 +719,27 @@ mod tests {
         assert_eq!(ch_params.len(), 3);
         assert_eq!(ch_params[0].id, ParameterId::from("gain_db_0"));
         assert_eq!(ch_params[0].name, "Gain Ch 1");
+    }
+
+    /// Per-channel gain parameters must round-trip through set_parameter /
+    /// get_parameter when the plugin is created in per-channel mode.
+    #[test]
+    fn test_per_channel_gain_round_trip() {
+        let mut p = GainPlugin::new_per_channel(vec![0.0f32, 0.0]).unwrap();
+        p.initialize(48000).unwrap();
+
+        p.set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(3.0))
+            .unwrap();
+        p.set_parameter(ParameterId::from("gain_db_1"), ParameterValue::Float(-3.0))
+            .unwrap();
+
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("gain_db_0")),
+            Some(ParameterValue::Float(3.0))
+        );
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("gain_db_1")),
+            Some(ParameterValue::Float(-3.0))
+        );
     }
 }

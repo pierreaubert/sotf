@@ -1,6 +1,7 @@
 //! Universal plugin factory for all SOTF audio plugins.
 
 use sotf_host::plugin::{InPlacePluginAdapter, Plugin};
+use sotf_host::ParametricPluginAdapter;
 
 /// Create a plugin instance from a type name, channel count, sample rate, and JSON config.
 ///
@@ -21,8 +22,8 @@ pub fn create_plugin(
         // ============================================================
         "EQ" | "eq" => {
             let params: sotf_plugin_eq::EqPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_eq::EqPlugin::from_params(channels, sample_rate, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            sotf_plugin_eq::EqPlugin::from_params(channels, sample_rate, params)
+                .map(|p| p.into_boxed_plugin())
         }
 
         "Compressor" | "compressor" => {
@@ -51,7 +52,7 @@ pub fn create_plugin(
         "Gain" | "gain" => {
             let params: sotf_plugin_gain::GainPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_gain::GainPlugin::from_params(channels, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricPluginAdapter::new(plugin)))
         }
 
         "Delay" | "delay" => {

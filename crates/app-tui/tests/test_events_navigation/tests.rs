@@ -541,7 +541,7 @@ fn spinorama_configure_step_tab_left_goes_to_select() {
 #[test]
 fn room_eq_esc_goes_to_tab_bar() {
     let mut app = app_on_room_eq();
-    app.room_eq.step = RoomEqStep::Configure;
+    app.room_eq.model.step = RoomEqStep::Configure;
     app.room_eq.step_tab_focused = false;
     assert!(app.input_mode.is_configure_sub_screen());
 
@@ -557,42 +557,42 @@ fn room_eq_esc_goes_to_tab_bar() {
 #[test]
 fn room_eq_optimize_backtab_goes_to_configure() {
     let mut app = app_on_room_eq();
-    app.room_eq.step = RoomEqStep::Optimize;
+    app.room_eq.model.step = RoomEqStep::Optimize;
     app.room_eq.step_tab_focused = false;
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Configure);
 }
 
 #[test]
 fn room_eq_review_backtab_goes_to_optimize() {
     let mut app = app_on_room_eq();
-    app.room_eq.step = RoomEqStep::Review;
+    app.room_eq.model.step = RoomEqStep::Review;
     app.room_eq.step_tab_focused = false;
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Optimize);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Optimize);
 }
 
 #[test]
 fn room_eq_export_backtab_goes_to_review() {
     let mut app = app_on_room_eq();
-    app.room_eq.step = RoomEqStep::Export;
+    app.room_eq.model.step = RoomEqStep::Export;
     app.room_eq.step_tab_focused = false;
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Review);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Review);
 }
 
 #[test]
 fn room_eq_backtab_chain() {
     let mut app = app_on_room_eq();
-    app.room_eq.step = RoomEqStep::Export;
+    app.room_eq.model.step = RoomEqStep::Export;
     app.room_eq.step_tab_focused = false;
 
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Review);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Review);
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Optimize);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Optimize);
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Configure);
 }
 
 #[test]
@@ -847,40 +847,40 @@ fn spinorama_step_tab_left_right_round_trip() {
 #[test]
 fn room_eq_step_tab_right_cycles_all_steps() {
     let mut app = app_on_room_eq();
-    app.room_eq.step = RoomEqStep::LoadData;
+    app.room_eq.model.step = RoomEqStep::LoadData;
     app.room_eq.step_tab_focused = true;
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Delay);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Delay);
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Process);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Process);
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Configure);
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Optimize);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Optimize);
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Review);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Review);
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Export);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Export);
 
     // Wraps back to LoadData
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.room_eq.step, RoomEqStep::LoadData);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::LoadData);
 }
 
 #[test]
 fn room_eq_step_tab_left_wraps_from_load_data_to_export() {
     let mut app = app_on_room_eq();
-    app.room_eq.step = RoomEqStep::LoadData;
+    app.room_eq.model.step = RoomEqStep::LoadData;
     app.room_eq.step_tab_focused = true;
 
     send_keys(&mut app, &[KeyCode::Left]);
-    assert_eq!(app.room_eq.step, RoomEqStep::Export);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Export);
 }
 
 #[test]
@@ -905,17 +905,17 @@ fn spinorama_configure_tab_cycles_fields() {
 #[test]
 fn room_eq_configure_tab_cycles_fields() {
     let mut app = app_on_room_eq();
-    app.room_eq.step = RoomEqStep::Configure;
+    app.room_eq.model.step = RoomEqStep::Configure;
     app.room_eq.step_tab_focused = false;
     app.room_eq.selected_field = 0;
 
     send_keys(&mut app, &[KeyCode::Tab]);
     assert_eq!(app.room_eq.selected_field, 1);
-    assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Configure);
 
     // Wrap at max field (23)
     app.room_eq.selected_field = 28;
     send_keys(&mut app, &[KeyCode::Tab]);
     assert_eq!(app.room_eq.selected_field, 0);
-    assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+    assert_eq!(app.room_eq.model.step, RoomEqStep::Configure);
 }

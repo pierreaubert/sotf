@@ -15,4 +15,8 @@ mod misc;
 mod types;
 
 pub(crate) use build::*;
+#[cfg(test)]
+pub(crate) use compute::{compute_image_sources, compute_reflection_beta_boost};
+#[cfg(test)]
+pub(crate) use misc::air_absorption;
 pub(crate) use types::*;

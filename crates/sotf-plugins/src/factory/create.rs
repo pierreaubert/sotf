@@ -30,7 +30,7 @@ use crate::{
     EqPluginParams, ExpanderPlugin, ExpanderPluginParams, FirDesignerPlugin,
     FirDesignerPluginParams, GainPlugin, GainPluginParams, GatePlugin, GatePluginParams,
     HissReducerPlugin, HissReducerPluginParams, InPlacePluginAdapter, LimiterPlugin,
-    LimiterPluginParams, LinearPhaseEqPlugin, LinearPhaseEqPluginParams,
+    ParametricPluginAdapter, LimiterPluginParams, LinearPhaseEqPlugin, LinearPhaseEqPluginParams,
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
     MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams, MultibandCompressorPlugin,
     MultibandCompressorPluginParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
@@ -76,14 +76,13 @@ pub fn create_plugin(
             let params: GainPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse gain params: {e}"))?;
             let plugin = GainPlugin::from_params(channels, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricPluginAdapter::new(plugin)))
         }
 
         "eq" | "parametric_eq" => {
             let params: EqPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse EQ params: {e}"))?;
-            let plugin = EqPlugin::from_params(channels, sample_rate, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            EqPlugin::from_params(channels, sample_rate, params).map(|p| p.into_boxed_plugin())
         }
 
         "compressor" => {

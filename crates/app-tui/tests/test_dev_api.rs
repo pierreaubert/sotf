@@ -206,8 +206,8 @@ fn query_recording_state() {
 fn query_room_eq_state() {
     let mut app = make_app();
     app.room_eq = sotf_audio_player_tui::app::RoomEqTuiState::default();
-    app.room_eq.opt_status_message = Some("running".to_string());
-    app.room_eq.opt_error = Some("boom".to_string());
+    app.room_eq.model.status_message = Some("running".to_string());
+    app.room_eq.model.error_message = Some("boom".to_string());
 
     resolve("roomeq.step", &app).unwrap();
     assert_eq!(resolve("roomeq.measurement_count", &app).unwrap(), 0);
@@ -303,8 +303,8 @@ fn query_room_eq_with_results() {
 
     let mut app = make_app();
     app.room_eq = sotf_audio_player_tui::app::RoomEqTuiState::default();
-    app.room_eq.opt_status = OptimizationStatus::Completed;
-    app.room_eq.channel_results = vec![
+    app.room_eq.model.optimization_status = OptimizationStatus::Completed;
+    app.room_eq.model.channel_results = vec![
         ChannelOptResult {
             channel_name: "L".to_string(),
             pre_score: 3.0,

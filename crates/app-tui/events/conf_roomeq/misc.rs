@@ -5,7 +5,7 @@ pub(super) fn is_room_eq_field_numerical(field: usize) -> bool {
 }
 
 pub(super) fn set_room_eq_field_from_string(app: &mut App) {
-    let c = &mut app.room_eq.config;
+    let c = &mut app.room_eq.model.optimizer_config;
     let buf = &app.room_eq.edit_buffer;
     match app.room_eq.selected_field {
         0 => {
@@ -90,7 +90,7 @@ pub(super) fn set_room_eq_field_from_string(app: &mut App) {
 pub(super) fn adjust_room_eq_field(app: &mut App, delta: i32) {
     use sotf_audio_player::room_eq_types::{MultiSpeakerMode, RoomEqOptimizationMode};
 
-    let c = &mut app.room_eq.config;
+    let c = &mut app.room_eq.model.optimizer_config;
     match app.room_eq.selected_field {
         // Basic
         0 => {
@@ -208,18 +208,21 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
     match std::fs::read_to_string(path) {
         Ok(contents) => match RoomEqMeasurementsFile::load_from_json(&contents, base_dir) {
             Ok(channels) => {
-                app.room_eq.ctc_config = serde_json::from_str::<autoeq::RoomConfig>(&contents)
+                app.room_eq.model.ctc_config = serde_json::from_str::<autoeq::RoomConfig>(&contents)
                     .ok()
                     .and_then(|room_config| room_config.ctc);
-                if let (Some(ctc), Some(dir)) = (app.room_eq.ctc_config.as_mut(), base_dir) {
+                if let (Some(ctc), Some(dir)) = (app.room_eq.model.ctc_config.as_mut(), base_dir) {
                     ctc.resolve_paths(dir);
                 }
-                app.room_eq.ctc_measurements = app
+                app.room_eq.model.ctc_measurements = app
                     .room_eq
+                    .model
                     .ctc_config
                     .as_ref()
                     .and_then(|ctc| ctc.measurements.clone());
-                app.room_eq.channel_measurements = channels;
+                app.room_eq.model.channel_measurements = channels;
+                app.room_eq.model.init_speaker_configs();
+                app.room_eq.model.apply_smart_defaults(None);
                 app.room_eq.load_error = None;
                 // Pre-seed Delay Detection form from the recording
                 // session metadata when the file carries it. Only fields
@@ -228,7 +231,7 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
                 if let Some(hints) =
                     RoomEqMeasurementsFile::extract_delay_detection_hints(&contents)
                 {
-                    let dd = &mut app.room_eq.delay_detection;
+                    let dd = &mut app.room_eq.model.delay_detection;
                     if let Some(sr) = hints.sample_rate {
                         dd.sample_rate = sr;
                     }
@@ -245,16 +248,18 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
             }
             Err(e) => {
                 app.room_eq.load_error = Some(e);
-                app.room_eq.channel_measurements.clear();
-                app.room_eq.ctc_measurements = None;
-                app.room_eq.ctc_config = None;
+                app.room_eq.model.channel_measurements.clear();
+                app.room_eq.model.ctc_measurements = None;
+                app.room_eq.model.ctc_config = None;
+                app.room_eq.model.speaker_configs.clear();
             }
         },
         Err(e) => {
             app.room_eq.load_error = Some(format!("Read error: {}", e));
-            app.room_eq.channel_measurements.clear();
-            app.room_eq.ctc_measurements = None;
-            app.room_eq.ctc_config = None;
+            app.room_eq.model.channel_measurements.clear();
+            app.room_eq.model.ctc_measurements = None;
+            app.room_eq.model.ctc_config = None;
+            app.room_eq.model.speaker_configs.clear();
         }
     }
 }
@@ -267,13 +272,14 @@ pub(crate) fn export_room_eq_results(app: &mut App) {
 
     let formats = sotf_audio_player::autoeq::EQ_EXPORT_FORMAT_OPTIONS;
     let (format_id, _, _) = formats
-        .get(app.room_eq.export_format)
+        .get(app.room_eq.model.export_format_index)
         .copied()
         .unwrap_or(("json", "JSON", ".json"));
 
     // Collect all EQ filters from channel results and convert to Biquad
     let biquads: Vec<math_audio_iir_fir::Biquad> = app
         .room_eq
+        .model
         .channel_results
         .iter()
         .flat_map(|ch| {

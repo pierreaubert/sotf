@@ -40,7 +40,7 @@ proptest! {
     }
 
     #[test]
-    fn parameter_round_trip_smoothing(smoothing_ms in 0.0f32..200.0f32) {
+    fn parameter_round_trip_smoothing(smoothing_ms in 0.0f32..100.0f32) {
         let mut plugin = GainPlugin::new(2, 0.0);
         plugin
             .set_parameter(

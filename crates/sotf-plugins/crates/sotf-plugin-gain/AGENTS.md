@@ -6,7 +6,7 @@ Simple gain plugin with global and per-channel volume control, using SIMD-optimi
 
 ```
 src/
-  lib.rs    -- GainPlugin (InPlacePlugin), GainPluginParams
+  lib.rs    -- GainPlugin (ParametricPlugin), GainPluginParams
   params.rs -- Centralized parameter specs (behind params module)
 ```
 
@@ -14,7 +14,7 @@ Data flow: Global gain OR per-channel gains -> `Smoother` for click-free transit
 
 **Key types:**
 
-- `GainPlugin` -- Main plugin implementing `InPlacePlugin`. Supports two modes: global gain (single value) or per-channel gains (independent per channel).
+- `GainPlugin` -- Main plugin implementing `ParametricPlugin`. Supports two modes: global gain (single value) or per-channel gains (independent per channel).
 - `GainPluginParams` -- Serde config: `gain_db` (global), `channel_gains` (per-channel, optional).
 - Uses `Smoother` for all gain transitions (default 20ms smoothing time).
 
@@ -25,7 +25,7 @@ Data flow: Global gain OR per-channel gains -> `Smoother` for click-free transit
 - `GainPlugin::new_per_channel(channel_gains) -> Result<Self, String>` -- Per-channel mode (`lib.rs`)
 - `GainPlugin::from_params(channels, params) -> Result<Self, String>` -- From JSON config (`lib.rs`)
 - `set_gain_db(db)`, `set_gain_linear(g)`, `set_channel_gains(dbs)`, `set_channel_gain_db(ch, db)` -- Runtime parameter updates
-- Implements `InPlacePlugin` trait
+- Implements `ParametricPlugin` trait; host-facing `Plugin` is provided by `ParametricPluginAdapter<GainPlugin>`
 
 **Parameters:** `gain_db` (global), `smoothing_ms`, `gain_db_{N}` (per-channel, dynamic).
 
@@ -38,6 +38,6 @@ cargo test -p sotf-plugin-gain
 ## Important Notes
 
 - Calling `set_gain_db()` or `set_gain_linear()` clears per-channel mode (switches back to global).
-- The plugin uses deferred sample rate initialization: created with 48kHz placeholder, real rate set in `initialize()`. Smoother timing adjusts accordingly.
+- The plugin uses deferred sample rate initialization: created with 48kHz placeholder, real rate set in `plugin_initialize()`. Smoother timing adjusts accordingly.
 - SIMD paths: `apply_gain_simd` for global mode, `apply_per_channel_gain_simd` for per-channel mode.
-- Gain range: -100 dB to +24 dB. Smoothing range: 0 to 200 ms.
+- Gain range: -60 dB to +20 dB. Smoothing range: 0 to 100 ms.

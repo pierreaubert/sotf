@@ -102,14 +102,14 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "recording.status" => json!(app.recording.status_message),
 
         // Room EQ
-        "roomeq.step" => json!(format!("{:?}", app.room_eq.step)),
-        "roomeq.measurement_count" => json!(app.room_eq.channel_measurements.len()),
-        "roomeq.speaker_config_count" => json!(app.room_eq.channel_measurements.len()),
-        "roomeq.optimization_status" => json!(format!("{:?}", app.room_eq.opt_status)),
-        "roomeq.result_count" => json!(app.room_eq.channel_results.len()),
-        "roomeq.has_dsp_output" => json!(app.room_eq.dsp_output.is_some()),
+        "roomeq.step" => json!(format!("{:?}", app.room_eq.model.step)),
+        "roomeq.measurement_count" => json!(app.room_eq.model.channel_measurements.len()),
+        "roomeq.speaker_config_count" => json!(app.room_eq.model.channel_measurements.len()),
+        "roomeq.optimization_status" => json!(format!("{:?}", app.room_eq.model.optimization_status)),
+        "roomeq.result_count" => json!(app.room_eq.model.channel_results.len()),
+        "roomeq.has_dsp_output" => json!(app.room_eq.model.dsp_output.is_some()),
         "roomeq.dsp_channel_count" => {
-            json!(app.room_eq.dsp_output.as_ref().map(|d| d.channels.len()))
+            json!(app.room_eq.model.dsp_output.as_ref().map(|d| d.channels.len()))
         }
         "roomeq.filter_count" => json!(
             app.room_eq
@@ -119,13 +119,13 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
                 .sum::<usize>()
         ),
         "roomeq.average_pre_score" => {
-            json!(average_room_eq_score(&app.room_eq.channel_results, |r| r.pre_score))
+            json!(average_room_eq_score(&app.room_eq.model.channel_results, |r| r.pre_score))
         }
         "roomeq.average_post_score" => {
-            json!(average_room_eq_score(&app.room_eq.channel_results, |r| r.post_score))
+            json!(average_room_eq_score(&app.room_eq.model.channel_results, |r| r.post_score))
         }
-        "roomeq.status" => json!(app.room_eq.opt_status_message.as_deref().unwrap_or("")),
-        "roomeq.error" => json!(app.room_eq.opt_error.as_deref().unwrap_or("")),
+        "roomeq.status" => json!(app.room_eq.model.status_message.as_deref().unwrap_or("")),
+        "roomeq.error" => json!(app.room_eq.model.error_message.as_deref().unwrap_or("")),
 
         // Headphone EQ
         "headphoneeq.step" => json!(format!("{:?}", app.headphone_eq.step)),

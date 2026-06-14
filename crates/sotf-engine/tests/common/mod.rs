@@ -10,8 +10,7 @@
 #![allow(unused_imports)]
 #![allow(unused_macros)]
 
-mod find_device_impl;
-pub use find_device_impl::find_device;
+pub use sotf_testkit::find_device;
 
 use hound::{WavSpec, WavWriter};
 use sotf_audio::engine::EngineConfig;

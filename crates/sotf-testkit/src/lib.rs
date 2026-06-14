@@ -8,6 +8,9 @@ pub mod audio;
 pub mod db;
 
 #[cfg(feature = "engine")]
+pub mod audio_device;
+
+#[cfg(feature = "engine")]
 pub mod engine;
 
 #[cfg(feature = "plugin")]
@@ -15,3 +18,6 @@ pub mod plugin;
 
 #[cfg(feature = "plugin")]
 pub mod mock_server;
+
+#[cfg(feature = "engine")]
+pub use audio_device::find_device;

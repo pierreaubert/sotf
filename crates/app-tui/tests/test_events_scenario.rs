@@ -271,7 +271,7 @@ mod tests {
                 vec![Input::Key(KeyCode::Char('3'))],
                 |app| {
                     assert_eq!(app.configure_sub_screen, ConfigureSubScreen::RoomEq);
-                    assert_eq!(app.room_eq.step, RoomEqStep::LoadData);
+                    assert_eq!(app.room_eq.model.step, RoomEqStep::LoadData);
                     assert_eq!(
                         app.input_mode,
                         InputMode::FileExplorer,
@@ -303,7 +303,7 @@ mod tests {
                     Input::Key(KeyCode::Down),  // → enter Export content
                 ],
                 |app| {
-                    assert_eq!(app.room_eq.step, RoomEqStep::Export);
+                    assert_eq!(app.room_eq.model.step, RoomEqStep::Export);
                     assert!(!app.room_eq.step_tab_focused);
                 },
             ),

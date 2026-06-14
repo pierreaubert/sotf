@@ -4,8 +4,8 @@ use sotf_audio_player::room_eq_types::OptimizationStatus;
 
 /// Auto-start optimization when entering the Optimize step, if data is loaded and not already running.
 pub fn auto_start_optimization(app: &mut App) {
-    if app.room_eq.opt_status == OptimizationStatus::Idle
-        && !app.room_eq.channel_measurements.is_empty()
+    if app.room_eq.model.optimization_status == OptimizationStatus::Idle
+        && !app.room_eq.model.channel_measurements.is_empty()
     {
         spawn_room_eq_optimization(app);
     }
@@ -13,7 +13,7 @@ pub fn auto_start_optimization(app: &mut App) {
 
 /// Open the file explorer for Room EQ measurement selection if no data is loaded.
 pub fn auto_open_load_data(app: &mut App) {
-    if app.room_eq.file_path.is_empty() && app.room_eq.channel_measurements.is_empty() {
+    if app.room_eq.file_path.is_empty() && app.room_eq.model.channel_measurements.is_empty() {
         app.open_file_explorer(
             FilePickerOrigin::RoomEqFilePath,
             FilePickerMode::File,

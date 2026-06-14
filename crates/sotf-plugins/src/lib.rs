@@ -359,6 +359,7 @@ pub use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, Par
 pub use sotf_host::plugin::{
     InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
 };
+pub use sotf_host::ParametricPluginAdapter;
 
 #[cfg(feature = "qa")]
 pub use sotf_host::test_utils::benchmark_plugin_full;

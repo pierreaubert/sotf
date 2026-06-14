@@ -1546,3 +1546,157 @@ fn test_validate_freq_q_gain_returns_static_error() {
     );
     assert!(validate_freq_q_gain(1000.0, 1.0, 0.0).is_ok());
 }
+
+// ----------------------------------------------------------------------------
+// ParametricPlugin migration tests
+// ----------------------------------------------------------------------------
+
+#[test]
+fn test_parametric_plugin_schema_matches_in_place_params() {
+    use sotf_host::parametric_plugin::ParametricPlugin;
+    let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0);
+    let plugin = EqPlugin::new(1, vec![f]);
+
+    let schema = plugin.parameter_schema();
+    let in_place_params = plugin.parameters();
+    let schema_ids: Vec<&str> = schema.iter().map(|p| p.id.as_str()).collect();
+    let in_place_ids: Vec<&str> = in_place_params.iter().map(|p| p.id.as_str()).collect();
+
+    assert_eq!(schema_ids, in_place_ids);
+    assert!(schema_ids.contains(&"auto_gain_enabled"));
+    assert!(schema_ids.contains(&"band_0_freq"));
+    assert!(schema_ids.contains(&"band_0_gain"));
+}
+
+#[test]
+fn test_parametric_plugin_current_values_roundtrip() {
+    use sotf_host::parametric_plugin::ParametricPlugin;
+    let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 6.0);
+    let plugin = EqPlugin::new(1, vec![f]);
+    let values = plugin.current_values();
+
+    assert_eq!(
+        values.get(&ParameterId::from("auto_gain_enabled")),
+        Some(&ParameterValue::Bool(false))
+    );
+    assert_eq!(
+        values.get(&ParameterId::from("band_0_freq")),
+        Some(&ParameterValue::Float(1000.0))
+    );
+    assert_eq!(
+        values.get(&ParameterId::from("band_0_gain")),
+        Some(&ParameterValue::Float(6.0))
+    );
+}
+
+#[test]
+fn test_parametric_adapter_parameter_roundtrip() {
+    let mut plugin = EqPlugin::new(2, vec![]).into_boxed_plugin();
+    plugin.initialize(48000).unwrap();
+
+    plugin
+        .set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("oversampling")),
+        Some(ParameterValue::Int(2))
+    );
+
+    plugin
+        .set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(true))
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("tdf2")),
+        Some(ParameterValue::Bool(true))
+    );
+
+    let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0);
+    let mut plugin = EqPlugin::new(1, vec![f]).into_boxed_plugin();
+    plugin.initialize(48000).unwrap();
+
+    plugin
+        .set_parameter(
+            ParameterId::from("band_0_gain"),
+            ParameterValue::Float(-6.0),
+        )
+        .unwrap();
+    let got = plugin.get_parameter(&ParameterId::from("band_0_gain"));
+    assert!(
+        matches!(got, Some(ParameterValue::Float(v)) if (v - (-6.0)).abs() < 0.01),
+        "band gain round-trip drift: {:?}",
+        got
+    );
+}
+
+#[test]
+fn test_parametric_adapter_filter_update_changes_output() {
+    let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 6.0);
+    let mut plugin = EqPlugin::new(2, vec![f]).into_boxed_plugin();
+    plugin.initialize(48000).unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+    let num_frames = 512;
+    let input: Vec<f32> = (0..num_frames * 2)
+        .map(|i| (i as f32 * 0.05).sin() * 0.5)
+        .collect();
+    let mut output1 = vec![0.0f32; input.len()];
+    let context = ProcessContext::new(48000, num_frames);
+    plugin.process(&input, &mut output1, &context).unwrap();
+
+    plugin
+        .set_parameter(
+            ParameterId::from("band_0_freq"),
+            ParameterValue::Float(8000.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("band_0_gain"),
+            ParameterValue::Float(-12.0),
+        )
+        .unwrap();
+
+    let mut output2 = vec![0.0f32; input.len()];
+    plugin.process(&input, &mut output2, &context).unwrap();
+
+    let diff: f32 = output1
+        .iter()
+        .zip(output2.iter())
+        .map(|(a, b)| (a - b).abs())
+        .sum();
+    assert!(
+        diff > 0.1,
+        "Changing filter parameters should produce different output: diff={}",
+        diff
+    );
+}
+
+#[test]
+fn test_parametric_plugin_apply_values_updates_filters() {
+    use sotf_host::parametric_plugin::ParametricPlugin;
+    let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0);
+    let mut plugin = EqPlugin::new(1, vec![f]);
+    plugin.initialize(48000).unwrap();
+
+    let mut values = sotf_host::parametric_plugin::ParameterSet::new();
+    values.insert(ParameterId::from("band_0_freq"), ParameterValue::Float(2500.0));
+    values.insert(ParameterId::from("band_0_gain"), ParameterValue::Float(3.0));
+    ParametricPlugin::apply_values(&mut plugin, values).unwrap();
+
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("band_0_freq")),
+        Some(ParameterValue::Float(2500.0))
+    );
+    assert!(
+        matches!(
+            plugin.get_parameter(&ParameterId::from("band_0_gain")),
+            Some(ParameterValue::Float(v)) if (v - 3.0).abs() < 0.01
+        ),
+        "gain should update to 3.0 dB"
+    );
+}

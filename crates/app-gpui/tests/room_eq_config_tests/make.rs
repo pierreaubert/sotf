@@ -6,26 +6,24 @@ use std::path::PathBuf;
 
 #[test]
 fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
-    let mut state = RoomEqState {
-        channel_measurements: vec![
-            make_dummy_measurement("L"),
-            make_dummy_measurement("R"),
-            make_dummy_measurement("LFE [mic 1]"),
-        ],
-        ctc_config: Some(autoeq::roomeq::CtcConfig {
-            enabled: true,
-            matrix_source: "raw_sweep".to_string(),
-            reference_sweep: Some(PathBuf::from("ctc_reference_sweep.wav")),
-            measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
-                speakers: vec!["L".to_string(), "R".to_string(), "LFE [mic 1]".to_string()],
-                mics: vec!["left_ear".to_string(), "right_ear".to_string()],
-                head_positions: Vec::new(),
-                files: Vec::new(),
-            }),
-            ..Default::default()
+    let mut state = RoomEqState::default();
+    state.model.channel_measurements = vec![
+        make_dummy_measurement("L"),
+        make_dummy_measurement("R"),
+        make_dummy_measurement("LFE [mic 1]"),
+    ];
+    state.model.ctc_config = Some(autoeq::roomeq::CtcConfig {
+        enabled: true,
+        matrix_source: "raw_sweep".to_string(),
+        reference_sweep: Some(PathBuf::from("ctc_reference_sweep.wav")),
+        measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
+            speakers: vec!["L".to_string(), "R".to_string(), "LFE [mic 1]".to_string()],
+            mics: vec!["left_ear".to_string(), "right_ear".to_string()],
+            head_positions: Vec::new(),
+            files: Vec::new(),
         }),
         ..Default::default()
-    };
+    });
     state.init_speaker_configs();
 
     let config = state.to_room_config();
@@ -60,21 +58,19 @@ fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
 
 #[test]
 fn test_room_eq_to_room_config_disables_imported_ctc_config() {
-    let mut state = RoomEqState {
-        channel_measurements: vec![make_dummy_measurement("L"), make_dummy_measurement("R")],
-        ctc_config: Some(autoeq::roomeq::CtcConfig {
-            enabled: true,
-            matrix_source: "measured".to_string(),
-            measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
-                speakers: vec!["L".to_string(), "R".to_string()],
-                mics: vec!["left_ear".to_string(), "right_ear".to_string()],
-                head_positions: Vec::new(),
-                files: Vec::new(),
-            }),
-            ..Default::default()
+    let mut state = RoomEqState::default();
+    state.model.channel_measurements = vec![make_dummy_measurement("L"), make_dummy_measurement("R")];
+    state.model.ctc_config = Some(autoeq::roomeq::CtcConfig {
+        enabled: true,
+        matrix_source: "measured".to_string(),
+        measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
+            speakers: vec!["L".to_string(), "R".to_string()],
+            mics: vec!["left_ear".to_string(), "right_ear".to_string()],
+            head_positions: Vec::new(),
+            files: Vec::new(),
         }),
         ..Default::default()
-    };
+    });
     state.init_speaker_configs();
 
     let config = state.to_room_config();
@@ -89,14 +85,12 @@ fn test_room_eq_to_room_config_disables_imported_ctc_config() {
 
 #[test]
 fn test_room_eq_to_room_config_emits_bass_management_without_ctc() {
-    let mut state = RoomEqState {
-        channel_measurements: vec![
-            make_dummy_measurement("L"),
-            make_dummy_measurement("R"),
-            make_dummy_measurement("LFE"),
-        ],
-        ..Default::default()
-    };
+    let mut state = RoomEqState::default();
+    state.model.channel_measurements = vec![
+        make_dummy_measurement("L"),
+        make_dummy_measurement("R"),
+        make_dummy_measurement("LFE"),
+    ];
     state.init_speaker_configs();
 
     let config = state.to_room_config();
@@ -121,21 +115,19 @@ fn test_room_eq_to_room_config_emits_bass_management_without_ctc() {
 
 #[test]
 fn test_room_eq_to_room_config_preserves_imported_system_and_crossovers() {
-    let mut state = RoomEqState {
-        channel_measurements: vec![
-            make_dummy_measurement("L"),
-            make_dummy_measurement("R"),
-            make_dummy_measurement("LFE"),
-        ],
-        ..Default::default()
-    };
+    let mut state = RoomEqState::default();
+    state.model.channel_measurements = vec![
+        make_dummy_measurement("L"),
+        make_dummy_measurement("R"),
+        make_dummy_measurement("LFE"),
+    ];
     state.init_speaker_configs();
 
     let mut speakers = HashMap::new();
     speakers.insert("L".to_string(), "L".to_string());
     speakers.insert("R".to_string(), "R".to_string());
     speakers.insert("LFE".to_string(), "LFE".to_string());
-    state.imported_system = Some(autoeq::roomeq::SystemConfig {
+    state.model.imported_system = Some(autoeq::roomeq::SystemConfig {
         model: autoeq::roomeq::SystemModel::HomeCinema,
         speakers,
         subwoofers: Some(autoeq::roomeq::SubwooferSystemConfig {
@@ -158,7 +150,7 @@ fn test_room_eq_to_room_config_preserves_imported_system_and_crossovers() {
             frequency_range: None,
         },
     );
-    state.imported_crossovers = Some(crossovers);
+    state.model.imported_crossovers = Some(crossovers);
 
     let config = state.to_room_config();
     let system = config.system.expect("imported system must be preserved");

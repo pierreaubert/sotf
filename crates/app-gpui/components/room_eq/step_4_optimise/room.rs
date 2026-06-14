@@ -53,7 +53,7 @@ impl PlayerView {
         // Pipeline step strip — stable left-to-right render order,
         // colored by the latest status the optimizer has reported for
         // each step.
-        let current_step = room_eq.current_step;
+        let current_pipeline_step = room_eq.current_pipeline_step;
         let step_history = room_eq.step_history.clone();
 
         // Build the actual RoomConfig that will be sent to the optimizer
@@ -285,14 +285,14 @@ impl PlayerView {
                                     .child(render_pipeline_step_strip(
                                         &theme,
                                         &d,
-                                        current_step,
+                                        current_pipeline_step,
                                         &step_history,
                                         is_completed,
                                         is_failed,
                                     ))
                                     .child(render_pipeline_phase_readout(
                                         &theme,
-                                        current_step,
+                                        current_pipeline_step,
                                         &step_history,
                                         status_msg.clone(),
                                         is_completed,
@@ -960,7 +960,7 @@ impl PlayerView {
             state.app.measurement_state.room_eq_state.artifact_dir = Some(artifact_dir.clone());
             state.app.measurement_state.room_eq_state.current_channel = None;
             state.app.measurement_state.room_eq_state.error_message = None;
-            state.app.measurement_state.room_eq_state.current_step = None;
+            state.app.measurement_state.room_eq_state.current_pipeline_step = None;
             state
                 .app
                 .measurement_state
@@ -1150,11 +1150,11 @@ impl PlayerView {
                         if let Some(sid) = latest_step_id
                             && latest_step_status.map(is_active_step).unwrap_or(false)
                         {
-                            room_eq.current_step = Some(sid);
+                            room_eq.current_pipeline_step = Some(sid);
                         } else if let Some(sid) = latest_step_id
-                            && room_eq.current_step == Some(sid)
+                            && room_eq.current_pipeline_step == Some(sid)
                         {
-                            room_eq.current_step = None;
+                            room_eq.current_pipeline_step = None;
                         }
 
                         let history = &mut room_eq.progress_history;

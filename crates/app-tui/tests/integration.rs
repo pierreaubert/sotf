@@ -188,7 +188,7 @@ fn room_eq_step_navigation_wraps() {
     app.current_screen = Screen::Configure;
     app.configure_sub_screen = ConfigureSubScreen::RoomEq;
     app.input_mode = InputMode::ConfigureRoomEq;
-    app.room_eq.step = RoomEqStep::LoadData;
+    app.room_eq.model.step = RoomEqStep::LoadData;
     app.room_eq.step_tab_focused = true;
 
     let expected = [
@@ -202,7 +202,7 @@ fn room_eq_step_navigation_wraps() {
     ];
     for expected_step in expected {
         send_keys(&mut app, &[KeyCode::Right]);
-        assert_eq!(app.room_eq.step, expected_step);
+        assert_eq!(app.room_eq.model.step, expected_step);
     }
 }
 

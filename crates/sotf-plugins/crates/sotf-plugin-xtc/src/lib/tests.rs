@@ -6,6 +6,7 @@ use filters::{
     head_shadowing_woodworth, sanitize_filter, soft_limit_complex_magnitude,
     woodworth_diffraction_path,
 };
+use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 use rustfft::num_complex::Complex;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
@@ -2223,4 +2224,271 @@ fn test_xtc_set_head_model() {
     let val = ParameterValue::Int(1);
     plugin.set_parameter(id.clone(), val).unwrap();
     assert_eq!(plugin.param_value(26), Some(1.0));
+}
+
+/// Test that image source model produces 6 reflection paths for a known geometry
+#[test]
+fn test_image_source_positions() {
+    // Simple geometry: speaker at (0, 1.2, 2.0), ear at (0.0875, 1.2, 0.0)
+    // Room: 4m wide, 5m deep, 2.5m tall
+    let speaker_pos = [0.0_f32, 1.2, 2.0];
+    let ear_pos = [0.0875_f32, 1.2, 0.0];
+    let direct_dist = {
+        let dx = speaker_pos[0] - ear_pos[0];
+        let dy = speaker_pos[1] - ear_pos[1];
+        let dz = speaker_pos[2] - ear_pos[2];
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    };
+
+    // We create a minimal RoomGeometry by calling the function directly
+    let room = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.3);
+    let paths = compute_image_sources(speaker_pos, ear_pos, direct_dist, &room);
+
+    assert_eq!(paths.len(), 6, "Should have 6 first-order reflections");
+
+    // All delays should be positive and amplitudes in (0, 1)
+    for (i, path) in paths.iter().enumerate() {
+        assert!(
+            path.delay_s > 0.0,
+            "Reflection {} delay should be positive, got {}",
+            i,
+            path.delay_s
+        );
+        assert!(
+            path.amplitude > 0.0 && path.amplitude < 1.0,
+            "Reflection {} amplitude should be in (0, 1), got {}",
+            i,
+            path.amplitude
+        );
+    }
+}
+
+/// Test that reflection amplitude uses pressure coefficient sqrt(1 - absorption).
+///
+/// The Sabine absorption coefficient α is an energy quantity. For a pressure signal
+/// the correct reflection coefficient is sqrt(1 - α), not (1 - α).
+/// For α = 0.75: correct = sqrt(0.25) = 0.5; wrong = (1 - 0.75) = 0.25.
+#[test]
+fn test_reflection_amplitude_uses_pressure_coefficient() {
+    // α = 0.75 → pressure reflection = sqrt(0.25) = 0.5, energy reflection = 0.25
+    // The two values differ by 2× so any reasonable geometry should distinguish them.
+    let speaker_pos = [0.0_f32, 1.2, 2.0];
+    let ear_pos = [0.0875_f32, 1.2, 0.0];
+    let direct_dist = {
+        let dx = speaker_pos[0] - ear_pos[0];
+        let dy = speaker_pos[1] - ear_pos[1];
+        let dz = speaker_pos[2] - ear_pos[2];
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    };
+
+    let room_energy = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.75);
+    let paths = compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_energy);
+    assert!(!paths.is_empty());
+
+    // Ratio test: compare α=0.75 amplitudes against α=0 (fully reflective) amplitudes.
+    let room_ref = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.0);
+    let paths_ref = compute_image_sources(speaker_pos, ear_pos, direct_dist, &room_ref);
+
+    assert_eq!(paths.len(), paths_ref.len());
+    for (path, ref_path) in paths.iter().zip(paths_ref.iter()) {
+        let ratio = path.amplitude / ref_path.amplitude;
+        // Pressure reflection coefficient for α=0.75: sqrt(0.25) = 0.5
+        assert!(
+            (ratio - 0.5).abs() < 1e-4,
+            "Reflection amplitude ratio should be sqrt(1-0.75)=0.5 (pressure), \
+             got {ratio:.6} (energy would be 0.25)"
+        );
+    }
+}
+
+/// Test that comb filter beta boost detects deep nulls
+#[test]
+fn test_comb_filter_beta_boost() {
+    let num_bins = 513;
+
+    // Create a magnitude spectrum with a known deep null at bin 100
+    let mut magnitude = vec![1.0_f32; num_bins];
+    magnitude[100] = 0.01; // -40 dB null
+    magnitude[101] = 0.05; // -26 dB null
+    magnitude[200] = 0.02; // -34 dB null
+
+    let boost = compute_reflection_beta_boost(&magnitude, num_bins, 3.0);
+
+    // Bins near nulls should have boost > 1.0
+    assert!(
+        boost[100] > 1.0,
+        "Boost at null bin 100 should be > 1.0, got {}",
+        boost[100]
+    );
+    assert!(
+        boost[200] > 1.0,
+        "Boost at null bin 200 should be > 1.0, got {}",
+        boost[200]
+    );
+
+    // Bins away from nulls should be ~1.0
+    assert!(
+        (boost[50] - 1.0).abs() < 0.2,
+        "Boost at non-null bin 50 should be ~1.0, got {}",
+        boost[50]
+    );
+}
+
+/// Test that air absorption produces physically plausible results.
+///
+/// The formula `0.001 * (f/1000)^2` dB/m approximates ISO 9613-1 for indoor conditions
+/// (20°C, 50% RH). It overestimates by ~1.8× at 4 kHz and ~2.5× at 8 kHz relative to
+/// the full ISO table, but errors are inaudible at typical room distances.
+///
+/// ISO 9613-1 reference (indoor, 20°C, 50% RH): ~0.002 dB/m at 1 kHz, ~0.025 dB/m at 8 kHz.
+#[test]
+fn test_air_absorption_physically_plausible() {
+    // Absorption must be in (0, 1]: always attenuates, never amplifies.
+    for &(freq, dist) in &[(1000.0_f32, 1.0_f32), (4000.0, 5.0), (8000.0, 10.0)] {
+        let a = air_absorption(freq, dist);
+        assert!(
+            a > 0.0 && a <= 1.0,
+            "air_absorption({freq}, {dist}) = {a} must be in (0, 1]"
+        );
+    }
+
+    // Higher frequency → more attenuation (quadratic law).
+    let a_1k = air_absorption(1000.0, 5.0);
+    let a_8k = air_absorption(8000.0, 5.0);
+    assert!(
+        a_8k < a_1k,
+        "8 kHz absorption ({a_8k}) should be greater than 1 kHz ({a_1k})"
+    );
+
+    // Longer distance → more attenuation.
+    let a_1m = air_absorption(4000.0, 1.0);
+    let a_5m = air_absorption(4000.0, 5.0);
+    assert!(
+        a_5m < a_1m,
+        "5 m absorption ({a_5m}) should be greater than 1 m ({a_1m})"
+    );
+
+    // At 1 kHz and 1 m the attenuation should be tiny (<0.1 dB → linear >0.988).
+    let at_1k_1m = air_absorption(1000.0, 1.0);
+    assert!(
+        at_1k_1m > 0.988,
+        "Air absorption at 1 kHz, 1 m should be >0.988 (tiny loss), got {at_1k_1m}"
+    );
+
+    let at_8k_5m = air_absorption(8000.0, 5.0);
+    let expected = 10.0_f32.powf(-(0.001 * 8.0_f32.powi(2)) * 5.0 / 20.0);
+    assert!(
+        (at_8k_5m - expected).abs() < 1e-6,
+        "air_absorption should follow the documented quadratic dB/m fit"
+    );
+}
+
+/// Test that enabling reflections changes filter magnitudes compared to disabled
+#[test]
+fn test_reflections_change_filters() {
+    let fft_size = 1024;
+    let num_bins = fft_size / 2 + 1;
+
+    // Without reflections
+    let mut params_off = XtcPluginParams::default();
+    params_off.fft_size = fft_size;
+    params_off.room_reflections_enabled = false;
+    let filters_off = compute_xtc_filters_full(&params_off, 48000, num_bins);
+
+    // With reflections
+    let mut params_on = XtcPluginParams::default();
+    params_on.fft_size = fft_size;
+    params_on.room_reflections_enabled = true;
+    params_on.wall_absorption = 0.3;
+    let filters_on = compute_xtc_filters_full(&params_on, 48000, num_bins);
+
+    // Filters should differ at mid frequencies
+    let bin_1khz = (1000.0 * fft_size as f32 / 48000.0) as usize;
+    let diff_ll = (filters_on.filter_ll[bin_1khz] - filters_off.filter_ll[bin_1khz]).norm();
+    let diff_lr = (filters_on.filter_lr[bin_1khz] - filters_off.filter_lr[bin_1khz]).norm();
+
+    assert!(
+        diff_ll > 1e-4 || diff_lr > 1e-4,
+        "Enabling reflections should change filters. diff_ll={}, diff_lr={}",
+        diff_ll,
+        diff_lr
+    );
+}
+
+/// Test that energy stays in acceptable range with reflections enabled
+#[test]
+fn test_energy_preservation_with_reflections() {
+    let mut params = XtcPluginParams::default();
+    params.room_reflections_enabled = true;
+    params.wall_absorption = 0.3;
+
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    let num_frames = 8192;
+    let mut input = vec![0.0_f32; num_frames * 2];
+    for i in 0..num_frames {
+        let phase = 2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0;
+        input[i * 2] = phase.sin() * 0.5;
+        input[i * 2 + 1] = phase.cos() * 0.5;
+    }
+    let mut output = vec![0.0_f32; num_frames * 2];
+
+    let context = ProcessContext::new(48000, num_frames);
+
+    plugin.process(&input, &mut output, &context).unwrap();
+
+    let skip_samples = 2048;
+    let input_energy: f32 = input[skip_samples * 2..].iter().map(|x| x * x).sum();
+    let output_energy: f32 = output[skip_samples * 2..].iter().map(|x| x * x).sum();
+
+    let energy_ratio = output_energy / input_energy;
+    assert!(
+        energy_ratio > 0.1 && energy_ratio < 5.0,
+        "Energy ratio {} with reflections is outside acceptable range [0.1, 5.0]",
+        energy_ratio
+    );
+}
+
+/// Test air absorption: unity at DC, increases with frequency and distance
+#[test]
+fn test_air_absorption() {
+    // At DC, no absorption regardless of distance
+    assert!((air_absorption(0.0, 10.0) - 1.0).abs() < 1e-6);
+
+    // At 1kHz and 2m, absorption should be very small
+    let atten_1k_2m = air_absorption(1000.0, 2.0);
+    assert!(
+        atten_1k_2m > 0.99,
+        "1kHz at 2m should have negligible absorption, got {}",
+        atten_1k_2m
+    );
+
+    // Absorption increases with frequency
+    let atten_10k_5m = air_absorption(10000.0, 5.0);
+    let atten_1k_5m = air_absorption(1000.0, 5.0);
+    assert!(
+        atten_10k_5m < atten_1k_5m,
+        "10kHz should have more absorption than 1kHz: {} vs {}",
+        atten_10k_5m,
+        atten_1k_5m
+    );
+
+    // Absorption increases with distance
+    let atten_5k_2m = air_absorption(5000.0, 2.0);
+    let atten_5k_10m = air_absorption(5000.0, 10.0);
+    assert!(
+        atten_5k_10m < atten_5k_2m,
+        "10m should have more absorption than 2m: {} vs {}",
+        atten_5k_10m,
+        atten_5k_2m
+    );
+
+    // At 10kHz and 10m, absorption should be noticeable but not extreme
+    let atten_10k_10m = air_absorption(10000.0, 10.0);
+    assert!(
+        atten_10k_10m > 0.5 && atten_10k_10m < 1.0,
+        "10kHz at 10m absorption {} should be moderate",
+        atten_10k_10m
+    );
 }

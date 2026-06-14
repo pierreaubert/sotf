@@ -5,10 +5,13 @@
 //! focus flags). The latter stays in `app-gpui` / `app-tui`.
 
 use crate::autoeq::{PipelineStepId, PipelineStepStatus};
+use crate::recording_types::{CtcMatrixExportStrategy, RecordingState};
 use crate::room_eq_types::{
-    ChannelMeasurement, ChannelMetadata, ChannelOptResult, DelayDetectionState, DspChainOutput,
-    OptimizationStatus, RoomEqDataSource, RoomEqOptimizerConfig, RoomEqSpeakerConfig, RoomEqStep,
-    RoomEqWizardMode, SimplePresetConfig, apply_simple_preset,
+    ChannelMeasurement, ChannelMetadata, ChannelOptResult, CrossoverType, DelayDetectionState,
+    DelayDetectionStatus, DspChainOutput, OptimizationStatus, RoomEqDataSource,
+    RoomEqMeasurementsFile, RoomEqOptimizerConfig, RoomEqSpeakerConfig, RoomEqStep,
+    RoomEqWizardMode, SimpleCrossoverChoice, SimplePresetConfig, apply_simple_preset,
+    ctc_system_config_for_speaker_names, room_eq_channel_is_bass_output,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -32,6 +35,15 @@ pub struct RoomEqScreenModel {
 
     /// Parsed CTC configuration forwarded to the optimizer.
     pub ctc_config: Option<autoeq::roomeq::CtcConfig>,
+
+    /// Original `system` block imported from a RoomConfig file.
+    ///
+    /// This carries home-cinema role mapping and bass-management policy.
+    /// Rebuilding it from UI-only state can change the optimizer result.
+    pub imported_system: Option<autoeq::roomeq::SystemConfig>,
+
+    /// Original crossover map imported from a RoomConfig file.
+    pub imported_crossovers: Option<HashMap<String, autoeq::roomeq::CrossoverConfig>>,
 
     /// Shared delay-detection state (probe form, results, overrides).
     pub delay_detection: DelayDetectionState,
@@ -108,6 +120,8 @@ impl Default for RoomEqScreenModel {
             channel_measurements: Vec::new(),
             ctc_measurements: None,
             ctc_config: None,
+            imported_system: None,
+            imported_crossovers: None,
             delay_detection: DelayDetectionState::default(),
             speaker_configs: Vec::new(),
             optimizer_config: RoomEqOptimizerConfig::default(),
@@ -148,6 +162,8 @@ pub enum RoomEqViewEvent {
     SetDataSource(RoomEqDataSource),
     /// Replace the loaded measurements and re-derive speaker configs.
     LoadMeasurements(Vec<ChannelMeasurement>),
+    /// Load measurements from a completed recording session.
+    LoadFromRecording(Box<RecordingState>),
     /// Remove all loaded measurements.
     ClearMeasurements,
 
@@ -245,6 +261,11 @@ impl RoomEqScreenModel {
                 self.apply_smart_defaults(None);
                 self.has_multi_position_data = false;
                 self.multi_position_counts.clear();
+            }
+            RoomEqViewEvent::LoadFromRecording(recording_state) => {
+                self.load_from_recording(&recording_state);
+                self.init_speaker_configs();
+                self.apply_smart_defaults(None);
             }
             RoomEqViewEvent::ClearMeasurements => {
                 self.channel_measurements.clear();
@@ -407,6 +428,17 @@ impl RoomEqScreenModel {
                 } else {
                     SpeakerConfigType::Single
                 },
+                crossover_type: CrossoverType::LR24,
+                driver_names: if m.is_group {
+                    m.group_drivers
+                        .iter()
+                        .enumerate()
+                        .map(|(i, _)| format!("driver_{}", i + 1))
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                crossover_freq_hints: Vec::new(),
                 ..Default::default()
             })
             .collect();
@@ -419,5 +451,742 @@ impl RoomEqScreenModel {
             playback_sample_rate,
         };
         self.optimizer_config.apply_smart_defaults(&meta);
+    }
+
+    /// Check if any channel is a subwoofer (LFE, Sub, SW).
+    pub fn has_subwoofer(&self) -> bool {
+        self.channel_names().iter().any(|name| {
+            let upper = name.to_uppercase();
+            upper == "LFE" || upper == "SUB" || upper == "SW" || upper.starts_with("SUB")
+        })
+    }
+
+    /// Check if the setup is surround (3+ channels, excluding subs).
+    pub fn is_surround(&self) -> bool {
+        let non_sub_count = self
+            .channel_names()
+            .iter()
+            .filter(|name| {
+                let upper = name.to_uppercase();
+                upper != "LFE" && upper != "SUB" && upper != "SW" && !upper.starts_with("SUB")
+            })
+            .count();
+        non_sub_count >= 3
+    }
+
+    /// Check if any channel has phase data.
+    pub fn has_phase_data(&self) -> bool {
+        self.channel_measurements
+            .iter()
+            .any(|m| !m.measurement.phase_deg.is_empty())
+    }
+
+    /// Check if any channel is a multi-driver group.
+    pub fn has_multi_driver(&self) -> bool {
+        self.channel_measurements.iter().any(|m| m.is_group)
+    }
+
+    /// Check if multi-position measurement data is available.
+    pub fn has_multiple_measurements(&self) -> bool {
+        self.has_multi_position_data
+    }
+
+    /// Height channel names used for Voice of God detection.
+    const HEIGHT_CHANNELS: &[&str] = &[
+        "TFL", "TFR", "TSL", "TSR", "TBL", "TBR", "VOG", "TFC", "TBC", "TSC",
+    ];
+
+    /// Check if measurement has height channels (for VoG).
+    pub fn has_height_channels(&self) -> bool {
+        self.channel_names().iter().any(|name| {
+            let upper = name.to_uppercase();
+            Self::HEIGHT_CHANNELS.iter().any(|&h| upper == h)
+        })
+    }
+
+    /// Check if the setup is home cinema (5+ non-sub channels).
+    pub fn is_home_cinema(&self) -> bool {
+        let non_sub_count = self
+            .channel_names()
+            .iter()
+            .filter(|name| {
+                let upper = name.to_uppercase();
+                upper != "LFE" && upper != "SUB" && upper != "SW" && !upper.starts_with("SUB")
+            })
+            .count();
+        non_sub_count >= 5
+    }
+
+    /// Get average pre-score.
+    pub fn average_pre_score(&self) -> f64 {
+        if self.channel_results.is_empty() {
+            0.0
+        } else {
+            self.channel_results
+                .iter()
+                .map(|r| r.pre_score)
+                .sum::<f64>()
+                / self.channel_results.len() as f64
+        }
+    }
+
+    /// Get average post-score.
+    pub fn average_post_score(&self) -> f64 {
+        if self.channel_results.is_empty() {
+            0.0
+        } else {
+            self.channel_results
+                .iter()
+                .map(|r| r.post_score)
+                .sum::<f64>()
+                / self.channel_results.len() as f64
+        }
+    }
+
+    /// Load measurements from recording state.
+    ///
+    /// Groups multi-mic recordings by speaker index so that each physical channel
+    /// produces one `ChannelMeasurement` with additional mic data stored in
+    /// `multi_mic_measurements` for multi-position optimization.
+    pub fn load_from_recording(&mut self, recording_state: &RecordingState) {
+        use std::collections::BTreeMap;
+
+        // Group completed recordings by speaker index (channel_index)
+        let mut grouped: BTreeMap<usize, Vec<&crate::recording_types::ChannelRecording>> =
+            BTreeMap::new();
+        for r in &recording_state.channel_recordings {
+            if r.result.is_some() {
+                grouped.entry(r.channel_index).or_default().push(r);
+            }
+        }
+
+        self.channel_measurements = grouped
+            .into_values()
+            .map(|recordings| {
+                let first = recordings[0];
+                // Strip the first parenthetical suffix — handles
+                // " (Mic N)", " (Pos N)", and " (Pos N / Mic M)" naming.
+                let base_name = first
+                    .channel_name
+                    .find(" (")
+                    .map_or(first.channel_name.as_str(), |pos| &first.channel_name[..pos])
+                    .to_string();
+
+                let primary_result = first.result.clone().unwrap();
+                let multi_mic = if recordings.len() > 1 {
+                    recordings
+                        .iter()
+                        .skip(1)
+                        .filter_map(|r| r.result.clone())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+
+                ChannelMeasurement {
+                    channel_name: base_name,
+                    measurement: primary_result,
+                    is_group: false,
+                    group_drivers: Vec::new(),
+                    multi_mic_measurements: multi_mic,
+                }
+            })
+            .collect();
+
+        let mut ctc_exported_raw = false;
+        let mut ctc_raw_sweep_range = None;
+        self.ctc_measurements = recording_state
+            .recording_directory
+            .as_ref()
+            .and_then(|dir| {
+                let speaker_names: Vec<String> = recording_state
+                    .playback_config
+                    .channel_mappings
+                    .iter()
+                    .map(|m| m.group_name.clone())
+                    .collect();
+                let mic_names = vec!["left_ear".to_string(), "right_ear".to_string()];
+                let output_dir = std::path::Path::new(dir);
+                if recording_state.recording_config.ctc_matrix_strategy
+                    == CtcMatrixExportStrategy::RawSweep
+                {
+                    match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
+                        &recording_state.channel_recordings,
+                        &speaker_names,
+                        &mic_names,
+                        recording_state.recording_config.sample_rate,
+                        output_dir,
+                        recording_state.recording_config.ctc_matrix_strategy,
+                        recording_state.recording_config.ctc_loopback_input_channel,
+                        &recording_state.transfer_matrix_loopbacks,
+                    ) {
+                        Ok(Some(measurements)) => match crate::room_eq_types::ctc_uniform_sweep_range_for_measurements(
+                            &recording_state.channel_recordings,
+                            &speaker_names,
+                            &measurements,
+                        ) {
+                            Some(range) => {
+                                ctc_exported_raw = true;
+                                ctc_raw_sweep_range = Some(range);
+                                Some(measurements)
+                            }
+                            None => {
+                                log::warn!(
+                                    "Raw-sweep CTC matrix mixes sweep ranges or references missing recordings; falling back to measured impulse-response export"
+                                );
+                                None
+                            }
+                        },
+                        Ok(None) => {
+                            log::warn!(
+                                "Raw-sweep CTC matrix is incomplete; falling back to measured impulse-response export"
+                            );
+                            None
+                        }
+                        Err(e) => {
+                            log::warn!("Could not export raw-sweep CTC transfer matrix: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+                .or_else(|| {
+                    match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+                        &recording_state.channel_recordings,
+                        &speaker_names,
+                        &mic_names,
+                        recording_state.recording_config.sample_rate,
+                        output_dir,
+                    ) {
+                        Ok(measurements) => measurements,
+                        Err(e) => {
+                            log::warn!("Could not export CTC transfer matrix: {}", e);
+                            None
+                        }
+                    }
+                })
+            });
+        self.ctc_config = self.ctc_measurements.clone().map(|measurements| {
+            let raw = ctc_exported_raw && recording_state.ctc_reference_sweep_path.is_some();
+            autoeq::roomeq::CtcConfig {
+                enabled: false,
+                matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
+                measurements: Some(measurements),
+                reference_sweep: if raw {
+                    recording_state
+                        .ctc_reference_sweep_path
+                        .as_ref()
+                        .map(std::path::PathBuf::from)
+                } else {
+                    None
+                },
+                sweep_duration_s: if raw {
+                    Some(recording_state.signal_duration_secs as f64)
+                } else {
+                    None
+                },
+                sweep_start_hz: if raw {
+                    ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                } else {
+                    None
+                },
+                sweep_end_hz: if raw {
+                    ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                } else {
+                    None
+                },
+                ..Default::default()
+            }
+        });
+
+        self.delay_detection.sample_rate = recording_state.probe_capture.sample_rate;
+        self.delay_detection.input_channel = recording_state.probe_capture.input_channel;
+        self.delay_detection.output_device_name =
+            (!recording_state.playback_config.device_name.is_empty())
+                .then(|| recording_state.playback_config.device_name.clone());
+        self.delay_detection.input_device_name =
+            (!recording_state.recording_config.device_name.is_empty())
+                .then(|| recording_state.recording_config.device_name.clone());
+        if let Some(results) = recording_state.probe_capture.results.clone() {
+            self.delay_detection.apply_results(results);
+        } else {
+            self.delay_detection.results = None;
+            self.delay_detection.edited_arrival_ms.clear();
+            self.delay_detection.status = DelayDetectionStatus::Idle;
+        }
+
+        self.data_source = RoomEqDataSource::FromRecording;
+    }
+
+    /// Convert UI state to backend RoomConfig.
+    pub fn to_room_config(&self) -> autoeq::roomeq::RoomConfig {
+        use ndarray::Array1;
+
+        let mut speakers: HashMap<String, autoeq::roomeq::SpeakerConfig> = HashMap::new();
+        let mut crossovers: HashMap<String, autoeq::roomeq::CrossoverConfig> =
+            self.imported_crossovers.clone().unwrap_or_default();
+
+        let to_curve = |meas: &ChannelMeasurement| -> autoeq::Curve {
+            let frequencies: Vec<f64> = meas
+                .measurement
+                .frequencies
+                .iter()
+                .map(|&f| f as f64)
+                .collect();
+            let magnitude_db: Vec<f64> = meas
+                .measurement
+                .magnitude_db
+                .iter()
+                .map(|&db| db as f64)
+                .collect();
+            let phase = if !meas.measurement.phase_deg.is_empty()
+                && meas.measurement.phase_deg.len() == frequencies.len()
+            {
+                Some(Array1::from_vec(
+                    meas.measurement
+                        .phase_deg
+                        .iter()
+                        .map(|&p| p as f64)
+                        .collect(),
+                ))
+            } else {
+                None
+            };
+
+            autoeq::Curve {
+                freq: Array1::from_vec(frequencies),
+                spl: Array1::from_vec(magnitude_db),
+                phase,
+                ..Default::default()
+            }
+        };
+
+        let result_to_curve = |res: &crate::recording_types::RecordingResult| -> autoeq::Curve {
+            let frequencies: Vec<f64> = res.frequencies.iter().map(|&f| f as f64).collect();
+            let magnitude_db: Vec<f64> = res.magnitude_db.iter().map(|&db| db as f64).collect();
+            let phase = if !res.phase_deg.is_empty() && res.phase_deg.len() == frequencies.len() {
+                Some(Array1::from_vec(
+                    res.phase_deg.iter().map(|&p| p as f64).collect(),
+                ))
+            } else {
+                None
+            };
+
+            autoeq::Curve {
+                freq: Array1::from_vec(frequencies),
+                spl: Array1::from_vec(magnitude_db),
+                phase,
+                ..Default::default()
+            }
+        };
+
+        for speaker_config in &self.speaker_configs {
+            let channel_name = &speaker_config.channel_name;
+
+            if let Some(meas) = self
+                .channel_measurements
+                .iter()
+                .find(|m| &m.channel_name == channel_name)
+            {
+                match speaker_config.config_type {
+                    crate::room_eq_types::SpeakerConfigType::Single => {
+                        if meas.multi_mic_measurements.is_empty() {
+                            let curve = to_curve(meas);
+                            speakers.insert(
+                                channel_name.clone(),
+                                autoeq::roomeq::SpeakerConfig::Single(
+                                    autoeq::roomeq::MeasurementSource::InMemory(curve),
+                                ),
+                            );
+                        } else {
+                            let mut curves = vec![to_curve(meas)];
+                            for extra in &meas.multi_mic_measurements {
+                                curves.push(result_to_curve(extra));
+                            }
+                            speakers.insert(
+                                channel_name.clone(),
+                                autoeq::roomeq::SpeakerConfig::Single(
+                                    autoeq::roomeq::MeasurementSource::InMemoryMultiple(curves),
+                                ),
+                            );
+                        }
+                    }
+                    crate::room_eq_types::SpeakerConfigType::MultiDriver => {
+                        let mut driver_measurements = Vec::new();
+                        if meas.is_group && !meas.group_drivers.is_empty() {
+                            for driver_res in &meas.group_drivers {
+                                driver_measurements.push(
+                                    autoeq::roomeq::MeasurementSource::InMemory(result_to_curve(
+                                        driver_res,
+                                    )),
+                                );
+                            }
+                        } else {
+                            driver_measurements.push(
+                                autoeq::roomeq::MeasurementSource::InMemory(to_curve(meas)),
+                            );
+                        }
+
+                        let xover_id = format!("xover_{}", channel_name);
+                        let xover_type = match speaker_config.crossover_type {
+                            CrossoverType::LR12 => "LR12",
+                            CrossoverType::LR24 => "LR24",
+                            CrossoverType::LR48 => "LR48",
+                            CrossoverType::LinearPhase => "LinearPhase",
+                            CrossoverType::Butterworth12 => "Butterworth12",
+                            CrossoverType::Butterworth24 => "Butterworth24",
+                        };
+
+                        crossovers.insert(
+                            xover_id.clone(),
+                            autoeq::roomeq::CrossoverConfig {
+                                crossover_type: xover_type.to_string(),
+                                frequency: None,
+                                frequencies: None,
+                                frequency_range: None,
+                            },
+                        );
+
+                        speakers.insert(
+                            channel_name.clone(),
+                            autoeq::roomeq::SpeakerConfig::Group(autoeq::roomeq::SpeakerGroup {
+                                name: channel_name.clone(),
+                                speaker_name: None,
+                                measurements: driver_measurements,
+                                crossover: Some(xover_id),
+                            }),
+                        );
+                    }
+                }
+            }
+        }
+
+        let optimizer = self.optimizer_config.to_optimizer_config();
+
+        log::info!(
+            "RoomConfig: filters={}, max_q={}, max_freq={}, schroeder={}, target_response={}, excursion={}, broadband={}, imported={}",
+            optimizer.num_filters,
+            optimizer.max_q,
+            optimizer.max_freq,
+            optimizer.schroeder_split.is_some(),
+            optimizer.target_response.is_some(),
+            optimizer.excursion_protection.is_some(),
+            optimizer
+                .target_response
+                .as_ref()
+                .is_some_and(|tr| tr.broadband_precorrection),
+            self.optimizer_config.imported_from_file,
+        );
+
+        let ctc = self
+            .ctc_config
+            .clone()
+            .or_else(|| {
+                self.ctc_measurements.clone().map(|measurements| {
+                    autoeq::roomeq::CtcConfig {
+                        enabled: false,
+                        matrix_source: "measured".to_string(),
+                        measurements: Some(measurements),
+                        ..Default::default()
+                    }
+                })
+            })
+            .map(|mut ctc| {
+                ctc.enabled = false;
+                ctc
+            });
+        let ctc_enabled = ctc.as_ref().is_some_and(|ctc| ctc.enabled);
+        let has_bass_output = speakers
+            .keys()
+            .any(|name| room_eq_channel_is_bass_output(name));
+        let system = if let Some(system) = self.imported_system.clone() {
+            Some(system)
+        } else if ctc_enabled || has_bass_output {
+            let bass_management_crossover = has_bass_output.then(|| {
+                let xover_id = "bass_management".to_string();
+                let crossover_type = match self.simple_preset.crossover {
+                    SimpleCrossoverChoice::Lr24 => "LR24",
+                    SimpleCrossoverChoice::Lr48 => "LR48",
+                };
+                crossovers
+                    .entry(xover_id.clone())
+                    .or_insert_with(|| autoeq::roomeq::CrossoverConfig {
+                        crossover_type: crossover_type.to_string(),
+                        frequency: Some(80.0),
+                        frequencies: None,
+                        frequency_range: None,
+                    });
+                xover_id
+            });
+            ctc_system_config_for_speaker_names(
+                speakers.keys().map(String::as_str),
+                bass_management_crossover,
+            )
+        } else {
+            None
+        };
+
+        autoeq::roomeq::RoomConfig {
+            version: autoeq::roomeq::default_config_version(),
+            system,
+            speakers,
+            crossovers: Some(crossovers),
+            target_curve: None,
+            optimizer,
+            recording_config: None,
+            ctc,
+            cea2034_cache: None,
+        }
+    }
+
+    /// Validate the current configuration.
+    pub fn validate(&self) -> autoeq::roomeq::ValidationResult {
+        let config = self.to_room_config();
+        autoeq::roomeq::validate_room_config(&config)
+    }
+
+    /// Calculate the level offset needed to normalize a curve to 0 dB.
+    /// Uses mean SPL in the 1 kHz to 2 kHz range by default.
+    pub fn calculate_normalization_offset(frequencies: &[f64], spl: &[f64]) -> f64 {
+        let min_freq = 1000.0;
+        let max_freq = 2000.0;
+
+        let mut sum = 0.0;
+        let mut count = 0;
+
+        for (i, &f) in frequencies.iter().enumerate() {
+            if f >= min_freq
+                && f <= max_freq
+                && let Some(&db) = spl.get(i)
+            {
+                sum += db;
+                count += 1;
+            }
+        }
+
+        if count > 0 {
+            sum / count as f64
+        } else if spl.is_empty() {
+            0.0
+        } else {
+            spl.iter().sum::<f64>() / spl.len() as f64
+        }
+    }
+
+    /// Normalize a set of points by subtracting an offset.
+    pub fn normalize_points(points: &[(f64, f64)], offset: f64) -> Vec<(f64, f64)> {
+        points.iter().map(|&(f, db)| (f, db - offset)).collect()
+    }
+
+    /// Compute the average slope for L and R channels in dB/octave.
+    pub fn compute_lr_slope(&self) -> Option<(f64, f64, f64)> {
+        crate::room_eq_types::compute_lr_slope(&self.channel_measurements)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::recording_types::{ChannelRecording, ChannelRecordingState, RecordingResult};
+    use crate::room_eq_types::ChannelMeasurement;
+
+    fn make_recording_result(channel: usize) -> RecordingResult {
+        RecordingResult {
+            channel,
+            wav_path: None,
+            csv_path: None,
+            frequencies: vec![100.0, 1000.0, 10000.0],
+            magnitude_db: vec![0.0, 0.0, 0.0],
+            phase_deg: vec![],
+            impulse_response: None,
+            impulse_time_ms: None,
+            thd_percent: None,
+            harmonic_distortion_db: None,
+            excess_group_delay_ms: None,
+            rt60_ms: None,
+            clarity_c50_db: None,
+            clarity_c80_db: None,
+            spectrogram_db: None,
+        }
+    }
+
+    fn make_measurement(channel_name: &str) -> ChannelMeasurement {
+        ChannelMeasurement {
+            channel_name: channel_name.to_string(),
+            measurement: make_recording_result(0),
+            is_group: false,
+            group_drivers: Vec::new(),
+            multi_mic_measurements: Vec::new(),
+        }
+    }
+
+    fn make_done_recording(channel_index: usize, channel_name: &str) -> ChannelRecording {
+        let mut rec = ChannelRecording::with_mic_position(
+            channel_index,
+            channel_name.to_string(),
+            0,
+            0,
+        );
+        rec.state = ChannelRecordingState::Done;
+        rec.result = Some(make_recording_result(channel_index));
+        rec
+    }
+
+    fn assert_effect_navigate_to_step(effect: &RoomEqEffect, expected: RoomEqStep) {
+        assert!(
+            matches!(effect, RoomEqEffect::NavigateToStep(step) if *step == expected),
+            "expected NavigateToStep({:?}), got {:?}",
+            expected,
+            effect
+        );
+    }
+
+    #[test]
+    fn navigate_to_step_updates_step_and_emits_effect() {
+        let mut model = RoomEqScreenModel::default();
+        let effects = model.apply(RoomEqViewEvent::NavigateToStep(RoomEqStep::Configure));
+        assert_eq!(model.step, RoomEqStep::Configure);
+        assert_eq!(effects.len(), 1);
+        assert_effect_navigate_to_step(&effects[0], RoomEqStep::Configure);
+    }
+
+    #[test]
+    fn next_and_previous_step_navigate() {
+        let mut model = RoomEqScreenModel::default();
+        model.step = RoomEqStep::LoadData;
+        let effects = model.apply(RoomEqViewEvent::NextStep);
+        assert_eq!(model.step, RoomEqStep::Delay);
+        assert_eq!(effects.len(), 1);
+        assert_effect_navigate_to_step(&effects[0], RoomEqStep::Delay);
+
+        let effects = model.apply(RoomEqViewEvent::PreviousStep);
+        assert_eq!(model.step, RoomEqStep::LoadData);
+        assert_eq!(effects.len(), 1);
+        assert_effect_navigate_to_step(&effects[0], RoomEqStep::LoadData);
+    }
+
+    #[test]
+    fn load_measurements_initializes_speaker_configs() {
+        let mut model = RoomEqScreenModel::default();
+        let measurements = vec![make_measurement("L"), make_measurement("R")];
+        let effects = model.apply(RoomEqViewEvent::LoadMeasurements(measurements));
+        assert!(effects.is_empty());
+        assert_eq!(model.speaker_configs.len(), 2);
+        assert_eq!(model.speaker_configs[0].channel_name, "L");
+        assert_eq!(model.speaker_configs[1].channel_name, "R");
+    }
+
+    #[test]
+    fn start_optimization_with_no_measurements_sets_error() {
+        let mut model = RoomEqScreenModel::default();
+        let effects = model.apply(RoomEqViewEvent::StartOptimization);
+        assert_eq!(model.error_message, Some("No measurements loaded".to_string()));
+        assert_eq!(effects.len(), 1);
+        assert!(
+            matches!(&effects[0], RoomEqEffect::ShowError(msg) if msg == "No measurements loaded"),
+            "expected ShowError, got {:?}",
+            effects[0]
+        );
+    }
+
+    #[test]
+    fn start_optimization_with_measurements_starts() {
+        let mut model = RoomEqScreenModel::default();
+        model.apply(RoomEqViewEvent::LoadMeasurements(vec![make_measurement("L")]));
+        let effects = model.apply(RoomEqViewEvent::StartOptimization);
+        assert_eq!(model.optimization_status, OptimizationStatus::Running);
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], RoomEqEffect::StartOptimization(_)));
+    }
+
+    #[test]
+    fn set_optimization_results_completes() {
+        let mut model = RoomEqScreenModel::default();
+        let effects = model.apply(RoomEqViewEvent::SetOptimizationResults {
+            channel_results: vec![ChannelOptResult {
+                channel_name: "L".to_string(),
+                pre_score: 0.5,
+                post_score: 0.9,
+                eq_filters: Vec::new(),
+                broadband_filters: Vec::new(),
+                preamp_gain_db: 0.0,
+                crossover_freqs: None,
+                driver_gains: None,
+                original_response: None,
+                corrected_response: None,
+                normalized_response: None,
+                target_curve: None,
+                group_delay_before: None,
+                group_delay_after: None,
+                phase_response_before: None,
+                phase_response_after: None,
+                impulse_response: None,
+            }],
+            dsp_output: Box::new(DspChainOutput {
+                version: "1.0.0".to_string(),
+                global_plugins: Vec::new(),
+                channels: HashMap::new(),
+                metadata: None,
+            }),
+            artifact_dir: PathBuf::from("/tmp/room_eq"),
+        });
+        assert!(effects.is_empty());
+        assert_eq!(model.optimization_status, OptimizationStatus::Completed);
+        assert_eq!(model.overall_progress, 1.0);
+        assert_eq!(model.status_message, "Optimization completed");
+        assert_eq!(model.average_pre_score(), 0.5);
+        assert_eq!(model.average_post_score(), 0.9);
+    }
+
+    #[test]
+    fn load_from_recording_groups_by_speaker() {
+        let mut model = RoomEqScreenModel::default();
+        let mut recording_state = RecordingState::default();
+        recording_state.channel_recordings = vec![
+            make_done_recording(0, "L"),
+            make_done_recording(1, "R"),
+        ];
+        let effects = model.apply(RoomEqViewEvent::LoadFromRecording(Box::new(recording_state)));
+        assert!(effects.is_empty());
+        assert_eq!(model.channel_measurements.len(), 2);
+        assert_eq!(model.channel_measurements[0].channel_name, "L");
+        assert_eq!(model.channel_measurements[1].channel_name, "R");
+        assert_eq!(model.speaker_configs.len(), 2);
+        assert_eq!(model.data_source, RoomEqDataSource::FromRecording);
+    }
+
+    #[test]
+    fn helper_methods_detect_channel_layouts() {
+        let mut model = RoomEqScreenModel::default();
+        model.apply(RoomEqViewEvent::LoadMeasurements(vec![
+            make_measurement("L"),
+            make_measurement("R"),
+            make_measurement("C"),
+            make_measurement("LFE"),
+            make_measurement("SL"),
+            make_measurement("SR"),
+        ]));
+        assert!(model.has_subwoofer());
+        assert!(model.is_surround());
+        assert!(!model.has_height_channels());
+        assert!(model.is_home_cinema());
+        assert!(!model.has_multi_driver());
+        assert!(!model.has_phase_data());
+    }
+
+    #[test]
+    fn calculate_normalization_offset_uses_1k_to_2k_range() {
+        let frequencies = vec![500.0, 1000.0, 1500.0, 2000.0, 4000.0];
+        let spl = vec![10.0, 5.0, 7.0, 9.0, 20.0];
+        let offset = RoomEqScreenModel::calculate_normalization_offset(&frequencies, &spl);
+        assert!((offset - 7.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn normalize_points_subtracts_offset() {
+        let points = vec![(100.0, 5.0), (1000.0, 7.0)];
+        let normalized = RoomEqScreenModel::normalize_points(&points, 2.0);
+        assert_eq!(normalized, vec![(100.0, 3.0), (1000.0, 5.0)]);
     }
 }

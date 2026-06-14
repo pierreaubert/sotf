@@ -136,7 +136,7 @@ pub(super) fn handle_tab_bar_keys(app: &mut App, key: KeyEvent) -> Option<Player
         app.configure_sub_screen = sub;
         app.input_mode = InputMode::from_configure_sub_screen(sub);
         if sub == ConfigureSubScreen::RoomEq
-            && app.room_eq.step == sotf_audio_player::room_eq_types::RoomEqStep::LoadData
+            && app.room_eq.model.step == sotf_audio_player::room_eq_types::RoomEqStep::LoadData
         {
             super::conf_roomeq::auto_open_load_data(app);
         }

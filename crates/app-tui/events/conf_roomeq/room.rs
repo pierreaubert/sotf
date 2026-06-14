@@ -26,7 +26,7 @@ pub(super) fn room_eq_step_next_wrap(s: RoomEqStep) -> RoomEqStep {
 }
 
 pub(super) fn room_eq_field_value_string(app: &App, field: usize) -> String {
-    let c = &app.room_eq.config;
+    let c = &app.room_eq.model.optimizer_config;
     match field {
         0 => c.num_filters.to_string(),
         1 => format!("{:.0}", c.min_freq),

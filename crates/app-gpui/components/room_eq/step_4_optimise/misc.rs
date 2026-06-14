@@ -24,7 +24,7 @@ pub(super) fn finalize_pipeline_step_state(
     succeeded: bool,
 ) {
     use sotf_audio_player::autoeq::PipelineStepStatus;
-    room_eq.current_step = None;
+    room_eq.current_pipeline_step = None;
     if succeeded {
         for status in room_eq.step_history.values_mut() {
             if matches!(

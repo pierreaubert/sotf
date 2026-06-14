@@ -730,12 +730,13 @@ impl App {
     pub fn apply_room_eq_to_chain(&mut self) -> Result<String, String> {
         use sotf_audio_player::autoeq::{self, RoomEqApplyOutcome};
 
-        let Some(dsp_output) = self.room_eq.dsp_output.clone() else {
+        let Some(dsp_output) = self.room_eq.model.dsp_output.clone() else {
             return Err("No optimization results to apply. Run the optimizer first.".to_string());
         };
 
         let channel_names: Vec<String> = self
             .room_eq
+            .model
             .channel_results
             .iter()
             .map(|r| r.channel_name.clone())

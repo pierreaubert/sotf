@@ -43,8 +43,7 @@ fn create_plugin_builtin(
         "eq" => {
             let params: EqPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Invalid EQ params: {}", e))?;
-            let plugin = EqPlugin::from_params(num_channels, sample_rate, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            EqPlugin::from_params(num_channels, sample_rate, params).map(|p| p.into_boxed_plugin())
         }
         "gain" => {
             let params: GainPluginParams = serde_json::from_value(parameters.clone())
