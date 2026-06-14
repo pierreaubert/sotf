@@ -1,0 +1,12 @@
+---
+source: crates/systemwide/crates/daemon/bin/sotf_daemon/tests.rs
+assertion_line: 1693
+expression: resp
+---
+{
+  "success": true,
+  "data": {
+    "x": 1,
+    "name": "test"
+  }
+}
