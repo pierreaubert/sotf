@@ -2,15 +2,8 @@
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Returns the path to the demo audio files directory
-pub fn demo_audio_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("app-gpui")
-        .join("assets")
-        .join("demo-audio")
-}
+/// Re-export the workspace-level demo audio helpers from `sotf-testkit`.
+pub use sotf_testkit::audio::{demo_audio_file as get_demo_file, test_data_audio_dir as demo_audio_dir};
 
 /// Returns all WAV files in the demo audio directory
 pub fn all_wav_files() -> Vec<PathBuf> {
@@ -45,11 +38,6 @@ pub fn all_flac_files() -> Vec<PathBuf> {
             }
         })
         .collect()
-}
-
-/// Returns a specific demo audio file by name
-pub fn get_demo_file(name: &str) -> PathBuf {
-    demo_audio_dir().join(name)
 }
 
 /// Creates a temporary database file for testing
@@ -116,7 +104,7 @@ mod tests {
     #[test]
     fn test_get_demo_file() {
         let file = get_demo_file("classical.wav");
-        assert!(file.ends_with("demo-audio/classical.wav"));
+        assert!(file.ends_with("data_tests/audio/classical.wav"));
     }
 
     #[test]

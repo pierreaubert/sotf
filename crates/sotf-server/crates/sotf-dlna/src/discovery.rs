@@ -211,4 +211,34 @@ mod tests {
         let from: SocketAddr = "192.168.1.50:1900".parse().unwrap();
         assert!(parse_search_response(response, from).is_none());
     }
+
+    #[test]
+    fn test_parse_search_response_missing_headers() {
+        let response = "HTTP/1.1 200 OK\r\nUSN: uuid:x\r\n\r\n";
+        let from: SocketAddr = "192.168.1.50:8200".parse().unwrap();
+        assert!(parse_search_response(response, from).is_none());
+    }
+
+    #[test]
+    fn test_parse_search_response_lowercase_headers() {
+        let response = "HTTP/1.1 200 OK\r\n\
+            location: http://192.168.1.2:8200/desc.xml\r\n\
+            st: urn:schemas-upnp-org:device:MediaServer:1\r\n\
+            usn: uuid:lowercase\r\n\r\n";
+        let from: SocketAddr = "192.168.1.2:8200".parse().unwrap();
+        let device = parse_search_response(response, from).unwrap();
+        assert_eq!(device.location, "http://192.168.1.2:8200/desc.xml");
+        assert_eq!(device.device_type, "urn:schemas-upnp-org:device:MediaServer:1");
+        assert_eq!(device.usn, "uuid:lowercase");
+    }
+
+    #[test]
+    fn test_parse_search_response_usn_optional() {
+        let response = "HTTP/1.1 200 OK\r\n\
+            LOCATION: http://192.168.1.3/desc.xml\r\n\
+            ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
+        let from: SocketAddr = "192.168.1.3:8200".parse().unwrap();
+        let device = parse_search_response(response, from).unwrap();
+        assert_eq!(device.usn, "");
+    }
 }

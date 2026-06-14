@@ -468,12 +468,20 @@ fn plugin_cache_update_skips_under_ui_contention_without_fallback() {
 fn processing_thread_idle_wait_blocks_instead_of_micro_spinning() {
     let source = include_str!("processing_state.rs");
     assert!(
-        source.contains("decoder_stream_active"),
-        "processing thread empty-queue path should distinguish active playback from idle"
+        source.contains("let mut decoder_stream_active = true"),
+        "processing thread should start in low-latency mode before the first decoded frame"
     );
     assert!(
-        source.contains("from_millis(IDLE_EMPTY_SLEEP_PROCESSING_MS)"),
+        source.contains("IDLE_EMPTY_SLEEP_PROCESSING_MS"),
         "processing thread should use a coarser wait after the decoder has gone idle"
+    );
+    assert!(
+        source.contains("recv_timeout"),
+        "processing thread should wake immediately when decoder frames arrive"
+    );
+    assert!(
+        !source.contains("TryRecvError::Empty"),
+        "processing thread must not sleep after an empty try_recv"
     );
 }
 

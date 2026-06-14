@@ -10,7 +10,9 @@ use super::sotf_service_descriptor::mdns_query_matches;
 #[cfg(target_os = "macos")]
 use super::sotf_service_descriptor::platform;
 use crate::federation_config::SotfApiSettings;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::Ipv4Addr;
+#[cfg(not(target_os = "macos"))]
+use std::net::{SocketAddr, SocketAddrV4};
 
 /// Advertise the SOTF API as `_sotf._tcp` so mobile clients can discover it.
 pub async fn run_sotf_lan_discovery(

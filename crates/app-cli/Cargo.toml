@@ -75,3 +75,5 @@ rand = { workspace = true }
 criterion = { workspace = true }
 assert_cmd = "2.0"
 predicates = "3.1"
+sotf-engine = { workspace = true }
+sotf-test = { workspace = true }

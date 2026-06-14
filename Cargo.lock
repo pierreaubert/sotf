@@ -246,6 +246,7 @@ dependencies = [
  "signal-hook 0.4.4",
  "sotf-engine",
  "sotf-plugins",
+ "sotf-test",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",
@@ -9453,6 +9454,8 @@ dependencies = [
  "sotf-plugin-ambisonics",
  "sotf-plugins",
  "sotf-streaming",
+ "sotf-test",
+ "sotf-testkit",
  "sotf-types",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
@@ -9541,6 +9544,7 @@ dependencies = [
  "sotf-player",
  "sotf-plugins",
  "sotf-services",
+ "sotf-testkit",
  "sotf-tls",
  "strsim",
  "symphonia 0.6.0",
@@ -9708,6 +9712,8 @@ dependencies = [
  "sotf-mpd",
  "sotf-player",
  "sotf-plugins",
+ "sotf-test",
+ "sotf-testkit",
  "sotf-tls",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
@@ -10324,6 +10330,7 @@ dependencies = [
  "sotf-plugin-transient-shaper",
  "sotf-plugin-upmixer",
  "sotf-plugin-xtc",
+ "sotf-test",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",
@@ -10371,6 +10378,15 @@ dependencies = [
  "reqwest 0.13.3",
  "symphonia-core 0.6.0",
  "url",
+]
+
+[[package]]
+name = "sotf-test"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -10459,6 +10475,7 @@ dependencies = [
  "sotf-player",
  "sotf-plugins",
  "sotf-services",
+ "sotf-test",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",

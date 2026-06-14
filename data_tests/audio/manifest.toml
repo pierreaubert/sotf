@@ -1,0 +1,138 @@
+# Centralized workspace audio test fixtures.
+# Paths in this manifest are relative to data_tests/audio/.
+
+[[files]]
+name = "classical.aac"
+format = "aac"
+duration_seconds = 45.7
+sample_rate = 48000
+channels = 2
+description = "Classical music sample in AAC format."
+
+[[files]]
+name = "classical.flac"
+format = "flac"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Classical music sample in FLAC format."
+
+[[files]]
+name = "classical.m4a"
+format = "m4a"
+duration_seconds = 44.992
+sample_rate = 48000
+channels = 2
+description = "Classical music sample in M4A/AAC format."
+
+[[files]]
+name = "classical.mp4"
+format = "mp4"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Classical music sample in MP4 container."
+
+[[files]]
+name = "classical.wav"
+format = "wav"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Classical music sample in WAV format."
+
+[[files]]
+name = "country.flac"
+format = "flac"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Country music sample in FLAC format."
+
+[[files]]
+name = "country.wav"
+format = "wav"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Country music sample in WAV format."
+
+[[files]]
+name = "edm.flac"
+format = "flac"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "EDM sample in FLAC format."
+
+[[files]]
+name = "edm.wav"
+format = "wav"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "EDM sample in WAV format."
+
+[[files]]
+name = "female_vocal.flac"
+format = "flac"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Female vocal sample in FLAC format."
+
+[[files]]
+name = "female_vocal.wav"
+format = "wav"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Female vocal sample in WAV format."
+
+[[files]]
+name = "jazz.flac"
+format = "flac"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Jazz sample in FLAC format."
+
+[[files]]
+name = "jazz.wav"
+format = "wav"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Jazz sample in WAV format."
+
+[[files]]
+name = "piano.flac"
+format = "flac"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Piano sample in FLAC format."
+
+[[files]]
+name = "piano.wav"
+format = "wav"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Piano sample in WAV format."
+
+[[files]]
+name = "rock.flac"
+format = "flac"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Rock music sample in FLAC format."
+
+[[files]]
+name = "rock.wav"
+format = "wav"
+duration_seconds = 44.954
+sample_rate = 48000
+channels = 2
+description = "Rock music sample in WAV format."

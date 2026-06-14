@@ -35,6 +35,19 @@ fn test_ir_file_parameter_reports_load_errors() {
 }
 
 #[test]
+fn ir_loader_does_not_hold_receiver_lock_while_building_ir_state() {
+    let source = include_str!("convolution_plugin.rs");
+    assert!(
+        source.contains("let req = match rx.lock().unwrap().recv()"),
+        "IR loader workers should hold the receiver mutex only while taking a request"
+    );
+    assert!(
+        !source.contains("while let Ok(req) = rx.lock().unwrap().recv()"),
+        "IR loader must not hold the receiver mutex while build_ir_state runs"
+    );
+}
+
+#[test]
 fn test_set_parameter_long_ir_loads_without_process_allocations() {
     use sotf_host::assert_no_allocs;
     use std::io::Write;
@@ -97,7 +110,10 @@ fn test_set_parameter_long_ir_loads_without_process_allocations() {
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    assert!(plugin.ir_load_result_rx.is_none(), "IR load should complete");
+    assert!(
+        plugin.ir_load_result_rx.is_none(),
+        "IR load should complete"
+    );
 
     assert_no_allocs("ConvolutionPlugin::process_in_place long IR", || {
         for _ in 0..100 {

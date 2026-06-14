@@ -4,10 +4,7 @@ use super::line_read::read_line_bounded;
 use super::misc::MAX_LINE_BYTES;
 use super::misc::execute_command_list;
 use super::misc::redact_for_log;
-use super::mpd_server::MpdServer;
-use super::mpd_server_config::MpdServerConfig;
 use super::types::LineRead;
-use super::types::MpdAuthMode;
 use crate::handler::PlayerAdapter;
 use crate::protocol::MpdCommand;
 use std::sync::Arc;
@@ -15,6 +12,13 @@ use tokio::io::BufReader;
 
 use crate::handler::*;
 use crate::protocol::FilterExpr;
+
+#[cfg(feature = "tls")]
+use super::mpd_server::MpdServer;
+#[cfg(feature = "tls")]
+use super::mpd_server_config::MpdServerConfig;
+#[cfg(feature = "tls")]
+use super::types::MpdAuthMode;
 
 struct DummyAdapter;
 
@@ -260,4 +264,70 @@ fn test_redact_for_log_edge_cases() {
     assert_eq!(redact_for_log("password\tsecret123"), "password <redacted>");
     // Case-insensitive match
     assert_eq!(redact_for_log("PASSWORD secret"), "password <redacted>");
+}
+
+#[tokio::test]
+async fn test_read_line_bounded_only_lf() {
+    let input: &[u8] = b"play\n";
+    let mut reader = BufReader::new(input);
+    match read_line_bounded(&mut reader, MAX_LINE_BYTES).await {
+        LineRead::Line(s) => assert_eq!(s, "play"),
+        other => panic!("unexpected: {other:?}", other = format_outcome(&other)),
+    }
+}
+
+#[tokio::test]
+async fn test_read_line_bounded_exactly_at_limit() {
+    // max_bytes=3: three data bytes plus LF fits exactly.
+    let input: &[u8] = b"abc\n";
+    let mut reader = BufReader::new(input);
+    match read_line_bounded(&mut reader, 3).await {
+        LineRead::Line(s) => assert_eq!(s, "abc"),
+        other => panic!("unexpected: {other:?}", other = format_outcome(&other)),
+    }
+}
+
+#[tokio::test]
+async fn test_read_line_bounded_oversize_by_one() {
+    // max_bytes=3: four data bytes before LF must be rejected.
+    let input: &[u8] = b"abcd\n";
+    let mut reader = BufReader::new(input);
+    match read_line_bounded(&mut reader, 3).await {
+        LineRead::TooLong => {}
+        other => panic!("expected TooLong, got {other:?}", other = format_outcome(&other)),
+    }
+}
+
+#[tokio::test]
+async fn test_read_line_bounded_times_out_when_reader_blocks() {
+    // A reader that never produces data must block until the outer timeout
+    // fires; this confirms the bounded read does not busy-loop or return early.
+    let (reader, _writer) = tokio::io::duplex(64);
+    let mut reader = BufReader::new(reader);
+    let result = tokio::time::timeout(
+        std::time::Duration::from_millis(10),
+        read_line_bounded(&mut reader, MAX_LINE_BYTES),
+    )
+    .await;
+    assert!(result.is_err(), "expected timeout");
+}
+
+#[tokio::test]
+async fn test_read_line_bounded_invalid_utf8() {
+    let input: &[u8] = b"\xff\xfe\n";
+    let mut reader = BufReader::new(input);
+    match read_line_bounded(&mut reader, MAX_LINE_BYTES).await {
+        LineRead::InvalidUtf8 => {}
+        other => panic!("expected InvalidUtf8, got {other:?}", other = format_outcome(&other)),
+    }
+}
+
+#[tokio::test]
+async fn test_read_line_bounded_partial_line_at_eof() {
+    let input: &[u8] = b"status";
+    let mut reader = BufReader::new(input);
+    match read_line_bounded(&mut reader, MAX_LINE_BYTES).await {
+        LineRead::Line(s) => assert_eq!(s, "status"),
+        other => panic!("unexpected: {other:?}", other = format_outcome(&other)),
+    }
 }

@@ -108,6 +108,7 @@ core-foundation-sys = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+sotf-test = { workspace = true }
 
 [lib]
 name = "sotf_audio_player_tui"

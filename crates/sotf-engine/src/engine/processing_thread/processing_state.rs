@@ -13,7 +13,7 @@ use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
 /// Short wait used while audio is active and the decoder queue briefly runs dry.
 const ACTIVE_EMPTY_SLEEP_PROCESSING_US: u64 = 100;
-/// Coarser wait once the decoder has been quiet long enough to be considered idle.
+/// Coarser wait once playback has explicitly stopped or reached end of stream.
 const IDLE_EMPTY_SLEEP_PROCESSING_MS: u64 = 1;
 
 /// Processing state
@@ -444,7 +444,7 @@ pub(super) fn run_processing_thread(
         channels
     );
 
-    let mut decoder_stream_active = false;
+    let mut decoder_stream_active = true;
 
     loop {
         // Check for commands (non-blocking)
@@ -460,8 +460,18 @@ pub(super) fn run_processing_thread(
             }
         }
 
-        // Process audio from decoder.
-        let message = decoder_rx.try_recv();
+        // Process audio from decoder. Use a timeout receive instead of
+        // try_recv + sleep so arriving frames wake the processing thread
+        // immediately while idle engines still back off.
+        let message = if decoder_stream_active {
+            decoder_rx.recv_timeout(std::time::Duration::from_micros(
+                ACTIVE_EMPTY_SLEEP_PROCESSING_US,
+            ))
+        } else {
+            decoder_rx.recv_timeout(std::time::Duration::from_millis(
+                IDLE_EMPTY_SLEEP_PROCESSING_MS,
+            ))
+        };
 
         match message {
             Ok(DecoderMessage::Frame(frame)) => {
@@ -652,6 +662,7 @@ pub(super) fn run_processing_thread(
                 }
             }
             Ok(DecoderMessage::Flush) => {
+                decoder_stream_active = true;
                 // Reset plugin state (IIR filter history, compressor envelopes,
                 // limiter lookahead, upmixer FFT buffers) so that stale pre-seek
                 // audio doesn't cause transient artifacts in post-seek output.
@@ -677,19 +688,8 @@ pub(super) fn run_processing_thread(
                     }
                 }
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                // During active playback, keep wakeup latency low enough to
-                // avoid starving the playback ring. Once EOS or an explicit
-                // stop marks the stream inactive, back off to a millisecond-
-                // scale idle wait so stopped engines do not burn CPU.
-                let sleep = if decoder_stream_active {
-                    std::time::Duration::from_micros(ACTIVE_EMPTY_SLEEP_PROCESSING_US)
-                } else {
-                    std::time::Duration::from_millis(IDLE_EMPTY_SLEEP_PROCESSING_MS)
-                };
-                std::thread::sleep(sleep);
-            }
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 log::debug!("[Processing Thread] Decoder queue disconnected");
                 break;
             }

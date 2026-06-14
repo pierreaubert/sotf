@@ -102,6 +102,261 @@ fn dev_query_reply_serialization() {
 }
 
 #[test]
+fn query_library_track_count() {
+    let app = make_app();
+    assert_eq!(resolve("library.track_count", &app).unwrap(), 0);
+}
+
+#[test]
+fn query_metadata_editor() {
+    use sotf_audio_player::{
+        MetadataAffectedFile, MetadataEditPreview, MetadataImportCandidate, MetadataTarget,
+    };
+    use sotf_audio_player_tui::app::{
+        MetadataEditorFields, MetadataEditorScope, MetadataEditorState,
+    };
+
+    let mut app = make_app();
+    assert_eq!(resolve("metadata.editor_open", &app).unwrap(), false);
+    assert!(resolve("metadata.target", &app).unwrap().is_null());
+
+    app.metadata_editor = Some(MetadataEditorState {
+        scope: MetadataEditorScope::Album,
+        target: MetadataTarget::AlbumId(1),
+        target_label: "Test Album".to_string(),
+        fields: MetadataEditorFields {
+            title: "Test Title".to_string(),
+            year: "2024".to_string(),
+            ..Default::default()
+        },
+        selected_field: 0,
+        editing: false,
+        edit_buffer: String::new(),
+        preview: Some(MetadataEditPreview {
+            target: None,
+            affected_files: vec![MetadataAffectedFile {
+                path: std::path::PathBuf::from("/tmp/a.flac"),
+                backup_path: std::path::PathBuf::from("/tmp/a.flac.bak"),
+                writable: true,
+                reason: None,
+            }],
+            sidecar_path: None,
+            sidecar_backup_path: None,
+            affected_album_ids: vec![],
+            affected_track_paths: vec![],
+            unsupported_writes: vec![MetadataAffectedFile {
+                path: std::path::PathBuf::from("/tmp/a.flac"),
+                backup_path: std::path::PathBuf::from("/tmp/a.flac.bak"),
+                writable: false,
+                reason: Some("composer".to_string()),
+            }],
+        }),
+        error: None,
+        search_query: String::new(),
+        search_results: vec![MetadataImportCandidate {
+            provider_id: "test".to_string(),
+            provider_entity_id: "1".to_string(),
+            title: Some("Candidate".to_string()),
+            artist: None,
+            album_artist: None,
+            album_title: None,
+            year: None,
+            track_number: None,
+            disc_number: None,
+            isrc: None,
+            score: 0,
+        }],
+        selected_result: 0,
+        search_error: None,
+    });
+
+    assert_eq!(resolve("metadata.editor_open", &app).unwrap(), true);
+    assert_eq!(
+        resolve("metadata.target", &app).unwrap(),
+        serde_json::json!("Test Album")
+    );
+    assert_eq!(
+        resolve("metadata.title", &app).unwrap(),
+        serde_json::json!("Test Title")
+    );
+    assert_eq!(resolve("metadata.year", &app).unwrap(), serde_json::json!("2024"));
+    assert_eq!(resolve("metadata.preview_files", &app).unwrap(), 1);
+    assert_eq!(resolve("metadata.unsupported_count", &app).unwrap(), 1);
+    assert_eq!(resolve("metadata.candidate_count", &app).unwrap(), 1);
+}
+
+#[test]
+fn query_recording_state() {
+    let mut app = make_app();
+    app.recording = sotf_audio_player_tui::app::RecordingTuiState::default();
+    app.recording.status_message = "ready".to_string();
+
+    resolve("recording.step", &app).unwrap();
+    // Empty channel recordings means all (zero) channels are done.
+    assert_eq!(resolve("recording.all_done", &app).unwrap(), true);
+    assert_eq!(resolve("recording.done_count", &app).unwrap(), 0);
+    assert_eq!(resolve("recording.channel_count", &app).unwrap(), 0);
+    assert_eq!(
+        resolve("recording.status", &app).unwrap(),
+        serde_json::json!("ready")
+    );
+}
+
+#[test]
+fn query_room_eq_state() {
+    let mut app = make_app();
+    app.room_eq = sotf_audio_player_tui::app::RoomEqTuiState::default();
+    app.room_eq.opt_status_message = Some("running".to_string());
+    app.room_eq.opt_error = Some("boom".to_string());
+
+    resolve("roomeq.step", &app).unwrap();
+    assert_eq!(resolve("roomeq.measurement_count", &app).unwrap(), 0);
+    assert_eq!(resolve("roomeq.speaker_config_count", &app).unwrap(), 0);
+    resolve("roomeq.optimization_status", &app).unwrap();
+    assert_eq!(resolve("roomeq.result_count", &app).unwrap(), 0);
+    assert_eq!(resolve("roomeq.has_dsp_output", &app).unwrap(), false);
+    assert!(resolve("roomeq.dsp_channel_count", &app).unwrap().is_null());
+    assert_eq!(resolve("roomeq.filter_count", &app).unwrap(), 0);
+    assert!(resolve("roomeq.average_pre_score", &app).unwrap().is_null());
+    assert!(resolve("roomeq.average_post_score", &app).unwrap().is_null());
+    assert_eq!(
+        resolve("roomeq.status", &app).unwrap(),
+        serde_json::json!("running")
+    );
+    assert_eq!(resolve("roomeq.error", &app).unwrap(), serde_json::json!("boom"));
+}
+
+#[test]
+fn query_headphone_eq_and_spinorama_steps() {
+    let mut app = make_app();
+    app.headphone_eq = sotf_audio_player_tui::app::HeadphoneEqTuiState::default();
+    app.spinorama_eq = sotf_audio_player_tui::app::SpinoramaEqTuiState::default();
+
+    resolve("headphoneeq.step", &app).unwrap();
+    resolve("spinorama.step", &app).unwrap();
+}
+
+#[test]
+fn query_settings_theme() {
+    let app = make_app();
+    assert_eq!(resolve("settings.theme", &app).unwrap(), serde_json::json!("dark"));
+}
+
+#[test]
+fn query_audio_devices() {
+    let mut app = make_app();
+    app.output_devices = vec![];
+    app.current_output_device_name = Some("BlackHole".to_string());
+
+    assert_eq!(
+        resolve("audio.output_device", &app).unwrap(),
+        serde_json::json!("BlackHole")
+    );
+    assert_eq!(resolve("audio.output_device_count", &app).unwrap(), 0);
+}
+
+#[test]
+fn query_plugins_and_playlists_and_level_meters_and_cast() {
+    use sotf_audio_player::{ChannelGroup, ChannelInfo};
+
+    let mut app = make_app();
+    app.level_meter_groups = vec![ChannelGroup {
+        name: "stereo".to_string(),
+        channels: vec![
+            ChannelInfo {
+                index: 0,
+                name: "L".to_string(),
+                display_name: vec!["L".to_string()],
+            },
+            ChannelInfo {
+                index: 1,
+                name: "R".to_string(),
+                display_name: vec!["R".to_string()],
+            },
+        ],
+        muted: false,
+        soloed: false,
+        dimmed: false,
+    }];
+    app.cast_devices = vec![sotf_audio_player_tui::app::CastDeviceInfo {
+        name: "Kitchen".to_string(),
+        device_type: "Chromecast".to_string(),
+        address: "192.168.1.10".to_string(),
+        port: 8009,
+    }];
+
+    assert_eq!(
+        resolve("plugins.count", &app).unwrap(),
+        app.plugin_graph.plugin_count()
+    );
+    assert_eq!(
+        resolve("playlists.count", &app).unwrap(),
+        app.playlist_controller.playlists().len()
+    );
+    assert_eq!(resolve("level_meters.channel_count", &app).unwrap(), 2);
+    assert_eq!(resolve("cast.device_count", &app).unwrap(), 1);
+}
+
+#[test]
+fn query_room_eq_with_results() {
+    use sotf_audio_player::room_eq_types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
+
+    let mut app = make_app();
+    app.room_eq = sotf_audio_player_tui::app::RoomEqTuiState::default();
+    app.room_eq.opt_status = OptimizationStatus::Completed;
+    app.room_eq.channel_results = vec![
+        ChannelOptResult {
+            channel_name: "L".to_string(),
+            pre_score: 3.0,
+            post_score: 1.0,
+            eq_filters: vec![EqFilterConfig {
+                filter_type: "peak".to_string(),
+                frequency: 1000.0,
+                q: 1.0,
+                gain_db: 2.0,
+            }],
+            broadband_filters: vec![],
+            preamp_gain_db: 0.0,
+            crossover_freqs: None,
+            driver_gains: None,
+            original_response: None,
+            corrected_response: None,
+            normalized_response: None,
+            target_curve: None,
+            group_delay_before: None,
+            group_delay_after: None,
+            phase_response_before: None,
+            phase_response_after: None,
+            impulse_response: None,
+        },
+        ChannelOptResult {
+            channel_name: "R".to_string(),
+            pre_score: 5.0,
+            post_score: 2.0,
+            eq_filters: vec![],
+            broadband_filters: vec![],
+            preamp_gain_db: 0.0,
+            crossover_freqs: None,
+            driver_gains: None,
+            original_response: None,
+            corrected_response: None,
+            normalized_response: None,
+            target_curve: None,
+            group_delay_before: None,
+            group_delay_after: None,
+            phase_response_before: None,
+            phase_response_after: None,
+            impulse_response: None,
+        },
+    ];
+
+    assert_eq!(resolve("roomeq.result_count", &app).unwrap(), 2);
+    assert_eq!(resolve("roomeq.filter_count", &app).unwrap(), 1);
+    assert_eq!(resolve("roomeq.average_pre_score", &app).unwrap(), 4.0);
+    assert_eq!(resolve("roomeq.average_post_score", &app).unwrap(), 1.5);
+}
+
+#[test]
 fn dev_command_channel_roundtrip() {
     let (tx, rx) = mpsc::channel::<DevCommand>();
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);

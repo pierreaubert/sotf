@@ -5,7 +5,12 @@ use super::types::PlaybackState;
 use super::types::TestQueueItem;
 use gpui::TestAppContext;
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
+
+fn demo_audio_path(name: &str) -> PathBuf {
+    sotf_testkit::audio::demo_audio_file(name)
+}
 
 /// Test complete playback flow: load -> play -> seek -> pause -> resume -> stop.
 #[gpui::test]
@@ -20,14 +25,14 @@ async fn test_full_playback_flow(_cx: &mut TestAppContext) {
     // Step 1: Load tracks into queue
     let tracks = vec![
         TestTrack::new(
-            "assets/demo-audio/piano.flac",
+            demo_audio_path("piano.flac").to_str().unwrap(),
             "Piano Piece",
             "Test Artist",
             "Test Album",
             180.0,
         ),
         TestTrack::new(
-            "assets/demo-audio/rock.flac",
+            demo_audio_path("rock.flac").to_str().unwrap(),
             "Rock Song",
             "Rock Artist",
             "Rock Album",
@@ -426,9 +431,6 @@ async fn test_playback_auto_advance_on_track_end(_cx: &mut TestAppContext) {
 /// Test that demo audio files exist for testing.
 #[gpui::test]
 async fn test_demo_audio_files_exist(_cx: &mut TestAppContext) {
-    use std::path::Path;
-
-    let demo_audio_dir = Path::new("../../assets/demo-audio");
     let expected_files = vec![
         "piano.flac",
         "rock.flac",
@@ -440,7 +442,7 @@ async fn test_demo_audio_files_exist(_cx: &mut TestAppContext) {
     // Verify directory structure is expected
     // Note: In CI, these files may not exist, so we just verify the paths are reasonable
     for file in expected_files {
-        let file_path = demo_audio_dir.join(file);
+        let file_path = demo_audio_path(file);
         // Just verify the path string is valid
         assert!(
             file_path.to_str().is_some(),

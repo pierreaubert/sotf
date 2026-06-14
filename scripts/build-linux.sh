@@ -350,7 +350,8 @@ create_tarball() {
     cp "$BUILD_DIR/$TUI_BINARY_NAME" "$staging_dir/"
     chmod +x "$staging_dir/$TUI_BINARY_NAME"
 
-    # Copy assets excluding demo-audio (distributed separately as sotf-demo.zip)
+    # Copy app assets. Demo audio was moved to data_tests/audio and is
+    # distributed separately as sotf-demo.zip via builds/cross.just.
     if [ -d "$PROJECT_ROOT/crates/app-gpui/assets" ]; then
         cp -r "$PROJECT_ROOT/crates/app-gpui/assets" "$staging_dir/"
         rm -rf "$staging_dir/assets/demo-audio"

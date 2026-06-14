@@ -252,3 +252,73 @@ pub(super) fn get_file_mtime(path: &Path) -> Option<u64> {
         .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_secs())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_album_title_corpus() {
+        let cases = [
+            ("the beatles", "the beatles"),
+            ("Album Title (CD 1)", "Album Title"),
+            ("Album Title (CD1)", "Album Title"),
+            ("Album Title (CD-1)", "Album Title"),
+            ("Album Title (Disc 1)", "Album Title"),
+            ("Album Title (Disc1)", "Album Title"),
+            ("Album Title CD 1", "Album Title"),
+            ("Album Title CD1", "Album Title"),
+            ("Album Title Vol. 2", "Album Title"),
+            ("Album Title Vol 3", "Album Title"),
+            ("Album Title [CD1]", "Album Title"),
+            ("Album Title (3116-2)", "Album Title"),
+            ("Album Title (R2 47730)", "Album Title"),
+            ("Passion [RWCD 1]", "Passion"),
+            ("The CD Is Dead", "The CD Is Dead"),
+            ("No disc here", "No disc here"),
+            ("Remaster (Deluxe Edition)", "Remaster (Deluxe Edition)"),
+            ("", ""),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                clean_album_title(input),
+                expected,
+                "clean_album_title({input:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn clean_album_title_does_not_increase_length() {
+        // Property: cleaning can only remove/trim characters, never add them.
+        let inputs = [
+            "My Album (CD 1)".to_string(),
+            "Another [catalog 123]".to_string(),
+            format!("Long Title {} (Disc 99)", "x".repeat(200)),
+        ];
+        for input in inputs {
+            let cleaned = clean_album_title(&input);
+            assert!(
+                cleaned.len() <= input.len(),
+                "cleaned {input:?} into {cleaned:?}, which grew"
+            );
+        }
+    }
+
+    #[test]
+    fn clean_album_title_never_panics() {
+        // Property: arbitrary strings should not cause a panic.
+        let inputs = [
+            "",
+            " ",
+            "Album (CD 1) (CD 1)",
+            "Album [ABC-123] [ABC-123]",
+            "((()))",
+            "日本語",
+            "\0\n\t",
+        ];
+        for input in inputs {
+            let _ = clean_album_title(input);
+        }
+    }
+}

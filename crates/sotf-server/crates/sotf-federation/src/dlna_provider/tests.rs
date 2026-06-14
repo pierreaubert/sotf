@@ -243,3 +243,35 @@ fn test_paginate_browse_terminates_on_total_matches() {
     let result = paginate_browse(&mut stub, 10).expect("must not error");
     assert_eq!(result.len(), 3);
 }
+
+#[test]
+fn test_paginate_browse_exact_page_size_reaches_total() {
+    let mut stub = TotalMatchesStub {
+        call_count: std::cell::Cell::new(0),
+    };
+    // Total 3, page size 2: page0 (id-0,id-1), page1 (id-2), then
+    // TotalMatches termination stops the loop.
+    let result = paginate_browse(&mut stub, 2).expect("must not error");
+    assert_eq!(result.len(), 3);
+    assert_eq!(stub.call_count.get(), 2);
+    assert_eq!(result[0].0, "id-0");
+    assert_eq!(result[2].0, "id-2");
+}
+
+#[test]
+fn test_paginate_browse_empty_first_page() {
+    struct EmptyStub;
+    impl BrowseSource for EmptyStub {
+        fn browse_page(&mut self, _start: u32, _count: u32) -> Result<BrowsePage, ProviderError> {
+            Ok(BrowsePage {
+                containers: vec![],
+                number_returned: Some(0),
+                total_matches: Some(0),
+            })
+        }
+    }
+
+    let mut stub = EmptyStub;
+    let result = paginate_browse(&mut stub, 10).expect("must not error");
+    assert!(result.is_empty());
+}

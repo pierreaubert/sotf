@@ -714,3 +714,83 @@ pub(super) fn api_content_length(headers: &[(String, String)]) -> Result<usize, 
         None => Ok(0),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn api_parse_range_header_no_header() {
+        assert_eq!(api_parse_range_header(None, 100), Ok(None));
+    }
+
+    #[test]
+    fn api_parse_range_header_full_range() {
+        assert_eq!(
+            api_parse_range_header(Some("bytes=0-99"), 100),
+            Ok(Some((0, 99)))
+        );
+    }
+
+    #[test]
+    fn api_parse_range_header_open_ended() {
+        assert_eq!(
+            api_parse_range_header(Some("bytes=10-"), 100),
+            Ok(Some((10, 99)))
+        );
+    }
+
+    #[test]
+    fn api_parse_range_header_suffix() {
+        assert_eq!(
+            api_parse_range_header(Some("bytes=-10"), 100),
+            Ok(Some((90, 99)))
+        );
+    }
+
+    #[test]
+    fn api_parse_range_header_end_beyond_file() {
+        assert_eq!(
+            api_parse_range_header(Some("bytes=0-999"), 100),
+            Ok(Some((0, 99)))
+        );
+    }
+
+    #[test]
+    fn api_parse_range_header_missing_bytes_prefix() {
+        assert_eq!(api_parse_range_header(Some("0-99"), 100), Err(()));
+    }
+
+    #[test]
+    fn api_parse_range_header_multiple_ranges() {
+        assert_eq!(api_parse_range_header(Some("bytes=0-9,10-19"), 100), Err(()));
+    }
+
+    #[test]
+    fn api_parse_range_header_start_at_or_beyond_length() {
+        assert_eq!(api_parse_range_header(Some("bytes=100-"), 100), Err(()));
+        assert_eq!(api_parse_range_header(Some("bytes=101-"), 100), Err(()));
+    }
+
+    #[test]
+    fn api_parse_range_header_end_before_start() {
+        assert_eq!(api_parse_range_header(Some("bytes=10-5"), 100), Err(()));
+    }
+
+    #[test]
+    fn api_parse_range_header_zero_suffix() {
+        assert_eq!(api_parse_range_header(Some("bytes=-0"), 100), Err(()));
+    }
+
+    #[test]
+    fn api_parse_range_header_zero_file_length() {
+        assert_eq!(api_parse_range_header(Some("bytes=0-"), 0), Err(()));
+    }
+
+    #[test]
+    fn api_parse_range_header_invalid_numbers() {
+        assert_eq!(api_parse_range_header(Some("bytes=abc-"), 100), Err(()));
+        assert_eq!(api_parse_range_header(Some("bytes=0-xyz"), 100), Err(()));
+        assert_eq!(api_parse_range_header(Some("bytes=-abc"), 100), Err(()));
+    }
+}

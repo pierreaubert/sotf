@@ -2,6 +2,7 @@
 use super::consts::SERVICE_ENUMERATION_TYPE;
 use super::consts::SOTF_API_SERVICE_TYPE;
 use super::dns::dns_label;
+#[cfg(not(target_os = "macos"))]
 use super::misc::decode_dns_name;
 use super::txt::txt_value;
 use crate::federation_config::SotfApiSettings;

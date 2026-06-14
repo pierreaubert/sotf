@@ -28,11 +28,43 @@ fn recorder_cmd() -> Command {
     let mut cmd =
         Command::cargo_bin("sotf-recorder-cli").expect("sotf-recorder-cli binary available");
     cmd.timeout(TEST_TIMEOUT);
+    // Redirect generated WAV/CSV files away from the source tree.
+    let output_dir = std::env::var("CARGO_TARGET_TMPDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir().join("sotf-recorder-tests"));
+    cmd.arg("--output-dir").arg(output_dir);
     cmd
 }
 
 fn fixture_wav() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tone_send0_rec0_48000.wav")
+    std::env::var("CARGO_TARGET_TMPDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir().join("sotf-recorder-tests"))
+        .join("tone_send0_rec0_48000.wav")
+}
+
+/// Generate a deterministic mono tone WAV fixture under the target temp dir.
+fn ensure_fixture_wav() {
+    use sotf_audio::signal_recorder::{SignalParams, SignalType, generate_signal, write_wav_file};
+
+    let path = fixture_wav();
+    if path.is_file() {
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let signal = generate_signal(
+        SignalType::Tone,
+        &SignalParams::Tone {
+            freq: 1000.0,
+            amp: 0.5,
+        },
+        0.5,
+        48000,
+    )
+    .expect("failed to generate tone signal");
+    write_wav_file(&path, &signal, 48000, 1).expect("failed to write fixture WAV");
 }
 
 // ---------------------------------------------------------------------------
@@ -48,6 +80,7 @@ fn player_cli_help_shows_usage() {
         .stdout(predicate::str::contains("Audio player"));
 }
 
+#[sotf_test::requires_hardware]
 #[test]
 fn player_cli_devices_lists_audio_devices() {
     player_cmd().arg("devices").assert().success().stdout(
@@ -62,11 +95,9 @@ fn player_cli_devices_lists_audio_devices() {
 
 #[test]
 fn player_cli_replay_gain_analyzes_local_wav() {
+    ensure_fixture_wav();
     let wav = fixture_wav();
-    if !wav.is_file() {
-        eprintln!("skipping: fixture WAV not found at {}", wav.display());
-        return;
-    }
+    assert!(wav.is_file(), "fixture WAV should be generated at {}", wav.display());
 
     player_cmd()
         .args(["replay-gain", wav.to_str().unwrap()])
@@ -386,6 +417,7 @@ fn recorder_cli_help_shows_usage() {
         ));
 }
 
+#[sotf_test::requires_hardware]
 #[test]
 fn recorder_cli_list_devices_shows_devices() {
     recorder_cmd()

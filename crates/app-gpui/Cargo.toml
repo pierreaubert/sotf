@@ -168,6 +168,7 @@ cpal = { workspace = true }
 hound = { workspace = true }
 sotf-engine = { workspace = true }
 sotf-player = { workspace = true, features = ["testing"] }
+sotf-testkit = { workspace = true }
 proptest = { workspace = true }
 
 [[test]]

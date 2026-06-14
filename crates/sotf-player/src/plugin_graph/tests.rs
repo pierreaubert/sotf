@@ -920,3 +920,180 @@ fn test_get_engine_index_by_linear_position_out_of_bounds() {
     let g = PluginGraph::with_default_rack();
     assert_eq!(g.get_engine_index_by_linear_position(100), None);
 }
+
+// =========================================================================
+// Channel count helpers
+// =========================================================================
+
+#[test]
+fn test_node_input_output_channels_for_special_nodes() {
+    let mut g = PluginGraph::new();
+    let input = g.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 4);
+    let output = g.add_special_node(SpecialNodeType::Output, NodePosition::new(0.0, 0.0), 6);
+    let split = g.add_special_node(SpecialNodeType::Split, NodePosition::new(0.0, 0.0), 2);
+    let merge = g.add_special_node(SpecialNodeType::Merge, NodePosition::new(0.0, 0.0), 2);
+
+    assert_eq!(g.node_input_channels(input), 0);
+    assert_eq!(g.node_output_channels(input), 4);
+
+    assert_eq!(g.node_input_channels(output), 6);
+    assert_eq!(g.node_output_channels(output), 0);
+
+    assert_eq!(g.node_input_channels(split), 1);
+    assert_eq!(g.node_output_channels(split), 2);
+
+    assert_eq!(g.node_input_channels(merge), 2);
+    assert_eq!(g.node_output_channels(merge), 1);
+}
+
+#[test]
+fn test_node_input_output_channels_for_plugins() {
+    let mut g = PluginGraph::new();
+    let eq = g.add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0));
+    let upmixer = g.add_plugin_node(&PluginType::Upmixer, NodePosition::new(0.0, 0.0));
+
+    assert_eq!(g.node_input_channels(eq), 2);
+    assert_eq!(g.node_output_channels(eq), 2);
+
+    assert_eq!(g.node_input_channels(upmixer), 2);
+    assert!(g.node_output_channels(upmixer) >= 5);
+}
+
+#[test]
+fn test_node_input_output_channels_for_missing_node() {
+    let g = PluginGraph::new();
+    let unknown_id = super::types::GraphNodeId::new_v4();
+    assert_eq!(g.node_input_channels(unknown_id), 0);
+    assert_eq!(g.node_output_channels(unknown_id), 0);
+}
+
+// =========================================================================
+// ASCII diagram
+// =========================================================================
+
+#[test]
+fn test_ascii_diagram_empty_graph() {
+    let g = PluginGraph::new();
+    let lines = g.to_ascii_diagram();
+    assert_eq!(lines, vec!["(empty graph)"]);
+}
+
+#[test]
+fn test_ascii_diagram_shows_disabled_plugins() {
+    let mut g = PluginGraph::with_default_rack();
+    let eq_id = g.add_user_plugin(&PluginType::EQ).unwrap();
+    g.toggle_plugin(eq_id).unwrap();
+
+    let joined = g.to_ascii_diagram().join(" ");
+    assert!(
+        joined.contains("[off]"),
+        "disabled plugin should be marked [off]: {joined}"
+    );
+}
+
+#[test]
+fn test_update_channel_dependent_plugins_eq_channels_propagate() {
+    let mut g = PluginGraph::with_default_rack();
+    let eq_id = g.add_user_plugin(&PluginType::EQ).unwrap();
+
+    // Change input to mono
+    if let Some(input) = g.input_node_mut() {
+        input.channels = 1;
+    }
+
+    g.update_channel_dependent_plugins();
+
+    let eq_node = g.nodes.get(&eq_id).unwrap();
+    match &eq_node.plugin.settings {
+        PluginSettings::EQ { channels, .. } => {
+            assert_eq!(*channels, 1, "EQ should adopt mono input channels");
+        }
+        _ => panic!("Expected EQ settings"),
+    }
+    assert_eq!(eq_node.input_channels, 1);
+    assert_eq!(eq_node.output_channels, 1);
+}
+
+#[test]
+fn test_update_channel_dependent_plugins_gain_channels_propagate() {
+    let mut g = PluginGraph::with_default_rack();
+    let gain_id = g.add_user_plugin(&PluginType::Gain).unwrap();
+
+    // Change input to mono
+    if let Some(input) = g.input_node_mut() {
+        input.channels = 1;
+    }
+
+    g.update_channel_dependent_plugins();
+
+    let gain_node = g.nodes.get(&gain_id).unwrap();
+    match &gain_node.plugin.settings {
+        PluginSettings::Gain { channels, .. } => {
+            assert_eq!(*channels, 1, "Gain should adopt mono input channels");
+        }
+        _ => panic!("Expected Gain settings"),
+    }
+}
+
+#[test]
+fn test_update_channel_dependent_plugins_per_channel_mode_resets_when_mismatch() {
+    let mut g = PluginGraph::with_default_rack();
+    let eq_id = g.add_user_plugin(&PluginType::EQ).unwrap();
+
+    // Seed EQ with per-channel filters for 2 channels, then switch input to mono
+    if let Some(node) = g.nodes.get_mut(&eq_id) {
+        if let PluginSettings::EQ {
+            channel_filters,
+            per_channel_mode,
+            ..
+        } = &mut node.plugin.settings
+        {
+            *channel_filters = Some(vec![Vec::new(), Vec::new()]);
+            *per_channel_mode = true;
+        }
+    }
+
+    if let Some(input) = g.input_node_mut() {
+        input.channels = 1;
+    }
+    g.update_channel_dependent_plugins();
+
+    let eq_node = g.nodes.get(&eq_id).unwrap();
+    match &eq_node.plugin.settings {
+        PluginSettings::EQ {
+            channels,
+            per_channel_mode,
+            channel_filters,
+            ..
+        } => {
+            assert_eq!(*channels, 1);
+            assert!(!per_channel_mode);
+            assert!(channel_filters.is_none());
+        }
+        _ => panic!("Expected EQ settings"),
+    }
+}
+
+#[test]
+fn test_move_user_plugin_preserves_channel_counts() {
+    let mut g = PluginGraph::with_default_rack();
+    let eq_id = g.add_user_plugin(&PluginType::EQ).unwrap();
+    let comp_id = g.add_user_plugin(&PluginType::Compressor).unwrap();
+
+    g.update_channel_dependent_plugins();
+    let eq_in_before = g.nodes.get(&eq_id).unwrap().input_channels;
+    let comp_in_before = g.nodes.get(&comp_id).unwrap().input_channels;
+
+    g.move_user_plugin_down(eq_id).unwrap();
+
+    assert_eq!(
+        g.nodes.get(&eq_id).unwrap().input_channels,
+        eq_in_before,
+        "EQ input channels should be preserved after move"
+    );
+    assert_eq!(
+        g.nodes.get(&comp_id).unwrap().input_channels,
+        comp_in_before,
+        "Compressor input channels should be preserved after move"
+    );
+}

@@ -345,7 +345,7 @@ Write-Info "Added sotf-desktop.exe"
 # Microsoft.VCLibs.140.00.UWPDesktop framework dependency declared in
 # AppxManifest.xml.
 
-# Copy app assets (fonts, icons, headphone-targets -- not demo-audio)
+# Copy app assets (fonts, icons, headphone-targets -- demo-audio now lives in data_tests/audio)
 $assetsSrc = Join-Path $ProjectRoot 'crates\app-gpui\assets'
 if (Test-Path $assetsSrc) {
     foreach ($subdir in @('fonts','icons','headphone-targets')) {

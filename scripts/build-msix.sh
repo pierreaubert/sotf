@@ -634,7 +634,7 @@ build_msix() {
         done
     fi
 
-    # Copy app assets (fonts, icons, headphone-targets — not demo-audio)
+    # Copy app assets (fonts, icons, headphone-targets — demo-audio now lives in data_tests/audio)
     local assets_src="$PROJECT_ROOT/crates/app-gpui/assets"
     if [ -d "$assets_src" ]; then
         for subdir in fonts icons headphone-targets; do

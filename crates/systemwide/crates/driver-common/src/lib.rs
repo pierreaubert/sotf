@@ -493,4 +493,102 @@ mod tests {
         let error = DriverError::invalid_config("channel_count", "must be 1..=32");
         assert_eq!(error.to_string(), "channel_count: must be 1..=32");
     }
+
+    #[test]
+    fn test_driver_error_display_all_variants() {
+        assert_eq!(DriverError::not_available("na").to_string(), "na");
+        assert_eq!(DriverError::not_installed("ni").to_string(), "ni");
+        assert_eq!(
+            DriverError::permission_denied("pd").to_string(),
+            "pd"
+        );
+        assert_eq!(DriverError::timeout("to").to_string(), "to");
+        assert_eq!(DriverError::io("io").to_string(), "io");
+        assert_eq!(DriverError::other("ot").to_string(), "ot");
+    }
+
+    #[test]
+    fn test_driver_error_from_string_and_str_and_io() {
+        let from_string: DriverError = String::from("msg").into();
+        assert_eq!(from_string.to_string(), "msg");
+
+        let from_str: DriverError = "slice".into();
+        assert_eq!(from_str.to_string(), "slice");
+
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
+        let from_io: DriverError = io.into();
+        assert_eq!(from_io.to_string(), "gone");
+    }
+
+    #[test]
+    fn test_driver_error_equality_and_serialization() {
+        let a = DriverError::timeout("slow");
+        let b = DriverError::timeout("slow");
+        let c = DriverError::timeout("fast");
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+
+        let json = serde_json::to_value(&a).unwrap();
+        assert_eq!(json["Timeout"]["message"], "slow");
+        let back: DriverError = serde_json::from_value(json).unwrap();
+        assert_eq!(a, back);
+    }
+
+    #[test]
+    fn test_driver_config_with_helpers() {
+        let sr = DriverConfig::with_sample_rate(96_000);
+        assert_eq!(sr.sample_rate, 96_000);
+        assert_eq!(sr.buffer_frames, 0);
+        assert_eq!(sr.channel_count, 0);
+        assert_eq!(sr.sample_rate_or(48_000), 96_000);
+        assert_eq!(sr.buffer_frames_or(512), 512);
+
+        let bf = DriverConfig::with_buffer_frames(256);
+        assert_eq!(bf.sample_rate, 0);
+        assert_eq!(bf.buffer_frames, 256);
+        assert_eq!(bf.buffer_frames_or(512), 256);
+
+        let cc = DriverConfig::with_channel_count(8);
+        assert_eq!(cc.sample_rate, 0);
+        assert_eq!(cc.channel_count, 8);
+        assert_eq!(cc.channel_count_or(2), 8);
+    }
+
+    #[test]
+    fn test_driver_config_default_and_new() {
+        assert_eq!(DriverConfig::default(), DriverConfig::keep_current());
+        let full = DriverConfig::new(48_000, 512, 2);
+        assert_eq!(full.sample_rate_or(44_100), 48_000);
+        assert_eq!(full.buffer_frames_or(256), 512);
+        assert_eq!(full.channel_count_or(1), 2);
+    }
+
+    #[test]
+    fn test_null_driver_default_and_acknowledges() {
+        let mut driver: NullDriver = Default::default();
+        driver.shutdown();
+        driver.set_engine_ready(true);
+        driver.acknowledge_config_change(DriverConfig::keep_current(), ConfigResult::Accepted);
+        assert_eq!(driver.available_frames(), 0);
+    }
+
+    #[test]
+    fn test_config_result_accepted_error_and_serialization() {
+        assert_eq!(ConfigResult::Accepted, ConfigResult::Accepted);
+        assert_ne!(ConfigResult::Accepted, ConfigResult::error("boom"));
+
+        let err = ConfigResult::error("boom");
+        let json = serde_json::to_value(&err).unwrap();
+        assert_eq!(json["Error"]["Other"]["message"], "boom");
+
+        let neg = ConfigResult::negotiated(48_000, 512, 2);
+        assert!(matches!(neg, ConfigResult::Negotiated { .. }));
+    }
+
+    #[test]
+    fn test_null_driver_read_frames_preserves_channels() {
+        let mut driver = NullDriver::new();
+        let mut buf = vec![1.0f32; 10];
+        assert_eq!(driver.read_frames(&mut buf), 0);
+    }
 }

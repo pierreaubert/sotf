@@ -2,6 +2,7 @@ use super::build::build_mdns_query;
 #[cfg(any(not(target_os = "macos"), test))]
 use super::build::build_mdns_response;
 use super::consts::SOTF_API_SERVICE_TYPE;
+use super::misc::decode_dns_name;
 use super::parse::parse_sotf_mdns_response;
 use super::sotf_service_descriptor::SotfServiceDescriptor;
 #[cfg(any(not(target_os = "macos"), test))]
@@ -17,6 +18,29 @@ fn test_settings(name: &str) -> SotfApiSettings {
         friendly_name: name.to_string(),
         auth_token: Some("secret".to_string()),
     }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn remove_answer_record(packet: &mut Vec<u8>, index: usize) {
+    let ancount = u16::from_be_bytes([packet[6], packet[7]]) as usize;
+    assert!(index < ancount, "answer index out of bounds");
+
+    let mut pos = 12;
+    for _ in 0..index {
+        let (_, name_end) = decode_dns_name(packet, pos).expect("valid record name");
+        let rdlength =
+            u16::from_be_bytes([packet[name_end + 8], packet[name_end + 9]]) as usize;
+        pos = name_end + 10 + rdlength;
+    }
+
+    let start = pos;
+    let (_, name_end) = decode_dns_name(packet, pos).expect("valid record name");
+    let rdlength = u16::from_be_bytes([packet[name_end + 8], packet[name_end + 9]]) as usize;
+    let end = name_end + 10 + rdlength;
+
+    packet.drain(start..end);
+    let new_ancount = (ancount - 1) as u16;
+    packet[6..8].copy_from_slice(&new_ancount.to_be_bytes());
 }
 
 #[test]
@@ -112,6 +136,77 @@ fn parses_advertised_sotf_api_server() {
 #[test]
 fn parser_rejects_mdns_queries_as_servers() {
     let packet = build_mdns_query(SOTF_API_SERVICE_TYPE);
+    let from = "192.168.1.42:5353".parse().unwrap();
+    assert!(parse_sotf_mdns_response(&packet, from).is_empty());
+}
+
+#[test]
+fn parser_rejects_empty_packet() {
+    let from = "192.168.1.42:5353".parse().unwrap();
+    assert!(parse_sotf_mdns_response(&[], from).is_empty());
+}
+
+#[test]
+fn parser_rejects_short_packet() {
+    let from = "192.168.1.42:5353".parse().unwrap();
+    assert!(parse_sotf_mdns_response(&[0; 11], from).is_empty());
+}
+
+#[test]
+fn parser_rejects_query_flag_packets() {
+    // Standard query response flag is 0x8400; flip the response bit off.
+    let mut packet = build_mdns_query(SOTF_API_SERVICE_TYPE);
+    packet[2] = 0x00;
+    packet[3] = 0x00;
+    let from = "192.168.1.42:5353".parse().unwrap();
+    assert!(parse_sotf_mdns_response(&packet, from).is_empty());
+}
+
+#[test]
+fn parser_uses_fallback_ipv4_address() {
+    // The descriptor advertises 192.168.1.42; remove the A record so the
+    // parser has to fall back to the source address.
+    let descriptor = SotfServiceDescriptor::with_pairing(
+        &test_settings("Kitchen SOTF"),
+        Ipv4Addr::new(192, 168, 1, 42),
+        false,
+    );
+    let mut packet = build_mdns_response(&descriptor);
+    // A record is the last answer (index 4: PTR, PTR, SRV, TXT, A).
+    remove_answer_record(&mut packet, 4);
+
+    let from = "192.168.1.99:5353".parse().unwrap();
+    let servers = parse_sotf_mdns_response(&packet, from);
+    assert_eq!(servers.len(), 1);
+    assert_eq!(servers[0].address, Ipv4Addr::new(192, 168, 1, 99));
+}
+
+#[test]
+fn parser_skips_ipv6_source_fallback() {
+    let descriptor = SotfServiceDescriptor::with_pairing(
+        &test_settings("Kitchen SOTF"),
+        Ipv4Addr::new(192, 168, 1, 42),
+        false,
+    );
+    let mut packet = build_mdns_response(&descriptor);
+    // Remove the A record; IPv6 sources provide no usable IPv4 fallback.
+    remove_answer_record(&mut packet, 4);
+
+    let from = "[::1]:5353".parse().unwrap();
+    assert!(parse_sotf_mdns_response(&packet, from).is_empty());
+}
+
+#[test]
+fn parser_skips_instance_without_srv() {
+    let descriptor = SotfServiceDescriptor::with_pairing(
+        &test_settings("Kitchen SOTF"),
+        Ipv4Addr::new(192, 168, 1, 42),
+        false,
+    );
+    let mut packet = build_mdns_response(&descriptor);
+    // Remove the SRV record (index 2: PTR, PTR, SRV, TXT, A).
+    remove_answer_record(&mut packet, 2);
+
     let from = "192.168.1.42:5353".parse().unwrap();
     assert!(parse_sotf_mdns_response(&packet, from).is_empty());
 }

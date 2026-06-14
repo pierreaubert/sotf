@@ -18,7 +18,7 @@ mod types;
 pub use app_impl::{App, FederationScanResult};
 pub use parameters::{TuiEditablePlugin, TuiParamDescriptor, TuiParamSpec, TuiParamType};
 pub use types::{
-    ArtistNode, ChannelConflictChoice, ChannelFilter, ChannelGroup, ChannelInfo,
+    ArtistNode, CastDeviceInfo, ChannelConflictChoice, ChannelFilter, ChannelGroup, ChannelInfo,
     ConfigureSubScreen, FederationEditState, FederationMode, FederationTuiState, FilePickerMode,
     FilePickerOrigin, HEADPHONE_TARGET_PRESETS, HeadphoneEqStep, HeadphoneEqTuiState, InputMode,
     LibrarySortOrder, LibraryViewMode, MatrixEditMode, MetadataEditorFields, MetadataEditorScope,

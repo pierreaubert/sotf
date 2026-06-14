@@ -81,3 +81,63 @@ pub(super) fn parse_range_header(
 
     Ok(Some((start, end)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_range_header_none() {
+        assert_eq!(parse_range_header(None, 100), Ok(None));
+    }
+
+    #[test]
+    fn test_parse_range_header_full_range() {
+        assert_eq!(parse_range_header(Some("bytes=0-99"), 100), Ok(Some((0, 99))));
+    }
+
+    #[test]
+    fn test_parse_range_header_open_ended() {
+        assert_eq!(parse_range_header(Some("bytes=10-"), 100), Ok(Some((10, 99))));
+    }
+
+    #[test]
+    fn test_parse_range_header_suffix() {
+        assert_eq!(parse_range_header(Some("bytes=-10"), 100), Ok(Some((90, 99))));
+    }
+
+    #[test]
+    fn test_parse_range_header_clamps_end() {
+        assert_eq!(parse_range_header(Some("bytes=0-200"), 100), Ok(Some((0, 99))));
+    }
+
+    #[test]
+    fn test_parse_range_header_zero_suffix_is_error() {
+        assert_eq!(parse_range_header(Some("bytes=-0"), 100), Err(()));
+    }
+
+    #[test]
+    fn test_parse_range_header_start_beyond_file() {
+        assert_eq!(parse_range_header(Some("bytes=100-"), 100), Err(()));
+    }
+
+    #[test]
+    fn test_parse_range_header_end_before_start() {
+        assert_eq!(parse_range_header(Some("bytes=50-10"), 100), Err(()));
+    }
+
+    #[test]
+    fn test_parse_range_header_missing_bytes_prefix() {
+        assert_eq!(parse_range_header(Some("0-10"), 100), Err(()));
+    }
+
+    #[test]
+    fn test_parse_range_header_multiple_ranges() {
+        assert_eq!(parse_range_header(Some("bytes=0-10,20-30"), 100), Err(()));
+    }
+
+    #[test]
+    fn test_parse_range_header_empty_file() {
+        assert_eq!(parse_range_header(Some("bytes=0-"), 0), Err(()));
+    }
+}

@@ -51,7 +51,7 @@ The `MusicDatabase` has been hardened for concurrent use:
 
 ## Test Infrastructure
 The `fixtures.rs` module provides shared utilities:
-- `demo_audio_dir()` - Path to demo audio files (`assets/demo-audio/`).
+- `demo_audio_dir()` - Path to workspace-level demo audio files (`data_tests/audio/`).
 - `temp_database()` - Create temporary test database.
 - `copy_demo_files_to_temp()` - Copy files for isolated testing.
 

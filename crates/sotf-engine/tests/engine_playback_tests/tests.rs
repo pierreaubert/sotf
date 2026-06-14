@@ -7,6 +7,7 @@ use sotf_audio::engine::{
 use std::sync::mpsc::{channel, sync_channel};
 use std::time::Duration;
 
+#[sotf_test::requires_hardware]
 #[test]
 fn test_playback_thread_creation() {
     super::common::skip_without_device!();
@@ -34,6 +35,7 @@ fn test_playback_thread_creation() {
     );
 }
 
+#[sotf_test::requires_hardware]
 #[test]
 fn test_playback_send_commands() {
     super::common::skip_without_device!();
@@ -98,6 +100,7 @@ fn test_playback_volume_commands() {
     }
 }
 
+#[sotf_test::requires_hardware]
 #[test]
 fn test_playback_shutdown() {
     super::common::skip_without_device!();
@@ -422,6 +425,7 @@ fn test_playback_mixed_commands() {
     std::thread::sleep(Duration::from_millis(100));
 }
 
+#[sotf_test::requires_hardware]
 #[test]
 fn test_playback_different_sample_rates() {
     super::common::skip_without_device!();

@@ -255,4 +255,58 @@ mod tests {
         let list = store.list();
         assert_eq!(list.len(), 2);
     }
+
+    #[test]
+    fn test_load_malformed_file_returns_error() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let path = tmp.path().join("tls").join("known_hosts.toml");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "this is not toml [}").unwrap();
+
+        let err = TofuStore::load(tmp.path()).expect_err("expected parse error");
+        assert!(err.contains("parse known_hosts"), "error: {err}");
+    }
+
+    #[test]
+    fn test_remove_nonexistent_returns_false() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let mut store = TofuStore::load(tmp.path()).expect("load");
+        assert!(!store.remove("no-such:1").expect("remove"));
+        // Removing a missing entry must not create the store file.
+        assert!(!tmp.path().join("tls").join("known_hosts.toml").exists());
+    }
+
+    #[test]
+    fn test_accept_updates_existing_host_and_persists() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        {
+            let mut store = TofuStore::load(tmp.path()).expect("load");
+            store.accept("host:1", "AA", "Old").expect("accept");
+            store.accept("host:1", "BB", "New").expect("update");
+            assert_eq!(store.check("host:1", "BB"), TofuResult::Trusted);
+        }
+
+        let store = TofuStore::load(tmp.path()).expect("reload");
+        assert_eq!(store.check("host:1", "BB"), TofuResult::Trusted);
+        assert_eq!(
+            store.check("host:1", "AA"),
+            TofuResult::Changed {
+                old_fingerprint: "BB".to_string(),
+                new_fingerprint: "AA".to_string(),
+            }
+        );
+        assert_eq!(store.list()[0].1.display_name, "New");
+    }
+
+    #[test]
+    fn test_list_sorted_by_host() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let mut store = TofuStore::load(tmp.path()).expect("load");
+        store.accept("z:9", "ZZ", "Zulu").expect("accept");
+        store.accept("a:1", "AA", "Alpha").expect("accept");
+        store.accept("m:5", "MM", "Mike").expect("accept");
+
+        let keys: Vec<_> = store.list().iter().map(|(k, _)| k.to_string()).collect();
+        assert_eq!(keys, vec!["a:1", "m:5", "z:9"]);
+    }
 }

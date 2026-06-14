@@ -1,6 +1,7 @@
 use sotf_plugins::{LoudnessMonitorPlugin, Plugin, ProcessContext};
 use std::time::Instant;
 
+#[sotf_test::slow]
 #[test]
 fn test_loudness_monitor_performance_96khz() {
     let channels = 2;

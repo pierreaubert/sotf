@@ -1,6 +1,7 @@
 use sotf_plugins::{DawHost, InPlacePluginAdapter, LoudnessMonitorPlugin};
 use std::time::Instant;
 
+#[sotf_test::slow]
 #[test]
 fn test_plugin_chain_performance_with_monitor_96khz() {
     let channels = 2;

@@ -307,10 +307,10 @@ build-demo-zip:
 	set -euo pipefail
 	echo "Creating sotf-demo.zip..."
 	mkdir -p dist/sotf-demo/music
-	cp crates/app-gpui/assets/demo-audio/*.flac dist/sotf-demo/music/
-	cp crates/app-gpui/assets/demo-audio/*.wav dist/sotf-demo/music/
-	if [ -f crates/app-gpui/assets/demo-audio/README.md ]; then
-		cp crates/app-gpui/assets/demo-audio/README.md dist/sotf-demo/music/
+	cp data_tests/audio/*.flac dist/sotf-demo/music/
+	cp data_tests/audio/*.wav dist/sotf-demo/music/
+	if [ -f data_tests/audio/README.md ]; then
+		cp data_tests/audio/README.md dist/sotf-demo/music/
 	fi
 	cd dist && zip -r sotf-demo.zip sotf-demo/
 	rm -rf sotf-demo

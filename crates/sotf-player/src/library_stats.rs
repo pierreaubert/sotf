@@ -323,4 +323,152 @@ mod tests {
         assert_eq!(format_channel_count(10), "10ch (5.1.4/7.1.2)");
         assert_eq!(format_channel_count(12), "12ch (7.1.4)");
     }
+
+    #[test]
+    fn compute_empty_library() {
+        let stats = LibraryStats::compute(&[]);
+        assert!(stats.valid);
+        assert_eq!(stats.total_tracks, 0);
+        assert_eq!(stats.artists_count, 0);
+        assert_eq!(stats.composers_count, 0);
+        assert_eq!(stats.genres_count, 0);
+        assert_eq!(stats.min_year, 0);
+        assert_eq!(stats.max_year, 0);
+        assert!(stats.genre_counts.is_empty());
+        assert!(stats.year_counts.is_empty());
+        assert!(stats.decade_counts.is_empty());
+    }
+
+    fn album_with_tracks(
+        title: &str,
+        artist: Option<&str>,
+        composer: Option<&str>,
+        genre: Option<&str>,
+        year: Option<u32>,
+        channels: u32,
+        track_titles: &[&str],
+    ) -> Album {
+        Album {
+            title: title.to_string(),
+            year,
+            tracks: track_titles
+                .iter()
+                .enumerate()
+                .map(|(i, t)| Track {
+                    path: PathBuf::from(format!("{title}_{i}.wav")),
+                    title: Some(t.to_string()),
+                    artist: artist.map(String::from),
+                    composer: composer.map(String::from),
+                    genre: genre.map(String::from),
+                    channels: Some(channels),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn compute_aggregates_tracks_artists_genres_years() {
+        let albums = [
+            album_with_tracks(
+                "Album A",
+                Some("Artist One"),
+                Some("Composer One"),
+                Some("Rock"),
+                Some(1985),
+                2,
+                &["Track 1", "Track 2", "Track 3"],
+            ),
+            album_with_tracks(
+                "Album B",
+                Some("Artist Two"),
+                Some("Composer One"),
+                Some("Jazz"),
+                Some(1992),
+                2,
+                &["Track 1", "Track 2"],
+            ),
+            album_with_tracks(
+                "Album C",
+                Some("Artist One"),
+                None,
+                Some("Rock"),
+                Some(1988),
+                1,
+                &["Track 1"],
+            ),
+        ];
+
+        let stats = LibraryStats::compute(&albums);
+
+        assert_eq!(stats.total_tracks, 6);
+        assert_eq!(stats.artists_count, 2);
+        assert_eq!(stats.composers_count, 1);
+        assert_eq!(stats.genres_count, 2);
+
+        assert_eq!(stats.artist_counts.get("Artist One"), Some(&2));
+        assert_eq!(stats.artist_counts.get("Artist Two"), Some(&1));
+        assert_eq!(stats.artist_letter_counts.get(&'A'), Some(&3));
+
+        assert_eq!(stats.composer_counts.get("Composer One"), Some(&2));
+        assert_eq!(stats.composer_letter_counts.get(&'C'), Some(&2));
+
+        assert_eq!(stats.genre_counts.get("Rock"), Some(&2));
+        assert_eq!(stats.genre_counts.get("Jazz"), Some(&1));
+
+        assert_eq!(stats.year_counts.get(&1985), Some(&1));
+        assert_eq!(stats.year_counts.get(&1988), Some(&1));
+        assert_eq!(stats.year_counts.get(&1992), Some(&1));
+
+        assert_eq!(stats.min_year, 1985);
+        assert_eq!(stats.max_year, 1992);
+
+        // 1980s and 1990s, sorted most-recent first.
+        assert_eq!(stats.decade_counts, vec![(1990, 1999, 1), (1980, 1989, 2)]);
+
+        assert_eq!(stats.stereo_count, 2);
+        assert_eq!(stats.mono_count, 1);
+        assert_eq!(stats.channel_counts.get(&2), Some(&2));
+        assert_eq!(stats.channel_counts.get(&1), Some(&1));
+    }
+
+    #[test]
+    fn compute_ignores_empty_metadata() {
+        let albums = [album_with_tracks("X", Some(""), Some(""), Some(""), Some(0), 2, &["T"])];
+        let stats = LibraryStats::compute(&albums);
+        assert_eq!(stats.artists_count, 0);
+        assert_eq!(stats.composers_count, 0);
+        assert_eq!(stats.genres_count, 0);
+        assert_eq!(stats.min_year, 0);
+        assert_eq!(stats.max_year, 0);
+    }
+
+    #[test]
+    fn compute_track_range_counts() {
+        let albums = [
+            album_with_tracks("A1", None, None, None, None, 2, &["a"]),
+            album_with_tracks("A2", None, None, None, None, 2, &["a"; 8]),
+            album_with_tracks("A3", None, None, None, None, 2, &["a"; 12]),
+            album_with_tracks("A4", None, None, None, None, 2, &["a"; 60]),
+        ];
+        let stats = LibraryStats::compute(&albums);
+        let ranges: Vec<_> = stats.track_range_counts.clone();
+        assert!(ranges.contains(&(1, 5, 1)));
+        assert!(ranges.contains(&(6, 10, 1)));
+        assert!(ranges.contains(&(11, 15, 1)));
+        assert!(ranges.contains(&(51, usize::MAX, 1)));
+    }
+
+    #[test]
+    fn compute_album_letter_counts_group_non_letters() {
+        let albums = [
+            album_with_tracks("#1 Hits", None, None, None, None, 2, &["a"]),
+            album_with_tracks("123", None, None, None, None, 2, &["a"]),
+            album_with_tracks("Alpha", None, None, None, None, 2, &["a"]),
+        ];
+        let stats = LibraryStats::compute(&albums);
+        assert_eq!(stats.album_letter_counts.get(&'#'), Some(&2));
+        assert_eq!(stats.album_letter_counts.get(&'A'), Some(&1));
+    }
 }

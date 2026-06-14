@@ -5,16 +5,18 @@
 use super::audio_daemon::AudioDaemon;
 use super::command::Command;
 use super::configured::configured_output_device_from_value;
-use super::consts::MAX_IPC_COMMAND_BYTES;
+use super::consts::{MAX_HAL_CHANNELS, MAX_IPC_COMMAND_BYTES};
 use super::driver_manager::DriverManager;
-use super::loudness::loudness_data_to_json;
-use super::misc::is_safe_output_device_name;
+use super::loudness::{loudness_data_to_json, loudness_info_to_json};
+use super::misc::{build_driver_plugin_chain, is_safe_output_device_name, parameter_descriptor_to_json};
 use super::misc::push_metering_faults;
+use super::misc::sanitize_user_plugins;
 use super::misc::transport_snapshot_and_faults;
 use super::pipeline_reconfigure_outcome::handle_driver_config_change;
 use super::pipeline_reconfigure_outcome::reconfigure_audio_pipeline;
+use super::pipeline_spec::{PipelineSpec, pipeline_spec_to_json};
 use super::pipeline_supervisor::PipelineSupervisor;
-use super::plugin::plugin_parameter_descriptors;
+use super::plugin::{plugin_parameter_descriptors, plugin_type_category, plugin_type_to_engine_str};
 use super::response::Response;
 use super::response::serialize_response_safely;
 use super::security::{KeyManager, PeerClass};
@@ -27,9 +29,16 @@ use serde_json::Value;
 use sotf_audio::PluginConfig;
 use sotf_audio::manager::AudioEngineManager;
 use sotf_audio::plugins::PluginType;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Cursor, Write};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
+
+fn test_plugin(plugin_type: &str) -> PluginConfig {
+    PluginConfig {
+        plugin_type: plugin_type.to_string(),
+        parameters: serde_json::json!({}),
+    }
+}
 
 #[test]
 fn loudness_data_json_includes_meter_fields() {
@@ -96,6 +105,228 @@ fn virtual_output_device_names_are_rejected() {
     for name in ["Built-in Output", "ADAM Audio D3V", "MacBook Pro Speakers"] {
         assert!(is_safe_output_device_name(name), "{name} should be safe");
     }
+}
+
+#[test]
+fn plugin_type_to_engine_str_maps_all_variants() {
+    // Spot-check a representative set; the match must cover every PluginType.
+    assert_eq!(plugin_type_to_engine_str(&PluginType::EQ), "eq");
+    assert_eq!(plugin_type_to_engine_str(&PluginType::Gain), "gain");
+    assert_eq!(plugin_type_to_engine_str(&PluginType::Upmixer), "upmixer");
+    assert_eq!(plugin_type_to_engine_str(&PluginType::Compressor), "compressor");
+    assert_eq!(
+        plugin_type_to_engine_str(&PluginType::MultibandCompressor),
+        "multiband_compressor"
+    );
+    assert_eq!(
+        plugin_type_to_engine_str(&PluginType::LoudnessCompensation),
+        "loudness_compensation"
+    );
+    assert_eq!(
+        plugin_type_to_engine_str(&PluginType::LoudnessMonitor),
+        "loudness_monitor"
+    );
+    assert_eq!(plugin_type_to_engine_str(&PluginType::ChannelMuteSolo), "channel_mute_solo");
+    assert_eq!(plugin_type_to_engine_str(&PluginType::ABCompare), "ab_compare");
+    assert_eq!(plugin_type_to_engine_str(&PluginType::MonoToStereo), "mono_to_stereo");
+    assert_eq!(plugin_type_to_engine_str(&PluginType::LinearPhaseEq), "linear_phase_eq");
+}
+
+#[test]
+fn plugin_type_category_groups_are_consistent() {
+    assert_eq!(plugin_type_category(&PluginType::EQ), "EQ & Tone");
+    assert_eq!(plugin_type_category(&PluginType::Gain), "Utility");
+    assert_eq!(plugin_type_category(&PluginType::Compressor), "Dynamics");
+    assert_eq!(plugin_type_category(&PluginType::Upmixer), "Spatial & Routing");
+    assert_eq!(plugin_type_category(&PluginType::Convolution), "Effects");
+    assert_eq!(plugin_type_category(&PluginType::Denoiser), "Restoration");
+    assert_eq!(plugin_type_category(&PluginType::LoudnessMonitor), "Monitoring");
+}
+
+#[test]
+fn sanitize_user_plugins_strips_daemon_owned_types() {
+    let plugins = vec![
+        test_plugin("hal_input"),
+        test_plugin("eq"),
+        test_plugin("loudness_monitor"),
+        test_plugin("gain"),
+        test_plugin("hal_output"),
+    ];
+    let sanitized = sanitize_user_plugins(plugins);
+    assert_eq!(
+        sanitized.iter().map(|p| p.plugin_type.as_str()).collect::<Vec<_>>(),
+        vec!["eq", "gain"]
+    );
+}
+
+#[test]
+fn build_driver_plugin_chain_wraps_user_plugins_with_monitors() {
+    let (runtime, input_idx, output_idx) =
+        build_driver_plugin_chain(vec![test_plugin("eq"), test_plugin("gain")]);
+
+    assert_eq!(input_idx, 0);
+    assert_eq!(output_idx, 3);
+    assert_eq!(
+        runtime.iter().map(|p| p.plugin_type.as_str()).collect::<Vec<_>>(),
+        vec!["loudness_monitor", "eq", "gain", "loudness_monitor"]
+    );
+}
+
+#[test]
+fn empty_loudness_json_clamps_channels_and_shapes_defaults() {
+    let zero = super::consts::empty_loudness_json(0);
+    assert_eq!(zero["momentary"], -60.0);
+    assert_eq!(zero["short_term"], -60.0);
+    assert_eq!(zero["integrated"], -60.0);
+    assert_eq!(zero["peak"], 0.0);
+    assert_eq!(zero["channel_peaks"].as_array().unwrap().len(), 1);
+    assert_eq!(zero["true_peaks_dbtp"].as_array().unwrap().len(), 1);
+    assert!(zero["correlation_lr"].is_null());
+
+    let many = super::consts::empty_loudness_json(64);
+    assert_eq!(many["channel_peaks"].as_array().unwrap().len(), MAX_HAL_CHANNELS);
+    assert_eq!(many["true_peaks_dbtp"].as_array().unwrap().len(), MAX_HAL_CHANNELS);
+}
+
+#[test]
+fn metering_source_json_reflects_data_presence() {
+    let present = super::consts::metering_source_json(true, 2);
+    assert_eq!(present["status"], "available");
+    assert_eq!(present["source"], "loudness_monitor");
+    assert_eq!(present["channels"], 2);
+
+    let fallback = super::consts::metering_source_json(false, 6);
+    assert_eq!(fallback["status"], "fallback_zero");
+    assert_eq!(fallback["source"], "channel_sized_fallback");
+    assert_eq!(fallback["channels"], 6);
+}
+
+#[test]
+fn pipeline_spec_to_json_reports_plugin_types_and_count() {
+    let spec = PipelineSpec {
+        output_device: Some("ADAM Audio D3V".to_string()),
+        user_plugins: vec![test_plugin("eq"), test_plugin("gain")],
+        input_channels: 2,
+        output_channels: 6,
+    };
+    let json = pipeline_spec_to_json(&spec);
+    assert_eq!(json["output_device"], "ADAM Audio D3V");
+    assert_eq!(json["input_channels"], 2);
+    assert_eq!(json["output_channels"], 6);
+    assert_eq!(json["user_plugin_count"], 2);
+    assert_eq!(
+        json["user_plugin_types"].as_array().unwrap(),
+        &vec![serde_json::json!("eq"), serde_json::json!("gain")]
+    );
+}
+
+#[test]
+fn loudness_info_to_json_shapes_empty_channel_arrays() {
+    let info = sotf_audio::LoudnessInfo {
+        momentary_lufs: -20.0,
+        shortterm_lufs: -19.0,
+        integrated_lufs: -21.0,
+        peak: 0.5,
+    };
+    let json = loudness_info_to_json(&info);
+    assert_eq!(json["momentary"], -20.0);
+    assert_eq!(json["integrated"], -21.0);
+    assert_eq!(json["channel_peaks"].as_array().unwrap().len(), 0);
+    assert_eq!(json["true_peaks_dbtp"].as_array().unwrap().len(), 0);
+    assert!(json["correlation_lr"].is_null());
+}
+
+#[test]
+fn read_ipc_line_bounded_returns_eof_on_empty_input() {
+    let input = Cursor::new(b"");
+    let mut reader = BufReader::new(input);
+    let mut buffer = Vec::new();
+    assert_eq!(
+        read_ipc_line_bounded(&mut reader, &mut buffer).unwrap(),
+        IpcLine::Eof
+    );
+}
+
+#[test]
+fn read_ipc_line_bounded_returns_invalid_utf8() {
+    let input = Cursor::new(vec![0xc0, 0x80, b'\n']);
+    let mut reader = BufReader::new(input);
+    let mut buffer = Vec::new();
+    assert_eq!(
+        read_ipc_line_bounded(&mut reader, &mut buffer).unwrap(),
+        IpcLine::InvalidUtf8
+    );
+}
+
+#[test]
+fn response_constructors_build_expected_shape() {
+    let ok = Response::ok(serde_json::json!({"x": 1}));
+    assert!(ok.success);
+    assert_eq!(ok.data.unwrap()["x"], 1);
+    assert!(ok.error.is_none());
+
+    let empty = Response::ok_empty();
+    assert!(empty.success);
+    assert!(empty.data.is_none());
+
+    let err = Response::err("bad");
+    assert!(!err.success);
+    assert_eq!(err.error.unwrap(), "bad");
+}
+
+#[test]
+fn command_name_covers_all_variants() {
+    // Additional variants not exercised by command_name_matches_wire_tag.
+    let cases: Vec<(Command, &str)> = vec![
+        (Command::Pause, "pause"),
+        (Command::Stop, "stop"),
+        (Command::Seek { position: 0.0 }, "seek"),
+        (Command::SetVolume { volume: 0.5 }, "set_volume"),
+        (Command::ListDevices, "list_devices"),
+        (Command::SetDevice { device: String::new() }, "set_device"),
+        (Command::SetInputChannels { channels: 2 }, "set_input_channels"),
+        (Command::GetLoudness, "get_loudness"),
+        (Command::GetMetering, "get_metering"),
+        (Command::GetPlugins, "get_plugins"),
+        (Command::GetAvailablePlugins, "get_available_plugins"),
+        (Command::AddPlugin { plugin: test_plugin("eq"), index: None }, "add_plugin"),
+        (Command::RemovePlugin { index: 0 }, "remove_plugin"),
+        (Command::ReorderPlugins { order: vec![] }, "reorder_plugins"),
+        (Command::SetEncryption { enabled: true }, "set_encryption"),
+        (Command::EncryptionStatus, "encryption_status"),
+        (Command::RotateEncryptionKey, "rotate_encryption_key"),
+        (Command::SetSampleRate { rate: 48_000 }, "set_sample_rate"),
+        (Command::SetBufferFrames { frames: 512 }, "set_buffer_frames"),
+        (Command::GetDriverConfig, "get_driver_config"),
+    ];
+    for (cmd, expected) in cases {
+        assert_eq!(cmd.name(), expected, "{cmd:?}");
+    }
+}
+
+#[test]
+fn default_channel_counts_match_definitions() {
+    assert_eq!(super::default::default_input_channels(), 0);
+    assert_eq!(super::default::default_output_channels(), 2);
+}
+
+#[test]
+fn parameter_descriptor_to_json_maps_float_spec() {
+    use sotf_plugins::param_specs::ParamSpec;
+    let spec = ParamSpec::float("Gain", "gain_db", 0.0, -60.0, 12.0, 0.1, "dB", "Level")
+        .doc("Gain in dB");
+    let json = parameter_descriptor_to_json(&spec);
+    assert_eq!(json["key"], "gain_db");
+    assert_eq!(json["name"], "Gain");
+    assert_eq!(json["unit"], "dB");
+    assert_eq!(json["group"], "Level");
+    assert_eq!(json["doc"], "Gain in dB");
+    assert_eq!(json["type"], "float");
+    assert_eq!(json["default"], 0.0);
+    assert_eq!(json["min"], -60.0);
+    assert_eq!(json["max"], 12.0);
+    assert_eq!(json["step"], 0.1);
+    assert_eq!(json["update_mode"], "realtime");
 }
 
 #[cfg(test)]
@@ -282,13 +513,6 @@ mod ipc_safety_tests {
 
         let cmd: Command = serde_json::from_str(r#"{"command":"shutdown"}"#).unwrap();
         assert_eq!(cmd.name(), "shutdown");
-    }
-
-    fn test_plugin(plugin_type: &str) -> PluginConfig {
-        PluginConfig {
-            plugin_type: plugin_type.to_string(),
-            parameters: serde_json::json!({}),
-        }
     }
 
     #[derive(Debug)]

@@ -11,7 +11,7 @@ pub(super) fn default_artifacts_dir() -> PathBuf {
 }
 
 pub(super) fn default_demo_audio_dir() -> PathBuf {
-    PathBuf::from("crates/app-gpui/assets/demo-audio")
+    PathBuf::from("data_tests/audio")
 }
 
 pub(super) fn default_readiness_timeout() -> String {

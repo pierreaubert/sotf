@@ -482,4 +482,135 @@ mod tests {
         let from: SocketAddr = "192.168.1.1:5353".parse().unwrap();
         assert!(parse_mdns_response(&data, from, CastDeviceType::AirPlay).is_none());
     }
+
+    fn encode_name(name: &str) -> Vec<u8> {
+        let mut out = Vec::new();
+        for label in name.split('.') {
+            out.push(label.len() as u8);
+            out.extend_from_slice(label.as_bytes());
+        }
+        out.push(0);
+        out
+    }
+
+    fn append_record(packet: &mut Vec<u8>, name: &str, rtype: u16, ttl: u32, rdata: &[u8]) {
+        packet.extend_from_slice(&encode_name(name));
+        packet.extend_from_slice(&rtype.to_be_bytes());
+        packet.extend_from_slice(&1u16.to_be_bytes()); // IN class
+        packet.extend_from_slice(&ttl.to_be_bytes());
+        packet.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+        packet.extend_from_slice(rdata);
+    }
+
+    fn srv_rdata(port: u16, target: &str) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&0u16.to_be_bytes()); // priority
+        out.extend_from_slice(&0u16.to_be_bytes()); // weight
+        out.extend_from_slice(&port.to_be_bytes());
+        out.extend_from_slice(&encode_name(target));
+        out
+    }
+
+    fn txt_rdata(entries: &[(&str, &str)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for (k, v) in entries {
+            let pair = format!("{}={}", k, v);
+            out.push(pair.len() as u8);
+            out.extend_from_slice(pair.as_bytes());
+        }
+        out
+    }
+
+    #[test]
+    fn test_parse_mdns_response_full() {
+        let mut packet = Vec::new();
+        // Header: response, no questions, 4 answers
+        packet.extend_from_slice(&[0, 0]); // ID
+        packet.extend_from_slice(&0x8400u16.to_be_bytes()); // flags: response
+        packet.extend_from_slice(&[0, 0]); // QDCOUNT
+        packet.extend_from_slice(&4u16.to_be_bytes()); // ANCOUNT
+        packet.extend_from_slice(&[0, 0]); // NSCOUNT
+        packet.extend_from_slice(&[0, 0]); // ARCOUNT
+
+        append_record(
+            &mut packet,
+            "_googlecast._tcp.local",
+            12, // PTR
+            120,
+            &encode_name("Kitchen._googlecast._tcp.local"),
+        );
+        append_record(
+            &mut packet,
+            "Kitchen._googlecast._tcp.local",
+            33, // SRV
+            120,
+            &srv_rdata(8009, "Kitchen.local"),
+        );
+        append_record(
+            &mut packet,
+            "Kitchen._googlecast._tcp.local",
+            16, // TXT
+            120,
+            &txt_rdata(&[("fn", "Kitchen")]),
+        );
+        append_record(
+            &mut packet,
+            "Kitchen.local",
+            1, // A
+            120,
+            &[192, 168, 1, 50],
+        );
+
+        let from: SocketAddr = "192.168.1.100:5353".parse().unwrap();
+        let device = parse_mdns_response(&packet, from, CastDeviceType::Chromecast).unwrap();
+        assert_eq!(device.name, "Kitchen");
+        assert_eq!(device.port, 8009);
+        assert_eq!(device.address, Ipv4Addr::new(192, 168, 1, 50));
+        assert_eq!(device.txt_records.get("fn"), Some(&"Kitchen".to_string()));
+    }
+
+    #[test]
+    fn test_parse_mdns_response_fallbacks() {
+        // No SRV, A, or friendly PTR records: parser must fall back to the
+        // sender address and the default Chromecast port.
+        let mut packet = Vec::new();
+        packet.extend_from_slice(&[0, 0]);
+        packet.extend_from_slice(&0x8400u16.to_be_bytes());
+        packet.extend_from_slice(&[0, 0]);
+        packet.extend_from_slice(&1u16.to_be_bytes());
+        packet.extend_from_slice(&[0, 0]);
+        packet.extend_from_slice(&[0, 0]);
+
+        // A TXT record without a "fn" key leaves `name` empty.
+        append_record(
+            &mut packet,
+            "Kitchen._googlecast._tcp.local",
+            16,
+            120,
+            &txt_rdata(&[("id", "kitchen-id")]),
+        );
+
+        let from: SocketAddr = "192.168.1.77:5353".parse().unwrap();
+        let device = parse_mdns_response(&packet, from, CastDeviceType::Chromecast).unwrap();
+        assert_eq!(device.address, Ipv4Addr::new(192, 168, 1, 77));
+        assert_eq!(device.port, 8009);
+        assert!(device.name.contains("Chromecast"));
+    }
+
+    #[test]
+    fn test_parse_mdns_response_short_packet() {
+        let data = [0u8; 10];
+        let from: SocketAddr = "192.168.1.1:5353".parse().unwrap();
+        assert!(parse_mdns_response(&data, from, CastDeviceType::AirPlay).is_none());
+    }
+
+    #[test]
+    fn test_decode_dns_name_with_compression() {
+        let mut data = encode_name("test.local");
+        let offset = data.len();
+        data.push(0xC0);
+        data.push(0); // pointer back to offset 0
+        let name = decode_dns_name(&data, offset).unwrap();
+        assert_eq!(name, "test.local");
+    }
 }

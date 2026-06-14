@@ -580,4 +580,117 @@ mod tests {
             _ => panic!("expected Gain"),
         }
     }
+
+    // ========================================================================
+    // End-to-end: build_ui_graph_from_config applies DSP params to UI graph.
+    // ========================================================================
+
+    #[test]
+    fn build_ui_graph_from_config_applies_eq_filters_per_channel() {
+        use sotf_audio::engine::{PluginGraphConfig, PluginGraphNodeConfig};
+
+        let config = PluginGraphConfig {
+            nodes: vec![PluginGraphNodeConfig {
+                id: 0,
+                plugin_type: "eq".to_string(),
+                input_channels: 2,
+                parameters: serde_json::json!({
+                    "channel_filters": [
+                        [{"filter_type": "peak", "freq": 100.0, "q": 1.5, "db_gain": -3.0}],
+                        [{"filter_type": "peak", "freq": 200.0, "q": 2.0, "db_gain": 4.0}],
+                    ],
+                }),
+            }],
+            edges: vec![],
+        };
+
+        let graph = build_ui_graph_from_config(&config);
+        let eq_node = graph
+            .nodes
+            .values()
+            .find(|n| n.plugin.plugin_type().name() == "EQ")
+            .expect("EQ node exists");
+
+        match &eq_node.plugin.settings {
+            PluginSettings::EQ {
+                per_channel_mode,
+                channel_filters,
+                filters,
+                ..
+            } => {
+                assert!(*per_channel_mode);
+                let cf = channel_filters.as_ref().expect("channel filters set");
+                assert_eq!(cf.len(), 2);
+                assert!((cf[0][0].frequency - 100.0).abs() < 0.1);
+                assert!((cf[1][0].frequency - 200.0).abs() < 0.1);
+                assert_eq!(filters.len(), 1);
+                assert!((filters[0].frequency - 100.0).abs() < 0.1);
+            }
+            _ => panic!("expected EQ settings"),
+        }
+    }
+
+    #[test]
+    fn build_ui_graph_from_config_applies_delay_per_channel_representative() {
+        use sotf_audio::engine::{PluginGraphConfig, PluginGraphNodeConfig};
+
+        let config = PluginGraphConfig {
+            nodes: vec![PluginGraphNodeConfig {
+                id: 0,
+                plugin_type: "delay".to_string(),
+                input_channels: 2,
+                parameters: serde_json::json!({
+                    "channel_delays_ms": [12.5, 25.0],
+                    "delay_ms": 0.0,
+                }),
+            }],
+            edges: vec![],
+        };
+
+        let graph = build_ui_graph_from_config(&config);
+        let delay_node = graph
+            .nodes
+            .values()
+            .find(|n| n.plugin.plugin_type().name() == "Delay")
+            .expect("Delay node exists");
+
+        match &delay_node.plugin.settings {
+            PluginSettings::Delay { delay_ms, .. } => {
+                assert!((delay_ms - 12.5).abs() < 0.01);
+            }
+            _ => panic!("expected Delay settings"),
+        }
+    }
+
+    #[test]
+    fn build_ui_graph_from_config_applies_gain_per_channel_representative() {
+        use sotf_audio::engine::{PluginGraphConfig, PluginGraphNodeConfig};
+
+        let config = PluginGraphConfig {
+            nodes: vec![PluginGraphNodeConfig {
+                id: 0,
+                plugin_type: "gain".to_string(),
+                input_channels: 2,
+                parameters: serde_json::json!({
+                    "channel_gains": [-6.0, -9.0],
+                    "gain_db": 0.0,
+                }),
+            }],
+            edges: vec![],
+        };
+
+        let graph = build_ui_graph_from_config(&config);
+        let gain_node = graph
+            .nodes
+            .values()
+            .find(|n| n.plugin.plugin_type().name() == "Gain")
+            .expect("Gain node exists");
+
+        match &gain_node.plugin.settings {
+            PluginSettings::Gain { gain_db, .. } => {
+                assert!((gain_db - -6.0).abs() < 0.01);
+            }
+            _ => panic!("expected Gain settings"),
+        }
+    }
 }

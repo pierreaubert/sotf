@@ -2,7 +2,29 @@
 
 use hound::{WavReader, WavSpec, WavWriter, SampleFormat};
 use std::f32::consts::PI;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Resolve the workspace-level centralized audio test-data directory.
+///
+/// Uses `SOTF_TEST_DATA_ROOT` when set, otherwise resolves from
+/// `CARGO_MANIFEST_DIR` to the workspace root (`data_tests/audio`).
+pub fn test_data_audio_dir() -> PathBuf {
+    if let Ok(root) = std::env::var("SOTF_TEST_DATA_ROOT") {
+        PathBuf::from(root).join("audio")
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("CARGO_MANIFEST_DIR should be inside crates/<crate>")
+            .join("data_tests")
+            .join("audio")
+    }
+}
+
+/// Resolve the path to a centralized demo audio file by name.
+pub fn demo_audio_file(name: &str) -> PathBuf {
+    test_data_audio_dir().join(name)
+}
 
 /// Generate a mono sine wave at the given frequency.
 pub fn sine(samples: usize, sample_rate: u32, freq_hz: f32) -> Vec<f32> {

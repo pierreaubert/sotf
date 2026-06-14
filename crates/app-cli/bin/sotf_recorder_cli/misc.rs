@@ -90,6 +90,7 @@ pub fn record_signal(
     hwaudio_send_to: String,
     hwaudio_record_from: String,
     name: Option<String>,
+    output_dir: Option<std::path::PathBuf>,
     device: Option<String>,
     freq: Option<f32>,
     freq1: Option<f32>,
@@ -104,6 +105,11 @@ pub fn record_signal(
     mic_calibration_map: std::collections::HashMap<usize, String>,
 ) -> Result<(), String> {
     use sotf_audio::signal_recorder::*;
+
+    let output_dir = output_dir.unwrap_or_else(|| {
+        std::env::current_dir().expect("current directory should be accessible")
+    });
+    std::fs::create_dir_all(&output_dir).map_err(|e| format!("failed to create output directory: {e}"))?;
 
     println!("{}", "=".repeat(60));
     println!("Signal Recording and Analysis");
@@ -298,6 +304,8 @@ pub fn record_signal(
             record_ch,
             sample_rate,
         );
+        let wav_path = output_dir.join(wav_path);
+        let csv_path = output_dir.join(csv_path);
 
         println!("  Output WAV: {:?}", wav_path);
         println!("  Output CSV: {:?}", csv_path);

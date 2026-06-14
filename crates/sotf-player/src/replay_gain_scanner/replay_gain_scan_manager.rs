@@ -428,3 +428,100 @@ impl ReplayGainScanManager {
         (self.processed as f32 / self.total as f32) * 100.0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn manager_stop_cancels_scan() {
+        let mut manager = ReplayGainScanManager::new();
+        manager.in_progress = true;
+        manager.total = 10;
+        manager.processed = 5;
+
+        manager.stop();
+        assert!(!manager.in_progress);
+        assert!(manager.scanner.is_none());
+        assert_eq!(manager.album_gain_phase, AlbumGainPhase::Idle);
+    }
+
+    #[test]
+    fn manager_progress_is_percentage() {
+        let mut manager = ReplayGainScanManager::new();
+        manager.total = 10;
+        manager.processed = 5;
+        assert!((manager.progress() - 50.0).abs() < 0.1);
+
+        manager.total = 0;
+        assert_eq!(manager.progress(), 0.0);
+    }
+
+    #[test]
+    fn compute_album_gain_from_track_data() {
+        // Synthetic EBU R128 inputs: two tracks at different levels.
+        let track_data: Vec<(f64, u64, f64)> = vec![
+            (0.8, 100, 0.64), // louder
+            (0.4, 100, 0.16), // quieter
+        ];
+        let (gain, peak) = sotf_audio::replaygain::compute_album_gain(&track_data).unwrap();
+        assert!(peak <= 0.8);
+        assert!(peak >= 0.4);
+        // The returned gain is a finite dB value; exact sign depends on the
+        // analyzer's reference level, so just assert it is real and not NaN.
+        assert!(gain.is_finite(), "album gain should be finite, got {gain}");
+    }
+
+    #[test]
+    fn compute_album_gain_empty_returns_none() {
+        assert!(sotf_audio::replaygain::compute_album_gain(&[]).is_none());
+    }
+
+    #[test]
+    fn manager_update_does_not_panic_when_no_scanner() {
+        let mut manager = ReplayGainScanManager::new();
+        assert!(!manager.update());
+    }
+
+    #[test]
+    fn manager_update_counts_success_and_error_messages() {
+        let mut manager = ReplayGainScanManager::new();
+        manager.total = 3;
+        manager.in_progress = true;
+
+        // Create a minimal scanner with no workers so we can inject messages.
+        let (task_tx, _task_rx) = crossbeam::channel::unbounded::<PathBuf>();
+        let (message_tx, message_rx) = crossbeam::channel::unbounded::<ScanMessage>();
+        let (stop_tx, _stop_rx) = crossbeam::channel::unbounded::<()>();
+        let scanner = Arc::new(ReplayGainScanner {
+            _workers: Vec::new(),
+            task_tx,
+            message_rx,
+            stop_tx,
+        });
+
+        message_tx
+            .send(ScanMessage::Success {
+                path: PathBuf::from("/a.flac"),
+                gain: -6.0,
+                peak: 0.5,
+            })
+            .unwrap();
+        message_tx
+            .send(ScanMessage::Error {
+                path: PathBuf::from("/b.flac"),
+                error: "decode failed".to_string(),
+            })
+            .unwrap();
+
+        manager.scanner = Some(scanner);
+        // total is 3, so processing 2 messages does not trigger the album gain
+        // path and the scan stays in progress.
+        assert!(!manager.update());
+        assert!(manager.in_progress);
+        assert_eq!(manager.processed, 2);
+        assert_eq!(manager.succeeded, 1);
+        assert_eq!(manager.failed, 1);
+    }
+}

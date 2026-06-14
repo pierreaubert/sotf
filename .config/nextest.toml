@@ -10,6 +10,12 @@
 # the normal test runner. They are pre-existing failures unrelated to the
 # workspace crate migration and must be run individually (with a manual stop
 # or under a debugger) until engine/test shutdown is fixed.
+#
+# Tests tagged with #[sotf_test::slow], #[sotf_test::requires_hardware], or
+# #[sotf_test::requires_network] expand to #[ignore = "..."] and are also
+# skipped by default. Run them with:
+#   cargo nextest run --run-ignored all
+# or use one of the profiles below together with --run-ignored all.
 default-filter = 'not (test(testkit_load_plugin_artifact_accepts_rack_chain_without_ui_flattening) | test(testkit_patch_channel_command_preserves_daemon_owned_plugins_and_input_channels))'
 
 # Test groups allow limiting parallelism for specific tests.
@@ -21,8 +27,28 @@ max-threads = 1
 [[profile.default.overrides]]
 # All engine integration tests that use the audio device must run serially.
 # Binary names: engine_latency_tests, engine_manager_tests, engine_stress_tests,
-# engine_playback_tests, engine_mute_solo_tests, engine_allocation_tests,
-# e2e_audio, test_*_loopback, and any future engine_* test binaries.
+# engine_playback_tests, engine_allocation_tests, e2e_audio, test_*_loopback,
+# and any future engine_* test binaries.
 filter = 'binary(/^engine_/) | binary(/loopback/) | binary(e2e_audio)'
 test-group = 'audio-device'
 
+# Additional run profiles for use with `cargo nextest run --profile <name>`.
+# These profiles select the same test set as the default profile. To actually
+# execute the ignored tagged tests, pass `--run-ignored all` (or `--run-ignored
+# only` to run only the ignored ones).
+[profile.slow]
+# Intended for: cargo nextest run --profile slow --run-ignored all
+default-filter = 'not (test(testkit_load_plugin_artifact_accepts_rack_chain_without_ui_flattening) | test(testkit_patch_channel_command_preserves_daemon_owned_plugins_and_input_channels))'
+
+[profile.network]
+# Intended for: cargo nextest run --profile network --run-ignored all
+default-filter = 'not (test(testkit_load_plugin_artifact_accepts_rack_chain_without_ui_flattening) | test(testkit_patch_channel_command_preserves_daemon_owned_plugins_and_input_channels))'
+
+[profile.hardware]
+# Intended for: cargo nextest run --profile hardware --run-ignored all
+default-filter = 'not (test(testkit_load_plugin_artifact_accepts_rack_chain_without_ui_flattening) | test(testkit_patch_channel_command_preserves_daemon_owned_plugins_and_input_channels))'
+
+[profile.thorough]
+# Intended for: cargo nextest run --profile thorough --run-ignored all
+# Runs the full test suite (excluding only the two known-hanging daemon tests).
+default-filter = 'not (test(testkit_load_plugin_artifact_accepts_rack_chain_without_ui_flattening) | test(testkit_patch_channel_command_preserves_daemon_owned_plugins_and_input_channels))'

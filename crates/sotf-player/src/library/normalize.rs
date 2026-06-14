@@ -54,3 +54,53 @@ pub(super) fn tagged_album_key(title: &str, edition: Option<&str>) -> String {
     let edition = edition.map(normalize_album_key).unwrap_or_default();
     format!("{}|{}", normalized, edition)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_album_key_corpus() {
+        let cases = [
+            ("2Cellos", "2cellos"),
+            ("2CELLOS", "2cellos"),
+            ("2 Cellos ", "2cellos"),
+            ("Café", "cafe"),
+            ("The Beatles!", "thebeatles"),
+            ("AC/DC", "acdc"),
+            ("R.E.M.", "r.e.m."),
+            ("  spaces  ", "spaces"),
+            ("", ""),
+            ("Beyoncé", "beyonce"),
+            // Non-ASCII letters/numbers are preserved.
+            ("日本語", "日本語"),
+            ("ÄÖÜ", "aou"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                normalize_album_key(input),
+                expected,
+                "normalize_album_key({input:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_album_key_idempotent() {
+        let inputs = ["Café!", "AC/DC (Remaster)", "  2Cellos  "];
+        for input in inputs {
+            let once = normalize_album_key(input);
+            let twice = normalize_album_key(&once);
+            assert_eq!(once, twice, "normalize_album_key not idempotent for {input:?}");
+        }
+    }
+
+    #[test]
+    fn normalize_album_key_removes_punctuation_and_diacritics() {
+        let key = normalize_album_key("¡Hola, Señor!");
+        assert!(!key.contains(','));
+        assert!(!key.contains('¡'));
+        assert!(!key.contains('ñ'));
+        assert_eq!(key, "holasenor");
+    }
+}

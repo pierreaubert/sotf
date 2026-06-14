@@ -74,6 +74,7 @@ fn main() {
         hwaudio_send_to,
         hwaudio_record_from,
         cli.name,
+        cli.output_dir,
         cli.device,
         cli.freq,
         cli.freq1,

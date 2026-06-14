@@ -271,7 +271,8 @@ function New-Distribution {
     # No runtime DLLs to ship -- pure-Rust binary, MSVC CRT comes from VCRedist
     # (dynamic build) or is statically linked (-Static build).
 
-    # Copy assets excluding demo-audio (distributed separately as sotf-demo.zip)
+    # Copy app assets. Demo audio was moved to data_tests/audio and is
+    # distributed separately as sotf-demo.zip via builds/cross.just.
     $assetsDir = "$ProjectRoot\crates\app-gpui\assets"
     if (Test-Path $assetsDir) {
         Copy-Item -Recurse $assetsDir -Destination "$stagingDir\assets"

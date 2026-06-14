@@ -218,4 +218,30 @@ mod tests {
             "mpd-stream://h:6600:8000/x.flac"
         );
     }
+
+    #[test]
+    fn validate_mpd_token_accepts_empty_and_rejects_controls() {
+        assert!(validate_mpd_token("").is_ok());
+        assert!(validate_mpd_token("safe_token-123").is_ok());
+        assert!(validate_mpd_token("has\n").is_err());
+        assert!(validate_mpd_token("has\r").is_err());
+        assert!(validate_mpd_token("has\0").is_err());
+    }
+
+    #[test]
+    fn build_mpd_stream_url_encodes_unicode_and_specials() {
+        let url = build_mpd_stream_url("host", 6600, 8000, "日本語/🎵 ?& #.flac");
+        assert!(url.contains("%E6%97%A5%E6%9C%AC%E8%AA%9E"));
+        assert!(url.contains("%F0%9F%8E%B5"));
+        assert!(url.contains("%20"));
+        assert!(url.contains("%3F"));
+        assert!(url.contains("%26"));
+        assert!(url.contains("%23"));
+    }
+
+    #[test]
+    fn escape_mpd_string_preserves_unicode_and_empty() {
+        assert_eq!(escape_mpd_string(""), "");
+        assert_eq!(escape_mpd_string("café 日本語"), "café 日本語");
+    }
 }

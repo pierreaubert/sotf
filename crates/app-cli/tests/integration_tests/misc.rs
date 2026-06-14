@@ -23,17 +23,32 @@ fn recorder_cmd() -> Command {
     let mut cmd =
         Command::cargo_bin("sotf-recorder-cli").expect("sotf-recorder-cli binary available");
     cmd.timeout(TEST_TIMEOUT);
+    // Redirect generated WAV/CSV files away from the source tree.
+    let output_dir = std::env::var("CARGO_TARGET_TMPDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir().join("sotf-recorder-tests"));
+    cmd.arg("--output-dir").arg(output_dir);
     cmd
 }
 
 fn demo_audio_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../app-gpui/assets/demo-audio")
-        .join(name)
+    if let Ok(root) = std::env::var("SOTF_TEST_DATA_ROOT") {
+        PathBuf::from(root).join("audio").join(name)
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("data_tests")
+            .join("audio")
+            .join(name)
+    }
 }
 
 const PLAY_PARSE_SMOKE_DURATION_SECS: &str = "1";
 
+#[sotf_test::requires_hardware]
 #[test]
 fn player_cli_devices_lists_audio_devices() {
     let output = player_cmd()
@@ -397,6 +412,7 @@ fn player_cli_play_with_compressor_args_parses() {
     );
 }
 
+#[sotf_test::requires_hardware]
 #[test]
 fn recorder_cli_list_devices_shows_devices() {
     let output = recorder_cmd()

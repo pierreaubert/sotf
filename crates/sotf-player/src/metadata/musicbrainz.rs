@@ -317,6 +317,7 @@ mod tests {
         (format!("http://{addr}"), rx)
     }
 
+    #[sotf_test::requires_network]
     #[tokio::test]
     async fn search_album_uses_configured_endpoint_and_maps_release_json() {
         let body = r#"{"releases":[{"id":"release-1","title":"Kind of Blue","date":"1959-08-17","score":"98","artist-credit":[{"name":"Miles Davis"}]}]}"#;
@@ -340,6 +341,7 @@ mod tests {
         assert_eq!(candidates[0].score, 98);
     }
 
+    #[sotf_test::requires_network]
     #[tokio::test]
     async fn fetch_release_uses_mock_endpoint_instead_of_musicbrainz() {
         let body = r#"{"id":"release-2","title":"Blue Train","date":"1958","artist-credit":[{"name":"John Coltrane"}]}"#;

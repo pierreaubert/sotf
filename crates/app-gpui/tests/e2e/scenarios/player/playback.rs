@@ -5,16 +5,14 @@
 use gpui::TestAppContext;
 use std::path::PathBuf;
 
-/// Get the path to the test audio directory.
+/// Get the path to the workspace-level test audio directory.
 fn test_audio_dir() -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("assets/demo-audio");
-    path
+    sotf_testkit::audio::test_data_audio_dir()
 }
 
 /// Get the path to a specific test audio file.
 fn test_audio_file(name: &str) -> PathBuf {
-    test_audio_dir().join(format!("{}.flac", name))
+    sotf_testkit::audio::demo_audio_file(&format!("{}.flac", name))
 }
 
 /// Test loading a test audio file.

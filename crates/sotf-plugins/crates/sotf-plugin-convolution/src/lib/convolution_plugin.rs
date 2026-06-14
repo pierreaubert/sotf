@@ -21,8 +21,8 @@ use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::path::Path;
-use std::sync::{mpsc, Arc, Mutex};
 use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, mpsc};
 use symphonia::core::audio::{Audio, GenericAudioBufferRef};
 use symphonia::core::codecs::CodecParameters;
 use symphonia::core::codecs::audio::AudioDecoderOptions;
@@ -55,7 +55,11 @@ fn get_ir_loader() -> &'static mpsc::Sender<IrLoadRequest> {
             std::thread::Builder::new()
                 .name(format!("convolution-ir-load-{i}"))
                 .spawn(move || {
-                    while let Ok(req) = rx.lock().unwrap().recv() {
+                    loop {
+                        let req = match rx.lock().unwrap().recv() {
+                            Ok(req) => req,
+                            Err(_) => break,
+                        };
                         let result = ConvolutionPlugin::build_ir_state(
                             &req.path,
                             req.channels,

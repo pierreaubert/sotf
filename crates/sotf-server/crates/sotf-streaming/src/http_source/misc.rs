@@ -128,4 +128,45 @@ mod tests {
             Some("m4a".to_string())
         );
     }
+
+    #[test]
+    fn test_url_extension_hint_edge_cases() {
+        assert_eq!(
+            url_extension_hint("http://example.com/path/"),
+            None
+        );
+        assert_eq!(
+            url_extension_hint("http://example.com/song.MP4?x=1#y"),
+            Some("mp4".to_string())
+        );
+        // Unknown final extension returns None even if an earlier segment is a known type.
+        assert_eq!(
+            url_extension_hint("http://example.com/song.flac.tar"),
+            None
+        );
+        assert_eq!(url_extension_hint("http://example.com/.flac"), Some("flac".to_string()));
+        assert_eq!(url_extension_hint("song.ogg"), Some("ogg".to_string()));
+        assert_eq!(url_extension_hint("noextension"), None);
+    }
+
+    #[test]
+    fn test_content_type_to_hint_all_known_types() {
+        assert_eq!(content_type_to_hint("audio/mp3"), Some("mp3".to_string()));
+        assert_eq!(content_type_to_hint("audio/x-flac"), Some("flac".to_string()));
+        assert_eq!(content_type_to_hint("application/ogg"), Some("ogg".to_string()));
+        assert_eq!(content_type_to_hint("audio/wave"), Some("wav".to_string()));
+        assert_eq!(content_type_to_hint("audio/aacp"), Some("aac".to_string()));
+        assert_eq!(content_type_to_hint("audio/aiff"), Some("aiff".to_string()));
+    }
+
+    #[test]
+    fn test_is_retriable_kinds() {
+        assert!(is_retriable(&io::Error::new(io::ErrorKind::ConnectionReset, "")));
+        assert!(is_retriable(&io::Error::new(io::ErrorKind::ConnectionAborted, "")));
+        assert!(is_retriable(&io::Error::new(io::ErrorKind::BrokenPipe, "")));
+        assert!(is_retriable(&io::Error::new(io::ErrorKind::TimedOut, "")));
+        assert!(is_retriable(&io::Error::new(io::ErrorKind::UnexpectedEof, "")));
+        assert!(!is_retriable(&io::Error::new(io::ErrorKind::NotFound, "")));
+        assert!(!is_retriable(&io::Error::new(io::ErrorKind::InvalidData, "")));
+    }
 }

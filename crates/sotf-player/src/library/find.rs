@@ -173,3 +173,73 @@ pub fn find_and_generate_album_thumbnail(album: &mut Album) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sotf_testkit::db::temp_files;
+
+    fn temp_dir_with_files(files: &[&str]) -> (tempfile::TempDir, std::path::PathBuf) {
+        let (dir, _paths) = temp_files(files);
+        let path = dir.path().to_path_buf();
+        (dir, path)
+    }
+
+    fn create_subdir(parent: &std::path::Path, name: &str, files: &[&str]) -> std::path::PathBuf {
+        let sub = parent.join(name);
+        std::fs::create_dir(&sub).expect("create subdir");
+        for file in files {
+            std::fs::write(sub.join(file), b"").expect("write subdir file");
+        }
+        sub
+    }
+
+    #[test]
+    fn find_album_art_prefers_common_filename() {
+        let (_dir, path) = temp_dir_with_files(&["cover.jpg", "other.jpg", "album.txt"]);
+        let found = find_album_art(&path);
+        assert_eq!(found, Some(path.join("cover.jpg")));
+    }
+
+    #[test]
+    fn find_album_art_falls_back_to_front_filename() {
+        let (_dir, path) = temp_dir_with_files(&["notes.txt", "album_front.jpg"]);
+        let found = find_album_art(&path);
+        assert_eq!(found, Some(path.join("album_front.jpg")));
+    }
+
+    #[test]
+    fn find_album_art_uses_only_image_when_unique() {
+        let (_dir, path) = temp_dir_with_files(&["track.flac", "photo.png"]);
+        let found = find_album_art(&path);
+        assert_eq!(found, Some(path.join("photo.png")));
+    }
+
+    #[test]
+    fn find_album_art_refuses_multiple_ambiguous_images() {
+        let (_dir, path) = temp_dir_with_files(&["a.jpg", "b.png"]);
+        assert!(find_album_art(&path).is_none());
+    }
+
+    #[test]
+    fn find_album_art_searches_artwork_subdirectory() {
+        let (_dir, path) = temp_dir_with_files(&["track.flac"]);
+        create_subdir(&path, "Artwork", &["cover.jpg"]);
+        let found = find_album_art(&path);
+        assert_eq!(found, Some(path.join("Artwork").join("cover.jpg")));
+    }
+
+    #[test]
+    fn find_album_art_searches_covers_subdirectory() {
+        let (_dir, path) = temp_dir_with_files(&["track.flac"]);
+        create_subdir(&path, "Covers", &["front.png"]);
+        let found = find_album_art(&path);
+        assert_eq!(found, Some(path.join("Covers").join("front.png")));
+    }
+
+    #[test]
+    fn find_album_art_returns_none_for_empty_directory() {
+        let (_dir, path) = temp_dir_with_files(&[]);
+        assert!(find_album_art(&path).is_none());
+    }
+}

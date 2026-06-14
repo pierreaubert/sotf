@@ -315,3 +315,150 @@ pub(super) fn set_plugin_param_value(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use math_audio_iir_fir::BiquadFilterType;
+    use sotf_plugins::BandCompressorParams;
+
+    #[test]
+    fn set_plugin_param_value_eq_frequency_field() {
+        let mut settings = PluginSettings::EQ {
+            channels: 2,
+            filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)],
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+        let mut changed = false;
+
+        // Param index 0 = band 0 frequency
+        assert!(set_plugin_param_value(&mut settings, 0, 2500.0, &mut changed));
+        match settings {
+            PluginSettings::EQ { filters, .. } => assert_eq!(filters[0].frequency, 2500.0),
+            _ => panic!("expected EQ"),
+        }
+        assert!(!changed);
+    }
+
+    #[test]
+    fn set_plugin_param_value_eq_gain_clamped() {
+        let mut settings = PluginSettings::EQ {
+            channels: 2,
+            filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)],
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+        let mut changed = false;
+
+        // Param index 2 = band 0 gain_db; should clamp to [-24, 24]
+        assert!(set_plugin_param_value(&mut settings, 2, 50.0, &mut changed));
+        match settings {
+            PluginSettings::EQ { filters, .. } => assert_eq!(filters[0].gain_db, 24.0),
+            _ => panic!("expected EQ"),
+        }
+    }
+
+    #[test]
+    fn set_plugin_param_value_eq_type_field() {
+        let mut settings = PluginSettings::EQ {
+            channels: 2,
+            filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)],
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+        let mut changed = false;
+
+        // Param index 3 = band 0 filter type; 1 = Lowshelf
+        assert!(set_plugin_param_value(&mut settings, 3, 1.0, &mut changed));
+        match settings {
+            PluginSettings::EQ { filters, .. } => {
+                assert_eq!(filters[0].filter_type, BiquadFilterType::Lowshelf)
+            }
+            _ => panic!("expected EQ"),
+        }
+    }
+
+    #[test]
+    fn set_plugin_param_value_gain() {
+        let mut settings = PluginSettings::Gain {
+            channels: 2,
+            gain_db: 0.0,
+            smoothing_ms: 20.0,
+        };
+        let mut changed = false;
+
+        assert!(set_plugin_param_value(&mut settings, 0, -12.0, &mut changed));
+        match settings {
+            PluginSettings::Gain { gain_db, .. } => assert!((gain_db - -12.0).abs() < 0.01),
+            _ => panic!("expected Gain"),
+        }
+    }
+
+    #[test]
+    fn set_plugin_param_value_multiband_compressor_band_threshold() {
+        let mut settings = PluginSettings::MultibandCompressor {
+            num_bands: 1,
+            crossover_preset: 0,
+            crossover_freq_1: 200.0,
+            crossover_freq_2: 1000.0,
+            crossover_freq_3: 4000.0,
+            crossover_freq_4: 8000.0,
+            threshold_db: -20.0,
+            ratio: 4.0,
+            attack_ms: 10.0,
+            release_ms: 100.0,
+            knee_db: 6.0,
+            mix: 1.0,
+            link_channels: false,
+            per_band_lookahead_ms: 0.0,
+            ms_mode: false,
+            bands: vec![BandCompressorParams {
+                threshold_db: None,
+                ratio: None,
+                attack_ms: None,
+                release_ms: None,
+                knee_db: None,
+                makeup_gain_db: 0.0,
+                auto_makeup: false,
+                measured_auto_makeup: false,
+                active: true,
+                solo: false,
+                bypass: false,
+            }],
+            sidechain_tilt_db: 0.0,
+            link_amount: 0.0,
+        };
+        let mut changed = false;
+
+        // Band-level threshold at index 106
+        assert!(set_plugin_param_value(&mut settings, 106, -15.0, &mut changed));
+        match settings {
+            PluginSettings::MultibandCompressor { bands, .. } => {
+                assert!((bands[0].threshold_db.unwrap() - -15.0).abs() < 0.01);
+            }
+            _ => panic!("expected MultibandCompressor"),
+        }
+    }
+
+    #[test]
+    fn set_plugin_param_value_returns_false_for_out_of_range_index() {
+        let mut settings = PluginSettings::Gain {
+            channels: 2,
+            gain_db: 0.0,
+            smoothing_ms: 20.0,
+        };
+        let mut changed = false;
+
+        assert!(!set_plugin_param_value(&mut settings, 999, 0.0, &mut changed));
+    }
+}

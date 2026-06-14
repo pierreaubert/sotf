@@ -432,4 +432,60 @@ mod tests {
             "a&lt;b&gt;c&amp;d&quot;e&apos;f"
         );
     }
+
+    #[test]
+    fn test_local_name() {
+        assert_eq!(local_name("s:Body"), "Body");
+        assert_eq!(local_name("SOAP-ENV:Envelope"), "Envelope");
+        assert_eq!(local_name("Body"), "Body");
+        assert_eq!(local_name(""), "");
+    }
+
+    #[test]
+    fn test_find_body_inner_simple() {
+        let soap = r#"<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Play xmlns:u="urn:x"><InstanceID>0</InstanceID></u:Play></s:Body></s:Envelope>"#;
+        let inner = find_body_inner(soap).unwrap();
+        assert!(inner.contains("<u:Play"));
+        assert!(!inner.contains("</s:Body>"));
+    }
+
+    #[test]
+    fn test_find_body_inner_no_body() {
+        let soap = r#"<s:Envelope><s:Header><x>1</x></s:Header></s:Envelope>"#;
+        assert!(find_body_inner(soap).is_none());
+    }
+
+    #[test]
+    fn test_find_body_inner_with_comments_and_doctype() {
+        let soap = r#"<?xml version="1.0"?>
+<!DOCTYPE Envelope [<!ENTITY x "y">]>
+<!-- comment -->
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+  <SOAP-ENV:Body>
+    <Pause><InstanceID>0</InstanceID></Pause>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>"#;
+        let inner = find_body_inner(soap).unwrap();
+        assert!(inner.contains("<Pause>"));
+    }
+
+    #[test]
+    fn test_extract_soap_action_self_closing() {
+        let soap = r#"<?xml version="1.0"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <u:GetPositionInfo xmlns:u="urn:schemas-upnp-org:service:AVTransport:1" />
+  </s:Body>
+</s:Envelope>"#;
+        let (action, args) = extract_soap_action(soap).unwrap();
+        assert_eq!(action, "GetPositionInfo");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn test_xml_decode_trailing_ampersand_and_numeric() {
+        assert_eq!(xml_decode("a&amp"), "a&amp"); // no semicolon
+        assert_eq!(xml_decode("&#x1F600;"), "\u{1F600}"); // emoji
+        assert_eq!(xml_decode("&#99999999;"), "&#99999999;"); // out of char range
+    }
 }

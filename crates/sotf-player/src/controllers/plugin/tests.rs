@@ -302,3 +302,62 @@ fn add_and_pop_eq_kautz_section() {
     assert!(matches!(effect, PluginUpdateEffect::Structural));
     assert_eq!(kautz_count(&ctrl), before);
 }
+
+#[test]
+fn cycle_eq_filter_topology_no_op_when_no_band() {
+    let (mut ctrl, idx) = make_linear_eq();
+
+    // Empty the filter list first
+    if let Some(plugin) = ctrl.graph.get_plugin_mut(idx) {
+        if let PluginSettings::EQ { filters, .. } = &mut plugin.settings {
+            filters.clear();
+        }
+    }
+
+    let effect = ctrl.cycle_eq_filter_topology(idx, 0);
+    assert!(matches!(effect, PluginUpdateEffect::None));
+}
+
+#[test]
+fn cycle_eq_filter_lambda_no_op_when_not_warped() {
+    let (mut ctrl, idx) = make_linear_eq();
+
+    // Default is Biquad, not warped → no-op
+    let effect = ctrl.cycle_eq_filter_lambda(idx, 0);
+    assert!(matches!(effect, PluginUpdateEffect::None));
+}
+
+#[test]
+fn cycle_eq_filter_lambda_no_op_when_band_missing() {
+    let (mut ctrl, idx) = make_linear_eq();
+
+    let effect = ctrl.cycle_eq_filter_lambda(idx, 999);
+    assert!(matches!(effect, PluginUpdateEffect::None));
+}
+
+#[test]
+fn move_user_plugin_by_index_swaps_two_user_plugins() {
+    let mut ctrl = PluginController::new();
+    let _ = ctrl.add_plugin(&PluginType::EQ);
+    let _ = ctrl.add_plugin(&PluginType::Compressor);
+
+    let order_before: Vec<String> = ctrl
+        .graph
+        .plugins()
+        .iter()
+        .map(|p| p.display_name().to_string())
+        .collect();
+
+    // Move first user plugin down to second user plugin position
+    ctrl.graph.move_plugin(2, 3);
+
+    let order_after: Vec<String> = ctrl
+        .graph
+        .plugins()
+        .iter()
+        .map(|p| p.display_name().to_string())
+        .collect();
+    assert_ne!(order_before, order_after);
+    assert_eq!(order_after[2], order_before[3]);
+    assert_eq!(order_after[3], order_before[2]);
+}

@@ -1,7 +1,7 @@
 [runner]
 app_bin = "target/debug/sotf-desktop"
 artifacts_dir = "target/qa-gpui"
-demo_audio_dir = "crates/app-gpui/assets/demo-audio"
+demo_audio_dir = "data_tests/audio"
 readiness_timeout = "20s"
 size = "1440x900"
 

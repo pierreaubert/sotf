@@ -210,3 +210,118 @@ pub(super) fn parse_byte_range(value: &str) -> io::Result<PendingByteRange> {
 
     Ok(PendingByteRange { length, offset })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_attribute_finds_quoted_and_unquoted_values() {
+        assert_eq!(
+            parse_attribute(r#"#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS="mp4a.40.2""#, "BANDWIDTH"),
+            Some("128000")
+        );
+        assert_eq!(
+            parse_attribute(r#"#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS="mp4a.40.2""#, "CODECS"),
+            Some("mp4a.40.2")
+        );
+        assert_eq!(
+            parse_attribute(r#"#EXT-X-KEY:METHOD=AES-128,URI="key.bin""#, "METHOD"),
+            Some("AES-128")
+        );
+        assert_eq!(parse_attribute("#EXT-X-FOO:BAR=1", "MISSING"), None);
+    }
+
+    #[test]
+    fn parse_attribute_handles_commas_inside_quotes() {
+        let line = r#"#EXT-X-STREAM-INF:BANDWIDTH=128000,NAME="A,B,C",CODECS="mp4a.40.2""#;
+        assert_eq!(parse_attribute(line, "NAME"), Some("A,B,C"));
+        assert_eq!(parse_attribute(line, "CODECS"), Some("mp4a.40.2"));
+    }
+
+    #[test]
+    fn parse_attribute_pair_trims_quotes() {
+        assert_eq!(parse_attribute_pair("NAME=\"value\"", "NAME"), Some("value"));
+        assert_eq!(parse_attribute_pair("NAME=value", "NAME"), Some("value"));
+        assert_eq!(parse_attribute_pair("OTHER=1", "NAME"), None);
+    }
+
+    #[test]
+    fn parse_byte_range_length_only() {
+        let range = parse_byte_range("1024").unwrap();
+        assert_eq!(range.length, 1024);
+        assert_eq!(range.offset, None);
+    }
+
+    #[test]
+    fn parse_byte_range_length_and_offset() {
+        let range = parse_byte_range("1024@2048").unwrap();
+        assert_eq!(range.length, 1024);
+        assert_eq!(range.offset, Some(2048));
+    }
+
+    #[test]
+    fn parse_byte_range_rejects_zero_length() {
+        assert!(parse_byte_range("0").is_err());
+    }
+
+    #[test]
+    fn parse_byte_range_rejects_invalid_numbers() {
+        assert!(parse_byte_range("abc").is_err());
+        assert!(parse_byte_range("1024@abc").is_err());
+    }
+
+    #[test]
+    fn parse_master_playlist_selects_highest_bandwidth() {
+        let base = Url::parse("http://example.com/").unwrap();
+        let playlist = "#EXTM3U\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=128000\n\
+            low.m3u8\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=256000\n\
+            high.m3u8\n";
+        let selected = parse_master_playlist(&base, playlist).unwrap().unwrap();
+        assert_eq!(selected.as_str(), "http://example.com/high.m3u8");
+    }
+
+    #[test]
+    fn parse_master_playlist_returns_none_for_empty() {
+        let base = Url::parse("http://example.com/").unwrap();
+        assert!(parse_master_playlist(&base, "#EXTM3U\n").unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_media_playlist_extracts_segments() {
+        let base = Url::parse("http://example.com/").unwrap();
+        let playlist = "#EXTM3U\n\
+            #EXT-X-TARGETDURATION:10\n\
+            #EXTINF:9.009,\n\
+            segment0.ts\n\
+            #EXTINF:9.009,\n\
+            segment1.ts\n\
+            #EXT-X-ENDLIST\n";
+        let resolved = parse_media_playlist(&base, playlist).unwrap();
+        assert_eq!(resolved.segments.len(), 2);
+        assert!(resolved.end_list);
+        assert_eq!(resolved.target_duration, Duration::from_secs(10));
+        assert_eq!(
+            resolved.segments[0].url.as_str(),
+            "http://example.com/segment0.ts"
+        );
+    }
+
+    #[test]
+    fn parse_media_playlist_rejects_encrypted() {
+        let base = Url::parse("http://example.com/").unwrap();
+        let playlist = "#EXTM3U\n\
+            #EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n\
+            segment.ts\n";
+        let err = parse_media_playlist(&base, playlist).unwrap_err();
+        assert!(err.to_string().contains("encrypted"));
+    }
+
+    #[test]
+    fn parse_media_playlist_rejects_empty() {
+        let base = Url::parse("http://example.com/").unwrap();
+        assert!(parse_media_playlist(&base, "#EXTM3U\n").is_err());
+    }
+}

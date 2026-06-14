@@ -98,4 +98,6 @@ clap = { workspace = true }
 
 [dev-dependencies]
 sotf-player = { path = ".", features = ["testing"] }
+sotf-testkit = { workspace = true }
+sotf-test = { workspace = true }
 tempfile = { workspace = true }

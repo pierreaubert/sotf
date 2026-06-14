@@ -10,7 +10,7 @@ use super::consts::MAX_RESAMPLE_STAGING_SAMPLES;
 use super::consts::send_or_interrupt;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use super::hal_input_guard_trip::guard_hal_input_block;
-#[cfg(any(test, all(target_os = "macos", feature = "hal")))]
+#[cfg(all(target_os = "macos", feature = "hal"))]
 use super::misc::frames_to_sample_count;
 use super::misc::take_frame_buffer;
 use super::sample_queue::SampleQueue;
