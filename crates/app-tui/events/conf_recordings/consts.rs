@@ -74,33 +74,33 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         DEFAULT_MLS_ORDER, SignalParams, SignalType, generate_signal, write_temp_wav,
     };
 
-    let selected = match app.recording.channel_recordings.get(channel_idx) {
+    let selected = match app.recording.model.channel_recordings.get(channel_idx) {
         Some(ch) => ch.clone(),
         None => return,
     };
-    let ctc_strategy = app.recording.recording_config.ctc_matrix_strategy;
+    let ctc_strategy = app.recording.model.recording_config.ctc_matrix_strategy;
     let capture_indices = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
         ctc_raw_capture_channel_indices(app, channel_idx)
     } else {
         vec![channel_idx]
     };
     if ctc_strategy == CtcMatrixExportStrategy::RawSweep && capture_indices.len() < 2 {
-        if let Some(ch) = app.recording.channel_recordings.get_mut(channel_idx) {
+        if let Some(ch) = app.recording.model.channel_recordings.get_mut(channel_idx) {
             ch.state = ChannelRecordingState::Error;
         }
-        app.recording.status_message =
+        app.recording.model.status_message =
             "Raw-sweep CTC requires two ear input channels for the selected speaker/position"
                 .to_string();
         return;
     }
 
     for idx in &capture_indices {
-        if let Some(ch) = app.recording.channel_recordings.get_mut(*idx) {
+        if let Some(ch) = app.recording.model.channel_recordings.get_mut(*idx) {
             ch.state = ChannelRecordingState::Recording;
             ch.result = None;
         }
     }
-    app.recording.status_message = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
+    app.recording.model.status_message = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
         format!("Recording CTC ear pair for {}...", selected.channel_name)
     } else {
         format!("Recording channel {}...", selected.channel_name)
@@ -109,7 +109,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let mic_index = selected.mic_index;
 
     // Map signal type
-    let signal_type = match app.recording.signal_type {
+    let signal_type = match app.recording.model.signal_type {
         sotf_audio_player::recording_types::RecordingSignalType::Sweep => SignalType::Sweep,
         sotf_audio_player::recording_types::RecordingSignalType::WhiteNoise => {
             SignalType::WhiteNoise
@@ -125,17 +125,18 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         }
     };
 
-    let duration_secs = app.recording.signal_duration_secs;
-    let level_db = app.recording.signal_level_db;
+    let duration_secs = app.recording.model.signal_duration_secs;
+    let level_db = app.recording.model.signal_level_db;
     let sweep_start_freq = selected.sweep_start_freq;
     let sweep_end_freq = selected.sweep_end_freq;
-    let sample_rate = app.recording.playback_config.sample_rate;
+    let sample_rate = app.recording.model.playback_config.sample_rate;
 
-    let output_device = app.recording.playback_config.device_name.clone();
-    let input_device = app.recording.recording_config.device_name.clone();
+    let output_device = app.recording.model.playback_config.device_name.clone();
+    let input_device = app.recording.model.recording_config.device_name.clone();
 
     let output_channel = app
         .recording
+        .model
         .playback_config
         .channel_mappings
         .get(speaker_index)
@@ -143,12 +144,13 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         .unwrap_or(0) as u16;
     let input_channel = app
         .recording
+        .model
         .recording_config
         .channel_mappings
         .get(mic_index)
         .copied()
         .unwrap_or(0) as u16;
-    let loopback_input = app.recording.recording_config.ctc_loopback_input_channel;
+    let loopback_input = app.recording.model.recording_config.ctc_loopback_input_channel;
     let position_idx = selected.mic_position_index;
 
     // Per-channel calibration lives in `recording_config.mic_calibration_paths`.
@@ -156,13 +158,14 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     // its one input — pick the calibration for the input channel being used.
     let mic_calibration = app
         .recording
+        .model
         .recording_config
         .mic_calibration_paths
         .get(input_channel as usize)
         .and_then(|o| o.clone())
         .filter(|s| !s.is_empty());
 
-    let channel_name = app.recording.channel_recordings[channel_idx]
+    let channel_name = app.recording.model.channel_recordings[channel_idx]
         .channel_name
         .clone();
     let output_directory = app.recording.output_directory.clone();
@@ -194,10 +197,10 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let signal = match generate_signal(signal_type, &params, duration_secs, sample_rate) {
         Ok(s) => s,
         Err(e) => {
-            if let Some(ch) = app.recording.channel_recordings.get_mut(channel_idx) {
+            if let Some(ch) = app.recording.model.channel_recordings.get_mut(channel_idx) {
                 ch.state = ChannelRecordingState::Error;
             }
-            app.recording.status_message = format!("Error generating signal: {}", e);
+            app.recording.model.status_message = format!("Error generating signal: {}", e);
             return;
         }
     };
@@ -206,10 +209,10 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let temp_wav = match write_temp_wav(&signal, sample_rate, 1) {
         Ok(f) => f,
         Err(e) => {
-            if let Some(ch) = app.recording.channel_recordings.get_mut(channel_idx) {
+            if let Some(ch) = app.recording.model.channel_recordings.get_mut(channel_idx) {
                 ch.state = ChannelRecordingState::Error;
             }
-            app.recording.status_message = format!("Error writing temp WAV: {}", e);
+            app.recording.model.status_message = format!("Error writing temp WAV: {}", e);
             return;
         }
     };
@@ -241,7 +244,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         capture_indices
             .iter()
             .filter_map(|idx| {
-                let rec = app.recording.channel_recordings.get(*idx)?;
+                let rec = app.recording.model.channel_recordings.get(*idx)?;
                 let safe_name: String = rec
                     .channel_name
                     .chars()
@@ -255,6 +258,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                     .collect();
                 let input_ch = app
                     .recording
+                    .model
                     .recording_config
                     .channel_mappings
                     .get(rec.mic_index)
@@ -262,6 +266,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                     .unwrap_or(0) as u16;
                 let calibration = app
                     .recording
+                    .model
                     .recording_config
                     .mic_calibration_paths
                     .get(input_ch as usize)
@@ -302,10 +307,10 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
 
     // B4: Create output directory before recording
     if let Err(e) = std::fs::create_dir_all(&recording_dir) {
-        if let Some(ch) = app.recording.channel_recordings.get_mut(channel_idx) {
+        if let Some(ch) = app.recording.model.channel_recordings.get_mut(channel_idx) {
             ch.state = ChannelRecordingState::Error;
         }
-        app.recording.status_message = format!("Cannot create directory: {}", e);
+        app.recording.model.status_message = format!("Cannot create directory: {}", e);
         return;
     }
 
@@ -317,9 +322,9 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             sample_rate,
             1,
         ) {
-            app.recording.status_message = format!("Could not write CTC reference sweep: {}", e);
+            app.recording.model.status_message = format!("Could not write CTC reference sweep: {}", e);
         } else {
-            app.recording.ctc_reference_sweep_path =
+            app.recording.model.ctc_reference_sweep_path =
                 Some(reference_path.to_string_lossy().to_string());
         }
     }

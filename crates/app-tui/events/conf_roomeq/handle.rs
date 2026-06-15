@@ -755,7 +755,7 @@ mod tests {
         let mut app = app_on_room_eq_content();
         app.room_eq.model.step = RoomEqStep::LoadData;
         handle_room_eq_keys(&mut app, key(KeyCode::Enter));
-        assert_eq!(app.file_picker_origin, FilePickerOrigin::RoomEqFilePath);
+        assert_eq!(app.file_explorer.picker_origin, FilePickerOrigin::RoomEqFilePath);
     }
 
     #[test]

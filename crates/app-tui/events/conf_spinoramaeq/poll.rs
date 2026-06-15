@@ -11,18 +11,18 @@ pub fn poll_spinorama_speaker_load(app: &mut App) -> bool {
     use crate::app::{ConfigureSubScreen, Screen, SpinoramaStep};
 
     // Auto-load speakers when on Select step with empty list
-    if !app.spinorama_eq.loading_speakers
-        && app.spinorama_eq.available_speakers.is_empty()
+    if !app.spinorama_eq.model.loading_speakers
+        && app.spinorama_eq.model.available_speakers.is_empty()
         && app.spinorama_eq.speakers_error.is_none()
         && app.current_screen == Screen::Configure
         && app.configure_sub_screen == ConfigureSubScreen::SpinoramaEq
         && app.spinorama_eq.step == SpinoramaStep::Select
     {
-        app.spinorama_eq.loading_speakers = true;
+        app.spinorama_eq.model.loading_speakers = true;
         spawn_spinorama_speaker_load();
     }
 
-    if !app.spinorama_eq.loading_speakers {
+    if !app.spinorama_eq.model.loading_speakers {
         return false;
     }
     let result_slot = SPEAKERS_RESULT
@@ -31,10 +31,10 @@ pub fn poll_spinorama_speaker_load(app: &mut App) -> bool {
     if let Ok(mut guard) = result_slot.lock()
         && let Some(result) = guard.take()
     {
-        app.spinorama_eq.loading_speakers = false;
+        app.spinorama_eq.model.loading_speakers = false;
         match result {
             Ok(speakers) => {
-                app.spinorama_eq.available_speakers = speakers;
+                app.spinorama_eq.model.available_speakers = speakers;
                 app.spinorama_eq.update_filter();
             }
             Err(e) => {
@@ -52,7 +52,7 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
     use sotf_audio_player::room_eq_types::OptimizationStatus;
     use sotf_audio_player::spinorama_eq_types::SpinoramaBiquad;
 
-    if app.spinorama_eq.opt_status != OptimizationStatus::Running {
+    if app.spinorama_eq.model.optimization_status != OptimizationStatus::Running {
         return false;
     }
 
@@ -68,9 +68,9 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
     {
         match result {
             Ok(r) => {
-                app.spinorama_eq.pre_loss = r.initial_loss;
-                app.spinorama_eq.post_loss = r.final_loss;
-                app.spinorama_eq.filters = r
+                app.spinorama_eq.model.pre_loss = r.initial_loss;
+                app.spinorama_eq.model.post_loss = r.final_loss;
+                app.spinorama_eq.model.filters = r
                     .biquads
                     .into_iter()
                     .map(|b| SpinoramaBiquad {
@@ -80,26 +80,26 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
                         db_gain: b.db_gain,
                     })
                     .collect();
-                app.spinorama_eq.curve_frequencies = r.frequencies.clone();
-                app.spinorama_eq.curve_input = r.input_curve.clone();
-                app.spinorama_eq.curve_target = r.target_curve.clone();
-                app.spinorama_eq.curve_corrected = r.corrected_curve.clone();
-                app.spinorama_eq.curve_filter_response = r.filter_response.clone();
+                app.spinorama_eq.model.curve_frequencies = r.frequencies.clone();
+                app.spinorama_eq.model.curve_input = r.input_curve.clone();
+                app.spinorama_eq.model.curve_target = r.target_curve.clone();
+                app.spinorama_eq.model.curve_corrected = r.corrected_curve.clone();
+                app.spinorama_eq.model.curve_filter_response = r.filter_response.clone();
                 // Keep the progress-based loss_history (which includes scores)
                 // Only override if empty (e.g. if the callback wasn't called)
-                if app.spinorama_eq.loss_history.is_empty() {
-                    app.spinorama_eq.loss_history = r
+                if app.spinorama_eq.model.progress_history.is_empty() {
+                    app.spinorama_eq.model.progress_history = r
                         .optimization_history
                         .iter()
                         .map(|(iter, loss)| (*iter, *loss, None))
                         .collect();
                 }
-                app.spinorama_eq.opt_status = OptimizationStatus::Completed;
-                app.spinorama_eq.opt_progress = 1.0;
+                app.spinorama_eq.model.optimization_status = OptimizationStatus::Completed;
+                app.spinorama_eq.model.progress = 1.0;
             }
             Err(e) => {
-                app.spinorama_eq.opt_status = OptimizationStatus::Failed;
-                app.spinorama_eq.opt_error = Some(e);
+                app.spinorama_eq.model.optimization_status = OptimizationStatus::Failed;
+                app.spinorama_eq.model.error_message = Some(e);
             }
         }
         return true;
@@ -108,11 +108,11 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
     if let Ok(mut guard) = progress_slot.lock()
         && let Some((iter, max_iter, loss, pct, score)) = guard.take()
     {
-        app.spinorama_eq.opt_iteration = iter;
+        app.spinorama_eq.model.current_iteration = iter;
         app.spinorama_eq.opt_max_iter = max_iter;
-        app.spinorama_eq.opt_loss = loss;
-        app.spinorama_eq.opt_progress = pct;
-        app.spinorama_eq.loss_history.push((iter, loss, score));
+        app.spinorama_eq.model.current_loss = loss;
+        app.spinorama_eq.model.progress = pct;
+        app.spinorama_eq.model.progress_history.push((iter, loss, score));
         return true;
     }
 

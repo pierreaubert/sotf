@@ -85,11 +85,11 @@ pub(super) fn start_playback(
         app.get_current_sample_rate()
     );
 
-    app.plugin_graph.adapt_matrix_to_input(track_channels);
+    app.plugin_rack.graph.adapt_matrix_to_input(track_channels);
 
     // Apply ReplayGain correction to the permanent Gain plugin
     let rg_gain = app.get_replay_gain_for_current_track();
-    app.plugin_graph.set_replay_gain(rg_gain);
+    app.plugin_rack.graph.set_replay_gain(rg_gain);
 
     // `load_and_play_source` only accepts a flat `Vec<PluginConfig>`,
     // which cannot express the DAG topology a non-linear plugin
@@ -100,14 +100,14 @@ pub(super) fn start_playback(
     // in-place updates). Without this, pressing Play silently drops
     // routed RoomEQ topology until a parameter twiddle re-triggers a
     // structural flush.
-    if !app.plugin_graph.is_linear() {
-        app.needs_plugin_update = true;
-        app.plugin_update_retry_count = 0;
-        app.plugin_update_last_attempt = None;
+    if !app.plugin_rack.graph.is_linear() {
+        app.plugin_rack.needs_update = true;
+        app.plugin_rack.update_retry_count = 0;
+        app.plugin_rack.update_last_attempt = None;
     }
 
-    let plugins = app.plugin_graph.to_plugin_configs(sample_rate);
-    let mut output_channels = app.plugin_graph.output_channels_for_input(track_channels);
+    let plugins = app.plugin_rack.graph.to_plugin_configs(sample_rate);
+    let mut output_channels = app.plugin_rack.graph.output_channels_for_input(track_channels);
 
     let device_max = app.get_device_max_channels();
     log::info!(
@@ -131,14 +131,14 @@ pub(super) fn start_playback(
     }
 
     // Sync volume to the engine before playback starts
-    player.set_volume(app.volume)?;
+    player.set_volume(app.playback.volume)?;
 
     let source_path = source.as_path().map(|p| p.to_path_buf());
     player.load_and_play_source(
         source,
         plugins,
         output_channels,
-        app.current_output_device_name.clone(),
+        app.audio_devices.current_output_name.clone(),
     )?;
 
     if let Some(path) = source_path {
@@ -166,21 +166,21 @@ pub(super) fn handle_player_command(
             let track_channels = app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
 
             // Clear suspensions from previous track
-            app.plugin_graph.clear_suspensions();
-            app.plugin_graph.update_channel_dependent_plugins();
+            app.plugin_rack.graph.clear_suspensions();
+            app.plugin_rack.graph.update_channel_dependent_plugins();
 
             // Check for channel conflicts with all fixed-channel plugins
-            let conflicts = app.plugin_graph.find_channel_conflicts(track_channels);
+            let conflicts = app.plugin_rack.graph.find_channel_conflicts(track_channels);
             if !conflicts.is_empty() {
                 log::info!(
                     "[TUI] Channel conflict: {}ch file with {} incompatible plugin(s)",
                     track_channels,
                     conflicts.len()
                 );
-                app.channel_conflicts = conflicts;
-                app.channel_conflict_path = Some(path);
-                app.channel_conflict_selection = 0;
-                app.channel_conflict_track_channels = track_channels;
+                app.modal.channel_conflicts = conflicts;
+                app.modal.channel_conflict_path = Some(path);
+                app.modal.channel_conflict_selection = 0;
+                app.modal.channel_conflict_track_channels = track_channels;
                 app.enter_overlay_mode(InputMode::ChannelConflict);
                 return Ok(());
             }
@@ -212,9 +212,9 @@ pub(super) fn handle_player_command(
         }
         PlayerCommand::SetOutputDevice(device_name) => {
             // Store the device name for future playback
-            app.current_output_device_name = Some(device_name.clone());
+            app.audio_devices.current_output_name = Some(device_name.clone());
             player.set_output_device(device_name.clone())?;
-            app.status_message = Some(format!(
+            app.ui.status_message = Some(format!(
                 "Output device set to '{}'; will be used for next playback",
                 device_name
             ));
@@ -236,9 +236,9 @@ pub(super) fn handle_player_command(
             );
         }
         PlayerCommand::ToggleMute => {
-            app.muted = !app.muted;
-            player.set_mute(app.muted)?;
-            log::info!("Mute toggled: {}", app.muted);
+            app.playback.muted = !app.playback.muted;
+            player.set_mute(app.playback.muted)?;
+            log::info!("Mute toggled: {}", app.playback.muted);
         }
     }
     Ok(())
@@ -256,7 +256,7 @@ pub(super) fn update_media_controls(
     // Snapshot the desired metadata.
     let track = app.current_track();
     let album_title = app
-        .current_queue_index
+        .playback.current_queue_index
         .and_then(|idx| app.queue.get(idx))
         .map(|entry| entry.item.album.title.clone())
         .filter(|s| !s.is_empty());
@@ -270,7 +270,7 @@ pub(super) fn update_media_controls(
     let duration_secs = track.and_then(|t| t.duration_secs);
 
     let cover_url = app
-        .current_queue_index
+        .playback.current_queue_index
         .and_then(|idx| app.queue.get(idx))
         .and_then(|entry| entry.item.album.album_art_path.as_ref())
         .filter(|path| path.exists())
@@ -279,12 +279,12 @@ pub(super) fn update_media_controls(
     // Only push metadata to the OS when something actually changed —
     // every call crosses an FFI boundary (e.g. macOS
     // MPNowPlayingInfoCenter) and we tick at ~10 Hz.
-    let metadata_changed = app.mc_last_queue_index != app.current_queue_index
-        || app.mc_last_title != title
-        || app.mc_last_artist != artist
-        || app.mc_last_album != album_title
-        || app.mc_last_cover_url != cover_url
-        || app.mc_last_duration_secs != duration_secs;
+    let metadata_changed = app.media_control.last_queue_index != app.playback.current_queue_index
+        || app.media_control.last_title != title
+        || app.media_control.last_artist != artist
+        || app.media_control.last_album != album_title
+        || app.media_control.last_cover_url != cover_url
+        || app.media_control.last_duration_secs != duration_secs;
 
     if metadata_changed {
         mc.set_metadata(
@@ -294,20 +294,20 @@ pub(super) fn update_media_controls(
             duration_secs.map(Duration::from_secs),
             cover_url.as_deref(),
         );
-        app.mc_last_queue_index = app.current_queue_index;
-        app.mc_last_title = title;
-        app.mc_last_artist = artist;
-        app.mc_last_album = album_title;
-        app.mc_last_cover_url = cover_url;
-        app.mc_last_duration_secs = duration_secs;
+        app.media_control.last_queue_index = app.playback.current_queue_index;
+        app.media_control.last_title = title;
+        app.media_control.last_artist = artist;
+        app.media_control.last_album = album_title;
+        app.media_control.last_cover_url = cover_url;
+        app.media_control.last_duration_secs = duration_secs;
     }
 
     let position_secs = player.get_position();
     let progress = Some(MediaPosition::from_secs_f64(position_secs));
 
-    let playback = if app.is_playing {
+    let playback = if app.playback.is_playing {
         MediaPlayback::Playing { progress }
-    } else if app.current_queue_index.is_some() {
+    } else if app.playback.current_queue_index.is_some() {
         MediaPlayback::Paused { progress }
     } else {
         MediaPlayback::Stopped
@@ -352,9 +352,9 @@ pub(super) fn process_dev_command(
                     if let Some(cmd) = handle_key_event(app, key) {
                         if let Err(e) = handle_player_command(player, app, cmd) {
                             log::error!("[dev-api] Player command error: {}", e);
-                            app.error_message = Some(e.to_string());
+                            app.ui.error_message = Some(e.to_string());
                             app.enter_overlay_mode(InputMode::ShowError);
-                            app.is_playing = false;
+                            app.playback.is_playing = false;
                         }
                         update_media_controls(app, player, media_controls);
                     }
@@ -397,19 +397,19 @@ pub(super) fn dispatch_tui_action(
 
     match name {
         "PlayPause" => {
-            app.is_playing = !app.is_playing;
+            app.playback.is_playing = !app.playback.is_playing;
         }
         "Stop" => {
-            app.is_playing = false;
+            app.playback.is_playing = false;
         }
         "VolumeUp" => {
-            app.volume = (app.volume + 0.05).min(1.0);
+            app.playback.volume = (app.playback.volume + 0.05).min(1.0);
         }
         "VolumeDown" => {
-            app.volume = (app.volume - 0.05).max(0.0);
+            app.playback.volume = (app.playback.volume - 0.05).max(0.0);
         }
         "Mute" => {
-            app.muted = !app.muted;
+            app.playback.muted = !app.playback.muted;
         }
         "SwitchToLibrary" => {
             app.current_screen = Screen::Library;
@@ -438,22 +438,22 @@ pub(super) fn dispatch_tui_action(
         "MetadataSeedAlbum" => {
             app.library.albums =
                 vec![sotf_audio_player::dev_api_fixtures::metadata_fixture_album()];
-            app.selected_album_index = 0;
+            app.library_view.selected_album_index = 0;
             app.request_filter_update();
             let _ = app.filtered_albums();
             app.current_screen = Screen::Library;
             app.input_mode = InputMode::Normal;
-            app.metadata_editor = None;
+            app.modal.metadata_editor = None;
         }
         "MetadataOpenAlbumEditor" => {
-            let index = app.selected_album_index;
+            let index = app.library_view.selected_album_index;
             let album = app
                 .filtered_albums()
                 .get(index)
                 .cloned()
                 .or_else(|| app.library.albums.first().cloned())
                 .ok_or_else(|| anyhow::anyhow!("no album available for metadata editor"))?;
-            app.metadata_editor = Some(
+            app.modal.metadata_editor = Some(
                 MetadataEditorState::for_album(&album)
                     .map_err(|err| anyhow::anyhow!("metadata editor unavailable: {err}"))?,
             );
@@ -461,7 +461,7 @@ pub(super) fn dispatch_tui_action(
         }
         "MetadataSetField" => {
             let editor = app
-                .metadata_editor
+                .modal.metadata_editor
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
             let field = payload_str(&payload, "field")?;
@@ -473,7 +473,7 @@ pub(super) fn dispatch_tui_action(
         "MetadataPreview" => {
             let (target, patch) = {
                 let editor = app
-                    .metadata_editor
+                    .modal.metadata_editor
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
                 (
@@ -485,7 +485,7 @@ pub(super) fn dispatch_tui_action(
             };
             let result = MetadataController::preview_edit(&app.library, target, patch);
             let editor = app
-                .metadata_editor
+                .modal.metadata_editor
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
             match result {
@@ -501,7 +501,7 @@ pub(super) fn dispatch_tui_action(
         }
         "MetadataInjectCandidate" => {
             let editor = app
-                .metadata_editor
+                .modal.metadata_editor
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
             editor
@@ -512,7 +512,7 @@ pub(super) fn dispatch_tui_action(
         }
         "MetadataImportCandidate" => {
             let editor = app
-                .metadata_editor
+                .modal.metadata_editor
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
             let candidate = editor
@@ -523,7 +523,7 @@ pub(super) fn dispatch_tui_action(
             editor.apply_candidate(candidate);
         }
         "MetadataClose" => {
-            app.metadata_editor = None;
+            app.modal.metadata_editor = None;
             app.input_mode = InputMode::Normal;
         }
         _ => return Err(anyhow::anyhow!("unknown action: `{name}`")),

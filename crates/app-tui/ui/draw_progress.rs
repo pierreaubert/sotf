@@ -47,7 +47,7 @@ pub(crate) fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
         Line::from(vec![
             Span::raw("Tracks found: "),
             Span::styled(
-                format!("{}", app.scan_progress_tracks),
+                format!("{}", app.scan.progress_tracks),
                 Style::default()
                     .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
@@ -56,7 +56,7 @@ pub(crate) fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
         Line::from(vec![
             Span::raw("Albums found: "),
             Span::styled(
-                format!("{}", app.scan_progress_albums),
+                format!("{}", app.scan.progress_albums),
                 Style::default()
                     .fg(app.theme.accent_success)
                     .add_modifier(Modifier::BOLD),
@@ -116,8 +116,8 @@ pub(crate) fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
         height: dialog_area.height.saturating_sub(4),
     };
 
-    let progress_pct = if app.maintenance_progress_total > 0 {
-        (app.maintenance_progress_checked as f32 / app.maintenance_progress_total as f32 * 100.0)
+    let progress_pct = if app.scan.maintenance_progress_total > 0 {
+        (app.scan.maintenance_progress_checked as f32 / app.scan.maintenance_progress_total as f32 * 100.0)
             as u32
     } else {
         0
@@ -135,7 +135,7 @@ pub(crate) fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
             Span::styled(
                 format!(
                     "{} / {} ({}%)",
-                    app.maintenance_progress_checked, app.maintenance_progress_total, progress_pct
+                    app.scan.maintenance_progress_checked, app.scan.maintenance_progress_total, progress_pct
                 ),
                 Style::default()
                     .fg(app.theme.accent_primary)
@@ -196,8 +196,8 @@ pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
         height: dialog_area.height.saturating_sub(4),
     };
 
-    let progress_pct = if app.replay_gain_manager.total > 0 {
-        (app.replay_gain_manager.processed as f32 / app.replay_gain_manager.total as f32 * 100.0)
+    let progress_pct = if app.scan.replay_gain_manager.total > 0 {
+        (app.scan.replay_gain_manager.processed as f32 / app.scan.replay_gain_manager.total as f32 * 100.0)
             as u32
     } else {
         0
@@ -215,7 +215,7 @@ pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
             Span::styled(
                 format!(
                     "{} / {} ({}%)",
-                    app.replay_gain_manager.processed, app.replay_gain_manager.total, progress_pct
+                    app.scan.replay_gain_manager.processed, app.scan.replay_gain_manager.total, progress_pct
                 ),
                 Style::default()
                     .fg(app.theme.accent_primary)
@@ -226,14 +226,14 @@ pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
         Line::from(vec![
             Span::raw("Succeeded: "),
             Span::styled(
-                format!("{}", app.replay_gain_manager.succeeded),
+                format!("{}", app.scan.replay_gain_manager.succeeded),
                 Style::default()
                     .fg(app.theme.accent_success)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw("  Failed: "),
             Span::styled(
-                format!("{}", app.replay_gain_manager.failed),
+                format!("{}", app.scan.replay_gain_manager.failed),
                 Style::default()
                     .fg(app.theme.accent_error)
                     .add_modifier(Modifier::BOLD),

@@ -63,38 +63,38 @@ fn app_on_recording() -> crate::app::App {
 #[test]
 fn recording_capture_backtab_goes_to_config() {
     let mut app = app_on_recording();
-    app.recording.step = RecordingStep::Capture;
+    app.recording.model.step = RecordingStep::Capture;
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.recording.step, RecordingStep::Config);
+    assert_eq!(app.recording.model.step, RecordingStep::Config);
 }
 
 #[test]
 fn recording_evaluating_backtab_goes_to_capture() {
     let mut app = app_on_recording();
-    app.recording.step = RecordingStep::Evaluating;
+    app.recording.model.step = RecordingStep::Evaluating;
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.recording.step, RecordingStep::Capture);
+    assert_eq!(app.recording.model.step, RecordingStep::Capture);
 }
 
 #[test]
 fn recording_saving_backtab_goes_to_evaluating() {
     let mut app = app_on_recording();
-    app.recording.step = RecordingStep::Saving;
+    app.recording.model.step = RecordingStep::Saving;
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.recording.step, RecordingStep::Evaluating);
+    assert_eq!(app.recording.model.step, RecordingStep::Evaluating);
 }
 
 #[test]
 fn recording_backtab_chain() {
     let mut app = app_on_recording();
-    app.recording.step = RecordingStep::Saving;
+    app.recording.model.step = RecordingStep::Saving;
 
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.recording.step, RecordingStep::Evaluating);
+    assert_eq!(app.recording.model.step, RecordingStep::Evaluating);
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.recording.step, RecordingStep::Capture);
+    assert_eq!(app.recording.model.step, RecordingStep::Capture);
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.recording.step, RecordingStep::Config);
+    assert_eq!(app.recording.model.step, RecordingStep::Config);
 }
 
 /// Create an app with the channel conflict dialog open and one fake conflict.
@@ -103,12 +103,12 @@ fn app_in_channel_conflict() -> crate::app::App {
 
     let mut app = make_app();
     app.input_mode = InputMode::ChannelConflict;
-    app.channel_conflict_selection = 0;
-    app.channel_conflict_path = Some(sotf_audio::decoder::AudioSource::File(
+    app.modal.channel_conflict_selection = 0;
+    app.modal.channel_conflict_path = Some(sotf_audio::decoder::AudioSource::File(
         std::path::PathBuf::from("/fake/track.flac"),
     ));
-    app.channel_conflict_track_channels = 6;
-    app.channel_conflicts = vec![ChannelConflict {
+    app.modal.channel_conflict_track_channels = 6;
+    app.modal.channel_conflicts = vec![ChannelConflict {
         index: 0,
         plugin_type: PluginType::Upmixer,
         required_channels: 2,
@@ -120,45 +120,45 @@ fn app_in_channel_conflict() -> crate::app::App {
 #[test]
 fn channel_conflict_up_down_navigates_selection() {
     let mut app = app_in_channel_conflict();
-    assert_eq!(app.channel_conflict_selection, 0);
+    assert_eq!(app.modal.channel_conflict_selection, 0);
 
     send_keys(&mut app, &[KeyCode::Down]);
-    assert_eq!(app.channel_conflict_selection, 1);
+    assert_eq!(app.modal.channel_conflict_selection, 1);
 
     send_keys(&mut app, &[KeyCode::Down]);
-    assert_eq!(app.channel_conflict_selection, 2);
+    assert_eq!(app.modal.channel_conflict_selection, 2);
 
     // Clamps at bottom
     send_keys(&mut app, &[KeyCode::Down]);
-    assert_eq!(app.channel_conflict_selection, 2);
+    assert_eq!(app.modal.channel_conflict_selection, 2);
 
     send_keys(&mut app, &[KeyCode::Up]);
-    assert_eq!(app.channel_conflict_selection, 1);
+    assert_eq!(app.modal.channel_conflict_selection, 1);
 
     send_keys(&mut app, &[KeyCode::Up]);
-    assert_eq!(app.channel_conflict_selection, 0);
+    assert_eq!(app.modal.channel_conflict_selection, 0);
 
     // Clamps at top
     send_keys(&mut app, &[KeyCode::Up]);
-    assert_eq!(app.channel_conflict_selection, 0);
+    assert_eq!(app.modal.channel_conflict_selection, 0);
 }
 
 #[test]
 fn channel_conflict_enter_on_suspend_returns_play() {
     let mut app = app_in_channel_conflict();
-    app.channel_conflict_selection = 0; // Suspend
+    app.modal.channel_conflict_selection = 0; // Suspend
 
     let cmd = handle_key_event(&mut app, key(KeyCode::Enter));
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(matches!(cmd, Some(PlayerCommand::PlayResolved(_))));
-    assert!(app.channel_conflicts.is_empty());
-    assert!(app.channel_conflict_path.is_none());
+    assert!(app.modal.channel_conflicts.is_empty());
+    assert!(app.modal.channel_conflict_path.is_none());
 }
 
 #[test]
 fn channel_conflict_enter_on_remove_returns_play() {
     let mut app = app_in_channel_conflict();
-    app.channel_conflict_selection = 1; // Remove
+    app.modal.channel_conflict_selection = 1; // Remove
 
     let cmd = handle_key_event(&mut app, key(KeyCode::Enter));
     assert_eq!(app.input_mode, InputMode::Normal);
@@ -168,12 +168,12 @@ fn channel_conflict_enter_on_remove_returns_play() {
 #[test]
 fn channel_conflict_enter_on_cancel_stops_playback() {
     let mut app = app_in_channel_conflict();
-    app.channel_conflict_selection = 2; // Cancel
+    app.modal.channel_conflict_selection = 2; // Cancel
 
     let cmd = handle_key_event(&mut app, key(KeyCode::Enter));
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(cmd.is_none());
-    assert!(!app.is_playing);
+    assert!(!app.playback.is_playing);
 }
 
 #[test]
@@ -183,9 +183,9 @@ fn channel_conflict_esc_cancels() {
     let cmd = handle_key_event(&mut app, key(KeyCode::Esc));
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(cmd.is_none());
-    assert!(!app.is_playing);
-    assert!(app.channel_conflicts.is_empty());
-    assert!(app.channel_conflict_path.is_none());
+    assert!(!app.playback.is_playing);
+    assert!(app.modal.channel_conflicts.is_empty());
+    assert!(app.modal.channel_conflict_path.is_none());
 }
 
 #[test]
@@ -194,12 +194,12 @@ fn channel_conflict_navigate_then_enter() {
 
     // Down, Down → selection 2 (Cancel), then Enter
     send_keys(&mut app, &[KeyCode::Down, KeyCode::Down]);
-    assert_eq!(app.channel_conflict_selection, 2);
+    assert_eq!(app.modal.channel_conflict_selection, 2);
 
     let cmd = handle_key_event(&mut app, key(KeyCode::Enter));
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(cmd.is_none());
-    assert!(!app.is_playing);
+    assert!(!app.playback.is_playing);
 }
 
 #[test]
@@ -244,36 +244,36 @@ fn recording_step_tab_right_cycles_all_steps() {
     // Config → SplCalibration → Capture → Probe → BassAnchor →
     // Evaluating → Saving → Config.
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.recording.step, RecordingStep::SplCalibration);
+    assert_eq!(app.recording.model.step, RecordingStep::SplCalibration);
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.recording.step, RecordingStep::Capture);
+    assert_eq!(app.recording.model.step, RecordingStep::Capture);
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.recording.step, RecordingStep::Probe);
+    assert_eq!(app.recording.model.step, RecordingStep::Probe);
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.recording.step, RecordingStep::BassAnchor);
+    assert_eq!(app.recording.model.step, RecordingStep::BassAnchor);
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.recording.step, RecordingStep::Evaluating);
+    assert_eq!(app.recording.model.step, RecordingStep::Evaluating);
 
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.recording.step, RecordingStep::Saving);
+    assert_eq!(app.recording.model.step, RecordingStep::Saving);
 
     // Wraps
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.recording.step, RecordingStep::Config);
+    assert_eq!(app.recording.model.step, RecordingStep::Config);
 }
 
 #[test]
 fn recording_step_tab_left_wraps_from_config_to_saving() {
     let mut app = app_on_recording();
-    assert_eq!(app.recording.step, RecordingStep::Config);
+    assert_eq!(app.recording.model.step, RecordingStep::Config);
     app.recording.step_tab_focused = true;
 
     send_keys(&mut app, &[KeyCode::Left]);
-    assert_eq!(app.recording.step, RecordingStep::Saving);
+    assert_eq!(app.recording.model.step, RecordingStep::Saving);
 }
 
 #[test]
@@ -299,12 +299,12 @@ fn headphone_eq_configure_tab_cycles_detail_level() {
 #[test]
 fn recording_config_tab_cycles_fields() {
     let mut app = app_on_recording();
-    app.recording.step = RecordingStep::Config;
+    app.recording.model.step = RecordingStep::Config;
     app.recording.selected_field = 0;
 
     send_keys(&mut app, &[KeyCode::Tab]);
     assert_eq!(app.recording.selected_field, 1);
-    assert_eq!(app.recording.step, RecordingStep::Config);
+    assert_eq!(app.recording.model.step, RecordingStep::Config);
 
     // Wrap at max field. Field count is dynamic: 10 statics +
     // 2*num_channels per-channel rows (mic cal + input mapping). The
@@ -314,7 +314,7 @@ fn recording_config_tab_cycles_fields() {
     app.recording.selected_field = last;
     send_keys(&mut app, &[KeyCode::Tab]);
     assert_eq!(app.recording.selected_field, 0);
-    assert_eq!(app.recording.step, RecordingStep::Config);
+    assert_eq!(app.recording.model.step, RecordingStep::Config);
 }
 
 /// Helper: create an app in directory editing mode with autocomplete menu active.
@@ -323,11 +323,11 @@ fn app_editing_directory_with_suggestions(suggestions: Vec<String>) -> crate::ap
     app.current_screen = Screen::Configure;
     app.configure_sub_screen = ConfigureSubScreen::Directories;
     app.input_mode = InputMode::ConfigureDirectories;
-    app.editing_directory = true;
-    app.directory_input = "test".to_string();
-    app.autocomplete_suggestions = suggestions;
-    app.autocomplete_menu_active = true;
-    app.autocomplete_index = 0;
+    app.library_view.editing_directory = true;
+    app.library_view.directory_input = "test".to_string();
+    app.autocomplete.suggestions = suggestions;
+    app.autocomplete.menu_active = true;
+    app.autocomplete.index = 0;
     app
 }
 
@@ -341,17 +341,17 @@ fn directory_autocomplete_down_arrow_cycles_suggestions() {
 
     // Down arrow should select next suggestion
     send_keys(&mut app, &[KeyCode::Down]);
-    assert_eq!(app.autocomplete_index, 1);
-    assert_eq!(app.directory_input, "/test/bbb/");
+    assert_eq!(app.autocomplete.index, 1);
+    assert_eq!(app.library_view.directory_input, "/test/bbb/");
 
     send_keys(&mut app, &[KeyCode::Down]);
-    assert_eq!(app.autocomplete_index, 2);
-    assert_eq!(app.directory_input, "/test/ccc/");
+    assert_eq!(app.autocomplete.index, 2);
+    assert_eq!(app.library_view.directory_input, "/test/ccc/");
 
     // Wrap around
     send_keys(&mut app, &[KeyCode::Down]);
-    assert_eq!(app.autocomplete_index, 0);
-    assert_eq!(app.directory_input, "/test/aaa/");
+    assert_eq!(app.autocomplete.index, 0);
+    assert_eq!(app.library_view.directory_input, "/test/aaa/");
 }
 
 #[test]
@@ -364,10 +364,10 @@ fn directory_autocomplete_up_arrow_cycles_suggestions() {
 
     // Up arrow from index 0 should wrap to last
     send_keys(&mut app, &[KeyCode::Up]);
-    assert_eq!(app.autocomplete_index, 2);
-    assert_eq!(app.directory_input, "/test/ccc/");
+    assert_eq!(app.autocomplete.index, 2);
+    assert_eq!(app.library_view.directory_input, "/test/ccc/");
 
     send_keys(&mut app, &[KeyCode::Up]);
-    assert_eq!(app.autocomplete_index, 1);
-    assert_eq!(app.directory_input, "/test/bbb/");
+    assert_eq!(app.autocomplete.index, 1);
+    assert_eq!(app.library_view.directory_input, "/test/bbb/");
 }

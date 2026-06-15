@@ -12,7 +12,7 @@ use sotf_audio_player::recording_types::CtcMatrixExportStrategy;
 /// Nudge the currently selected SPL form-field by `step` (1 == "one
 /// natural unit"). Numeric ranges match the engine's input validation.
 pub(super) fn adjust_spl_field(app: &mut App, step: f32) {
-    let cal = &mut app.recording.spl_calibration_capture;
+    let cal = &mut app.recording.model.spl_calibration_capture;
     match app.recording.spl_selected_field {
         SPL_FIELD_REF_FREQ => {
             cal.reference_freq_hz = (cal.reference_freq_hz + 100.0 * step).clamp(20.0, 20_000.0);
@@ -66,8 +66,8 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
                 let (id, name) = app.recording.available_playback_devices
                     [app.recording.selected_playback_idx]
                     .clone();
-                app.recording.playback_config.device_name = name;
-                app.recording.playback_config.device_id = id;
+                app.recording.model.playback_config.device_name = name;
+                app.recording.model.playback_config.device_id = id;
             }
         }
         RecordingDevice => {
@@ -82,15 +82,15 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
                 let (id, name) = app.recording.available_recording_devices
                     [app.recording.selected_recording_idx]
                     .clone();
-                app.recording.recording_config.device_name = name;
-                app.recording.recording_config.device_id = id;
+                app.recording.model.recording_config.device_name = name;
+                app.recording.model.recording_config.device_id = id;
             }
         }
         SpeakerConfig => {
             let configs = SpeakerConfiguration::all();
             let idx = configs
                 .iter()
-                .position(|c| *c == app.recording.playback_config.speaker_configuration)
+                .position(|c| *c == app.recording.model.playback_config.speaker_configuration)
                 .unwrap_or(0);
             let new_idx = if delta > 0 {
                 (idx + 1) % configs.len()
@@ -98,42 +98,42 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
                 (idx + configs.len() - 1) % configs.len()
             };
             let new_config = configs[new_idx];
-            app.recording.playback_config.speaker_configuration = new_config;
+            app.recording.model.playback_config.speaker_configuration = new_config;
             update_channel_mappings_for_config(app, new_config);
         }
         SignalType => {
             let types = RecordingSignalType::all();
             let idx = types
                 .iter()
-                .position(|t| *t == app.recording.signal_type)
+                .position(|t| *t == app.recording.model.signal_type)
                 .unwrap_or(0);
             let new_idx = if delta > 0 {
                 (idx + 1) % types.len()
             } else {
                 (idx + types.len() - 1) % types.len()
             };
-            app.recording.signal_type = types[new_idx];
+            app.recording.model.signal_type = types[new_idx];
         }
         Duration => {
-            app.recording.signal_duration_secs =
-                (app.recording.signal_duration_secs + delta as f32).clamp(1.0, 30.0);
+            app.recording.model.signal_duration_secs =
+                (app.recording.model.signal_duration_secs + delta as f32).clamp(1.0, 30.0);
         }
         Level => {
-            app.recording.signal_level_db =
-                (app.recording.signal_level_db + delta as f32).clamp(-40.0, 0.0);
+            app.recording.model.signal_level_db =
+                (app.recording.model.signal_level_db + delta as f32).clamp(-40.0, 0.0);
         }
         SweepStart => {
-            app.recording.sweep_start_freq =
-                (app.recording.sweep_start_freq + delta as f32 * 10.0).clamp(10.0, 1000.0);
+            app.recording.model.sweep_start_freq =
+                (app.recording.model.sweep_start_freq + delta as f32 * 10.0).clamp(10.0, 1000.0);
         }
         SweepEnd => {
-            app.recording.sweep_end_freq =
-                (app.recording.sweep_end_freq + delta as f32 * 1000.0).clamp(1000.0, 24000.0);
+            app.recording.model.sweep_end_freq =
+                (app.recording.model.sweep_end_freq + delta as f32 * 1000.0).clamp(1000.0, 24000.0);
         }
         NumRecordingChannels => {
-            let cur = app.recording.recording_config.num_channels as i32;
+            let cur = app.recording.model.recording_config.num_channels as i32;
             let next = (cur + delta).clamp(1, 128) as usize;
-            app.recording.recording_config.num_channels = next;
+            app.recording.model.recording_config.num_channels = next;
             app.recording.sync_recording_channel_vecs();
             let last = crate::app::recording_field_count(&app.recording) - 1;
             if app.recording.selected_field > last {
@@ -141,8 +141,8 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
             }
         }
         CtcStrategy => {
-            app.recording.recording_config.ctc_matrix_strategy =
-                match app.recording.recording_config.ctc_matrix_strategy {
+            app.recording.model.recording_config.ctc_matrix_strategy =
+                match app.recording.model.recording_config.ctc_matrix_strategy {
                     CtcMatrixExportStrategy::ImpulseResponse => CtcMatrixExportStrategy::RawSweep,
                     CtcMatrixExportStrategy::RawSweep => CtcMatrixExportStrategy::ImpulseResponse,
                 };
@@ -150,14 +150,15 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
         CtcLoopbackInput => {
             let cur = app
                 .recording
+                .model
                 .recording_config
                 .ctc_loopback_input_channel
                 .unwrap_or(0) as i32;
-            app.recording.recording_config.ctc_loopback_input_channel =
+            app.recording.model.recording_config.ctc_loopback_input_channel =
                 Some((cur + delta).clamp(0, 127) as usize);
         }
         ChannelInput(i) => {
-            if let Some(slot) = app.recording.recording_config.channel_mappings.get_mut(i) {
+            if let Some(slot) = app.recording.model.recording_config.channel_mappings.get_mut(i) {
                 let cur = *slot as i32;
                 let next = (cur + delta).clamp(0, 127) as usize;
                 *slot = next;

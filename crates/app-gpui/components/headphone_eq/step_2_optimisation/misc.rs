@@ -62,7 +62,7 @@ impl PlayerView {
             spacing_weight: config.spacing_weight,
             min_spacing_oct: config.min_spacing_oct,
             // Goals - use headphone_eq_state values
-            loss_type: headphone_eq.ui_loss_type().to_string(),
+            loss_type: headphone_eq.model.ui_loss_type().to_string(),
             target_curve: headphone_eq.target_preset.clone(),
             ..Default::default()
         };
@@ -137,7 +137,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |target, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.headphone_eq_state.target_preset =
+                        state.app.measurement_state.headphone_eq_state.model.target_preset =
                             target.to_string();
                         state
                             .app
@@ -727,9 +727,9 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(autoeq_form)
-            .when(headphone_eq.requires_custom_target_path(), |vstack| {
+            .when(headphone_eq.model.requires_custom_target_path(), |vstack| {
                 let custom_target_path =
-                    headphone_eq.custom_target_path.clone().unwrap_or_default();
+                    headphone_eq.model.custom_target_path.clone();
                 let path_text = if custom_target_path.is_empty() {
                     "No target curve selected".to_string()
                 } else {
@@ -768,7 +768,7 @@ impl PlayerView {
                                                 .bg(theme.background_secondary)
                                                 .text_size(d.text_sm)
                                                 .text_color(
-                                                    if headphone_eq.has_custom_target_path() {
+                                                    if headphone_eq.model.has_custom_target_path() {
                                                         theme.text_primary
                                                     } else {
                                                         theme.text_muted
@@ -804,7 +804,7 @@ impl PlayerView {
                         let progress = headphone_eq.progress;
                         let status_msg = headphone_eq.status_message.clone();
                         let optimization_status = headphone_eq.optimization_status;
-                        let is_optimizing = headphone_eq.is_optimizing();
+                        let is_optimizing = headphone_eq.model.is_optimizing();
                         let is_completed = optimization_status == OptimizationStatus::Completed;
                         let is_failed = optimization_status == OptimizationStatus::Failed;
                         let show_progress = is_optimizing || is_completed || is_failed;

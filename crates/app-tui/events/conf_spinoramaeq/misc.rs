@@ -5,7 +5,7 @@ pub(super) fn is_spinorama_field_numerical(field: usize) -> bool {
 }
 
 pub(super) fn set_spinorama_field_from_string(app: &mut App) {
-    let c = &mut app.spinorama_eq.config;
+    let c = &mut app.spinorama_eq.model.optimizer_config;
     let buf = &app.spinorama_eq.edit_buffer;
     match app.spinorama_eq.selected_field {
         1 => {
@@ -93,7 +93,7 @@ pub(super) fn set_spinorama_field_from_string(app: &mut App) {
 }
 
 pub(super) fn adjust_spinorama_field(app: &mut App, delta: i32) {
-    let c = &mut app.spinorama_eq.config;
+    let c = &mut app.spinorama_eq.model.optimizer_config;
     match app.spinorama_eq.selected_field {
         // ── Loss ──
         0 => {

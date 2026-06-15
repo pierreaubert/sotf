@@ -94,14 +94,14 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .split(content_area);
 
             // Search box
-            let search_title = if s.loading_speakers {
+            let search_title = if s.model.loading_speakers {
                 "Search Speaker (loading...)"
             } else if let Some(ref e) = s.speakers_error {
                 &format!("Error: {}", e)
             } else {
                 "Search Speaker (type to filter, Enter to select)"
             };
-            let search = Paragraph::new(s.search_query.as_str())
+            let search = Paragraph::new(s.model.speaker_search.as_str())
                 .style(Style::default().fg(app.theme.fg_primary))
                 .block(
                     Block::default()
@@ -113,7 +113,8 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Speaker list
             let items: Vec<ListItem> = s
-                .filtered_speakers
+                .model
+                .speaker_suggestions
                 .iter()
                 .enumerate()
                 .map(|(i, name)| {
@@ -134,13 +135,13 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 })
                 .collect();
 
-            let list_title = if s.filtered_speakers.is_empty() && !s.loading_speakers {
+            let list_title = if s.model.speaker_suggestions.is_empty() && !s.model.loading_speakers {
                 "Speakers (press 'r' to load from spinorama.org)".to_string()
             } else {
                 format!(
                     "Speakers ({}/{})",
-                    s.filtered_speakers.len(),
-                    s.available_speakers.len()
+                    s.model.speaker_suggestions.len(),
+                    s.model.available_speakers.len()
                 )
             };
             let list =
@@ -148,7 +149,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(list, inner[1]);
 
             // Hint bar
-            let hint = if let Some(ref sel) = s.selected_speaker {
+            let hint = if let Some(ref sel) = s.model.selected_speaker {
                 format!(" Selected: {}  |  ←/→=step  Enter=confirm", sel)
             } else {
                 " ←/→=step  ↑/↓=navigate  Enter=select  r=load speakers".to_string()
@@ -167,6 +168,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .split(content_area);
 
             let speaker_name = s
+                .model
                 .selected_speaker
                 .as_deref()
                 .unwrap_or("(no speaker selected)");
@@ -175,7 +177,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Each entry is either a Section header (None index) or a field (Some index)
             // Fields are numbered 0..24 for selected_field navigation
-            let c = &s.config;
+            let c = &s.model.optimizer_config;
             let rows: Vec<(Option<usize>, &str, String)> = vec![
                 (None, "── Loss ──", String::new()),
                 (Some(0), "Loss Function", c.loss_function.clone()),
@@ -322,7 +324,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .split(content_area);
 
             // Status
-            let (status_text, status_style) = match &s.opt_status {
+            let (status_text, status_style) = match &s.model.optimization_status {
                 OptimizationStatus::Idle => (
                     "Press Enter to start optimization".to_string(),
                     Style::default().fg(app.theme.fg_secondary),
@@ -330,22 +332,22 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 OptimizationStatus::Running => (
                     format!(
                         "Running... iter {}/{} | loss: {:.6}",
-                        s.opt_iteration, s.opt_max_iter, s.opt_loss
+                        s.model.current_iteration, s.opt_max_iter, s.model.current_loss
                     ),
                     Style::default().fg(app.theme.accent_primary),
                 ),
                 OptimizationStatus::Completed => (
                     format!(
                         "Completed! Final loss: {:.6}  |  {} filters found",
-                        s.post_loss,
-                        s.filters.len()
+                        s.model.post_loss,
+                        s.model.filters.len()
                     ),
                     Style::default().fg(app.theme.accent_success),
                 ),
                 OptimizationStatus::Failed => (
                     format!(
                         "Failed: {}",
-                        s.opt_error.as_deref().unwrap_or("unknown error")
+                        s.model.error_message.as_deref().unwrap_or("unknown error")
                     ),
                     Style::default().fg(app.theme.accent_error),
                 ),
@@ -363,7 +365,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(status_para, inner[0]);
 
             // Progress bar
-            let progress_pct = (s.opt_progress * 100.0) as u16;
+            let progress_pct = (s.model.progress * 100.0) as u16;
             let bar_width = inner[1].width.saturating_sub(4) as usize;
             let filled = (bar_width * progress_pct as usize / 100).min(bar_width);
             let bar = format!(
@@ -378,10 +380,10 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(progress_para, inner[1]);
 
             // Loss history chart (if data available), else hint
-            if s.loss_history.len() >= 2 {
-                draw_loss_chart(f, inner[2], app, &s.loss_history);
+            if s.model.progress_history.len() >= 2 {
+                draw_loss_chart(f, inner[2], app, &s.model.progress_history);
             } else {
-                let hint = match &s.opt_status {
+                let hint = match &s.model.optimization_status {
                     OptimizationStatus::Idle => " Enter=start  Tab=back to configure",
                     OptimizationStatus::Running => " Optimization running...",
                     OptimizationStatus::Completed => " Enter=re-run  Tab=view results",
@@ -397,7 +399,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         }
 
         SpinoramaStep::Results => {
-            if s.filters.is_empty() {
+            if s.model.filters.is_empty() {
                 let msg =
                     Paragraph::new("No results yet. Go to Optimize step and run optimization.")
                         .style(Style::default().fg(app.theme.fg_secondary))
@@ -406,7 +408,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 f.render_widget(msg, content_area);
             } else {
                 // Vertical split: summary + chart on top, filter table on bottom
-                let table_height = (s.filters.len() as u16 + 3).min(15); // rows + header + borders, capped
+                let table_height = (s.model.filters.len() as u16 + 3).min(15); // rows + header + borders, capped
                 let rows_layout = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
@@ -416,8 +418,8 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     ])
                     .split(content_area);
 
-                let initial_score = s.loss_history.iter().find_map(|(_, _, score)| *score);
-                let final_score = s.loss_history.iter().rev().find_map(|(_, _, score)| *score);
+                let initial_score = s.model.progress_history.iter().find_map(|(_, _, score)| *score);
+                let final_score = s.model.progress_history.iter().rev().find_map(|(_, _, score)| *score);
                 let score_part = match (initial_score, final_score) {
                     (Some(init), Some(fin)) => format!(
                         "  |  Score: {:.2} → {:.2} (Δ {:+.2})",
@@ -429,10 +431,10 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 };
                 let summary = format!(
                     " {} filters  |  Loss: {:.4} → {:.4} (Δ {:.4}){}",
-                    s.filters.len(),
-                    s.pre_loss,
-                    s.post_loss,
-                    s.pre_loss - s.post_loss,
+                    s.model.filters.len(),
+                    s.model.pre_loss,
+                    s.model.post_loss,
+                    s.model.pre_loss - s.model.post_loss,
                     score_part,
                 );
                 let summary_para = Paragraph::new(summary)
@@ -444,10 +446,10 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     f,
                     rows_layout[1],
                     app,
-                    &s.curve_frequencies,
-                    &s.curve_input,
-                    &s.curve_corrected,
-                    &s.curve_filter_response,
+                    &s.model.curve_frequencies,
+                    &s.model.curve_input,
+                    &s.model.curve_corrected,
+                    &s.model.curve_filter_response,
                 );
 
                 // Bottom: filter table
@@ -461,6 +463,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 let header_row = Row::new(header_cells).height(1).bottom_margin(0);
 
                 let rows: Vec<Row> = s
+                    .model
                     .filters
                     .iter()
                     .enumerate()
@@ -494,8 +497,8 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
         SpinoramaStep::UpdatePlugin => {
             use crate::app::SpinUpdateSubStep;
-            let has_results = !s.filters.is_empty();
-            let speaker = s.selected_speaker.as_deref().unwrap_or("(none)");
+            let has_results = !s.model.filters.is_empty();
+            let speaker = s.model.selected_speaker.as_deref().unwrap_or("(none)");
 
             let mut lines = vec![
                 Line::from(""),
@@ -515,7 +518,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 SpinUpdateSubStep::Ready => {
                     if has_results {
                         lines.push(Line::from(vec![Span::styled(
-                            format!("  {} PEQ filters ready to apply", s.filters.len()),
+                            format!("  {} PEQ filters ready to apply", s.model.filters.len()),
                             Style::default().fg(app.theme.accent_success),
                         )]));
                         lines.push(Line::from(""));

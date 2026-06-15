@@ -14,227 +14,205 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-pub struct App {
-    pub library: MusicLibrary,
-    pub queue: Vec<QueueEntry>,
-    pub current_screen: Screen,
-    pub input_mode: InputMode,
-    pub saved_input_mode: InputMode, // Saved mode for overlay modals (ShowHelp, ShowError, ChannelConflict)
+pub struct UiState {
+    pub loading_tick: u16,
+    pub status_message: Option<String>,
+    pub error_message: Option<String>,
+    pub needs_redraw: bool,
+}
 
-    // Theme
-    pub theme: Theme,
+pub struct ModalState {
+    pub metadata_editor: Option<super::super::types::MetadataEditorState>,
+    pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>,
+    pub channel_conflict_selection: usize,
+    pub channel_conflict_track_channels: usize,
+    pub channel_conflicts: Vec<ChannelConflict>,
+}
 
-    // UI state
+pub struct LibraryViewState {
     pub search_query: String,
     pub directory_input: String,
     pub editing_directory: bool,
-    pub plugin_file_input: String, // For save/load plugin chain
-    pub apo_file_input: String,    // For loading APO EQ files
-    pub sofa_file_input: String,   // For loading SOFA HRTF files
     pub selected_album_index: usize,
     pub selected_directory_index: usize,
-    pub selected_queue_index: usize,
-    pub selected_queue_track_index: Option<usize>, // None = album header, Some(i) = track i
-    pub selected_plugin_index: usize,
-    pub add_plugin_selected_index: usize, // For plugin add dialog
     pub album_list_offset: usize,
-    pub status_message: Option<String>, // For displaying save/load status
-    pub error_message: Option<String>,  // For displaying decode/playback errors in a modal
-    pub metadata_editor: Option<super::super::types::MetadataEditorState>,
-
-    // Channel conflict dialog state
-    pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>, // Source pending playback
-    pub channel_conflict_selection: usize, // Currently highlighted option (0-2)
-    pub channel_conflict_track_channels: usize, // File's channel count
-    pub channel_conflicts: Vec<ChannelConflict>, // All incompatible plugins
-
-    // Cached filtered results
     pub cached_filtered_albums: Vec<Album>,
     pub needs_filter_update: bool,
-
-    // Autocomplete state
-    pub autocomplete_suggestions: Vec<String>,
-    pub autocomplete_index: usize,
-    pub autocomplete_menu_active: bool,
-
-    // Plugin preset selection
-    pub available_plugin_presets: Vec<String>, // List of preset filenames
-    pub selected_preset_index: usize,
-
-    // Library tree view
-    pub library_view_mode: LibraryViewMode,
-    pub library_sort_order: LibrarySortOrder,
+    pub mode: LibraryViewMode,
+    pub sort_order: LibrarySortOrder,
     pub channel_filter: ChannelFilter,
     pub show_favorites_only: bool,
     pub artist_tree: Vec<ArtistNode>,
-    pub selected_tree_index: usize, // Index in flattened tree (artists + visible albums)
+    pub selected_tree_index: usize,
+    #[cfg(not(target_os = "windows"))]
+    pub album_images: Vec<PathBuf>,
+    #[cfg(not(target_os = "windows"))]
+    pub selected_image_index: usize,
+    #[cfg(not(target_os = "windows"))]
+    pub image_picker: Option<ratatui_image::picker::Picker>,
+    #[cfg(not(target_os = "windows"))]
+    pub image_protocol: Option<ratatui_image::protocol::StatefulProtocol>,
+    #[cfg(not(target_os = "windows"))]
+    pub image_protocol_path: Option<PathBuf>,
+}
 
-    // Playlists
-    pub playlist_controller: sotf_audio_player::PlaylistController,
-    pub playlist_mode: super::super::types::PlaylistMode,
-    pub playlist_name_input: String,
+pub struct QueueViewState {
+    pub selected_index: usize,
+    pub selected_track_index: Option<usize>,
+}
 
-    // Plugin system
-    pub plugin_graph: PluginGraph,
-    pub needs_plugin_update: bool,
-    pub pending_param_update: Option<PendingParameterUpdate>,
-    pub editing_plugin_index: Option<usize>,
-    pub plugin_param_selection: usize, // Which parameter is selected in edit mode
-    pub plugin_update_last_attempt: Option<std::time::Instant>,
-    pub plugin_update_retry_count: u32,
-    pub plugin_update_in_progress: bool,
-
-    // Matrix editor state
-    pub matrix_edit_mode: MatrixEditMode, // Header (channels/preset) or Grid (cells)
-    pub matrix_grid_row: usize,           // Selected output row in grid
-    pub matrix_grid_col: usize,           // Selected input column in grid
-    pub matrix_header_selection: usize,   // 0 = Input Channels, 1 = Output Channels, 2 = Preset
-
-    // Playback state
+pub struct PlaybackState {
     pub is_playing: bool,
     pub current_queue_index: Option<usize>,
     pub volume: f32,
     pub muted: bool,
     pub position_secs: f64,
-    pub current_sample_rate: Option<u32>, // Actual playback rate from engine
-
-    // Play tracking for statistics (30s threshold)
+    pub current_sample_rate: Option<u32>,
     pub current_track_path: Option<PathBuf>,
     pub current_track_start_time: Option<std::time::Instant>,
     pub current_track_already_recorded: bool,
-
-    // Loudness monitoring
     pub loudness_info: Option<LoudnessData>,
-
-    // Level meters
-    pub level_meter_groups: Vec<ChannelGroup>,
-    pub selected_level_meter_group: usize,
-    pub level_meter_control_selection: usize, // 0 = Mute, 1 = Solo, 2 = Dim
-    /// Cached channel count to avoid rebuilding meter groups every frame
-    pub level_meter_last_channel_count: usize,
-    /// Cached speaker config to avoid rebuilding meter groups every frame
-    pub level_meter_last_speaker_config: Option<String>,
-
-    // Audio devices
-    pub output_devices: Vec<AudioDevice>,
-    pub selected_output_device_index: usize,
-    pub current_output_device_name: Option<String>,
-
-    // Cast devices (Chromecast / AirPlay) discovered on the local network
-    pub cast_devices: Vec<CastDeviceInfo>,
-    pub cast_discovery_running: bool,
-    pub cast_discovery_receiver: Option<std::sync::mpsc::Receiver<Vec<CastDeviceInfo>>>,
-
-    // Loading screen animation
-    pub loading_tick: u16,
-
-    // Flags
-    pub read_only: bool, // Second instance: no DB writes, no scans
-    pub should_quit: bool,
-    pub needs_rescan: bool,
-    pub needs_redraw: bool,
-
-    // Cached media-control metadata. `update_media_controls` runs
-    // every tick (~10 Hz); without this cache it clones strings and
-    // crosses an FFI boundary on every call. Set only when one of
-    // these values actually changes.
-    pub mc_last_queue_index: Option<usize>,
-    pub mc_last_title: Option<String>,
-    pub mc_last_artist: Option<String>,
-    pub mc_last_album: Option<String>,
-    pub mc_last_cover_url: Option<String>,
-    pub mc_last_duration_secs: Option<u64>,
-
-    // Cached redraw-relevant state. The tick handler sets
-    // `needs_redraw` only when one of these actually changes,
-    // avoiding a full screen redraw every 100 ms.
-    pub last_position_secs: f64,
-    pub last_is_playing_state: bool,
-    pub last_loudness_signature: u64,
-
-    // Scan progress
-    pub scan_in_progress: bool,
-    pub scan_progress_tracks: usize,
-    pub scan_progress_albums: usize,
-    pub library_scanner: Option<sotf_audio_player::LibraryScanner>,
-
-    // Maintenance progress
-    pub maintenance_in_progress: bool,
-    pub maintenance_progress_checked: usize,
-    pub maintenance_progress_total: usize,
-
-    // Shared pause flag: true while playing, scanners sleep-loop on it
-    pub scanner_pause_flag: Arc<AtomicBool>,
-    // When true, don't auto-pause scanners even during playback
-    pub scanner_pause_override: bool,
-
-    // ReplayGain scanner manager
-    pub replay_gain_manager: sotf_audio_player::ReplayGainScanManager,
-
-    // ReplayGain playback settings
     pub replay_gain_enabled: bool,
     pub replay_gain_mode: super::super::types::ReplayGainMode,
     pub replay_gain_preamp: f32,
+}
 
-    // Waveform scanner manager
-    pub waveform_manager: sotf_audio_player::WaveformScanManager,
-
-    // Bliss audio analysis scanner manager
-    pub bliss_manager: sotf_audio_player::BlissScanManager,
-
-    // Scanner thread count (None = auto-detect)
-    pub scanner_threads: Option<usize>,
-
-    // Last loaded plugin preset name (for config persistence)
+pub struct PluginRackState {
+    pub graph: PluginGraph,
+    pub needs_update: bool,
+    pub pending_param_update: Option<PendingParameterUpdate>,
+    pub editing_index: Option<usize>,
+    pub param_selection: usize,
+    pub update_last_attempt: Option<std::time::Instant>,
+    pub update_retry_count: u32,
+    pub update_in_progress: bool,
+    pub selected_index: usize,
+    pub add_selected_index: usize,
+    pub available_presets: Vec<String>,
+    pub selected_preset_index: usize,
+    pub file_input: String,
+    pub apo_input: String,
+    pub sofa_input: String,
     pub last_loaded_preset: Option<String>,
+}
 
-    // File explorer state
-    pub file_explorer_items: Vec<PathBuf>,
-    pub file_explorer_selected: usize,
-    pub file_explorer_dir: PathBuf,
-    pub file_explorer_filter: Option<String>,
-    pub file_explorer_show_hidden: bool,
-    pub file_picker_mode: FilePickerMode,
-    pub file_picker_origin: FilePickerOrigin,
-    pub file_picker_title: String,
+pub struct PlaylistState {
+    pub controller: sotf_audio_player::PlaylistController,
+    pub mode: super::super::types::PlaylistMode,
+    pub name_input: String,
+}
 
-    // Album cover image display
-    #[cfg(not(target_os = "windows"))]
-    pub album_images: Vec<PathBuf>, // List of image files in current album directory
-    #[cfg(not(target_os = "windows"))]
-    pub selected_image_index: usize, // Current image being displayed
-    #[cfg(not(target_os = "windows"))]
-    pub image_picker: Option<ratatui_image::picker::Picker>, // Image protocol picker
-    #[cfg(not(target_os = "windows"))]
-    pub image_protocol: Option<ratatui_image::protocol::StatefulProtocol>, // Cached protocol for current image
-    #[cfg(not(target_os = "windows"))]
-    pub image_protocol_path: Option<PathBuf>, // Path the cached protocol was created from
+pub struct MatrixEditState {
+    pub edit_mode: MatrixEditMode,
+    pub grid_row: usize,
+    pub grid_col: usize,
+    pub header_selection: usize,
+}
 
-    // Configure section sub-screen
-    pub configure_sub_screen: super::super::types::ConfigureSubScreen,
+pub struct LevelMeterState {
+    pub groups: Vec<ChannelGroup>,
+    pub selected_group: usize,
+    pub control_selection: usize,
+    pub last_channel_count: usize,
+    pub last_speaker_config: Option<String>,
+}
 
-    // Spinorama EQ wizard state
-    pub spinorama_eq: super::super::types::SpinoramaEqTuiState,
-    // Headphone EQ wizard state
-    pub headphone_eq: super::super::types::HeadphoneEqTuiState,
-    // Room EQ wizard state
-    pub room_eq: super::super::types::RoomEqTuiState,
-    // Recording wizard state
-    pub recording: super::super::types::RecordingTuiState,
+pub struct AudioDeviceState {
+    pub outputs: Vec<AudioDevice>,
+    pub selected_output_index: usize,
+    pub current_output_name: Option<String>,
+    pub cast: Vec<CastDeviceInfo>,
+    pub cast_discovery_running: bool,
+    pub cast_discovery_receiver: Option<std::sync::mpsc::Receiver<Vec<CastDeviceInfo>>>,
+}
 
-    // Federation Sources configuration state
-    pub federation_state: super::super::types::FederationTuiState,
-    // Server configuration state
-    pub server_state: super::super::types::ServersTuiState,
-    /// Receiver for background federation scan results.
-    pub federation_scan_receiver: Option<std::sync::mpsc::Receiver<FederationScanResult>>,
-    /// Receiver for background federation connection test results.
-    pub federation_test_receiver: Option<
+pub struct MediaControlState {
+    pub last_queue_index: Option<usize>,
+    pub last_title: Option<String>,
+    pub last_artist: Option<String>,
+    pub last_album: Option<String>,
+    pub last_cover_url: Option<String>,
+    pub last_duration_secs: Option<u64>,
+    pub last_position_secs: f64,
+    pub last_is_playing_state: bool,
+    pub last_loudness_signature: u64,
+}
+
+pub struct ScanState {
+    pub in_progress: bool,
+    pub progress_tracks: usize,
+    pub progress_albums: usize,
+    pub library_scanner: Option<sotf_audio_player::LibraryScanner>,
+    pub maintenance_in_progress: bool,
+    pub maintenance_progress_checked: usize,
+    pub maintenance_progress_total: usize,
+    pub pause_flag: Arc<AtomicBool>,
+    pub pause_override: bool,
+    pub replay_gain_manager: sotf_audio_player::ReplayGainScanManager,
+    pub waveform_manager: sotf_audio_player::WaveformScanManager,
+    pub bliss_manager: sotf_audio_player::BlissScanManager,
+    pub threads: Option<usize>,
+    pub needs_rescan: bool,
+}
+
+pub struct FileExplorerState {
+    pub items: Vec<PathBuf>,
+    pub selected: usize,
+    pub dir: PathBuf,
+    pub filter: Option<String>,
+    pub show_hidden: bool,
+    pub picker_mode: FilePickerMode,
+    pub picker_origin: FilePickerOrigin,
+    pub picker_title: String,
+}
+
+pub struct AutocompleteState {
+    pub suggestions: Vec<String>,
+    pub index: usize,
+    pub menu_active: bool,
+}
+
+pub struct FederationReceivers {
+    pub scan: Option<std::sync::mpsc::Receiver<FederationScanResult>>,
+    pub test: Option<
         std::sync::mpsc::Receiver<(
             String,
             sotf_audio_player::federation_config::ConnectionStatus,
         )>,
     >,
+}
+
+pub struct App {
+    pub library: MusicLibrary,
+    pub queue: Vec<QueueEntry>,
+    pub queue_view: QueueViewState,
+    pub current_screen: Screen,
+    pub input_mode: InputMode,
+    pub saved_input_mode: InputMode,
+    pub theme: Theme,
+    pub read_only: bool,
+    pub should_quit: bool,
+    pub ui: UiState,
+    pub modal: ModalState,
+    pub library_view: LibraryViewState,
+    pub playback: PlaybackState,
+    pub plugin_rack: PluginRackState,
+    pub playlists: PlaylistState,
+    pub matrix: MatrixEditState,
+    pub level_meters: LevelMeterState,
+    pub audio_devices: AudioDeviceState,
+    pub media_control: MediaControlState,
+    pub scan: ScanState,
+    pub file_explorer: FileExplorerState,
+    pub autocomplete: AutocompleteState,
+    pub configure_sub_screen: super::super::types::ConfigureSubScreen,
+    pub spinorama_eq: super::super::types::SpinoramaEqTuiState,
+    pub headphone_eq: super::super::types::HeadphoneEqTuiState,
+    pub room_eq: super::super::types::RoomEqTuiState,
+    pub recording: super::super::types::RecordingTuiState,
+    pub federation_state: super::super::types::FederationTuiState,
+    pub server_state: super::super::types::ServersTuiState,
+    pub federation_receivers: FederationReceivers,
 }
 
 impl App {
@@ -259,136 +237,164 @@ impl App {
         let mut app = Self {
             library,
             queue: Vec::new(),
+            queue_view: QueueViewState {
+                selected_index: 0,
+                selected_track_index: None,
+            },
             current_screen: Screen::Loading,
             input_mode: InputMode::Normal,
             saved_input_mode: InputMode::Normal,
             theme,
-            search_query: String::new(),
-            directory_input: String::new(),
-            editing_directory: false,
-            plugin_file_input: String::new(),
-            apo_file_input: String::new(),
-            sofa_file_input: String::new(),
-            selected_album_index: 0,
-            selected_directory_index: 0,
-            selected_queue_index: 0,
-            selected_queue_track_index: None,
-            selected_plugin_index: 0,
-            add_plugin_selected_index: 0,
-            album_list_offset: 0,
-            status_message: None,
-            error_message: None,
-            metadata_editor: None,
-            channel_conflict_path: None,
-            channel_conflict_selection: 0,
-            channel_conflict_track_channels: 2,
-            channel_conflicts: Vec::new(),
-            cached_filtered_albums: Vec::new(),
-            needs_filter_update: true,
-            autocomplete_suggestions: Vec::new(),
-            autocomplete_index: 0,
-            autocomplete_menu_active: false,
-            available_plugin_presets: Vec::new(),
-            selected_preset_index: 0,
-            library_view_mode: LibraryViewMode::Flat,
-            library_sort_order: LibrarySortOrder::Artist,
-            channel_filter: ChannelFilter::All,
-            show_favorites_only: false,
-            artist_tree: Vec::new(),
-            selected_tree_index: 0,
-            playlist_controller: sotf_audio_player::PlaylistController::new(),
-            playlist_mode: super::super::types::PlaylistMode::List,
-            playlist_name_input: String::new(),
-            plugin_graph: PluginGraph::with_default_rack(),
-            needs_plugin_update: false,
-            pending_param_update: None,
-            editing_plugin_index: None,
-            plugin_param_selection: 0,
-            plugin_update_last_attempt: None,
-            plugin_update_retry_count: 0,
-            plugin_update_in_progress: false,
-            matrix_edit_mode: MatrixEditMode::Header,
-            matrix_grid_row: 0,
-            matrix_grid_col: 0,
-            matrix_header_selection: 0,
-            is_playing: false,
-            current_queue_index: None,
-            volume: 0.1, // Start at 10% volume
-            muted: false,
-            position_secs: 0.0,
-            current_sample_rate: None,
-            current_track_path: None,
-            current_track_start_time: None,
-            current_track_already_recorded: false,
-            loudness_info: None,
-            level_meter_groups: Vec::new(),
-            selected_level_meter_group: 0,
-            level_meter_control_selection: 0,
-            level_meter_last_channel_count: 0,
-            level_meter_last_speaker_config: None,
-            output_devices: Vec::new(),
-            selected_output_device_index: 0,
-            current_output_device_name: None,
-            cast_devices: Vec::new(),
-            cast_discovery_running: false,
-            cast_discovery_receiver: None,
-            loading_tick: 0,
             read_only,
             should_quit: false,
-            needs_rescan: false,
-            needs_redraw: true,
-            mc_last_queue_index: None,
-            mc_last_title: None,
-            mc_last_artist: None,
-            mc_last_album: None,
-            mc_last_cover_url: None,
-            mc_last_duration_secs: None,
-            last_position_secs: f64::NAN,
-            last_is_playing_state: false,
-            last_loudness_signature: 0,
-            scan_in_progress: false,
-            scan_progress_tracks: 0,
-            scan_progress_albums: 0,
-            library_scanner: None,
-            maintenance_in_progress: false,
-            maintenance_progress_checked: 0,
-            maintenance_progress_total: 0,
-            scanner_pause_flag: Arc::clone(&scanner_pause_flag),
-            scanner_pause_override: false,
-            replay_gain_manager: sotf_audio_player::ReplayGainScanManager::with_pause_flag(
-                Arc::clone(&scanner_pause_flag),
-            ),
-            replay_gain_enabled: true,
-            replay_gain_mode: super::super::types::ReplayGainMode::Track,
-            replay_gain_preamp: 0.0,
-            waveform_manager: sotf_audio_player::WaveformScanManager::with_pause_flag(Arc::clone(
-                &scanner_pause_flag,
-            )),
-            bliss_manager: sotf_audio_player::BlissScanManager::with_pause_flag(Arc::clone(
-                &scanner_pause_flag,
-            )),
-            scanner_threads: None,
-            last_loaded_preset: None,
-            file_explorer_items: Vec::new(),
-            file_explorer_selected: 0,
-            file_explorer_dir: directories::UserDirs::new()
-                .map(|u| u.home_dir().to_path_buf())
-                .unwrap_or_else(|| PathBuf::from("/")),
-            file_explorer_filter: None,
-            file_explorer_show_hidden: false,
-            file_picker_mode: FilePickerMode::File,
-            file_picker_origin: FilePickerOrigin::SofaFile,
-            file_picker_title: String::new(),
-            #[cfg(not(target_os = "windows"))]
-            album_images: Vec::new(),
-            #[cfg(not(target_os = "windows"))]
-            selected_image_index: 0,
-            #[cfg(not(target_os = "windows"))]
-            image_picker: None,
-            #[cfg(not(target_os = "windows"))]
-            image_protocol: None,
-            #[cfg(not(target_os = "windows"))]
-            image_protocol_path: None,
+            ui: UiState {
+                loading_tick: 0,
+                status_message: None,
+                error_message: None,
+                needs_redraw: true,
+            },
+            modal: ModalState {
+                metadata_editor: None,
+                channel_conflict_path: None,
+                channel_conflict_selection: 0,
+                channel_conflict_track_channels: 2,
+                channel_conflicts: Vec::new(),
+            },
+            library_view: LibraryViewState {
+                search_query: String::new(),
+                directory_input: String::new(),
+                editing_directory: false,
+                selected_album_index: 0,
+                selected_directory_index: 0,
+                album_list_offset: 0,
+                cached_filtered_albums: Vec::new(),
+                needs_filter_update: true,
+                mode: LibraryViewMode::Flat,
+                sort_order: LibrarySortOrder::Artist,
+                channel_filter: ChannelFilter::All,
+                show_favorites_only: false,
+                artist_tree: Vec::new(),
+                selected_tree_index: 0,
+                #[cfg(not(target_os = "windows"))]
+                album_images: Vec::new(),
+                #[cfg(not(target_os = "windows"))]
+                selected_image_index: 0,
+                #[cfg(not(target_os = "windows"))]
+                image_picker: None,
+                #[cfg(not(target_os = "windows"))]
+                image_protocol: None,
+                #[cfg(not(target_os = "windows"))]
+                image_protocol_path: None,
+            },
+            playback: PlaybackState {
+                is_playing: false,
+                current_queue_index: None,
+                volume: 0.1,
+                muted: false,
+                position_secs: 0.0,
+                current_sample_rate: None,
+                current_track_path: None,
+                current_track_start_time: None,
+                current_track_already_recorded: false,
+                loudness_info: None,
+                replay_gain_enabled: true,
+                replay_gain_mode: super::super::types::ReplayGainMode::Track,
+                replay_gain_preamp: 0.0,
+            },
+            plugin_rack: PluginRackState {
+                graph: PluginGraph::with_default_rack(),
+                needs_update: false,
+                pending_param_update: None,
+                editing_index: None,
+                param_selection: 0,
+                update_last_attempt: None,
+                update_retry_count: 0,
+                update_in_progress: false,
+                selected_index: 0,
+                add_selected_index: 0,
+                available_presets: Vec::new(),
+                selected_preset_index: 0,
+                file_input: String::new(),
+                apo_input: String::new(),
+                sofa_input: String::new(),
+                last_loaded_preset: None,
+            },
+            playlists: PlaylistState {
+                controller: sotf_audio_player::PlaylistController::new(),
+                mode: super::super::types::PlaylistMode::List,
+                name_input: String::new(),
+            },
+            matrix: MatrixEditState {
+                edit_mode: MatrixEditMode::Header,
+                grid_row: 0,
+                grid_col: 0,
+                header_selection: 0,
+            },
+            level_meters: LevelMeterState {
+                groups: Vec::new(),
+                selected_group: 0,
+                control_selection: 0,
+                last_channel_count: 0,
+                last_speaker_config: None,
+            },
+            audio_devices: AudioDeviceState {
+                outputs: Vec::new(),
+                selected_output_index: 0,
+                current_output_name: None,
+                cast: Vec::new(),
+                cast_discovery_running: false,
+                cast_discovery_receiver: None,
+            },
+            media_control: MediaControlState {
+                last_queue_index: None,
+                last_title: None,
+                last_artist: None,
+                last_album: None,
+                last_cover_url: None,
+                last_duration_secs: None,
+                last_position_secs: f64::NAN,
+                last_is_playing_state: false,
+                last_loudness_signature: 0,
+            },
+            scan: ScanState {
+                in_progress: false,
+                progress_tracks: 0,
+                progress_albums: 0,
+                library_scanner: None,
+                maintenance_in_progress: false,
+                maintenance_progress_checked: 0,
+                maintenance_progress_total: 0,
+                pause_flag: Arc::clone(&scanner_pause_flag),
+                pause_override: false,
+                replay_gain_manager: sotf_audio_player::ReplayGainScanManager::with_pause_flag(
+                    Arc::clone(&scanner_pause_flag),
+                ),
+                waveform_manager: sotf_audio_player::WaveformScanManager::with_pause_flag(
+                    Arc::clone(&scanner_pause_flag),
+                ),
+                bliss_manager: sotf_audio_player::BlissScanManager::with_pause_flag(
+                    Arc::clone(&scanner_pause_flag),
+                ),
+                threads: None,
+                needs_rescan: false,
+            },
+            file_explorer: FileExplorerState {
+                items: Vec::new(),
+                selected: 0,
+                dir: directories::UserDirs::new()
+                    .map(|u| u.home_dir().to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("/")),
+                filter: None,
+                show_hidden: false,
+                picker_mode: FilePickerMode::File,
+                picker_origin: FilePickerOrigin::SofaFile,
+                picker_title: String::new(),
+            },
+            autocomplete: AutocompleteState {
+                suggestions: Vec::new(),
+                index: 0,
+                menu_active: false,
+            },
             configure_sub_screen: super::super::types::ConfigureSubScreen::Directories,
             spinorama_eq: super::super::types::SpinoramaEqTuiState::default(),
             headphone_eq: super::super::types::HeadphoneEqTuiState::default(),
@@ -396,13 +402,12 @@ impl App {
             recording: super::super::types::RecordingTuiState::default(),
             federation_state: super::super::types::FederationTuiState::default(),
             server_state: load_server_tui_state(),
-            federation_scan_receiver: None,
-            federation_test_receiver: None,
+            federation_receivers: FederationReceivers { scan: None, test: None },
         };
 
         // Load playlists from database
         if let Some(db) = app.library.get_database()
-            && let Err(e) = app.playlist_controller.load_playlists(db)
+            && let Err(e) = app.playlists.controller.load_playlists(db)
         {
             log::warn!("Failed to load playlists: {}", e);
         }
@@ -413,10 +418,10 @@ impl App {
     /// Set the number of scanner threads for all background scanners.
     /// If None, each scanner will auto-detect (capped at 4).
     pub fn set_scanner_threads(&mut self, threads: Option<usize>) {
-        self.scanner_threads = threads;
-        self.replay_gain_manager.set_num_threads(threads);
-        self.waveform_manager.set_num_threads(threads);
-        self.bliss_manager.set_num_threads(threads);
+        self.scan.threads = threads;
+        self.scan.replay_gain_manager.set_num_threads(threads);
+        self.scan.waveform_manager.set_num_threads(threads);
+        self.scan.bliss_manager.set_num_threads(threads);
         if let Some(t) = threads {
             log::info!("Scanner thread count set to {}", t);
         }
@@ -428,7 +433,7 @@ impl App {
     }
 
     pub fn current_track_source(&self) -> Option<sotf_audio::decoder::AudioSource> {
-        self.current_queue_index
+        self.playback.current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.current_track())
             .map(|track| track.audio_source())
@@ -436,14 +441,14 @@ impl App {
 
     /// Get the currently playing track info
     pub fn current_track(&self) -> Option<&Track> {
-        self.current_queue_index
+        self.playback.current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.current_track())
     }
 
     /// Peek at the next track without mutating state (for gapless pre-queuing).
     pub fn peek_next_track(&self) -> Option<&Track> {
-        let idx = self.current_queue_index?;
+        let idx = self.playback.current_queue_index?;
         let entry = self.queue.get(idx)?;
 
         // Try next track in current album
@@ -460,19 +465,19 @@ impl App {
     pub fn get_replay_gain_for_current_track(&self) -> Option<f64> {
         use super::super::types::ReplayGainMode;
 
-        if !self.replay_gain_enabled {
+        if !self.playback.replay_gain_enabled {
             return None;
         }
         let track = self.current_track()?;
-        let gain = match self.replay_gain_mode {
+        let gain = match self.playback.replay_gain_mode {
             ReplayGainMode::Track => track.replay_gain,
             ReplayGainMode::Album => track.album_gain,
         };
-        gain.map(|g| g + self.replay_gain_preamp as f64)
+        gain.map(|g| g + self.playback.replay_gain_preamp as f64)
     }
 
     pub fn next_track(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
-        if let Some(idx) = self.current_queue_index {
+        if let Some(idx) = self.playback.current_queue_index {
             if let Some(entry) = self.queue.get_mut(idx)
                 && let Some(track) = entry.item.next_track()
             {
@@ -487,7 +492,7 @@ impl App {
     }
 
     pub fn previous_track(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
-        if let Some(idx) = self.current_queue_index
+        if let Some(idx) = self.playback.current_queue_index
             && let Some(entry) = self.queue.get_mut(idx)
         {
             if let Some(track) = entry.item.previous_track() {
@@ -495,7 +500,7 @@ impl App {
             } else {
                 // Move to previous album in queue
                 if idx > 0 {
-                    self.current_queue_index = Some(idx - 1);
+                    self.playback.current_queue_index = Some(idx - 1);
                     // Go to last track of previous album
                     if let Some(prev_entry) = self.queue.get_mut(idx - 1) {
                         prev_entry.item.current_track_index =
@@ -510,9 +515,9 @@ impl App {
 
     pub fn start_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         if !self.queue.is_empty() {
-            self.current_queue_index = Some(0);
+            self.playback.current_queue_index = Some(0);
             self.queue[0].item.current_track_index = 0;
-            self.is_playing = true;
+            self.playback.is_playing = true;
             self.current_track_source()
         } else {
             None
@@ -521,13 +526,13 @@ impl App {
 
     /// Jump to the selected album/track in queue and start playing
     pub fn jump_to_selected_album(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
-        if self.selected_queue_index < self.queue.len() {
-            self.current_queue_index = Some(self.selected_queue_index);
-            let track_idx = self.selected_queue_track_index.unwrap_or(0);
-            self.queue[self.selected_queue_index]
+        if self.queue_view.selected_index < self.queue.len() {
+            self.playback.current_queue_index = Some(self.queue_view.selected_index);
+            let track_idx = self.queue_view.selected_track_index.unwrap_or(0);
+            self.queue[self.queue_view.selected_index]
                 .item
                 .current_track_index = track_idx;
-            self.is_playing = true;
+            self.playback.is_playing = true;
             self.current_track_source()
         } else {
             None
@@ -539,7 +544,7 @@ impl App {
         use sotf_audio_player::{EQFilter, PluginSettings};
         use std::path::Path;
 
-        let path = Path::new(&self.apo_file_input);
+        let path = Path::new(&self.plugin_rack.apo_input);
 
         // Validate path before reading
         sotf_audio_player::security::validate_plugin_file_path(path).map_err(|e| e.to_string())?;
@@ -548,7 +553,7 @@ impl App {
         let filters = EQFilter::from_apo_file(path)?;
 
         // Update the currently selected plugin if it's an EQ
-        if let Some(plugin) = self.plugin_graph.get_plugin_mut(self.selected_plugin_index) {
+        if let Some(plugin) = self.plugin_rack.graph.get_plugin_mut(self.plugin_rack.selected_index) {
             if let PluginSettings::EQ { channels, .. } = &plugin.settings {
                 let channels = *channels;
                 let filter_count = filters.len();
@@ -575,12 +580,12 @@ impl App {
         use sotf_audio_player::PluginSettings;
 
         // Update the currently selected plugin if it's a binaural decoder
-        if let Some(plugin) = self.plugin_graph.get_plugin_mut(self.selected_plugin_index) {
+        if let Some(plugin) = self.plugin_rack.graph.get_plugin_mut(self.plugin_rack.selected_index) {
             if let PluginSettings::BinauralDecoder {
                 ref mut sofa_file, ..
             } = plugin.settings
             {
-                *sofa_file = self.sofa_file_input.clone();
+                *sofa_file = self.plugin_rack.sofa_input.clone();
                 Ok(())
             } else {
                 Err("Selected plugin is not a Binaural Decoder".to_string())
@@ -593,8 +598,8 @@ impl App {
     /// Returns `(slot_index, filter_count)` for the last non-permanent EQ plugin, or `None`.
     pub fn find_last_eq_info(&self) -> Option<(usize, usize)> {
         use sotf_audio_player::PluginSettings;
-        (0..self.plugin_graph.len()).rev().find_map(|i| {
-            if let Some(p) = self.plugin_graph.get_plugin(i)
+        (0..self.plugin_rack.graph.len()).rev().find_map(|i| {
+            if let Some(p) = self.plugin_rack.graph.get_plugin(i)
                 && !p.is_permanent()
                 && let PluginSettings::EQ { filters, .. } = &p.settings
             {
@@ -640,8 +645,8 @@ impl App {
         let n = eq_filters.len();
 
         // Find the last non-permanent EQ plugin
-        let eq_idx = (0..self.plugin_graph.len()).rev().find(|&i| {
-            if let Some(p) = self.plugin_graph.get_plugin(i) {
+        let eq_idx = (0..self.plugin_rack.graph.len()).rev().find(|&i| {
+            if let Some(p) = self.plugin_rack.graph.get_plugin(i) {
                 !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. })
             } else {
                 false
@@ -652,15 +657,15 @@ impl App {
             idx
         } else {
             // No EQ plugin found — insert one at the user-plugin slot
-            let insert_at = self.plugin_graph.user_plugin_insert_index();
-            self.plugin_graph
+            let insert_at = self.plugin_rack.graph.user_plugin_insert_index();
+            self.plugin_rack.graph
                 .insert_plugin(insert_at, &PluginType::EQ)
                 .ok();
             insert_at
         };
 
         // Update the plugin settings
-        if let Some(plugin) = self.plugin_graph.get_plugin_mut(target_idx) {
+        if let Some(plugin) = self.plugin_rack.graph.get_plugin_mut(target_idx) {
             let channels = match &plugin.settings {
                 PluginSettings::EQ { channels, .. } => *channels,
                 _ => 2,
@@ -677,7 +682,7 @@ impl App {
             plugin.enabled = true;
         }
 
-        self.plugin_graph.update_channel_dependent_plugins();
+        self.plugin_rack.graph.update_channel_dependent_plugins();
         self.request_plugin_update();
 
         Ok(format!(
@@ -690,12 +695,14 @@ impl App {
     pub fn apply_spinorama_to_plugins(&mut self) -> Result<String, String> {
         let filters: Vec<_> = self
             .spinorama_eq
+            .model
             .filters
             .iter()
             .map(|f| (f.filter_type.clone(), f.freq, f.q, f.db_gain))
             .collect();
         let label = self
             .spinorama_eq
+            .model
             .selected_speaker
             .clone()
             .unwrap_or_else(|| "unknown".to_string());
@@ -706,11 +713,12 @@ impl App {
     pub fn apply_headphone_to_plugins(&mut self) -> Result<String, String> {
         let filters: Vec<_> = self
             .headphone_eq
+            .model
             .filters
             .iter()
             .map(|f| (f.filter_type.clone(), f.freq, f.q, f.db_gain))
             .collect();
-        let label = std::path::Path::new(&self.headphone_eq.measurement_path)
+        let label = std::path::Path::new(&self.headphone_eq.model.measurement_path)
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "headphone".to_string());
@@ -743,18 +751,18 @@ impl App {
             .collect();
 
         let sample_rate = self
-            .current_sample_rate
+            .playback.current_sample_rate
             .map(|r| r as f64)
             .unwrap_or_else(|| self.get_current_sample_rate());
 
         let outcome = autoeq::apply_room_eq_to_chain(
-            &mut self.plugin_graph,
+            &mut self.plugin_rack.graph,
             &dsp_output,
             sample_rate,
             &channel_names,
         )?;
 
-        self.plugin_graph.update_channel_dependent_plugins();
+        self.plugin_rack.graph.update_channel_dependent_plugins();
         self.request_plugin_update();
 
         match outcome {
@@ -776,30 +784,30 @@ impl App {
 
     /// Start tracking a new track for play statistics
     pub fn start_track_tracking(&mut self, track_path: PathBuf) {
-        self.current_track_path = Some(track_path);
-        self.current_track_start_time = Some(std::time::Instant::now());
-        self.current_track_already_recorded = false;
+        self.playback.current_track_path = Some(track_path);
+        self.playback.current_track_start_time = Some(std::time::Instant::now());
+        self.playback.current_track_already_recorded = false;
     }
 
     /// Check if current track has been played for 30+ seconds and record it
     pub fn check_and_record_play(&mut self) {
-        if self.read_only || self.current_track_already_recorded {
+        if self.read_only || self.playback.current_track_already_recorded {
             return;
         }
 
         if let (Some(path), Some(start_time)) =
-            (&self.current_track_path, self.current_track_start_time)
+            (&self.playback.current_track_path, self.playback.current_track_start_time)
         {
             let elapsed = start_time.elapsed().as_secs();
             if elapsed >= 30 {
                 // Record the play in the database
                 if let Some(db) = self.library.get_database() {
-                    let duration = self.position_secs as u64;
+                    let duration = self.playback.position_secs as u64;
                     if let Err(e) = db.record_play(path, duration) {
                         log::error!("Failed to record play: {}", e);
                     } else {
                         log::info!("Recorded play for {:?} ({}s)", path, duration);
-                        self.current_track_already_recorded = true;
+                        self.playback.current_track_already_recorded = true;
                     }
                 }
             }
@@ -808,9 +816,9 @@ impl App {
 
     /// Stop tracking the current track (called when track changes or stops)
     pub fn stop_track_tracking(&mut self) {
-        self.current_track_path = None;
-        self.current_track_start_time = None;
-        self.current_track_already_recorded = false;
+        self.playback.current_track_path = None;
+        self.playback.current_track_start_time = None;
+        self.playback.current_track_already_recorded = false;
     }
 
     // ========================================================================
@@ -820,8 +828,8 @@ impl App {
     /// Toggle favorite on the currently selected album in library view
     pub fn toggle_selected_album_favorite(&mut self) {
         // Copy the index first to avoid borrow conflicts with filtered_albums()
-        let idx = self.selected_album_index;
-        let album_id = self.cached_filtered_albums.get(idx).and_then(|a| a.id);
+        let idx = self.library_view.selected_album_index;
+        let album_id = self.library_view.cached_filtered_albums.get(idx).and_then(|a| a.id);
         if let Some(album_id) = album_id
             && let Some(db) = self.library.get_database()
         {
@@ -849,7 +857,7 @@ impl App {
     /// Toggle favorite on the current queue album
     pub fn toggle_current_queue_album_favorite(&mut self) {
         let album_id = self
-            .current_queue_index
+            .playback.current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.album.id);
         if let Some(album_id) = album_id
@@ -882,9 +890,9 @@ impl App {
 
     /// Toggle the favorites-only filter in the library view
     pub fn toggle_favorites_filter(&mut self) {
-        self.show_favorites_only = !self.show_favorites_only;
+        self.library_view.show_favorites_only = !self.library_view.show_favorites_only;
         self.request_filter_update();
-        self.selected_album_index = 0;
+        self.library_view.selected_album_index = 0;
     }
 
     // ========================================================================
@@ -900,11 +908,11 @@ impl App {
         start_dir: Option<&str>,
         extension_filter: Option<&str>,
     ) {
-        self.file_picker_origin = origin;
-        self.file_picker_mode = mode;
-        self.file_picker_title = title.to_string();
-        self.file_explorer_filter = extension_filter.map(|s| s.to_lowercase());
-        self.file_explorer_show_hidden = false;
+        self.file_explorer.picker_origin = origin;
+        self.file_explorer.picker_mode = mode;
+        self.file_explorer.picker_title = title.to_string();
+        self.file_explorer.filter = extension_filter.map(|s| s.to_lowercase());
+        self.file_explorer.show_hidden = false;
 
         // Smart start directory: use provided path's parent if it exists, else home
         let dir = start_dir
@@ -924,7 +932,7 @@ impl App {
                     .unwrap_or_else(|| PathBuf::from("/"))
             });
 
-        self.file_explorer_dir = dir;
+        self.file_explorer.dir = dir;
         self.refresh_file_explorer();
         self.input_mode = InputMode::FileExplorer;
     }
@@ -932,7 +940,7 @@ impl App {
     /// Close the file explorer and restore the appropriate input mode.
     pub fn close_file_explorer(&mut self) {
         self.input_mode =
-            match self.file_picker_origin {
+            match self.file_explorer.picker_origin {
                 FilePickerOrigin::SofaFile
                 | FilePickerOrigin::IrFile
                 | FilePickerOrigin::ApoFile
@@ -965,10 +973,10 @@ impl App {
     }
 
     pub fn refresh_file_explorer(&mut self) {
-        self.file_explorer_items.clear();
-        self.file_explorer_selected = 0;
+        self.file_explorer.items.clear();
+        self.file_explorer.selected = 0;
 
-        if let Ok(entries) = std::fs::read_dir(&self.file_explorer_dir) {
+        if let Ok(entries) = std::fs::read_dir(&self.file_explorer.dir) {
             let mut dirs = Vec::new();
             let mut files = Vec::new();
 
@@ -980,14 +988,14 @@ impl App {
                     .unwrap_or_default();
 
                 // Skip hidden files unless toggled on
-                if !self.file_explorer_show_hidden && name.starts_with('.') {
+                if !self.file_explorer.show_hidden && name.starts_with('.') {
                     continue;
                 }
 
                 if path.is_dir() {
                     dirs.push(path);
                 } else if path.is_file() {
-                    if let Some(ext) = &self.file_explorer_filter {
+                    if let Some(ext) = &self.file_explorer.filter {
                         if path
                             .extension()
                             .is_some_and(|e| e.to_string_lossy().to_lowercase() == *ext)
@@ -1003,49 +1011,49 @@ impl App {
             dirs.sort();
             files.sort();
 
-            self.file_explorer_items.extend(dirs);
-            self.file_explorer_items.extend(files);
+            self.file_explorer.items.extend(dirs);
+            self.file_explorer.items.extend(files);
         }
     }
 
     pub fn file_explorer_enter_dir(&mut self, path: PathBuf) {
-        self.file_explorer_dir = path;
+        self.file_explorer.dir = path;
         self.refresh_file_explorer();
     }
 
     pub fn file_explorer_go_parent(&mut self) {
-        if let Some(parent) = self.file_explorer_dir.parent() {
+        if let Some(parent) = self.file_explorer.dir.parent() {
             let parent = parent.to_path_buf();
-            self.file_explorer_dir = parent;
+            self.file_explorer.dir = parent;
             self.refresh_file_explorer();
         }
     }
 
     pub fn file_explorer_select_next(&mut self) {
-        if !self.file_explorer_items.is_empty() {
-            self.file_explorer_selected =
-                (self.file_explorer_selected + 1) % self.file_explorer_items.len();
+        if !self.file_explorer.items.is_empty() {
+            self.file_explorer.selected =
+                (self.file_explorer.selected + 1) % self.file_explorer.items.len();
         }
     }
 
     pub fn file_explorer_select_prev(&mut self) {
-        if !self.file_explorer_items.is_empty() {
-            if self.file_explorer_selected == 0 {
-                self.file_explorer_selected = self.file_explorer_items.len() - 1;
+        if !self.file_explorer.items.is_empty() {
+            if self.file_explorer.selected == 0 {
+                self.file_explorer.selected = self.file_explorer.items.len() - 1;
             } else {
-                self.file_explorer_selected -= 1;
+                self.file_explorer.selected -= 1;
             }
         }
     }
 
     pub fn file_explorer_toggle_hidden(&mut self) {
-        self.file_explorer_show_hidden = !self.file_explorer_show_hidden;
+        self.file_explorer.show_hidden = !self.file_explorer.show_hidden;
         self.refresh_file_explorer();
     }
 
     /// Returns the currently selected path, if any.
     pub fn file_explorer_current(&self) -> Option<&PathBuf> {
-        self.file_explorer_items.get(self.file_explorer_selected)
+        self.file_explorer.items.get(self.file_explorer.selected)
     }
 }
 

@@ -15,7 +15,7 @@ pub(super) fn now_ms() -> u64 {
 pub(super) fn request_spl_cancel(app: &mut App) {
     log::info!("Cancel requested for SPL calibration capture");
     app.recording
-        .spl_cancel_requested
+        .model.spl_cancel_requested
         .store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -23,15 +23,15 @@ pub(super) fn request_spl_cancel(app: &mut App) {
 /// editing an existing value doesn't start from an empty buffer.
 pub(super) fn current_save_field_value(app: &App) -> String {
     match app.recording.selected_save_field {
-        0 => app.recording.save_name.clone(),
-        1 => fmt_opt_dim(app.recording.save_room_width),
-        2 => fmt_opt_dim(app.recording.save_room_depth),
-        3 => fmt_opt_dim(app.recording.save_room_height),
-        5 => app.recording.setup_description.clone(),
+        0 => app.recording.model.save_name.clone(),
+        1 => fmt_opt_dim(app.recording.model.room_width_input),
+        2 => fmt_opt_dim(app.recording.model.room_depth_input),
+        3 => fmt_opt_dim(app.recording.model.room_height_input),
+        5 => app.recording.model.setup_description.clone(),
         n if n >= 6 => {
             let row = n - 6;
             app.recording
-                .channel_speakers
+                .model.channel_speakers
                 .get(row)
                 .cloned()
                 .unwrap_or_default()
@@ -52,21 +52,21 @@ pub(super) fn fmt_opt_dim(v: f64) -> String {
 pub(super) fn commit_save_field_edit(app: &mut App) {
     let buf = app.recording.edit_buffer.clone();
     match app.recording.selected_save_field {
-        0 => app.recording.save_name = buf,
+        0 => app.recording.model.save_name = buf,
         1 => {
-            app.recording.save_room_width = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+            app.recording.model.room_width_input = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
         }
         2 => {
-            app.recording.save_room_depth = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+            app.recording.model.room_depth_input = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
         }
         3 => {
-            app.recording.save_room_height = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+            app.recording.model.room_height_input = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
         }
-        5 => app.recording.setup_description = buf,
+        5 => app.recording.model.setup_description = buf,
         n if n >= 6 => {
             let row = n - 6;
             app.recording.sync_channel_speakers_length();
-            if let Some(slot) = app.recording.channel_speakers.get_mut(row) {
+            if let Some(slot) = app.recording.model.channel_speakers.get_mut(row) {
                 *slot = buf;
             }
         }
@@ -101,27 +101,27 @@ pub(super) fn set_recording_field_from_string(app: &mut App) {
     match field {
         Duration => {
             if let Ok(v) = buf.parse::<f32>() {
-                app.recording.signal_duration_secs = v.clamp(1.0, 30.0);
+                app.recording.model.signal_duration_secs = v.clamp(1.0, 30.0);
             }
         }
         Level => {
             if let Ok(v) = buf.parse::<f32>() {
-                app.recording.signal_level_db = v.clamp(-40.0, 0.0);
+                app.recording.model.signal_level_db = v.clamp(-40.0, 0.0);
             }
         }
         SweepStart => {
             if let Ok(v) = buf.parse::<f32>() {
-                app.recording.sweep_start_freq = v.clamp(10.0, 1000.0);
+                app.recording.model.sweep_start_freq = v.clamp(10.0, 1000.0);
             }
         }
         SweepEnd => {
             if let Ok(v) = buf.parse::<f32>() {
-                app.recording.sweep_end_freq = v.clamp(1000.0, 24000.0);
+                app.recording.model.sweep_end_freq = v.clamp(1000.0, 24000.0);
             }
         }
         NumRecordingChannels => {
             if let Ok(v) = buf.parse::<usize>() {
-                app.recording.recording_config.num_channels = v.clamp(1, 128);
+                app.recording.model.recording_config.num_channels = v.clamp(1, 128);
                 app.recording.sync_recording_channel_vecs();
                 // Clamp cursor in case the field count just shrank.
                 let last = crate::app::recording_field_count(&app.recording) - 1;
@@ -132,14 +132,14 @@ pub(super) fn set_recording_field_from_string(app: &mut App) {
         }
         CtcLoopbackInput => {
             if let Ok(v) = buf.parse::<usize>() {
-                app.recording.recording_config.ctc_loopback_input_channel =
+                app.recording.model.recording_config.ctc_loopback_input_channel =
                     Some(v.saturating_sub(1).min(127));
             }
         }
         ChannelInput(i) => {
             if let Ok(v) = buf.parse::<usize>() {
                 let v = v.saturating_sub(1).min(127);
-                if let Some(slot) = app.recording.recording_config.channel_mappings.get_mut(i) {
+                if let Some(slot) = app.recording.model.recording_config.channel_mappings.get_mut(i) {
                     *slot = v;
                 }
             }
@@ -157,26 +157,26 @@ pub(crate) fn update_channel_mappings_for_config(
     // For Custom, keep the existing channel mappings (renamed to generic Ch labels
     // when transitioning into Custom from a preset) so the user can edit them.
     if config == SpeakerConfiguration::Custom {
-        let len = app.recording.playback_config.channel_mappings.len().max(2);
-        app.recording.playback_config.channel_mappings = (0..len)
+        let len = app.recording.model.playback_config.channel_mappings.len().max(2);
+        app.recording.model.playback_config.channel_mappings = (0..len)
             .map(|i| ChannelMapping::single(i, format!("Ch{}", i + 1)))
             .collect();
-        app.recording.playback_config.num_channels = len;
+        app.recording.model.playback_config.num_channels = len;
         return;
     }
 
     let names = config.default_channel_names();
-    app.recording.playback_config.channel_mappings = names
+    app.recording.model.playback_config.channel_mappings = names
         .iter()
         .enumerate()
         .map(|(i, name)| ChannelMapping::single(i, *name))
         .collect();
-    app.recording.playback_config.num_channels = names.len();
+    app.recording.model.playback_config.num_channels = names.len();
 }
 
 pub(crate) fn add_custom_speaker(app: &mut App) {
     use sotf_audio_player::recording_types::ChannelMapping;
-    let cfg = &mut app.recording.playback_config;
+    let cfg = &mut app.recording.model.playback_config;
     let next_ch = cfg
         .channel_mappings
         .iter()
@@ -189,7 +189,7 @@ pub(crate) fn add_custom_speaker(app: &mut App) {
 }
 
 pub(crate) fn remove_custom_speaker(app: &mut App) {
-    let cfg = &mut app.recording.playback_config;
+    let cfg = &mut app.recording.model.playback_config;
     if cfg.channel_mappings.len() > 1 {
         cfg.channel_mappings.pop();
         cfg.sync_channel_count();
@@ -199,15 +199,16 @@ pub(crate) fn remove_custom_speaker(app: &mut App) {
 pub(crate) fn init_recording_channels(app: &mut App) {
     use sotf_audio_player::recording_types::ChannelRecording;
 
-    let num_speakers = app.recording.playback_config.channel_mappings.len();
-    let num_mics = app.recording.recording_config.channel_mappings.len().max(1);
-    let num_positions = app.recording.recording_config.num_positions.max(1);
+    let num_speakers = app.recording.model.playback_config.channel_mappings.len();
+    let num_mics = app.recording.model.recording_config.channel_mappings.len().max(1);
+    let num_positions = app.recording.model.recording_config.num_positions.max(1);
     let expected_count = num_speakers * num_mics * num_positions;
-    if app.recording.channel_recordings.len() != expected_count {
+    if app.recording.model.channel_recordings.len() != expected_count {
         let mut recordings = Vec::with_capacity(expected_count);
         for position_idx in 0..num_positions {
             for (speaker_idx, mapping) in app
                 .recording
+                .model
                 .playback_config
                 .channel_mappings
                 .iter()
@@ -231,19 +232,20 @@ pub(crate) fn init_recording_channels(app: &mut App) {
                 }
             }
         }
-        app.recording.channel_recordings = recordings;
-        app.recording.transfer_matrix_loopbacks.clear();
-        app.recording.ctc_reference_sweep_path = None;
-        app.recording.current_channel = if expected_count > 0 { Some(0) } else { None };
+        app.recording.model.channel_recordings = recordings;
+        app.recording.model.transfer_matrix_loopbacks.clear();
+        app.recording.model.ctc_reference_sweep_path = None;
+        app.recording.model.current_recording_channel = if expected_count > 0 { Some(0) } else { None };
     }
 }
 
 pub(super) fn ctc_raw_capture_channel_indices(app: &App, channel_idx: usize) -> Vec<usize> {
-    let Some(selected) = app.recording.channel_recordings.get(channel_idx) else {
+    let Some(selected) = app.recording.model.channel_recordings.get(channel_idx) else {
         return Vec::new();
     };
     let mut indices: Vec<usize> = app
         .recording
+        .model
         .channel_recordings
         .iter()
         .enumerate()
@@ -256,7 +258,7 @@ pub(super) fn ctc_raw_capture_channel_indices(app: &App, channel_idx: usize) -> 
         .collect();
     indices.sort_by_key(|idx| {
         app.recording
-            .channel_recordings
+            .model.channel_recordings
             .get(*idx)
             .map(|rec| rec.mic_index)
             .unwrap_or(usize::MAX)
@@ -274,10 +276,10 @@ pub(crate) fn save_recordings(app: &mut App) {
     };
 
     // Validate save name early (before any I/O)
-    let name = if app.recording.save_name.is_empty() {
+    let name = if app.recording.model.save_name.is_empty() {
         "recordings".to_string()
     } else {
-        app.recording.save_name.clone()
+        app.recording.model.save_name.clone()
     };
     if name.contains('/') || name.contains('\\') {
         app.recording.save_error = Some("Save name must not contain path separators".to_string());
@@ -286,6 +288,7 @@ pub(crate) fn save_recordings(app: &mut App) {
 
     let completed: Vec<_> = app
         .recording
+        .model
         .channel_recordings
         .iter()
         .filter(|ch| ch.state == ChannelRecordingState::Done && ch.result.is_some())
@@ -310,36 +313,37 @@ pub(crate) fn save_recordings(app: &mut App) {
 
     let channel_names: Vec<String> = app
         .recording
+        .model
         .playback_config
         .channel_mappings
         .iter()
         .map(|m| m.group_name.clone())
         .collect();
     let mic_names = vec!["left_ear".to_string(), "right_ear".to_string()];
-    let ctc_strategy = app.recording.recording_config.ctc_matrix_strategy;
+    let ctc_strategy = app.recording.model.recording_config.ctc_matrix_strategy;
     let mut ctc_reference_sweep = None;
     let mut ctc_raw_sweep_range = None;
     let mut ctc_raw_fallback = false;
     let mut ctc_measurements = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
-        ctc_reference_sweep = app.recording.ctc_reference_sweep_path.as_ref().map(|path| {
+        ctc_reference_sweep = app.recording.model.ctc_reference_sweep_path.as_ref().map(|path| {
             std::path::Path::new(path)
                 .strip_prefix(&dir)
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|_| std::path::PathBuf::from(path))
         });
         match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
-            &app.recording.channel_recordings,
+            &app.recording.model.channel_recordings,
             &channel_names,
             &mic_names,
-            app.recording.recording_config.sample_rate,
+            app.recording.model.recording_config.sample_rate,
             std::path::Path::new(&dir),
             ctc_strategy,
-            app.recording.recording_config.ctc_loopback_input_channel,
-            &app.recording.transfer_matrix_loopbacks,
+            app.recording.model.recording_config.ctc_loopback_input_channel,
+            &app.recording.model.transfer_matrix_loopbacks,
         ) {
             Ok(Some(measurements)) => {
                 match sotf_audio_player::room_eq_types::ctc_uniform_sweep_range_for_measurements(
-                    &app.recording.channel_recordings,
+                    &app.recording.model.channel_recordings,
                     &channel_names,
                     &measurements,
                 ) {
@@ -349,7 +353,7 @@ pub(crate) fn save_recordings(app: &mut App) {
                     }
                     None => {
                         ctc_raw_fallback = true;
-                        app.recording.status_message =
+                        app.recording.model.status_message =
                             "Raw-sweep CTC mixes sweep ranges; falling back to measured CTC"
                                 .to_string();
                         None
@@ -358,13 +362,13 @@ pub(crate) fn save_recordings(app: &mut App) {
             }
             Ok(None) => {
                 ctc_raw_fallback = true;
-                app.recording.status_message =
+                app.recording.model.status_message =
                     "Raw-sweep CTC incomplete; falling back to measured CTC".to_string();
                 None
             }
             Err(e) => {
                 ctc_raw_fallback = true;
-                app.recording.status_message =
+                app.recording.model.status_message =
                     format!("Could not export raw-sweep CTC transfer matrix: {}", e);
                 None
             }
@@ -374,15 +378,15 @@ pub(crate) fn save_recordings(app: &mut App) {
     };
     if ctc_measurements.is_none() {
         ctc_measurements = match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
-            &app.recording.channel_recordings,
+            &app.recording.model.channel_recordings,
             &channel_names,
             &mic_names,
-            app.recording.recording_config.sample_rate,
+            app.recording.model.recording_config.sample_rate,
             std::path::Path::new(&dir),
         ) {
             Ok(measurements) => measurements,
             Err(e) => {
-                app.recording.status_message =
+                app.recording.model.status_message =
                     format!("Could not export CTC transfer matrix: {}", e);
                 None
             }
@@ -394,7 +398,7 @@ pub(crate) fn save_recordings(app: &mut App) {
     // position) recording for the same output channel folds into one
     // SpeakerConfig so roomeq emits one EQ chain per channel.
     let speakers = build_speakers_from_recordings(
-        &app.recording.channel_recordings,
+        &app.recording.model.channel_recordings,
         &channel_names,
         app.recording.channel_speakers_map_for_save().as_ref(),
     );
@@ -404,25 +408,25 @@ pub(crate) fn save_recordings(app: &mut App) {
         return;
     }
 
-    let mic_calibration_paths_value = app.recording.recording_config.mic_calibration_paths.clone();
+    let mic_calibration_paths_value = app.recording.model.recording_config.mic_calibration_paths.clone();
 
     let configuration = RecordingConfiguration {
-        playback_device_name: Some(app.recording.playback_config.device_name.clone()),
-        playback_device_id: Some(app.recording.playback_config.device_id.clone()),
-        playback_sample_rate: Some(app.recording.playback_config.sample_rate),
-        playback_channels: Some(app.recording.playback_config.num_channels),
+        playback_device_name: Some(app.recording.model.playback_config.device_name.clone()),
+        playback_device_id: Some(app.recording.model.playback_config.device_id.clone()),
+        playback_sample_rate: Some(app.recording.model.playback_config.sample_rate),
+        playback_channels: Some(app.recording.model.playback_config.num_channels),
         speaker_configuration: Some(
             app.recording
-                .playback_config
+                .model.playback_config
                 .speaker_configuration
                 .as_str()
                 .to_string(),
         ),
         channel_names: Some(channel_names.clone()),
-        recording_device_name: Some(app.recording.recording_config.device_name.clone()),
-        recording_device_id: Some(app.recording.recording_config.device_id.clone()),
-        recording_sample_rate: Some(app.recording.recording_config.sample_rate),
-        recording_channels: Some(app.recording.recording_config.num_channels),
+        recording_device_name: Some(app.recording.model.recording_config.device_name.clone()),
+        recording_device_id: Some(app.recording.model.recording_config.device_id.clone()),
+        recording_sample_rate: Some(app.recording.model.recording_config.sample_rate),
+        recording_channels: Some(app.recording.model.recording_config.num_channels),
         mic_calibration_path: mic_calibration_paths_value
             .first()
             .and_then(|o| o.clone())
@@ -437,14 +441,14 @@ pub(crate) fn save_recordings(app: &mut App) {
         } else {
             Some(app.recording.output_directory.clone())
         },
-        signal_type: Some(app.recording.signal_type.as_str().to_string()),
-        signal_duration_secs: Some(app.recording.signal_duration_secs),
-        signal_level_db: Some(app.recording.signal_level_db),
-        sweep_start_freq: Some(app.recording.sweep_start_freq),
-        sweep_end_freq: Some(app.recording.sweep_end_freq),
+        signal_type: Some(app.recording.model.signal_type.as_str().to_string()),
+        signal_duration_secs: Some(app.recording.model.signal_duration_secs),
+        signal_level_db: Some(app.recording.model.signal_level_db),
+        sweep_start_freq: Some(app.recording.model.sweep_start_freq),
+        sweep_end_freq: Some(app.recording.model.sweep_end_freq),
         room_dimensions: app.recording.room_dimensions_for_save(),
         setup_description: {
-            let s = app.recording.setup_description.trim();
+            let s = app.recording.model.setup_description.trim();
             if s.is_empty() {
                 None
             } else {
@@ -452,7 +456,7 @@ pub(crate) fn save_recordings(app: &mut App) {
             }
         },
         channel_speakers: app.recording.channel_speakers_map_for_save(),
-        probe_results: app.recording.probe_capture.results.as_ref().map(|r| {
+        probe_results: app.recording.model.probe_capture.results.as_ref().map(|r| {
             autoeq::roomeq::ProbeResultsLegacy {
                 channels: r
                     .channels
@@ -471,17 +475,18 @@ pub(crate) fn save_recordings(app: &mut App) {
         }),
         probe_wav_relative: app
             .recording
+            .model
             .probe_capture
             .wav_path
             .as_ref()
             .and_then(|p| std::path::Path::new(p).file_name())
             .map(|f| f.to_string_lossy().to_string()),
         num_positions: {
-            let n = app.recording.recording_config.num_positions.max(1);
+            let n = app.recording.model.recording_config.num_positions.max(1);
             if n > 1 { Some(n) } else { None }
         },
-        bass_probe_freq_hz: Some(app.recording.bass_anchor_capture.bass_freq_hz),
-        bass_probe_duration_s: Some(app.recording.bass_anchor_capture.bass_duration_s),
+        bass_probe_freq_hz: Some(app.recording.model.bass_anchor_capture.bass_freq_hz),
+        bass_probe_duration_s: Some(app.recording.model.bass_anchor_capture.bass_duration_s),
         ..Default::default()
     };
 
@@ -497,7 +502,7 @@ pub(crate) fn save_recordings(app: &mut App) {
             measurements: Some(measurements),
             reference_sweep: ctc_reference_sweep,
             sweep_duration_s: if raw {
-                Some(app.recording.signal_duration_secs as f64)
+                Some(app.recording.model.signal_duration_secs as f64)
             } else {
                 None
             },
@@ -554,7 +559,7 @@ pub(crate) fn save_recordings(app: &mut App) {
     app.recording.save_success = false;
     app.recording.save_receiver = Some(rx);
     if ctc_raw_fallback {
-        app.recording.status_message =
+        app.recording.model.status_message =
             "Saved with measured CTC fallback; raw-sweep CTC was incomplete".to_string();
     }
 

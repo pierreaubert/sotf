@@ -3,7 +3,7 @@ use crate::app::{App, FilePickerMode, FilePickerOrigin};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub(super) fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    if app.editing_directory {
+    if app.library_view.editing_directory {
         return handle_directory_text_input(app, key);
     }
 
@@ -11,8 +11,8 @@ pub(super) fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<Play
 
     match key.code {
         KeyCode::Char('a') | KeyCode::F(2) => {
-            app.editing_directory = true;
-            app.directory_input.clear();
+            app.library_view.editing_directory = true;
+            app.library_view.directory_input.clear();
             None
         }
         KeyCode::Up | KeyCode::Char('k') => {
@@ -53,42 +53,42 @@ pub(super) fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<Play
         KeyCode::Char('r') => {
             // Start ReplayGain scan for tracks missing data
             if let Err(e) = app.start_replay_gain_scan() {
-                app.status_message = Some(format!("Error starting ReplayGain scan: {}", e));
+                app.ui.status_message = Some(format!("Error starting ReplayGain scan: {}", e));
             }
             None
         }
         KeyCode::Char('R') => {
             // Force ReplayGain rescan of all tracks
             if let Err(e) = app.start_force_replay_gain_scan() {
-                app.status_message = Some(format!("Error starting ReplayGain force scan: {}", e));
+                app.ui.status_message = Some(format!("Error starting ReplayGain force scan: {}", e));
             }
             None
         }
         KeyCode::Char('b') => {
             // Start Bliss audio analysis scan
             if let Err(e) = app.start_bliss_scan() {
-                app.status_message = Some(format!("Error starting Bliss scan: {}", e));
+                app.ui.status_message = Some(format!("Error starting Bliss scan: {}", e));
             }
             None
         }
         KeyCode::Char('B') => {
             // Force Bliss rescan of all tracks
             if let Err(e) = app.start_force_bliss_scan() {
-                app.status_message = Some(format!("Error starting Bliss force scan: {}", e));
+                app.ui.status_message = Some(format!("Error starting Bliss force scan: {}", e));
             }
             None
         }
         KeyCode::Char('w') => {
             // Start waveform scan for tracks missing data
             if let Err(e) = app.start_waveform_scan() {
-                app.status_message = Some(format!("Error starting Waveform scan: {}", e));
+                app.ui.status_message = Some(format!("Error starting Waveform scan: {}", e));
             }
             None
         }
         KeyCode::Char('W') => {
             // Force waveform rescan of all tracks
             if let Err(e) = app.start_force_waveform_scan() {
-                app.status_message = Some(format!("Error starting Waveform force scan: {}", e));
+                app.ui.status_message = Some(format!("Error starting Waveform force scan: {}", e));
             }
             None
         }
@@ -104,18 +104,18 @@ pub(super) fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<Play
 fn handle_directory_text_input(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc => {
-            app.editing_directory = false;
-            app.directory_input.clear();
+            app.library_view.editing_directory = false;
+            app.library_view.directory_input.clear();
             app.clear_autocomplete();
             None
         }
         KeyCode::Enter => {
-            if !app.directory_input.is_empty() {
-                let path = std::path::PathBuf::from(&app.directory_input);
+            if !app.library_view.directory_input.is_empty() {
+                let path = std::path::PathBuf::from(&app.library_view.directory_input);
                 app.add_directory(path);
-                app.directory_input.clear();
+                app.library_view.directory_input.clear();
             }
-            app.editing_directory = false;
+            app.library_view.editing_directory = false;
             app.clear_autocomplete();
             None
         }
@@ -132,7 +132,7 @@ fn handle_directory_text_input(app: &mut App, key: KeyEvent) -> Option<PlayerCom
             None
         }
         KeyCode::F(2) => {
-            let start = app.directory_input.clone();
+            let start = app.library_view.directory_input.clone();
             app.open_file_explorer(
                 FilePickerOrigin::AddDirectory,
                 FilePickerMode::Directory,
@@ -151,7 +151,7 @@ fn handle_directory_text_input(app: &mut App, key: KeyEvent) -> Option<PlayerCom
             None
         }
         KeyCode::Char(c) => {
-            app.directory_input.push(c);
+            app.library_view.directory_input.push(c);
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_directory_input,
                 crate::app::app_autocomplete::AutocompleteKind::FilePath,
@@ -159,7 +159,7 @@ fn handle_directory_text_input(app: &mut App, key: KeyEvent) -> Option<PlayerCom
             None
         }
         KeyCode::Backspace => {
-            app.directory_input.pop();
+            app.library_view.directory_input.pop();
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_directory_input,
                 crate::app::app_autocomplete::AutocompleteKind::FilePath,

@@ -41,8 +41,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Calculate exact width needed for meters:
     // 2 (borders) + 1 (padding) + groups + 1 (padding)
     let mut meters_width = 2 + 1; // borders + left padding
-    if !app.level_meter_groups.is_empty() {
-        for group in &app.level_meter_groups {
+    if !app.level_meters.groups.is_empty() {
+        for group in &app.level_meters.groups {
             let num_channels_in_group = group.channels.len();
             // For stereo (2 channels), use 3 chars per meter + 2 chars spacing = 8 total
             // For other configs, use 1 char per channel with max(3) for controls
@@ -156,17 +156,17 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     // Scan progress popup
-    if app.scan_in_progress {
+    if app.scan.in_progress {
         draw_scan_progress_dialog(f, app);
     }
 
     // Maintenance progress dialog
-    if app.maintenance_in_progress {
+    if app.scan.maintenance_in_progress {
         draw_maintenance_progress_dialog(f, app);
     }
 
     // ReplayGain progress dialog
-    if app.replay_gain_manager.in_progress {
+    if app.scan.replay_gain_manager.in_progress {
         draw_replay_gain_progress_dialog(f, app);
     }
 

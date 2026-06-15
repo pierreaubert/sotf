@@ -9,13 +9,13 @@ use std::sync::{Arc, Mutex};
 /// save step to pre-warm the per-channel autocomplete without having
 /// to visit the spinorama EQ screen first.
 pub(crate) fn ensure_spinorama_speakers_loading(app: &mut App) {
-    if app.spinorama_eq.loading_speakers
-        || !app.spinorama_eq.available_speakers.is_empty()
+    if app.spinorama_eq.model.loading_speakers
+        || !app.spinorama_eq.model.available_speakers.is_empty()
         || app.spinorama_eq.speakers_error.is_some()
     {
         return;
     }
-    app.spinorama_eq.loading_speakers = true;
+    app.spinorama_eq.model.loading_speakers = true;
     spawn_spinorama_speaker_load();
 }
 
@@ -46,23 +46,23 @@ pub(super) fn spawn_spinorama_optimization(app: &mut App) {
     use sotf_audio_player::room_eq_types::OptimizationStatus;
 
     // Start new optimization
-    let speaker = match &app.spinorama_eq.selected_speaker {
+    let speaker = match &app.spinorama_eq.model.selected_speaker {
         Some(s) => s.clone(),
         None => {
-            app.spinorama_eq.opt_status = OptimizationStatus::Failed;
-            app.spinorama_eq.opt_error = Some("No speaker selected".to_string());
+            app.spinorama_eq.model.optimization_status = OptimizationStatus::Failed;
+            app.spinorama_eq.model.error_message = Some("No speaker selected".to_string());
             return;
         }
     };
 
-    app.spinorama_eq.opt_status = OptimizationStatus::Running;
-    app.spinorama_eq.opt_error = None;
-    app.spinorama_eq.opt_progress = 0.0;
-    app.spinorama_eq.opt_iteration = 0;
-    app.spinorama_eq.opt_loss = 0.0;
-    app.spinorama_eq.filters.clear();
+    app.spinorama_eq.model.optimization_status = OptimizationStatus::Running;
+    app.spinorama_eq.model.error_message = None;
+    app.spinorama_eq.model.progress = 0.0;
+    app.spinorama_eq.model.current_iteration = 0;
+    app.spinorama_eq.model.current_loss = 0.0;
+    app.spinorama_eq.model.filters.clear();
 
-    let c = &app.spinorama_eq.config;
+    let c = &app.spinorama_eq.model.optimizer_config;
     let num_filters = c.num_filters;
     let min_freq = c.min_freq;
     let max_freq = c.max_freq;

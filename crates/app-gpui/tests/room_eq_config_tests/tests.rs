@@ -98,24 +98,22 @@ fn test_load_from_recording_marks_ctc_fallback_as_measured() {
     }
 
     let dir = tempfile::tempdir().unwrap();
-    let mut recording = RecordingState {
-        recording_directory: Some(dir.path().to_string_lossy().to_string()),
-        ctc_reference_sweep_path: Some(
-            dir.path()
-                .join("ctc_reference_sweep.wav")
-                .to_string_lossy()
-                .to_string(),
-        ),
-        channel_recordings: vec![
-            ctc_ir_recording(0, 0),
-            ctc_ir_recording(0, 1),
-            ctc_ir_recording(1, 0),
-            ctc_ir_recording(1, 1),
-        ],
-        ..Default::default()
-    };
-    recording.recording_config.channel_mappings = vec![0, 1];
-    recording.recording_config.ctc_matrix_strategy = CtcMatrixExportStrategy::RawSweep;
+    let mut recording = RecordingState::default();
+    recording.model.recording_directory = Some(dir.path().to_string_lossy().to_string());
+    recording.model.ctc_reference_sweep_path = Some(
+        dir.path()
+            .join("ctc_reference_sweep.wav")
+            .to_string_lossy()
+            .to_string(),
+    );
+    recording.model.channel_recordings = vec![
+        ctc_ir_recording(0, 0),
+        ctc_ir_recording(0, 1),
+        ctc_ir_recording(1, 0),
+        ctc_ir_recording(1, 1),
+    ];
+    recording.model.recording_config.channel_mappings = vec![0, 1];
+    recording.model.recording_config.ctc_matrix_strategy = CtcMatrixExportStrategy::RawSweep;
 
     let mut room_eq = RoomEqState::default();
     room_eq.load_from_recording(&recording);
@@ -136,11 +134,11 @@ fn test_load_from_recording_marks_ctc_fallback_as_measured() {
 #[test]
 fn test_load_from_recording_applies_probe_delay_results() {
     let mut recording = RecordingState::default();
-    recording.playback_config.device_name = "Output Device".to_string();
-    recording.recording_config.device_name = "Input Device".to_string();
-    recording.probe_capture.sample_rate = 96_000;
-    recording.probe_capture.input_channel = 1;
-    recording.probe_capture.results = Some(DelayProbeResults {
+    recording.model.playback_config.device_name = "Output Device".to_string();
+    recording.model.recording_config.device_name = "Input Device".to_string();
+    recording.model.probe_capture.sample_rate = 96_000;
+    recording.model.probe_capture.input_channel = 1;
+    recording.model.probe_capture.results = Some(DelayProbeResults {
         sample_rate: 96_000,
         channels: vec![
             DelayProbeChannelResult {

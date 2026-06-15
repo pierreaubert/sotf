@@ -106,7 +106,7 @@ mod poll_tests {
     #[test]
     fn test_poll_spinorama_optimization_maps_filter_type_to_long_name() {
         let mut app = App::new(Theme::default(), false);
-        app.spinorama_eq.opt_status = OptimizationStatus::Running;
+        app.spinorama_eq.model.optimization_status = OptimizationStatus::Running;
 
         let slot = OPT_RESULT
             .get_or_init(|| Arc::new(Mutex::new(None)))
@@ -114,8 +114,8 @@ mod poll_tests {
         *slot.lock().unwrap() = Some(Ok(make_result()));
 
         assert!(poll_spinorama_optimization(&mut app));
-        assert_eq!(app.spinorama_eq.filters.len(), 1);
-        assert_eq!(app.spinorama_eq.filters[0].filter_type, "Lowshelf");
-        assert_eq!(app.spinorama_eq.opt_status, OptimizationStatus::Completed);
+        assert_eq!(app.spinorama_eq.model.filters.len(), 1);
+        assert_eq!(app.spinorama_eq.model.filters[0].filter_type, "Lowshelf");
+        assert_eq!(app.spinorama_eq.model.optimization_status, OptimizationStatus::Completed);
     }
 }

@@ -45,21 +45,21 @@ impl App {
         set_input: fn(&mut Self, String),
         kind: AutocompleteKind,
     ) {
-        if self.autocomplete_menu_active {
+        if self.autocomplete.menu_active {
             // Menu is showing — check if the user has already selected a suggestion
             // (inline refresh shows the menu but doesn't set the input to a suggestion)
             let current_input = get_input(self).to_string();
             let already_selected = self
-                .autocomplete_suggestions
-                .get(self.autocomplete_index)
+                .autocomplete.suggestions
+                .get(self.autocomplete.index)
                 .is_some_and(|s| *s == current_input);
             if already_selected {
                 // Cycle forward to next suggestion
-                self.autocomplete_index =
-                    (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+                self.autocomplete.index =
+                    (self.autocomplete.index + 1) % self.autocomplete.suggestions.len();
             }
             // Apply current suggestion
-            let value = self.autocomplete_suggestions[self.autocomplete_index].clone();
+            let value = self.autocomplete.suggestions[self.autocomplete.index].clone();
             set_input(self, value);
             return;
         }
@@ -75,29 +75,29 @@ impl App {
             }
         }
 
-        match self.autocomplete_suggestions.len() {
+        match self.autocomplete.suggestions.len() {
             0 => {
                 // No matches
-                self.status_message = Some("No matches".to_string());
+                self.ui.status_message = Some("No matches".to_string());
             }
             1 => {
                 // Single match — apply directly, no menu
-                let value = self.autocomplete_suggestions[0].clone();
+                let value = self.autocomplete.suggestions[0].clone();
                 set_input(self, value);
                 self.clear_autocomplete();
             }
             _ => {
                 // Multiple matches — complete to common prefix, show menu
-                let prefix = common_prefix(&self.autocomplete_suggestions);
-                self.autocomplete_menu_active = true;
-                self.autocomplete_index = 0;
+                let prefix = common_prefix(&self.autocomplete.suggestions);
+                self.autocomplete.menu_active = true;
+                self.autocomplete.index = 0;
 
                 // If common prefix is longer than input, apply it but don't select any item yet
                 if prefix.len() > input.len() {
                     set_input(self, prefix);
                 } else {
                     // Common prefix doesn't extend input — highlight first item
-                    let value = self.autocomplete_suggestions[self.autocomplete_index].clone();
+                    let value = self.autocomplete.suggestions[self.autocomplete.index].clone();
                     set_input(self, value);
                 }
             }
@@ -106,27 +106,27 @@ impl App {
 
     /// Handle Shift+Tab (BackTab) — cycle backward through menu.
     pub fn zsh_backtab_complete(&mut self, set_input: fn(&mut Self, String)) {
-        if !self.autocomplete_menu_active || self.autocomplete_suggestions.is_empty() {
+        if !self.autocomplete.menu_active || self.autocomplete.suggestions.is_empty() {
             return;
         }
-        if self.autocomplete_index == 0 {
-            self.autocomplete_index = self.autocomplete_suggestions.len() - 1;
+        if self.autocomplete.index == 0 {
+            self.autocomplete.index = self.autocomplete.suggestions.len() - 1;
         } else {
-            self.autocomplete_index -= 1;
+            self.autocomplete.index -= 1;
         }
-        let value = self.autocomplete_suggestions[self.autocomplete_index].clone();
+        let value = self.autocomplete.suggestions[self.autocomplete.index].clone();
         set_input(self, value);
     }
 
     /// Move autocomplete selection down (next suggestion).
     /// Returns true if the event was consumed.
     pub fn autocomplete_down(&mut self, set_input: fn(&mut Self, String)) -> bool {
-        if !self.autocomplete_menu_active || self.autocomplete_suggestions.is_empty() {
+        if !self.autocomplete.menu_active || self.autocomplete.suggestions.is_empty() {
             return false;
         }
-        self.autocomplete_index =
-            (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
-        let value = self.autocomplete_suggestions[self.autocomplete_index].clone();
+        self.autocomplete.index =
+            (self.autocomplete.index + 1) % self.autocomplete.suggestions.len();
+        let value = self.autocomplete.suggestions[self.autocomplete.index].clone();
         set_input(self, value);
         true
     }
@@ -134,15 +134,15 @@ impl App {
     /// Move autocomplete selection up (previous suggestion).
     /// Returns true if the event was consumed.
     pub fn autocomplete_up(&mut self, set_input: fn(&mut Self, String)) -> bool {
-        if !self.autocomplete_menu_active || self.autocomplete_suggestions.is_empty() {
+        if !self.autocomplete.menu_active || self.autocomplete.suggestions.is_empty() {
             return false;
         }
-        if self.autocomplete_index == 0 {
-            self.autocomplete_index = self.autocomplete_suggestions.len() - 1;
+        if self.autocomplete.index == 0 {
+            self.autocomplete.index = self.autocomplete.suggestions.len() - 1;
         } else {
-            self.autocomplete_index -= 1;
+            self.autocomplete.index -= 1;
         }
-        let value = self.autocomplete_suggestions[self.autocomplete_index].clone();
+        let value = self.autocomplete.suggestions[self.autocomplete.index].clone();
         set_input(self, value);
         true
     }
@@ -153,8 +153,8 @@ impl App {
 
     /// Generate filesystem-based autocomplete suggestions from an input path.
     fn generate_autocomplete_suggestions_for_input(&mut self, input: &str) {
-        self.autocomplete_suggestions.clear();
-        self.autocomplete_index = 0;
+        self.autocomplete.suggestions.clear();
+        self.autocomplete.index = 0;
 
         let input = if input.is_empty() { "./" } else { input };
 
@@ -202,31 +202,31 @@ impl App {
                         }
 
                         let suggestion = full_path.to_string_lossy().to_string();
-                        self.autocomplete_suggestions.push(suggestion);
+                        self.autocomplete.suggestions.push(suggestion);
                     }
                 }
             }
         }
 
-        self.autocomplete_suggestions.sort();
+        self.autocomplete.suggestions.sort();
     }
 
     /// Generate preset name suggestions filtered by prefix.
     fn generate_autocomplete_suggestions_for_save_preset_from(&mut self, input: &str) {
-        self.autocomplete_suggestions.clear();
-        self.autocomplete_index = 0;
+        self.autocomplete.suggestions.clear();
+        self.autocomplete.index = 0;
 
         let input_lower = input.trim_end_matches(".json").to_lowercase();
 
-        for preset in &self.available_plugin_presets {
+        for preset in &self.plugin_rack.available_presets {
             let preset_without_ext = preset.trim_end_matches(".json");
             if preset_without_ext.to_lowercase().starts_with(&input_lower) {
-                self.autocomplete_suggestions
+                self.autocomplete.suggestions
                     .push(preset_without_ext.to_string());
             }
         }
 
-        self.autocomplete_suggestions.sort();
+        self.autocomplete.suggestions.sort();
     }
 
     // ========================================================================
@@ -235,9 +235,9 @@ impl App {
 
     /// Clear autocomplete suggestions and menu state.
     pub fn clear_autocomplete(&mut self) {
-        self.autocomplete_suggestions.clear();
-        self.autocomplete_index = 0;
-        self.autocomplete_menu_active = false;
+        self.autocomplete.suggestions.clear();
+        self.autocomplete.index = 0;
+        self.autocomplete.menu_active = false;
     }
 
     /// Refresh autocomplete suggestions inline (as-you-type).
@@ -264,8 +264,8 @@ impl App {
                 self.generate_autocomplete_suggestions_for_save_preset_from(&input);
             }
         }
-        self.autocomplete_menu_active = !self.autocomplete_suggestions.is_empty();
-        self.autocomplete_index = 0;
+        self.autocomplete.menu_active = !self.autocomplete.suggestions.is_empty();
+        self.autocomplete.index = 0;
     }
 }
 
@@ -276,45 +276,45 @@ impl App {
 // These are free functions matching `fn(&App) -> &str` and `fn(&mut App, String)`.
 
 pub fn get_directory_input(app: &App) -> &str {
-    &app.directory_input
+    &app.library_view.directory_input
 }
 pub fn set_directory_input(app: &mut App, val: String) {
-    app.directory_input = val;
+    app.library_view.directory_input = val;
 }
 
 pub fn get_plugin_file_input(app: &App) -> &str {
-    &app.plugin_file_input
+    &app.plugin_rack.file_input
 }
 pub fn set_plugin_file_input(app: &mut App, val: String) {
-    app.plugin_file_input = val;
+    app.plugin_rack.file_input = val;
 }
 
 pub fn get_apo_file_input(app: &App) -> &str {
-    &app.apo_file_input
+    &app.plugin_rack.apo_input
 }
 pub fn set_apo_file_input(app: &mut App, val: String) {
-    app.apo_file_input = val;
+    app.plugin_rack.apo_input = val;
 }
 
 pub fn get_sofa_file_input(app: &App) -> &str {
-    &app.sofa_file_input
+    &app.plugin_rack.sofa_input
 }
 pub fn set_sofa_file_input(app: &mut App, val: String) {
-    app.sofa_file_input = val;
+    app.plugin_rack.sofa_input = val;
 }
 
 pub fn get_headphone_measurement_path(app: &App) -> &str {
-    &app.headphone_eq.measurement_path
+    &app.headphone_eq.model.measurement_path
 }
 pub fn set_headphone_measurement_path(app: &mut App, val: String) {
-    app.headphone_eq.measurement_path = val;
+    app.headphone_eq.model.measurement_path = val;
 }
 
 pub fn get_headphone_custom_target_path(app: &App) -> &str {
-    &app.headphone_eq.custom_target_path
+    &app.headphone_eq.model.custom_target_path
 }
 pub fn set_headphone_custom_target_path(app: &mut App, val: String) {
-    app.headphone_eq.custom_target_path = val;
+    app.headphone_eq.model.custom_target_path = val;
 }
 
 pub fn get_room_eq_file_path(app: &App) -> &str {

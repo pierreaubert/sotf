@@ -41,15 +41,15 @@ impl App {
 
         // Output devices
         if let Some(output_devices) = devices_map.get("output") {
-            self.output_devices = output_devices.clone();
-            if !self.output_devices.is_empty() {
-                self.selected_output_device_index = self
-                    .output_devices
+            self.audio_devices.outputs = output_devices.clone();
+            if !self.audio_devices.outputs.is_empty() {
+                self.audio_devices.selected_output_index = self
+                    .audio_devices.outputs
                     .iter()
                     .position(|d| d.is_default)
                     .unwrap_or(0);
-                self.current_output_device_name = self.output_devices
-                    [self.selected_output_device_index]
+                self.audio_devices.current_output_name = self.audio_devices.outputs
+                    [self.audio_devices.selected_output_index]
                     .name
                     .clone()
                     .into();
@@ -81,15 +81,15 @@ impl App {
             let (id, name) = self.recording.available_playback_devices
                 [self.recording.selected_playback_idx]
                 .clone();
-            self.recording.playback_config.device_name = name;
-            self.recording.playback_config.device_id = id;
+            self.recording.model.playback_config.device_name = name;
+            self.recording.model.playback_config.device_id = id;
         }
         if !self.recording.available_recording_devices.is_empty() {
             let (id, name) = self.recording.available_recording_devices
                 [self.recording.selected_recording_idx]
                 .clone();
-            self.recording.recording_config.device_name = name;
-            self.recording.recording_config.device_id = id;
+            self.recording.model.recording_config.device_name = name;
+            self.recording.model.recording_config.device_id = id;
         }
     }
 
@@ -98,15 +98,15 @@ impl App {
         if let Ok(devices_map) = sotf_audio::devices::get_audio_devices()
             && let Some(output_devices) = devices_map.get("output")
         {
-            self.output_devices = output_devices.clone();
-            if !self.output_devices.is_empty() {
-                self.selected_output_device_index = self
-                    .output_devices
+            self.audio_devices.outputs = output_devices.clone();
+            if !self.audio_devices.outputs.is_empty() {
+                self.audio_devices.selected_output_index = self
+                    .audio_devices.outputs
                     .iter()
                     .position(|d| d.is_default)
                     .unwrap_or(0);
-                self.current_output_device_name = self.output_devices
-                    [self.selected_output_device_index]
+                self.audio_devices.current_output_name = self.audio_devices.outputs
+                    [self.audio_devices.selected_output_index]
                     .name
                     .clone()
                     .into();
@@ -117,13 +117,13 @@ impl App {
     /// Spawn a background mDNS scan for AirPlay + Chromecast receivers.
     /// Idempotent: returns immediately if a scan is already in flight.
     pub fn start_cast_discovery(&mut self) {
-        if self.cast_discovery_running {
+        if self.audio_devices.cast_discovery_running {
             return;
         }
-        self.cast_discovery_running = true;
+        self.audio_devices.cast_discovery_running = true;
 
         let (tx, rx) = std::sync::mpsc::channel();
-        self.cast_discovery_receiver = Some(rx);
+        self.audio_devices.cast_discovery_receiver = Some(rx);
 
         std::thread::Builder::new()
             .name("tui-cast-discovery".into())
@@ -167,22 +167,22 @@ impl App {
     /// Drain the cast-discovery channel; returns true if state changed and the
     /// devices screen should redraw.
     pub fn poll_cast_discovery(&mut self) -> bool {
-        let rx = match &self.cast_discovery_receiver {
+        let rx = match &self.audio_devices.cast_discovery_receiver {
             Some(rx) => rx,
             None => return false,
         };
         match rx.try_recv() {
             Ok(devices) => {
                 log::info!("Cast discovery found {} device(s)", devices.len());
-                self.cast_devices = devices;
-                self.cast_discovery_running = false;
-                self.cast_discovery_receiver = None;
+                self.audio_devices.cast = devices;
+                self.audio_devices.cast_discovery_running = false;
+                self.audio_devices.cast_discovery_receiver = None;
                 true
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => false,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                self.cast_discovery_running = false;
-                self.cast_discovery_receiver = None;
+                self.audio_devices.cast_discovery_running = false;
+                self.audio_devices.cast_discovery_receiver = None;
                 true
             }
         }
@@ -220,37 +220,37 @@ impl App {
             let (id, name) = self.recording.available_playback_devices
                 [self.recording.selected_playback_idx]
                 .clone();
-            self.recording.playback_config.device_name = name;
-            self.recording.playback_config.device_id = id;
+            self.recording.model.playback_config.device_name = name;
+            self.recording.model.playback_config.device_id = id;
         }
         if !self.recording.available_recording_devices.is_empty() {
             let (id, name) = self.recording.available_recording_devices
                 [self.recording.selected_recording_idx]
                 .clone();
-            self.recording.recording_config.device_name = name;
-            self.recording.recording_config.device_id = id;
+            self.recording.model.recording_config.device_name = name;
+            self.recording.model.recording_config.device_id = id;
         }
     }
 
     pub fn select_next_output_device(&mut self) {
-        if !self.output_devices.is_empty() {
-            self.selected_output_device_index =
-                (self.selected_output_device_index + 1) % self.output_devices.len();
+        if !self.audio_devices.outputs.is_empty() {
+            self.audio_devices.selected_output_index =
+                (self.audio_devices.selected_output_index + 1) % self.audio_devices.outputs.len();
         }
     }
 
     pub fn select_previous_output_device(&mut self) {
-        if !self.output_devices.is_empty() {
-            if self.selected_output_device_index == 0 {
-                self.selected_output_device_index = self.output_devices.len() - 1;
+        if !self.audio_devices.outputs.is_empty() {
+            if self.audio_devices.selected_output_index == 0 {
+                self.audio_devices.selected_output_index = self.audio_devices.outputs.len() - 1;
             } else {
-                self.selected_output_device_index -= 1;
+                self.audio_devices.selected_output_index -= 1;
             }
         }
     }
 
     pub fn get_selected_output_device(&self) -> Option<&AudioDevice> {
-        self.output_devices.get(self.selected_output_device_index)
+        self.audio_devices.outputs.get(self.audio_devices.selected_output_index)
     }
 
     /// Get the maximum output channels supported by the selected device
@@ -282,34 +282,34 @@ impl App {
     pub fn get_target_sample_rate(&self, track_sample_rate: u32) -> f64 {
         sotf_audio::select_output_sample_rate(
             track_sample_rate,
-            self.current_output_device_name.as_deref(),
+            self.audio_devices.current_output_name.as_deref(),
         ) as f64
     }
 
     /// Get filtered albums, using cache if available
     pub fn filtered_albums(&mut self) -> &[Album] {
-        if self.needs_filter_update {
-            self.cached_filtered_albums = self.library.get_filtered_albums(
-                &self.search_query,
-                self.library_sort_order,
-                self.channel_filter,
-                self.show_favorites_only,
+        if self.library_view.needs_filter_update {
+            self.library_view.cached_filtered_albums = self.library.get_filtered_albums(
+                &self.library_view.search_query,
+                self.library_view.sort_order,
+                self.library_view.channel_filter,
+                self.library_view.show_favorites_only,
             );
-            self.needs_filter_update = false;
+            self.library_view.needs_filter_update = false;
         }
-        &self.cached_filtered_albums
+        &self.library_view.cached_filtered_albums
     }
 
     /// Mark filtered albums cache as dirty
     pub fn request_filter_update(&mut self) {
-        self.needs_filter_update = true;
+        self.library_view.needs_filter_update = true;
     }
 
     pub fn add_album_to_queue(
         &mut self,
     ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
         // Use a local copy to avoid borrow issues while mutating queue
-        let index = self.selected_album_index;
+        let index = self.library_view.selected_album_index;
         let album = match self.filtered_albums().get(index) {
             Some(a) => a.clone(),
             None => return Ok(None),
@@ -348,22 +348,22 @@ impl App {
             return QueuePlaybackEffect::None;
         }
 
-        let was_playing = self.is_playing;
+        let was_playing = self.playback.is_playing;
         let mut effect = QueuePlaybackEffect::None;
         self.queue.remove(index);
 
         // Adjust current queue index if needed
-        if let Some(current_idx) = self.current_queue_index {
+        if let Some(current_idx) = self.playback.current_queue_index {
             if current_idx == index {
                 // We deleted the currently playing album
                 if self.queue.is_empty() {
-                    self.current_queue_index = None;
-                    self.is_playing = false;
+                    self.playback.current_queue_index = None;
+                    self.playback.is_playing = false;
                     effect = QueuePlaybackEffect::Stop;
                 } else if index < self.queue.len() {
                     // There are albums after the deleted one, stay at same index
                     // (items have shifted down, so index now points to the next album)
-                    self.current_queue_index = Some(index);
+                    self.playback.current_queue_index = Some(index);
                     // Reset to first track of the new album at this position
                     if let Some(entry) = self.queue.get_mut(index) {
                         entry.item.current_track_index = 0;
@@ -373,55 +373,55 @@ impl App {
                     }
                 } else if index > 0 {
                     // Deleted last album, move to previous album
-                    self.current_queue_index = Some(index - 1);
+                    self.playback.current_queue_index = Some(index - 1);
                     if was_playing && let Some(source) = self.current_track_source() {
                         effect = QueuePlaybackEffect::Reload(source);
                     }
                 } else {
-                    self.current_queue_index = None;
-                    self.is_playing = false;
+                    self.playback.current_queue_index = None;
+                    self.playback.is_playing = false;
                     effect = QueuePlaybackEffect::Stop;
                 }
             } else if current_idx > index {
                 // Deleted an album before the current one, adjust index
-                self.current_queue_index = Some(current_idx - 1);
+                self.playback.current_queue_index = Some(current_idx - 1);
             }
         }
-        if self.selected_queue_index >= self.queue.len() && self.selected_queue_index > 0 {
-            self.selected_queue_index = self.queue.len() - 1;
+        if self.queue_view.selected_index >= self.queue.len() && self.queue_view.selected_index > 0 {
+            self.queue_view.selected_index = self.queue.len() - 1;
         }
-        self.selected_queue_track_index = None;
+        self.queue_view.selected_track_index = None;
         effect
     }
 
     pub fn clear_queue(&mut self) {
         self.queue.clear();
-        self.current_queue_index = None;
-        self.selected_queue_index = 0;
-        self.selected_queue_track_index = None;
-        self.is_playing = false;
+        self.playback.current_queue_index = None;
+        self.queue_view.selected_index = 0;
+        self.queue_view.selected_track_index = None;
+        self.playback.is_playing = false;
     }
 
     pub fn toggle_queue_item_expansion(&mut self) {
-        if let Some(entry) = self.queue.get_mut(self.selected_queue_index) {
+        if let Some(entry) = self.queue.get_mut(self.queue_view.selected_index) {
             entry.expanded = !entry.expanded;
             if !entry.expanded {
-                self.selected_queue_track_index = None;
+                self.queue_view.selected_track_index = None;
             }
         }
     }
 
     pub fn expand_queue_item(&mut self) {
-        if let Some(entry) = self.queue.get_mut(self.selected_queue_index) {
+        if let Some(entry) = self.queue.get_mut(self.queue_view.selected_index) {
             entry.expanded = true;
         }
     }
 
     pub fn collapse_queue_item(&mut self) {
-        if self.selected_queue_track_index.is_some() {
+        if self.queue_view.selected_track_index.is_some() {
             // On a track: move back to album header
-            self.selected_queue_track_index = None;
-        } else if let Some(entry) = self.queue.get_mut(self.selected_queue_index) {
+            self.queue_view.selected_track_index = None;
+        } else if let Some(entry) = self.queue.get_mut(self.queue_view.selected_index) {
             entry.expanded = false;
         }
     }
@@ -429,17 +429,17 @@ impl App {
     pub fn select_next_album(&mut self) {
         let count = self.filtered_albums().len();
         if count > 0 {
-            self.selected_album_index = (self.selected_album_index + 1) % count;
+            self.library_view.selected_album_index = (self.library_view.selected_album_index + 1) % count;
         }
     }
 
     pub fn select_previous_album(&mut self) {
         let count = self.filtered_albums().len();
         if count > 0 {
-            if self.selected_album_index == 0 {
-                self.selected_album_index = count - 1;
+            if self.library_view.selected_album_index == 0 {
+                self.library_view.selected_album_index = count - 1;
             } else {
-                self.selected_album_index -= 1;
+                self.library_view.selected_album_index -= 1;
             }
         }
     }
@@ -447,54 +447,54 @@ impl App {
     pub fn page_down_albums(&mut self, page_size: usize) {
         let count = self.filtered_albums().len();
         if count > 0 {
-            self.selected_album_index = (self.selected_album_index + page_size).min(count - 1);
+            self.library_view.selected_album_index = (self.library_view.selected_album_index + page_size).min(count - 1);
         }
     }
 
     pub fn page_up_albums(&mut self, page_size: usize) {
         let count = self.filtered_albums().len();
         if count > 0 {
-            self.selected_album_index = self.selected_album_index.saturating_sub(page_size);
+            self.library_view.selected_album_index = self.library_view.selected_album_index.saturating_sub(page_size);
         }
     }
 
     pub fn page_down_tree(&mut self, page_size: usize) {
-        if self.library_view_mode != LibraryViewMode::TreeView {
+        if self.library_view.mode != LibraryViewMode::TreeView {
             return;
         }
 
         let tree_items = self.get_tree_items();
         if !tree_items.is_empty() {
-            self.selected_tree_index =
-                (self.selected_tree_index + page_size).min(tree_items.len() - 1);
+            self.library_view.selected_tree_index =
+                (self.library_view.selected_tree_index + page_size).min(tree_items.len() - 1);
         }
     }
 
     pub fn page_up_tree(&mut self, page_size: usize) {
-        if self.library_view_mode != LibraryViewMode::TreeView {
+        if self.library_view.mode != LibraryViewMode::TreeView {
             return;
         }
 
         let tree_items = self.get_tree_items();
         if !tree_items.is_empty() {
-            self.selected_tree_index = self.selected_tree_index.saturating_sub(page_size);
+            self.library_view.selected_tree_index = self.library_view.selected_tree_index.saturating_sub(page_size);
         }
     }
 
     pub fn select_next_directory(&mut self) {
         let tree_items = self.get_directory_tree_items();
         if !tree_items.is_empty() {
-            self.selected_directory_index = (self.selected_directory_index + 1) % tree_items.len();
+            self.library_view.selected_directory_index = (self.library_view.selected_directory_index + 1) % tree_items.len();
         }
     }
 
     pub fn select_previous_directory(&mut self) {
         let tree_items = self.get_directory_tree_items();
         if !tree_items.is_empty() {
-            if self.selected_directory_index == 0 {
-                self.selected_directory_index = tree_items.len() - 1;
+            if self.library_view.selected_directory_index == 0 {
+                self.library_view.selected_directory_index = tree_items.len() - 1;
             } else {
-                self.selected_directory_index -= 1;
+                self.library_view.selected_directory_index -= 1;
             }
         }
     }
@@ -502,15 +502,15 @@ impl App {
     pub fn page_down_directories(&mut self, page_size: usize) {
         let tree_items = self.get_directory_tree_items();
         if !tree_items.is_empty() {
-            self.selected_directory_index =
-                (self.selected_directory_index + page_size).min(tree_items.len() - 1);
+            self.library_view.selected_directory_index =
+                (self.library_view.selected_directory_index + page_size).min(tree_items.len() - 1);
         }
     }
 
     pub fn page_up_directories(&mut self, page_size: usize) {
         let tree_items = self.get_directory_tree_items();
         if !tree_items.is_empty() {
-            self.selected_directory_index = self.selected_directory_index.saturating_sub(page_size);
+            self.library_view.selected_directory_index = self.library_view.selected_directory_index.saturating_sub(page_size);
         }
     }
 
@@ -519,27 +519,27 @@ impl App {
             return;
         }
 
-        let entry = &self.queue[self.selected_queue_index];
+        let entry = &self.queue[self.queue_view.selected_index];
         if entry.expanded {
-            match self.selected_queue_track_index {
+            match self.queue_view.selected_track_index {
                 None => {
                     // On album header of expanded album → move to first track
-                    self.selected_queue_track_index = Some(0);
+                    self.queue_view.selected_track_index = Some(0);
                 }
                 Some(ti) if ti + 1 < entry.item.album.tracks.len() => {
                     // Move to next track within album
-                    self.selected_queue_track_index = Some(ti + 1);
+                    self.queue_view.selected_track_index = Some(ti + 1);
                 }
                 Some(_) => {
                     // Past last track → move to next album header
-                    self.selected_queue_track_index = None;
-                    self.selected_queue_index = (self.selected_queue_index + 1) % self.queue.len();
+                    self.queue_view.selected_track_index = None;
+                    self.queue_view.selected_index = (self.queue_view.selected_index + 1) % self.queue.len();
                 }
             }
         } else {
             // Collapsed album → move to next album
-            self.selected_queue_track_index = None;
-            self.selected_queue_index = (self.selected_queue_index + 1) % self.queue.len();
+            self.queue_view.selected_track_index = None;
+            self.queue_view.selected_index = (self.queue_view.selected_index + 1) % self.queue.len();
         }
     }
 
@@ -548,28 +548,28 @@ impl App {
             return;
         }
 
-        match self.selected_queue_track_index {
+        match self.queue_view.selected_track_index {
             Some(0) => {
                 // First track → move back to album header
-                self.selected_queue_track_index = None;
+                self.queue_view.selected_track_index = None;
             }
             Some(ti) => {
                 // Move to previous track
-                self.selected_queue_track_index = Some(ti - 1);
+                self.queue_view.selected_track_index = Some(ti - 1);
             }
             None => {
                 // On album header → move to previous album
-                if self.selected_queue_index == 0 {
-                    self.selected_queue_index = self.queue.len() - 1;
+                if self.queue_view.selected_index == 0 {
+                    self.queue_view.selected_index = self.queue.len() - 1;
                 } else {
-                    self.selected_queue_index -= 1;
+                    self.queue_view.selected_index -= 1;
                 }
                 // If the previous album is expanded, land on its last track
-                let prev = &self.queue[self.selected_queue_index];
+                let prev = &self.queue[self.queue_view.selected_index];
                 if prev.expanded && !prev.item.album.tracks.is_empty() {
-                    self.selected_queue_track_index = Some(prev.item.album.tracks.len() - 1);
+                    self.queue_view.selected_track_index = Some(prev.item.album.tracks.len() - 1);
                 } else {
-                    self.selected_queue_track_index = None;
+                    self.queue_view.selected_track_index = None;
                 }
             }
         }
@@ -579,14 +579,14 @@ impl App {
         match self.library.add_directory(path) {
             Ok(needs_scan) => {
                 if needs_scan {
-                    self.needs_rescan = true;
-                    self.status_message = Some("Directory added. Press 's' to scan.".to_string());
+                    self.scan.needs_rescan = true;
+                    self.ui.status_message = Some("Directory added. Press 's' to scan.".to_string());
                 } else {
-                    self.status_message = Some("Directory already exists.".to_string());
+                    self.ui.status_message = Some("Directory already exists.".to_string());
                 }
             }
             Err(msg) => {
-                self.status_message = Some(msg);
+                self.ui.status_message = Some(msg);
             }
         }
     }
@@ -599,13 +599,13 @@ impl App {
     pub fn remove_selected_directory(&mut self) {
         if self
             .library
-            .remove_directory(self.selected_directory_index)
+            .remove_directory(self.library_view.selected_directory_index)
             .is_some()
         {
-            if self.selected_directory_index >= self.library.directories.len()
-                && self.selected_directory_index > 0
+            if self.library_view.selected_directory_index >= self.library.directories.len()
+                && self.library_view.selected_directory_index > 0
             {
-                self.selected_directory_index = self.library.directories.len() - 1;
+                self.library_view.selected_directory_index = self.library.directories.len() - 1;
             }
             // Reload library from database (tracks already removed by remove_directory)
             if let Err(e) = self.load_library_from_database() {
@@ -616,7 +616,7 @@ impl App {
 
     pub fn toggle_directory_expansion(&mut self) {
         let tree_items = self.get_directory_tree_items();
-        if let Some((path, _, _)) = tree_items.get(self.selected_directory_index) {
+        if let Some((path, _, _)) = tree_items.get(self.library_view.selected_directory_index) {
             self.library.toggle_directory_expanded(path);
         }
     }
@@ -627,10 +627,10 @@ impl App {
     }
 
     pub fn clean_library_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
-        self.maintenance_in_progress = true;
-        self.maintenance_progress_checked = 0;
-        self.maintenance_progress_total = 0;
-        self.status_message = Some("Starting database maintenance...".to_string());
+        self.scan.maintenance_in_progress = true;
+        self.scan.maintenance_progress_checked = 0;
+        self.scan.maintenance_progress_total = 0;
+        self.ui.status_message = Some("Starting database maintenance...".to_string());
 
         // Create shared progress state
         let progress_checked = Arc::new(Mutex::new(0usize));
@@ -653,28 +653,28 @@ impl App {
 
         // Update app state with final progress
         if let Ok(pc) = progress_checked.lock() {
-            self.maintenance_progress_checked = *pc;
+            self.scan.maintenance_progress_checked = *pc;
         }
         if let Ok(pt) = progress_total.lock() {
-            self.maintenance_progress_total = *pt;
+            self.scan.maintenance_progress_total = *pt;
         }
 
-        self.maintenance_in_progress = false;
+        self.scan.maintenance_in_progress = false;
 
         match &result {
             Ok(removed) => {
                 if *removed > 0 {
-                    self.status_message =
+                    self.ui.status_message =
                         Some(format!("Cleaned {} missing tracks from database", removed));
                     log::info!("Database maintenance: removed {} missing tracks", removed);
                 } else {
-                    self.status_message =
+                    self.ui.status_message =
                         Some("Database is clean - no missing tracks found".to_string());
                     log::info!("Database maintenance: no missing tracks found");
                 }
             }
             Err(e) => {
-                self.status_message = Some(format!("Database maintenance failed: {}", e));
+                self.ui.status_message = Some(format!("Database maintenance failed: {}", e));
                 log::error!("Database maintenance failed: {}", e);
             }
         }
@@ -688,19 +688,19 @@ impl App {
     pub fn save_config(&self) -> Result<(), Box<dyn std::error::Error>> {
         let config = sotf_audio_player::config::AppConfig {
             version: 1,
-            output_device: self.current_output_device_name.clone(),
+            output_device: self.audio_devices.current_output_name.clone(),
             queue: self
                 .queue
                 .iter()
                 .map(|entry| (entry.item.album.artist(), entry.item.album.title.clone()))
                 .collect(),
-            queue_index: self.current_queue_index,
+            queue_index: self.playback.current_queue_index,
             track_index: self
-                .current_queue_index
+                .playback.current_queue_index
                 .and_then(|idx| self.queue.get(idx))
                 .map(|entry| entry.item.current_track_index)
                 .unwrap_or(0),
-            plugin_preset: self.last_loaded_preset.clone(),
+            plugin_preset: self.plugin_rack.last_loaded_preset.clone(),
         };
 
         sotf_audio_player::config::save_app_config(&config)?;
@@ -714,14 +714,14 @@ impl App {
 
         // Restore output device
         if let Some(device_name) = &config.output_device {
-            self.current_output_device_name = Some(device_name.clone());
+            self.audio_devices.current_output_name = Some(device_name.clone());
             // Find the device index
             if let Some(idx) = self
-                .output_devices
+                .audio_devices.outputs
                 .iter()
                 .position(|d| d.name == *device_name)
             {
-                self.selected_output_device_index = idx;
+                self.audio_devices.selected_output_index = idx;
             }
         }
 
@@ -742,7 +742,7 @@ impl App {
         if let Some(queue_idx) = config.queue_index
             && queue_idx < self.queue.len()
         {
-            self.current_queue_index = Some(queue_idx);
+            self.playback.current_queue_index = Some(queue_idx);
             // Restore track position within album
             if let Some(entry) = self.queue.get_mut(queue_idx)
                 && config.track_index < entry.item.album.tracks.len()
@@ -755,12 +755,12 @@ impl App {
         if let Some(preset_name) = &config.plugin_preset {
             // Use the plugin chain's own load method
             if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
-                match self.plugin_graph.load_from_file(&presets_dir, preset_name) {
+                match self.plugin_rack.graph.load_from_file(&presets_dir, preset_name) {
                     Ok(warnings) => {
                         // Update BinauralDecoder input channels after loading
-                        self.plugin_graph.update_channel_dependent_plugins();
+                        self.plugin_rack.graph.update_channel_dependent_plugins();
 
-                        self.last_loaded_preset = Some(preset_name.clone());
+                        self.plugin_rack.last_loaded_preset = Some(preset_name.clone());
                         self.request_plugin_update();
                         if warnings.is_empty() {
                             log::info!("Restored plugin preset: {}", preset_name);
@@ -773,7 +773,7 @@ impl App {
                             for w in &warnings {
                                 log::warn!("  {}", w);
                             }
-                            self.status_message = Some(format!(
+                            self.ui.status_message = Some(format!(
                                 "Preset '{}': {} plugin(s) skipped",
                                 preset_name,
                                 warnings.len()
@@ -790,8 +790,8 @@ impl App {
         log::info!(
             "Loaded app configuration: {} items in queue, device: {:?}, preset: {:?}",
             self.queue.len(),
-            self.current_output_device_name,
-            self.last_loaded_preset
+            self.audio_devices.current_output_name,
+            self.plugin_rack.last_loaded_preset
         );
         Ok(())
     }
@@ -811,7 +811,7 @@ impl App {
         let mut artists: Vec<_> = artist_map.into_iter().collect();
         artists.sort_by(|a, b| a.0.cmp(&b.0));
 
-        self.artist_tree = artists
+        self.library_view.artist_tree = artists
             .into_iter()
             .map(|(artist, album_indices)| ArtistNode {
                 artist,
@@ -820,42 +820,42 @@ impl App {
             })
             .collect();
 
-        self.selected_tree_index = 0;
+        self.library_view.selected_tree_index = 0;
     }
 
     /// Toggle tree view mode
     pub fn toggle_library_view_mode(&mut self) {
-        self.library_view_mode = match self.library_view_mode {
+        self.library_view.mode = match self.library_view.mode {
             LibraryViewMode::Flat => LibraryViewMode::TreeView,
             LibraryViewMode::TreeView => LibraryViewMode::Flat,
         };
-        self.selected_tree_index = 0;
+        self.library_view.selected_tree_index = 0;
     }
 
     /// Set library sort order
     pub fn set_library_sort_order(&mut self, order: LibrarySortOrder) {
-        self.library_sort_order = order;
+        self.library_view.sort_order = order;
         // Reset selection to top when changing sort order
-        self.selected_album_index = 0;
-        self.selected_tree_index = 0;
+        self.library_view.selected_album_index = 0;
+        self.library_view.selected_tree_index = 0;
         // Mark cache as dirty
         self.request_filter_update();
         // Rebuild tree view if active (as sort order affects tree structure)
-        if self.library_view_mode == LibraryViewMode::TreeView {
+        if self.library_view.mode == LibraryViewMode::TreeView {
             self.rebuild_artist_tree();
         }
     }
 
     /// Set channel filter
     pub fn set_channel_filter(&mut self, filter: ChannelFilter) {
-        self.channel_filter = filter;
+        self.library_view.channel_filter = filter;
         // Reset selection to top when changing filter
-        self.selected_album_index = 0;
-        self.selected_tree_index = 0;
+        self.library_view.selected_album_index = 0;
+        self.library_view.selected_tree_index = 0;
         // Mark cache as dirty
         self.request_filter_update();
         // Rebuild tree view if active
-        if self.library_view_mode == LibraryViewMode::TreeView {
+        if self.library_view.mode == LibraryViewMode::TreeView {
             self.rebuild_artist_tree();
         }
     }
@@ -886,7 +886,7 @@ impl App {
             .filter(|&count| count > 2)
             .collect();
 
-        self.channel_filter = match self.channel_filter {
+        self.library_view.channel_filter = match self.library_view.channel_filter {
             ChannelFilter::All => ChannelFilter::Mono,
             ChannelFilter::Mono => ChannelFilter::Stereo,
             ChannelFilter::Stereo => ChannelFilter::Surround,
@@ -915,27 +915,27 @@ impl App {
             }
         };
         // Reset selection
-        self.selected_album_index = 0;
-        self.selected_tree_index = 0;
+        self.library_view.selected_album_index = 0;
+        self.library_view.selected_tree_index = 0;
         // Mark cache as dirty
         self.request_filter_update();
         // Rebuild tree view if active
-        if self.library_view_mode == LibraryViewMode::TreeView {
+        if self.library_view.mode == LibraryViewMode::TreeView {
             self.rebuild_artist_tree();
         }
     }
 
     /// Toggle expansion of the currently selected artist node
     pub fn toggle_artist_expansion(&mut self) {
-        if self.library_view_mode != LibraryViewMode::TreeView {
+        if self.library_view.mode != LibraryViewMode::TreeView {
             return;
         }
 
         // Get the filtered tree items to find which artist we're on
         let tree_items = self.get_tree_items();
-        if let Some(TreeItem::Artist { name, .. }) = tree_items.get(self.selected_tree_index) {
+        if let Some(TreeItem::Artist { name, .. }) = tree_items.get(self.library_view.selected_tree_index) {
             // Find this artist in the tree and toggle expansion
-            for artist_node in &mut self.artist_tree {
+            for artist_node in &mut self.library_view.artist_tree {
                 if artist_node.artist == *name {
                     artist_node.expanded = !artist_node.expanded;
                     // Note: This doesn't change the set of albums, just visibility in tree
@@ -952,11 +952,11 @@ impl App {
         use sotf_audio_player::AlbumChannelType;
         use std::collections::HashSet;
 
-        let mut indices: HashSet<usize> = if self.search_query.is_empty() {
+        let mut indices: HashSet<usize> = if self.library_view.search_query.is_empty() {
             (0..self.library.albums.len()).collect()
         } else {
             // Get filtered albums and find their indices in the library
-            let filtered = self.library.search_albums(&self.search_query);
+            let filtered = self.library.search_albums(&self.library_view.search_query);
             self.library
                 .albums
                 .iter()
@@ -969,7 +969,7 @@ impl App {
         // Apply channel filter
         indices.retain(|&idx| {
             if let Some(album) = self.library.albums.get(idx) {
-                match self.channel_filter {
+                match self.library_view.channel_filter {
                     ChannelFilter::All => true,
                     ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
                     ChannelFilter::Stereo => album.uniform_channel_count() == Some(2),

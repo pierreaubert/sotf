@@ -264,4 +264,27 @@ mod tests {
         let (_dir, path) = temp_dir_with_files(&[]);
         assert!(find_album_art(&path).is_none());
     }
+
+    #[test]
+    fn find_album_art_prefers_cover_over_front() {
+        let (_dir, path) = temp_dir_with_files(&["front.png", "cover.jpg"]);
+        let found = find_album_art(&path);
+        assert_eq!(found, Some(path.join("cover.jpg")));
+    }
+
+    #[test]
+    fn common_ancestor_of_single_path_is_that_path() {
+        let a = PathBuf::from("/music/album/cd1");
+        assert_eq!(common_ancestor(&[&a]), Some(a));
+    }
+
+    #[test]
+    fn common_ancestor_finds_shared_parent() {
+        let a = PathBuf::from("/music/album/cd1/track.wav");
+        let b = PathBuf::from("/music/album/cd2/track.wav");
+        assert_eq!(
+            common_ancestor(&[&a, &b]),
+            Some(PathBuf::from("/music/album"))
+        );
+    }
 }

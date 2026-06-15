@@ -84,19 +84,22 @@ pub(super) fn load_room_eq_recording_fixture(fixture_dir: &Path) -> Result<Recor
     }
 
     let mut recording = RecordingState {
-        recording_directory: Some(fixture_dir.to_string_lossy().into_owned()),
+        model: sotf_audio_player::ui_models::recording::RecordingScreenModel {
+            recording_directory: Some(fixture_dir.to_string_lossy().into_owned()),
+            ..Default::default()
+        },
         ..RecordingState::default()
     };
-    recording.playback_config.num_channels = names.len();
-    recording.playback_config.channel_mappings = names
+    recording.model.playback_config.num_channels = names.len();
+    recording.model.playback_config.channel_mappings = names
         .iter()
         .enumerate()
         .map(|(idx, name)| ChannelMapping::single(idx + 1, name.clone()))
         .collect();
-    recording.recording_config.num_channels = 1;
-    recording.recording_config.channel_mappings = vec![0];
+    recording.model.recording_config.num_channels = 1;
+    recording.model.recording_config.channel_mappings = vec![0];
 
-    recording.channel_recordings = names
+    recording.model.channel_recordings = names
         .iter()
         .enumerate()
         .map(|(idx, name)| -> Result<ChannelRecording> {
@@ -138,10 +141,10 @@ pub(super) fn load_room_eq_recording_fixture(fixture_dir: &Path) -> Result<Recor
         })
         .collect::<Result<Vec<_>>>()?;
 
-    recording.step = RecordingStep::Evaluating;
-    recording.recording_progress = 1.0;
-    recording.current_recording_channel = None;
-    recording.status_message = format!("QA RoomEQ fixture loaded: {} channels", names.len());
+    recording.model.step = RecordingStep::Evaluating;
+    recording.model.recording_progress = 1.0;
+    recording.model.current_recording_channel = None;
+    recording.model.status_message = format!("QA RoomEQ fixture loaded: {} channels", names.len());
 
     Ok(recording)
 }

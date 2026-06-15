@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 pub(super) fn spawn_probe_capture(app: &mut App) {
     use sotf_audio_player::recording_types::ProbeCaptureStatus;
 
-    if app.recording.channel_recordings.is_empty() {
-        app.recording.probe_capture.status =
+    if app.recording.model.channel_recordings.is_empty() {
+        app.recording.model.probe_capture.status =
             ProbeCaptureStatus::Failed("Record sweeps first (Capture step)".to_string());
         return;
     }
@@ -20,7 +20,7 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
     // layout (e.g. 9.1.6 × 2 mic positions × 1 mic = 32 entries for a
     // 16-speaker setup) and tries to address hardware outputs that
     // don't exist.
-    let mappings = &app.recording.playback_config.channel_mappings;
+    let mappings = &app.recording.model.playback_config.channel_mappings;
     let channel_names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
     let channel_indices: Vec<u16> = mappings
         .iter()
@@ -38,18 +38,18 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
         format!("{}/probe_all_channels.wav", base_dir)
     };
 
-    let probe_ms = app.recording.probe_capture.probe_duration_ms;
-    let silence_ms = app.recording.probe_capture.silence_duration_ms;
-    let sample_rate = app.recording.probe_capture.sample_rate;
-    let input_channel = app.recording.probe_capture.input_channel;
-    let signal_level_db = app.recording.signal_level_db;
-    let output_device = Some(app.recording.playback_config.device_name.clone());
-    let input_device = Some(app.recording.recording_config.device_name.clone());
+    let probe_ms = app.recording.model.probe_capture.probe_duration_ms;
+    let silence_ms = app.recording.model.probe_capture.silence_duration_ms;
+    let sample_rate = app.recording.model.probe_capture.sample_rate;
+    let input_channel = app.recording.model.probe_capture.input_channel;
+    let signal_level_db = app.recording.model.signal_level_db;
+    let output_device = Some(app.recording.model.playback_config.device_name.clone());
+    let input_device = Some(app.recording.model.recording_config.device_name.clone());
 
-    app.recording.probe_capture.status = ProbeCaptureStatus::Running {
+    app.recording.model.probe_capture.status = ProbeCaptureStatus::Running {
         started_at_ms: now_ms(),
     };
-    app.recording.probe_capture.results = None;
+    app.recording.model.probe_capture.results = None;
 
     let slot = PROBE_CAPTURE_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
@@ -85,24 +85,24 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
 pub(super) fn spawn_spl_calibration_capture(app: &mut App) {
     use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
 
-    let cal = &mut app.recording.spl_calibration_capture;
+    let cal = &mut app.recording.model.spl_calibration_capture;
     let reference_freq_hz = cal.reference_freq_hz;
     let tone_amp = cal.tone_amp;
     let duration_s = cal.duration_s;
     let sample_rate = cal.sample_rate;
     let output_channel = cal.output_channel;
     let input_channel = cal.input_channel;
-    let output_device = Some(app.recording.playback_config.device_name.clone());
-    let input_device = Some(app.recording.recording_config.device_name.clone());
+    let output_device = Some(app.recording.model.playback_config.device_name.clone());
+    let input_device = Some(app.recording.model.recording_config.device_name.clone());
 
     // Reset the cancel flag and capture status so the new run starts
     // clean. `engine_result` is cleared on every fresh capture.
     app.recording
-        .spl_cancel_requested
+        .model.spl_cancel_requested
         .store(false, std::sync::atomic::Ordering::Relaxed);
-    let cancel_flag = app.recording.spl_cancel_requested.clone();
+    let cancel_flag = app.recording.model.spl_cancel_requested.clone();
 
-    let cal = &mut app.recording.spl_calibration_capture;
+    let cal = &mut app.recording.model.spl_calibration_capture;
     cal.status = SplCalibrationCaptureStatus::Running {
         started_at_ms: now_ms(),
     };
@@ -136,9 +136,9 @@ pub(super) fn spawn_spl_calibration_capture(app: &mut App) {
 pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
     use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
 
-    let mappings = &app.recording.playback_config.channel_mappings;
+    let mappings = &app.recording.model.playback_config.channel_mappings;
     if mappings.is_empty() {
-        app.recording.bass_anchor_capture.status =
+        app.recording.model.bass_anchor_capture.status =
             BassAnchorCaptureStatus::Failed("Configure speakers first (Config step)".to_string());
         return;
     }
@@ -157,16 +157,16 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
         format!("{}/bass_anchor_all_channels.wav", base_dir)
     };
 
-    let bass_freq_hz = app.recording.bass_anchor_capture.bass_freq_hz;
-    let bass_duration_s = app.recording.bass_anchor_capture.bass_duration_s;
-    let fade_ms = app.recording.bass_anchor_capture.fade_ms;
-    let num_windows = app.recording.bass_anchor_capture.num_windows;
-    let silence_ms = app.recording.bass_anchor_capture.silence_duration_ms;
-    let sample_rate = app.recording.bass_anchor_capture.sample_rate;
-    let input_channel = app.recording.bass_anchor_capture.input_channel;
+    let bass_freq_hz = app.recording.model.bass_anchor_capture.bass_freq_hz;
+    let bass_duration_s = app.recording.model.bass_anchor_capture.bass_duration_s;
+    let fade_ms = app.recording.model.bass_anchor_capture.fade_ms;
+    let num_windows = app.recording.model.bass_anchor_capture.num_windows;
+    let silence_ms = app.recording.model.bass_anchor_capture.silence_duration_ms;
+    let sample_rate = app.recording.model.bass_anchor_capture.sample_rate;
+    let input_channel = app.recording.model.bass_anchor_capture.input_channel;
     let loopback_input_channel =
         app.recording
-            .recording_config
+            .model.recording_config
             .ctc_loopback_input_channel
             .and_then(|c| match u16::try_from(c) {
                 Ok(v) => Some(v),
@@ -177,14 +177,14 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
                     None
                 }
             });
-    let signal_level_db = app.recording.signal_level_db;
-    let output_device = Some(app.recording.playback_config.device_name.clone());
-    let input_device = Some(app.recording.recording_config.device_name.clone());
+    let signal_level_db = app.recording.model.signal_level_db;
+    let output_device = Some(app.recording.model.playback_config.device_name.clone());
+    let input_device = Some(app.recording.model.recording_config.device_name.clone());
 
-    app.recording.bass_anchor_capture.status = BassAnchorCaptureStatus::Running {
+    app.recording.model.bass_anchor_capture.status = BassAnchorCaptureStatus::Running {
         started_at_ms: now_ms(),
     };
-    app.recording.bass_anchor_capture.results = None;
+    app.recording.model.bass_anchor_capture.results = None;
 
     let slot = BASS_ANCHOR_CAPTURE_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))

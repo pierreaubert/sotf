@@ -8,7 +8,7 @@ impl App {
         let mut items = Vec::new();
         let filtered_indices = self.filtered_album_indices();
 
-        for artist_node in &self.artist_tree {
+        for artist_node in &self.library_view.artist_tree {
             // Filter albums for this artist
             let visible_albums: Vec<usize> = artist_node
                 .album_indices
@@ -47,46 +47,46 @@ impl App {
 
     /// Select next item in tree view
     pub fn select_next_tree_item(&mut self) {
-        if self.library_view_mode != LibraryViewMode::TreeView {
+        if self.library_view.mode != LibraryViewMode::TreeView {
             return;
         }
 
         let tree_items = self.get_tree_items();
         if !tree_items.is_empty() {
-            self.selected_tree_index = (self.selected_tree_index + 1) % tree_items.len();
+            self.library_view.selected_tree_index = (self.library_view.selected_tree_index + 1) % tree_items.len();
         }
     }
 
     /// Select previous item in tree view
     pub fn select_previous_tree_item(&mut self) {
-        if self.library_view_mode != LibraryViewMode::TreeView {
+        if self.library_view.mode != LibraryViewMode::TreeView {
             return;
         }
 
         let tree_items = self.get_tree_items();
         if !tree_items.is_empty() {
-            if self.selected_tree_index == 0 {
-                self.selected_tree_index = tree_items.len() - 1;
+            if self.library_view.selected_tree_index == 0 {
+                self.library_view.selected_tree_index = tree_items.len() - 1;
             } else {
-                self.selected_tree_index -= 1;
+                self.library_view.selected_tree_index -= 1;
             }
         }
     }
 
     /// Add the selected item (artist or album) to queue from tree view
     pub fn add_tree_selection_to_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
-        if self.library_view_mode != LibraryViewMode::TreeView {
+        if self.library_view.mode != LibraryViewMode::TreeView {
             return None;
         }
 
         let tree_items = self.get_tree_items();
         let filtered_indices = self.filtered_album_indices();
 
-        if let Some(item) = tree_items.get(self.selected_tree_index) {
+        if let Some(item) = tree_items.get(self.library_view.selected_tree_index) {
             match item {
                 TreeItem::Artist { name, .. } => {
                     // Find this artist in the tree and add their filtered albums
-                    for artist_node in &self.artist_tree {
+                    for artist_node in &self.library_view.artist_tree {
                         if artist_node.artist == *name {
                             // Add only albums that pass the current filter
                             for &album_idx in &artist_node.album_indices {

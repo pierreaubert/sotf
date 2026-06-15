@@ -14,11 +14,11 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
     }
 
     // Get current track waveform and duration
-    let (waveform, duration, position) = if let Some(idx) = app.current_queue_index {
+    let (waveform, duration, position) = if let Some(idx) = app.playback.current_queue_index {
         if let Some(entry) = app.queue.get(idx) {
             if let Some(track) = entry.item.current_track() {
                 let waveform = track.waveform.as_deref().map(|samples| &samples[..]);
-                (waveform, track.duration_secs, app.position_secs)
+                (waveform, track.duration_secs, app.playback.position_secs)
             } else {
                 (None, None, 0.0)
             }
@@ -30,12 +30,12 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
     };
 
     // Transport buttons
-    let buttons = if app.is_playing {
+    let buttons = if app.playback.is_playing {
         "\u{23EE}  \u{23F8}  \u{23ED}"
     } else {
         "\u{23EE}  \u{25B6}  \u{23ED}"
     };
-    let button_style = if app.is_playing {
+    let button_style = if app.playback.is_playing {
         Style::default().fg(app.theme.playing_indicator)
     } else {
         Style::default().fg(app.theme.fg_primary)

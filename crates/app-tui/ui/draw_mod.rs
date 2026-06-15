@@ -237,7 +237,7 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
 }
 
 pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
-    let Some(editor) = &app.metadata_editor else {
+    let Some(editor) = &app.modal.metadata_editor else {
         return;
     };
 
@@ -421,7 +421,7 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
 }
 
 pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {
-    if let Some(error_msg) = &app.error_message {
+    if let Some(error_msg) = &app.ui.error_message {
         // Create a centered modal (60% width, auto height based on content)
         let area = f.area();
         let modal_width = (area.width as f32 * 0.6) as u16;
@@ -530,7 +530,7 @@ pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {
 pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
     let area = f.area();
     // Dynamic height: 2 (header) + 1 (blank) + conflicts + 1 (blank) + 3 (options) + 1 (blank) + 1 (help) + 3 (border)
-    let conflict_lines = app.channel_conflicts.len().max(1);
+    let conflict_lines = app.modal.channel_conflicts.len().max(1);
     let content_height = 2 + 1 + conflict_lines + 1 + 3 + 1 + 1;
     let modal_width = 56u16.min(area.width.saturating_sub(4));
     let modal_height = (content_height as u16 + 3).min(area.height.saturating_sub(4));
@@ -576,14 +576,14 @@ pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
     lines.push(Line::from(Span::styled(
         format!(
             "This track has {} channels but these plugins",
-            app.channel_conflict_track_channels
+            app.modal.channel_conflict_track_channels
         ),
         text_style,
     )));
     lines.push(Line::from(Span::styled("are incompatible:", text_style)));
     lines.push(Line::from(""));
 
-    for conflict in &app.channel_conflicts {
+    for conflict in &app.modal.channel_conflicts {
         lines.push(Line::from(Span::styled(
             format!(
                 "  {} (requires {}ch, got {}ch)",
@@ -604,7 +604,7 @@ pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
     ];
 
     for (i, option) in options.iter().enumerate() {
-        let selected = i == app.channel_conflict_selection;
+        let selected = i == app.modal.channel_conflict_selection;
         let prefix = if selected { "▸ " } else { "  " };
         let style = if selected {
             highlight_style

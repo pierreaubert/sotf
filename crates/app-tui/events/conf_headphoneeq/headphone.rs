@@ -100,7 +100,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 app.headphone_eq.step_tab_focused = false;
                 // Auto-start optimization when entering the Optimize step content
                 if app.headphone_eq.step == HeadphoneEqStep::Optimize
-                    && app.headphone_eq.opt_status == OptimizationStatus::Idle
+                    && app.headphone_eq.model.optimization_status == OptimizationStatus::Idle
                 {
                     spawn_headphone_eq_optimization(app);
                 }
@@ -119,33 +119,33 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         app.headphone_eq.editing_search = false;
                         // If Enter and a headphone is highlighted, select it
                         if key.code == KeyCode::Enter
-                            && !app.headphone_eq.filtered_headphones.is_empty()
+                            && !app.headphone_eq.model.headphone_suggestions.is_empty()
                         {
                             let idx = app.headphone_eq.selected_headphone_idx;
                             if let Some(name) =
-                                app.headphone_eq.filtered_headphones.get(idx).cloned()
+                                app.headphone_eq.model.headphone_suggestions.get(idx).cloned()
                             {
-                                app.headphone_eq.selected_headphone = Some(name.clone());
+                                app.headphone_eq.model.selected_headphone = Some(name.clone());
                                 // Start download
-                                app.headphone_eq.loading_download = true;
+                                app.headphone_eq.model.loading_download = true;
                                 spawn_headphone_download(&name);
                             }
                         }
                     }
-                    KeyCode::Down if !app.headphone_eq.filtered_headphones.is_empty() => {
+                    KeyCode::Down if !app.headphone_eq.model.headphone_suggestions.is_empty() => {
                         app.headphone_eq.selected_headphone_idx =
                             (app.headphone_eq.selected_headphone_idx + 1)
-                                .min(app.headphone_eq.filtered_headphones.len() - 1);
+                                .min(app.headphone_eq.model.headphone_suggestions.len() - 1);
                     }
                     KeyCode::Up if app.headphone_eq.selected_headphone_idx > 0 => {
                         app.headphone_eq.selected_headphone_idx -= 1;
                     }
                     KeyCode::Backspace => {
-                        app.headphone_eq.search_query.pop();
+                        app.headphone_eq.model.headphone_search.pop();
                         app.headphone_eq.update_filter();
                     }
                     KeyCode::Char(c) => {
-                        app.headphone_eq.search_query.push(c);
+                        app.headphone_eq.model.headphone_search.push(c);
                         app.headphone_eq.update_filter();
                     }
                     _ => {}
@@ -181,14 +181,14 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         );
                     }
                     KeyCode::Backspace => {
-                        app.headphone_eq.measurement_path.pop();
+                        app.headphone_eq.model.measurement_path.pop();
                         app.refresh_autocomplete_inline(
                             crate::app::app_autocomplete::get_headphone_measurement_path,
                             crate::app::app_autocomplete::AutocompleteKind::FilePath,
                         );
                     }
                     KeyCode::F(2) => {
-                        let start = app.headphone_eq.measurement_path.clone();
+                        let start = app.headphone_eq.model.measurement_path.clone();
                         app.open_file_explorer(
                             FilePickerOrigin::HeadphoneMeasurement,
                             FilePickerMode::File,
@@ -198,7 +198,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         );
                     }
                     KeyCode::Char(c) => {
-                        app.headphone_eq.measurement_path.push(c);
+                        app.headphone_eq.model.measurement_path.push(c);
                         app.refresh_autocomplete_inline(
                             crate::app::app_autocomplete::get_headphone_measurement_path,
                             crate::app::app_autocomplete::AutocompleteKind::FilePath,
@@ -237,14 +237,14 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         );
                     }
                     KeyCode::Backspace => {
-                        app.headphone_eq.custom_target_path.pop();
+                        app.headphone_eq.model.custom_target_path.pop();
                         app.refresh_autocomplete_inline(
                             crate::app::app_autocomplete::get_headphone_custom_target_path,
                             crate::app::app_autocomplete::AutocompleteKind::FilePath,
                         );
                     }
                     KeyCode::F(2) => {
-                        let start = app.headphone_eq.custom_target_path.clone();
+                        let start = app.headphone_eq.model.custom_target_path.clone();
                         app.open_file_explorer(
                             FilePickerOrigin::HeadphoneCustomTarget,
                             FilePickerMode::File,
@@ -254,7 +254,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         );
                     }
                     KeyCode::Char(c) => {
-                        app.headphone_eq.custom_target_path.push(c);
+                        app.headphone_eq.model.custom_target_path.push(c);
                         app.refresh_autocomplete_inline(
                             crate::app::app_autocomplete::get_headphone_custom_target_path,
                             crate::app::app_autocomplete::AutocompleteKind::FilePath,
@@ -271,7 +271,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             // 3 = custom target path (only when preset == "custom")
             let max_field = {
                 let base = 2; // source, measurement/search, target
-                if app.headphone_eq.target_preset == "custom" {
+                if app.headphone_eq.model.target_preset == "custom" {
                     base + 1
                 } else {
                     base
@@ -293,17 +293,17 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     match app.headphone_eq.selected_field {
                         0 => {} // source cycles with Left/Right
                         1 => {
-                            match app.headphone_eq.measurement_source {
+                            match app.headphone_eq.model.measurement_source {
                                 HeadphoneMeasurementSource::File => {
                                     app.headphone_eq.editing_measurement = true;
                                 }
                                 HeadphoneMeasurementSource::Spinorama => {
                                     app.headphone_eq.editing_search = true;
                                     // Auto-fetch headphone list if empty
-                                    if app.headphone_eq.available_headphones.is_empty()
-                                        && !app.headphone_eq.loading_headphones
+                                    if app.headphone_eq.model.available_headphones.is_empty()
+                                        && !app.headphone_eq.model.loading_headphones
                                     {
-                                        app.headphone_eq.loading_headphones = true;
+                                        app.headphone_eq.model.loading_headphones = true;
                                         spawn_headphone_list_load();
                                     }
                                 }
@@ -324,17 +324,17 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     match app.headphone_eq.selected_field {
                         0 => {
                             // Toggle source
-                            app.headphone_eq.measurement_source =
-                                app.headphone_eq.measurement_source.toggle();
+                            app.headphone_eq.model.measurement_source =
+                                app.headphone_eq.model.measurement_source.toggle();
                         }
                         2 => {
-                            app.headphone_eq.target_preset = super::super::cycle_string(
-                                &app.headphone_eq.target_preset,
+                            app.headphone_eq.model.target_preset = super::super::cycle_string(
+                                &app.headphone_eq.model.target_preset,
                                 HEADPHONE_TARGET_PRESETS,
                                 delta,
                             );
                             // Clamp selected_field if "custom" row disappeared
-                            let new_max = if app.headphone_eq.target_preset == "custom" {
+                            let new_max = if app.headphone_eq.model.target_preset == "custom" {
                                 3
                             } else {
                                 2
@@ -455,7 +455,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 None
             }
             KeyCode::Enter => {
-                match &app.headphone_eq.opt_status {
+                match &app.headphone_eq.model.optimization_status {
                     OptimizationStatus::Idle
                     | OptimizationStatus::Failed
                     | OptimizationStatus::Cancelled => {
@@ -504,14 +504,14 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                             app.headphone_eq.update_substep = SpinUpdateSubStep::ConfirmOverwrite;
                         } else {
                             match app.apply_headphone_to_plugins() {
-                                Ok(msg) => app.status_message = Some(msg),
-                                Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                                Ok(msg) => app.ui.status_message = Some(msg),
+                                Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                             }
                         }
                     } else {
                         match app.apply_headphone_to_plugins() {
-                            Ok(msg) => app.status_message = Some(msg),
-                            Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                            Ok(msg) => app.ui.status_message = Some(msg),
+                            Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                         }
                     }
                     None
@@ -523,16 +523,16 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
                         let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
                         let filename = format!("pre-headphone-eq-{}.json", timestamp);
-                        match app.plugin_graph.save_to_file(&presets_dir, &filename) {
+                        match app.plugin_rack.graph.save_to_file(&presets_dir, &filename) {
                             Ok(_) => {
-                                app.status_message = Some(format!("Saved backup: {}", filename));
+                                app.ui.status_message = Some(format!("Saved backup: {}", filename));
                                 log::info!(
                                     "Auto-saved preset before headphone EQ overwrite: {}",
                                     filename
                                 );
                             }
                             Err(e) => {
-                                app.status_message = Some(format!("Backup failed: {}", e));
+                                app.ui.status_message = Some(format!("Backup failed: {}", e));
                                 log::error!("Failed to auto-save preset: {}", e);
                                 app.headphone_eq.update_substep = SpinUpdateSubStep::Ready;
                                 app.headphone_eq.update_existing_eq_info = None;
@@ -541,8 +541,8 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         }
                     }
                     match app.apply_headphone_to_plugins() {
-                        Ok(msg) => app.status_message = Some(msg),
-                        Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                        Ok(msg) => app.ui.status_message = Some(msg),
+                        Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                     }
                     app.headphone_eq.update_substep = SpinUpdateSubStep::Ready;
                     app.headphone_eq.update_existing_eq_info = None;
@@ -550,8 +550,8 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 }
                 KeyCode::Char('n') => {
                     match app.apply_headphone_to_plugins() {
-                        Ok(msg) => app.status_message = Some(msg),
-                        Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                        Ok(msg) => app.ui.status_message = Some(msg),
+                        Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                     }
                     app.headphone_eq.update_substep = SpinUpdateSubStep::Ready;
                     app.headphone_eq.update_existing_eq_info = None;
@@ -581,7 +581,7 @@ fn headphone_eq_visible_fields(detail: sotf_audio_player::autoeq::DetailLevel) -
 }
 
 fn headphone_eq_field_value_string(app: &App, field: usize) -> String {
-    let c = &app.headphone_eq.config;
+    let c = &app.headphone_eq.model.optimizer_config;
     match field {
         0 => c.num_filters.to_string(),
         1 => format!("{:.0}", c.min_freq),
@@ -694,7 +694,7 @@ mod tests {
     fn headphone_eq_down_clamps_at_non_custom_max() {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
-        app.headphone_eq.target_preset = "harman-over-ear-2018".to_string();
+        app.headphone_eq.model.target_preset = "harman-over-ear-2018".to_string();
         app.headphone_eq.selected_field = 2; // target preset (max for non-custom)
 
         // Down should NOT go past 2 for non-custom presets
@@ -706,7 +706,7 @@ mod tests {
     fn headphone_eq_down_allows_field_3_for_custom() {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
-        app.headphone_eq.target_preset = "custom".to_string();
+        app.headphone_eq.model.target_preset = "custom".to_string();
         app.headphone_eq.selected_field = 2; // target preset
 
         // Down should go to 3 when preset is "custom"
@@ -807,10 +807,10 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.selected_field = 2; // target preset field
-        let old_preset = app.headphone_eq.target_preset.clone();
+        let old_preset = app.headphone_eq.model.target_preset.clone();
         handle_headphone_eq_keys(&mut app, key(KeyCode::Right));
         // Right on field 2 should cycle the target preset
-        assert_ne!(app.headphone_eq.target_preset, old_preset);
+        assert_ne!(app.headphone_eq.model.target_preset, old_preset);
         // Should stay on SelectFile step (not navigate)
         assert_eq!(app.headphone_eq.step, HeadphoneEqStep::SelectFile);
     }
@@ -821,11 +821,11 @@ mod tests {
         app.input_mode = InputMode::ConfigureHeadphoneEq;
         app.headphone_eq.step = HeadphoneEqStep::Configure;
         app.headphone_eq.config_selected_field = 0; // num_filters
-        let before = app.headphone_eq.config.num_filters;
+        let before = app.headphone_eq.model.optimizer_config.num_filters;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Right));
-        assert_eq!(app.headphone_eq.config.num_filters, before + 1);
+        assert_eq!(app.headphone_eq.model.optimizer_config.num_filters, before + 1);
         handle_headphone_eq_keys(&mut app, key(KeyCode::Left));
-        assert_eq!(app.headphone_eq.config.num_filters, before);
+        assert_eq!(app.headphone_eq.model.optimizer_config.num_filters, before);
         // Should stay on Configure step
         assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Configure);
     }
@@ -851,7 +851,7 @@ mod tests {
         app.headphone_eq.edit_buffer = "15".to_string();
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
         assert!(!app.headphone_eq.editing_value);
-        assert_eq!(app.headphone_eq.config.num_filters, 15);
+        assert_eq!(app.headphone_eq.model.optimizer_config.num_filters, 15);
     }
 
     #[test]
@@ -904,11 +904,11 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::Optimize;
         app.headphone_eq.step_tab_focused = true;
-        app.headphone_eq.opt_status = OptimizationStatus::Idle;
+        app.headphone_eq.model.optimization_status = OptimizationStatus::Idle;
         // measurement_path is empty, so optimization will fail immediately (no spawn)
         handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
         assert!(!app.headphone_eq.step_tab_focused);
-        assert_eq!(app.headphone_eq.opt_status, OptimizationStatus::Failed);
+        assert_eq!(app.headphone_eq.model.optimization_status, OptimizationStatus::Failed);
     }
 
     #[test]
@@ -916,10 +916,10 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::Optimize;
         app.headphone_eq.step_tab_focused = true;
-        app.headphone_eq.opt_status = OptimizationStatus::Running;
+        app.headphone_eq.model.optimization_status = OptimizationStatus::Running;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
         assert!(!app.headphone_eq.step_tab_focused);
-        assert_eq!(app.headphone_eq.opt_status, OptimizationStatus::Running);
+        assert_eq!(app.headphone_eq.model.optimization_status, OptimizationStatus::Running);
     }
 
     #[test]
@@ -927,7 +927,7 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.editing_search = true;
-        app.headphone_eq.filtered_headphones = vec!["A".to_string(), "B".to_string()];
+        app.headphone_eq.model.headphone_suggestions = vec!["A".to_string(), "B".to_string()];
         app.headphone_eq.selected_headphone_idx = 0;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
         assert_eq!(app.headphone_eq.selected_headphone_idx, 1);
@@ -940,7 +940,7 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.editing_search = true;
-        app.headphone_eq.filtered_headphones = vec!["A".to_string(), "B".to_string()];
+        app.headphone_eq.model.headphone_suggestions = vec!["A".to_string(), "B".to_string()];
         app.headphone_eq.selected_headphone_idx = 0;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Up));
         assert_eq!(app.headphone_eq.selected_headphone_idx, 0);
@@ -951,15 +951,15 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.editing_search = true;
-        app.headphone_eq.search_query = "test".to_string();
-        app.headphone_eq.available_headphones = vec!["testphone".to_string(), "other".to_string()];
+        app.headphone_eq.model.headphone_search = "test".to_string();
+        app.headphone_eq.model.available_headphones = vec!["testphone".to_string(), "other".to_string()];
         app.headphone_eq.update_filter();
         handle_headphone_eq_keys(&mut app, key(KeyCode::Backspace));
-        assert_eq!(app.headphone_eq.search_query, "tes");
-        assert_eq!(app.headphone_eq.filtered_headphones.len(), 1);
+        assert_eq!(app.headphone_eq.model.headphone_search, "tes");
+        assert_eq!(app.headphone_eq.model.headphone_suggestions.len(), 1);
         handle_headphone_eq_keys(&mut app, key(KeyCode::Char('t')));
-        assert_eq!(app.headphone_eq.search_query, "test");
-        assert_eq!(app.headphone_eq.filtered_headphones.len(), 1);
+        assert_eq!(app.headphone_eq.model.headphone_search, "test");
+        assert_eq!(app.headphone_eq.model.headphone_suggestions.len(), 1);
     }
 
     #[test]
@@ -967,15 +967,15 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.editing_search = true;
-        app.headphone_eq.filtered_headphones = vec!["TestPhone".to_string()];
+        app.headphone_eq.model.headphone_suggestions = vec!["TestPhone".to_string()];
         app.headphone_eq.selected_headphone_idx = 0;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
         assert!(!app.headphone_eq.editing_search);
         assert_eq!(
-            app.headphone_eq.selected_headphone,
+            app.headphone_eq.model.selected_headphone,
             Some("TestPhone".to_string())
         );
-        assert!(app.headphone_eq.loading_download);
+        assert!(app.headphone_eq.model.loading_download);
     }
 
     #[test]
@@ -983,7 +983,7 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.selected_field = 1;
-        app.headphone_eq.measurement_source = HeadphoneMeasurementSource::File;
+        app.headphone_eq.model.measurement_source = HeadphoneMeasurementSource::File;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
         assert!(app.headphone_eq.editing_measurement);
     }
@@ -993,10 +993,10 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.selected_field = 1;
-        app.headphone_eq.measurement_source = HeadphoneMeasurementSource::Spinorama;
+        app.headphone_eq.model.measurement_source = HeadphoneMeasurementSource::Spinorama;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
         assert!(app.headphone_eq.editing_search);
-        assert!(app.headphone_eq.loading_headphones);
+        assert!(app.headphone_eq.model.loading_headphones);
     }
 
     #[test]
@@ -1004,9 +1004,9 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.selected_field = 0;
-        let old = app.headphone_eq.measurement_source;
+        let old = app.headphone_eq.model.measurement_source;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Left));
-        assert_ne!(app.headphone_eq.measurement_source, old);
+        assert_ne!(app.headphone_eq.model.measurement_source, old);
     }
 
     #[test]
@@ -1045,9 +1045,9 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::Configure;
         app.headphone_eq.config_selected_field = 14; // refine (boolean)
-        let before = app.headphone_eq.config.refine;
+        let before = app.headphone_eq.model.optimizer_config.refine;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
-        assert_eq!(app.headphone_eq.config.refine, !before);
+        assert_eq!(app.headphone_eq.model.optimizer_config.refine, !before);
     }
 
     #[test]
@@ -1062,7 +1062,7 @@ mod tests {
     fn optimize_enter_when_completed_goes_to_results() {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::Optimize;
-        app.headphone_eq.opt_status = OptimizationStatus::Completed;
+        app.headphone_eq.model.optimization_status = OptimizationStatus::Completed;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
         assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Results);
     }
@@ -1071,10 +1071,10 @@ mod tests {
     fn optimize_enter_when_running_does_nothing() {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::Optimize;
-        app.headphone_eq.opt_status = OptimizationStatus::Running;
+        app.headphone_eq.model.optimization_status = OptimizationStatus::Running;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
         assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Optimize);
-        assert_eq!(app.headphone_eq.opt_status, OptimizationStatus::Running);
+        assert_eq!(app.headphone_eq.model.optimization_status, OptimizationStatus::Running);
     }
 
     #[test]
@@ -1092,8 +1092,8 @@ mod tests {
         app.headphone_eq.update_substep = SpinUpdateSubStep::Ready;
         // No filters, so apply_headphone_to_plugins should fail
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
-        assert!(app.status_message.is_some());
-        assert!(app.status_message.as_ref().unwrap().starts_with("Error:"));
+        assert!(app.ui.status_message.is_some());
+        assert!(app.ui.status_message.as_ref().unwrap().starts_with("Error:"));
     }
 
     #[test]
@@ -1104,7 +1104,7 @@ mod tests {
         handle_headphone_eq_keys(&mut app, key(KeyCode::Char('n')));
         assert_eq!(app.headphone_eq.update_substep, SpinUpdateSubStep::Ready);
         assert!(app.headphone_eq.update_existing_eq_info.is_none());
-        assert!(app.status_message.is_some());
+        assert!(app.ui.status_message.is_some());
     }
 
     #[test]

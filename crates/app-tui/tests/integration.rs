@@ -144,7 +144,7 @@ fn esc_chain_returns_from_configure_to_library() {
 #[test]
 fn spinorama_full_wizard_workflow() {
     let mut app = app_on_library();
-    app.spinorama_eq.available_speakers = vec!["Adam A7V".to_string(), "Genelec 8030C".to_string()];
+    app.spinorama_eq.model.available_speakers = vec!["Adam A7V".to_string(), "Genelec 8030C".to_string()];
     app.spinorama_eq.update_filter();
 
     // Library -> Configure -> SpinoramaEq
@@ -157,7 +157,7 @@ fn spinorama_full_wizard_workflow() {
     send_keys(&mut app, &[KeyCode::Down]);
     send_keys(&mut app, &[KeyCode::Enter]);
     assert_eq!(
-        app.spinorama_eq.selected_speaker,
+        app.spinorama_eq.model.selected_speaker,
         Some("Genelec 8030C".to_string())
     );
     assert_eq!(app.spinorama_eq.step, SpinoramaStep::Configure);
@@ -241,9 +241,9 @@ fn headphone_eq_full_wizard_navigation() {
     send_keys(&mut app, &[KeyCode::Down]);
     assert!(!app.headphone_eq.step_tab_focused);
     app.headphone_eq.config_selected_field = 0; // num_filters
-    let before = app.headphone_eq.config.num_filters;
+    let before = app.headphone_eq.model.optimizer_config.num_filters;
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.headphone_eq.config.num_filters, before + 1);
+    assert_eq!(app.headphone_eq.model.optimizer_config.num_filters, before + 1);
 
     // Enter direct-edit mode and commit a new value
     send_keys(&mut app, &[KeyCode::Enter]);
@@ -252,13 +252,13 @@ fn headphone_eq_full_wizard_navigation() {
     type_text(&mut app, "12");
     send_keys(&mut app, &[KeyCode::Enter]);
     assert!(!app.headphone_eq.editing_value);
-    assert_eq!(app.headphone_eq.config.num_filters, 12);
+    assert_eq!(app.headphone_eq.model.optimizer_config.num_filters, 12);
 
     // Navigate to Optimize and mark it completed so Results is reachable
     send_keys(&mut app, &[KeyCode::Esc]);
     send_keys(&mut app, &[KeyCode::Right, KeyCode::Down]);
     assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Optimize);
-    app.headphone_eq.opt_status = OptimizationStatus::Completed;
+    app.headphone_eq.model.optimization_status = OptimizationStatus::Completed;
 
     send_keys(&mut app, &[KeyCode::Esc, KeyCode::Right, KeyCode::Down]);
     assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Results);
@@ -270,7 +270,7 @@ fn headphone_eq_full_wizard_navigation() {
 #[test]
 fn headphone_eq_apply_without_filters_returns_error() {
     let mut app = app_on_library();
-    app.headphone_eq.filters.clear();
+    app.headphone_eq.model.filters.clear();
     let result = app.apply_headphone_to_plugins();
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("No optimization results"));
@@ -300,12 +300,12 @@ fn recording_full_wizard_navigation() {
     ];
     for expected_step in expected {
         send_keys(&mut app, &[KeyCode::Right]);
-        assert_eq!(app.recording.step, expected_step);
+        assert_eq!(app.recording.model.step, expected_step);
     }
 
     // BackTab from Saving returns to Evaluating
     send_keys(&mut app, &[KeyCode::BackTab]);
-    assert_eq!(app.recording.step, RecordingStep::Evaluating);
+    assert_eq!(app.recording.model.step, RecordingStep::Evaluating);
 }
 
 #[test]
@@ -319,14 +319,14 @@ fn recording_capture_requires_output_directory() {
     use sotf_audio_player::recording_types::RecordingStep;
 
     app.recording.step_tab_focused = true;
-    app.recording.step = RecordingStep::SplCalibration;
+    app.recording.model.step = RecordingStep::SplCalibration;
     send_keys(&mut app, &[KeyCode::Right]);
     // Should be blocked at SplCalibration because output dir is empty
-    assert_eq!(app.recording.step, RecordingStep::SplCalibration);
+    assert_eq!(app.recording.model.step, RecordingStep::SplCalibration);
     assert!(
-        app.recording.status_message.contains("output directory"),
+        app.recording.model.status_message.contains("output directory"),
         "expected warning about output directory, got: {}",
-        app.recording.status_message
+        app.recording.model.status_message
     );
 }
 
@@ -336,7 +336,7 @@ fn recording_config_field_editing_roundtrip() {
     app.current_screen = Screen::Configure;
     app.configure_sub_screen = ConfigureSubScreen::Recording;
     app.input_mode = InputMode::ConfigureRecording;
-    app.recording.step = sotf_audio_player::recording_types::RecordingStep::Config;
+    app.recording.model.step = sotf_audio_player::recording_types::RecordingStep::Config;
 
     // Select OutputDir (field 8) and enter edit mode
     app.recording.selected_field = 8;
@@ -356,7 +356,7 @@ fn recording_config_field_editing_roundtrip() {
     type_text(&mut app, "9.5");
     send_keys(&mut app, &[KeyCode::Enter]);
     assert!(!app.recording.editing_value);
-    assert!((app.recording.signal_duration_secs - 9.5).abs() < f32::EPSILON);
+    assert!((app.recording.model.signal_duration_secs - 9.5).abs() < f32::EPSILON);
 }
 
 // ── Directories configuration ───────────────────────────────────────────────
@@ -369,20 +369,20 @@ fn directories_add_input_roundtrip() {
     app.input_mode = InputMode::ConfigureDirectories;
 
     send_keys(&mut app, &[KeyCode::Char('a')]);
-    assert!(app.editing_directory);
-    assert!(app.directory_input.is_empty());
+    assert!(app.library_view.editing_directory);
+    assert!(app.library_view.directory_input.is_empty());
 
     type_text(&mut app, "/music/library");
     send_keys(&mut app, &[KeyCode::Esc]);
-    assert!(!app.editing_directory);
-    assert!(app.directory_input.is_empty());
+    assert!(!app.library_view.editing_directory);
+    assert!(app.library_view.directory_input.is_empty());
 
     // Re-open and confirm
     send_keys(&mut app, &[KeyCode::Char('a')]);
     type_text(&mut app, "/music/library");
     let count_before = app.library.directories.len();
     send_keys(&mut app, &[KeyCode::Enter]);
-    assert!(!app.editing_directory);
+    assert!(!app.library_view.editing_directory);
     assert_eq!(app.library.directories.len(), count_before + 1);
 }
 
@@ -476,17 +476,17 @@ fn plugin_chain_save_load_roundtrip() {
 
     // Add an EQ plugin with a custom filter
     app.add_plugin(&PluginType::EQ);
-    let eq_idx = (0..app.plugin_graph.len())
+    let eq_idx = (0..app.plugin_rack.graph.len())
         .rev()
         .find(|&i| {
-            app.plugin_graph
+            app.plugin_rack.graph
                 .get_plugin(i)
                 .map(|p| matches!(p.settings, PluginSettings::EQ { .. }))
                 .unwrap_or(false)
         })
         .expect("expected an EQ plugin");
 
-    if let Some(plugin) = app.plugin_graph.get_plugin_mut(eq_idx)
+    if let Some(plugin) = app.plugin_rack.graph.get_plugin_mut(eq_idx)
         && let PluginSettings::EQ {
             ref mut filters,
             ref mut max_filters,
@@ -503,23 +503,23 @@ fn plugin_chain_save_load_roundtrip() {
         *max_filters = 1;
     }
 
-    let saved_len = app.plugin_graph.len();
+    let saved_len = app.plugin_rack.graph.len();
     let preset_name = "integration_test_eq";
-    app.plugin_graph
+    app.plugin_rack.graph
         .save_to_file(temp_dir.path(), preset_name)
         .expect("save plugin chain");
 
     // Reset graph to default rack and reload
-    app.plugin_graph = sotf_audio_player::PluginGraph::with_default_rack();
-    assert!(app.plugin_graph.len() < saved_len);
+    app.plugin_rack.graph = sotf_audio_player::PluginGraph::with_default_rack();
+    assert!(app.plugin_rack.graph.len() < saved_len);
 
-    app.plugin_graph
+    app.plugin_rack.graph
         .load_from_file(temp_dir.path(), preset_name)
         .expect("load plugin chain");
-    assert_eq!(app.plugin_graph.len(), saved_len);
+    assert_eq!(app.plugin_rack.graph.len(), saved_len);
 
     let reloaded_eq = app
-        .plugin_graph
+        .plugin_rack.graph
         .get_plugin(eq_idx)
         .expect("reloaded EQ plugin index");
     if let PluginSettings::EQ { filters, .. } = &reloaded_eq.settings {
@@ -550,15 +550,15 @@ fn app_config_save_load_roundtrip() {
     };
     app.library.albums.push(album.clone());
     app.queue.push(QueueEntry::new(QueueItem::new(album.clone())));
-    app.current_queue_index = Some(0);
+    app.playback.current_queue_index = Some(0);
 
     // Save a real plugin preset so load_config can restore it.
     let presets_dir = sotf_audio_player::config::get_plugin_presets_dir()
         .expect("plugin presets dir");
-    app.plugin_graph
+    app.plugin_rack.graph
         .save_to_file(&presets_dir, "my-preset")
         .expect("save plugin preset");
-    app.last_loaded_preset = Some("my-preset.json".to_string());
+    app.plugin_rack.last_loaded_preset = Some("my-preset.json".to_string());
 
     app.save_config().expect("save app config");
 
@@ -567,8 +567,8 @@ fn app_config_save_load_roundtrip() {
     app2.library.albums.push(album);
     app2.load_config().expect("load app config");
 
-    assert_eq!(app2.last_loaded_preset, Some("my-preset.json".to_string()));
-    assert_eq!(app2.current_queue_index, Some(0));
+    assert_eq!(app2.plugin_rack.last_loaded_preset, Some("my-preset.json".to_string()));
+    assert_eq!(app2.playback.current_queue_index, Some(0));
     assert_eq!(app2.queue.len(), 1);
     assert_eq!(
         app2.queue[0].item.album.title,
@@ -589,21 +589,21 @@ fn esc_from_library_quits() {
 fn plugins_screen_handles_empty_chain() {
     let mut app = app_on_library();
     app.current_screen = Screen::Plugins;
-    app.plugin_graph = sotf_audio_player::PluginGraph::default();
+    app.plugin_rack.graph = sotf_audio_player::PluginGraph::default();
 
     // Removing from an empty chain should not panic
     send_keys(&mut app, &[KeyCode::Char('d')]);
-    assert!(app.plugin_graph.is_empty());
+    assert!(app.plugin_rack.graph.is_empty());
 
     // Toggling in an empty chain should not panic
     send_keys(&mut app, &[KeyCode::Char(' ')]);
-    assert!(app.plugin_graph.is_empty());
+    assert!(app.plugin_rack.graph.is_empty());
 }
 
 #[test]
 fn spinorama_apply_without_filters_returns_error() {
     let mut app = app_on_library();
-    app.spinorama_eq.filters.clear();
+    app.spinorama_eq.model.filters.clear();
     let result = app.apply_spinorama_to_plugins();
     assert!(result.is_err());
 }

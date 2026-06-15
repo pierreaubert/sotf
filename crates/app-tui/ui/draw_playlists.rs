@@ -14,7 +14,7 @@ pub(crate) fn draw_playlists_screen(f: &mut Frame, area: Rect, app: &App) {
         ])
         .split(area);
 
-    let help_text = match app.playlist_mode {
+    let help_text = match app.playlists.mode {
         PlaylistMode::List => {
             "↑↓=Navigate  Enter=Open  n=New  r=Rename  d=Delete  p=Play  i=Import  e=Export  Esc=Back"
         }
@@ -37,16 +37,16 @@ pub(crate) fn draw_playlists_screen(f: &mut Frame, area: Rect, app: &App) {
     draw_playlist_tracks(f, chunks[1], app);
 
     // Overlay for text input modes
-    match app.playlist_mode {
-        PlaylistMode::Create => draw_input_popup(f, area, "New Playlist", &app.playlist_name_input),
+    match app.playlists.mode {
+        PlaylistMode::Create => draw_input_popup(f, area, "New Playlist", &app.playlists.name_input),
         PlaylistMode::Rename => {
-            draw_input_popup(f, area, "Rename Playlist", &app.playlist_name_input)
+            draw_input_popup(f, area, "Rename Playlist", &app.playlists.name_input)
         }
         PlaylistMode::ConfirmDelete => {
             let name = app
-                .playlist_controller
+                .playlists.controller
                 .playlists()
-                .get(app.playlist_controller.selected_playlist_index)
+                .get(app.playlists.controller.selected_playlist_index)
                 .map(|p| p.name.as_str())
                 .unwrap_or("?");
             draw_confirm_popup(f, area, &format!("Delete '{}'? (y/n)", name));
@@ -56,21 +56,21 @@ pub(crate) fn draw_playlists_screen(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_playlist_list(f: &mut Frame, area: Rect, app: &App) {
-    let playlists = app.playlist_controller.playlists();
-    let is_list_focused = app.playlist_mode == PlaylistMode::List;
+    let playlists = app.playlists.controller.playlists();
+    let is_list_focused = app.playlists.mode == PlaylistMode::List;
 
     let items: Vec<ListItem> = playlists
         .iter()
         .enumerate()
         .map(|(i, playlist)| {
-            let track_count = app.playlist_controller.playlist_track_count(i);
+            let track_count = app.playlists.controller.playlist_track_count(i);
             let content = if track_count > 0 {
                 format!("{} ({})", playlist.name, track_count)
             } else {
                 playlist.name.clone()
             };
 
-            let style = if i == app.playlist_controller.selected_playlist_index {
+            let style = if i == app.playlists.controller.selected_playlist_index {
                 Style::default()
                     .fg(app.theme.fg_selected)
                     .bg(app.theme.bg_selected)
@@ -106,10 +106,10 @@ fn draw_playlist_list(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_playlist_tracks(f: &mut Frame, area: Rect, app: &App) {
-    let is_tracks_focused = app.playlist_mode == PlaylistMode::Tracks;
+    let is_tracks_focused = app.playlists.mode == PlaylistMode::Tracks;
 
-    let (title, items) = if let Some(playlist) = app.playlist_controller.active_playlist() {
-        let resolved = app.playlist_controller.resolve_tracks(&app.library);
+    let (title, items) = if let Some(playlist) = app.playlists.controller.active_playlist() {
+        let resolved = app.playlists.controller.resolve_tracks(&app.library);
 
         let items: Vec<ListItem> = playlist
             .entries
@@ -136,7 +136,7 @@ fn draw_playlist_tracks(f: &mut Frame, area: Rect, app: &App) {
                     )
                 };
 
-                let style = if i == app.playlist_controller.selected_track_index {
+                let style = if i == app.playlists.controller.selected_track_index {
                     Style::default()
                         .fg(app.theme.fg_selected)
                         .bg(app.theme.bg_selected)

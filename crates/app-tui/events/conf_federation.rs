@@ -206,7 +206,7 @@ fn test_federation_source(app: &mut App) {
         .insert(source_id.clone(), ConnectionStatus::Testing);
 
     let (tx, rx) = std::sync::mpsc::channel();
-    app.federation_test_receiver = Some(rx);
+    app.federation_receivers.test = Some(rx);
 
     std::thread::spawn(move || {
         let status = sotf_audio_player::federation_scan::run_connection_diagnostic(&source);
@@ -215,8 +215,8 @@ fn test_federation_source(app: &mut App) {
 }
 
 fn scan_federation_source(app: &mut App) {
-    if app.federation_scan_receiver.is_some() {
-        app.status_message = Some("A federation scan is already running.".to_string());
+    if app.federation_receivers.scan.is_some() {
+        app.ui.status_message = Some("A federation scan is already running.".to_string());
         return;
     }
 
@@ -230,10 +230,10 @@ fn scan_federation_source(app: &mut App) {
         return;
     }
 
-    app.status_message = Some(format!("Scanning {}...", source.display_name));
+    app.ui.status_message = Some(format!("Scanning {}...", source.display_name));
 
     let (tx, rx) = std::sync::mpsc::channel();
-    app.federation_scan_receiver = Some(rx);
+    app.federation_receivers.scan = Some(rx);
 
     std::thread::Builder::new()
         .name("federation-scan".into())
@@ -275,23 +275,23 @@ async fn do_federation_scan(source: &FederationSourceEntry) -> crate::app::Feder
 /// Poll for federation scan completion. Call from the main tick loop.
 /// Returns true if the UI needs a redraw.
 pub fn poll_federation_scan(app: &mut App) -> bool {
-    let result = match &app.federation_scan_receiver {
+    let result = match &app.federation_receivers.scan {
         Some(rx) => match rx.try_recv() {
             Ok(result) => Some(result),
             Err(std::sync::mpsc::TryRecvError::Empty) => return false,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                app.federation_scan_receiver = None;
+                app.federation_receivers.scan = None;
                 return false;
             }
         },
         None => return false,
     };
 
-    app.federation_scan_receiver = None;
+    app.federation_receivers.scan = None;
 
     if let Some(result) = result {
         if let Some(ref err) = result.error {
-            app.status_message = Some(format!("Federation scan failed: {err}"));
+            app.ui.status_message = Some(format!("Federation scan failed: {err}"));
             // Mark source as unavailable
             if let Some(source) = app
                 .federation_state
@@ -308,7 +308,7 @@ pub fn poll_federation_scan(app: &mut App) -> bool {
                 .statuses
                 .insert(result.source_id, ConnectionStatus::Error(err.clone()));
         } else {
-            app.status_message = Some(format!(
+            app.ui.status_message = Some(format!(
                 "Scan complete: {} albums, {} tracks merged.",
                 result.albums, result.tracks
             ));
@@ -351,14 +351,14 @@ pub fn poll_federation_scan(app: &mut App) -> bool {
 /// Poll for federation connection test completion. Call from the main tick loop.
 /// Returns true if the UI needs a redraw.
 pub fn poll_federation_test(app: &mut App) -> bool {
-    let rx = match &app.federation_test_receiver {
+    let rx = match &app.federation_receivers.test {
         Some(rx) => rx,
         None => return false,
     };
 
     match rx.try_recv() {
         Ok((sid, status)) => {
-            app.federation_test_receiver = None;
+            app.federation_receivers.test = None;
 
             let available = match &status {
                 ConnectionStatus::Connected { .. } => true,
@@ -379,7 +379,7 @@ pub fn poll_federation_test(app: &mut App) -> bool {
             }
 
             let should_scan_peer = available
-                && app.federation_scan_receiver.is_none()
+                && app.federation_receivers.scan.is_none()
                 && app
                     .federation_state
                     .sources
@@ -397,7 +397,7 @@ pub fn poll_federation_test(app: &mut App) -> bool {
         }
         Err(std::sync::mpsc::TryRecvError::Empty) => false,
         Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-            app.federation_test_receiver = None;
+            app.federation_receivers.test = None;
             false
         }
     }

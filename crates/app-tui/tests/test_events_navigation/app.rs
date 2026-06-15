@@ -17,7 +17,7 @@ pub(super) fn app_on_spinorama_select() -> crate::app::App {
     app.input_mode = InputMode::ConfigureSpinoramaEq;
     app.spinorama_eq.step = SpinoramaStep::Select;
     // Pre-populate speaker list so Enter can select one
-    app.spinorama_eq.available_speakers = vec![
+    app.spinorama_eq.model.available_speakers = vec![
         "Speaker A".to_string(),
         "Speaker B".to_string(),
         "Speaker C".to_string(),

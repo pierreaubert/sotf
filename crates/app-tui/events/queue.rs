@@ -27,7 +27,7 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             None
         }
         KeyCode::Char('d') | KeyCode::Delete => {
-            match app.remove_from_queue(app.selected_queue_index) {
+            match app.remove_from_queue(app.queue_view.selected_index) {
                 sotf_audio_player::QueuePlaybackEffect::Reload(path)
                 | sotf_audio_player::QueuePlaybackEffect::Play(path) => {
                     Some(PlayerCommand::Play(path))
@@ -42,23 +42,23 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
         }
         KeyCode::Char('p') => {
             // Play from start or current position
-            if app.current_queue_index.is_none() {
+            if app.playback.current_queue_index.is_none() {
                 if let Some(path) = app.start_queue() {
                     return Some(PlayerCommand::Play(path));
                 }
             } else {
-                app.is_playing = true;
+                app.playback.is_playing = true;
                 return Some(PlayerCommand::Resume);
             }
             None
         }
         KeyCode::Char(' ') => {
             // Toggle pause
-            if app.is_playing {
-                app.is_playing = false;
+            if app.playback.is_playing {
+                app.playback.is_playing = false;
                 Some(PlayerCommand::Pause)
             } else {
-                app.is_playing = true;
+                app.playback.is_playing = true;
                 Some(PlayerCommand::Resume)
             }
         }
@@ -67,7 +67,7 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             if let Some(path) = app.next_track() {
                 Some(PlayerCommand::Play(path))
             } else {
-                app.is_playing = false;
+                app.playback.is_playing = false;
                 Some(PlayerCommand::Stop)
             }
         }
@@ -110,16 +110,14 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             None
         }
         KeyCode::Char('m') => {
-            let Some(entry) = app.queue.get(app.selected_queue_index) else {
-                return None;
-            };
+            let entry = app.queue.get(app.queue_view.selected_index)?;
             let target_track = app
-                .selected_queue_track_index
+                .queue_view.selected_track_index
                 .and_then(|idx| entry.item.album.tracks.get(idx))
                 .or_else(|| entry.item.current_track())
                 .or_else(|| entry.item.album.tracks.first());
             if let Some(track) = target_track {
-                app.metadata_editor = Some(crate::app::MetadataEditorState::for_track(track));
+                app.modal.metadata_editor = Some(crate::app::MetadataEditorState::for_track(track));
                 app.input_mode = crate::app::InputMode::MetadataEditor;
             }
             None
@@ -129,15 +127,15 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             // expanded album, add just that track; otherwise add the whole
             // album. Mirrors the Library `A` handler for albums and extends
             // it with track-level granularity from the queue view.
-            if app.playlist_controller.active_playlist_id().is_none() {
-                app.status_message = Some("Open a playlist first (Y screen)".to_string());
+            if app.playlists.controller.active_playlist_id().is_none() {
+                app.ui.status_message = Some("Open a playlist first (Y screen)".to_string());
                 return None;
             }
             let db = app.library.get_database()?;
-            let idx = app.selected_queue_index;
+            let idx = app.queue_view.selected_index;
             let entry = app.queue.get(idx)?;
 
-            if let Some(t_idx) = app.selected_queue_track_index
+            if let Some(t_idx) = app.queue_view.selected_track_index
                 && let Some(track) = entry.item.album.tracks.get(t_idx)
             {
                 let title = track
@@ -145,14 +143,14 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     .clone()
                     .unwrap_or_else(|| format!("Track {}", t_idx + 1));
                 let path = track.path.clone();
-                match app.playlist_controller.add_tracks(db, &[path]) {
-                    Ok(()) => app.status_message = Some(format!("Added '{}' to playlist", title)),
-                    Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                match app.playlists.controller.add_tracks(db, &[path]) {
+                    Ok(()) => app.ui.status_message = Some(format!("Added '{}' to playlist", title)),
+                    Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                 }
             } else {
-                let active_id = app.playlist_controller.active_playlist_id();
+                let active_id = app.playlists.controller.active_playlist_id();
                 let pl_idx = active_id.and_then(|id| {
-                    app.playlist_controller
+                    app.playlists.controller
                         .playlists()
                         .iter()
                         .position(|p| p.id == Some(id))
@@ -160,14 +158,14 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 if let Some(pl_idx) = pl_idx {
                     let album = entry.item.album.clone();
                     match app
-                        .playlist_controller
+                        .playlists.controller
                         .add_album_to_playlist(db, pl_idx, &album)
                     {
                         Ok(()) => {
-                            app.status_message =
+                            app.ui.status_message =
                                 Some(format!("Added '{}' to playlist", album.title))
                         }
-                        Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                        Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                     }
                 }
             }

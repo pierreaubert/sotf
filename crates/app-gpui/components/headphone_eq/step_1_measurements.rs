@@ -25,7 +25,7 @@ impl PlayerView {
         let headphone_eq = &state.app.measurement_state.headphone_eq_state;
 
         let measurement_source = headphone_eq.measurement_source;
-        let measurement_path = headphone_eq.measurement_path.clone().unwrap_or_default();
+        let measurement_path = headphone_eq.model.measurement_path.clone();
         let downloaded_curve = headphone_eq.downloaded_curve.clone();
         let app_width = state.app.ui_state.window_width;
 
@@ -216,8 +216,8 @@ impl PlayerView {
                                                 .on_text_change({
                                                     move |text, _window, cx| {
                                                         state_for_text.update(cx, |state, _cx| {
-                                                            state.app.measurement_state.headphone_eq_state.headphone_search = text;
-                                                            state.app.measurement_state.headphone_eq_state.update_headphone_suggestions();
+                                                            state.app.measurement_state.headphone_eq_state.model.headphone_search = text;
+                                                            state.app.measurement_state.headphone_eq_state.model.update_headphone_suggestions();
                                                         });
                                                     }
                                                 })

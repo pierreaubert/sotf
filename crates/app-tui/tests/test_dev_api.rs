@@ -35,9 +35,9 @@ fn query_input_mode() {
 #[test]
 fn query_playback_state() {
     let mut app = make_app();
-    app.is_playing = true;
-    app.volume = 0.75;
-    app.muted = true;
+    app.playback.is_playing = true;
+    app.playback.volume = 0.75;
+    app.playback.muted = true;
 
     assert_eq!(resolve("playback.is_playing", &app).unwrap(), true);
     assert_eq!(resolve("playback.volume", &app).unwrap(), 0.75);
@@ -120,7 +120,7 @@ fn query_metadata_editor() {
     assert_eq!(resolve("metadata.editor_open", &app).unwrap(), false);
     assert!(resolve("metadata.target", &app).unwrap().is_null());
 
-    app.metadata_editor = Some(MetadataEditorState {
+    app.modal.metadata_editor = Some(MetadataEditorState {
         scope: MetadataEditorScope::Album,
         target: MetadataTarget::AlbumId(1),
         target_label: "Test Album".to_string(),
@@ -189,7 +189,7 @@ fn query_metadata_editor() {
 fn query_recording_state() {
     let mut app = make_app();
     app.recording = sotf_audio_player_tui::app::RecordingTuiState::default();
-    app.recording.status_message = "ready".to_string();
+    app.recording.model.status_message = "ready".to_string();
 
     resolve("recording.step", &app).unwrap();
     // Empty channel recordings means all (zero) channels are done.
@@ -206,7 +206,7 @@ fn query_recording_state() {
 fn query_room_eq_state() {
     let mut app = make_app();
     app.room_eq = sotf_audio_player_tui::app::RoomEqTuiState::default();
-    app.room_eq.model.status_message = Some("running".to_string());
+    app.room_eq.model.status_message = "running".to_string();
     app.room_eq.model.error_message = Some("boom".to_string());
 
     resolve("roomeq.step", &app).unwrap();
@@ -245,8 +245,8 @@ fn query_settings_theme() {
 #[test]
 fn query_audio_devices() {
     let mut app = make_app();
-    app.output_devices = vec![];
-    app.current_output_device_name = Some("BlackHole".to_string());
+    app.audio_devices.outputs = vec![];
+    app.audio_devices.current_output_name = Some("BlackHole".to_string());
 
     assert_eq!(
         resolve("audio.output_device", &app).unwrap(),
@@ -260,7 +260,7 @@ fn query_plugins_and_playlists_and_level_meters_and_cast() {
     use sotf_audio_player::{ChannelGroup, ChannelInfo};
 
     let mut app = make_app();
-    app.level_meter_groups = vec![ChannelGroup {
+    app.level_meters.groups = vec![ChannelGroup {
         name: "stereo".to_string(),
         channels: vec![
             ChannelInfo {
@@ -278,7 +278,7 @@ fn query_plugins_and_playlists_and_level_meters_and_cast() {
         soloed: false,
         dimmed: false,
     }];
-    app.cast_devices = vec![sotf_audio_player_tui::app::CastDeviceInfo {
+    app.audio_devices.cast = vec![sotf_audio_player_tui::app::CastDeviceInfo {
         name: "Kitchen".to_string(),
         device_type: "Chromecast".to_string(),
         address: "192.168.1.10".to_string(),
@@ -287,11 +287,11 @@ fn query_plugins_and_playlists_and_level_meters_and_cast() {
 
     assert_eq!(
         resolve("plugins.count", &app).unwrap(),
-        app.plugin_graph.plugin_count()
+        app.plugin_rack.graph.plugin_count()
     );
     assert_eq!(
         resolve("playlists.count", &app).unwrap(),
-        app.playlist_controller.playlists().len()
+        app.playlists.controller.playlists().len()
     );
     assert_eq!(resolve("level_meters.channel_count", &app).unwrap(), 2);
     assert_eq!(resolve("cast.device_count", &app).unwrap(), 1);

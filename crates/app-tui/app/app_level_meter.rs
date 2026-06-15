@@ -9,7 +9,7 @@ impl App {
     /// Uses caching to avoid rebuilding every frame
     pub fn update_level_meter_groups(&mut self) {
         let num_channels = self
-            .loudness_info
+            .playback.loudness_info
             .as_ref()
             .map(|l| l.channel_peaks.len())
             .unwrap_or(0);
@@ -19,21 +19,21 @@ impl App {
         }
 
         // Get current speaker config
-        let current_speaker_config = self.plugin_graph.output_speaker_config();
+        let current_speaker_config = self.plugin_rack.graph.output_speaker_config();
 
         // Skip rebuilding if nothing has changed
-        if num_channels == self.level_meter_last_channel_count
-            && current_speaker_config == self.level_meter_last_speaker_config
-            && !self.level_meter_groups.is_empty()
+        if num_channels == self.level_meters.last_channel_count
+            && current_speaker_config == self.level_meters.last_speaker_config
+            && !self.level_meters.groups.is_empty()
         {
             return;
         }
 
         // Update cache
-        self.level_meter_last_channel_count = num_channels;
-        self.level_meter_last_speaker_config = current_speaker_config.clone();
+        self.level_meters.last_channel_count = num_channels;
+        self.level_meters.last_speaker_config = current_speaker_config.clone();
 
-        self.level_meter_groups.clear();
+        self.level_meters.groups.clear();
 
         // Try to get meter groups from the speaker config (via upmixer plugin)
         // This handles collisions like 5.1.4 vs 7.1.2 (both 10 channels)
@@ -45,7 +45,7 @@ impl App {
         if let Some(groups) = meter_groups {
             // Convert static specs to runtime groups
             for group_spec in groups {
-                self.level_meter_groups.push(ChannelGroup {
+                self.level_meters.groups.push(ChannelGroup {
                     name: group_spec.name.to_string(),
                     channels: group_spec
                         .channels
@@ -70,7 +70,7 @@ impl App {
             match num_channels {
                 1 => {
                     // Mono
-                    self.level_meter_groups.push(ChannelGroup {
+                    self.level_meters.groups.push(ChannelGroup {
                         name: "Mono".to_string(),
                         channels: vec![ChannelInfo {
                             index: 0,
@@ -84,7 +84,7 @@ impl App {
                 }
                 4 => {
                     // Quad (FL, FR, SL, SR) - not a standard speaker config
-                    self.level_meter_groups.push(ChannelGroup {
+                    self.level_meters.groups.push(ChannelGroup {
                         name: "L/R".to_string(),
                         channels: vec![
                             ChannelInfo {
@@ -102,7 +102,7 @@ impl App {
                         soloed: false,
                         dimmed: false,
                     });
-                    self.level_meter_groups.push(ChannelGroup {
+                    self.level_meters.groups.push(ChannelGroup {
                         name: "Surrounds".to_string(),
                         channels: vec![
                             ChannelInfo {
@@ -137,7 +137,7 @@ impl App {
                             }
                         })
                         .collect();
-                    self.level_meter_groups.push(ChannelGroup {
+                    self.level_meters.groups.push(ChannelGroup {
                         name: "All Channels".to_string(),
                         channels,
                         muted: false,
@@ -154,7 +154,7 @@ impl App {
 
     /// Clear all mutes, solos, and dims in level meter groups
     pub fn clear_level_meter_mutes_and_solos(&mut self) {
-        for group in &mut self.level_meter_groups {
+        for group in &mut self.level_meters.groups {
             group.muted = false;
             group.soloed = false;
             group.dimmed = false;
@@ -165,8 +165,8 @@ impl App {
     /// Toggle mute for the selected level meter group
     pub fn toggle_level_meter_mute(&mut self) {
         if let Some(group) = self
-            .level_meter_groups
-            .get_mut(self.selected_level_meter_group)
+            .level_meters.groups
+            .get_mut(self.level_meters.selected_group)
         {
             group.muted = !group.muted;
             self.update_matrix_channel_states();
@@ -176,16 +176,16 @@ impl App {
     /// Toggle solo for the selected level meter group
     pub fn toggle_level_meter_solo(&mut self) {
         if let Some(group) = self
-            .level_meter_groups
-            .get_mut(self.selected_level_meter_group)
+            .level_meters.groups
+            .get_mut(self.level_meters.selected_group)
         {
             let is_currently_soloed = group.soloed;
 
             // Solo behavior: only one group can be soloed at a time
             // When soloing, set soloed=true on selected group, soloed=false on all others
             // When un-soloing, set soloed=false on selected group
-            for (idx, g) in self.level_meter_groups.iter_mut().enumerate() {
-                if idx == self.selected_level_meter_group {
+            for (idx, g) in self.level_meters.groups.iter_mut().enumerate() {
+                if idx == self.level_meters.selected_group {
                     g.soloed = !is_currently_soloed;
                 } else {
                     g.soloed = false;
@@ -199,8 +199,8 @@ impl App {
     /// Toggle dim for the selected level meter group
     pub fn toggle_level_meter_dim(&mut self) {
         if let Some(group) = self
-            .level_meter_groups
-            .get_mut(self.selected_level_meter_group)
+            .level_meters.groups
+            .get_mut(self.level_meters.selected_group)
         {
             group.dimmed = !group.dimmed;
             self.update_matrix_channel_states();
@@ -214,7 +214,7 @@ impl App {
 
         // Calculate total channel count
         let num_channels = self
-            .level_meter_groups
+            .level_meters.groups
             .iter()
             .map(|g| g.channels.len())
             .sum();
@@ -233,7 +233,7 @@ impl App {
             num_channels
         ];
 
-        for group in &self.level_meter_groups {
+        for group in &self.level_meters.groups {
             for channel_info in &group.channels {
                 if channel_info.index < num_channels {
                     channel_states[channel_info.index] = ChannelState {
@@ -246,8 +246,8 @@ impl App {
         }
 
         // Find and update the permanent Matrix plugin's channel_states in memory
-        for i in 0..self.plugin_graph.len() {
-            if let Some(plugin) = self.plugin_graph.get_plugin_mut(i)
+        for i in 0..self.plugin_rack.graph.len() {
+            if let Some(plugin) = self.plugin_rack.graph.get_plugin_mut(i)
                 && plugin.is_permanent()
                 && matches!(&plugin.settings, PluginSettings::Matrix { .. })
             {
@@ -263,10 +263,10 @@ impl App {
         }
 
         // Queue zero-dropout parameter update via matrix_engine_index
-        if let Some(engine_index) = self.plugin_graph.matrix_engine_index()
+        if let Some(engine_index) = self.plugin_rack.graph.matrix_engine_index()
             && let Ok(json) = serde_json::to_string(&channel_states)
         {
-            self.pending_param_update = Some(PendingParameterUpdate {
+            self.plugin_rack.pending_param_update = Some(PendingParameterUpdate {
                 plugin_index: engine_index,
                 param_id: "channel_states".to_string(),
                 value: json,
@@ -276,34 +276,34 @@ impl App {
 
     /// Navigate to next level meter group
     pub fn select_next_level_meter_group(&mut self) {
-        if !self.level_meter_groups.is_empty() {
-            self.selected_level_meter_group =
-                (self.selected_level_meter_group + 1) % self.level_meter_groups.len();
+        if !self.level_meters.groups.is_empty() {
+            self.level_meters.selected_group =
+                (self.level_meters.selected_group + 1) % self.level_meters.groups.len();
         }
     }
 
     /// Navigate to previous level meter group
     pub fn select_previous_level_meter_group(&mut self) {
-        if !self.level_meter_groups.is_empty() {
-            if self.selected_level_meter_group == 0 {
-                self.selected_level_meter_group = self.level_meter_groups.len() - 1;
+        if !self.level_meters.groups.is_empty() {
+            if self.level_meters.selected_group == 0 {
+                self.level_meters.selected_group = self.level_meters.groups.len() - 1;
             } else {
-                self.selected_level_meter_group -= 1;
+                self.level_meters.selected_group -= 1;
             }
         }
     }
 
     /// Navigate between mute, solo, and dim controls
     pub fn select_next_level_meter_control(&mut self) {
-        self.level_meter_control_selection = (self.level_meter_control_selection + 1) % 3;
+        self.level_meters.control_selection = (self.level_meters.control_selection + 1) % 3;
     }
 
     /// Navigate between mute, solo, and dim controls (previous)
     pub fn select_previous_level_meter_control(&mut self) {
-        self.level_meter_control_selection = if self.level_meter_control_selection == 0 {
+        self.level_meters.control_selection = if self.level_meters.control_selection == 0 {
             2
         } else {
-            self.level_meter_control_selection - 1
+            self.level_meters.control_selection - 1
         };
     }
 }

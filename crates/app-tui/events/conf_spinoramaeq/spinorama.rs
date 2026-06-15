@@ -86,7 +86,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 None
             }
             KeyCode::Down => {
-                let max = app.spinorama_eq.filtered_speakers.len().saturating_sub(1);
+                let max = app.spinorama_eq.model.speaker_suggestions.len().saturating_sub(1);
                 if app.spinorama_eq.selected_speaker_idx < max {
                     app.spinorama_eq.selected_speaker_idx += 1;
                 }
@@ -94,8 +94,8 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             }
             KeyCode::Enter => {
                 let idx = app.spinorama_eq.selected_speaker_idx;
-                if let Some(name) = app.spinorama_eq.filtered_speakers.get(idx).cloned() {
-                    app.spinorama_eq.selected_speaker = Some(name);
+                if let Some(name) = app.spinorama_eq.model.speaker_suggestions.get(idx).cloned() {
+                    app.spinorama_eq.model.selected_speaker = Some(name);
                     app.spinorama_eq.step = SpinoramaStep::Configure;
                 }
                 None
@@ -103,18 +103,18 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             KeyCode::Char('r') => {
                 // Retry speaker list load (e.g. after error)
                 app.spinorama_eq.speakers_error = None;
-                app.spinorama_eq.available_speakers.clear();
-                app.spinorama_eq.loading_speakers = true;
+                app.spinorama_eq.model.available_speakers.clear();
+                app.spinorama_eq.model.loading_speakers = true;
                 spawn_spinorama_speaker_load();
                 None
             }
             KeyCode::Backspace => {
-                app.spinorama_eq.search_query.pop();
+                app.spinorama_eq.model.speaker_search.pop();
                 app.spinorama_eq.update_filter();
                 None
             }
             KeyCode::Char(c) => {
-                app.spinorama_eq.search_query.push(c);
+                app.spinorama_eq.model.speaker_search.push(c);
                 app.spinorama_eq.update_filter();
                 None
             }
@@ -193,7 +193,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 None
             }
             KeyCode::Enter => {
-                match &app.spinorama_eq.opt_status {
+                match &app.spinorama_eq.model.optimization_status {
                     OptimizationStatus::Idle
                     | OptimizationStatus::Failed
                     | OptimizationStatus::Cancelled
@@ -245,15 +245,15 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                             } else {
                                 // Existing EQ but empty — apply directly
                                 match app.apply_spinorama_to_plugins() {
-                                    Ok(msg) => app.status_message = Some(msg),
-                                    Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                                    Ok(msg) => app.ui.status_message = Some(msg),
+                                    Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                                 }
                             }
                         } else {
                             // No existing EQ — apply directly (will insert one)
                             match app.apply_spinorama_to_plugins() {
-                                Ok(msg) => app.status_message = Some(msg),
-                                Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                                Ok(msg) => app.ui.status_message = Some(msg),
+                                Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                             }
                         }
                         None
@@ -268,9 +268,9 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         {
                             let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
                             let filename = format!("pre-spinorama-{}.json", timestamp);
-                            match app.plugin_graph.save_to_file(&presets_dir, &filename) {
+                            match app.plugin_rack.graph.save_to_file(&presets_dir, &filename) {
                                 Ok(_) => {
-                                    app.status_message =
+                                    app.ui.status_message =
                                         Some(format!("Saved backup: {}", filename));
                                     log::info!(
                                         "Auto-saved preset before spinorama overwrite: {}",
@@ -278,7 +278,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                                     );
                                 }
                                 Err(e) => {
-                                    app.status_message = Some(format!("Backup failed: {}", e));
+                                    app.ui.status_message = Some(format!("Backup failed: {}", e));
                                     log::error!("Failed to auto-save preset: {}", e);
                                     // Reset and don't apply
                                     app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
@@ -289,8 +289,8 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         }
                         // Apply
                         match app.apply_spinorama_to_plugins() {
-                            Ok(msg) => app.status_message = Some(msg),
-                            Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                            Ok(msg) => app.ui.status_message = Some(msg),
+                            Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                         }
                         app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
                         app.spinorama_eq.update_existing_eq_info = None;
@@ -299,8 +299,8 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     KeyCode::Char('n') => {
                         // Apply without saving
                         match app.apply_spinorama_to_plugins() {
-                            Ok(msg) => app.status_message = Some(msg),
-                            Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                            Ok(msg) => app.ui.status_message = Some(msg),
+                            Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                         }
                         app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
                         app.spinorama_eq.update_existing_eq_info = None;
@@ -319,7 +319,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 }
 
 fn spinorama_field_value_string(app: &App, field: usize) -> String {
-    let c = &app.spinorama_eq.config;
+    let c = &app.spinorama_eq.model.optimizer_config;
     match field {
         1 => c.num_filters.to_string(),
         2 => format!("{:.0}", c.min_freq),

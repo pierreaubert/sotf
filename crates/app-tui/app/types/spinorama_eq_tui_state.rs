@@ -1,57 +1,48 @@
 use super::SpinUpdateSubStep;
 use super::spinorama_step::SpinoramaStep;
 use sotf_audio_player::room_eq_types::OptimizationStatus;
-use sotf_audio_player::spinorama_eq_types::{SpinoramaBiquad, SpinoramaOptimizerConfig};
+use sotf_audio_player::spinorama_eq_types::SpinoramaOptimizerConfig;
+use sotf_audio_player::ui_models::spinorama_eq::SpinoramaEqScreenModel;
 
-/// TUI state for the Spinorama EQ wizard
+/// TUI state for the Spinorama EQ wizard.
+///
+/// Domain state (speaker selection, optimizer config, optimization
+/// progress/results, curves) lives in the shared [`SpinoramaEqScreenModel`]
+/// from `sotf-player`; this struct only holds view state that is specific to
+/// the terminal UI.
 #[derive(Debug, Clone)]
 pub struct SpinoramaEqTuiState {
+    /// Shared, UI-agnostic Spinorama EQ wizard domain model.
+    pub model: SpinoramaEqScreenModel,
+
+    /// Current step in the TUI workflow.
     pub step: SpinoramaStep,
     /// When true, the wizard step tab bar has focus (Left/Right change step).
     pub step_tab_focused: bool,
+
     // Step 1: speaker selection
-    pub search_query: String,
-    pub available_speakers: Vec<String>,
-    pub filtered_speakers: Vec<String>,
     pub selected_speaker_idx: usize,
-    pub selected_speaker: Option<String>,
-    pub loading_speakers: bool,
     pub speakers_error: Option<String>,
-    // Step 2: configuration (shared config struct)
-    pub config: SpinoramaOptimizerConfig,
+
+    // Step 2: configuration
     pub selected_field: usize, // which config field is selected
-    /// True when a numerical field is being directly edited via keyboard
+    /// True when a numerical field is being directly edited via keyboard.
     pub editing_value: bool,
     pub edit_buffer: String,
+
     // Step 3: optimization progress
-    pub opt_status: OptimizationStatus,
-    pub opt_error: Option<String>,
-    pub opt_progress: f32,
-    pub opt_loss: f64,
-    pub opt_iteration: usize,
     pub opt_max_iter: usize,
-    // Step 4: results
-    pub filters: Vec<SpinoramaBiquad>,
-    pub pre_loss: f64,
-    pub post_loss: f64,
-    // Frequency response curves (log-spaced Hz, dB values)
-    pub curve_frequencies: Vec<f64>,
-    pub curve_input: Vec<f64>,
-    pub curve_target: Vec<f64>,
-    pub curve_corrected: Vec<f64>,
-    pub curve_filter_response: Vec<f64>,
-    // Optimization loss history: (iteration, loss, optional score)
-    pub loss_history: Vec<(usize, f64, Option<f64>)>,
+
     // Step 5: update plugin confirmation
     pub update_substep: SpinUpdateSubStep,
-    /// (slot_index, filter_count) of existing EQ to overwrite
+    /// (slot_index, filter_count) of existing EQ to overwrite.
     pub update_existing_eq_info: Option<(usize, usize)>,
 }
 
 impl Default for SpinoramaEqTuiState {
     fn default() -> Self {
-        // TUI uses slightly different defaults than GPUI
-        let config = SpinoramaOptimizerConfig {
+        // TUI uses slightly different defaults than GPUI.
+        let optimizer_config = SpinoramaOptimizerConfig {
             population: 50,
             smooth: true,
             smooth_n: 1,
@@ -61,35 +52,20 @@ impl Default for SpinoramaEqTuiState {
             atolerance: 1e-4,
             ..SpinoramaOptimizerConfig::default()
         };
+        let model = SpinoramaEqScreenModel {
+            optimizer_config,
+            ..SpinoramaEqScreenModel::default()
+        };
         Self {
+            model,
             step: SpinoramaStep::Select,
             step_tab_focused: false,
-            search_query: String::new(),
-            available_speakers: Vec::new(),
-            filtered_speakers: Vec::new(),
             selected_speaker_idx: 0,
-            selected_speaker: None,
-            loading_speakers: false,
             speakers_error: None,
-            config,
             selected_field: 0,
             editing_value: false,
             edit_buffer: String::new(),
-            opt_status: OptimizationStatus::Idle,
-            opt_error: None,
-            opt_progress: 0.0,
-            opt_loss: 0.0,
-            opt_iteration: 0,
             opt_max_iter: 0,
-            filters: Vec::new(),
-            pre_loss: 0.0,
-            post_loss: 0.0,
-            curve_frequencies: Vec::new(),
-            curve_input: Vec::new(),
-            curve_target: Vec::new(),
-            curve_corrected: Vec::new(),
-            curve_filter_response: Vec::new(),
-            loss_history: Vec::new(),
             update_substep: SpinUpdateSubStep::Ready,
             update_existing_eq_info: None,
         }
@@ -97,18 +73,27 @@ impl Default for SpinoramaEqTuiState {
 }
 
 impl SpinoramaEqTuiState {
+    /// Update filtered speakers based on search query.
     pub fn update_filter(&mut self) {
-        if self.search_query.is_empty() {
-            self.filtered_speakers = self.available_speakers.clone();
+        self.model.update_suggestions();
+        // Clamp index
+        if !self.model.speaker_suggestions.is_empty() {
+            self.selected_speaker_idx = self
+                .selected_speaker_idx
+                .min(self.model.speaker_suggestions.len() - 1);
         } else {
-            let q = self.search_query.to_lowercase();
-            self.filtered_speakers = self
-                .available_speakers
-                .iter()
-                .filter(|s| s.to_lowercase().contains(&q))
-                .cloned()
-                .collect();
+            self.selected_speaker_idx = 0;
         }
-        self.selected_speaker_idx = 0;
+    }
+
+    /// Reset optimization state.
+    pub fn reset_optimization(&mut self) {
+        self.model.reset_optimization();
+        self.opt_max_iter = 0;
+    }
+
+    /// Check if optimization is running.
+    pub fn is_optimizing(&self) -> bool {
+        self.model.optimization_status == OptimizationStatus::Running
     }
 }

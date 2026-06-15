@@ -5,7 +5,7 @@ pub(super) fn is_headphone_eq_field_numerical(field: usize) -> bool {
 }
 
 pub(super) fn set_headphone_eq_field_from_string(app: &mut App) {
-    let c = &mut app.headphone_eq.config;
+    let c = &mut app.headphone_eq.model.optimizer_config;
     let buf = &app.headphone_eq.edit_buffer;
     match app.headphone_eq.config_selected_field {
         0 => {
@@ -84,7 +84,7 @@ pub(super) fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
         if let Some(preset) = autoeq::find_preset(EqWorkflow::Headphone, &new_id)
             && let Some(params) = preset.apply()
         {
-            let c = &mut app.headphone_eq.config;
+            let c = &mut app.headphone_eq.model.optimizer_config;
             c.num_filters = params.num_filters;
             c.min_freq = params.min_freq;
             c.max_freq = params.max_freq;
@@ -108,11 +108,11 @@ pub(super) fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
             .iter()
             .map(|(id, _)| *id)
             .collect();
-        app.headphone_eq.config.loss =
-            super::super::cycle_string(&app.headphone_eq.config.loss, &losses, delta);
+        app.headphone_eq.model.optimizer_config.loss =
+            super::super::cycle_string(&app.headphone_eq.model.optimizer_config.loss, &losses, delta);
         return;
     }
-    let c = &mut app.headphone_eq.config;
+    let c = &mut app.headphone_eq.model.optimizer_config;
     match app.headphone_eq.config_selected_field {
         0 => {
             let n = c.num_filters as i32 + delta;

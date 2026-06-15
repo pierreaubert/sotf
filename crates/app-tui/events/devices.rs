@@ -21,8 +21,8 @@ pub(super) fn handle_devices_keys(app: &mut App, key: KeyEvent) -> Option<Player
             // Rescan local output devices and re-trigger Cast (AirPlay /
             // Chromecast) discovery on the local network.
             app.reload_all_devices();
-            app.status_message = Some("Rescanning audio + cast devices…".to_string());
-            app.needs_redraw = true;
+            app.ui.status_message = Some("Rescanning audio + cast devices…".to_string());
+            app.ui.needs_redraw = true;
             None
         }
         _ => None,

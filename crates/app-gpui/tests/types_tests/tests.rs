@@ -209,7 +209,7 @@ fn test_headphone_eq_custom_target_path_helpers() {
     assert!(state.requires_custom_target_path());
     assert!(!state.has_custom_target_path());
 
-    state.custom_target_path = Some(" /tmp/custom-target.csv ".to_string());
+    state.model.custom_target_path = " /tmp/custom-target.csv ".to_string();
     assert!(state.has_custom_target_path());
 }
 

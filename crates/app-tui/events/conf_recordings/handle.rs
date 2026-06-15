@@ -69,26 +69,26 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
     if app.recording.step_tab_focused {
         match key.code {
             KeyCode::Left | KeyCode::BackTab => {
-                app.recording.step = recording_step_prev_wrap(app.recording.step);
+                app.recording.model.step = recording_step_prev_wrap(app.recording.model.step);
                 return None;
             }
             KeyCode::Right | KeyCode::Tab => {
-                let next = recording_step_next_wrap(app.recording.step);
+                let next = recording_step_next_wrap(app.recording.model.step);
                 // Guard: entering Capture requires an output directory.
                 // `recording_step_next_wrap(SplCalibration) == Capture`,
                 // so the guard fires on the SplCalibration→Capture
                 // edge — Config and Capture are not adjacent in the
                 // wrap order (Config → SplCalibration → Capture).
                 if next == RecordingStep::Capture
-                    && app.recording.step == RecordingStep::SplCalibration
+                    && app.recording.model.step == RecordingStep::SplCalibration
                 {
                     if app.recording.output_directory.is_empty() {
-                        app.recording.status_message = "Set an output directory first".to_string();
+                        app.recording.model.status_message = "Set an output directory first".to_string();
                         return None;
                     }
                     init_recording_channels(app);
                 }
-                app.recording.step = next;
+                app.recording.model.step = next;
                 return None;
             }
             KeyCode::Up => {
@@ -104,11 +104,13 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
         }
     }
 
-    match app.recording.step {
+    match app.recording.model.step {
         RecordingStep::Config => {
             if app.recording.editing_output_dir {
                 match key.code {
                     KeyCode::Enter => {
+                        app.recording.model.recording_base_directory =
+                            Some(app.recording.output_directory.clone());
                         app.recording.editing_output_dir = false;
                         app.clear_autocomplete();
                     }
@@ -285,7 +287,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     if matches!(
                         recording_field_at(&app.recording, app.recording.selected_field),
                         Some(RecordingField::SpeakerConfig)
-                    ) && app.recording.playback_config.speaker_configuration
+                    ) && app.recording.model.playback_config.speaker_configuration
                         == sotf_audio_player::recording_types::SpeakerConfiguration::Custom =>
                 {
                     add_custom_speaker(app);
@@ -294,7 +296,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     if matches!(
                         recording_field_at(&app.recording, app.recording.selected_field),
                         Some(RecordingField::SpeakerConfig)
-                    ) && app.recording.playback_config.speaker_configuration
+                    ) && app.recording.model.playback_config.speaker_configuration
                         == sotf_audio_player::recording_types::SpeakerConfiguration::Custom =>
                 {
                     remove_custom_speaker(app);
@@ -313,9 +315,9 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 
         RecordingStep::Capture => match key.code {
             KeyCode::Up => {
-                match app.recording.current_channel {
+                match app.recording.model.current_recording_channel {
                     Some(ch) if ch > 0 => {
-                        app.recording.current_channel = Some(ch - 1);
+                        app.recording.model.current_recording_channel = Some(ch - 1);
                     }
                     _ => {
                         app.recording.step_tab_focused = true;
@@ -324,20 +326,21 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 None
             }
             KeyCode::Down => {
-                if let Some(ch) = app.recording.current_channel {
-                    if ch + 1 < app.recording.channel_recordings.len() {
-                        app.recording.current_channel = Some(ch + 1);
+                if let Some(ch) = app.recording.model.current_recording_channel {
+                    if ch + 1 < app.recording.model.channel_recordings.len() {
+                        app.recording.model.current_recording_channel = Some(ch + 1);
                     }
-                } else if !app.recording.channel_recordings.is_empty() {
-                    app.recording.current_channel = Some(0);
+                } else if !app.recording.model.channel_recordings.is_empty() {
+                    app.recording.model.current_recording_channel = Some(0);
                 }
                 None
             }
             KeyCode::Enter => {
                 // B2: Record current channel via engine
-                if let Some(ch_idx) = app.recording.current_channel {
+                if let Some(ch_idx) = app.recording.model.current_recording_channel {
                     let can_record = app
                         .recording
+                        .model
                         .channel_recordings
                         .get(ch_idx)
                         .map(|ch| {
@@ -352,7 +355,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 None
             }
             KeyCode::BackTab => {
-                app.recording.step = RecordingStep::Config;
+                app.recording.model.step = RecordingStep::Config;
                 None
             }
             _ => None,
@@ -369,18 +372,19 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             }
             KeyCode::Down => {
                 let completed = app
-                    .recording
-                    .channel_recordings
-                    .iter()
-                    .filter(|ch| ch.state == ChannelRecordingState::Done)
-                    .count();
+                        .recording
+                        .model
+                        .channel_recordings
+                        .iter()
+                        .filter(|ch| ch.state == ChannelRecordingState::Done)
+                        .count();
                 if app.recording.selected_channel_view + 1 < completed {
                     app.recording.selected_channel_view += 1;
                 }
                 None
             }
             KeyCode::BackTab => {
-                app.recording.step = RecordingStep::Capture;
+                app.recording.model.step = RecordingStep::Capture;
                 None
             }
             _ => None,
@@ -441,18 +445,18 @@ fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
                 match app.recording.probe_selected_field {
                     FIELD_PROBE_MS => {
                         if let Ok(v) = v {
-                            app.recording.probe_capture.probe_duration_ms = v.clamp(100.0, 5000.0);
+                            app.recording.model.probe_capture.probe_duration_ms = v.clamp(100.0, 5000.0);
                         }
                     }
                     FIELD_SILENCE_MS => {
                         if let Ok(v) = v {
-                            app.recording.probe_capture.silence_duration_ms =
+                            app.recording.model.probe_capture.silence_duration_ms =
                                 v.clamp(100.0, 5000.0);
                         }
                     }
                     FIELD_MIC_CHANNEL => {
                         if let Ok(v) = v {
-                            app.recording.probe_capture.input_channel = v.max(0.0) as u16;
+                            app.recording.model.probe_capture.input_channel = v.max(0.0) as u16;
                         }
                     }
                     _ => {}
@@ -472,7 +476,7 @@ fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
     }
 
     let running = matches!(
-        app.recording.probe_capture.status,
+        app.recording.model.probe_capture.status,
         ProbeCaptureStatus::Running { .. }
     );
 
@@ -487,31 +491,31 @@ fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('+') | KeyCode::Right => match app.recording.probe_selected_field {
             FIELD_PROBE_MS => {
-                let v = (app.recording.probe_capture.probe_duration_ms + 100.0).min(5000.0);
-                app.recording.probe_capture.probe_duration_ms = v;
+                let v = (app.recording.model.probe_capture.probe_duration_ms + 100.0).min(5000.0);
+                app.recording.model.probe_capture.probe_duration_ms = v;
             }
             FIELD_SILENCE_MS => {
-                let v = (app.recording.probe_capture.silence_duration_ms + 100.0).min(5000.0);
-                app.recording.probe_capture.silence_duration_ms = v;
+                let v = (app.recording.model.probe_capture.silence_duration_ms + 100.0).min(5000.0);
+                app.recording.model.probe_capture.silence_duration_ms = v;
             }
             FIELD_MIC_CHANNEL => {
-                app.recording.probe_capture.input_channel =
-                    app.recording.probe_capture.input_channel.saturating_add(1);
+                app.recording.model.probe_capture.input_channel =
+                    app.recording.model.probe_capture.input_channel.saturating_add(1);
             }
             _ => {}
         },
         KeyCode::Char('-') | KeyCode::Left => match app.recording.probe_selected_field {
             FIELD_PROBE_MS => {
-                let v = (app.recording.probe_capture.probe_duration_ms - 100.0).max(100.0);
-                app.recording.probe_capture.probe_duration_ms = v;
+                let v = (app.recording.model.probe_capture.probe_duration_ms - 100.0).max(100.0);
+                app.recording.model.probe_capture.probe_duration_ms = v;
             }
             FIELD_SILENCE_MS => {
-                let v = (app.recording.probe_capture.silence_duration_ms - 100.0).max(100.0);
-                app.recording.probe_capture.silence_duration_ms = v;
+                let v = (app.recording.model.probe_capture.silence_duration_ms - 100.0).max(100.0);
+                app.recording.model.probe_capture.silence_duration_ms = v;
             }
             FIELD_MIC_CHANNEL => {
-                app.recording.probe_capture.input_channel =
-                    app.recording.probe_capture.input_channel.saturating_sub(1);
+                app.recording.model.probe_capture.input_channel =
+                    app.recording.model.probe_capture.input_channel.saturating_sub(1);
             }
             _ => {}
         },
@@ -541,7 +545,7 @@ fn handle_spl_calibration_step_keys(app: &mut App, key: KeyEvent) {
             }
             KeyCode::Enter => {
                 let parsed = app.recording.edit_buffer.trim().parse::<f32>();
-                let cal = &mut app.recording.spl_calibration_capture;
+                let cal = &mut app.recording.model.spl_calibration_capture;
                 match app.recording.spl_selected_field {
                     SPL_FIELD_REF_FREQ => {
                         if let Ok(v) = parsed
@@ -605,7 +609,7 @@ fn handle_spl_calibration_step_keys(app: &mut App, key: KeyEvent) {
     }
 
     let running = matches!(
-        app.recording.spl_calibration_capture.status,
+        app.recording.model.spl_calibration_capture.status,
         SplCalibrationCaptureStatus::Running { .. }
     );
 
@@ -651,7 +655,7 @@ fn handle_bass_anchor_step_keys(app: &mut App, key: KeyEvent) {
     use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
 
     let running = matches!(
-        app.recording.bass_anchor_capture.status,
+        app.recording.model.bass_anchor_capture.status,
         BassAnchorCaptureStatus::Running { .. }
     );
 
@@ -738,12 +742,12 @@ fn handle_saving_step_keys(app: &mut App, key: KeyEvent) {
                 (app.recording.selected_save_field + 1) % field_count.max(1);
         }
         KeyCode::BackTab => {
-            app.recording.step = RecordingStep::Evaluating;
+            app.recording.model.step = RecordingStep::Evaluating;
         }
         KeyCode::Enter => {
             if app.recording.selected_save_field == 4 {
                 // Unit toggle is a pure cycle — no edit mode needed.
-                app.recording.save_room_unit = app.recording.save_room_unit.toggled();
+                app.recording.model.room_dimension_unit = app.recording.model.room_dimension_unit.toggled();
             } else {
                 app.recording.editing_save_value = true;
                 app.recording.edit_buffer = current_save_field_value(app);
@@ -752,7 +756,7 @@ fn handle_saving_step_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('u') | KeyCode::Char('U') => {
             // Quick keyboard shortcut for the unit toggle from any
             // field — saves the user tabbing to field 4.
-            app.recording.save_room_unit = app.recording.save_room_unit.toggled();
+            app.recording.model.room_dimension_unit = app.recording.model.room_dimension_unit.toggled();
         }
         _ => {}
     }

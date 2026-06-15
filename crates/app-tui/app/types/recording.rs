@@ -5,7 +5,7 @@ use super::recording_tui_state::RecordingTuiState;
 /// last valid row.
 pub fn recording_field_at(s: &RecordingTuiState, idx: usize) -> Option<RecordingField> {
     use RecordingField::*;
-    let n = s.recording_config.num_channels.max(1);
+    let n = s.model.recording_config.num_channels.max(1);
     match idx {
         0 => Some(PlaybackDevice),
         1 => Some(RecordingDevice),
@@ -27,5 +27,5 @@ pub fn recording_field_at(s: &RecordingTuiState, idx: usize) -> Option<Recording
 
 /// Total number of selectable rows for the current state.
 pub fn recording_field_count(s: &RecordingTuiState) -> usize {
-    12 + 2 * s.recording_config.num_channels.max(1)
+    12 + 2 * s.model.recording_config.num_channels.max(1)
 }

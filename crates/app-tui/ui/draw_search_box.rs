@@ -10,13 +10,13 @@ pub(crate) fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let search_text = if app.input_mode == InputMode::Search {
-        format!("Search: {}█", app.search_query)
+        format!("Search: {}█", app.library_view.search_query)
     } else {
-        format!("Search: {}", app.search_query)
+        format!("Search: {}", app.library_view.search_query)
     };
 
     // Display current sort order (will be rendered in green)
-    let sort_order_str = match app.library_sort_order {
+    let sort_order_str = match app.library_view.sort_order {
         LibrarySortOrder::Year => "Year",
         LibrarySortOrder::Genre => "Genre",
         LibrarySortOrder::Artist => "Artist",
@@ -27,7 +27,7 @@ pub(crate) fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
     };
 
     // Display current channel filter (will be rendered in green)
-    let filter_str = match app.channel_filter {
+    let filter_str = match app.library_view.channel_filter {
         ChannelFilter::All => "All".to_string(),
         ChannelFilter::Mono => "Mono".to_string(),
         ChannelFilter::Stereo => "2.0".to_string(),

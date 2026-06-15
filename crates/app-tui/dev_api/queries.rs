@@ -16,9 +16,9 @@ pub fn resolve(path: &str, app: &App) -> Result<Value> {
 fn read_path(path: &str, app: &App) -> Result<Value> {
     Ok(match path {
         // Playback
-        "playback.volume" => json!(app.volume),
-        "playback.is_playing" => json!(app.is_playing),
-        "playback.muted" => json!(app.muted),
+        "playback.volume" => json!(app.playback.volume),
+        "playback.is_playing" => json!(app.playback.is_playing),
+        "playback.muted" => json!(app.playback.muted),
 
         // Screen / navigation
         "screen.focused" => json!(format!("{:?}", app.current_screen)),
@@ -27,7 +27,7 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
 
         // Queue
         "queue.length" => json!(app.queue.len()),
-        "queue.current_index" => match app.current_queue_index {
+        "queue.current_index" => match app.playback.current_queue_index {
             Some(i) => json!(i),
             None => Value::Null,
         },
@@ -44,46 +44,46 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         ),
 
         // Metadata editor
-        "metadata.editor_open" => json!(app.metadata_editor.is_some()),
+        "metadata.editor_open" => json!(app.modal.metadata_editor.is_some()),
         "metadata.target" => json!(
-            app.metadata_editor
+            app.modal.metadata_editor
                 .as_ref()
                 .map(|editor| editor.target_label.clone())
         ),
         "metadata.title" => json!(
-            app.metadata_editor
+            app.modal.metadata_editor
                 .as_ref()
                 .map(|editor| editor.fields.title.clone())
         ),
         "metadata.year" => json!(
-            app.metadata_editor
+            app.modal.metadata_editor
                 .as_ref()
                 .map(|editor| editor.fields.year.clone())
         ),
         "metadata.preview_files" => json!(
-            app.metadata_editor
+            app.modal.metadata_editor
                 .as_ref()
                 .and_then(|editor| editor.preview.as_ref())
                 .map(|preview| preview.affected_files.len())
         ),
         "metadata.unsupported_count" => json!(
-            app.metadata_editor
+            app.modal.metadata_editor
                 .as_ref()
                 .and_then(|editor| editor.preview.as_ref())
                 .map(|preview| preview.unsupported_writes.len())
         ),
         "metadata.candidate_count" => json!(
-            app.metadata_editor
+            app.modal.metadata_editor
                 .as_ref()
                 .map(|editor| editor.search_results.len())
         ),
 
         // Recording
-        "recording.step" => json!(format!("{:?}", app.recording.step)),
+        "recording.step" => json!(format!("{:?}", app.recording.model.step)),
         "recording.all_done" => {
             json!(
                 app.recording
-                    .channel_recordings
+                    .model.channel_recordings
                     .iter()
                     .all(|c| c.state
                         == sotf_audio_player::recording_types::ChannelRecordingState::Done)
@@ -91,15 +91,15 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         }
         "recording.done_count" => json!(
             app.recording
-                .channel_recordings
+                .model.channel_recordings
                 .iter()
                 .filter(
                     |c| c.state == sotf_audio_player::recording_types::ChannelRecordingState::Done
                 )
                 .count()
         ),
-        "recording.channel_count" => json!(app.recording.channel_recordings.len()),
-        "recording.status" => json!(app.recording.status_message),
+        "recording.channel_count" => json!(app.recording.model.channel_recordings.len()),
+        "recording.status" => json!(app.recording.model.status_message),
 
         // Room EQ
         "roomeq.step" => json!(format!("{:?}", app.room_eq.model.step)),
@@ -113,6 +113,7 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         }
         "roomeq.filter_count" => json!(
             app.room_eq
+                .model
                 .channel_results
                 .iter()
                 .map(|r| r.eq_filters.len())
@@ -124,7 +125,7 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "roomeq.average_post_score" => {
             json!(average_room_eq_score(&app.room_eq.model.channel_results, |r| r.post_score))
         }
-        "roomeq.status" => json!(app.room_eq.model.status_message.as_deref().unwrap_or("")),
+        "roomeq.status" => json!(app.room_eq.model.status_message.as_str()),
         "roomeq.error" => json!(app.room_eq.model.error_message.as_deref().unwrap_or("")),
 
         // Headphone EQ
@@ -137,25 +138,25 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "settings.theme" => json!("dark"),
 
         // Audio devices
-        "audio.output_device" => json!(app.current_output_device_name),
-        "audio.output_device_count" => json!(app.output_devices.len()),
+        "audio.output_device" => json!(app.audio_devices.current_output_name),
+        "audio.output_device_count" => json!(app.audio_devices.outputs.len()),
 
         // Plugins
-        "plugins.count" => json!(app.plugin_graph.plugin_count()),
+        "plugins.count" => json!(app.plugin_rack.graph.plugin_count()),
 
         // Playlists
-        "playlists.count" => json!(app.playlist_controller.playlists().len()),
+        "playlists.count" => json!(app.playlists.controller.playlists().len()),
 
         // Level meters
         "level_meters.channel_count" => json!(
-            app.level_meter_groups
+            app.level_meters.groups
                 .iter()
                 .map(|g| g.channels.len())
                 .sum::<usize>()
         ),
 
         // Cast
-        "cast.device_count" => json!(app.cast_devices.len()),
+        "cast.device_count" => json!(app.audio_devices.cast.len()),
 
         other => return Err(anyhow!("unknown query path: `{other}`")),
     })

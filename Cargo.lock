@@ -9727,6 +9727,7 @@ dependencies = [
  "sotf-test",
  "sotf-testkit",
  "sotf-tls",
+ "strsim",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",

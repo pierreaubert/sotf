@@ -5,14 +5,14 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
 
     // Calculate channel count for truncation logic
     let num_channels = app
-        .loudness_info
+        .playback.loudness_info
         .as_ref()
         .map(|info| info.channel_peaks.len())
         .unwrap_or(2);
 
-    match app.library_view_mode {
+    match app.library_view.mode {
         LibraryViewMode::Flat => {
-            let albums = &app.cached_filtered_albums;
+            let albums = &app.library_view.cached_filtered_albums;
 
             let items: Vec<ListItem> = albums
                 .iter()
@@ -35,7 +35,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                         format!("{}{}", fav_prefix, content)
                     };
 
-                    let style = if i == app.selected_album_index {
+                    let style = if i == app.library_view.selected_album_index {
                         Style::default()
                             .fg(app.theme.fg_selected)
                             .bg(app.theme.bg_selected)
@@ -61,7 +61,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                         .title(format!(
                             "Albums ({}){}  'a' add, 't' tree, 'f' fav, 'F' filter",
                             albums.len(),
-                            if app.show_favorites_only {
+                            if app.library_view.show_favorites_only {
                                 " [\u{2665} Favorites]"
                             } else {
                                 ""
@@ -76,7 +76,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                 );
 
             let mut state = ListState::default();
-            state.select(Some(app.selected_album_index));
+            state.select(Some(app.library_view.selected_album_index));
 
             StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
         }
@@ -97,7 +97,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                             let mut style = Style::default()
                                 .fg(app.theme.accent_primary)
                                 .add_modifier(Modifier::BOLD);
-                            if i == app.selected_tree_index {
+                            if i == app.library_view.selected_tree_index {
                                 style = style.bg(app.theme.bg_highlight);
                             }
                             (content, style)
@@ -116,7 +116,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                                     format!("  └─ {}", truncated)
                                 };
 
-                                let style = if i == app.selected_tree_index {
+                                let style = if i == app.library_view.selected_tree_index {
                                     Style::default()
                                         .fg(app.theme.fg_selected)
                                         .bg(app.theme.bg_selected)
@@ -149,7 +149,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                     .border_type(border_type)
                     .title(format!(
                         "Artists ({}) - 'h/l' to expand/collapse, 'a' to add, 't' to toggle view",
-                        app.artist_tree.len()
+                        app.library_view.artist_tree.len()
                     )))
                 .highlight_style(
                     Style::default()
@@ -159,7 +159,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                 );
 
             let mut state = ListState::default();
-            state.select(Some(app.selected_tree_index));
+            state.select(Some(app.library_view.selected_tree_index));
 
             StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
         }

@@ -59,7 +59,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    if let Some(ref loudness) = app.loudness_info {
+    if let Some(ref loudness) = app.playback.loudness_info {
         let mut y_offset = 0;
         // Reused stack buffer for all short numeric gauge labels in this box.
         let mut label_buf = MeterLabelBuf::new();
@@ -437,7 +437,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
 
 pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     // Check for loudness info first
-    let has_loudness = app.loudness_info.is_some();
+    let has_loudness = app.playback.loudness_info.is_some();
     if !has_loudness {
         let paragraph = Paragraph::new("No audio")
             .style(Style::default().fg(app.theme.fg_muted))
@@ -448,7 +448,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let num_channels = app
-        .loudness_info
+        .playback.loudness_info
         .as_ref()
         .map(|l| l.channel_peaks.len())
         .unwrap_or(0);
@@ -465,7 +465,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     app.update_level_meter_groups();
 
     // Now borrow loudness immutably for the rest of the function
-    let loudness = app.loudness_info.as_ref().unwrap();
+    let loudness = app.playback.loudness_info.as_ref().unwrap();
 
     // Draw border with simple title
     let title_lines = [Line::from("Levels (help: ?)")];
@@ -508,7 +508,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 
     // Calculate dimensions
     let max_name_lines = app
-        .level_meter_groups
+        .level_meters.groups
         .iter()
         .flat_map(|g| &g.channels)
         .map(|ch| ch.display_name.len())
@@ -531,7 +531,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 
     // Check if we should show right-side scale (only for single stereo group with enough space)
     let is_single_stereo_group =
-        app.level_meter_groups.len() == 1 && app.level_meter_groups[0].channels.len() == 2;
+        app.level_meters.groups.len() == 1 && app.level_meters.groups[0].channels.len() == 2;
     let right_scale_width = if is_single_stereo_group && available_width >= scale_width * 2 + 8 {
         scale_width
     } else {
@@ -539,11 +539,11 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     };
 
     // Calculate total width for multi-group layout
-    let num_group_gaps = app.level_meter_groups.len().saturating_sub(1);
+    let num_group_gaps = app.level_meters.groups.len().saturating_sub(1);
 
     // First try with padded group widths (min 3 for [M][S][D] controls)
     let padded_groups_width: usize = app
-        .level_meter_groups
+        .level_meters.groups
         .iter()
         .map(|g| g.channels.len().max(3))
         .sum::<usize>()
@@ -554,7 +554,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 
     // If padded widths don't fit, use actual channel counts (no min 3 padding)
     let compact_groups_width: usize = app
-        .level_meter_groups
+        .level_meters.groups
         .iter()
         .map(|g| g.channels.len())
         .sum::<usize>()
@@ -626,8 +626,8 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     }
 
     // Draw each group
-    for (group_idx, group) in app.level_meter_groups.iter().enumerate() {
-        let is_selected = group_idx == app.selected_level_meter_group;
+    for (group_idx, group) in app.level_meters.groups.iter().enumerate() {
+        let is_selected = group_idx == app.level_meters.selected_group;
 
         // Calculate width for this group
         let num_channels = group.channels.len();
@@ -830,7 +830,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         // Draw M/S/D controls for this group
         // Show controls if there's space, or always for stereo (centered layout)
         let show_controls =
-            is_stereo || (app.level_meter_groups.len() > 1 && x_offset + 3 <= available_width);
+            is_stereo || (app.level_meters.groups.len() > 1 && x_offset + 3 <= available_width);
         if show_controls {
             // Center [M][S][D] (3 chars) under the group
             let controls_x = if is_stereo {
@@ -863,7 +863,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
             let controls_y = inner.y + meter_height as u16 + max_name_lines as u16;
 
             // Mute button
-            let mute_style = if is_selected && app.level_meter_control_selection == 0 {
+            let mute_style = if is_selected && app.level_meters.control_selection == 0 {
                 Style::default()
                     .fg(app.theme.fg_selected)
                     .bg(app.theme.bg_selected)
@@ -885,7 +885,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
             );
 
             // Solo button
-            let solo_style = if is_selected && app.level_meter_control_selection == 1 {
+            let solo_style = if is_selected && app.level_meters.control_selection == 1 {
                 Style::default()
                     .fg(app.theme.fg_selected)
                     .bg(app.theme.bg_selected)
@@ -907,7 +907,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
             );
 
             // Dim button
-            let dim_style = if is_selected && app.level_meter_control_selection == 2 {
+            let dim_style = if is_selected && app.level_meters.control_selection == 2 {
                 Style::default()
                     .fg(app.theme.fg_selected)
                     .bg(app.theme.bg_selected)
@@ -945,7 +945,7 @@ mod tests {
 
     fn test_app_with_loudness() -> App {
         let mut app = App::new(Theme::default(), /* read_only */ true);
-        app.loudness_info = Some(LoudnessData {
+        app.playback.loudness_info = Some(LoudnessData {
             momentary_lufs: -10.5,
             shortterm_lufs: -12.0,
             integrated_lufs: -14.0,

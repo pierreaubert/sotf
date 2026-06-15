@@ -9,7 +9,7 @@ impl App {
             log::info!("Skipping library scan (read-only mode)");
             return;
         }
-        if self.scan_in_progress {
+        if self.scan.in_progress {
             return; // Already scanning
         }
 
@@ -22,22 +22,22 @@ impl App {
             .collect();
 
         if directories.is_empty() {
-            self.status_message = Some("No directories to scan".to_string());
+            self.ui.status_message = Some("No directories to scan".to_string());
             return;
         }
 
         // Start background scanner (with pause support during playback)
         let scanner = sotf_audio_player::LibraryScanner::start_with_pause(
             directories,
-            Arc::clone(&self.scanner_pause_flag),
+            Arc::clone(&self.scan.pause_flag),
         );
-        self.library_scanner = Some(scanner);
+        self.scan.library_scanner = Some(scanner);
 
-        self.scan_in_progress = true;
-        self.scan_progress_tracks = 0;
-        self.scan_progress_albums = 0;
-        self.scanner_pause_override = true;
-        self.status_message = Some("Starting library scan...".to_string());
+        self.scan.in_progress = true;
+        self.scan.progress_tracks = 0;
+        self.scan.progress_albums = 0;
+        self.scan.pause_override = true;
+        self.ui.status_message = Some("Starting library scan...".to_string());
         log::info!("Started background library scan");
     }
 
@@ -50,7 +50,7 @@ impl App {
             log::info!("Skipping force library scan (read-only mode)");
             return;
         }
-        if self.scan_in_progress {
+        if self.scan.in_progress {
             return; // Already scanning
         }
 
@@ -63,34 +63,34 @@ impl App {
             .collect();
 
         if directories.is_empty() {
-            self.status_message = Some("No directories to scan".to_string());
+            self.ui.status_message = Some("No directories to scan".to_string());
             return;
         }
 
         // Start background scanner with force=true (with pause support during playback)
         let scanner = sotf_audio_player::LibraryScanner::start_force_with_pause(
             directories,
-            Arc::clone(&self.scanner_pause_flag),
+            Arc::clone(&self.scan.pause_flag),
         );
-        self.library_scanner = Some(scanner);
+        self.scan.library_scanner = Some(scanner);
 
-        self.scan_in_progress = true;
-        self.scan_progress_tracks = 0;
-        self.scan_progress_albums = 0;
-        self.scanner_pause_override = true;
-        self.status_message = Some("Starting FORCE library scan (all files)...".to_string());
+        self.scan.in_progress = true;
+        self.scan.progress_tracks = 0;
+        self.scan.progress_albums = 0;
+        self.scan.pause_override = true;
+        self.ui.status_message = Some("Starting FORCE library scan (all files)...".to_string());
         log::info!("Started FORCE background library scan");
     }
 
     /// Check progress of background library scan
     pub fn check_library_scan_progress(&mut self) {
-        if !self.scan_in_progress {
+        if !self.scan.in_progress {
             return;
         }
 
         // Drain messages one at a time instead of collecting them into a Vec.
         // This bounds memory usage when the UI thread falls behind the scanner.
-        let scanner = match &self.library_scanner {
+        let scanner = match &self.scan.library_scanner {
             Some(s) => s,
             None => return,
         };
@@ -106,19 +106,19 @@ impl App {
 
             match msg {
                 LibraryScanMessage::Progress { tracks, albums, .. } => {
-                    self.scan_progress_tracks = tracks;
-                    self.scan_progress_albums = albums;
-                    self.status_message = Some(format!(
+                    self.scan.progress_tracks = tracks;
+                    self.scan.progress_albums = albums;
+                    self.ui.status_message = Some(format!(
                         "Scanning: {} tracks, {} albums found...",
                         tracks, albums
                     ));
                 }
                 LibraryScanMessage::Complete { tracks, albums } => {
-                    self.scan_in_progress = false;
-                    self.needs_rescan = false;
-                    self.scan_progress_tracks = tracks;
-                    self.scan_progress_albums = albums;
-                    self.status_message = Some(format!(
+                    self.scan.in_progress = false;
+                    self.scan.needs_rescan = false;
+                    self.scan.progress_tracks = tracks;
+                    self.scan.progress_albums = albums;
+                    self.ui.status_message = Some(format!(
                         "Scan complete: {} tracks in {} albums",
                         tracks, albums
                     ));
@@ -130,8 +130,8 @@ impl App {
                     completion = Some(Completion::Complete);
                 }
                 LibraryScanMessage::Error { message } => {
-                    self.scan_in_progress = false;
-                    self.status_message = Some(format!("Scan failed: {}", message));
+                    self.scan.in_progress = false;
+                    self.ui.status_message = Some(format!("Scan failed: {}", message));
                     log::error!("Library scan failed: {}", message);
                     completion = Some(Completion::Error);
                 }
@@ -141,7 +141,7 @@ impl App {
         // Drop the scanner borrow before running completion side effects that
         // need to mutate other fields of `self`.
         if completion.is_some() {
-            self.library_scanner = None;
+            self.scan.library_scanner = None;
         }
 
         match completion {
@@ -172,10 +172,10 @@ impl App {
     }
 
     pub fn scan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.scan_in_progress = true;
-        self.scan_progress_tracks = 0;
-        self.scan_progress_albums = 0;
-        self.status_message = Some("Scanning library...".to_string());
+        self.scan.in_progress = true;
+        self.scan.progress_tracks = 0;
+        self.scan.progress_albums = 0;
+        self.ui.status_message = Some("Scanning library...".to_string());
 
         // Create shared progress state using atomics to avoid locking on every
         // progress tick.
@@ -201,19 +201,19 @@ impl App {
         });
 
         // Update app state with final progress
-        self.scan_progress_tracks = progress_tracks.load(Ordering::Relaxed);
-        self.scan_progress_albums = progress_albums.load(Ordering::Relaxed);
+        self.scan.progress_tracks = progress_tracks.load(Ordering::Relaxed);
+        self.scan.progress_albums = progress_albums.load(Ordering::Relaxed);
 
-        self.scan_in_progress = false;
-        self.needs_rescan = false;
-        self.selected_album_index = 0;
-        self.album_list_offset = 0;
+        self.scan.in_progress = false;
+        self.scan.needs_rescan = false;
+        self.library_view.selected_album_index = 0;
+        self.library_view.album_list_offset = 0;
 
         match &result {
             Ok(_) => {
                 let album_count = self.library.albums.len();
                 let track_count: usize = self.library.albums.iter().map(|a| a.tracks.len()).sum();
-                self.status_message = Some(format!(
+                self.ui.status_message = Some(format!(
                     "Scan complete: {} tracks in {} albums",
                     track_count, album_count
                 ));
@@ -224,7 +224,7 @@ impl App {
                 );
             }
             Err(e) => {
-                self.status_message = Some(format!("Scan failed: {}", e));
+                self.ui.status_message = Some(format!("Scan failed: {}", e));
                 log::error!("Scan failed: {}", e);
             }
         }
@@ -246,11 +246,11 @@ impl App {
             log::info!("Skipping replay gain scan (read-only mode)");
             return Ok(());
         }
-        let msg = self.replay_gain_manager.start_scan()?;
-        if self.replay_gain_manager.in_progress {
-            self.scanner_pause_override = true;
+        let msg = self.scan.replay_gain_manager.start_scan()?;
+        if self.scan.replay_gain_manager.in_progress {
+            self.scan.pause_override = true;
         }
-        self.status_message = Some(msg);
+        self.ui.status_message = Some(msg);
         Ok(())
     }
 
@@ -259,28 +259,28 @@ impl App {
             log::info!("Skipping force replay gain scan (read-only mode)");
             return Ok(());
         }
-        let msg = self.replay_gain_manager.start_force_scan()?;
-        if self.replay_gain_manager.in_progress {
-            self.scanner_pause_override = true;
+        let msg = self.scan.replay_gain_manager.start_force_scan()?;
+        if self.scan.replay_gain_manager.in_progress {
+            self.scan.pause_override = true;
         }
-        self.status_message = Some(msg);
+        self.ui.status_message = Some(msg);
         Ok(())
     }
 
     /// Check for ReplayGain scanner progress updates
     pub fn check_replay_gain_progress(&mut self) {
-        if !self.replay_gain_manager.in_progress {
+        if !self.scan.replay_gain_manager.in_progress {
             return;
         }
 
-        let just_completed = self.replay_gain_manager.update();
+        let just_completed = self.scan.replay_gain_manager.update();
 
         if just_completed {
-            self.status_message = Some(format!(
+            self.ui.status_message = Some(format!(
                 "ReplayGain scan complete: {}/{} succeeded, {} failed",
-                self.replay_gain_manager.succeeded,
-                self.replay_gain_manager.total,
-                self.replay_gain_manager.failed
+                self.scan.replay_gain_manager.succeeded,
+                self.scan.replay_gain_manager.total,
+                self.scan.replay_gain_manager.failed
             ));
 
             // Reload library so in-memory tracks get the new gain values
@@ -296,12 +296,12 @@ impl App {
 
     /// Clear the pause override once no user-initiated scans are running.
     fn clear_pause_override_if_idle(&mut self) {
-        if !self.scan_in_progress
-            && !self.replay_gain_manager.in_progress
-            && !self.waveform_manager.in_progress
-            && !self.bliss_manager.in_progress
+        if !self.scan.in_progress
+            && !self.scan.replay_gain_manager.in_progress
+            && !self.scan.waveform_manager.in_progress
+            && !self.scan.bliss_manager.in_progress
         {
-            self.scanner_pause_override = false;
+            self.scan.pause_override = false;
         }
     }
 
@@ -311,7 +311,7 @@ impl App {
             log::info!("Skipping waveform scan (read-only mode)");
             return Ok(());
         }
-        self.waveform_manager.start_scan()
+        self.scan.waveform_manager.start_scan()
     }
 
     pub fn start_force_waveform_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -319,23 +319,23 @@ impl App {
             log::info!("Skipping force waveform scan (read-only mode)");
             return Ok(());
         }
-        self.waveform_manager.start_force_scan()?;
-        if self.waveform_manager.in_progress {
-            self.scanner_pause_override = true;
+        self.scan.waveform_manager.start_force_scan()?;
+        if self.scan.waveform_manager.in_progress {
+            self.scan.pause_override = true;
         }
-        self.status_message = Some("Force waveform rescan started...".to_string());
+        self.ui.status_message = Some("Force waveform rescan started...".to_string());
         Ok(())
     }
 
     /// Check progress of waveform scan
     pub fn check_waveform_progress(&mut self) {
-        if !self.waveform_manager.in_progress {
+        if !self.scan.waveform_manager.in_progress {
             return;
         }
-        let was_in_progress = self.waveform_manager.in_progress;
-        self.waveform_manager.update();
+        let was_in_progress = self.scan.waveform_manager.in_progress;
+        self.scan.waveform_manager.update();
 
-        if was_in_progress && !self.waveform_manager.in_progress {
+        if was_in_progress && !self.scan.waveform_manager.in_progress {
             // Reload library so in-memory tracks get waveform data
             if let Err(e) = self.library.load_from_database() {
                 log::error!("Failed to reload library after waveform scan: {}", e);
@@ -360,11 +360,11 @@ impl App {
             log::info!("Skipping force bliss scan (read-only mode)");
             return Ok(());
         }
-        let msg = self.bliss_manager.start_force_scan()?;
-        if self.bliss_manager.in_progress {
-            self.scanner_pause_override = true;
+        let msg = self.scan.bliss_manager.start_force_scan()?;
+        if self.scan.bliss_manager.in_progress {
+            self.scan.pause_override = true;
         }
-        self.status_message = Some(msg);
+        self.ui.status_message = Some(msg);
         Ok(())
     }
 
@@ -374,32 +374,32 @@ impl App {
             log::info!("Skipping bliss scan (read-only mode)");
             return Ok(());
         }
-        let msg = self.bliss_manager.start_scan()?;
-        if self.bliss_manager.in_progress {
-            self.scanner_pause_override = true;
+        let msg = self.scan.bliss_manager.start_scan()?;
+        if self.scan.bliss_manager.in_progress {
+            self.scan.pause_override = true;
         }
-        self.status_message = Some(msg);
+        self.ui.status_message = Some(msg);
         Ok(())
     }
 
     /// Check progress of bliss scan
     pub fn check_bliss_progress(&mut self) {
-        if !self.bliss_manager.in_progress {
+        if !self.scan.bliss_manager.in_progress {
             return;
         }
-        let was_in_progress = self.bliss_manager.in_progress;
-        self.bliss_manager.update();
+        let was_in_progress = self.scan.bliss_manager.in_progress;
+        self.scan.bliss_manager.update();
 
-        if was_in_progress && !self.bliss_manager.in_progress {
+        if was_in_progress && !self.scan.bliss_manager.in_progress {
             log::info!(
                 "Bliss scan complete: {}/{} succeeded, {} failed",
-                self.bliss_manager.succeeded,
-                self.bliss_manager.total,
-                self.bliss_manager.failed
+                self.scan.bliss_manager.succeeded,
+                self.scan.bliss_manager.total,
+                self.scan.bliss_manager.failed
             );
-            self.status_message = Some(format!(
+            self.ui.status_message = Some(format!(
                 "Bliss scan complete: {}/{} succeeded, {} failed",
-                self.bliss_manager.succeeded, self.bliss_manager.total, self.bliss_manager.failed
+                self.scan.bliss_manager.succeeded, self.scan.bliss_manager.total, self.scan.bliss_manager.failed
             ));
             self.clear_pause_override_if_idle();
         }

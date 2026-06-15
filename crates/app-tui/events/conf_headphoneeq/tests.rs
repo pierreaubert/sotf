@@ -66,7 +66,7 @@ mod poll_tests {
     #[test]
     fn test_poll_headphone_eq_optimization_maps_filter_type_to_long_name() {
         let mut app = App::new(Theme::default(), false);
-        app.headphone_eq.opt_status = OptimizationStatus::Running;
+        app.headphone_eq.model.optimization_status = OptimizationStatus::Running;
         app.headphone_eq.step = HeadphoneEqStep::Optimize;
 
         let slot = HEADPHONE_OPT_RESULT
@@ -75,8 +75,8 @@ mod poll_tests {
         *slot.lock().unwrap() = Some(Ok(make_result()));
 
         assert!(poll_headphone_eq_optimization(&mut app));
-        assert_eq!(app.headphone_eq.filters.len(), 1);
-        assert_eq!(app.headphone_eq.filters[0].filter_type, "Peak");
-        assert_eq!(app.headphone_eq.opt_status, OptimizationStatus::Completed);
+        assert_eq!(app.headphone_eq.model.filters.len(), 1);
+        assert_eq!(app.headphone_eq.model.filters[0].filter_type, "Peak");
+        assert_eq!(app.headphone_eq.model.optimization_status, OptimizationStatus::Completed);
     }
 }

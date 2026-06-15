@@ -2,7 +2,7 @@ use super::*;
 
 pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     // Calculate constraints based on whether we have autocomplete suggestions
-    let ac_height = if app.editing_directory {
+    let ac_height = if app.library_view.editing_directory {
         autocomplete_dropdown_height(app)
     } else {
         0
@@ -23,14 +23,14 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     draw_help_box_with_text(f, chunks[0], app, help_text);
 
     // Input box for adding directories
-    let input_style = if app.editing_directory {
+    let input_style = if app.library_view.editing_directory {
         Style::default().fg(app.theme.title_color)
     } else {
         Style::default().fg(app.theme.fg_primary)
     };
 
-    let input_text = if app.editing_directory {
-        format!("Path: {}█ (Tab to autocomplete)", app.directory_input)
+    let input_text = if app.library_view.editing_directory {
+        format!("Path: {}█ (Tab to autocomplete)", app.library_view.directory_input)
     } else {
         "Path: (Press 'a' to add directory)".to_string()
     };
@@ -44,7 +44,7 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(input_box, chunks[1]);
 
     // Show autocomplete suggestions
-    if app.editing_directory {
+    if app.library_view.editing_directory {
         render_autocomplete_dropdown(f, chunks[2], app);
     }
 
@@ -148,7 +148,7 @@ pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
 
             let content = format!("{}{}{}{}", indent, expand_indicator, path_str, info_str);
 
-            let style = if i == app.selected_directory_index {
+            let style = if i == app.library_view.selected_directory_index {
                 Style::default()
                     .fg(app.theme.fg_selected)
                     .bg(app.theme.bg_selected)
@@ -178,7 +178,7 @@ pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
 
     // Use stateful widget for proper scrolling
     let mut state = ListState::default();
-    state.select(Some(app.selected_directory_index));
+    state.select(Some(app.library_view.selected_directory_index));
 
     use ratatui::widgets::StatefulWidget;
     StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
@@ -186,7 +186,7 @@ pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
 
 pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     let paused = app
-        .scanner_pause_flag
+        .scan.pause_flag
         .load(std::sync::atomic::Ordering::Relaxed);
 
     let pause_tag = if paused { " [paused]" } else { "" };
@@ -250,7 +250,7 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     };
 
     // ReplayGain
-    let rg = &app.replay_gain_manager;
+    let rg = &app.scan.replay_gain_manager;
     if rg.in_progress {
         let rg_status = if rg.album_gain_phase == sotf_audio_player::AlbumGainPhase::Scanning {
             format!(
@@ -286,7 +286,7 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     }
 
     // Waveform
-    let wf = &app.waveform_manager;
+    let wf = &app.scan.waveform_manager;
     if wf.in_progress {
         let pct = if wf.total > 0 {
             wf.processed as f32 / wf.total as f32 * 100.0
@@ -315,7 +315,7 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     }
 
     // Bliss
-    let bl = &app.bliss_manager;
+    let bl = &app.scan.bliss_manager;
     if bl.in_progress {
         let pct = if bl.total > 0 {
             bl.processed as f32 / bl.total as f32 * 100.0
@@ -344,7 +344,7 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
 
     // Library scan (no success/failure breakdown)
     let album_count = app.library.albums.len();
-    if app.scan_in_progress {
+    if app.scan.in_progress {
         lines.push(Line::from(vec![
             Span::styled(format!("{:<12}", "Library"), label_style),
             Span::styled(
@@ -352,7 +352,7 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
                     "{:<20}",
                     format!(
                         "{} tracks / {} albums{}",
-                        app.scan_progress_tracks, app.scan_progress_albums, pause_tag
+                        app.scan.progress_tracks, app.scan.progress_albums, pause_tag
                     )
                 ),
                 progress_style,

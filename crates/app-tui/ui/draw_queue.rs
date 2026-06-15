@@ -21,7 +21,7 @@ pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     // Split the area horizontally if we have album images (not available on Windows)
     #[cfg(not(target_os = "windows"))]
     let (queue_area, image_area) = {
-        let has_images = !app.album_images.is_empty();
+        let has_images = !app.library_view.album_images.is_empty();
         if has_images {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
@@ -42,9 +42,9 @@ pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     let mut selected_visual_index: Option<usize> = None;
 
     for (i, entry) in app.queue.iter().enumerate() {
-        let is_current = app.current_queue_index == Some(i);
-        let is_selected = i == app.selected_queue_index;
-        let is_album_header_selected = is_selected && app.selected_queue_track_index.is_none();
+        let is_current = app.playback.current_queue_index == Some(i);
+        let is_selected = i == app.queue_view.selected_index;
+        let is_album_header_selected = is_selected && app.queue_view.selected_track_index.is_none();
         let is_expanded = entry.expanded;
 
         // Album header
@@ -86,7 +86,7 @@ pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
             for (track_idx, track) in entry.item.album.tracks.iter().enumerate() {
                 let is_current_track = is_current && track_idx == entry.item.current_track_index;
                 let is_track_selected =
-                    is_selected && app.selected_queue_track_index == Some(track_idx);
+                    is_selected && app.queue_view.selected_track_index == Some(track_idx);
                 let raw_track_name = track
                     .title
                     .as_deref()
@@ -102,7 +102,7 @@ pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
                 };
 
                 let track_content = if is_current_track {
-                    if app.is_playing {
+                    if app.playback.is_playing {
                         format!("  ▶ {}.{}{}", track_idx + 1, track_name, duration_str)
                     } else {
                         format!("  ⏸ {}.{}{}", track_idx + 1, track_name, duration_str)
@@ -172,13 +172,13 @@ pub(crate) fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
     use ratatui_image::StatefulImage;
 
     // Create a border block
-    let title = if app.album_images.is_empty() {
+    let title = if app.library_view.album_images.is_empty() {
         "Album Art (none)".to_string()
-    } else if app.album_images.len() > 1 {
+    } else if app.library_view.album_images.len() > 1 {
         format!(
             "Album Art ({}/{}) - [] to cycle",
-            app.selected_image_index + 1,
-            app.album_images.len()
+            app.library_view.selected_image_index + 1,
+            app.library_view.album_images.len()
         )
     } else {
         "Album Art".to_string()
@@ -207,20 +207,20 @@ pub(crate) fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
     if let Some(image_path) = app.get_current_album_image().cloned() {
         // Create the protocol once and cache it; reuse across renders so it can resize properly
         let needs_create = app
-            .image_protocol_path
+            .library_view.image_protocol_path
             .as_ref()
             .is_none_or(|p| *p != image_path);
-        if needs_create && let Some(picker) = &mut app.image_picker {
+        if needs_create && let Some(picker) = &mut app.library_view.image_picker {
             if let Ok(img) = image::open(&image_path) {
-                app.image_protocol = Some(picker.new_resize_protocol(img));
-                app.image_protocol_path = Some(image_path.clone());
+                app.library_view.image_protocol = Some(picker.new_resize_protocol(img));
+                app.library_view.image_protocol_path = Some(image_path.clone());
             } else {
-                app.image_protocol = None;
-                app.image_protocol_path = None;
+                app.library_view.image_protocol = None;
+                app.library_view.image_protocol_path = None;
             }
         }
 
-        if let Some(protocol) = &mut app.image_protocol {
+        if let Some(protocol) = &mut app.library_view.image_protocol {
             let image = StatefulImage::new();
             f.render_stateful_widget(image, image_area, protocol);
         } else {
@@ -240,7 +240,7 @@ pub(crate) fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
 
 pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
     // Get currently playing track
-    let track_info = if let Some(queue_index) = app.current_queue_index {
+    let track_info = if let Some(queue_index) = app.playback.current_queue_index {
         if let Some(entry) = app.queue.get(queue_index) {
             entry
                 .item

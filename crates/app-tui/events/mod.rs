@@ -182,11 +182,11 @@ fn handle_shared_keys(app: &mut App, key: KeyEvent) -> Option<Option<PlayerComma
         // Volume controls (not in configure sub-screens where +/- adjust fields)
         KeyCode::Char('+') | KeyCode::Char('=') if !app.input_mode.is_configure_sub_screen() => {
             app.increase_volume();
-            Some(Some(PlayerCommand::SetVolume(app.volume)))
+            Some(Some(PlayerCommand::SetVolume(app.playback.volume)))
         }
         KeyCode::Char('-') | KeyCode::Char('_') if !app.input_mode.is_configure_sub_screen() => {
             app.decrease_volume();
-            Some(Some(PlayerCommand::SetVolume(app.volume)))
+            Some(Some(PlayerCommand::SetVolume(app.playback.volume)))
         }
 
         // Mute toggle
@@ -207,7 +207,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     use crate::app::PlaylistMode;
     if app.current_screen == Screen::Playlists
         && matches!(
-            app.playlist_mode,
+            app.playlists.mode,
             PlaylistMode::Create | PlaylistMode::Rename
         )
     {
@@ -270,7 +270,7 @@ fn handle_error_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc | KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('q') => {
             app.exit_overlay_mode();
-            app.error_message = None;
+            app.ui.error_message = None;
             None
         }
         _ => None,
@@ -284,14 +284,14 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
 
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => {
-            if app.channel_conflict_selection > 0 {
-                app.channel_conflict_selection -= 1;
+            if app.modal.channel_conflict_selection > 0 {
+                app.modal.channel_conflict_selection -= 1;
             }
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.channel_conflict_selection < NUM_OPTIONS - 1 {
-                app.channel_conflict_selection += 1;
+            if app.modal.channel_conflict_selection < NUM_OPTIONS - 1 {
+                app.modal.channel_conflict_selection += 1;
             }
             None
         }
@@ -299,22 +299,22 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             // Project rule: crash hard on unknown values. The Up/Down
             // handler clamps to [0, NUM_OPTIONS), but if any future
             // code path pokes this field out of range we want to know.
-            let choice = match app.channel_conflict_selection {
+            let choice = match app.modal.channel_conflict_selection {
                 0 => ChannelConflictChoice::SuspendIncompatible,
                 1 => ChannelConflictChoice::RemoveIncompatible,
                 2 => ChannelConflictChoice::Cancel,
                 n => unreachable!("channel_conflict_selection out of range: {}", n),
             };
 
-            let path = app.channel_conflict_path.take();
-            let conflicts = std::mem::take(&mut app.channel_conflicts);
+            let path = app.modal.channel_conflict_path.take();
+            let conflicts = std::mem::take(&mut app.modal.channel_conflicts);
             app.exit_overlay_mode();
 
             match choice {
                 ChannelConflictChoice::SuspendIncompatible => {
                     let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
-                    app.plugin_graph.suspend_plugins(&indices);
-                    app.plugin_graph.update_channel_dependent_plugins();
+                    app.plugin_rack.graph.suspend_plugins(&indices);
+                    app.plugin_rack.graph.update_channel_dependent_plugins();
                     log::info!(
                         "[TUI] Suspended {} incompatible plugin(s) (channel conflict)",
                         indices.len()
@@ -326,7 +326,7 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     let mut indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
                     indices.sort_unstable_by(|a, b| b.cmp(a));
                     for idx in &indices {
-                        app.plugin_graph.remove_plugin_by_index(*idx).ok();
+                        app.plugin_rack.graph.remove_plugin_by_index(*idx).ok();
                     }
                     log::info!(
                         "[TUI] Removed {} incompatible plugin(s) (channel conflict)",
@@ -336,16 +336,16 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 }
                 ChannelConflictChoice::Cancel => {
                     log::info!("[TUI] Playback cancelled by user (channel conflict)");
-                    app.is_playing = false;
+                    app.playback.is_playing = false;
                     None
                 }
             }
         }
         KeyCode::Esc | KeyCode::Char('q') => {
-            app.channel_conflict_path = None;
-            app.channel_conflicts.clear();
+            app.modal.channel_conflict_path = None;
+            app.modal.channel_conflicts.clear();
             app.exit_overlay_mode();
-            app.is_playing = false;
+            app.playback.is_playing = false;
             None
         }
         _ => None,

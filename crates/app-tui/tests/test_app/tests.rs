@@ -9,29 +9,29 @@ mod create;
 #[test]
 fn test_navigation_with_empty_directories() {
     let mut app = App::new(Theme::default(), false);
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 
     // Should not crash with empty directories
     app.select_next_directory();
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 
     app.select_previous_directory();
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 
     app.page_down_directories(20);
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 
     app.page_up_directories(20);
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 }
 
 #[test]
 fn test_adjust_eq_parameters() {
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_graph.add_plugin(&PluginType::EQ);
-    app.editing_plugin_index = Some(plugin_idx);
+    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::EQ);
+    app.plugin_rack.editing_index = Some(plugin_idx);
 
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let filters = match &plugin.settings {
         PluginSettings::EQ { filters, .. } => filters,
         _ => panic!("Expected EQ plugin"),
@@ -44,9 +44,9 @@ fn test_adjust_eq_parameters() {
     let orig_type = filters[0].filter_type;
 
     // Frequency
-    app.plugin_param_selection = 1; // Index 0 is now 'Max Filters'
+    app.plugin_rack.param_selection = 1; // Index 0 is now 'Max Filters'
     assert!(app.adjust_selected_param(1.0));
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let filters = match &plugin.settings {
         PluginSettings::EQ { filters, .. } => filters,
         _ => panic!("Expected EQ plugin"),
@@ -54,9 +54,9 @@ fn test_adjust_eq_parameters() {
     assert_ne!(filters[0].frequency, orig_freq);
 
     // Q
-    app.plugin_param_selection = 2;
+    app.plugin_rack.param_selection = 2;
     assert!(app.adjust_selected_param(1.0));
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let filters = match &plugin.settings {
         PluginSettings::EQ { filters, .. } => filters,
         _ => panic!("Expected EQ plugin"),
@@ -64,9 +64,9 @@ fn test_adjust_eq_parameters() {
     assert_ne!(filters[0].q, orig_q);
 
     // Gain
-    app.plugin_param_selection = 3;
+    app.plugin_rack.param_selection = 3;
     assert!(app.adjust_selected_param(1.0));
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let filters = match &plugin.settings {
         PluginSettings::EQ { filters, .. } => filters,
         _ => panic!("Expected EQ plugin"),
@@ -74,9 +74,9 @@ fn test_adjust_eq_parameters() {
     assert_ne!(filters[0].gain_db, orig_gain);
 
     // Type
-    app.plugin_param_selection = 4;
+    app.plugin_rack.param_selection = 4;
     assert!(app.adjust_selected_param(1.0));
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let filters = match &plugin.settings {
         PluginSettings::EQ { filters, .. } => filters,
         _ => panic!("Expected EQ plugin"),
@@ -87,10 +87,10 @@ fn test_adjust_eq_parameters() {
 #[test]
 fn test_adjust_upmixer_parameters() {
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_graph.add_plugin(&PluginType::Upmixer);
-    app.editing_plugin_index = Some(plugin_idx);
+    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::Upmixer);
+    app.plugin_rack.editing_index = Some(plugin_idx);
 
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let (
         orig_speaker_config,
         orig_front_direct,
@@ -159,11 +159,11 @@ fn test_adjust_upmixer_parameters() {
     // 8: subharm_gain, 9: subharm_freq, 10: subharm_attack, 11: subharm_release
     // 12: stereo_width, 13: center_spread, 14: bandpass
     for idx in 0..15 {
-        app.plugin_param_selection = idx;
+        app.plugin_rack.param_selection = idx;
         assert!(app.adjust_selected_param(1.0));
     }
 
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     if let PluginSettings::Upmixer {
         speaker_config,
         gain_front_direct,
@@ -207,10 +207,10 @@ fn test_adjust_upmixer_parameters() {
 fn test_adjust_compressor_limiter_gate_loudness_parameters() {
     // Compressor
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_graph.add_plugin(&PluginType::Compressor);
-    app.editing_plugin_index = Some(plugin_idx);
+    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::Compressor);
+    app.plugin_rack.editing_index = Some(plugin_idx);
 
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let (
         orig_thresh,
         orig_ratio,
@@ -252,11 +252,11 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
 
     // Use -1.0 since mix defaults to 1.0 (its max) — adjusting up would clamp
     for idx in 0..10 {
-        app.plugin_param_selection = idx;
+        app.plugin_rack.param_selection = idx;
         assert!(app.adjust_selected_param(-1.0));
     }
 
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     if let PluginSettings::Compressor {
         threshold_db,
         ratio,
@@ -285,9 +285,9 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
 
     // Limiter (use -1.0 since mix starts at 1.0 which is max)
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_graph.add_plugin(&PluginType::Limiter);
-    app.editing_plugin_index = Some(plugin_idx);
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::Limiter);
+    app.plugin_rack.editing_index = Some(plugin_idx);
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let (orig_thresh, orig_rel, orig_look, orig_soft, orig_mix) = match &plugin.settings {
         PluginSettings::Limiter {
             threshold_db,
@@ -301,10 +301,10 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
     };
     // Limiter params: 0=threshold, 1=release, 2=lookahead, 3=soft, 4=true_peak, 5=isp_mode, 6=dual_release, 7=mix
     for idx in [0, 1, 2, 3, 7] {
-        app.plugin_param_selection = idx;
+        app.plugin_rack.param_selection = idx;
         assert!(app.adjust_selected_param(-1.0));
     }
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     if let PluginSettings::Limiter {
         threshold_db,
         release_ms,
@@ -323,9 +323,9 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
 
     // Gate - test parameters individually since mix starts at max (1.0) and hpf at min (0.0)
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_graph.add_plugin(&PluginType::Gate);
-    app.editing_plugin_index = Some(plugin_idx);
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::Gate);
+    app.plugin_rack.editing_index = Some(plugin_idx);
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let (
         orig_thresh,
         orig_ratio,
@@ -360,11 +360,11 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
     };
     // Adjust each parameter - mix (idx 5) decreases, hpf (idx 7) increases, others can go either way
     for idx in 0..8 {
-        app.plugin_param_selection = idx;
+        app.plugin_rack.param_selection = idx;
         let delta = if idx == 5 { -1.0 } else { 1.0 }; // mix starts at max, decrease it
         assert!(app.adjust_selected_param(delta));
     }
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     if let PluginSettings::Gate {
         threshold_db,
         ratio,
@@ -390,10 +390,10 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
     // Loudness compensation
     let mut app = App::new(Theme::default(), false);
     let plugin_idx = app
-        .plugin_graph
+        .plugin_rack.graph
         .add_plugin(&PluginType::LoudnessCompensation);
-    app.editing_plugin_index = Some(plugin_idx);
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    app.plugin_rack.editing_index = Some(plugin_idx);
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let (orig_low_freq, orig_low_gain, orig_high_freq, orig_high_gain) = match &plugin.settings {
         PluginSettings::LoudnessCompensation {
             low_freq,
@@ -405,10 +405,10 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
         _ => panic!("Expected LoudnessCompensation plugin"),
     };
     for idx in 0..4 {
-        app.plugin_param_selection = idx;
+        app.plugin_rack.param_selection = idx;
         assert!(app.adjust_selected_param(1.0));
     }
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     if let PluginSettings::LoudnessCompensation {
         low_freq,
         low_gain,
@@ -427,11 +427,11 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
 #[test]
 fn test_adjust_binaural_decoder_parameters_and_set_sofa() {
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_graph.add_plugin(&PluginType::BinauralDecoder);
-    app.editing_plugin_index = Some(plugin_idx);
-    app.selected_plugin_index = plugin_idx;
+    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::BinauralDecoder);
+    app.plugin_rack.editing_index = Some(plugin_idx);
+    app.plugin_rack.selected_index = plugin_idx;
 
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let (orig_sofa, orig_channels, orig_ext, orig_near, orig_crossfade) = match &plugin.settings {
         PluginSettings::BinauralDecoder {
             sofa_file,
@@ -454,11 +454,11 @@ fn test_adjust_binaural_decoder_parameters_and_set_sofa() {
     // input_channels is derived from the chain and stays synchronized by
     // update_channel_dependent_plugins().
     for idx in 2..5 {
-        app.plugin_param_selection = idx;
+        app.plugin_rack.param_selection = idx;
         assert!(app.adjust_selected_param(1.0));
     }
 
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     if let PluginSettings::BinauralDecoder {
         sofa_file,
         input_channels,
@@ -478,10 +478,10 @@ fn test_adjust_binaural_decoder_parameters_and_set_sofa() {
     }
 
     // Now set SOFA file via load_sofa_file path
-    app.sofa_file_input = "/tmp/test.sofa".to_string();
+    app.plugin_rack.sofa_input = "/tmp/test.sofa".to_string();
     app.load_sofa_file().unwrap();
 
-    let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     if let PluginSettings::BinauralDecoder { sofa_file, .. } = &plugin.settings {
         assert_eq!(sofa_file, "/tmp/test.sofa");
     } else {
@@ -492,33 +492,33 @@ fn test_adjust_binaural_decoder_parameters_and_set_sofa() {
 #[test]
 fn test_increase_volume() {
     let mut app = App::new(Theme::default(), false);
-    app.volume = 0.5;
+    app.playback.volume = 0.5;
 
     app.increase_volume();
-    assert!((app.volume - 0.55).abs() < 0.001);
+    assert!((app.playback.volume - 0.55).abs() < 0.001);
 
     // Keep increasing
     for _ in 0..20 {
         app.increase_volume();
     }
     // Should clamp at 1.0
-    assert!((app.volume - 1.0).abs() < 0.001);
+    assert!((app.playback.volume - 1.0).abs() < 0.001);
 }
 
 #[test]
 fn test_decrease_volume() {
     let mut app = App::new(Theme::default(), false);
-    app.volume = 0.5;
+    app.playback.volume = 0.5;
 
     app.decrease_volume();
-    assert!((app.volume - 0.45).abs() < 0.001);
+    assert!((app.playback.volume - 0.45).abs() < 0.001);
 
     // Keep decreasing
     for _ in 0..20 {
         app.decrease_volume();
     }
     // Should clamp at 0.0
-    assert!((app.volume - 0.0).abs() < 0.001);
+    assert!((app.playback.volume - 0.0).abs() < 0.001);
 }
 
 #[test]
@@ -526,70 +526,70 @@ fn test_volume_boundary_values() {
     let mut app = App::new(Theme::default(), false);
 
     // Start at 0
-    app.volume = 0.0;
+    app.playback.volume = 0.0;
     app.decrease_volume();
-    assert_eq!(app.volume, 0.0);
+    assert_eq!(app.playback.volume, 0.0);
 
     // Start at 1
-    app.volume = 1.0;
+    app.playback.volume = 1.0;
     app.increase_volume();
-    assert_eq!(app.volume, 1.0);
+    assert_eq!(app.playback.volume, 1.0);
 }
 
 #[test]
 fn test_queue_navigation_empty() {
     let mut app = App::new(Theme::default(), false);
-    app.selected_queue_index = 0;
+    app.queue_view.selected_index = 0;
 
     app.select_next_queue_item();
-    assert_eq!(app.selected_queue_index, 0);
+    assert_eq!(app.queue_view.selected_index, 0);
 
     app.select_previous_queue_item();
-    assert_eq!(app.selected_queue_index, 0);
+    assert_eq!(app.queue_view.selected_index, 0);
 }
 
 #[test]
 fn test_album_navigation_empty_library() {
     let mut app = App::new(Theme::default(), false);
-    app.selected_album_index = 0;
+    app.library_view.selected_album_index = 0;
 
     app.select_next_album();
-    assert_eq!(app.selected_album_index, 0);
+    assert_eq!(app.library_view.selected_album_index, 0);
 
     app.page_down_albums(10);
-    assert_eq!(app.selected_album_index, 0);
+    assert_eq!(app.library_view.selected_album_index, 0);
 }
 
 #[test]
 fn test_add_plugin() {
     let mut app = App::new(Theme::default(), false);
     // App starts with default permanent plugins (LoudnessMonitor, Matrix, etc.)
-    let initial_count = app.plugin_graph.len();
+    let initial_count = app.plugin_rack.graph.len();
     assert!(initial_count >= 2, "App should start with default plugins");
 
     app.add_plugin(&PluginType::Gain);
-    assert_eq!(app.plugin_graph.len(), initial_count + 1);
-    assert!(app.needs_plugin_update);
+    assert_eq!(app.plugin_rack.graph.len(), initial_count + 1);
+    assert!(app.plugin_rack.needs_update);
 
     app.add_plugin(&PluginType::EQ);
-    assert_eq!(app.plugin_graph.len(), initial_count + 2);
+    assert_eq!(app.plugin_rack.graph.len(), initial_count + 2);
 }
 
 #[test]
 fn test_remove_plugin() {
     let mut app = App::new(Theme::default(), false);
-    let initial_count = app.plugin_graph.len();
+    let initial_count = app.plugin_rack.graph.len();
 
     app.add_plugin(&PluginType::Gain);
     app.add_plugin(&PluginType::EQ);
     app.add_plugin(&PluginType::Limiter);
 
-    assert_eq!(app.plugin_graph.len(), initial_count + 3);
+    assert_eq!(app.plugin_rack.graph.len(), initial_count + 3);
 
     // Remove one of our added plugins (index after the defaults)
     app.remove_plugin(initial_count);
-    assert_eq!(app.plugin_graph.len(), initial_count + 2);
-    assert!(app.needs_plugin_update);
+    assert_eq!(app.plugin_rack.graph.len(), initial_count + 2);
+    assert!(app.plugin_rack.needs_update);
 }
 
 #[test]
@@ -598,24 +598,24 @@ fn test_toggle_plugin() {
     app.add_plugin(&PluginType::Gain);
 
     // Check initial state (enabled)
-    let plugin = app.plugin_graph.get_plugin(0).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(0).unwrap();
     assert!(plugin.enabled);
 
     // Toggle off
     app.toggle_plugin(0);
-    let plugin = app.plugin_graph.get_plugin(0).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(0).unwrap();
     assert!(!plugin.enabled);
 
     // Toggle on
     app.toggle_plugin(0);
-    let plugin = app.plugin_graph.get_plugin(0).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(0).unwrap();
     assert!(plugin.enabled);
 }
 
 #[test]
 fn test_move_plugin_up() {
     let mut app = App::new(Theme::default(), false);
-    let base_idx = app.plugin_graph.user_plugin_insert_index();
+    let base_idx = app.plugin_rack.graph.user_plugin_insert_index();
     app.add_plugin(&PluginType::Gain);
     app.add_plugin(&PluginType::EQ);
     app.add_plugin(&PluginType::Limiter);
@@ -624,14 +624,14 @@ fn test_move_plugin_up() {
     app.move_plugin_up(base_idx + 2);
 
     // Limiter should now be at base_idx + 1
-    let plugin = app.plugin_graph.get_plugin(base_idx + 1).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(base_idx + 1).unwrap();
     assert!(matches!(plugin.plugin_type(), PluginType::Limiter));
 }
 
 #[test]
 fn test_move_plugin_down() {
     let mut app = App::new(Theme::default(), false);
-    let base_idx = app.plugin_graph.user_plugin_insert_index();
+    let base_idx = app.plugin_rack.graph.user_plugin_insert_index();
     app.add_plugin(&PluginType::Gain);
     app.add_plugin(&PluginType::EQ);
     app.add_plugin(&PluginType::Limiter);
@@ -640,7 +640,7 @@ fn test_move_plugin_down() {
     app.move_plugin_down(base_idx);
 
     // Gain should now be at base_idx + 1
-    let plugin = app.plugin_graph.get_plugin(base_idx + 1).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(base_idx + 1).unwrap();
     assert!(matches!(plugin.plugin_type(), PluginType::Gain));
 }
 
@@ -651,16 +651,16 @@ fn test_move_plugin_boundary() {
     app.add_plugin(&PluginType::EQ);
 
     // Try to move first plugin (index 0) up - should do nothing
-    let first_plugin_type = app.plugin_graph.get_plugin(0).unwrap().plugin_type();
+    let first_plugin_type = app.plugin_rack.graph.get_plugin(0).unwrap().plugin_type();
     app.move_plugin_up(0);
-    let plugin = app.plugin_graph.get_plugin(0).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(0).unwrap();
     assert_eq!(plugin.plugin_type(), first_plugin_type);
 
     // Try to move last plugin down (should do nothing)
-    let last_idx = app.plugin_graph.len() - 1;
-    let last_plugin_type = app.plugin_graph.get_plugin(last_idx).unwrap().plugin_type();
+    let last_idx = app.plugin_rack.graph.len() - 1;
+    let last_plugin_type = app.plugin_rack.graph.get_plugin(last_idx).unwrap().plugin_type();
     app.move_plugin_down(last_idx);
-    let plugin = app.plugin_graph.get_plugin(last_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(last_idx).unwrap();
     assert_eq!(plugin.plugin_type(), last_plugin_type);
 }
 
@@ -670,18 +670,18 @@ fn test_select_next_plugin() {
     app.add_plugin(&PluginType::Gain);
     app.add_plugin(&PluginType::EQ);
 
-    let total_plugins = app.plugin_graph.len();
-    app.selected_plugin_index = 0;
+    let total_plugins = app.plugin_rack.graph.len();
+    app.plugin_rack.selected_index = 0;
 
     // Navigate through all plugins
     for i in 1..total_plugins {
         app.select_next_plugin();
-        assert_eq!(app.selected_plugin_index, i);
+        assert_eq!(app.plugin_rack.selected_index, i);
     }
 
     // Wrap around to 0
     app.select_next_plugin();
-    assert_eq!(app.selected_plugin_index, 0);
+    assert_eq!(app.plugin_rack.selected_index, 0);
 }
 
 #[test]
@@ -689,46 +689,46 @@ fn test_select_previous_plugin() {
     let mut app = App::new(Theme::default(), false);
     app.add_plugin(&PluginType::Gain);
 
-    let total_plugins = app.plugin_graph.len();
-    app.selected_plugin_index = 0;
+    let total_plugins = app.plugin_rack.graph.len();
+    app.plugin_rack.selected_index = 0;
 
     // Wrap to last
     app.select_previous_plugin();
-    assert_eq!(app.selected_plugin_index, total_plugins - 1);
+    assert_eq!(app.plugin_rack.selected_index, total_plugins - 1);
 
     // Navigate back to 0
     for _ in 1..total_plugins {
         app.select_previous_plugin();
     }
-    assert_eq!(app.selected_plugin_index, 0);
+    assert_eq!(app.plugin_rack.selected_index, 0);
 }
 
 #[test]
 fn test_enter_exit_plugin_edit_mode() {
     let mut app = App::new(Theme::default(), false);
     app.add_plugin(&PluginType::EQ);
-    app.selected_plugin_index = 0;
+    app.plugin_rack.selected_index = 0;
 
-    assert!(app.editing_plugin_index.is_none());
+    assert!(app.plugin_rack.editing_index.is_none());
 
     app.enter_plugin_edit_mode();
-    assert_eq!(app.editing_plugin_index, Some(0));
-    assert_eq!(app.plugin_param_selection, 0);
+    assert_eq!(app.plugin_rack.editing_index, Some(0));
+    assert_eq!(app.plugin_rack.param_selection, 0);
 
     app.exit_plugin_edit_mode();
-    assert!(app.editing_plugin_index.is_none());
+    assert!(app.plugin_rack.editing_index.is_none());
 }
 
 #[test]
 fn test_toggle_library_view_mode() {
     let mut app = App::new(Theme::default(), false);
-    assert_eq!(app.library_view_mode, LibraryViewMode::Flat);
+    assert_eq!(app.library_view.mode, LibraryViewMode::Flat);
 
     app.toggle_library_view_mode();
-    assert_eq!(app.library_view_mode, LibraryViewMode::TreeView);
+    assert_eq!(app.library_view.mode, LibraryViewMode::TreeView);
 
     app.toggle_library_view_mode();
-    assert_eq!(app.library_view_mode, LibraryViewMode::Flat);
+    assert_eq!(app.library_view.mode, LibraryViewMode::Flat);
 }
 
 #[test]
@@ -736,13 +736,13 @@ fn test_set_library_sort_order() {
     let mut app = App::new(Theme::default(), false);
 
     app.set_library_sort_order(LibrarySortOrder::Artist);
-    assert_eq!(app.library_sort_order, LibrarySortOrder::Artist);
+    assert_eq!(app.library_view.sort_order, LibrarySortOrder::Artist);
 
     app.set_library_sort_order(LibrarySortOrder::Album);
-    assert_eq!(app.library_sort_order, LibrarySortOrder::Album);
+    assert_eq!(app.library_view.sort_order, LibrarySortOrder::Album);
 
     app.set_library_sort_order(LibrarySortOrder::Year);
-    assert_eq!(app.library_sort_order, LibrarySortOrder::Year);
+    assert_eq!(app.library_view.sort_order, LibrarySortOrder::Year);
 }
 
 #[test]
@@ -750,43 +750,43 @@ fn test_set_channel_filter() {
     let mut app = App::new(Theme::default(), false);
 
     app.set_channel_filter(ChannelFilter::All);
-    assert_eq!(app.channel_filter, ChannelFilter::All);
+    assert_eq!(app.library_view.channel_filter, ChannelFilter::All);
 
     app.set_channel_filter(ChannelFilter::Stereo);
-    assert_eq!(app.channel_filter, ChannelFilter::Stereo);
+    assert_eq!(app.library_view.channel_filter, ChannelFilter::Stereo);
 
     app.set_channel_filter(ChannelFilter::Surround);
-    assert_eq!(app.channel_filter, ChannelFilter::Surround);
+    assert_eq!(app.library_view.channel_filter, ChannelFilter::Surround);
 }
 
 #[test]
 fn test_cycle_channel_filter() {
     let mut app = App::new(Theme::default(), false);
-    app.channel_filter = ChannelFilter::All;
+    app.library_view.channel_filter = ChannelFilter::All;
 
     // Cycling depends on available channel counts, so test basic cycling
     // When library is empty, cycling should still work
-    let initial = app.channel_filter;
+    let initial = app.library_view.channel_filter;
     app.cycle_channel_filter();
     // After cycling, filter may or may not change depending on library
     // At minimum, it shouldn't panic
-    let _ = app.channel_filter;
+    let _ = app.library_view.channel_filter;
 
     // Reset
-    app.channel_filter = initial;
+    app.library_view.channel_filter = initial;
 }
 
 #[test]
 fn test_output_device_navigation_empty() {
     let mut app = App::new(Theme::default(), false);
-    app.selected_output_device_index = 0;
+    app.audio_devices.selected_output_index = 0;
 
     // Should not panic with empty devices
     app.select_next_output_device();
-    assert_eq!(app.selected_output_device_index, 0);
+    assert_eq!(app.audio_devices.selected_output_index, 0);
 
     app.select_previous_output_device();
-    assert_eq!(app.selected_output_device_index, 0);
+    assert_eq!(app.audio_devices.selected_output_index, 0);
 }
 
 #[test]
@@ -836,8 +836,8 @@ fn test_input_mode_variants() {
 fn test_apply_spinorama_to_plugins_adds_eq_when_missing() {
     use sotf_audio_player::spinorama_eq_types::SpinoramaBiquad;
     let mut app = App::new(Theme::default(), false);
-    app.spinorama_eq.selected_speaker = Some("Test Speaker".to_string());
-    app.spinorama_eq.filters = vec![
+    app.spinorama_eq.model.selected_speaker = Some("Test Speaker".to_string());
+    app.spinorama_eq.model.filters = vec![
         SpinoramaBiquad {
             filter_type: "Peak".to_string(),
             freq: 1000.0,
@@ -856,8 +856,8 @@ fn test_apply_spinorama_to_plugins_adds_eq_when_missing() {
     assert!(result.is_ok(), "Expected Ok, got {:?}", result);
 
     // An EQ plugin should now exist in the chain
-    let has_eq = (0..app.plugin_graph.len()).any(|i| {
-        app.plugin_graph
+    let has_eq = (0..app.plugin_rack.graph.len()).any(|i| {
+        app.plugin_rack.graph
             .get_plugin(i)
             .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
             .unwrap_or(false)
@@ -874,9 +874,9 @@ fn test_apply_spinorama_to_plugins_updates_last_eq() {
     app.add_plugin(&PluginType::EQ);
 
     // Record indices of both EQ plugins
-    let eq_indices: Vec<usize> = (0..app.plugin_graph.len())
+    let eq_indices: Vec<usize> = (0..app.plugin_rack.graph.len())
         .filter(|&i| {
-            app.plugin_graph
+            app.plugin_rack.graph
                 .get_plugin(i)
                 .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
                 .unwrap_or(false)
@@ -885,8 +885,8 @@ fn test_apply_spinorama_to_plugins_updates_last_eq() {
     assert_eq!(eq_indices.len(), 2, "Expected two EQ plugins");
     let last_eq_idx = eq_indices[1];
 
-    app.spinorama_eq.selected_speaker = Some("Test Speaker".to_string());
-    app.spinorama_eq.filters = vec![SpinoramaBiquad {
+    app.spinorama_eq.model.selected_speaker = Some("Test Speaker".to_string());
+    app.spinorama_eq.model.filters = vec![SpinoramaBiquad {
         filter_type: "Peak".to_string(),
         freq: 500.0,
         q: 2.0,
@@ -897,7 +897,7 @@ fn test_apply_spinorama_to_plugins_updates_last_eq() {
     assert!(result.is_ok(), "Expected Ok, got {:?}", result);
 
     // Verify the LAST EQ plugin was updated (not the first)
-    let plugin = app.plugin_graph.get_plugin(last_eq_idx).unwrap();
+    let plugin = app.plugin_rack.graph.get_plugin(last_eq_idx).unwrap();
     if let PluginSettings::EQ { filters, .. } = &plugin.settings {
         assert_eq!(filters.len(), 1);
         assert!((filters[0].frequency - 500.0).abs() < 0.01);
@@ -906,7 +906,7 @@ fn test_apply_spinorama_to_plugins_updates_last_eq() {
     }
 
     // First EQ should still have default filters (unchanged)
-    let first_plugin = app.plugin_graph.get_plugin(eq_indices[0]).unwrap();
+    let first_plugin = app.plugin_rack.graph.get_plugin(eq_indices[0]).unwrap();
     if let PluginSettings::EQ { filters, .. } = &first_plugin.settings {
         // Default EQ has no filters with freq 500
         assert!(
@@ -919,7 +919,7 @@ fn test_apply_spinorama_to_plugins_updates_last_eq() {
 #[test]
 fn test_apply_spinorama_to_plugins_empty_filters_returns_error() {
     let mut app = App::new(Theme::default(), false);
-    app.spinorama_eq.filters = vec![];
+    app.spinorama_eq.model.filters = vec![];
     let result = app.apply_spinorama_to_plugins();
     assert!(result.is_err());
 }
@@ -937,14 +937,14 @@ mod draw_tests {
     fn test_draw_skips_filtered_album_cache_on_non_library_screens() {
         let mut app = App::new(Theme::default(), false);
         app.current_screen = Screen::Configure;
-        app.needs_filter_update = true;
+        app.library_view.needs_filter_update = true;
 
         let backend = TestBackend::new(80, 40);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| ui::draw(f, &mut app)).unwrap();
 
         assert!(
-            app.needs_filter_update,
+            app.library_view.needs_filter_update,
             "filtered_albums() should not run on the configure screen"
         );
 
@@ -952,7 +952,7 @@ mod draw_tests {
         terminal.draw(|f| ui::draw(f, &mut app)).unwrap();
 
         assert!(
-            !app.needs_filter_update,
+            !app.library_view.needs_filter_update,
             "filtered_albums() should run on the library screen"
         );
     }
@@ -991,6 +991,6 @@ mod scanner_tests {
         let result = app.scan_library();
 
         assert!(result.is_ok());
-        assert!(!app.scan_in_progress);
+        assert!(!app.scan.in_progress);
     }
 }

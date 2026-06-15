@@ -137,12 +137,12 @@ fn esc_from_library_quits() {
 fn metadata_editor_opens_edits_previews_imports_and_closes() {
     let mut app = app_on_library();
     app.library.albums = vec![metadata_test_album()];
-    app.needs_filter_update = true;
+    app.library_view.needs_filter_update = true;
     app.filtered_albums();
 
     send_keys(&mut app, &[KeyCode::Char('m')]);
     assert_eq!(app.input_mode, InputMode::MetadataEditor);
-    assert!(app.metadata_editor.is_some());
+    assert!(app.modal.metadata_editor.is_some());
 
     send_keys(
         &mut app,
@@ -163,12 +163,12 @@ fn metadata_editor_opens_edits_previews_imports_and_closes() {
         ],
     );
     assert_eq!(
-        app.metadata_editor.as_ref().unwrap().fields.year.as_str(),
+        app.modal.metadata_editor.as_ref().unwrap().fields.year.as_str(),
         "2024"
     );
-    assert!(app.metadata_editor.as_ref().unwrap().preview.is_some());
+    assert!(app.modal.metadata_editor.as_ref().unwrap().preview.is_some());
 
-    app.metadata_editor
+    app.modal.metadata_editor
         .as_mut()
         .unwrap()
         .search_results
@@ -186,14 +186,14 @@ fn metadata_editor_opens_edits_previews_imports_and_closes() {
             score: 95,
         });
     send_keys(&mut app, &[KeyCode::Char('i')]);
-    let editor = app.metadata_editor.as_ref().unwrap();
+    let editor = app.modal.metadata_editor.as_ref().unwrap();
     assert_eq!(editor.fields.title, "Imported Album");
     assert_eq!(editor.fields.album_artist, "Imported Artist");
     assert!(editor.preview.is_some());
 
     send_keys(&mut app, &[KeyCode::Esc]);
     assert_eq!(app.input_mode, InputMode::Normal);
-    assert!(app.metadata_editor.is_none());
+    assert!(app.modal.metadata_editor.is_none());
 }
 
 fn metadata_test_album() -> Album {
@@ -361,7 +361,7 @@ fn spinorama_enter_selects_speaker_and_advances_to_configure() {
     send_keys(&mut app, &[KeyCode::Enter]);
     assert_eq!(app.spinorama_eq.step, SpinoramaStep::Configure);
     assert_eq!(
-        app.spinorama_eq.selected_speaker,
+        app.spinorama_eq.model.selected_speaker,
         Some("Speaker A".to_string())
     );
 }
@@ -405,9 +405,9 @@ fn spinorama_configure_right_adjusts_field() {
     let mut app = app_on_spinorama_select();
     app.spinorama_eq.step = SpinoramaStep::Configure;
     app.spinorama_eq.selected_field = 1; // num_filters
-    let before = app.spinorama_eq.config.num_filters;
+    let before = app.spinorama_eq.model.optimizer_config.num_filters;
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.spinorama_eq.config.num_filters, before + 1);
+    assert_eq!(app.spinorama_eq.model.optimizer_config.num_filters, before + 1);
     assert_eq!(app.spinorama_eq.step, SpinoramaStep::Configure);
 }
 
@@ -598,7 +598,7 @@ fn room_eq_backtab_chain() {
 #[test]
 fn sequence_c_5_enter_reaches_spinorama_configure() {
     let mut app = app_on_library();
-    app.spinorama_eq.available_speakers = vec!["Test Speaker".to_string()];
+    app.spinorama_eq.model.available_speakers = vec!["Test Speaker".to_string()];
     app.spinorama_eq.update_filter();
 
     send_keys(&mut app, &[KeyCode::Char('C')]);
@@ -613,7 +613,7 @@ fn sequence_c_5_enter_reaches_spinorama_configure() {
     send_keys(&mut app, &[KeyCode::Enter]);
     assert_eq!(app.spinorama_eq.step, SpinoramaStep::Configure);
     assert_eq!(
-        app.spinorama_eq.selected_speaker,
+        app.spinorama_eq.model.selected_speaker,
         Some("Test Speaker".to_string())
     );
 }
@@ -621,7 +621,7 @@ fn sequence_c_5_enter_reaches_spinorama_configure() {
 #[test]
 fn sequence_c_5_enter_esc_right_down_reaches_spinorama_optimize() {
     let mut app = app_on_library();
-    app.spinorama_eq.available_speakers = vec!["Test Speaker".to_string()];
+    app.spinorama_eq.model.available_speakers = vec!["Test Speaker".to_string()];
     app.spinorama_eq.update_filter();
 
     send_keys(
@@ -644,7 +644,7 @@ fn sequence_c_5_enter_esc_right_down_reaches_spinorama_optimize() {
 #[test]
 fn sequence_c_5_enter_esc_right_right_down_reaches_spinorama_results() {
     let mut app = app_on_library();
-    app.spinorama_eq.available_speakers = vec!["Test Speaker".to_string()];
+    app.spinorama_eq.model.available_speakers = vec!["Test Speaker".to_string()];
     app.spinorama_eq.update_filter();
 
     send_keys(
@@ -668,7 +668,7 @@ fn sequence_c_5_enter_esc_right_right_down_reaches_spinorama_results() {
 #[test]
 fn sequence_spinorama_full_forward_and_back() {
     let mut app = app_on_library();
-    app.spinorama_eq.available_speakers = vec!["Test Speaker".to_string()];
+    app.spinorama_eq.model.available_speakers = vec!["Test Speaker".to_string()];
     app.spinorama_eq.update_filter();
 
     // Forward via step tab bar: Select → Configure → Optimize → Results → UpdatePlugin
@@ -723,7 +723,7 @@ fn sequence_tab_through_all_screens() {
 #[test]
 fn sequence_esc_chain_from_spinorama_to_library() {
     let mut app = app_on_library();
-    app.spinorama_eq.available_speakers = vec!["Test Speaker".to_string()];
+    app.spinorama_eq.model.available_speakers = vec!["Test Speaker".to_string()];
     app.spinorama_eq.update_filter();
 
     // Navigate into Spinorama Configure step via keys
@@ -762,7 +762,7 @@ fn plugins_screen_enter_starts_edit_mode() {
 
     // 'e' or Enter enters edit mode (only if there is a plugin selected)
     // With the default plugin chain there should be plugins
-    if !app.plugin_graph.is_empty() {
+    if !app.plugin_rack.graph.is_empty() {
         send_keys(&mut app, &[KeyCode::Char('e')]);
         assert_eq!(app.input_mode, InputMode::EditPlugin);
     }
@@ -773,7 +773,7 @@ fn plugins_edit_mode_esc_returns_to_normal() {
     let mut app = app_on_library();
     app.current_screen = Screen::Plugins;
     app.input_mode = InputMode::EditPlugin;
-    app.editing_plugin_index = Some(0);
+    app.plugin_rack.editing_index = Some(0);
 
     send_keys(&mut app, &[KeyCode::Esc]);
     assert_eq!(app.input_mode, InputMode::Normal);
@@ -789,13 +789,13 @@ fn library_search_then_esc_returns_to_normal() {
 
     // Type a query
     send_keys(&mut app, &[KeyCode::Char('t'), KeyCode::Char('e')]);
-    assert_eq!(app.search_query, "te");
+    assert_eq!(app.library_view.search_query, "te");
 
     // Esc → back to normal
     send_keys(&mut app, &[KeyCode::Esc]);
     assert_eq!(app.input_mode, InputMode::Normal);
     // Search query is preserved
-    assert_eq!(app.search_query, "te");
+    assert_eq!(app.library_view.search_query, "te");
 }
 
 #[test]

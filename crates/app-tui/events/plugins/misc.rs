@@ -27,7 +27,7 @@ pub(super) fn open_file_path_param(app: &mut App, engine_key: &str) {
             );
         }
         "ir_file" => {
-            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index)
+            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index)
                 && let PluginSettings::Convolution { ref ir_file, .. } = plugin.settings
             {
                 let current_path = ir_file.clone();
@@ -45,7 +45,7 @@ pub(super) fn open_file_path_param(app: &mut App, engine_key: &str) {
                 FilePickerOrigin::SofaFile,
                 FilePickerMode::File,
                 "Select SOFA File",
-                Some(&app.sofa_file_input.clone()),
+                Some(&app.plugin_rack.sofa_input.clone()),
                 Some("sofa"),
             );
         }

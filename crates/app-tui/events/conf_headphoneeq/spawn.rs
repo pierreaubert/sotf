@@ -8,24 +8,24 @@ use std::sync::{Arc, Mutex};
 pub(super) fn spawn_headphone_eq_optimization(app: &mut App) {
     use sotf_audio_player::room_eq_types::OptimizationStatus;
 
-    if app.headphone_eq.measurement_path.is_empty() {
-        app.headphone_eq.opt_status = OptimizationStatus::Failed;
-        app.headphone_eq.opt_error = Some("No measurement file selected".to_string());
+    if app.headphone_eq.model.measurement_path.is_empty() {
+        app.headphone_eq.model.optimization_status = OptimizationStatus::Failed;
+        app.headphone_eq.model.error_message = Some("No measurement file selected".to_string());
         return;
     }
 
-    app.headphone_eq.opt_status = OptimizationStatus::Running;
-    app.headphone_eq.opt_error = None;
-    app.headphone_eq.opt_progress = 0.0;
-    app.headphone_eq.opt_iteration = 0;
-    app.headphone_eq.opt_loss = 0.0;
-    app.headphone_eq.filters.clear();
-    app.headphone_eq.loss_history.clear();
+    app.headphone_eq.model.optimization_status = OptimizationStatus::Running;
+    app.headphone_eq.model.error_message = None;
+    app.headphone_eq.model.progress = 0.0;
+    app.headphone_eq.model.current_iteration = 0;
+    app.headphone_eq.model.current_loss = 0.0;
+    app.headphone_eq.model.filters.clear();
+    app.headphone_eq.model.progress_history.clear();
 
-    let curve_path = app.headphone_eq.measurement_path.clone();
-    let target = app.headphone_eq.target_preset.clone();
-    let custom_target = app.headphone_eq.custom_target_path.clone();
-    let c = &app.headphone_eq.config;
+    let curve_path = app.headphone_eq.model.measurement_path.clone();
+    let target = app.headphone_eq.model.target_preset.clone();
+    let custom_target = app.headphone_eq.model.custom_target_path.clone();
+    let c = &app.headphone_eq.model.optimizer_config;
 
     let mut args = autoeq::Args::headphone_defaults();
     args.num_filters = c.num_filters;

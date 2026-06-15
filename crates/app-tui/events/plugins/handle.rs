@@ -24,25 +24,25 @@ pub(in super::super) fn handle_add_plugin_mode(
         }
         KeyCode::Enter => {
             // Add the selected plugin
-            if let Some(plugin_type) = plugin_types.get(app.add_plugin_selected_index) {
+            if let Some(plugin_type) = plugin_types.get(app.plugin_rack.add_selected_index) {
                 app.add_plugin(plugin_type);
             }
             app.input_mode = InputMode::Normal;
             None
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            if app.add_plugin_selected_index > 0 {
-                app.add_plugin_selected_index -= 1;
+            if app.plugin_rack.add_selected_index > 0 {
+                app.plugin_rack.add_selected_index -= 1;
             } else {
-                app.add_plugin_selected_index = num_plugins.saturating_sub(1);
+                app.plugin_rack.add_selected_index = num_plugins.saturating_sub(1);
             }
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.add_plugin_selected_index + 1 < num_plugins {
-                app.add_plugin_selected_index += 1;
+            if app.plugin_rack.add_selected_index + 1 < num_plugins {
+                app.plugin_rack.add_selected_index += 1;
             } else {
-                app.add_plugin_selected_index = 0;
+                app.plugin_rack.add_selected_index = 0;
             }
             None
         }
@@ -54,12 +54,12 @@ pub(in super::super) fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Opt
     match key.code {
         KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
             // Shift+Up: Move plugin up in the list
-            app.move_plugin_up(app.selected_plugin_index);
+            app.move_plugin_up(app.plugin_rack.selected_index);
             None
         }
         KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
             // Shift+Down: Move plugin down in the list
-            app.move_plugin_down(app.selected_plugin_index);
+            app.move_plugin_down(app.plugin_rack.selected_index);
             None
         }
         KeyCode::Up | KeyCode::Char('k') => {
@@ -78,7 +78,7 @@ pub(in super::super) fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Opt
         KeyCode::Char('s') => {
             // Save plugin chain
             app.input_mode = InputMode::SavePlugins;
-            app.plugin_file_input.clear();
+            app.plugin_rack.file_input.clear();
             // Refresh available presets to show in dialog
             app.refresh_plugin_presets();
             None
@@ -86,32 +86,32 @@ pub(in super::super) fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Opt
         KeyCode::Char('l') => {
             // Load plugin chain
             app.input_mode = InputMode::LoadPlugins;
-            app.plugin_file_input.clear();
+            app.plugin_rack.file_input.clear();
             app.refresh_plugin_presets();
             None
         }
         KeyCode::Char('a') => {
             // Open plugin selection dialog
-            app.add_plugin_selected_index = 0;
+            app.plugin_rack.add_selected_index = 0;
             app.input_mode = InputMode::AddPlugin;
             None
         }
         KeyCode::Char('t') => {
             // Toggle plugin enabled/disabled
-            app.toggle_plugin(app.selected_plugin_index);
+            app.toggle_plugin(app.plugin_rack.selected_index);
             None
         }
         KeyCode::Char('d') | KeyCode::Delete => {
-            app.remove_plugin(app.selected_plugin_index);
+            app.remove_plugin(app.plugin_rack.selected_index);
             None
         }
         KeyCode::Char('u') | KeyCode::Char('U') => {
-            app.move_plugin_up(app.selected_plugin_index);
+            app.move_plugin_up(app.plugin_rack.selected_index);
             None
         }
         KeyCode::Char('w') | KeyCode::Char('W') => {
             // Move plugin down (also available via Shift+Down)
-            app.move_plugin_down(app.selected_plugin_index);
+            app.move_plugin_down(app.plugin_rack.selected_index);
             None
         }
         _ => None,
@@ -124,8 +124,8 @@ pub(in super::super) fn handle_edit_plugin_mode(
 ) -> Option<PlayerCommand> {
     // Check if we're editing a Matrix plugin
     let is_matrix = app
-        .plugin_graph
-        .get_plugin(app.selected_plugin_index)
+        .plugin_rack.graph
+        .get_plugin(app.plugin_rack.selected_index)
         .is_some_and(|p| matches!(p.settings, PluginSettings::Matrix { .. }));
 
     if is_matrix {
@@ -140,11 +140,11 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Enter | KeyCode::Char('e') => {
             // Open file explorer for FilePath parameters
-            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index)
+            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index)
                 && let Some(spec) = plugin
                     .settings
                     .param_specs()
-                    .get(app.plugin_param_selection)
+                    .get(app.plugin_rack.param_selection)
                 && matches!(
                     spec.param_type,
                     sotf_audio_player::param_specs::ParamType::FilePath
@@ -200,12 +200,12 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Char('a') => {
             // Load APO file (for EQ plugins)
-            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index) {
+            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index) {
                 if matches!(plugin.settings, PluginSettings::EQ { .. }) {
                     app.input_mode = InputMode::LoadApoFile;
-                    app.status_message = Some("Enter path to APO file:".to_string());
+                    app.ui.status_message = Some("Enter path to APO file:".to_string());
                 } else {
-                    app.status_message =
+                    app.ui.status_message =
                         Some("APO files can only be loaded for EQ plugins".to_string());
                 }
             }
@@ -213,17 +213,17 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Char('o') => {
             // Open SOFA file browser (for Binaural Decoder plugins)
-            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index) {
+            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index) {
                 if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
                     app.open_file_explorer(
                         FilePickerOrigin::SofaFile,
                         FilePickerMode::File,
                         "Select SOFA File",
-                        Some(&app.sofa_file_input.clone()),
+                        Some(&app.plugin_rack.sofa_input.clone()),
                         Some("sofa"),
                     );
                 } else {
-                    app.status_message = Some(
+                    app.ui.status_message = Some(
                         "SOFA files can only be loaded for Binaural Decoder plugins".to_string(),
                     );
                 }
@@ -232,7 +232,7 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Char('f') => {
             // Open IR file browser (for Convolution plugins)
-            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index) {
+            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index) {
                 if let PluginSettings::Convolution { ref ir_file, .. } = plugin.settings {
                     let current_path = ir_file.clone();
                     app.open_file_explorer(
@@ -243,7 +243,7 @@ pub(in super::super) fn handle_edit_plugin_mode(
                         Some("wav"),
                     );
                 } else {
-                    app.status_message =
+                    app.ui.status_message =
                         Some("IR files can only be loaded for Convolution plugins".to_string());
                 }
             }
@@ -251,7 +251,7 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Char('A') => {
             // Load Path A config from preset file (for A/B Compare plugins)
-            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index)
+            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index)
                 && matches!(plugin.settings, PluginSettings::ABCompare { .. })
             {
                 let start = sotf_audio_player::config::get_plugin_presets_dir()
@@ -268,7 +268,7 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Char('B') => {
             // Load Path B config from preset file (for A/B Compare plugins)
-            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index)
+            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index)
                 && matches!(plugin.settings, PluginSettings::ABCompare { .. })
             {
                 let start = sotf_audio_player::config::get_plugin_presets_dir()
@@ -296,7 +296,7 @@ fn handle_matrix_edit_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         }
         KeyCode::Tab => {
             // Toggle between Header and Grid mode
-            app.matrix_edit_mode = match app.matrix_edit_mode {
+            app.matrix.edit_mode = match app.matrix.edit_mode {
                 MatrixEditMode::Header => MatrixEditMode::Grid,
                 MatrixEditMode::Grid => MatrixEditMode::Header,
             };
@@ -304,7 +304,7 @@ fn handle_matrix_edit_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         }
         _ => {
             // Delegate to mode-specific handler
-            match app.matrix_edit_mode {
+            match app.matrix.edit_mode {
                 MatrixEditMode::Header => handle_matrix_header_keys(app, key),
                 MatrixEditMode::Grid => handle_matrix_grid_keys(app, key),
             }
@@ -316,14 +316,14 @@ fn handle_matrix_edit_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
 fn handle_matrix_header_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => {
-            if app.matrix_header_selection > 0 {
-                app.matrix_header_selection -= 1;
+            if app.matrix.header_selection > 0 {
+                app.matrix.header_selection -= 1;
             }
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.matrix_header_selection < 2 {
-                app.matrix_header_selection += 1;
+            if app.matrix.header_selection < 2 {
+                app.matrix.header_selection += 1;
             }
             None
         }
@@ -350,26 +350,26 @@ fn handle_matrix_grid_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
 
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => {
-            if app.matrix_grid_row > 0 {
-                app.matrix_grid_row -= 1;
+            if app.matrix.grid_row > 0 {
+                app.matrix.grid_row -= 1;
             }
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.matrix_grid_row + 1 < out_ch {
-                app.matrix_grid_row += 1;
+            if app.matrix.grid_row + 1 < out_ch {
+                app.matrix.grid_row += 1;
             }
             None
         }
         KeyCode::Left | KeyCode::Char('h') => {
-            if app.matrix_grid_col > 0 {
-                app.matrix_grid_col -= 1;
+            if app.matrix.grid_col > 0 {
+                app.matrix.grid_col -= 1;
             }
             None
         }
         KeyCode::Right | KeyCode::Char('l') => {
-            if app.matrix_grid_col + 1 < in_ch {
-                app.matrix_grid_col += 1;
+            if app.matrix.grid_col + 1 < in_ch {
+                app.matrix.grid_col += 1;
             }
             None
         }
@@ -412,15 +412,15 @@ pub(in super::super) fn handle_save_plugins_mode(
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
-            app.plugin_file_input.clear();
+            app.plugin_rack.file_input.clear();
             app.clear_autocomplete();
             None
         }
         KeyCode::Enter => {
             // If there are presets shown and input is empty, use selected preset (overwrite)
-            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
+            if app.plugin_rack.file_input.is_empty() && !app.plugin_rack.available_presets.is_empty() {
                 app.save_selected_preset();
-            } else if !app.plugin_file_input.is_empty() {
+            } else if !app.plugin_rack.file_input.is_empty() {
                 app.save_plugins();
             }
             app.input_mode = InputMode::Normal;
@@ -442,11 +442,11 @@ pub(in super::super) fn handle_save_plugins_mode(
         KeyCode::Up => {
             if !app.autocomplete_up(crate::app::app_autocomplete::set_plugin_file_input) {
                 // Navigate preset list when input is empty
-                if app.plugin_file_input.is_empty()
-                    && !app.available_plugin_presets.is_empty()
-                    && app.selected_preset_index > 0
+                if app.plugin_rack.file_input.is_empty()
+                    && !app.plugin_rack.available_presets.is_empty()
+                    && app.plugin_rack.selected_preset_index > 0
                 {
-                    app.selected_preset_index -= 1;
+                    app.plugin_rack.selected_preset_index -= 1;
                 }
             }
             None
@@ -454,17 +454,17 @@ pub(in super::super) fn handle_save_plugins_mode(
         KeyCode::Down => {
             if !app.autocomplete_down(crate::app::app_autocomplete::set_plugin_file_input) {
                 // Navigate preset list when input is empty
-                if app.plugin_file_input.is_empty()
-                    && !app.available_plugin_presets.is_empty()
-                    && app.selected_preset_index < app.available_plugin_presets.len() - 1
+                if app.plugin_rack.file_input.is_empty()
+                    && !app.plugin_rack.available_presets.is_empty()
+                    && app.plugin_rack.selected_preset_index < app.plugin_rack.available_presets.len() - 1
                 {
-                    app.selected_preset_index += 1;
+                    app.plugin_rack.selected_preset_index += 1;
                 }
             }
             None
         }
         KeyCode::Char(c) => {
-            app.plugin_file_input.push(c);
+            app.plugin_rack.file_input.push(c);
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_plugin_file_input,
                 crate::app::app_autocomplete::AutocompleteKind::PresetName,
@@ -472,7 +472,7 @@ pub(in super::super) fn handle_save_plugins_mode(
             None
         }
         KeyCode::Backspace => {
-            app.plugin_file_input.pop();
+            app.plugin_rack.file_input.pop();
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_plugin_file_input,
                 crate::app::app_autocomplete::AutocompleteKind::PresetName,
@@ -490,15 +490,15 @@ pub(in super::super) fn handle_load_plugins_mode(
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
-            app.plugin_file_input.clear();
+            app.plugin_rack.file_input.clear();
             app.clear_autocomplete();
             None
         }
         KeyCode::Enter => {
             // If there are presets shown and input is empty, load selected preset
-            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
+            if app.plugin_rack.file_input.is_empty() && !app.plugin_rack.available_presets.is_empty() {
                 app.load_selected_preset();
-            } else if !app.plugin_file_input.is_empty() {
+            } else if !app.plugin_rack.file_input.is_empty() {
                 app.load_plugins();
             }
             app.input_mode = InputMode::Normal;
@@ -506,7 +506,7 @@ pub(in super::super) fn handle_load_plugins_mode(
             None
         }
         KeyCode::Tab => {
-            if !app.plugin_file_input.is_empty() {
+            if !app.plugin_rack.file_input.is_empty() {
                 app.zsh_tab_complete(
                     crate::app::app_autocomplete::get_plugin_file_input,
                     crate::app::app_autocomplete::set_plugin_file_input,
@@ -522,7 +522,7 @@ pub(in super::super) fn handle_load_plugins_mode(
         KeyCode::Up | KeyCode::Char('k') => {
             if !app.autocomplete_up(crate::app::app_autocomplete::set_plugin_file_input) {
                 // Navigate through presets
-                if app.plugin_file_input.is_empty() {
+                if app.plugin_rack.file_input.is_empty() {
                     app.select_previous_preset();
                 }
             }
@@ -531,14 +531,14 @@ pub(in super::super) fn handle_load_plugins_mode(
         KeyCode::Down | KeyCode::Char('j') => {
             if !app.autocomplete_down(crate::app::app_autocomplete::set_plugin_file_input) {
                 // Navigate through presets
-                if app.plugin_file_input.is_empty() {
+                if app.plugin_rack.file_input.is_empty() {
                     app.select_next_preset();
                 }
             }
             None
         }
         KeyCode::Char(c) => {
-            app.plugin_file_input.push(c);
+            app.plugin_rack.file_input.push(c);
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_plugin_file_input,
                 crate::app::app_autocomplete::AutocompleteKind::FilePath,
@@ -546,7 +546,7 @@ pub(in super::super) fn handle_load_plugins_mode(
             None
         }
         KeyCode::Backspace => {
-            app.plugin_file_input.pop();
+            app.plugin_rack.file_input.pop();
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_plugin_file_input,
                 crate::app::app_autocomplete::AutocompleteKind::FilePath,
@@ -564,22 +564,22 @@ pub(in super::super) fn handle_load_apo_file_mode(
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
-            app.apo_file_input.clear();
+            app.plugin_rack.apo_input.clear();
             app.clear_autocomplete();
             None
         }
         KeyCode::Enter => {
             match app.load_apo_file() {
                 Ok(()) => {
-                    app.status_message = Some("APO file loaded successfully".to_string());
+                    app.ui.status_message = Some("APO file loaded successfully".to_string());
                     app.request_plugin_update();
                 }
                 Err(e) => {
-                    app.status_message = Some(format!("Failed to load APO file: {}", e));
+                    app.ui.status_message = Some(format!("Failed to load APO file: {}", e));
                 }
             }
             app.input_mode = InputMode::Normal;
-            app.apo_file_input.clear();
+            app.plugin_rack.apo_input.clear();
             app.clear_autocomplete();
             None
         }
@@ -604,7 +604,7 @@ pub(in super::super) fn handle_load_apo_file_mode(
             None
         }
         KeyCode::Char(c) => {
-            app.apo_file_input.push(c);
+            app.plugin_rack.apo_input.push(c);
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_apo_file_input,
                 crate::app::app_autocomplete::AutocompleteKind::FilePath,
@@ -612,7 +612,7 @@ pub(in super::super) fn handle_load_apo_file_mode(
             None
         }
         KeyCode::Backspace => {
-            app.apo_file_input.pop();
+            app.plugin_rack.apo_input.pop();
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_apo_file_input,
                 crate::app::app_autocomplete::AutocompleteKind::FilePath,
@@ -630,22 +630,22 @@ pub(in super::super) fn handle_load_sofa_file_mode(
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
-            app.sofa_file_input.clear();
+            app.plugin_rack.sofa_input.clear();
             app.clear_autocomplete();
             None
         }
         KeyCode::Enter => {
             match app.load_sofa_file() {
                 Ok(()) => {
-                    app.status_message = Some("SOFA file path set successfully".to_string());
+                    app.ui.status_message = Some("SOFA file path set successfully".to_string());
                     app.request_plugin_update();
                 }
                 Err(e) => {
-                    app.status_message = Some(format!("Failed to set SOFA file: {}", e));
+                    app.ui.status_message = Some(format!("Failed to set SOFA file: {}", e));
                 }
             }
             app.input_mode = InputMode::Normal;
-            app.sofa_file_input.clear();
+            app.plugin_rack.sofa_input.clear();
             app.clear_autocomplete();
             None
         }
@@ -670,7 +670,7 @@ pub(in super::super) fn handle_load_sofa_file_mode(
             None
         }
         KeyCode::Char(c) => {
-            app.sofa_file_input.push(c);
+            app.plugin_rack.sofa_input.push(c);
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_sofa_file_input,
                 crate::app::app_autocomplete::AutocompleteKind::FilePath,
@@ -678,7 +678,7 @@ pub(in super::super) fn handle_load_sofa_file_mode(
             None
         }
         KeyCode::Backspace => {
-            app.sofa_file_input.pop();
+            app.plugin_rack.sofa_input.pop();
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_sofa_file_input,
                 crate::app::app_autocomplete::AutocompleteKind::FilePath,

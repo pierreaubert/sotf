@@ -1,7 +1,7 @@
 use super::*;
 
 pub(crate) fn draw_volume_box(f: &mut Frame, area: Rect, app: &App) {
-    let volume_pct = (app.volume * 100.0) as u32;
+    let volume_pct = (app.playback.volume * 100.0) as u32;
     let key_style = Style::default().fg(app.theme.title_color);
     let volume_style = Style::default()
         .fg(app.theme.accent_primary)

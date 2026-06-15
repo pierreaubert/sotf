@@ -20,7 +20,7 @@ pub(super) fn handle_file_explorer_mode(app: &mut App, key: KeyEvent) -> Option<
         KeyCode::Enter | KeyCode::Char('l') => {
             if let Some(path) = app.file_explorer_current().cloned() {
                 if path.is_dir() {
-                    match app.file_picker_mode {
+                    match app.file_explorer.picker_mode {
                         FilePickerMode::Directory => {
                             // Enter selects this directory
                             apply_file_selection(app, path);
@@ -61,28 +61,29 @@ pub(super) fn handle_file_explorer_mode(app: &mut App, key: KeyEvent) -> Option<
 
 fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
     let path_str = path.to_string_lossy().to_string();
-    match app.file_picker_origin {
+    match app.file_explorer.picker_origin {
         FilePickerOrigin::SofaFile => {
-            app.sofa_file_input = path_str;
+            app.plugin_rack.sofa_input = path_str;
             if let Err(e) = app.load_sofa_file() {
-                app.status_message = Some(format!("Error: {}", e));
+                app.ui.status_message = Some(format!("Error: {}", e));
             } else {
-                app.status_message = Some("SOFA file loaded".to_string());
+                app.ui.status_message = Some("SOFA file loaded".to_string());
                 app.request_plugin_update();
             }
         }
         FilePickerOrigin::IrFile => {
-            if let Some(plugin) = app.plugin_graph.get_plugin_mut(app.selected_plugin_index)
+            if let Some(plugin) = app.plugin_rack.graph.get_plugin_mut(app.plugin_rack.selected_index)
                 && let PluginSettings::Convolution {
                     ref mut ir_file, ..
                 } = plugin.settings
             {
                 *ir_file = path_str;
-                app.status_message = Some("IR file set".to_string());
+                app.ui.status_message = Some("IR file set".to_string());
                 app.request_plugin_update();
             }
         }
         FilePickerOrigin::RecordingOutputDir => {
+            app.recording.model.recording_base_directory = Some(path_str.clone());
             app.recording.output_directory = path_str;
             app.recording.editing_output_dir = false;
         }
@@ -102,34 +103,34 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
             super::conf_roomeq::export_room_eq_results(app);
         }
         FilePickerOrigin::HeadphoneMeasurement => {
-            app.headphone_eq.measurement_path = path_str;
+            app.headphone_eq.model.measurement_path = path_str;
             app.headphone_eq.editing_measurement = false;
         }
         FilePickerOrigin::HeadphoneCustomTarget => {
-            app.headphone_eq.custom_target_path = path_str;
+            app.headphone_eq.model.custom_target_path = path_str;
             app.headphone_eq.editing_custom_target = false;
         }
         FilePickerOrigin::AddDirectory => {
             app.add_directory(path);
         }
         FilePickerOrigin::ApoFile => {
-            app.apo_file_input = path_str;
+            app.plugin_rack.apo_input = path_str;
             if let Err(e) = app.load_apo_file() {
-                app.status_message = Some(format!("APO error: {}", e));
+                app.ui.status_message = Some(format!("APO error: {}", e));
             } else {
-                app.status_message = Some("APO file loaded".to_string());
+                app.ui.status_message = Some("APO file loaded".to_string());
                 app.request_plugin_update();
             }
         }
         FilePickerOrigin::ABConfigA | FilePickerOrigin::ABConfigB => {
-            let is_path_a = app.file_picker_origin == FilePickerOrigin::ABConfigA;
+            let is_path_a = app.file_explorer.picker_origin == FilePickerOrigin::ABConfigA;
             match std::fs::read_to_string(&path) {
                 Ok(json_content) => {
                     let sample_rate = app.get_current_sample_rate();
                     match preset_file_to_path_config_json(&json_content, sample_rate) {
                         Ok(path_config_json) => {
                             if let Some(plugin) =
-                                app.plugin_graph.get_plugin_mut(app.selected_plugin_index)
+                                app.plugin_rack.graph.get_plugin_mut(app.plugin_rack.selected_index)
                                 && let PluginSettings::ABCompare {
                                     ref mut path_a_config,
                                     ref mut path_b_config,
@@ -147,28 +148,28 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                                 }
                             }
                             let filename = path.file_name().unwrap_or_default().to_string_lossy();
-                            app.status_message = Some(format!("Config loaded from {}", filename));
+                            app.ui.status_message = Some(format!("Config loaded from {}", filename));
                             app.request_plugin_update();
                         }
                         Err(e) => {
-                            app.status_message = Some(format!("Invalid preset: {}", e));
+                            app.ui.status_message = Some(format!("Invalid preset: {}", e));
                         }
                     }
                 }
                 Err(e) => {
-                    app.status_message = Some(format!("Failed to read config: {}", e));
+                    app.ui.status_message = Some(format!("Failed to read config: {}", e));
                 }
             }
         }
         FilePickerOrigin::PlaylistImport => {
             if let Some(db) = app.library.get_database() {
-                match app.playlist_controller.import_playlist(db, &path) {
+                match app.playlists.controller.import_playlist(db, &path) {
                     Ok(()) => {
                         let name = path.file_stem().unwrap_or_default().to_string_lossy();
-                        app.status_message = Some(format!("Imported playlist '{}'", name));
-                        app.playlist_mode = crate::app::PlaylistMode::Tracks;
+                        app.ui.status_message = Some(format!("Imported playlist '{}'", name));
+                        app.playlists.mode = crate::app::PlaylistMode::Tracks;
                     }
-                    Err(e) => app.status_message = Some(format!("Import error: {}", e)),
+                    Err(e) => app.ui.status_message = Some(format!("Import error: {}", e)),
                 }
             }
         }
@@ -176,7 +177,7 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
             // Build the output file path: directory + playlist_name.m3u8
             let export_path = if path.is_dir() {
                 let playlist_name = app
-                    .playlist_controller
+                    .playlists.controller
                     .active_playlist()
                     .map(|p| p.name.as_str())
                     .unwrap_or("playlist");
@@ -196,7 +197,7 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                 path.clone()
             };
             match app
-                .playlist_controller
+                .playlists.controller
                 .export_playlist(&app.library, &export_path)
             {
                 Ok(()) => {
@@ -204,9 +205,9 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                         .file_name()
                         .unwrap_or_default()
                         .to_string_lossy();
-                    app.status_message = Some(format!("Exported to '{}'", name));
+                    app.ui.status_message = Some(format!("Exported to '{}'", name));
                 }
-                Err(e) => app.status_message = Some(format!("Export error: {}", e)),
+                Err(e) => app.ui.status_message = Some(format!("Export error: {}", e)),
             }
         }
     }

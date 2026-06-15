@@ -148,7 +148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Animate loading screen while waiting for the library to load
         let mut db_empty = true;
         loop {
-            app.loading_tick = app.loading_tick.wrapping_add(1);
+            app.ui.loading_tick = app.ui.loading_tick.wrapping_add(1);
             terminal.draw(|f| ui::draw(f, &mut app))?;
 
             match rx.try_recv() {

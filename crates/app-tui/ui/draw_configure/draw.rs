@@ -19,11 +19,11 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
 
     // --- Output devices block ----------------------------------------------
     let items: Vec<ListItem> = app
-        .output_devices
+        .audio_devices.outputs
         .iter()
         .enumerate()
         .map(|(i, device)| {
-            let is_selected = i == app.selected_output_device_index;
+            let is_selected = i == app.audio_devices.selected_output_index;
 
             let default_tag = if device.is_default { " [DEFAULT]" } else { "" };
             let config_info = if let Some(ref config) = device.default_config {
@@ -76,14 +76,14 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let output_title = if app.output_devices.is_empty() {
+    let output_title = if app.audio_devices.outputs.is_empty() {
         " Output Devices (none found) ".to_string()
     } else {
-        format!(" Output Devices ({}) ", app.output_devices.len())
+        format!(" Output Devices ({}) ", app.audio_devices.outputs.len())
     };
 
     let mut list_state = ListState::default();
-    list_state.select(Some(app.selected_output_device_index));
+    list_state.select(Some(app.audio_devices.selected_output_index));
 
     let output_list = List::new(items)
         .block(
@@ -104,7 +104,7 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
 
     // --- Cast devices block ------------------------------------------------
     let cast_items: Vec<ListItem> = app
-        .cast_devices
+        .audio_devices.cast
         .iter()
         .map(|device| {
             let line = Line::from(vec![
@@ -126,12 +126,12 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let cast_title = if app.cast_discovery_running {
+    let cast_title = if app.audio_devices.cast_discovery_running {
         " Cast Devices (scanning…) ".to_string()
-    } else if app.cast_devices.is_empty() {
+    } else if app.audio_devices.cast.is_empty() {
         " Cast Devices (none found — press R to scan) ".to_string()
     } else {
-        format!(" Cast Devices ({}) ", app.cast_devices.len())
+        format!(" Cast Devices ({}) ", app.audio_devices.cast.len())
     };
 
     let cast_list = List::new(cast_items).block(
@@ -412,7 +412,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
     let tab_titles: Vec<Line> = steps
         .iter()
         .map(|st| {
-            let style = if *st == s.step {
+            let style = if *st == s.model.step {
                 Style::default()
                     .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD)
@@ -422,7 +422,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             Line::from(Span::styled(st.label(), style))
         })
         .collect();
-    let step_idx = steps.iter().position(|st| *st == s.step).unwrap_or(0);
+    let step_idx = steps.iter().position(|st| *st == s.model.step).unwrap_or(0);
     let tabs = Tabs::new(tab_titles)
         .block(
             Block::default()
@@ -448,7 +448,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
         height: outer[1].height.saturating_sub(2),
     };
 
-    match s.step {
+    match s.model.step {
         RecordingStep::Config => {
             // When editing a path field, reserve space for the autocomplete
             // dropdown at the bottom of the content area. Without this carve-
@@ -493,7 +493,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             // field (`idx = Some(i)` where `i` matches `selected_field`'s
             // value via `recording_field_at`).
             use crate::app::RecordingField;
-            let n_channels = s.recording_config.num_channels.max(1);
+            let n_channels = s.model.recording_config.num_channels.max(1);
             let mic_cal_label = |ch: usize| {
                 if n_channels > 1 {
                     format!("Mic Cal Ch{}", ch + 1)
@@ -502,7 +502,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 }
             };
             let mic_cal_value = |ch: usize| {
-                s.recording_config
+                s.model.recording_config
                     .mic_calibration_paths
                     .get(ch)
                     .and_then(|o| o.clone())
@@ -511,7 +511,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             };
             let channel_input_label = |ch: usize| format!("Ch{} input", ch + 1);
             let channel_input_value = |ch: usize| {
-                s.recording_config
+                s.model.recording_config
                     .channel_mappings
                     .get(ch)
                     .map(|c| (c + 1).to_string())
@@ -527,33 +527,33 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             rows.push((
                 Some(2),
                 "Speaker Config".to_string(),
-                s.playback_config.speaker_configuration.as_str().to_string(),
+                s.model.playback_config.speaker_configuration.as_str().to_string(),
             ));
             rows.push((None, "── Signal ──".to_string(), String::new()));
             rows.push((
                 Some(3),
                 "Signal Type".to_string(),
-                s.signal_type.as_str().to_string(),
+                s.model.signal_type.as_str().to_string(),
             ));
             rows.push((
                 Some(4),
                 "Duration (s)".to_string(),
-                format!("{:.1}", s.signal_duration_secs),
+                format!("{:.1}", s.model.signal_duration_secs),
             ));
             rows.push((
                 Some(5),
                 "Level (dB)".to_string(),
-                format!("{:.1}", s.signal_level_db),
+                format!("{:.1}", s.model.signal_level_db),
             ));
             rows.push((
                 Some(6),
                 "Sweep Start (Hz)".to_string(),
-                format!("{:.0}", s.sweep_start_freq),
+                format!("{:.0}", s.model.sweep_start_freq),
             ));
             rows.push((
                 Some(7),
                 "Sweep End (Hz)".to_string(),
-                format!("{:.0}", s.sweep_end_freq),
+                format!("{:.0}", s.model.sweep_end_freq),
             ));
             rows.push((None, "── Paths ──".to_string(), String::new()));
             rows.push((
@@ -569,17 +569,17 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             rows.push((
                 Some(9),
                 "Num Channels".to_string(),
-                s.recording_config.num_channels.to_string(),
+                s.model.recording_config.num_channels.to_string(),
             ));
             rows.push((
                 Some(10),
                 "CTC Matrix".to_string(),
-                s.recording_config.ctc_matrix_strategy.as_str().to_string(),
+                s.model.recording_config.ctc_matrix_strategy.as_str().to_string(),
             ));
             rows.push((
                 Some(11),
                 "Loopback Input".to_string(),
-                s.recording_config
+                s.model.recording_config
                     .ctc_loopback_input_channel
                     .map(|ch| (ch + 1).to_string())
                     .unwrap_or_else(|| "<none>".to_string()),
@@ -616,6 +616,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                     let path_val: String = match field_kind {
                         Some(RecordingField::OutputDir) => s.output_directory.clone(),
                         Some(RecordingField::MicCal(ch)) => s
+                            .model
                             .recording_config
                             .mic_calibration_paths
                             .get(ch)
@@ -664,7 +665,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                     .fg(app.theme.fg_secondary)
                     .add_modifier(Modifier::BOLD),
             )));
-            for mapping in &s.playback_config.channel_mappings {
+            for mapping in &s.model.playback_config.channel_mappings {
                 lines.push(Line::from(Span::styled(
                     format!(
                         "    {} → ch {}",
@@ -715,10 +716,10 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 .split(content);
 
             // Status
-            let status_text = if s.status_message.is_empty() {
+            let status_text = if s.model.status_message.is_empty() {
                 "Ready to record. Select a channel and press Enter.".to_string()
             } else {
-                s.status_message.clone()
+                s.model.status_message.clone()
             };
             let status = Paragraph::new(status_text)
                 .style(Style::default().fg(app.theme.accent_primary))
@@ -738,11 +739,12 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             );
 
             let rows: Vec<Row> = s
+                .model
                 .channel_recordings
                 .iter()
                 .enumerate()
                 .map(|(i, ch)| {
-                    let is_current = s.current_channel == Some(i);
+                    let is_current = s.model.current_recording_channel == Some(i);
                     let state_str = match ch.state {
                         ChannelRecordingState::Empty => "[ ]",
                         ChannelRecordingState::Recording => "[REC]",
@@ -809,6 +811,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Channel summary
             let completed: Vec<&ChannelRecording> = s
+                .model
                 .channel_recordings
                 .iter()
                 .filter(|ch| ch.state == ChannelRecordingState::Done)
@@ -932,7 +935,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
     use sotf_audio_player::recording_types::{ChannelRecordingState, RoomDimensionUnit};
 
     let s = &app.recording;
-    let speaker_channel_count = s.playback_config.channel_mappings.len();
+    let speaker_channel_count = s.model.playback_config.channel_mappings.len();
     // Results table (speakers per channel) grows with the channel
     // count; 1 row per channel + 2 lines borders + 1 line dropdown
     // overlay when editing.
@@ -975,7 +978,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
     } else {
         "Session Name"
     };
-    let name_para = Paragraph::new(field_text(0, s.save_name.clone(), "type session name"))
+    let name_para = Paragraph::new(field_text(0, s.model.save_name.clone(), "type session name"))
         .style(focused(0))
         .block(Block::default().borders(Borders::ALL).title(name_title));
     f.render_widget(name_para, inner[0]);
@@ -986,7 +989,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
     // on the focused one.
     let room_block = Block::default()
         .borders(Borders::ALL)
-        .title(format!("Room Dimensions ({})", s.save_room_unit.label()));
+        .title(format!("Room Dimensions ({})", s.model.room_dimension_unit.label()));
     let room_inner = room_block.inner(inner[1]);
     f.render_widget(room_block, inner[1]);
 
@@ -1011,18 +1014,18 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
         )
     };
     f.render_widget(
-        Paragraph::new(format!(" W: {}", dim_str(1, s.save_room_width))).style(focused(1)),
+        Paragraph::new(format!(" W: {}", dim_str(1, s.model.room_width_input))).style(focused(1)),
         cells[0],
     );
     f.render_widget(
-        Paragraph::new(format!(" D: {}", dim_str(2, s.save_room_depth))).style(focused(2)),
+        Paragraph::new(format!(" D: {}", dim_str(2, s.model.room_depth_input))).style(focused(2)),
         cells[1],
     );
     f.render_widget(
-        Paragraph::new(format!(" H: {}", dim_str(3, s.save_room_height))).style(focused(3)),
+        Paragraph::new(format!(" H: {}", dim_str(3, s.model.room_height_input))).style(focused(3)),
         cells[2],
     );
-    let unit_marker = match s.save_room_unit {
+    let unit_marker = match s.model.room_dimension_unit {
         RoomDimensionUnit::Metric => "[Metric]",
         RoomDimensionUnit::Imperial => "[Imperial]",
     };
@@ -1039,7 +1042,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
     };
     let desc_para = Paragraph::new(field_text(
         5,
-        s.setup_description.clone(),
+        s.model.setup_description.clone(),
         "describe treatment, seating, equipment",
     ))
     .style(focused(5))
@@ -1047,7 +1050,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
     f.render_widget(desc_para, inner[2]);
 
     // --- Speakers per Channel ----------------------------------------
-    let catalog = &app.spinorama_eq.available_speakers;
+    let catalog = &app.spinorama_eq.model.available_speakers;
     let spk_title = if catalog.is_empty() {
         "Speakers per Channel  (catalog loading…)"
     } else {
@@ -1064,13 +1067,14 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
         );
     } else {
         let rows: Vec<Row> = s
+            .model
             .playback_config
             .channel_mappings
             .iter()
             .enumerate()
             .map(|(i, mapping)| {
                 let field_idx = 6 + i;
-                let current = s.channel_speakers.get(i).cloned().unwrap_or_default();
+                let current = s.model.channel_speakers.get(i).cloned().unwrap_or_default();
                 let cell_value = if is_editing_field(field_idx) {
                     format!("> {}_", s.edit_buffer)
                 } else if current.is_empty() {
@@ -1139,6 +1143,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
         f.render_widget(ok, inner[4]);
     } else {
         let completed = s
+            .model
             .channel_recordings
             .iter()
             .filter(|ch| ch.state == ChannelRecordingState::Done)
@@ -1184,8 +1189,8 @@ fn draw_recording_probe_step(f: &mut Frame, content: Rect, app: &App) {
     use sotf_audio_player::room_eq_types::estimate_probe_sequence_ms;
 
     let s = &app.recording;
-    let pc = &s.probe_capture;
-    let channel_count = s.channel_recordings.len();
+    let pc = &s.model.probe_capture;
+    let channel_count = s.model.channel_recordings.len();
 
     let inner = Layout::default()
         .direction(Direction::Vertical)
@@ -1375,7 +1380,7 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
     use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
 
     let s = &app.recording;
-    let bac = &s.bass_anchor_capture;
+    let bac = &s.model.bass_anchor_capture;
 
     let inner = Layout::default()
         .direction(Direction::Vertical)
@@ -1389,7 +1394,7 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
 
     // --- Explainer + config summary ------------------------------------
     let tone_ms = 1000.0 * bac.bass_duration_s;
-    let loopback_hint = match app.recording.recording_config.ctc_loopback_input_channel {
+    let loopback_hint = match app.recording.model.recording_config.ctc_loopback_input_channel {
         Some(ch) => format!(" • loopback ref ch {}", ch),
         None => String::new(),
     };
@@ -1523,7 +1528,7 @@ fn draw_recording_spl_calibration_step(f: &mut Frame, content: Rect, app: &App) 
     use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
 
     let s = &app.recording;
-    let cal = &s.spl_calibration_capture;
+    let cal = &s.model.spl_calibration_capture;
 
     let inner = Layout::default()
         .direction(Direction::Vertical)

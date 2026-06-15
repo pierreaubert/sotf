@@ -70,22 +70,22 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
         media_controls::pump_macos_event_loop();
 
         // Draw UI only if needed
-        if app.needs_redraw {
+        if app.ui.needs_redraw {
             terminal.draw(|f| ui::draw(f, app))?;
-            app.needs_redraw = false;
+            app.ui.needs_redraw = false;
         }
 
         // Handle events
         if let Some(event) = handle_events(Duration::from_millis(100), media_controls.as_ref())? {
-            app.needs_redraw = true;
+            app.ui.needs_redraw = true;
             match event {
                 AppEvent::Key(key) => {
                     if let Some(cmd) = handle_key_event(app, key) {
                         if let Err(e) = handle_player_command(player, app, cmd) {
                             log::error!("[TUI] Player command error: {}", e);
-                            app.error_message = Some(e.to_string());
+                            app.ui.error_message = Some(e.to_string());
                             app.enter_overlay_mode(InputMode::ShowError);
-                            app.is_playing = false;
+                            app.playback.is_playing = false;
                         }
                         update_media_controls(app, player, media_controls);
                     }
@@ -94,9 +94,9 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     if let Some(cmd) = handle_media_control_event(app, event) {
                         if let Err(e) = handle_player_command(player, app, cmd) {
                             log::error!("[TUI] Media control command error: {}", e);
-                            app.error_message = Some(e.to_string());
+                            app.ui.error_message = Some(e.to_string());
                             app.enter_overlay_mode(InputMode::ShowError);
-                            app.is_playing = false;
+                            app.playback.is_playing = false;
                         }
                         update_media_controls(app, player, media_controls);
                     }
@@ -104,58 +104,58 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                 AppEvent::Tick => {
                     // Poll optimizer progress (non-blocking, no-op when not running)
                     if poll_spinorama_optimization(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_headphone_eq_optimization(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_headphone_list_load(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_headphone_download(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_room_eq_optimization(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_delay_detection(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_recording(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_probe_capture(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_spl_calibration_capture(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_bass_anchor_capture(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_save_recordings(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     // Poll speaker-load result (non-blocking, no-op when not loading)
                     if poll_spinorama_speaker_load(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_federation_scan(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if poll_federation_test(app) {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
                     if app.poll_cast_discovery() {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
 
                     let state = player.get_playback_state();
 
                     // Pause background scanners while playing to avoid CPU starvation,
                     // unless the user explicitly started a scan.
-                    app.scanner_pause_flag.store(
-                        app.is_playing && state.is_playing && !app.scanner_pause_override,
+                    app.scan.pause_flag.store(
+                        app.playback.is_playing && state.is_playing && !app.scan.pause_override,
                         std::sync::atomic::Ordering::Relaxed,
                     );
 
@@ -166,56 +166,56 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     // still drive redraws but noise-floor jitter does not.
                     let new_position = state.position_secs;
                     let new_loudness = app
-                        .plugin_graph
+                        .plugin_rack.graph
                         .output_monitor_engine_index()
                         .and_then(|idx| player.get_cached_plugin_data(idx))
                         .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
-                    app.current_sample_rate = state.sample_rate;
+                    app.playback.current_sample_rate = state.sample_rate;
 
                     let pos_changed =
-                        (new_position * 10.0).round() != (app.last_position_secs * 10.0).round();
-                    let play_state_changed = state.is_playing != app.last_is_playing_state;
+                        (new_position * 10.0).round() != (app.media_control.last_position_secs * 10.0).round();
+                    let play_state_changed = state.is_playing != app.media_control.last_is_playing_state;
                     let new_loudness_signature = loudness_redraw_signature(new_loudness.as_ref());
-                    let loudness_changed = new_loudness_signature != app.last_loudness_signature;
+                    let loudness_changed = new_loudness_signature != app.media_control.last_loudness_signature;
 
                     if pos_changed || play_state_changed || loudness_changed {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
 
-                    app.position_secs = new_position;
-                    app.loudness_info = new_loudness;
-                    app.last_position_secs = new_position;
-                    app.last_is_playing_state = state.is_playing;
-                    app.last_loudness_signature = new_loudness_signature;
+                    app.playback.position_secs = new_position;
+                    app.playback.loudness_info = new_loudness;
+                    app.media_control.last_position_secs = new_position;
+                    app.media_control.last_is_playing_state = state.is_playing;
+                    app.media_control.last_loudness_signature = new_loudness_signature;
 
                     // Redraw while scanning or processing
-                    if app.scan_in_progress
-                        || app.maintenance_in_progress
-                        || app.replay_gain_manager.in_progress
-                        || app.waveform_manager.in_progress
-                        || app.bliss_manager.in_progress
+                    if app.scan.in_progress
+                        || app.scan.maintenance_in_progress
+                        || app.scan.replay_gain_manager.in_progress
+                        || app.scan.waveform_manager.in_progress
+                        || app.scan.bliss_manager.in_progress
                     {
-                        app.needs_redraw = true;
+                        app.ui.needs_redraw = true;
                     }
 
                     // Check if we should record a play (30s threshold)
-                    if app.is_playing && state.is_playing {
+                    if app.playback.is_playing && state.is_playing {
                         app.check_and_record_play();
                     }
 
                     // Engine crash handling (priority order: fatal > error > restarted > auto-advance)
                     if state.engine_fatal {
                         log::error!("[TUI] Engine crashed fatally, cannot auto-restart");
-                        app.error_message = Some(
+                        app.ui.error_message = Some(
                             "Audio engine crashed. Please play a new track to restart.".to_string(),
                         );
                         app.enter_overlay_mode(InputMode::ShowError);
-                        app.is_playing = false;
+                        app.playback.is_playing = false;
                     } else if let Some(err) = state.last_error {
                         log::error!("[TUI] Playback error: {}", err);
-                        app.error_message = Some(err);
+                        app.ui.error_message = Some(err);
                         app.enter_overlay_mode(InputMode::ShowError);
-                        app.is_playing = false;
+                        app.playback.is_playing = false;
                     } else if state.engine_restarted {
                         log::info!("[TUI] Engine auto-restarted after crash, resuming playback");
                     } else if let Some(_transition_source) = state.gapless_transition {
@@ -228,8 +228,8 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             app.start_track_tracking(path);
                         }
                         update_media_controls(app, player, media_controls);
-                    } else if (state.track_ended || (app.is_playing && !state.is_playing))
-                        && app.current_queue_index.is_some()
+                    } else if (state.track_ended || (app.playback.is_playing && !state.is_playing))
+                        && app.playback.current_queue_index.is_some()
                     {
                         log::info!("[TUI] Track ended, attempting auto-advance...");
                         // Track ended cleanly, stop tracking the previous track
@@ -243,10 +243,10 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
 
                             // Clear suspensions from previous track and check for conflicts
-                            app.plugin_graph.clear_suspensions();
-                            app.plugin_graph.update_channel_dependent_plugins();
+                            app.plugin_rack.graph.clear_suspensions();
+                            app.plugin_rack.graph.update_channel_dependent_plugins();
 
-                            let conflicts = app.plugin_graph.find_channel_conflicts(track_channels);
+                            let conflicts = app.plugin_rack.graph.find_channel_conflicts(track_channels);
                             if !conflicts.is_empty() {
                                 log::info!(
                                     "[TUI] Auto-advance channel conflict: {}ch file with {} incompatible plugin(s)",
@@ -256,27 +256,27 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 // Auto-suspend without modal (user already consented by continuing playback)
                                 let indices: Vec<usize> =
                                     conflicts.iter().map(|c| c.index).collect();
-                                app.plugin_graph.suspend_plugins(&indices);
-                                app.plugin_graph.update_channel_dependent_plugins();
+                                app.plugin_rack.graph.suspend_plugins(&indices);
+                                app.plugin_rack.graph.update_channel_dependent_plugins();
                             }
 
                             if let Err(e) = start_playback(player, app, path, track_channels) {
                                 log::error!("[TUI] Failed to auto-advance: {}", e);
-                                app.error_message = Some(format!("Auto-advance failed: {}", e));
+                                app.ui.error_message = Some(format!("Auto-advance failed: {}", e));
                                 app.enter_overlay_mode(InputMode::ShowError);
-                                app.is_playing = false;
+                                app.playback.is_playing = false;
                             } else {
                                 log::info!("[TUI] Auto-advance successful");
                             }
                         } else {
                             log::info!("[TUI] No more tracks in queue, stopping playback");
-                            app.is_playing = false;
+                            app.playback.is_playing = false;
                         }
                         update_media_controls(app, player, media_controls);
                     }
 
                     // Gapless pre-queuing: when near end of track, queue the next file
-                    if state.is_playing && app.current_queue_index.is_some() {
+                    if state.is_playing && app.playback.current_queue_index.is_some() {
                         let position = state.position_secs;
                         let duration = app
                             .current_track()
@@ -298,48 +298,48 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     }
 
                     // Apply pending plugin updates with debouncing and retry logic
-                    if app.needs_plugin_update && !app.plugin_update_in_progress {
+                    if app.plugin_rack.needs_update && !app.plugin_rack.update_in_progress {
                         const MAX_RETRIES: u32 = 3;
                         const DEBOUNCE_MS: u64 = 500;
 
                         // Check if enough time has passed since last attempt
-                        let should_attempt = match app.plugin_update_last_attempt {
+                        let should_attempt = match app.plugin_rack.update_last_attempt {
                             None => true,
                             Some(last) => last.elapsed().as_millis() >= DEBOUNCE_MS as u128,
                         };
 
                         if should_attempt {
                             // Check retry limit
-                            if app.plugin_update_retry_count >= MAX_RETRIES {
+                            if app.plugin_rack.update_retry_count >= MAX_RETRIES {
                                 log::error!(
                                     "[TUI] Plugin update failed after {} retries, giving up",
                                     MAX_RETRIES
                                 );
-                                app.status_message = Some(format!(
+                                app.ui.status_message = Some(format!(
                                     "Plugin update failed after {} retries. Check logs for details.",
                                     MAX_RETRIES
                                 ));
-                                app.needs_plugin_update = false;
-                                app.plugin_update_retry_count = 0;
-                                app.plugin_update_in_progress = false;
+                                app.plugin_rack.needs_update = false;
+                                app.plugin_rack.update_retry_count = 0;
+                                app.plugin_rack.update_in_progress = false;
                             } else {
                                 // Mark update as in progress and clear the trigger flag immediately
-                                app.plugin_update_in_progress = true;
-                                app.needs_plugin_update = false;
-                                app.plugin_update_last_attempt = Some(std::time::Instant::now());
+                                app.plugin_rack.update_in_progress = true;
+                                app.plugin_rack.needs_update = false;
+                                app.plugin_rack.update_last_attempt = Some(std::time::Instant::now());
 
                                 log::debug!(
                                     "[TUI] Attempting plugin update (attempt {}/{})",
-                                    app.plugin_update_retry_count + 1,
+                                    app.plugin_rack.update_retry_count + 1,
                                     MAX_RETRIES
                                 );
 
                                 // Recompute replay gain before building plugin configs
                                 let rg_gain = app.get_replay_gain_for_current_track();
-                                app.plugin_graph.set_replay_gain(rg_gain);
+                                app.plugin_rack.graph.set_replay_gain(rg_gain);
 
                                 let sample_rate = app
-                                    .current_sample_rate
+                                    .playback.current_sample_rate
                                     .map(|r| r as f64)
                                     .unwrap_or_else(|| app.get_current_sample_rate());
 
@@ -348,12 +348,12 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 // silently drops parallel branches and
                                 // routed bass management. Same fix as the
                                 // GPUI app's structural-flush path.
-                                let result = if app.plugin_graph.is_linear() {
-                                    let plugins = app.plugin_graph.to_plugin_configs(sample_rate);
+                                let result = if app.plugin_rack.graph.is_linear() {
+                                    let plugins = app.plugin_rack.graph.to_plugin_configs(sample_rate);
                                     player.update_plugins(plugins)
                                 } else {
                                     let config =
-                                        app.plugin_graph.to_plugin_graph_config(sample_rate);
+                                        app.plugin_rack.graph.to_plugin_graph_config(sample_rate);
                                     log::info!(
                                         "[TUI] Plugin update (graph): {} nodes, {} edges",
                                         config.nodes.len(),
@@ -365,32 +365,32 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 match result {
                                     Ok(()) => {
                                         log::info!("[TUI] Plugin update successful");
-                                        app.status_message =
+                                        app.ui.status_message =
                                             Some("Plugin chain updated".to_string());
-                                        app.plugin_update_retry_count = 0;
-                                        app.plugin_update_in_progress = false;
+                                        app.plugin_rack.update_retry_count = 0;
+                                        app.plugin_rack.update_in_progress = false;
                                     }
                                     Err(e) => {
-                                        app.plugin_update_retry_count += 1;
-                                        app.plugin_update_in_progress = false;
+                                        app.plugin_rack.update_retry_count += 1;
+                                        app.plugin_rack.update_in_progress = false;
 
                                         log::warn!(
                                             "[TUI] Plugin update failed (attempt {}/{}): {}",
-                                            app.plugin_update_retry_count,
+                                            app.plugin_rack.update_retry_count,
                                             MAX_RETRIES,
                                             e
                                         );
 
-                                        if app.plugin_update_retry_count < MAX_RETRIES {
+                                        if app.plugin_rack.update_retry_count < MAX_RETRIES {
                                             // Retry on next tick (after debounce delay)
-                                            app.needs_plugin_update = true;
-                                            app.status_message = Some(format!(
+                                            app.plugin_rack.needs_update = true;
+                                            app.ui.status_message = Some(format!(
                                                 "Plugin update failed, retrying... ({}/{})",
-                                                app.plugin_update_retry_count, MAX_RETRIES
+                                                app.plugin_rack.update_retry_count, MAX_RETRIES
                                             ));
                                         } else {
                                             // Max retries reached
-                                            app.status_message =
+                                            app.ui.status_message =
                                                 Some(format!("Plugin update failed: {}", e));
                                         }
                                     }
@@ -400,7 +400,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     }
 
                     // Apply pending parameter updates (zero-dropout updates)
-                    if let Some(param_update) = app.pending_param_update.take() {
+                    if let Some(param_update) = app.plugin_rack.pending_param_update.take() {
                         log::debug!(
                             "[TUI] Applying parameter update: plugin {} param {} = {}",
                             param_update.plugin_index,
@@ -423,7 +423,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     }
 
                     // Start library scan if needed (non-blocking)
-                    if app.needs_rescan && !app.scan_in_progress {
+                    if app.scan.needs_rescan && !app.scan.in_progress {
                         // Switch to directory view so user can see scan progress
                         app.current_screen = Screen::Configure;
                         app.start_library_scan();
@@ -454,7 +454,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
         #[cfg(feature = "dev-api")]
         if let Some(ref rx) = dev_api_rx {
             while let Ok(cmd) = rx.try_recv() {
-                app.needs_redraw = true;
+                app.ui.needs_redraw = true;
                 process_dev_command(app, player, media_controls, cmd);
             }
         }

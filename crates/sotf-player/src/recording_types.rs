@@ -8,6 +8,7 @@ pub use sotf_audio::signal_recorder::{
 
 mod bass_anchor_capture_state;
 mod bass_anchor_capture_status;
+mod calibration_data;
 mod channel_mapping;
 mod channel_recording;
 mod ctc_matrix_export_strategy;
@@ -29,6 +30,7 @@ mod types;
 
 pub use bass_anchor_capture_state::*;
 pub use bass_anchor_capture_status::*;
+pub use calibration_data::*;
 pub use channel_mapping::*;
 pub use channel_recording::*;
 pub use ctc_matrix_export_strategy::*;

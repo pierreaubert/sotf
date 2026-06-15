@@ -1,156 +1,89 @@
-use sotf_audio_player::recording_types::{
-    BassAnchorCaptureState, ChannelRecording, PlaybackDeviceConfig, ProbeCaptureState,
-    RecordingDeviceConfig, RecordingSignalType, RecordingStep, RoomDimensionUnit,
-    SplCalibrationCaptureState, TransferMatrixLoopbackRecording,
-};
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use sotf_audio_player::ui_models::recording::RecordingScreenModel;
+use std::collections::HashMap;
 
-/// TUI state for the Recording wizard
+/// TUI state for the Recording wizard. Holds only TUI-specific view state;
+/// all domain state lives in the embedded [`RecordingScreenModel`].
 // Note: not `Clone` because `save_receiver` (mpsc::Receiver) is not
 // `Clone`. The state is owned by `App` and accessed via `&mut`; no
 // caller needs to clone the wizard wholesale.
 #[derive(Debug)]
 pub struct RecordingTuiState {
-    pub step: RecordingStep,
+    /// Shared, UI-agnostic Recording wizard domain model.
+    pub model: RecordingScreenModel,
+
     /// When true, the wizard step tab bar has focus (Left/Right change step).
     pub step_tab_focused: bool,
-    // Step 1: config
-    pub playback_config: PlaybackDeviceConfig,
-    pub recording_config: RecordingDeviceConfig,
+
+    // Step 1: config (TUI UI-only fields)
     pub available_playback_devices: Vec<(String, String)>, // (id, name)
     pub available_recording_devices: Vec<(String, String)>,
     pub selected_playback_idx: usize,
     pub selected_recording_idx: usize,
-    pub signal_type: RecordingSignalType,
-    pub signal_duration_secs: f32,
-    pub signal_level_db: f32,
-    pub sweep_start_freq: f32,
-    pub sweep_end_freq: f32,
+    /// TUI edit buffer for the output/base directory. The canonical value
+    /// lives in `model.recording_base_directory`.
     pub output_directory: String,
     pub editing_output_dir: bool,
-    /// `Some(ch)` while editing channel `ch`'s mic-calibration path; `None`
-    /// otherwise. The path itself lives in
-    /// `recording_config.mic_calibration_paths[ch]` — there is no separate
-    /// scratch buffer (mirrors the GPUI per-channel calibration model).
+    /// `Some(ch)` while editing channel `ch`'s mic-calibration path.
     pub editing_mic_cal_channel: Option<usize>,
     pub selected_field: usize,
-    /// True when a numerical field is being directly edited via keyboard
+    /// True when a numerical field is being directly edited via keyboard.
     pub editing_value: bool,
     pub edit_buffer: String,
-    // Step 2: capture
-    pub channel_recordings: Vec<ChannelRecording>,
-    pub transfer_matrix_loopbacks: Vec<TransferMatrixLoopbackRecording>,
-    pub ctc_reference_sweep_path: Option<String>,
-    pub current_channel: Option<usize>,
-    pub recording_progress: f32,
-    pub auto_record: bool,
-    pub status_message: String,
-    // Step 3 (Probe): tone-burst delay probe capture. Shared
-    // business state lives in ProbeCaptureState; the TUI-only fields
-    // below are cursor + in-progress-edit state.
-    pub probe_capture: ProbeCaptureState,
-    /// Form-field cursor for the Probe step: 0=duration, 1=silence,
-    /// 2=mic channel, 3=Run button.
+
+    // Step 3 (Probe): tone-burst delay probe capture.
     pub probe_selected_field: usize,
     pub probe_editing_value: bool,
-    // SPL Calibration step (GD-Opt v2 Phase GD-1e.5). Mirrors the GPUI
-    // wizard surface: capture state + cancel flag + TUI-only cursor /
-    // edit state for the form fields.
-    pub spl_calibration_capture: SplCalibrationCaptureState,
-    pub spl_cancel_requested: Arc<AtomicBool>,
-    /// Form-field cursor for the SPL Calibration step:
-    /// 0=ref freq, 1=tone amp, 2=duration, 3=output ch, 4=input ch,
-    /// 5=Run button, 6=Reported dBSPL meter reading.
+
+    // SPL Calibration step (GD-Opt v2 Phase GD-1e.5).
     pub spl_selected_field: usize,
     pub spl_editing_value: bool,
-    // Bass Anchor step (GD-Opt v2 Phase GD-1e). Read-only display in
-    // the TUI to mirror the GPUI wizard, which exposes status +
-    // results without a Run button. Optional step — skip via wizard
-    // navigation when the system can't reproduce sub-bass.
-    pub bass_anchor_capture: BassAnchorCaptureState,
-    // Step 4: evaluate
+
+    // Step 4: evaluate (TUI UI-only fields)
     pub selected_channel_view: usize,
-    // Step 4: save
-    pub save_name: String,
+
+    // Step 4: save (TUI UI-only fields)
     pub editing_save_name: bool,
     /// Cursor within the save-step form. 0 = save_name, 1..=3 = room
     /// width/depth/height, 4 = unit toggle, 5 = setup description,
     /// 6..6+N-1 = per-channel speaker entries (N = channel count).
     pub selected_save_field: usize,
-    /// When true, a text/number field under the save cursor is being
-    /// typed into. Re-uses `edit_buffer` for the keystroke buffer.
+    /// When true, a text/number field under the save cursor is being typed.
     pub editing_save_value: bool,
-    /// Room dimensions — interpreted in `save_room_unit`. Zero means
-    /// "not specified" and is dropped at save time.
-    pub save_room_width: f64,
-    pub save_room_depth: f64,
-    pub save_room_height: f64,
-    pub save_room_unit: RoomDimensionUnit,
-    /// Free-form description of the listening setup.
-    pub setup_description: String,
-    /// Per-channel speaker identity (brand + model). Indices align
-    /// with `channel_recordings[i].channel_name`. Auto-resized at
-    /// render time.
-    pub channel_speakers: Vec<String>,
     pub save_error: Option<String>,
     pub save_success: bool,
-    /// True while a background save thread is serializing and writing
-    /// the JSON. The save step shows a "Saving…" indicator while set.
+    /// True while a background save thread is serializing and writing the JSON.
     pub save_in_progress: bool,
-    /// Receiver for the background save result. Drained each tick by
-    /// `poll_save_recordings`.
+    /// Receiver for the background save result.
     pub save_receiver: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
 }
 
 impl Default for RecordingTuiState {
     fn default() -> Self {
         Self {
-            step: RecordingStep::Config,
+            model: RecordingScreenModel {
+                signal_level_db: -20.0,
+                save_name: String::new(),
+                ..Default::default()
+            },
             step_tab_focused: false,
-            playback_config: PlaybackDeviceConfig::default(),
-            recording_config: RecordingDeviceConfig::default(),
             available_playback_devices: Vec::new(),
             available_recording_devices: Vec::new(),
             selected_playback_idx: 0,
             selected_recording_idx: 0,
-            signal_type: RecordingSignalType::Sweep,
-            signal_duration_secs: 5.0,
-            signal_level_db: -20.0,
-            sweep_start_freq: 20.0,
-            sweep_end_freq: 20000.0,
             output_directory: String::new(),
             editing_output_dir: false,
             editing_mic_cal_channel: None,
             selected_field: 0,
             editing_value: false,
             edit_buffer: String::new(),
-            channel_recordings: Vec::new(),
-            transfer_matrix_loopbacks: Vec::new(),
-            ctc_reference_sweep_path: None,
-            current_channel: None,
-            recording_progress: 0.0,
-            auto_record: false,
-            status_message: String::new(),
-            probe_capture: ProbeCaptureState::default(),
             probe_selected_field: 0,
             probe_editing_value: false,
-            spl_calibration_capture: SplCalibrationCaptureState::default(),
-            spl_cancel_requested: Arc::new(AtomicBool::new(false)),
             spl_selected_field: 0,
             spl_editing_value: false,
-            bass_anchor_capture: BassAnchorCaptureState::default(),
             selected_channel_view: 0,
-            save_name: String::new(),
             editing_save_name: false,
             selected_save_field: 0,
             editing_save_value: false,
-            save_room_width: 0.0,
-            save_room_depth: 0.0,
-            save_room_height: 0.0,
-            save_room_unit: RoomDimensionUnit::default(),
-            setup_description: String::new(),
-            channel_speakers: Vec::new(),
             save_error: None,
             save_success: false,
             save_in_progress: false,
@@ -160,118 +93,48 @@ impl Default for RecordingTuiState {
 }
 
 impl RecordingTuiState {
-    /// Currently-active mic-calibration path string (read-only). Returns
-    /// `""` when not editing or when the channel slot is empty.
+    /// Currently-active mic-calibration path string (read-only).
     pub fn active_mic_cal_path(&self) -> &str {
-        match self.editing_mic_cal_channel {
-            Some(ch) => self
-                .recording_config
-                .mic_calibration_paths
-                .get(ch)
-                .and_then(|o| o.as_deref())
-                .unwrap_or(""),
-            None => "",
-        }
+        self.model
+            .active_mic_cal_path(self.editing_mic_cal_channel)
     }
 
-    /// Mutable reference to the currently-active mic-calibration string,
-    /// growing the underlying `Vec` and lazily inserting an empty `String`
-    /// in the slot if needed. Returns `None` if no channel is being edited.
+    /// Mutable reference to the currently-active mic-calibration string.
     pub fn active_mic_cal_path_mut(&mut self) -> Option<&mut String> {
-        let ch = self.editing_mic_cal_channel?;
-        let paths = &mut self.recording_config.mic_calibration_paths;
-        while paths.len() <= ch {
-            paths.push(None);
-        }
-        if paths[ch].is_none() {
-            paths[ch] = Some(String::new());
-        }
-        paths[ch].as_mut()
+        self.model
+            .active_mic_cal_path_mut(self.editing_mic_cal_channel)
     }
 
-    /// Replace the active mic-calibration path, normalising an empty
-    /// string back to `None` so downstream code can treat both states
-    /// uniformly via `Option`.
+    /// Replace the active mic-calibration path.
     pub fn set_active_mic_cal_path(&mut self, val: String) {
-        if let Some(ch) = self.editing_mic_cal_channel {
-            let paths = &mut self.recording_config.mic_calibration_paths;
-            while paths.len() <= ch {
-                paths.push(None);
-            }
-            paths[ch] = if val.is_empty() { None } else { Some(val) };
-        }
+        self.model
+            .set_active_mic_cal_path(self.editing_mic_cal_channel, val);
     }
 
     /// Resize the mic-calibration and recording-channel-mapping vecs to
-    /// match `num_channels`. Mirrors GPUI's `update_recording_channel_mappings`.
+    /// match `num_channels`.
     pub fn sync_recording_channel_vecs(&mut self) {
-        let target = self.recording_config.num_channels.max(1);
-        let cm = &mut self.recording_config.channel_mappings;
-        while cm.len() < target {
-            cm.push(cm.len());
-        }
-        cm.truncate(target);
-
-        let cal = &mut self.recording_config.mic_calibration_paths;
-        while cal.len() < target {
-            cal.push(None);
-        }
-        cal.truncate(target);
+        self.model.sync_recording_channel_vecs();
     }
 
-    /// Ensure `channel_speakers` has one slot per physical playback
-    /// channel. Capture rows can be multiplied by mic/position, but
-    /// speaker identity is attached to the speaker channel itself.
+    /// Ensure `channel_speakers` has one slot per physical playback channel.
     pub fn sync_channel_speakers_length(&mut self) {
-        self.channel_speakers
-            .resize(self.playback_config.channel_mappings.len(), String::new());
+        self.model.sync_channel_speakers_length();
     }
 
-    /// Build the canonical-metric `RoomDimensions` to persist in the
-    /// autoeq `RecordingConfiguration`. Returns `None` when any
-    /// dimension is blank (zero) — a partial triple would mislead
-    /// downstream consumers (e.g. the optimizer's Schroeder auto-detect).
+    /// Build the canonical-metric `RoomDimensions` to persist.
     pub fn room_dimensions_for_save(&self) -> Option<autoeq::roomeq::RoomDimensions> {
-        if self.save_room_width <= 0.0
-            || self.save_room_depth <= 0.0
-            || self.save_room_height <= 0.0
-        {
-            return None;
-        }
-        let u = self.save_room_unit;
-        Some(autoeq::roomeq::RoomDimensions {
-            length: u.to_meters(self.save_room_depth),
-            width: u.to_meters(self.save_room_width),
-            height: u.to_meters(self.save_room_height),
-        })
+        self.model.room_dimensions_for_save()
     }
 
     /// Build the channel-name → "brand model" map persisted in
-    /// `RecordingConfiguration`. Blank entries are skipped; returns
-    /// `None` when every entry is empty.
-    pub fn channel_speakers_map_for_save(
-        &self,
-    ) -> Option<std::collections::HashMap<String, String>> {
-        let mut map = std::collections::HashMap::new();
-        for (i, mapping) in self.playback_config.channel_mappings.iter().enumerate() {
-            if let Some(entry) = self.channel_speakers.get(i) {
-                let trimmed = entry.trim();
-                if !trimmed.is_empty() {
-                    map.insert(mapping.group_name.clone(), trimmed.to_string());
-                }
-            }
-        }
-        if map.is_empty() { None } else { Some(map) }
+    /// `RecordingConfiguration`.
+    pub fn channel_speakers_map_for_save(&self) -> Option<HashMap<String, String>> {
+        self.model.channel_speakers_map_for_save()
     }
 
-    /// How many fields are in the Save-step form given the current
-    /// channel list. Layout:
-    ///   0        save_name
-    ///   1..=3    room width / depth / height
-    ///   4        unit toggle
-    ///   5        setup description
-    ///   6..6+N-1 per-playback-channel speaker entries
+    /// How many fields are in the Save-step form given the current channel list.
     pub fn save_field_count(&self) -> usize {
-        6 + self.playback_config.channel_mappings.len()
+        self.model.save_field_count()
     }
 }

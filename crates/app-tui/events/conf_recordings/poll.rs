@@ -5,13 +5,13 @@ use super::consts::SPL_CAPTURE_RESULT;
 use crate::app::App;
 use std::sync::{Arc, Mutex};
 
-/// Drain the probe-capture slot into `app.recording.probe_capture`.
+/// Drain the probe-capture slot into `app.recording.model.probe_capture`.
 /// Returns `true` if state changed and the UI should redraw.
 pub fn poll_probe_capture(app: &mut App) -> bool {
     use sotf_audio_player::recording_types::ProbeCaptureStatus;
 
     if !matches!(
-        app.recording.probe_capture.status,
+        app.recording.model.probe_capture.status,
         ProbeCaptureStatus::Running { .. }
     ) {
         return false;
@@ -29,11 +29,11 @@ pub fn poll_probe_capture(app: &mut App) -> bool {
     match outcome {
         Ok((results, wav_path)) => {
             app.recording
-                .probe_capture
+                .model.probe_capture
                 .apply_results(results, Some(wav_path));
         }
         Err(e) => {
-            app.recording.probe_capture.status = ProbeCaptureStatus::Failed(e);
+            app.recording.model.probe_capture.status = ProbeCaptureStatus::Failed(e);
         }
     }
     true
@@ -45,7 +45,7 @@ pub fn poll_spl_calibration_capture(app: &mut App) -> bool {
     use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
 
     if !matches!(
-        app.recording.spl_calibration_capture.status,
+        app.recording.model.spl_calibration_capture.status,
         SplCalibrationCaptureStatus::Running { .. }
     ) {
         return false;
@@ -60,7 +60,7 @@ pub fn poll_spl_calibration_capture(app: &mut App) -> bool {
         return false;
     };
     drop(guard);
-    let cal = &mut app.recording.spl_calibration_capture;
+    let cal = &mut app.recording.model.spl_calibration_capture;
     match outcome {
         Ok(res) => cal.apply_engine_result(res),
         Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
@@ -81,7 +81,7 @@ pub fn poll_bass_anchor_capture(app: &mut App) -> bool {
     use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
 
     if !matches!(
-        app.recording.bass_anchor_capture.status,
+        app.recording.model.bass_anchor_capture.status,
         BassAnchorCaptureStatus::Running { .. }
     ) {
         return false;
@@ -99,11 +99,11 @@ pub fn poll_bass_anchor_capture(app: &mut App) -> bool {
     match outcome {
         Ok((results, wav_path)) => {
             app.recording
-                .bass_anchor_capture
+                .model.bass_anchor_capture
                 .apply_results(results, Some(wav_path));
         }
         Err(e) => {
-            app.recording.bass_anchor_capture.status = BassAnchorCaptureStatus::Failed(e);
+            app.recording.model.bass_anchor_capture.status = BassAnchorCaptureStatus::Failed(e);
         }
     }
     true
@@ -116,6 +116,7 @@ pub fn poll_recording(app: &mut App) -> bool {
     // Only poll when a recording is active
     let has_active = app
         .recording
+        .model
         .channel_recordings
         .iter()
         .any(|ch| ch.state == ChannelRecordingState::Recording);
@@ -134,37 +135,37 @@ pub fn poll_recording(app: &mut App) -> bool {
             Ok((rec_results, loopback)) => {
                 let mut completed_names = Vec::new();
                 for (ch_idx, rec_result) in rec_results {
-                    if let Some(ch) = app.recording.channel_recordings.get_mut(ch_idx) {
+                    if let Some(ch) = app.recording.model.channel_recordings.get_mut(ch_idx) {
                         ch.state = ChannelRecordingState::Done;
                         completed_names.push(ch.channel_name.clone());
                         ch.result = Some(rec_result);
                     }
                 }
                 if let Some(loopback) = loopback {
-                    app.recording.transfer_matrix_loopbacks.retain(|r| {
+                    app.recording.model.transfer_matrix_loopbacks.retain(|r| {
                         r.speaker_index != loopback.speaker_index
                             || r.mic_position_index != loopback.mic_position_index
                     });
-                    app.recording.transfer_matrix_loopbacks.push(loopback);
+                    app.recording.model.transfer_matrix_loopbacks.push(loopback);
                 }
                 if !completed_names.is_empty() {
                     if completed_names.len() == 1 {
-                        app.recording.status_message =
+                        app.recording.model.status_message =
                             format!("Channel {} recording complete", completed_names[0]);
                     } else {
-                        app.recording.status_message =
+                        app.recording.model.status_message =
                             format!("Recorded {} CTC ear channels", completed_names.len());
                     }
                 }
             }
             Err(e) => {
                 // Mark the recording channel as error
-                for ch in &mut app.recording.channel_recordings {
+                for ch in &mut app.recording.model.channel_recordings {
                     if ch.state == ChannelRecordingState::Recording {
                         ch.state = ChannelRecordingState::Error;
                     }
                 }
-                app.recording.status_message = format!("Recording failed: {}", e);
+                app.recording.model.status_message = format!("Recording failed: {}", e);
             }
         }
         return true;

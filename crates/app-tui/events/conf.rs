@@ -48,7 +48,7 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
                     app.input_mode = InputMode::Normal;
                     None
                 }
-                InputMode::ConfigureDirectories if app.editing_directory => {
+                InputMode::ConfigureDirectories if app.library_view.editing_directory => {
                     // Editing text → let directory handler cancel editing
                     super::conf_directories::handle_directory_keys(app, key)
                 }
@@ -82,7 +82,7 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
         KeyCode::Tab | KeyCode::BackTab => {
             return match app.input_mode {
                 InputMode::Configure => handle_tab_bar_keys(app, key),
-                InputMode::ConfigureDirectories if app.editing_directory => {
+                InputMode::ConfigureDirectories if app.library_view.editing_directory => {
                     super::conf_directories::handle_directory_keys(app, key)
                 }
                 InputMode::ConfigureRecording => {

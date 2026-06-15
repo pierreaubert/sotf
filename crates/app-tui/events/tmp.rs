@@ -26,35 +26,35 @@
 
         // ReplayGain toggle
         KeyCode::Char('g') => {
-            app.replay_gain_enabled = !app.replay_gain_enabled;
-            let mode_str = if app.replay_gain_enabled {
-                match app.replay_gain_mode {
+            app.playback.replay_gain_enabled = !app.playback.replay_gain_enabled;
+            let mode_str = if app.playback.replay_gain_enabled {
+                match app.playback.replay_gain_mode {
                     crate::app::ReplayGainMode::Track => "ON (Track mode)",
                     crate::app::ReplayGainMode::Album => "ON (Album mode)",
                 }
             } else {
                 "OFF"
             };
-            app.status_message = Some(format!("ReplayGain: {}", mode_str));
-            if app.is_playing {
-                app.needs_plugin_update = true;
+            app.ui.status_message = Some(format!("ReplayGain: {}", mode_str));
+            if app.playback.is_playing {
+                app.plugin_rack.needs_update = true;
             }
             Some(None)
         }
         // ReplayGain mode cycle
         KeyCode::Char('G') => {
             use crate::app::ReplayGainMode;
-            app.replay_gain_mode = match app.replay_gain_mode {
+            app.playback.replay_gain_mode = match app.playback.replay_gain_mode {
                 ReplayGainMode::Track => ReplayGainMode::Album,
                 ReplayGainMode::Album => ReplayGainMode::Track,
             };
-            let mode_str = match app.replay_gain_mode {
+            let mode_str = match app.playback.replay_gain_mode {
                 ReplayGainMode::Track => "Track",
                 ReplayGainMode::Album => "Album",
             };
-            app.status_message = Some(format!("ReplayGain mode: {}", mode_str));
-            if app.is_playing && app.replay_gain_enabled {
-                app.needs_plugin_update = true;
+            app.ui.status_message = Some(format!("ReplayGain mode: {}", mode_str));
+            if app.playback.is_playing && app.playback.replay_gain_enabled {
+                app.plugin_rack.needs_update = true;
             }
             Some(None)
         }

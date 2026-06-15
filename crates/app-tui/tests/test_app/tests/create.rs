@@ -31,53 +31,53 @@ fn create_test_app_with_directories(num_dirs: usize) -> App {
 fn test_select_next_directory() {
     let mut app = create_test_app_with_directories(3);
 
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 
     app.select_next_directory();
-    assert_eq!(app.selected_directory_index, 1);
+    assert_eq!(app.library_view.selected_directory_index, 1);
 
     app.select_next_directory();
-    assert_eq!(app.selected_directory_index, 2);
+    assert_eq!(app.library_view.selected_directory_index, 2);
 
     // Should wrap around to 0
     app.select_next_directory();
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 }
 
 #[test]
 fn test_select_previous_directory() {
     let mut app = create_test_app_with_directories(3);
 
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 
     // Should wrap around to last item
     app.select_previous_directory();
-    assert_eq!(app.selected_directory_index, 2);
+    assert_eq!(app.library_view.selected_directory_index, 2);
 
     app.select_previous_directory();
-    assert_eq!(app.selected_directory_index, 1);
+    assert_eq!(app.library_view.selected_directory_index, 1);
 
     app.select_previous_directory();
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 }
 
 #[test]
 fn test_page_down_directories() {
     let mut app = create_test_app_with_directories(30);
 
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 
     // Page down by 20
     app.page_down_directories(20);
-    assert_eq!(app.selected_directory_index, 20);
+    assert_eq!(app.library_view.selected_directory_index, 20);
 
     // Page down by 20 again - should stop at max (29)
     app.page_down_directories(20);
-    assert_eq!(app.selected_directory_index, 29);
+    assert_eq!(app.library_view.selected_directory_index, 29);
 
     // Should stay at max
     app.page_down_directories(20);
-    assert_eq!(app.selected_directory_index, 29);
+    assert_eq!(app.library_view.selected_directory_index, 29);
 }
 
 #[test]
@@ -85,19 +85,19 @@ fn test_page_up_directories() {
     let mut app = create_test_app_with_directories(30);
 
     // Start at the end
-    app.selected_directory_index = 29;
+    app.library_view.selected_directory_index = 29;
 
     // Page up by 20
     app.page_up_directories(20);
-    assert_eq!(app.selected_directory_index, 9);
+    assert_eq!(app.library_view.selected_directory_index, 9);
 
     // Page up by 20 again - should stop at 0
     app.page_up_directories(20);
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 
     // Should stay at 0
     app.page_up_directories(20);
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn test_navigation_with_expanded_directories() {
 
     // Initially collapsed - tree has 2 items
     assert_eq!(app.get_directory_tree_items().len(), 2);
-    assert_eq!(app.selected_directory_index, 0);
+    assert_eq!(app.library_view.selected_directory_index, 0);
 
     // Expand first directory
     app.toggle_directory_expansion();
@@ -124,16 +124,16 @@ fn test_navigation_with_expanded_directories() {
 
     // Navigate through expanded tree
     app.select_next_directory();
-    assert_eq!(app.selected_directory_index, 1); // subdir1
+    assert_eq!(app.library_view.selected_directory_index, 1); // subdir1
 
     app.select_next_directory();
-    assert_eq!(app.selected_directory_index, 2); // subdir2
+    assert_eq!(app.library_view.selected_directory_index, 2); // subdir2
 
     app.select_next_directory();
-    assert_eq!(app.selected_directory_index, 3); // dir1
+    assert_eq!(app.library_view.selected_directory_index, 3); // dir1
 
     app.select_next_directory();
-    assert_eq!(app.selected_directory_index, 0); // wrap to dir0
+    assert_eq!(app.library_view.selected_directory_index, 0); // wrap to dir0
 }
 
 #[test]
@@ -229,8 +229,8 @@ fn test_next_track_removes_finished_album_and_advances() {
         QueueEntry::new(QueueItem::new(album1)),
         QueueEntry::new(QueueItem::new(album2)),
     ];
-    app.current_queue_index = Some(0);
-    app.is_playing = true;
+    app.playback.current_queue_index = Some(0);
+    app.playback.is_playing = true;
 
     let first_path = app.current_track_path().unwrap();
     assert!(first_path.to_string_lossy().contains("track0.flac"));
@@ -244,7 +244,7 @@ fn test_next_track_removes_finished_album_and_advances() {
             .contains("track1.flac")
     );
     assert_eq!(app.queue.len(), 2);
-    assert_eq!(app.current_queue_index, Some(0));
+    assert_eq!(app.playback.current_queue_index, Some(0));
 
     let third_path = app.next_track().unwrap();
     assert!(
@@ -255,7 +255,7 @@ fn test_next_track_removes_finished_album_and_advances() {
             .contains("album2/track0.flac")
     );
     assert_eq!(app.queue.len(), 1);
-    assert_eq!(app.current_queue_index, Some(0));
+    assert_eq!(app.playback.current_queue_index, Some(0));
 
     let fourth_path = app.next_track().unwrap();
     assert!(
@@ -269,8 +269,8 @@ fn test_next_track_removes_finished_album_and_advances() {
     let none = app.next_track();
     assert!(none.is_none());
     assert!(app.queue.is_empty());
-    assert!(app.current_queue_index.is_none());
-    assert!(!app.is_playing);
+    assert!(app.playback.current_queue_index.is_none());
+    assert!(!app.playback.is_playing);
 }
 
 #[test]
@@ -358,14 +358,14 @@ fn test_clear_queue() {
         QueueEntry::new(QueueItem::new(album1)),
         QueueEntry::new(QueueItem::new(album2)),
     ];
-    app.current_queue_index = Some(1);
-    app.is_playing = true;
+    app.playback.current_queue_index = Some(1);
+    app.playback.is_playing = true;
 
     app.clear_queue();
 
     assert!(app.queue.is_empty());
-    assert!(app.current_queue_index.is_none());
-    assert!(!app.is_playing);
+    assert!(app.playback.current_queue_index.is_none());
+    assert!(!app.playback.is_playing);
 }
 
 #[test]
@@ -380,14 +380,14 @@ fn test_remove_from_queue_first_item() {
         QueueEntry::new(QueueItem::new(album2)),
         QueueEntry::new(QueueItem::new(album3)),
     ];
-    app.current_queue_index = Some(1);
+    app.playback.current_queue_index = Some(1);
 
     // Remove first item
     app.remove_from_queue(0);
 
     assert_eq!(app.queue.len(), 2);
     assert_eq!(app.queue[0].item.album.title, "Album2");
-    assert_eq!(app.current_queue_index, Some(0)); // Adjusted
+    assert_eq!(app.playback.current_queue_index, Some(0)); // Adjusted
 }
 
 #[test]
@@ -400,8 +400,8 @@ fn test_remove_from_queue_current_playing() {
         QueueEntry::new(QueueItem::new(album1)),
         QueueEntry::new(QueueItem::new(album2)),
     ];
-    app.current_queue_index = Some(0);
-    app.is_playing = true;
+    app.playback.current_queue_index = Some(0);
+    app.playback.is_playing = true;
 
     // Remove currently playing item
     app.remove_from_queue(0);
@@ -409,7 +409,7 @@ fn test_remove_from_queue_current_playing() {
     assert_eq!(app.queue.len(), 1);
     assert_eq!(app.queue[0].item.album.title, "Album2");
     // Current queue index should remain at 0 (now pointing to Album2)
-    assert_eq!(app.current_queue_index, Some(0));
+    assert_eq!(app.playback.current_queue_index, Some(0));
 }
 
 #[test]
@@ -418,15 +418,15 @@ fn test_remove_from_queue_last_item() {
 
     let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
     app.queue = vec![QueueEntry::new(QueueItem::new(album1))];
-    app.current_queue_index = Some(0);
-    app.is_playing = true;
+    app.playback.current_queue_index = Some(0);
+    app.playback.is_playing = true;
 
     // Remove last item
     app.remove_from_queue(0);
 
     assert!(app.queue.is_empty());
-    assert!(app.current_queue_index.is_none());
-    assert!(!app.is_playing);
+    assert!(app.playback.current_queue_index.is_none());
+    assert!(!app.playback.is_playing);
 }
 
 #[test]
@@ -439,7 +439,7 @@ fn test_toggle_queue_item_expansion() {
         QueueEntry::new(QueueItem::new(album1)),
         QueueEntry::new(QueueItem::new(album2)),
     ];
-    app.selected_queue_index = 1;
+    app.queue_view.selected_index = 1;
 
     // Toggle expansion
     app.toggle_queue_item_expansion();
@@ -461,14 +461,14 @@ fn test_select_next_queue_item() {
         QueueEntry::new(QueueItem::new(album1)),
         QueueEntry::new(QueueItem::new(album2)),
     ];
-    app.selected_queue_index = 0;
+    app.queue_view.selected_index = 0;
 
     app.select_next_queue_item();
-    assert_eq!(app.selected_queue_index, 1);
+    assert_eq!(app.queue_view.selected_index, 1);
 
     // Wrap around
     app.select_next_queue_item();
-    assert_eq!(app.selected_queue_index, 0);
+    assert_eq!(app.queue_view.selected_index, 0);
 }
 
 #[test]
@@ -481,14 +481,14 @@ fn test_select_previous_queue_item() {
         QueueEntry::new(QueueItem::new(album1)),
         QueueEntry::new(QueueItem::new(album2)),
     ];
-    app.selected_queue_index = 0;
+    app.queue_view.selected_index = 0;
 
     // Wrap around to last
     app.select_previous_queue_item();
-    assert_eq!(app.selected_queue_index, 1);
+    assert_eq!(app.queue_view.selected_index, 1);
 
     app.select_previous_queue_item();
-    assert_eq!(app.selected_queue_index, 0);
+    assert_eq!(app.queue_view.selected_index, 0);
 }
 
 #[test]
@@ -501,31 +501,31 @@ fn test_queue_navigation_into_expanded_tracks() {
         QueueEntry::new(QueueItem::new(album1)),
         QueueEntry::new(QueueItem::new(album2)),
     ];
-    app.selected_queue_index = 0;
+    app.queue_view.selected_index = 0;
     app.queue[0].expanded = true;
 
     // Start on album header
-    assert_eq!(app.selected_queue_track_index, None);
+    assert_eq!(app.queue_view.selected_track_index, None);
 
     // Down → first track
     app.select_next_queue_item();
-    assert_eq!(app.selected_queue_index, 0);
-    assert_eq!(app.selected_queue_track_index, Some(0));
+    assert_eq!(app.queue_view.selected_index, 0);
+    assert_eq!(app.queue_view.selected_track_index, Some(0));
 
     // Down → second track
     app.select_next_queue_item();
-    assert_eq!(app.selected_queue_index, 0);
-    assert_eq!(app.selected_queue_track_index, Some(1));
+    assert_eq!(app.queue_view.selected_index, 0);
+    assert_eq!(app.queue_view.selected_track_index, Some(1));
 
     // Down → third track
     app.select_next_queue_item();
-    assert_eq!(app.selected_queue_index, 0);
-    assert_eq!(app.selected_queue_track_index, Some(2));
+    assert_eq!(app.queue_view.selected_index, 0);
+    assert_eq!(app.queue_view.selected_track_index, Some(2));
 
     // Down → next album header
     app.select_next_queue_item();
-    assert_eq!(app.selected_queue_index, 1);
-    assert_eq!(app.selected_queue_track_index, None);
+    assert_eq!(app.queue_view.selected_index, 1);
+    assert_eq!(app.queue_view.selected_track_index, None);
 }
 
 #[test]
@@ -539,22 +539,22 @@ fn test_queue_navigation_previous_into_expanded_tracks() {
         QueueEntry::new(QueueItem::new(album2)),
     ];
     app.queue[0].expanded = true;
-    app.selected_queue_index = 1;
+    app.queue_view.selected_index = 1;
 
     // Up from album2 header → last track of expanded album1
     app.select_previous_queue_item();
-    assert_eq!(app.selected_queue_index, 0);
-    assert_eq!(app.selected_queue_track_index, Some(1));
+    assert_eq!(app.queue_view.selected_index, 0);
+    assert_eq!(app.queue_view.selected_track_index, Some(1));
 
     // Up → first track
     app.select_previous_queue_item();
-    assert_eq!(app.selected_queue_index, 0);
-    assert_eq!(app.selected_queue_track_index, Some(0));
+    assert_eq!(app.queue_view.selected_index, 0);
+    assert_eq!(app.queue_view.selected_track_index, Some(0));
 
     // Up → album1 header
     app.select_previous_queue_item();
-    assert_eq!(app.selected_queue_index, 0);
-    assert_eq!(app.selected_queue_track_index, None);
+    assert_eq!(app.queue_view.selected_index, 0);
+    assert_eq!(app.queue_view.selected_track_index, None);
 }
 
 #[test]
@@ -564,13 +564,13 @@ fn test_collapse_resets_track_selection() {
     let album1 = create_test_album("Artist", "Album1", "/music/album1", 3);
     app.queue = vec![QueueEntry::new(QueueItem::new(album1))];
     app.queue[0].expanded = true;
-    app.selected_queue_index = 0;
-    app.selected_queue_track_index = Some(1);
+    app.queue_view.selected_index = 0;
+    app.queue_view.selected_track_index = Some(1);
 
     // Left on a track → moves to album header
     app.collapse_queue_item();
     assert!(app.queue[0].expanded); // still expanded
-    assert_eq!(app.selected_queue_track_index, None);
+    assert_eq!(app.queue_view.selected_track_index, None);
 
     // Left on album header → collapses
     app.collapse_queue_item();
@@ -583,8 +583,8 @@ fn test_jump_to_selected_track() {
 
     let album1 = create_test_album("Artist", "Album1", "/music/album1", 3);
     app.queue = vec![QueueEntry::new(QueueItem::new(album1))];
-    app.selected_queue_index = 0;
-    app.selected_queue_track_index = Some(2);
+    app.queue_view.selected_index = 0;
+    app.queue_view.selected_track_index = Some(2);
 
     app.jump_to_selected_album();
     assert_eq!(app.queue[0].item.current_track_index, 2);
@@ -607,61 +607,61 @@ fn create_test_app_with_albums(num_albums: usize) -> App {
 #[test]
 fn test_select_next_album() {
     let mut app = create_test_app_with_albums(5);
-    app.selected_album_index = 0;
+    app.library_view.selected_album_index = 0;
 
     app.select_next_album();
-    assert_eq!(app.selected_album_index, 1);
+    assert_eq!(app.library_view.selected_album_index, 1);
 
     app.select_next_album();
-    assert_eq!(app.selected_album_index, 2);
+    assert_eq!(app.library_view.selected_album_index, 2);
 }
 
 #[test]
 fn test_select_previous_album() {
     let mut app = create_test_app_with_albums(5);
-    app.selected_album_index = 2;
+    app.library_view.selected_album_index = 2;
 
     app.select_previous_album();
-    assert_eq!(app.selected_album_index, 1);
+    assert_eq!(app.library_view.selected_album_index, 1);
 
     app.select_previous_album();
-    assert_eq!(app.selected_album_index, 0);
+    assert_eq!(app.library_view.selected_album_index, 0);
 
     // Wraps around to last album
     app.select_previous_album();
-    assert_eq!(app.selected_album_index, 4);
+    assert_eq!(app.library_view.selected_album_index, 4);
 }
 
 #[test]
 fn test_page_down_albums() {
     let mut app = create_test_app_with_albums(30);
-    app.selected_album_index = 0;
+    app.library_view.selected_album_index = 0;
 
     app.page_down_albums(10);
-    assert_eq!(app.selected_album_index, 10);
+    assert_eq!(app.library_view.selected_album_index, 10);
 
     app.page_down_albums(10);
-    assert_eq!(app.selected_album_index, 20);
+    assert_eq!(app.library_view.selected_album_index, 20);
 
     // Should stop at max (29)
     app.page_down_albums(20);
-    assert_eq!(app.selected_album_index, 29);
+    assert_eq!(app.library_view.selected_album_index, 29);
 }
 
 #[test]
 fn test_page_up_albums() {
     let mut app = create_test_app_with_albums(30);
-    app.selected_album_index = 25;
+    app.library_view.selected_album_index = 25;
 
     app.page_up_albums(10);
-    assert_eq!(app.selected_album_index, 15);
+    assert_eq!(app.library_view.selected_album_index, 15);
 
     app.page_up_albums(10);
-    assert_eq!(app.selected_album_index, 5);
+    assert_eq!(app.library_view.selected_album_index, 5);
 
     // Should stop at 0
     app.page_up_albums(10);
-    assert_eq!(app.selected_album_index, 0);
+    assert_eq!(app.library_view.selected_album_index, 0);
 }
 
 #[test]
@@ -679,11 +679,11 @@ fn test_rebuild_artist_tree() {
     app.rebuild_artist_tree();
 
     // Should have 2 artists
-    assert_eq!(app.artist_tree.len(), 2);
+    assert_eq!(app.library_view.artist_tree.len(), 2);
 
     // Find Artist A node - should have 2 albums
     let artist_a = app
-        .artist_tree
+        .library_view.artist_tree
         .iter()
         .find(|n| n.artist == "Artist A")
         .unwrap();
@@ -691,7 +691,7 @@ fn test_rebuild_artist_tree() {
 
     // Find Artist B node - should have 1 album
     let artist_b = app
-        .artist_tree
+        .library_view.artist_tree
         .iter()
         .find(|n| n.artist == "Artist B")
         .unwrap();
@@ -713,19 +713,19 @@ fn test_toggle_artist_expansion() {
     app.library.albums.push(album4);
     app.rebuild_artist_tree();
 
-    app.library_view_mode = LibraryViewMode::TreeView;
-    app.selected_tree_index = 0;
+    app.library_view.mode = LibraryViewMode::TreeView;
+    app.library_view.selected_tree_index = 0;
 
     // Initially collapsed
-    assert!(!app.artist_tree[0].expanded);
+    assert!(!app.library_view.artist_tree[0].expanded);
 
     // Toggle expansion
     app.toggle_artist_expansion();
-    assert!(app.artist_tree[0].expanded);
+    assert!(app.library_view.artist_tree[0].expanded);
 
     // Toggle again
     app.toggle_artist_expansion();
-    assert!(!app.artist_tree[0].expanded);
+    assert!(!app.library_view.artist_tree[0].expanded);
 }
 
 #[test]
@@ -767,7 +767,7 @@ fn test_get_tree_items_expanded() {
     app.rebuild_artist_tree();
 
     // Expand first artist
-    app.artist_tree[0].expanded = true;
+    app.library_view.artist_tree[0].expanded = true;
 
     let items = app.get_tree_items();
     // Artist A (expanded) + 2 albums + Artist B (collapsed) = 4 items
@@ -798,15 +798,15 @@ fn test_select_next_tree_item() {
     app.library.albums.push(album2);
     app.rebuild_artist_tree();
 
-    app.library_view_mode = LibraryViewMode::TreeView;
-    app.selected_tree_index = 0;
+    app.library_view.mode = LibraryViewMode::TreeView;
+    app.library_view.selected_tree_index = 0;
 
     app.select_next_tree_item();
-    assert_eq!(app.selected_tree_index, 1);
+    assert_eq!(app.library_view.selected_tree_index, 1);
 
     // Should wrap
     app.select_next_tree_item();
-    assert_eq!(app.selected_tree_index, 0);
+    assert_eq!(app.library_view.selected_tree_index, 0);
 }
 
 #[test]
@@ -819,15 +819,15 @@ fn test_select_previous_tree_item() {
     app.library.albums.push(album2);
     app.rebuild_artist_tree();
 
-    app.library_view_mode = LibraryViewMode::TreeView;
-    app.selected_tree_index = 0;
+    app.library_view.mode = LibraryViewMode::TreeView;
+    app.library_view.selected_tree_index = 0;
 
     // Wrap to last
     app.select_previous_tree_item();
-    assert_eq!(app.selected_tree_index, 1);
+    assert_eq!(app.library_view.selected_tree_index, 1);
 
     app.select_previous_tree_item();
-    assert_eq!(app.selected_tree_index, 0);
+    assert_eq!(app.library_view.selected_tree_index, 0);
 }
 
 fn create_test_audio_device(name: &str, is_default: bool) -> AudioDevice {
@@ -848,36 +848,36 @@ fn test_select_next_output_device() {
     let mut app = App::new(Theme::default(), false);
 
     // Simulate having some devices
-    app.output_devices = vec![
+    app.audio_devices.outputs = vec![
         create_test_audio_device("Device 1", true),
         create_test_audio_device("Device 2", false),
     ];
-    app.selected_output_device_index = 0;
+    app.audio_devices.selected_output_index = 0;
 
     app.select_next_output_device();
-    assert_eq!(app.selected_output_device_index, 1);
+    assert_eq!(app.audio_devices.selected_output_index, 1);
 
     // Wrap
     app.select_next_output_device();
-    assert_eq!(app.selected_output_device_index, 0);
+    assert_eq!(app.audio_devices.selected_output_index, 0);
 }
 
 #[test]
 fn test_select_previous_output_device() {
     let mut app = App::new(Theme::default(), false);
 
-    app.output_devices = vec![
+    app.audio_devices.outputs = vec![
         create_test_audio_device("Device 1", true),
         create_test_audio_device("Device 2", false),
     ];
-    app.selected_output_device_index = 0;
+    app.audio_devices.selected_output_index = 0;
 
     // Wrap to last
     app.select_previous_output_device();
-    assert_eq!(app.selected_output_device_index, 1);
+    assert_eq!(app.audio_devices.selected_output_index, 1);
 
     app.select_previous_output_device();
-    assert_eq!(app.selected_output_device_index, 0);
+    assert_eq!(app.audio_devices.selected_output_index, 0);
 }
 
 #[test]
@@ -887,8 +887,8 @@ fn test_get_selected_output_device() {
     // Empty devices
     assert!(app.get_selected_output_device().is_none());
 
-    app.output_devices = vec![create_test_audio_device("Test Device", false)];
-    app.selected_output_device_index = 0;
+    app.audio_devices.outputs = vec![create_test_audio_device("Test Device", false)];
+    app.audio_devices.selected_output_index = 0;
 
     let device = app.get_selected_output_device().unwrap();
     assert_eq!(device.name, "Test Device");
@@ -920,8 +920,8 @@ fn test_get_device_max_channels_uses_supported_configs() {
         },
     ];
 
-    app.output_devices = vec![device];
-    app.selected_output_device_index = 0;
+    app.audio_devices.outputs = vec![device];
+    app.audio_devices.selected_output_index = 0;
 
     assert_eq!(app.get_device_max_channels(), Some(94));
 }
@@ -938,8 +938,8 @@ fn test_get_device_max_channels_falls_back_to_default_config() {
         sample_format: "f32".to_string(),
     });
 
-    app.output_devices = vec![device];
-    app.selected_output_device_index = 0;
+    app.audio_devices.outputs = vec![device];
+    app.audio_devices.selected_output_index = 0;
 
     assert_eq!(app.get_device_max_channels(), Some(6));
 }
@@ -950,8 +950,8 @@ fn test_start_queue() {
 
     // Empty queue
     assert!(app.start_queue().is_none());
-    assert!(app.current_queue_index.is_none());
-    assert!(!app.is_playing);
+    assert!(app.playback.current_queue_index.is_none());
+    assert!(!app.playback.is_playing);
 
     // Add items to queue
     let album = create_test_album("Artist", "Album", "/music/album", 3);
@@ -959,8 +959,8 @@ fn test_start_queue() {
 
     let path = app.start_queue();
     assert!(path.is_some());
-    assert_eq!(app.current_queue_index, Some(0));
-    assert!(app.is_playing);
+    assert_eq!(app.playback.current_queue_index, Some(0));
+    assert!(app.playback.is_playing);
 }
 
 #[test]
@@ -984,8 +984,8 @@ fn test_add_album_to_queue_does_not_start_playback() {
 
     assert!(source.is_none());
     assert_eq!(app.queue.len(), 1);
-    assert!(app.current_queue_index.is_none());
-    assert!(!app.is_playing);
+    assert!(app.playback.current_queue_index.is_none());
+    assert!(!app.playback.is_playing);
 
     let duplicate_source = app.add_album_to_queue().unwrap();
     assert!(duplicate_source.is_none());
@@ -1001,15 +1001,15 @@ fn test_add_tree_selection_to_queue_does_not_start_playback() {
     app.library.albums.push(album1);
     app.library.albums.push(album2);
     app.rebuild_artist_tree();
-    app.library_view_mode = LibraryViewMode::TreeView;
-    app.selected_tree_index = 0;
+    app.library_view.mode = LibraryViewMode::TreeView;
+    app.library_view.selected_tree_index = 0;
 
     let source = app.add_tree_selection_to_queue();
 
     assert!(source.is_none());
     assert_eq!(app.queue.len(), 2);
-    assert!(app.current_queue_index.is_none());
-    assert!(!app.is_playing);
+    assert!(app.playback.current_queue_index.is_none());
+    assert!(!app.playback.is_playing);
 }
 
 #[test]
@@ -1018,8 +1018,8 @@ fn test_previous_track_within_album() {
 
     let album = create_test_album("Artist", "Album", "/music/album", 3);
     app.queue.push(QueueEntry::new(QueueItem::new(album)));
-    app.current_queue_index = Some(0);
-    app.is_playing = true;
+    app.playback.current_queue_index = Some(0);
+    app.playback.is_playing = true;
 
     // Move to track 2
     app.queue[0].item.current_track_index = 2;
@@ -1044,8 +1044,8 @@ fn test_previous_track_to_previous_album() {
     let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
     app.queue.push(QueueEntry::new(QueueItem::new(album1)));
     app.queue.push(QueueEntry::new(QueueItem::new(album2)));
-    app.current_queue_index = Some(1);
-    app.is_playing = true;
+    app.playback.current_queue_index = Some(1);
+    app.playback.is_playing = true;
 
     // At first track of second album
     app.queue[1].item.current_track_index = 0;
@@ -1060,5 +1060,5 @@ fn test_previous_track_to_previous_album() {
             .to_string_lossy()
             .contains("album1/track1.flac")
     );
-    assert_eq!(app.current_queue_index, Some(0));
+    assert_eq!(app.playback.current_queue_index, Some(0));
 }

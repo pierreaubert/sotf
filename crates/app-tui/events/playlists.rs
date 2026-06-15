@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use super::PlayerCommand;
 
 pub fn handle_playlists_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match app.playlist_mode {
+    match app.playlists.mode {
         PlaylistMode::List => handle_list_mode(app, key),
         PlaylistMode::Tracks => handle_tracks_mode(app, key),
         PlaylistMode::Create => handle_text_input(app, key, true),
@@ -16,46 +16,46 @@ pub fn handle_playlists_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => {
-            app.playlist_controller.select_prev_playlist();
+            app.playlists.controller.select_prev_playlist();
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            app.playlist_controller.select_next_playlist();
+            app.playlists.controller.select_next_playlist();
             None
         }
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
             // Open the selected playlist
             if let Some(db) = app.library.get_database() {
-                let idx = app.playlist_controller.selected_playlist_index;
-                match app.playlist_controller.open_playlist(db, idx) {
-                    Ok(()) => app.playlist_mode = PlaylistMode::Tracks,
-                    Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                let idx = app.playlists.controller.selected_playlist_index;
+                match app.playlists.controller.open_playlist(db, idx) {
+                    Ok(()) => app.playlists.mode = PlaylistMode::Tracks,
+                    Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                 }
             }
             None
         }
         KeyCode::Char('n') => {
             // Create new playlist
-            app.playlist_name_input.clear();
-            app.playlist_mode = PlaylistMode::Create;
+            app.playlists.name_input.clear();
+            app.playlists.mode = PlaylistMode::Create;
             None
         }
         KeyCode::Char('r') => {
             // Rename selected playlist
             if let Some(playlist) = app
-                .playlist_controller
+                .playlists.controller
                 .playlists()
-                .get(app.playlist_controller.selected_playlist_index)
+                .get(app.playlists.controller.selected_playlist_index)
             {
-                app.playlist_name_input = playlist.name.clone();
-                app.playlist_mode = PlaylistMode::Rename;
+                app.playlists.name_input = playlist.name.clone();
+                app.playlists.mode = PlaylistMode::Rename;
             }
             None
         }
         KeyCode::Char('d') => {
             // Confirm delete
-            if !app.playlist_controller.playlists().is_empty() {
-                app.playlist_mode = PlaylistMode::ConfirmDelete;
+            if !app.playlists.controller.playlists().is_empty() {
+                app.playlists.mode = PlaylistMode::ConfirmDelete;
             }
             None
         }
@@ -78,12 +78,12 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char('e') => {
             // Export active playlist — ensure a playlist is open first
             use crate::app::{FilePickerMode, FilePickerOrigin};
-            let has_active = app.playlist_controller.active_playlist().is_some();
+            let has_active = app.playlists.controller.active_playlist().is_some();
             if !has_active && let Some(db) = app.library.get_database() {
-                let idx = app.playlist_controller.selected_playlist_index;
-                let _ = app.playlist_controller.open_playlist(db, idx);
+                let idx = app.playlists.controller.selected_playlist_index;
+                let _ = app.playlists.controller.open_playlist(db, idx);
             }
-            if app.playlist_controller.active_playlist().is_some() {
+            if app.playlists.controller.active_playlist().is_some() {
                 app.open_file_explorer(
                     FilePickerOrigin::PlaylistExport,
                     FilePickerMode::Directory,
@@ -92,7 +92,7 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                     None,
                 );
             } else {
-                app.status_message = Some("No playlist to export".to_string());
+                app.ui.status_message = Some("No playlist to export".to_string());
             }
             None
         }
@@ -103,24 +103,24 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 fn handle_tracks_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => {
-            app.playlist_controller.select_prev_track();
+            app.playlists.controller.select_prev_track();
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            app.playlist_controller.select_next_track();
+            app.playlists.controller.select_next_track();
             None
         }
         KeyCode::Esc | KeyCode::Left | KeyCode::Char('h') => {
-            app.playlist_controller.close_playlist();
-            app.playlist_mode = PlaylistMode::List;
+            app.playlists.controller.close_playlist();
+            app.playlists.mode = PlaylistMode::List;
             None
         }
         KeyCode::Char('x') => {
             // Remove track
             if let Some(db) = app.library.get_database() {
-                let idx = app.playlist_controller.selected_track_index;
-                if let Err(e) = app.playlist_controller.remove_track(db, idx) {
-                    app.status_message = Some(format!("Error: {}", e));
+                let idx = app.playlists.controller.selected_track_index;
+                if let Err(e) = app.playlists.controller.remove_track(db, idx) {
+                    app.ui.status_message = Some(format!("Error: {}", e));
                 }
             }
             None
@@ -128,18 +128,18 @@ fn handle_tracks_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char('K') => {
             // Move track up
             if let Some(db) = app.library.get_database()
-                && let Err(e) = app.playlist_controller.move_track_up(db)
+                && let Err(e) = app.playlists.controller.move_track_up(db)
             {
-                app.status_message = Some(format!("Error: {}", e));
+                app.ui.status_message = Some(format!("Error: {}", e));
             }
             None
         }
         KeyCode::Char('J') => {
             // Move track down
             if let Some(db) = app.library.get_database()
-                && let Err(e) = app.playlist_controller.move_track_down(db)
+                && let Err(e) = app.playlists.controller.move_track_down(db)
             {
-                app.status_message = Some(format!("Error: {}", e));
+                app.ui.status_message = Some(format!("Error: {}", e));
             }
             None
         }
@@ -154,38 +154,38 @@ fn handle_tracks_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 fn handle_text_input(app: &mut App, key: KeyEvent, is_create: bool) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Char(c) => {
-            app.playlist_name_input.push(c);
+            app.playlists.name_input.push(c);
             None
         }
         KeyCode::Backspace => {
-            app.playlist_name_input.pop();
+            app.playlists.name_input.pop();
             None
         }
         KeyCode::Enter => {
-            let name = app.playlist_name_input.trim().to_string();
+            let name = app.playlists.name_input.trim().to_string();
             if !name.is_empty()
                 && let Some(db) = app.library.get_database()
             {
                 if is_create {
-                    match app.playlist_controller.create_playlist(db, &name, None) {
-                        Ok(_) => app.status_message = Some(format!("Created '{}'", name)),
-                        Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                    match app.playlists.controller.create_playlist(db, &name, None) {
+                        Ok(_) => app.ui.status_message = Some(format!("Created '{}'", name)),
+                        Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                     }
                 } else {
-                    let idx = app.playlist_controller.selected_playlist_index;
-                    match app.playlist_controller.rename_playlist(db, idx, &name) {
-                        Ok(()) => app.status_message = Some(format!("Renamed to '{}'", name)),
-                        Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                    let idx = app.playlists.controller.selected_playlist_index;
+                    match app.playlists.controller.rename_playlist(db, idx, &name) {
+                        Ok(()) => app.ui.status_message = Some(format!("Renamed to '{}'", name)),
+                        Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                     }
                 }
             }
-            app.playlist_name_input.clear();
-            app.playlist_mode = PlaylistMode::List;
+            app.playlists.name_input.clear();
+            app.playlists.mode = PlaylistMode::List;
             None
         }
         KeyCode::Esc => {
-            app.playlist_name_input.clear();
-            app.playlist_mode = PlaylistMode::List;
+            app.playlists.name_input.clear();
+            app.playlists.mode = PlaylistMode::List;
             None
         }
         _ => None,
@@ -196,18 +196,18 @@ fn handle_confirm_delete(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
     match key.code {
         KeyCode::Char('y') | KeyCode::Enter => {
             if let Some(db) = app.library.get_database() {
-                let idx = app.playlist_controller.selected_playlist_index;
-                match app.playlist_controller.delete_playlist(db, idx) {
-                    Ok(()) => app.status_message = Some("Playlist deleted".to_string()),
-                    Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                let idx = app.playlists.controller.selected_playlist_index;
+                match app.playlists.controller.delete_playlist(db, idx) {
+                    Ok(()) => app.ui.status_message = Some("Playlist deleted".to_string()),
+                    Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                 }
             }
-            app.playlist_mode = PlaylistMode::List;
+            app.playlists.mode = PlaylistMode::List;
             None
         }
         _ => {
             // Any other key cancels
-            app.playlist_mode = PlaylistMode::List;
+            app.playlists.mode = PlaylistMode::List;
             None
         }
     }
@@ -216,8 +216,8 @@ fn handle_confirm_delete(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
 /// Play all tracks from the currently selected playlist.
 fn play_selected_playlist(app: &mut App) -> Option<PlayerCommand> {
     if let Some(db) = app.library.get_database() {
-        let idx = app.playlist_controller.selected_playlist_index;
-        if app.playlist_controller.open_playlist(db, idx).is_ok() {
+        let idx = app.playlists.controller.selected_playlist_index;
+        if app.playlists.controller.open_playlist(db, idx).is_ok() {
             return play_active_playlist(app);
         }
     }
@@ -233,9 +233,9 @@ fn play_selected_playlist(app: &mut App) -> Option<PlayerCommand> {
 fn play_active_playlist(app: &mut App) -> Option<PlayerCommand> {
     use crate::app::{QueueEntry, QueueItem};
 
-    let track_paths = app.playlist_controller.active_track_paths();
+    let track_paths = app.playlists.controller.active_track_paths();
     if track_paths.is_empty() {
-        app.status_message = Some("Playlist is empty".to_string());
+        app.ui.status_message = Some("Playlist is empty".to_string());
         return None;
     }
 
@@ -269,7 +269,7 @@ fn play_active_playlist(app: &mut App) -> Option<PlayerCommand> {
     }
 
     if added == 0 && skipped > 0 {
-        app.status_message = Some(format!(
+        app.ui.status_message = Some(format!(
             "Playlist already in queue ({} track{})",
             skipped,
             if skipped == 1 { "" } else { "s" }

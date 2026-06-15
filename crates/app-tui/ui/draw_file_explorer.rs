@@ -14,7 +14,7 @@ pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
         height: modal_height,
     };
 
-    let title = format!(" {} ", app.file_picker_title);
+    let title = format!(" {} ", app.file_explorer.picker_title);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
@@ -43,7 +43,7 @@ pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
         .split(inner);
 
     // Current directory
-    let dir_text = format!("Dir: {}", app.file_explorer_dir.display());
+    let dir_text = format!("Dir: {}", app.file_explorer.dir.display());
     f.render_widget(
         Paragraph::new(dir_text).style(Style::default().fg(app.theme.accent_primary)),
         chunks[0],
@@ -51,11 +51,11 @@ pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
 
     // File list
     let items: Vec<ListItem> = app
-        .file_explorer_items
+        .file_explorer.items
         .iter()
         .enumerate()
         .map(|(i, path)| {
-            let is_selected = i == app.file_explorer_selected;
+            let is_selected = i == app.file_explorer.selected;
             let is_dir = path.is_dir();
             let icon = if is_dir { "/" } else { " " };
             let name = path
@@ -81,7 +81,7 @@ pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
 
     let list = List::new(items);
     let mut state = ListState::default();
-    state.select(Some(app.file_explorer_selected));
+    state.select(Some(app.file_explorer.selected));
 
     use ratatui::widgets::StatefulWidget;
     StatefulWidget::render(list, chunks[1], f.buffer_mut(), &mut state);

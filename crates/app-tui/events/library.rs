@@ -14,8 +14,8 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
         }
         KeyCode::Char('X') => {
             // Explicitly clear search query
-            app.search_query.clear();
-            app.selected_album_index = 0;
+            app.library_view.search_query.clear();
+            app.library_view.selected_album_index = 0;
             app.request_filter_update();
             None
         }
@@ -26,7 +26,7 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
         }
         KeyCode::Char('s') => {
             // Cycle through sort orders
-            let next_order = match app.library_sort_order {
+            let next_order = match app.library_view.sort_order {
                 LibrarySortOrder::Year => LibrarySortOrder::Genre,
                 LibrarySortOrder::Genre => LibrarySortOrder::Artist,
                 LibrarySortOrder::Artist => LibrarySortOrder::Album,
@@ -89,28 +89,28 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
             None
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            match app.library_view_mode {
+            match app.library_view.mode {
                 LibraryViewMode::Flat => app.select_previous_album(),
                 LibraryViewMode::TreeView => app.select_previous_tree_item(),
             }
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            match app.library_view_mode {
+            match app.library_view.mode {
                 LibraryViewMode::Flat => app.select_next_album(),
                 LibraryViewMode::TreeView => app.select_next_tree_item(),
             }
             None
         }
         KeyCode::PageUp => {
-            match app.library_view_mode {
+            match app.library_view.mode {
                 LibraryViewMode::Flat => app.page_up_albums(PAGE_SIZE),
                 LibraryViewMode::TreeView => app.page_up_tree(PAGE_SIZE),
             }
             None
         }
         KeyCode::PageDown => {
-            match app.library_view_mode {
+            match app.library_view.mode {
                 LibraryViewMode::Flat => app.page_down_albums(PAGE_SIZE),
                 LibraryViewMode::TreeView => app.page_down_tree(PAGE_SIZE),
             }
@@ -118,27 +118,27 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
         }
         KeyCode::Right | KeyCode::Char('l') => {
             // Expand artist in tree view
-            if app.library_view_mode == LibraryViewMode::TreeView {
+            if app.library_view.mode == LibraryViewMode::TreeView {
                 app.toggle_artist_expansion();
             }
             None
         }
         KeyCode::Left | KeyCode::Char('h') => {
             // Collapse artist in tree view
-            if app.library_view_mode == LibraryViewMode::TreeView {
+            if app.library_view.mode == LibraryViewMode::TreeView {
                 app.toggle_artist_expansion();
             }
             None
         }
         KeyCode::Char('a') | KeyCode::Enter => {
-            let result = match app.library_view_mode {
+            let result = match app.library_view.mode {
                 LibraryViewMode::Flat => app.add_album_to_queue(),
                 LibraryViewMode::TreeView => Ok(app.add_tree_selection_to_queue()),
             };
             match result {
                 Ok(Some(source)) => Some(PlayerCommand::Play(source)),
                 Err(e) => {
-                    app.error_message = Some(e);
+                    app.ui.error_message = Some(e);
                     app.enter_overlay_mode(InputMode::ShowError);
                     None
                 }
@@ -156,47 +156,47 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
             None
         }
         KeyCode::Char('m') => {
-            if let Some(album) = app.cached_filtered_albums.get(app.selected_album_index) {
+            if let Some(album) = app.library_view.cached_filtered_albums.get(app.library_view.selected_album_index) {
                 match crate::app::MetadataEditorState::for_album(album) {
                     Ok(editor) => {
-                        app.metadata_editor = Some(editor);
+                        app.modal.metadata_editor = Some(editor);
                         app.input_mode = crate::app::InputMode::MetadataEditor;
                     }
-                    Err(err) => app.status_message = Some(format!("Metadata: {err}")),
+                    Err(err) => app.ui.status_message = Some(format!("Metadata: {err}")),
                 }
             }
             None
         }
         KeyCode::Char('A') => {
             // Add selected album to the active playlist
-            if let Some(active_id) = app.playlist_controller.active_playlist_id() {
-                let idx = app.selected_album_index;
-                if let Some(album) = app.cached_filtered_albums.get(idx) {
+            if let Some(active_id) = app.playlists.controller.active_playlist_id() {
+                let idx = app.library_view.selected_album_index;
+                if let Some(album) = app.library_view.cached_filtered_albums.get(idx) {
                     let album_clone = album.clone();
                     if let Some(db) = app.library.get_database() {
                         // Find the playlist index for the active playlist's ID
                         let pl_idx = app
-                            .playlist_controller
+                            .playlists.controller
                             .playlists()
                             .iter()
                             .position(|p| p.id == Some(active_id));
                         if let Some(pl_idx) = pl_idx {
-                            match app.playlist_controller.add_album_to_playlist(
+                            match app.playlists.controller.add_album_to_playlist(
                                 db,
                                 pl_idx,
                                 &album_clone,
                             ) {
                                 Ok(()) => {
-                                    app.status_message =
+                                    app.ui.status_message =
                                         Some(format!("Added '{}' to playlist", album_clone.title))
                                 }
-                                Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                                Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                             }
                         }
                     }
                 }
             } else {
-                app.status_message = Some("Open a playlist first (Y screen)".to_string());
+                app.ui.status_message = Some("Open a playlist first (Y screen)".to_string());
             }
             None
         }

@@ -10,26 +10,26 @@ pub fn handle_media_control_event(
 ) -> Option<PlayerCommand> {
     match event {
         sotf_media_controls::MediaControlEvent::Play => {
-            if app.current_queue_index.is_none() {
+            if app.playback.current_queue_index.is_none() {
                 // Nothing playing yet — start the queue
                 app.start_queue().map(PlayerCommand::Play)
             } else {
-                app.is_playing = true;
+                app.playback.is_playing = true;
                 Some(PlayerCommand::Resume)
             }
         }
         sotf_media_controls::MediaControlEvent::Pause => {
-            app.is_playing = false;
+            app.playback.is_playing = false;
             Some(PlayerCommand::Pause)
         }
         sotf_media_controls::MediaControlEvent::Toggle => {
-            if app.is_playing {
-                app.is_playing = false;
+            if app.playback.is_playing {
+                app.playback.is_playing = false;
                 Some(PlayerCommand::Pause)
-            } else if app.current_queue_index.is_none() {
+            } else if app.playback.current_queue_index.is_none() {
                 app.start_queue().map(PlayerCommand::Play)
             } else {
-                app.is_playing = true;
+                app.playback.is_playing = true;
                 Some(PlayerCommand::Resume)
             }
         }
@@ -37,7 +37,7 @@ pub fn handle_media_control_event(
             if let Some(path) = app.next_track() {
                 Some(PlayerCommand::Play(path))
             } else {
-                app.is_playing = false;
+                app.playback.is_playing = false;
                 Some(PlayerCommand::Stop)
             }
         }
@@ -45,7 +45,7 @@ pub fn handle_media_control_event(
             app.previous_track().map(PlayerCommand::Play)
         }
         sotf_media_controls::MediaControlEvent::Stop => {
-            app.is_playing = false;
+            app.playback.is_playing = false;
             Some(PlayerCommand::Stop)
         }
         sotf_media_controls::MediaControlEvent::SetPosition(pos) => {
@@ -53,7 +53,7 @@ pub fn handle_media_control_event(
         }
         sotf_media_controls::MediaControlEvent::SetVolume(vol) => {
             let clamped = vol.clamp(0.0, 1.0) as f32;
-            app.volume = clamped;
+            app.playback.volume = clamped;
             Some(PlayerCommand::SetVolume(clamped))
         }
         sotf_media_controls::MediaControlEvent::Seek(direction) => {

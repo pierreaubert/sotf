@@ -47,6 +47,7 @@ def count_fields(source: str, start: int) -> int:
     """Count top-level fields inside a struct body starting at source[start]."""
     depth = 0
     fields = 0
+    last_comma = -1
     i = start
     length = len(source)
     while i < length:
@@ -64,11 +65,15 @@ def count_fields(source: str, start: int) -> int:
             break
         elif ch == "," and depth == 1:
             fields += 1
+            last_comma = i
         i += 1
-    # For braced structs there is usually one more field than commas
-    # (trailing comma is common). For tuple structs the comma count is exact.
+    # For braced structs there is usually one more field than commas,
+    # unless the last comma is a trailing comma. For tuple structs the
+    # comma count is exact.
     if source[start] == "{" and fields > 0:
-        fields += 1
+        trailing_comma = last_comma >= 0 and source[last_comma + 1 : i].strip() == ""
+        if not trailing_comma:
+            fields += 1
     return fields
 
 

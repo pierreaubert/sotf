@@ -51,7 +51,7 @@ pub(crate) fn draw_loading_screen(f: &mut Frame, app: &App) {
     let segment_len = bar_total / 5; // Moving segment is 1/5 of total width
     let travel = bar_total.saturating_sub(segment_len);
     let cycle = if travel == 0 { 1 } else { travel * 2 };
-    let tick = (app.loading_tick as usize) % cycle;
+    let tick = (app.ui.loading_tick as usize) % cycle;
     let pos = if tick < travel { tick } else { cycle - tick };
 
     let mut bar_str = String::with_capacity(bar_total);

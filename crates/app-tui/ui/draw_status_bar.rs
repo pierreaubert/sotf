@@ -14,7 +14,7 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
 
     // Show status message if available
     // Filter out scan-related messages unless we're on the Directory screen
-    if let Some(msg) = &app.status_message {
+    if let Some(msg) = &app.ui.status_message {
         let is_scan_message = msg.contains("Scanning")
             || msg.contains("Scan complete")
             || msg.contains("Scan failed");
@@ -38,7 +38,7 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 
-    if let Some(idx) = app.current_queue_index
+    if let Some(idx) = app.playback.current_queue_index
         && let Some(entry) = app.queue.get(idx)
         && let Some(track) = entry.item.current_track()
     {
@@ -56,14 +56,14 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         status_spans.push(Span::raw(" | "));
     }
 
-    if !app.plugin_graph.is_empty() {
-        let plugin_status = if app.plugin_update_in_progress {
-            format!("Plugins: {} [updating...] ", app.plugin_graph.len())
+    if !app.plugin_rack.graph.is_empty() {
+        let plugin_status = if app.plugin_rack.update_in_progress {
+            format!("Plugins: {} [updating...] ", app.plugin_rack.graph.len())
         } else {
-            format!("Plugins: {} ", app.plugin_graph.len())
+            format!("Plugins: {} ", app.plugin_rack.graph.len())
         };
 
-        let plugin_color = if app.plugin_update_in_progress {
+        let plugin_color = if app.plugin_rack.update_in_progress {
             app.theme.accent_warning
         } else {
             app.theme.accent_secondary
@@ -79,44 +79,44 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     // Show background scanner progress
     {
         let mut scanner_parts: Vec<String> = Vec::new();
-        if app.waveform_manager.in_progress {
+        if app.scan.waveform_manager.in_progress {
             scanner_parts.push(format!(
                 "Waveform {}/{}/{}",
-                app.waveform_manager.succeeded,
-                app.waveform_manager.failed,
-                app.waveform_manager.total
+                app.scan.waveform_manager.succeeded,
+                app.scan.waveform_manager.failed,
+                app.scan.waveform_manager.total
             ));
         }
-        if app.replay_gain_manager.in_progress {
-            if app.replay_gain_manager.album_gain_phase
+        if app.scan.replay_gain_manager.in_progress {
+            if app.scan.replay_gain_manager.album_gain_phase
                 == sotf_audio_player::AlbumGainPhase::Scanning
             {
                 scanner_parts.push(format!(
                     "AlbumGain {}/{}",
-                    app.replay_gain_manager.album_gain_done,
-                    app.replay_gain_manager.album_gain_total,
+                    app.scan.replay_gain_manager.album_gain_done,
+                    app.scan.replay_gain_manager.album_gain_total,
                 ));
             } else {
                 scanner_parts.push(format!(
                     "ReplayGain {}/{}/{}",
-                    app.replay_gain_manager.succeeded,
-                    app.replay_gain_manager.failed,
-                    app.replay_gain_manager.total
+                    app.scan.replay_gain_manager.succeeded,
+                    app.scan.replay_gain_manager.failed,
+                    app.scan.replay_gain_manager.total
                 ));
             }
         }
-        if app.bliss_manager.in_progress {
+        if app.scan.bliss_manager.in_progress {
             scanner_parts.push(format!(
                 "Bliss {}/{}/{}",
-                app.bliss_manager.succeeded, app.bliss_manager.failed, app.bliss_manager.total
+                app.scan.bliss_manager.succeeded, app.scan.bliss_manager.failed, app.scan.bliss_manager.total
             ));
         }
-        if app.scan_in_progress {
-            scanner_parts.push(format!("Library {}", app.scan_progress_tracks));
+        if app.scan.in_progress {
+            scanner_parts.push(format!("Library {}", app.scan.progress_tracks));
         }
         if !scanner_parts.is_empty() {
             let paused = app
-                .scanner_pause_flag
+                .scan.pause_flag
                 .load(std::sync::atomic::Ordering::Relaxed);
             let label = if paused {
                 format!("[paused] {} ", scanner_parts.join(", "))

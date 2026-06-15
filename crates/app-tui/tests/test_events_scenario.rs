@@ -81,7 +81,7 @@ fn app_for_spinorama_scenario() -> App {
     let mut app = make_app();
     app.current_screen = Screen::Library;
     // Pre-populate speakers: 4 Adam models + 2 others
-    app.spinorama_eq.available_speakers = vec![
+    app.spinorama_eq.model.available_speakers = vec![
         "Adam A7V".to_string(),
         "Adam S2V".to_string(),
         "Adam T5V".to_string(),
@@ -128,10 +128,11 @@ mod tests {
                 "typing Adam filters speaker list",
                 vec![Input::TypeText("Adam")],
                 |app| {
-                    assert_eq!(app.spinorama_eq.filtered_speakers.len(), 4);
+                    assert_eq!(app.spinorama_eq.model.speaker_suggestions.len(), 4);
                     assert!(
                         app.spinorama_eq
-                            .filtered_speakers
+                            .model
+                            .speaker_suggestions
                             .iter()
                             .all(|s| s.contains("Adam"))
                     );
@@ -147,7 +148,7 @@ mod tests {
                 ],
                 |app| {
                     assert_eq!(app.spinorama_eq.selected_speaker_idx, 3);
-                    assert_eq!(app.spinorama_eq.filtered_speakers[3], "Adam D3V");
+                    assert_eq!(app.spinorama_eq.model.speaker_suggestions[3], "Adam D3V");
                 },
             ),
             // 5. Enter → selects speaker, step=Configure
@@ -156,7 +157,7 @@ mod tests {
                 vec![Input::Key(KeyCode::Enter)],
                 |app| {
                     assert_eq!(
-                        app.spinorama_eq.selected_speaker,
+                        app.spinorama_eq.model.selected_speaker,
                         Some("Adam D3V".to_string())
                     );
                     assert_eq!(app.spinorama_eq.step, SpinoramaStep::Configure);
@@ -170,10 +171,10 @@ mod tests {
                     // loss_function is field 0 and is a selectable field;
                     // default is "flat", cycling forward gives "flat-asymmetric"
                     assert_ne!(
-                        app.spinorama_eq.config.loss_function, "flat",
+                        app.spinorama_eq.model.optimizer_config.loss_function, "flat",
                         "loss_function should have changed from default"
                     );
-                    assert_eq!(app.spinorama_eq.config.loss_function, "flat-asymmetric",);
+                    assert_eq!(app.spinorama_eq.model.optimizer_config.loss_function, "flat-asymmetric",);
                 },
             ),
             // 7. Esc → step tab bar, Right x3 → UpdatePlugin, Down → enter content
@@ -197,7 +198,7 @@ mod tests {
                 vec![Input::Key(KeyCode::Enter)],
                 |app| {
                     assert!(
-                        app.status_message.is_some(),
+                        app.ui.status_message.is_some(),
                         "expected status_message to be set after applying EQ"
                     );
                 },

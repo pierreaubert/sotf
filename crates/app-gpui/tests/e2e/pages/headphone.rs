@@ -12,20 +12,20 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
 
     pub fn inject_mock_data(&mut self) {
         self.driver.update_app(|app, _| {
-            app.measurement_state.headphone_eq_state.measurement_path =
-                Some("/tmp/test_headphone.csv".to_string());
-            app.measurement_state.headphone_eq_state.loss_type = "score".to_string();
-            app.measurement_state.headphone_eq_state.target_preset =
+            app.measurement_state.headphone_eq_state.model.measurement_path =
+                "/tmp/test_headphone.csv".to_string();
+            app.measurement_state.headphone_eq_state.model.loss_type = "score".to_string();
+            app.measurement_state.headphone_eq_state.model.target_preset =
                 "harman-over-ear-2018".to_string();
-            app.measurement_state.headphone_eq_state.step = HeadphoneEqStep::Optimization;
+            app.measurement_state.headphone_eq_state.model.step = HeadphoneEqStep::Optimization;
         });
         self.driver.cx.run_until_parked();
     }
 
     pub fn select_headphone(&mut self, _name: &str) {
         self.driver.update_app(|app, _| {
-            app.measurement_state.headphone_eq_state.measurement_path =
-                Some("/tmp/test_headphone.csv".to_string());
+            app.measurement_state.headphone_eq_state.model.measurement_path =
+                "/tmp/test_headphone.csv".to_string();
         });
         self.driver.cx.run_until_parked();
     }
@@ -33,7 +33,7 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
     pub fn set_target_curve(&mut self, curve: &str) {
         let curve = curve.to_string();
         self.driver.update_app(move |app, _| {
-            app.measurement_state.headphone_eq_state.target_preset = curve;
+            app.measurement_state.headphone_eq_state.model.target_preset = curve;
         });
         self.driver.cx.run_until_parked();
     }
@@ -43,6 +43,7 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
         self.driver.update_app(move |app, _| {
             app.measurement_state
                 .headphone_eq_state
+                .model
                 .set_ui_loss_type(&loss_type);
         });
         self.driver.cx.run_until_parked();
@@ -52,14 +53,17 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
         self.driver.update_app(move |app, _| {
             app.measurement_state
                 .headphone_eq_state
+                .model
                 .optimizer_config
                 .num_filters = num_filters;
             app.measurement_state
                 .headphone_eq_state
+                .model
                 .optimizer_config
                 .max_iter = max_iter;
             app.measurement_state
                 .headphone_eq_state
+                .model
                 .optimizer_config
                 .tolerance = 1e-5;
         });
@@ -69,10 +73,12 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
         self.driver.update_app(move |app, _| {
             app.measurement_state
                 .headphone_eq_state
+                .model
                 .optimizer_config
                 .min_freq = min_freq;
             app.measurement_state
                 .headphone_eq_state
+                .model
                 .optimizer_config
                 .max_freq = max_freq;
         });
@@ -82,10 +88,12 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
         self.driver.update_app(move |app, _| {
             app.measurement_state
                 .headphone_eq_state
+                .model
                 .optimizer_config
                 .min_db = min_db;
             app.measurement_state
                 .headphone_eq_state
+                .model
                 .optimizer_config
                 .max_db = max_db;
         });
@@ -95,10 +103,12 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
         self.driver.update_app(move |app, _| {
             app.measurement_state
                 .headphone_eq_state
+                .model
                 .optimizer_config
                 .min_q = min_q;
             app.measurement_state
                 .headphone_eq_state
+                .model
                 .optimizer_config
                 .max_q = max_q;
         });
@@ -106,7 +116,7 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
 
     pub fn start_optimization(&mut self) {
         self.driver.update_app(|app, _| {
-            app.measurement_state.headphone_eq_state.optimization_status =
+            app.measurement_state.headphone_eq_state.model.optimization_status =
                 OptimizationStatus::Running;
         });
         self.driver.cx.run_until_parked();
@@ -163,6 +173,7 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
                                         .app
                                         .measurement_state
                                         .headphone_eq_state
+                                        .model
                                         .optimization_status = OptimizationStatus::Completed;
                                 }
                             });
@@ -177,16 +188,16 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
 
     pub fn get_current_step(&mut self) -> HeadphoneEqStep {
         self.driver
-            .read_app(|app| app.measurement_state.headphone_eq_state.step)
+            .read_app(|app| app.measurement_state.headphone_eq_state.model.step)
     }
 
     pub fn get_optimization_status(&mut self) -> OptimizationStatus {
         self.driver
-            .read_app(|app| app.measurement_state.headphone_eq_state.optimization_status)
+            .read_app(|app| app.measurement_state.headphone_eq_state.model.optimization_status)
     }
 
     pub fn has_result(&mut self) -> bool {
         self.driver
-            .read_app(|app| app.measurement_state.headphone_eq_state.result.is_some())
+            .read_app(|app| app.measurement_state.headphone_eq_state.model.result.is_some())
     }
 }

@@ -85,7 +85,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         HeadphoneEqStep::SelectFile => {
             use sotf_audio_player::headphone_eq_types::HeadphoneMeasurementSource;
 
-            let is_spinorama = s.measurement_source == HeadphoneMeasurementSource::Spinorama;
+            let is_spinorama = s.model.measurement_source == HeadphoneMeasurementSource::Spinorama;
 
             let inner = Layout::default()
                 .direction(Direction::Vertical)
@@ -104,7 +104,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 Style::default().fg(app.theme.fg_primary)
             };
-            let source = Paragraph::new(s.measurement_source.label())
+            let source = Paragraph::new(s.model.measurement_source.label())
                 .style(source_style)
                 .block(
                     Block::default()
@@ -128,24 +128,24 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     .split(inner[1]);
 
                 let search_label = if s.editing_search {
-                    if s.loading_headphones {
+                    if s.model.loading_headphones {
                         "Search (loading...)"
                     } else {
                         "Search (editing)"
                     }
-                } else if s.loading_download {
+                } else if s.model.loading_download {
                     "Search (downloading...)"
                 } else {
                     "Search headphones (Enter to edit)"
                 };
-                let search_text = if s.search_query.is_empty() && !s.editing_search {
-                    if let Some(ref name) = s.selected_headphone {
+                let search_text = if s.model.headphone_search.is_empty() && !s.editing_search {
+                    if let Some(ref name) = s.model.selected_headphone {
                         format!("Selected: {}", name)
                     } else {
                         "<type to search>".to_string()
                     }
                 } else {
-                    s.search_query.clone()
+                    s.model.headphone_search.clone()
                 };
                 let search = Paragraph::new(search_text)
                     .style(meas_style)
@@ -153,9 +153,10 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 f.render_widget(search, search_area[0]);
 
                 // Headphone list (show when editing search)
-                if s.editing_search && !s.filtered_headphones.is_empty() {
+                if s.editing_search && !s.model.headphone_suggestions.is_empty() {
                     let items: Vec<ratatui::widgets::ListItem> = s
-                        .filtered_headphones
+                        .model
+                        .headphone_suggestions
                         .iter()
                         .take(10)
                         .enumerate()
@@ -173,14 +174,14 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     let list = ratatui::widgets::List::new(items).block(
                         Block::default()
                             .borders(Borders::ALL)
-                            .title(format!("{} matches", s.filtered_headphones.len())),
+                            .title(format!("{} matches", s.model.headphone_suggestions.len())),
                     );
                     f.render_widget(list, search_area[1]);
                 }
 
                 // Show measurement path if downloaded
-                if !s.measurement_path.is_empty() && !s.editing_search {
-                    let path = Paragraph::new(format!("Downloaded: {}", s.measurement_path))
+                if !s.model.measurement_path.is_empty() && !s.editing_search {
+                    let path = Paragraph::new(format!("Downloaded: {}", s.model.measurement_path))
                         .style(Style::default().fg(app.theme.fg_secondary));
                     f.render_widget(path, search_area[1]);
                 }
@@ -191,10 +192,10 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 } else {
                     "Measurement CSV"
                 };
-                let meas = Paragraph::new(if s.measurement_path.is_empty() {
+                let meas = Paragraph::new(if s.model.measurement_path.is_empty() {
                     "<type path or paste>".to_string()
                 } else {
-                    s.measurement_path.clone()
+                    s.model.measurement_path.clone()
                 })
                 .style(meas_style)
                 .block(Block::default().borders(Borders::ALL).title(meas_label));
@@ -207,7 +208,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 Style::default().fg(app.theme.fg_primary)
             };
-            let target = Paragraph::new(s.target_preset.clone())
+            let target = Paragraph::new(s.model.target_preset.clone())
                 .style(target_style)
                 .block(
                     Block::default()
@@ -217,7 +218,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(target, inner[2]);
 
             // Row 3: Custom target path
-            if s.target_preset == "custom" {
+            if s.model.target_preset == "custom" {
                 let custom_style = if s.selected_field == 3 {
                     Style::default().fg(app.theme.accent_primary)
                 } else {
@@ -228,10 +229,10 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 } else {
                     "Custom Target CSV"
                 };
-                let custom = Paragraph::new(if s.custom_target_path.is_empty() {
+                let custom = Paragraph::new(if s.model.custom_target_path.is_empty() {
                     "<type path>".to_string()
                 } else {
-                    s.custom_target_path.clone()
+                    s.model.custom_target_path.clone()
                 })
                 .style(custom_style)
                 .block(Block::default().borders(Borders::ALL).title(custom_label));
@@ -273,7 +274,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 self, DetailLevel, EqWorkflow, HEADPHONE_LOSS_OPTIONS, PEQ_MODEL_OPTIONS,
             };
 
-            let c = &s.config;
+            let c = &s.model.optimizer_config;
             let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
             let detail = s.detail_level;
 
@@ -366,7 +367,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 Line::from(vec![
                     Span::styled("Speaker: ", Style::default().fg(app.theme.fg_secondary)),
                     Span::styled(
-                        &s.measurement_path,
+                        &s.model.measurement_path,
                         Style::default().fg(app.theme.accent_primary),
                     ),
                     Span::styled(
@@ -460,7 +461,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(content);
 
-            let (status_text, status_style) = match &s.opt_status {
+            let (status_text, status_style) = match &s.model.optimization_status {
                 OptimizationStatus::Idle => (
                     "Ready to optimize. Press Enter to start.".to_string(),
                     Style::default().fg(app.theme.fg_secondary),
@@ -468,22 +469,22 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 OptimizationStatus::Running => (
                     format!(
                         "Optimizing... iter {}/{} | loss: {:.4}",
-                        s.opt_iteration, s.opt_max_iter, s.opt_loss
+                        s.model.current_iteration, s.opt_max_iter, s.model.current_loss
                     ),
                     Style::default().fg(app.theme.accent_primary),
                 ),
                 OptimizationStatus::Completed => (
                     format!(
                         "Completed! Final loss: {:.4} | {} filters",
-                        s.post_loss,
-                        s.filters.len()
+                        s.model.post_loss,
+                        s.model.filters.len()
                     ),
                     Style::default().fg(app.theme.accent_success),
                 ),
                 OptimizationStatus::Failed => (
                     format!(
                         "Failed: {}",
-                        s.opt_error.as_deref().unwrap_or("unknown error")
+                        s.model.error_message.as_deref().unwrap_or("unknown error")
                     ),
                     Style::default().fg(app.theme.accent_error),
                 ),
@@ -499,7 +500,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(status_para, inner[0]);
 
             // Progress bar
-            let pct = (s.opt_progress * 100.0) as u16;
+            let pct = (s.model.progress * 100.0) as u16;
             let gauge = Gauge::default()
                 .block(Block::default().borders(Borders::ALL).title("Progress"))
                 .gauge_style(Style::default().fg(app.theme.accent_primary))
@@ -507,11 +508,11 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(gauge, inner[1]);
 
             // Loss chart or hint
-            if s.loss_history.len() >= 2 {
-                let history: Vec<_> = s.loss_history.iter().map(|(i, l)| (*i, *l, None)).collect();
+            if s.model.progress_history.len() >= 2 {
+                let history: Vec<_> = s.model.progress_history.iter().map(|(i, l)| (*i, *l, None)).collect();
                 draw_loss_chart(f, inner[2], app, &history);
             } else {
-                let hint = match &s.opt_status {
+                let hint = match &s.model.optimization_status {
                     OptimizationStatus::Idle => " Enter=start  BackTab=back to configure",
                     OptimizationStatus::Running => " Optimization running...",
                     OptimizationStatus::Completed => " Enter or Tab=view results",
@@ -527,7 +528,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         }
 
         HeadphoneEqStep::Results => {
-            if s.filters.is_empty() {
+            if s.model.filters.is_empty() {
                 let placeholder =
                     Paragraph::new("No optimization results yet. Go to Optimize step first.")
                         .style(Style::default().fg(app.theme.fg_secondary))
@@ -537,7 +538,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 return;
             }
 
-            let table_height = (s.filters.len() as u16 + 3).min(15);
+            let table_height = (s.model.filters.len() as u16 + 3).min(15);
             let inner = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -549,16 +550,16 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             let summary = Paragraph::new(vec![Line::from(vec![
                 Span::styled(
-                    format!(" {} filters", s.filters.len()),
+                    format!(" {} filters", s.model.filters.len()),
                     Style::default().fg(app.theme.accent_primary),
                 ),
                 Span::raw("  |  "),
                 Span::styled(
                     format!(
                         "Loss: {:.4} → {:.4} (Δ {:.4})",
-                        s.pre_loss,
-                        s.post_loss,
-                        s.pre_loss - s.post_loss
+                        s.model.pre_loss,
+                        s.model.post_loss,
+                        s.model.pre_loss - s.model.post_loss
                     ),
                     Style::default().fg(app.theme.accent_success),
                 ),
@@ -570,10 +571,10 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 f,
                 inner[1],
                 app,
-                &s.curve_frequencies,
-                &s.curve_input,
-                &s.curve_corrected,
-                &s.curve_filter_response,
+                &s.model.curve_frequencies,
+                &s.model.curve_input,
+                &s.model.curve_corrected,
+                &s.model.curve_filter_response,
             );
 
             // Filter table
@@ -591,6 +592,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             );
 
             let rows: Vec<Row> = s
+                .model
                 .filters
                 .iter()
                 .enumerate()
@@ -622,11 +624,11 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
         HeadphoneEqStep::UpdatePlugin => {
             use crate::app::SpinUpdateSubStep;
-            let has_results = !s.filters.is_empty();
-            let measurement = if s.measurement_path.is_empty() {
+            let has_results = !s.model.filters.is_empty();
+            let measurement = if s.model.measurement_path.is_empty() {
                 "(none)"
             } else {
-                &s.measurement_path
+                &s.model.measurement_path
             };
 
             let mut lines = vec![
@@ -647,7 +649,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 SpinUpdateSubStep::Ready => {
                     if has_results {
                         lines.push(Line::from(vec![Span::styled(
-                            format!("  {} PEQ filters ready to apply", s.filters.len()),
+                            format!("  {} PEQ filters ready to apply", s.model.filters.len()),
                             Style::default().fg(app.theme.accent_success),
                         )]));
                         lines.push(Line::from(""));

@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 pub(super) fn handle_metadata_editor_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     if app
-        .metadata_editor
+        .modal.metadata_editor
         .as_ref()
         .is_some_and(|editor| editor.editing)
     {
@@ -13,27 +13,27 @@ pub(super) fn handle_metadata_editor_mode(app: &mut App, key: KeyEvent) -> Optio
 
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
-            app.metadata_editor = None;
+            app.modal.metadata_editor = None;
             app.input_mode = InputMode::Normal;
         }
         KeyCode::Up => {
-            if let Some(editor) = &mut app.metadata_editor {
+            if let Some(editor) = &mut app.modal.metadata_editor {
                 editor.selected_field = editor.selected_field.saturating_sub(1);
             }
         }
         KeyCode::Down => {
-            if let Some(editor) = &mut app.metadata_editor {
+            if let Some(editor) = &mut app.modal.metadata_editor {
                 editor.selected_field =
                     (editor.selected_field + 1).min(MetadataEditorState::FIELD_COUNT - 1);
             }
         }
         KeyCode::Left => {
-            if let Some(editor) = &mut app.metadata_editor {
+            if let Some(editor) = &mut app.modal.metadata_editor {
                 editor.selected_result = editor.selected_result.saturating_sub(1);
             }
         }
         KeyCode::Right => {
-            if let Some(editor) = &mut app.metadata_editor
+            if let Some(editor) = &mut app.modal.metadata_editor
                 && !editor.search_results.is_empty()
             {
                 editor.selected_result =
@@ -41,7 +41,7 @@ pub(super) fn handle_metadata_editor_mode(app: &mut App, key: KeyEvent) -> Optio
             }
         }
         KeyCode::Enter => {
-            if let Some(editor) = &mut app.metadata_editor {
+            if let Some(editor) = &mut app.modal.metadata_editor {
                 editor.editing = true;
                 editor.edit_buffer = editor.field_value(editor.selected_field).to_string();
             }
@@ -58,13 +58,13 @@ pub(super) fn handle_metadata_editor_mode(app: &mut App, key: KeyEvent) -> Optio
 fn handle_field_edit(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc => {
-            if let Some(editor) = &mut app.metadata_editor {
+            if let Some(editor) = &mut app.modal.metadata_editor {
                 editor.editing = false;
                 editor.edit_buffer.clear();
             }
         }
         KeyCode::Enter => {
-            if let Some(editor) = &mut app.metadata_editor {
+            if let Some(editor) = &mut app.modal.metadata_editor {
                 let value = std::mem::take(&mut editor.edit_buffer);
                 editor.set_field_value(editor.selected_field, value);
                 editor.editing = false;
@@ -72,12 +72,12 @@ fn handle_field_edit(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             refresh_metadata_preview(app);
         }
         KeyCode::Backspace => {
-            if let Some(editor) = &mut app.metadata_editor {
+            if let Some(editor) = &mut app.modal.metadata_editor {
                 editor.edit_buffer.pop();
             }
         }
         KeyCode::Char(ch) => {
-            if let Some(editor) = &mut app.metadata_editor {
+            if let Some(editor) = &mut app.modal.metadata_editor {
                 editor.edit_buffer.push(ch);
             }
         }
@@ -87,7 +87,7 @@ fn handle_field_edit(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 }
 
 fn refresh_metadata_preview(app: &mut App) {
-    let Some(editor) = app.metadata_editor.clone() else {
+    let Some(editor) = app.modal.metadata_editor.clone() else {
         return;
     };
     let result = editor.patch().and_then(|patch| {
@@ -99,7 +99,7 @@ fn refresh_metadata_preview(app: &mut App) {
         .map_err(|err| err.to_string())
     });
 
-    if let Some(current) = &mut app.metadata_editor {
+    if let Some(current) = &mut app.modal.metadata_editor {
         match result {
             Ok(preview) => {
                 current.preview = Some(preview);
@@ -114,7 +114,7 @@ fn refresh_metadata_preview(app: &mut App) {
 }
 
 fn apply_metadata_editor(app: &mut App) {
-    let Some(editor) = app.metadata_editor.clone() else {
+    let Some(editor) = app.modal.metadata_editor.clone() else {
         return;
     };
     let result = editor.patch().and_then(|patch| {
@@ -128,16 +128,16 @@ fn apply_metadata_editor(app: &mut App) {
 
     match result {
         Ok(preview) => {
-            app.metadata_editor = None;
+            app.modal.metadata_editor = None;
             app.input_mode = InputMode::Normal;
-            app.needs_filter_update = true;
-            app.status_message = Some(format!(
+            app.library_view.needs_filter_update = true;
+            app.ui.status_message = Some(format!(
                 "Metadata updated for {} file(s)",
                 preview.affected_files.len()
             ));
         }
         Err(err) => {
-            if let Some(current) = &mut app.metadata_editor {
+            if let Some(current) = &mut app.modal.metadata_editor {
                 current.error = Some(err);
             }
         }
@@ -145,19 +145,19 @@ fn apply_metadata_editor(app: &mut App) {
 }
 
 fn search_musicbrainz(app: &mut App) {
-    let Some(editor) = app.metadata_editor.clone() else {
+    let Some(editor) = app.modal.metadata_editor.clone() else {
         return;
     };
     let query = editor.search_query.trim().to_string();
     if query.is_empty() {
-        if let Some(current) = &mut app.metadata_editor {
+        if let Some(current) = &mut app.modal.metadata_editor {
             current.search_error = Some("Enter a MusicBrainz search query".to_string());
         }
         return;
     }
 
     let result = run_musicbrainz_search(editor.scope, query);
-    if let Some(current) = &mut app.metadata_editor {
+    if let Some(current) = &mut app.modal.metadata_editor {
         match result {
             Ok(candidates) => {
                 current.search_results = candidates;
@@ -207,7 +207,7 @@ fn run_musicbrainz_search(
 }
 
 fn import_selected_candidate(app: &mut App) {
-    if let Some(editor) = &mut app.metadata_editor
+    if let Some(editor) = &mut app.modal.metadata_editor
         && let Some(candidate) = editor.search_results.get(editor.selected_result).cloned()
     {
         editor.apply_candidate(candidate);
