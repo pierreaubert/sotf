@@ -49,7 +49,7 @@ fn test_process_f64_empty_graph() {
 fn test_parameter_event_scratch_is_preallocated_to_queue_capacity() {
     let g = DawHost::new(2, 48000);
     assert!(
-        g.parameter_event_scratch.capacity() >= PARAMETER_EVENT_QUEUE_CAPACITY,
+        g.queues.parameter_event_scratch.capacity() >= PARAMETER_EVENT_QUEUE_CAPACITY,
         "parameter event scratch should not allocate while draining a full ring"
     );
 }

@@ -22,4 +22,4 @@ cargo test -p sotf-plugin-aec
 - PBFDAF (Partitioned Block Frequency Domain Adaptive Filter) algorithm
 - Two-path architecture for robust convergence
 - Post-filter for residual echo suppression
-- Plugin trait (not InPlacePlugin) — requires both microphone and reference signals
+- Plugin trait (not ParametricInPlacePlugin) — requires both microphone and reference signals

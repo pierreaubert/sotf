@@ -9,8 +9,8 @@ The plugin system consists of several key components:
 ### Core Traits
 
 - **`Plugin`**: The main trait for audio processing plugins that can transform N input channels to P output channels
-- **`InPlacePlugin`**: A simpler trait for plugins that process audio in-place (same number of input and output channels)
-- **`InPlacePluginAdapter`**: Adapter to convert `InPlacePlugin` implementations to the `Plugin` trait
+- **`ParametricInPlacePlugin`**: A simpler trait for plugins that process audio in-place (same number of input and output channels)
+- **`ParametricInPlacePluginAdapter`**: Adapter to convert `ParametricInPlacePlugin` implementations to the `Plugin` trait
 
 ### Plugin Host
 
@@ -44,14 +44,14 @@ The plugin processing happens **before** the audio is sent to CamillaDSP, allowi
 ### Basic Plugin Usage
 
 ```rust
-use sotf_audio::{GainPlugin, InPlacePluginAdapter, PluginHost};
+use sotf_audio::{GainPlugin, ParametricInPlacePluginAdapter, PluginHost};
 
 // Create a plugin host for 2-channel audio at 44.1kHz
 let mut host = PluginHost::new(2, 44100);
 
 // Create a gain plugin and wrap it in an adapter
 let gain_plugin = GainPlugin::new(2, -6.0); // -6dB attenuation
-let adapter = InPlacePluginAdapter::new(gain_plugin);
+let adapter = ParametricInPlacePluginAdapter::new(gain_plugin);
 
 // Add to the host
 host.add_plugin(Box::new(adapter)).unwrap();
@@ -69,10 +69,10 @@ let mut host = PluginHost::new(2, 44100);
 
 // Add multiple plugins - they process in order
 let gain1 = GainPlugin::new(2, -6.0);
-host.add_plugin(Box::new(InPlacePluginAdapter::new(gain1))).unwrap();
+host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(gain1))).unwrap();
 
 let gain2 = GainPlugin::new(2, -3.0);
-host.add_plugin(Box::new(InPlacePluginAdapter::new(gain2))).unwrap();
+host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(gain2))).unwrap();
 
 // Audio flows through gain1 first, then gain2
 ```
@@ -80,7 +80,7 @@ host.add_plugin(Box::new(InPlacePluginAdapter::new(gain2))).unwrap();
 ### Using with AudioStreamingManager
 
 ```rust
-use sotf_audio::{AudioStreamingManager, GainPlugin, InPlacePluginAdapter};
+use sotf_audio::{AudioStreamingManager, GainPlugin, ParametricInPlacePluginAdapter};
 
 let mut manager = AudioStreamingManager::new(camilla_binary_path);
 
@@ -93,7 +93,7 @@ manager.enable_plugin_host().unwrap();
 // Add plugins via the with_plugin_host closure
 manager.with_plugin_host(|host| {
     let gain = GainPlugin::new(2, -3.0);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(gain)))
+    host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(gain)))
 }).unwrap().unwrap();
 
 // Start playback - audio will flow through plugins
@@ -103,7 +103,7 @@ manager.start_playback(None, vec![], channel_map_mode, None, None).await.unwrap(
 ### Dynamic Parameter Changes
 
 ```rust
-use sotf_audio::{GainPlugin, ParameterId, ParameterValue, InPlacePlugin};
+use sotf_audio::{GainPlugin, ParameterId, ParameterValue, ParametricInPlacePlugin};
 
 let mut plugin = GainPlugin::new(2, 0.0);
 
@@ -120,12 +120,12 @@ for param in params {
 
 ## Creating Custom Plugins
 
-### Implementing InPlacePlugin (Simpler)
+### Implementing ParametricInPlacePlugin (Simpler)
 
 For plugins that don't change the channel count:
 
 ```rust
-use sotf_audio::{InPlacePlugin, PluginInfo, ProcessContext, Parameter,
+use sotf_audio::{ParametricInPlacePlugin, PluginInfo, ProcessContext, Parameter,
                  ParameterId, ParameterValue};
 
 pub struct MyPlugin {
@@ -133,7 +133,7 @@ pub struct MyPlugin {
     sample_rate: u32,
 }
 
-impl InPlacePlugin for MyPlugin {
+impl ParametricInPlacePlugin for MyPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: "My Plugin".to_string(),
@@ -244,7 +244,7 @@ Each sample is a 32-bit float, typically in the range -1.0 to +1.0.
 ## Performance Considerations
 
 - **Buffer Allocation**: The plugin host allocates intermediate buffers when processing. Buffers are reused across calls if the frame count doesn't change.
-- **In-Place Processing**: Use `InPlacePlugin` when possible - it's more efficient as it copies less data.
+- **In-Place Processing**: Use `ParametricInPlacePlugin` when possible - it's more efficient as it copies less data.
 - **Thread Safety**: `SharedPluginHost` provides thread-safe access via `Arc<Mutex<>>`.
 - **Zero-Copy**: The last plugin in the chain writes directly to the output buffer (no extra copy).
 

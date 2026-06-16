@@ -385,9 +385,9 @@ fn render_target_curve_graph(
 
     // Create chart theme
     let chart_theme = ChartTheme {
-        plot_background: theme.eq_curve_colors.background,
-        grid_color: theme.eq_curve_colors.grid,
-        axis_line_color: theme.graph_colors.grid,
+        plot_background: theme.plugin_palette.eq_curve_colors.background,
+        grid_color: theme.plugin_palette.eq_curve_colors.grid,
+        axis_line_color: theme.plugin_palette.graph_colors.grid,
         axis_label_color: theme.text_secondary,
         title_color: theme.text_primary,
         legend_text_color: theme.text_secondary,
@@ -415,7 +415,7 @@ fn render_target_curve_graph(
             .flex()
             .items_center()
             .justify_center()
-            .bg(theme.eq_curve_colors.background)
+            .bg(theme.plugin_palette.eq_curve_colors.background)
             .text_color(theme.text_secondary)
             .child("Unable to render chart")
             .into_any_element(),

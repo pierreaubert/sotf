@@ -1,6 +1,7 @@
 //! Universal plugin factory for all SOTF audio plugins.
 
-use sotf_host::plugin::{InPlacePluginAdapter, Plugin};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePluginAdapter;
+use sotf_host::plugin::Plugin;
 use sotf_host::ParametricPluginAdapter;
 
 /// Create a plugin instance from a type name, channel count, sample rate, and JSON config.
@@ -34,19 +35,19 @@ pub fn create_plugin(
             let plugin = sotf_plugin_multiband_compressor::MultibandCompressorPlugin::from_params(
                 channels, params,
             );
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Limiter" | "limiter" => {
             let params: sotf_plugin_limiter::LimiterPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_limiter::LimiterPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Gate" | "gate" => {
             let params: sotf_plugin_gate::GatePluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_gate::GatePlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Gain" | "gain" => {
@@ -58,7 +59,7 @@ pub fn create_plugin(
         "Delay" | "delay" => {
             let params: sotf_plugin_delay::DelayPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_delay::DelayPlugin::from_params(channels, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         // ============================================================
@@ -72,25 +73,25 @@ pub fn create_plugin(
             let plugin = sotf_plugin_multiband_expander::MultibandExpanderPlugin::from_params(
                 channels, params,
             );
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "DeEsser" | "de_esser" => {
             let params: sotf_plugin_de_esser::DeEsserPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_de_esser::DeEsserPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "DynamicEQ" | "dynamic_eq" => {
             let params: sotf_plugin_dynamic_eq::DynamicEqPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_dynamic_eq::DynamicEqPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Crossfeed" | "crossfeed" => {
             let params: sotf_plugin_crossfeed::CrossfeedPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_crossfeed::CrossfeedPlugin::new(params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "MultibandCompressor" | "multiband_compressor" => {
@@ -99,7 +100,7 @@ pub fn create_plugin(
             let plugin = sotf_plugin_multiband_compressor::MultibandCompressorPlugin::from_params(
                 channels, params,
             );
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "MultibandExpander" | "multiband_expander" => {
@@ -108,7 +109,7 @@ pub fn create_plugin(
             let plugin = sotf_plugin_multiband_expander::MultibandExpanderPlugin::from_params(
                 channels, params,
             );
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Convolution" | "convolution" => {
@@ -119,7 +120,7 @@ pub fn create_plugin(
                 sample_rate,
                 params,
             )?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "FletcherMunson" | "fletcher_munson" => {
@@ -131,7 +132,7 @@ pub fn create_plugin(
                 sotf_plugin_loudness_compensation::LoudnessCompensationPlugin::from_params(
                     channels, lc_params,
                 )?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "LoudnessCompensation" | "loudness_compensation" => {
@@ -141,7 +142,7 @@ pub fn create_plugin(
                 sotf_plugin_loudness_compensation::LoudnessCompensationPlugin::from_params(
                     channels, params,
                 )?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "ChannelMuteSolo" | "channel_mute_solo" => {
@@ -149,7 +150,7 @@ pub fn create_plugin(
                 parse_params(config_json)?;
             let plugin =
                 sotf_plugin_channel_mute_solo::ChannelMuteSoloPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Downmix" | "downmix" => {
@@ -208,7 +209,7 @@ pub fn create_plugin(
         "Denoiser" | "denoiser" => {
             let params: sotf_plugin_denoiser::DenoiserPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_denoiser::DenoiserPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "SpeechDenoiser" | "speech_denoiser" | "RNNoise" | "rnnoise" => {
@@ -216,20 +217,20 @@ pub fn create_plugin(
                 parse_params(config_json)?;
             let plugin =
                 sotf_plugin_speech_denoiser::SpeechDenoiserPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "HissReducer" | "hiss_reducer" | "Hiss" | "hiss" => {
             let params: sotf_plugin_hiss_reducer::HissReducerPluginParams =
                 parse_params(config_json)?;
             let plugin = sotf_plugin_hiss_reducer::HissReducerPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Declick" | "declick" | "TransientRepair" | "transient_repair" => {
             let params: sotf_plugin_declick::DeclickPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_declick::DeclickPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "ABCompare" | "ab_compare" => {
@@ -249,7 +250,7 @@ pub fn create_plugin(
                 parse_params(config_json)?;
             let plugin =
                 sotf_plugin_stereo_imager::StereoImagerPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "TransientShaper" | "transient_shaper" => {
@@ -257,13 +258,13 @@ pub fn create_plugin(
                 parse_params(config_json)?;
             let plugin =
                 sotf_plugin_transient_shaper::TransientShaperPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Saturation" | "saturation" => {
             let params: sotf_plugin_saturation::SaturationPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_saturation::SaturationPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "LinearPhaseEQ" | "linear_phase_eq" => {
@@ -274,7 +275,7 @@ pub fn create_plugin(
                 sample_rate,
                 params,
             )?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "SpectralCompressor" | "spectral_compressor" => {
@@ -283,12 +284,12 @@ pub fn create_plugin(
             let plugin = sotf_plugin_spectral_compressor::SpectralCompressorPlugin::from_params(
                 channels, params,
             );
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Dither" | "dither" => {
             let plugin = sotf_plugin_dither::DitherPlugin::new(channels);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "AmbisonicsDecoder" | "ambisonics_decoder" => {

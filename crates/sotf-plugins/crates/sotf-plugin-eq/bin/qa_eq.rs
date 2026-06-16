@@ -1,5 +1,6 @@
-use sotf_host::{CountingAlloc, measure_peak_db, run_standard_tests};
-use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::{ParametricPluginAdapter, ParametricPlugin, CountingAlloc, measure_peak_db, run_standard_tests};
+use sotf_host::ProcessContext;
+use sotf_host::parametric_plugin::{ParametricPlugin, ParametricPluginAdapter};
 use sotf_plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 use std::f32::consts::PI;
 
@@ -25,16 +26,17 @@ fn main() {
     };
 
     let mut inner = EqPlugin::from_params(channels, sample_rate, params).unwrap();
-    inner.initialize(sample_rate).unwrap();
+    inner.plugin_initialize(sample_rate).unwrap();
 
     println!("=== QA: EQ Plugin ===");
 
     // Test 1: Boost at peak frequency
     println!("\n[Test 1] Peak Boost (+6dB at 1kHz)");
     let num_frames = 4800;
-    let mut buffer = generate_sine(sample_rate, 1000.0, -10.0, num_frames);
+    let input = generate_sine(sample_rate, 1000.0, -10.0, num_frames);
+    let mut buffer = vec![0.0f32; input.len()];
     let ctx = ProcessContext::new(sample_rate, num_frames);
-    inner.process_in_place(&mut buffer, &ctx).unwrap();
+    inner.process(&input, &mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer[num_frames - 1000..]); // Measure settled
     println!("  Expected: -4.00dB, Measured: {:.2}dB", peak);
     assert!((peak + 4.0).abs() < 0.5);
@@ -42,10 +44,11 @@ fn main() {
     // Test 2: Cut at peak frequency
     println!("\n[Test 2] Peak Cut (-6dB at 1kHz)");
     inner
-        .set_parameter("band_0_gain".into(), sotf_host::ParameterValue::Float(-6.0))
+        .parametric_set_parameter("band_0_gain".into(), sotf_host::ParameterValue::Float(-6.0))
         .unwrap();
-    let mut buffer = generate_sine(sample_rate, 1000.0, -10.0, num_frames);
-    inner.process_in_place(&mut buffer, &ctx).unwrap();
+    let input = generate_sine(sample_rate, 1000.0, -10.0, num_frames);
+    let mut buffer = vec![0.0f32; input.len()];
+    inner.process(&input, &mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer[num_frames - 1000..]);
     println!("  Expected: -16.00dB, Measured: {:.2}dB", peak);
     assert!((peak + 16.0).abs() < 0.5);
@@ -68,10 +71,11 @@ fn main() {
     };
     let mut inner_ls_orf =
         EqPlugin::from_params(channels, sample_rate, params_lowshelf_orf).unwrap();
-    inner_ls_orf.initialize(sample_rate).unwrap();
+    inner_ls_orf.plugin_initialize(sample_rate).unwrap();
 
-    let mut buf_50hz = generate_sine(sample_rate, 50.0, -20.0, num_frames);
-    inner_ls_orf.process_in_place(&mut buf_50hz, &ctx).unwrap();
+    let input = generate_sine(sample_rate, 50.0, -20.0, num_frames);
+    let mut buf_50hz = vec![0.0f32; input.len()];
+    inner_ls_orf.process(&input, &mut buf_50hz, &ctx).unwrap();
     let peak_50hz = measure_peak_db(&buf_50hz[num_frames - 1000..]);
     println!("  Expected: ~-14.00dB, Measured: {:.2}dB", peak_50hz);
     assert!(
@@ -81,10 +85,11 @@ fn main() {
     );
 
     println!("\n[Test 3b] LowshelfOrf (+6dB at 200Hz): 5kHz sine should be near-unity");
-    let mut buf_5khz_ls = generate_sine(sample_rate, 5000.0, -20.0, num_frames);
-    inner_ls_orf.reset();
+    let input = generate_sine(sample_rate, 5000.0, -20.0, num_frames);
+    let mut buf_5khz_ls = vec![0.0f32; input.len()];
+    inner_ls_orf.plugin_reset();
     inner_ls_orf
-        .process_in_place(&mut buf_5khz_ls, &ctx)
+        .process(&input, &mut buf_5khz_ls, &ctx)
         .unwrap();
     let peak_5khz_ls = measure_peak_db(&buf_5khz_ls[num_frames - 1000..]);
     println!("  Expected: ~-20.00dB, Measured: {:.2}dB", peak_5khz_ls);
@@ -112,10 +117,11 @@ fn main() {
     };
     let mut inner_hs_orf =
         EqPlugin::from_params(channels, sample_rate, params_highshelf_orf).unwrap();
-    inner_hs_orf.initialize(sample_rate).unwrap();
+    inner_hs_orf.plugin_initialize(sample_rate).unwrap();
 
-    let mut buf_10khz = generate_sine(sample_rate, 10000.0, -20.0, num_frames);
-    inner_hs_orf.process_in_place(&mut buf_10khz, &ctx).unwrap();
+    let input = generate_sine(sample_rate, 10000.0, -20.0, num_frames);
+    let mut buf_10khz = vec![0.0f32; input.len()];
+    inner_hs_orf.process(&input, &mut buf_10khz, &ctx).unwrap();
     let peak_10khz = measure_peak_db(&buf_10khz[num_frames - 1000..]);
     println!("  Expected: ~-14.00dB, Measured: {:.2}dB", peak_10khz);
     assert!(
@@ -125,10 +131,11 @@ fn main() {
     );
 
     println!("\n[Test 4b] HighshelfOrf (+6dB at 5kHz): 200Hz sine should be near-unity");
-    let mut buf_200hz_hs = generate_sine(sample_rate, 200.0, -20.0, num_frames);
-    inner_hs_orf.reset();
+    let input = generate_sine(sample_rate, 200.0, -20.0, num_frames);
+    let mut buf_200hz_hs = vec![0.0f32; input.len()];
+    inner_hs_orf.plugin_reset();
     inner_hs_orf
-        .process_in_place(&mut buf_200hz_hs, &ctx)
+        .process(&input, &mut buf_200hz_hs, &ctx)
         .unwrap();
     let peak_200hz_hs = measure_peak_db(&buf_200hz_hs[num_frames - 1000..]);
     println!("  Expected: ~-20.00dB, Measured: {:.2}dB", peak_200hz_hs);
@@ -155,10 +162,11 @@ fn main() {
         auto_gain: Default::default(),
     };
     let mut inner_pm = EqPlugin::from_params(channels, sample_rate, params_peak_matched).unwrap();
-    inner_pm.initialize(sample_rate).unwrap();
+    inner_pm.plugin_initialize(sample_rate).unwrap();
 
-    let mut buf_1khz_pm = generate_sine(sample_rate, 1000.0, -20.0, num_frames);
-    inner_pm.process_in_place(&mut buf_1khz_pm, &ctx).unwrap();
+    let input = generate_sine(sample_rate, 1000.0, -20.0, num_frames);
+    let mut buf_1khz_pm = vec![0.0f32; input.len()];
+    inner_pm.process(&input, &mut buf_1khz_pm, &ctx).unwrap();
     let peak_1khz_pm = measure_peak_db(&buf_1khz_pm[num_frames - 1000..]);
     println!("  Expected: ~-14.00dB, Measured: {:.2}dB", peak_1khz_pm);
     assert!(
@@ -168,9 +176,10 @@ fn main() {
     );
 
     println!("\n[Test 5b] PeakMatched (+6dB at 1kHz, Q=2.0): 100Hz sine should be near-unity");
-    let mut buf_100hz_pm = generate_sine(sample_rate, 100.0, -20.0, num_frames);
-    inner_pm.reset();
-    inner_pm.process_in_place(&mut buf_100hz_pm, &ctx).unwrap();
+    let input = generate_sine(sample_rate, 100.0, -20.0, num_frames);
+    let mut buf_100hz_pm = vec![0.0f32; input.len()];
+    inner_pm.plugin_reset();
+    inner_pm.process(&input, &mut buf_100hz_pm, &ctx).unwrap();
     let peak_100hz_pm = measure_peak_db(&buf_100hz_pm[num_frames - 1000..]);
     println!("  Expected: ~-20.00dB, Measured: {:.2}dB", peak_100hz_pm);
     assert!(
@@ -180,7 +189,7 @@ fn main() {
     );
 
     // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
+    let mut plugin = ParametricPluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "EqPlugin");
 
     println!("\n[ALL PASS] EQ QA Complete.");

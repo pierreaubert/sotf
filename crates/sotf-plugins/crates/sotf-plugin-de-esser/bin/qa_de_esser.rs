@@ -1,5 +1,6 @@
-use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
-use sotf_host::{CountingAlloc, run_standard_tests};
+use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::ParametricInPlacePluginAdapter;
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, CountingAlloc, run_standard_tests};
 use sotf_plugin_de_esser::{DeEsserPlugin, DeEsserPluginParams};
 use std::f32::consts::PI;
 
@@ -44,7 +45,7 @@ fn main() {
     );
 
     // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
+    let mut plugin = ParametricInPlacePluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "DeEsserPlugin");
 
     println!("\n[ALL PASS] DeEsser QA Complete.");

@@ -33,11 +33,11 @@ pub fn render_gr_meter(
 
     // Color gradient: green -> yellow -> red based on amount
     let color = if gr_abs < 3.0 {
-        theme.meter_normal // Green
+        theme.feedback.meter_normal // Green
     } else if gr_abs < 10.0 {
-        theme.meter_warning // Yellow/Orange
+        theme.feedback.meter_warning // Yellow/Orange
     } else {
-        theme.meter_clip // Red
+        theme.feedback.meter_clip // Red
     };
 
     div()
@@ -118,11 +118,11 @@ pub fn render_peak_meter(d: &Ds, peak_db: f64, ceiling_db: f64, theme: &Theme) -
 
     // Color based on level
     let color = if peak_db > ceiling_db - 3.0 {
-        theme.meter_clip // Red - clipping or near ceiling
+        theme.feedback.meter_clip // Red - clipping or near ceiling
     } else if peak_db > -12.0 {
-        theme.meter_warning // Yellow - moderate
+        theme.feedback.meter_warning // Yellow - moderate
     } else {
-        theme.meter_normal // Green - safe
+        theme.feedback.meter_normal // Green - safe
     };
 
     div()
@@ -168,7 +168,7 @@ pub fn render_peak_meter(d: &Ds, peak_db: f64, ceiling_db: f64, theme: &Theme) -
                         .bottom(relative(ceiling_normalized))
                         // intentional: 2px ceiling marker line — visual indicator, not spacing
                         .h(px(2.0))
-                        .bg(theme.meter_clip),
+                        .bg(theme.feedback.meter_clip),
                 ),
         )
         // Value
@@ -210,7 +210,7 @@ pub fn render_gradient_meter(
     };
 
     let theme_c = theme.clone();
-    let peak_color = theme.meter_colors.peak;
+    let peak_color = theme.plugin_palette.meter_colors.peak;
     div()
         .flex()
         .flex_col()
@@ -236,7 +236,7 @@ pub fn render_gradient_meter(
                         .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
                             green_height,
                         )))
-                        .bg(theme_c.meter_normal),
+                        .bg(theme_c.feedback.meter_normal),
                 )
                 // Yellow segment (above green)
                 .when(yellow_height > 0.001, |el| {
@@ -251,7 +251,7 @@ pub fn render_gradient_meter(
                             .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
                                 yellow_height,
                             )))
-                            .bg(theme_c.meter_warning),
+                            .bg(theme_c.feedback.meter_warning),
                     )
                 })
                 // Red segment (above yellow)
@@ -267,7 +267,7 @@ pub fn render_gradient_meter(
                             .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
                                 red_height,
                             )))
-                            .bg(theme_c.meter_clip),
+                            .bg(theme_c.feedback.meter_clip),
                     )
                 })
                 // Peak hold indicator (horizontal line)
@@ -731,7 +731,15 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let channel_data = build_channel_meter_data(&group.channels, loudness, peak_hold);
-        self.render_meter_group_data(group_idx, group.muted, group.soloed, group.dimmed, channel_data, theme, cx)
+        self.render_meter_group_data(
+            group_idx,
+            group.muted,
+            group.soloed,
+            group.dimmed,
+            channel_data,
+            theme,
+            cx,
+        )
     }
 
     /// Render a meter group from pre-computed channel data. This avoids

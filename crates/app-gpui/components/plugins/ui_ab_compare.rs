@@ -25,11 +25,21 @@ pub fn render_ab_compare(
     let d = Ds::from_cx(cx);
     let state = ctx.entity.read(cx);
     let plugin_idx = ctx.plugin_idx;
-    let path_a = state.app.plugin_state.ab_path_a.clone();
-    let path_b = state.app.plugin_state.ab_path_b.clone();
-    let path_a_file = state.app.plugin_state.ab_compare_file_a.clone();
-    let path_b_file = state.app.plugin_state.ab_compare_file_b.clone();
-    let add_menu_target = state.app.plugin_state.ab_add_menu_target;
+    let path_a = state.app.plugin_state.ab_compare_state.ab_path_a.clone();
+    let path_b = state.app.plugin_state.ab_compare_state.ab_path_b.clone();
+    let path_a_file = state
+        .app
+        .plugin_state
+        .ab_compare_state
+        .ab_compare_file_a
+        .clone();
+    let path_b_file = state
+        .app
+        .plugin_state
+        .ab_compare_state
+        .ab_compare_file_b
+        .clone();
+    let add_menu_target = state.app.plugin_state.ab_compare_state.ab_add_menu_target;
 
     div()
         .flex()

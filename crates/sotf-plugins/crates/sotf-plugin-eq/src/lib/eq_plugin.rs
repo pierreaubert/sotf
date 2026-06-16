@@ -22,7 +22,7 @@ use sotf_host::parametric_plugin::{
     ParametricPlugin, ParameterSchema, ParameterSet, ParametricPluginAdapter,
 };
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use std::any::Any;
 use std::sync::Arc;
@@ -534,7 +534,7 @@ impl EqPlugin {
 
 impl ParametricPlugin for EqPlugin {
     fn plugin_info(&self) -> PluginInfo {
-        InPlacePlugin::info(self)
+        self.info()
     }
 
     fn input_channels(&self) -> usize {
@@ -546,13 +546,25 @@ impl ParametricPlugin for EqPlugin {
     }
 
     fn parameter_schema(&self) -> ParameterSchema {
-        InPlacePlugin::parameters(self)
+        self.parameters()
+    }
+
+    fn parametric_set_parameter(
+        &mut self,
+        id: ParameterId,
+        value: ParameterValue,
+    ) -> PluginResult<()> {
+        self.set_parameter(id, value)
+    }
+
+    fn parametric_get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        self.get_parameter(id)
     }
 
     fn current_values(&self) -> ParameterSet {
         let mut values = ParameterSet::new();
         for param in &self.cached_parameters {
-            if let Some(value) = InPlacePlugin::get_parameter(self, &param.id) {
+            if let Some(value) = self.get_parameter(&param.id) {
                 values.insert(param.id.clone(), value);
             }
         }
@@ -561,7 +573,7 @@ impl ParametricPlugin for EqPlugin {
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
         for (id, value) in values {
-            InPlacePlugin::set_parameter(self, id, value)?;
+            self.set_parameter(id, value)?;
         }
         Ok(())
     }
@@ -575,11 +587,11 @@ impl ParametricPlugin for EqPlugin {
     }
 
     fn plugin_initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
-        InPlacePlugin::initialize(self, sample_rate)
+        self.initialize(sample_rate)
     }
 
     fn plugin_reset(&mut self) {
-        InPlacePlugin::reset(self)
+        self.reset()
     }
 
     fn process(
@@ -589,24 +601,21 @@ impl ParametricPlugin for EqPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         output.copy_from_slice(input);
-        InPlacePlugin::process_in_place(self, output, context)
+        self.process_in_place(output, context)
     }
 
     fn latency_samples(&self) -> usize {
-        InPlacePlugin::latency_samples(self)
+        EqPlugin::latency_samples(self)
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        InPlacePlugin::get_data(self)
+        EqPlugin::get_data(self)
     }
 }
 
-impl InPlacePlugin for EqPlugin {
+impl EqPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Parametric EQ", "2.0.0", "SotF")
-    }
-    fn channels(&self) -> usize {
-        self.num_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
         self.cached_parameters.clone()
@@ -933,7 +942,7 @@ impl InPlacePlugin for EqPlugin {
             0
         }
     }
-    fn process_in_place(
+    pub fn process_in_place(
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,

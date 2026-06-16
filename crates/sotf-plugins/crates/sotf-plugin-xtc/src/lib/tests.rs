@@ -77,7 +77,7 @@ fn test_roomeq_recommended_plugin_consumes_artifact_on_create() {
     params.source_mode = "roomeq_recommended".to_string();
     params.recommended_matrix_file = Some(path.to_string_lossy().to_string());
     let plugin = XtcPlugin::new(params, 48_000).unwrap();
-    let filters = plugin.cached_current_filters.as_ref();
+    let filters = plugin.filter_state.cached_current_filters.as_ref();
     assert!(!filters.is_symmetric);
     assert!((filters.filter_ll[0].re - 1.0).abs() < 1e-6);
     assert!((filters.filter_lr[0].re - 0.5).abs() < 1e-6);
@@ -117,7 +117,7 @@ fn test_roomeq_recommended_matrix_supports_more_than_two_speakers() {
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 3);
     let matrix = plugin
-        .cached_current_filters
+        .filter_state.cached_current_filters
         .speaker_filters
         .as_ref()
         .expect("roomEQ speaker filter matrix");
@@ -1751,17 +1751,17 @@ fn test_reset_clears_state() {
     let ctx = ProcessContext::new(48000, 4096);
     plugin.process(&input, &mut output, &ctx).unwrap();
     plugin.reset();
-    assert_eq!(plugin.input_fill, 0);
-    assert_eq!(plugin.output_accumulator_fill, 0);
-    assert_eq!(plugin.crossfade_progress, 1.0);
-    assert!(plugin.prev_filters.is_none());
+    assert_eq!(plugin.input.input_fill, 0);
+    assert_eq!(plugin.output.output_accumulator_fill, 0);
+    assert_eq!(plugin.filter_state.crossfade_progress, 1.0);
+    assert!(plugin.filter_state.prev_filters.is_none());
 }
 
 #[test]
 fn test_initialize_different_sample_rate() {
     let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48000).unwrap();
     plugin.initialize(96000).unwrap();
-    assert_eq!(plugin.sample_rate, 96000);
+    assert_eq!(plugin.fft.sample_rate, 96000);
 }
 
 #[test]
@@ -1814,9 +1814,9 @@ fn test_process_with_crossfade() {
     let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48000).unwrap();
     plugin.initialize(48000).unwrap();
     // Manually set up crossfade state
-    let prev = Arc::clone(&plugin.cached_current_filters);
-    plugin.prev_filters = Some(prev);
-    plugin.crossfade_progress = 0.0;
+    let prev = Arc::clone(&plugin.filter_state.cached_current_filters);
+    plugin.filter_state.prev_filters = Some(prev);
+    plugin.filter_state.crossfade_progress = 0.0;
     let mut input = vec![0.0_f32; 4096 * 2];
     for i in 0..4096 {
         input[i * 2] = (i as f32 * 0.01).sin() * 0.5;
@@ -1827,7 +1827,7 @@ fn test_process_with_crossfade() {
     plugin.process(&input, &mut output, &ctx).unwrap();
     let sum: f32 = output.iter().map(|x| x.abs()).sum();
     assert!(sum > 0.0);
-    assert!(plugin.crossfade_progress > 0.0);
+    assert!(plugin.filter_state.crossfade_progress > 0.0);
 }
 
 #[test]

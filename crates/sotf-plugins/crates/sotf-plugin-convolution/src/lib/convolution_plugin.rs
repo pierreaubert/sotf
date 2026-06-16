@@ -12,8 +12,10 @@ use rubato::{Fft, FixedSync, Resampler};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use sotf_host::param_bridge;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
@@ -532,76 +534,88 @@ impl ConvolutionPlugin {
     }
 }
 
-impl InPlacePlugin for ConvolutionPlugin {
+impl ParametricInPlacePlugin for ConvolutionPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Convolution", "2.1.0", "Sotf")
     }
     fn channels(&self) -> usize {
         self.channels
     }
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        if id.as_str() == "ir_file" {
-            let path = match value {
-                ParameterValue::String(path) => path,
-                other => {
-                    return Err(format!(
-                        "ir_file: type mismatch (expected String, got {other:?})"
-                    ));
+    fn current_values(&self) -> ParameterSet {
+        self.cached_parameters
+            .iter()
+            .map(|p| (p.id.clone(), p.default_value.clone()))
+            .collect()
+    }
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            if id.as_str() == "ir_file" {
+                let path = match value {
+                    ParameterValue::String(path) => path,
+                    other => {
+                        return Err(format!(
+                            "ir_file: type mismatch (expected String, got {other:?})"
+                        ));
+                    }
+                };
+                if path.is_empty() {
+                    self.state.store(Arc::new(None));
+                    self.nupc_engines.clear();
+                    self.ir_file.clear();
+                    self.output_ring_read = 0;
+                    self.output_ring_available = 0;
+                    for buf in &mut self.output_ring {
+                        buf.fill(0.0);
+                    }
+                    self.input_fill = 0;
+                    for buf in &mut self.input_buffers {
+                        buf.fill(0.0);
+                    }
+                    for buf in &mut self.output_accum {
+                        buf.fill(0.0);
+                    }
+                    self.fdl_flat.fill(Complex::new(0.0, 0.0));
+                    self.fdl_head = 0;
+                } else {
+                    // Quick synchronous validation so tests get immediate feedback.
+                    if !std::path::Path::new(&path).exists() {
+                        return Err(format!("IO: {path}: No such file or directory"));
+                    }
+                    self.ir_file = path.clone();
+                    let (result_tx, result_rx) = std::sync::mpsc::channel();
+                    self.ir_load_result_rx = Some(result_rx);
+                    get_ir_loader()
+                        .send(IrLoadRequest {
+                            path,
+                            channels: self.channels,
+                            sample_rate: self.sample_rate,
+                            use_nupc: self.use_nupc,
+                            zero_latency_head: self.zero_latency_head,
+                            head_taps: self.head_taps,
+                            result_tx,
+                        })
+                        .map_err(|e| format!("Failed to enqueue IR load: {e}"))?;
                 }
-            };
-            if path.is_empty() {
-                self.state.store(Arc::new(None));
-                self.nupc_engines.clear();
-                self.ir_file.clear();
-                self.output_ring_read = 0;
-                self.output_ring_available = 0;
-                for buf in &mut self.output_ring {
-                    buf.fill(0.0);
-                }
-                self.input_fill = 0;
-                for buf in &mut self.input_buffers {
-                    buf.fill(0.0);
-                }
-                for buf in &mut self.output_accum {
-                    buf.fill(0.0);
-                }
-                self.fdl_flat.fill(Complex::new(0.0, 0.0));
-                self.fdl_head = 0;
             } else {
-                // Quick synchronous validation so tests get immediate feedback.
-                if !std::path::Path::new(&path).exists() {
-                    return Err(format!("IO: {path}: No such file or directory"));
-                }
-                self.ir_file = path.clone();
-                let (result_tx, result_rx) = std::sync::mpsc::channel();
-                self.ir_load_result_rx = Some(result_rx);
-                get_ir_loader()
-                    .send(IrLoadRequest {
-                        path,
-                        channels: self.channels,
-                        sample_rate: self.sample_rate,
-                        use_nupc: self.use_nupc,
-                        zero_latency_head: self.zero_latency_head,
-                        head_taps: self.head_taps,
-                        result_tx,
-                    })
-                    .map_err(|e| format!("Failed to enqueue IR load: {e}"))?;
+                param_bridge::set_parameter(CV, &id, &value, |i, v| {
+                    self.set_param_value(i, v);
+                })?;
             }
-            self.rebuild_cached_parameters();
-            return Ok(());
         }
-        param_bridge::set_parameter(CV, &id, &value, |i, v| self.set_param_value(i, v))?;
         self.rebuild_cached_parameters();
         Ok(())
     }
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id.as_str() == "ir_file" {
-            return Some(ParameterValue::String(self.ir_file.clone()));
-        }
-        param_bridge::get_parameter(CV, id, |i| self.param_value(i))
+    fn parametric_set_parameter(
+        &mut self,
+        id: ParameterId,
+        value: ParameterValue,
+    ) -> PluginResult<()> {
+        let mut values = ParameterSet::new();
+        values.insert(id, value);
+        self.apply_values(values)
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         let old_sr = self.sample_rate;

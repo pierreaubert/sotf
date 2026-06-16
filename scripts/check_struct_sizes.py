@@ -52,17 +52,12 @@ def count_fields(source: str, start: int) -> int:
     length = len(source)
     while i < length:
         ch = source[i]
-        if ch == "{":
+        if ch in "{([":
             depth += 1
-        elif ch == "}":
+        elif ch in "})]":
             depth -= 1
             if depth == 0:
                 break
-        elif ch == "(" and depth == 0:
-            # Tuple struct: fields are at depth 1 inside the parens.
-            depth = 1
-        elif ch == ")" and depth == 1:
-            break
         elif ch == "," and depth == 1:
             fields += 1
             last_comma = i

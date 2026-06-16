@@ -2,13 +2,13 @@
 // Loudness Compensation Plugin Integration Tests
 // ============================================================================
 
-use sotf_host::{InPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
+use sotf_host::{ParametricInPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugin_loudness_compensation::LoudnessCompensationPlugin;
 
 #[test]
 fn test_loudness_comp_typical_usage() {
     // Typical use case: +6dB bass and treble boost for low-volume listening
-    let mut plugin = InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
+    let mut plugin = ParametricInPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
         2,       // Stereo
         100.0,   // Low-shelf at 100Hz
         6.0,     // +6dB bass boost
@@ -61,7 +61,7 @@ fn test_loudness_comp_typical_usage() {
 fn test_loudness_comp_dynamic_adjustment() {
     // Test adjusting loudness compensation in real-time
     let mut plugin =
-        InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(2, 100.0, 0.0, 10000.0, 0.0));
+        ParametricInPlacePluginAdapter::new(LoudnessCompensationPlugin::new(2, 100.0, 0.0, 10000.0, 0.0));
     plugin.initialize(48000).unwrap();
 
     let num_frames = 512;
@@ -101,11 +101,11 @@ fn test_loudness_comp_with_music() {
 
     // High volume: minimal compensation
     let mut plugin_high_vol =
-        InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(2, 100.0, 0.0, 10000.0, 0.0));
+        ParametricInPlacePluginAdapter::new(LoudnessCompensationPlugin::new(2, 100.0, 0.0, 10000.0, 0.0));
     plugin_high_vol.initialize(48000).unwrap();
 
     // Low volume: significant compensation (Fletcher-Munson curves)
-    let mut plugin_low_vol = InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
+    let mut plugin_low_vol = ParametricInPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
         2, 100.0, 10.0, 10000.0, 8.0,
     ));
     plugin_low_vol.initialize(48000).unwrap();
@@ -157,7 +157,7 @@ fn test_loudness_comp_with_music() {
 #[test]
 fn test_loudness_comp_12db_per_octave() {
     // Verify that we get 12dB/octave slope (2 cascaded biquads)
-    let mut plugin = InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
+    let mut plugin = ParametricInPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
         2, 1000.0, 12.0, 10000.0, 0.0,
     ));
     plugin.initialize(48000).unwrap();
@@ -199,7 +199,7 @@ fn test_loudness_comp_12db_per_octave() {
 fn test_loudness_comp_stereo_to_5ch() {
     // Test using loudness compensation in a 5.0 channel setup
     let mut plugin =
-        InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(5, 100.0, 8.0, 10000.0, 6.0));
+        ParametricInPlacePluginAdapter::new(LoudnessCompensationPlugin::new(5, 100.0, 8.0, 10000.0, 6.0));
     plugin.initialize(48000).unwrap();
 
     let num_frames = 1024;

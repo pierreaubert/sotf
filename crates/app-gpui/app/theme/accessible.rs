@@ -64,19 +64,19 @@ impl Theme {
         self.warning = warning;
         self.error = error;
         self.info = info;
-        self.meter_normal = success;
-        self.meter_warning = warning;
-        self.meter_clip = error;
+        self.feedback.meter_normal = success;
+        self.feedback.meter_warning = warning;
+        self.feedback.meter_clip = error;
         self.button_mute_active = error;
         self.button_solo_active = warning;
         self.button_dim_active = secondary;
-        self.progress_bar_fill = accent;
-        self.toast_success_bg = Self::with_opacity(success, 0.22);
-        self.toast_error_bg = Self::with_opacity(error, 0.22);
-        self.toast_info_bg = Self::with_opacity(info, 0.22);
-        self.toast_warning_bg = Self::with_opacity(warning, 0.22);
+        self.feedback.progress_bar_fill = accent;
+        self.feedback.toast_success_bg = Self::with_opacity(success, 0.22);
+        self.feedback.toast_error_bg = Self::with_opacity(error, 0.22);
+        self.feedback.toast_info_bg = Self::with_opacity(info, 0.22);
+        self.feedback.toast_warning_bg = Self::with_opacity(warning, 0.22);
 
-        self.plugin_colors = PluginColorMap {
+        self.plugin_palette.plugin_colors = PluginColorMap {
             eq: accent,
             gain: success,
             upmixer: secondary,
@@ -90,19 +90,19 @@ impl Theme {
             spectrum: secondary,
             mute_solo: info,
         };
-        self.graph_colors = GraphLineColors {
+        self.plugin_palette.graph_colors = GraphLineColors {
             input: info,
             target: success,
             filter_response: warning,
             corrected: accent,
             error,
             deviation: secondary,
-            grid: self.grid_color,
+            grid: self.feedback.grid_color,
             secondary_line: self.text_secondary,
             directivity_er: rgb(0xcc79a7),
             directivity_sp: secondary,
         };
-        self.band_colors = vec![
+        self.plugin_palette.band_colors = vec![
             error,
             warning,
             success,
@@ -112,23 +112,23 @@ impl Theme {
             rgb(0xcc79a7),
             rgb(0x999999),
         ];
-        self.channel_colors = vec![info, error, success, warning, secondary, accent];
+        self.plugin_palette.channel_colors = vec![info, error, success, warning, secondary, accent];
 
-        self.eq_curve_colors.curve_boost = success;
-        self.eq_curve_colors.curve_cut = error;
-        self.eq_curve_colors.fill_boost = Self::with_opacity(success, 0.28);
-        self.eq_curve_colors.fill_cut = Self::with_opacity(error, 0.28);
-        self.spectrum_colors.bass = success;
-        self.spectrum_colors.mids = warning;
-        self.spectrum_colors.treble = error;
-        self.meter_colors.normal = success;
-        self.meter_colors.warning = warning;
-        self.meter_colors.clip = error;
-        self.drag_over_highlight = Self::with_opacity(accent, 0.25);
-        self.drag_over_border = accent;
-        self.neutral_indicator = accent;
-        self.warning_background = Self::with_opacity(warning, 0.2);
-        self.optimization_color = secondary;
+        self.plugin_palette.eq_curve_colors.curve_boost = success;
+        self.plugin_palette.eq_curve_colors.curve_cut = error;
+        self.plugin_palette.eq_curve_colors.fill_boost = Self::with_opacity(success, 0.28);
+        self.plugin_palette.eq_curve_colors.fill_cut = Self::with_opacity(error, 0.28);
+        self.plugin_palette.spectrum_colors.bass = success;
+        self.plugin_palette.spectrum_colors.mids = warning;
+        self.plugin_palette.spectrum_colors.treble = error;
+        self.plugin_palette.meter_colors.normal = success;
+        self.plugin_palette.meter_colors.warning = warning;
+        self.plugin_palette.meter_colors.clip = error;
+        self.feedback.drag_over_highlight = Self::with_opacity(accent, 0.25);
+        self.feedback.drag_over_border = accent;
+        self.feedback.neutral_indicator = accent;
+        self.feedback.warning_background = Self::with_opacity(warning, 0.2);
+        self.feedback.optimization_color = secondary;
         self
     }
 

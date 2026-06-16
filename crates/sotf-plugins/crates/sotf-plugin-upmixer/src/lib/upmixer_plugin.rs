@@ -19,82 +19,110 @@ use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config};
 use std::sync::Arc;
 
 /// Stereo to multi-channel surround upmixer using FFT-based Direct/Ambient decomposition
-pub struct UpmixerPlugin {
+pub(super) struct UpmixerCore {
     /// FFT size (must be power of 2)
     pub(super) fft_size: usize,
     /// Hop size for overlap-add (fft_size / 2 for 50% overlap)
     pub(super) hop_size: usize,
     /// Sample rate
     pub(super) sample_rate: u32,
-
     /// Speaker configuration
     pub(super) speaker_config: &'static SpeakerConfig,
     /// Number of output channels (dynamic based on config)
     pub(super) num_output_channels: usize,
     /// When true, output is binaural (2ch) instead of surround
     pub(super) binaural_preview: bool,
+    /// Initial latency counter to ensure OLA buffer is primed before output
+    pub(super) latency_filled: usize,
+    /// Remaining leading silence frames needed to align output with latency_samples().
+    pub(super) startup_padding_remaining: usize,
+    pub(super) cached_parameters: Vec<sotf_host::parameters::Parameter>,
+}
 
+pub(super) struct UpmixerFft {
     /// Forward FFT planner (low-resolution path)
     pub(super) fft_forward: Arc<dyn RealToComplex<f32>>,
     /// Inverse FFT planner (low-resolution path)
     pub(super) fft_inverse: Arc<dyn ComplexToReal<f32>>,
-
     /// High-resolution FFT size for direct-path enhancement
     pub(super) hr_fft_size: usize,
     /// High-resolution hop size (hr_fft_size / 2)
     pub(super) hr_fft_forward: Arc<dyn RealToComplex<f32>>,
     /// Inverse FFT planner (high-resolution path)
     pub(super) hr_fft_inverse: Arc<dyn ComplexToReal<f32>>,
+}
 
+pub(super) struct UpmixerGains {
     // Parameters
     /// Front direct gain (gainFS)
     pub(super) gain_front_direct: Smoother,
-
     /// Front ambient gain (gainFA)
     pub(super) gain_front_ambient: Smoother,
-
     /// Rear ambient gain (gainRA)
     pub(super) gain_rear_ambient: Smoother,
-
-    /// LFE cutoff frequency in Hz
-    pub(super) lfe_cutoff_hz: f32,
-
     /// Stereo width (0.0 = wide, 1.0 = narrow, 0.5 = balanced)
     pub(super) stereo_width: Smoother,
-
     pub(super) center_spread: Smoother,
-
-    /// Bandpass frequency in Hz (must be > lfe_cutoff_hz)
-    pub(super) bandpass_hz: f32,
-
-    /// Height channel gain (0.0 to 2.0)
-    pub(super) height_gain: Smoother,
-
     /// LFE gain (0.0 to 2.0)
     pub(super) lfe_gain: Smoother,
+    pub(super) hr_sharpen: Smoother,
+}
 
-    /// Sub-Harmonic Synthesis
-    pub(super) enable_subharmonic_synth: bool,
-    pub(super) subharmonic_gain: Smoother,
-
+pub(super) struct UpmixerParams {
+    /// LFE cutoff frequency in Hz
+    pub(super) lfe_cutoff_hz: f32,
+    /// Bandpass frequency in Hz (must be > lfe_cutoff_hz)
+    pub(super) bandpass_hz: f32,
     /// High-resolution direct-path enhancement (multires)
     pub(super) enable_hr_direct: bool,
-    pub(super) hr_sharpen: Smoother,
+    // Low-latency mode
+    pub(super) low_latency: bool,
+    // Diagnostic bypass parameters
+    pub(super) bypass_decorrelation: bool,
+    pub(super) bypass_transient_detection: bool,
+    pub(super) bypass_all_processing: bool,
+    // Frequency resolution for ERB band analysis
+    pub(super) frequency_resolution: String,
+    /// Cached value of `analysis_smoothing_scale()` to avoid allocating a
+    /// normalization `String` on every process block.
+    pub(super) cached_analysis_smoothing_scale: f32,
+}
 
+pub(super) struct UpmixerParamSmoothers {
+    /// Smoother for lfe_cutoff_hz to prevent clicks when changing crossover frequency
+    pub(super) lfe_cutoff_hz_smoother: Smoother,
+    /// Smoother for bandpass_hz to prevent clicks when changing upmix crossover
+    pub(super) bandpass_hz_smoother: Smoother,
+    /// Smoother for height_hf_cap_hz to prevent clicks when changing height HF cap
+    pub(super) height_hf_cap_hz_smoother: Smoother,
+    /// Smoother for safety_cap_db to prevent clicks when changing safety cap
+    pub(super) safety_cap_db_smoother: Smoother,
+}
+
+pub(super) struct UpmixerSafety {
     /// Safety cap on upmixer output peak (in dB)
     pub(super) safety_cap_db: f32,
     /// Previous safety scale for smoothing between blocks
     pub(super) prev_safety_scale: f32,
     /// Final post-OLA safety scale for the actual emitted samples
     pub(super) final_safety_scale: f32,
-
     // Auto-gain compensation: stereo input monitor vs stereo fold-down of
     // the rendered output, with gain applied to all output channels.
     pub(super) auto_gain_enabled: bool,
     pub(super) auto_gain_max_db: f32,
     pub(super) auto_gain_smoothing_ms: f32,
     pub(super) auto_gain: Option<MultichannelAutoGain>,
+    // Cached safety cap linear values (avoid per-block powf)
+    // safety_cap_linear = 10^(safety_cap_db / 20)
+    pub(super) safety_cap_linear: f32,
+    // safety_cap_min_scale = 10^(-safety_cap_db / 20)
+    pub(super) safety_cap_min_scale: f32,
+}
 
+pub(super) struct UpmixerSubharmonic {
+    /// Sub-Harmonic Synthesis
+    pub(super) enable_subharmonic_synth: bool,
+    pub(super) subharmonic_gain: Smoother,
     // Sub-harmonic synth state
     pub(super) subharmonic_phase: f32,
     /// Envelope for smoothing sub-harmonic synthesis on/off transitions
@@ -102,12 +130,59 @@ pub struct UpmixerPlugin {
     pub(super) subharmonic_envelope: f32,
     /// Smoothed amplitude envelope for sub-harmonic modulation (prevents raw AM distortion)
     pub(super) subharmonic_amp_envelope: f32,
+    // 0=Velvet, 1=LFO
+    // Sub-harmonic synthesis parameters
+    pub(super) subharmonic_freq_hz: f32,
+    pub(super) subharmonic_attack_ms: f32,
+    pub(super) subharmonic_release_ms: f32,
+    // Cached sub-harmonic envelope coefficients (recomputed in initialize() and when
+    // subharmonic_freq_hz, subharmonic_attack_ms, subharmonic_release_ms change).
+    /// Phase increment per sample: 2π * subharmonic_freq_hz / sample_rate
+    pub(super) cached_subharmonic_phase_inc: f32,
+    /// One-pole attack coefficient for envelope follower
+    pub(super) cached_subharmonic_attack_coeff: f32,
+    /// One-pole release coefficient for envelope follower
+    pub(super) cached_subharmonic_release_coeff: f32,
+}
 
+pub(super) struct UpmixerDecorrelation {
+    // Decorrelation Mode
+    pub(super) decorrelation_mode: usize,
+    // Decorrelation parameters
+    pub(super) decorrelation_lfo_rate_hz: f32,
+    pub(super) velvet_noise_duration_ms: f32,
+    pub(super) velvet_noise_density: f32,
+    // Decorrelation
+    pub(super) decorrelation_filter_left: Vec<Complex<f32>>,
+    pub(super) decorrelation_filter_right: Vec<Complex<f32>>,
+    /// Per-output-channel decorrelation filters (one per surround/height channel)
+    /// Front speakers and LFE get identity filters
+    pub(super) decorrelation_filters: Vec<Vec<Complex<f32>>>,
+    // LFO Decorrelation State
+    pub(super) decor_base_phases_left: Vec<f32>,
+    pub(super) decor_base_phases_right: Vec<f32>,
+    pub(super) decor_lfo_phase: f32,
+    /// Precomputed per-bin LFO depth table (depends on sample_rate, fft_size, bandpass_hz, lfe_cutoff_hz)
+    pub(super) cached_lfo_depth_table: Vec<f32>,
+    /// Current adaptive decorrelation strength (0.0 to 1.0)
+    pub(super) decorrelation_strength: f32,
+    /// Previous decorrelation strength for skipping redundant filter blends
+    pub(super) prev_decorrelation_strength: f32,
+    /// Pre-calculated blended decorrelation filters (one per channel)
+    pub(super) blended_decorrelation_filters: Vec<Vec<Complex<f32>>>,
+    /// Cross-fade counter for decorrelation mode/bypass transitions (blocks remaining)
+    pub(super) decorrelation_crossfade_remaining: usize,
+    /// Saved blended filters for cross-fading during decorrelation transitions
+    pub(super) prev_blended_filters_for_crossfade: Vec<Vec<Complex<f32>>>,
+}
+
+pub(super) struct UpmixerSteering {
     // ERB Banding
-    pub(super) erb_bands: Vec<usize>, // Start bin indices for each band
-
+    pub(super) erb_bands: Vec<usize>,
+    // Start bin indices for each band
     // Logic Steering State
-    pub(super) steering_alphas: Vec<f32>, // Per-band alpha
+    pub(super) steering_alphas: Vec<f32>,
+    // Per-band alpha
     pub(super) coherence_instant: Vec<f32>,
     pub(super) smoothed_coherence: Vec<f32>,
     pub(super) smoothed_diffuseness: Vec<f32>,
@@ -116,43 +191,42 @@ pub struct UpmixerPlugin {
     pub(super) coherence_history: Vec<[f32; 5]>,
     /// Current write index in coherence_history ring buffer
     pub(super) coherence_history_idx: usize,
+    // --- Intensity-vector DOA state (per ERB band) ---
+    /// Smoothed DOA angle per ERB band (radians, from atan2 of active intensity)
+    pub(super) doa_angle: Vec<f32>,
+}
 
-    // Decorrelation Mode
-    pub(super) decorrelation_mode: usize, // 0=Velvet, 1=LFO
-
-    // Sub-harmonic synthesis parameters
-    pub(super) subharmonic_freq_hz: f32,
-    pub(super) subharmonic_attack_ms: f32,
-    pub(super) subharmonic_release_ms: f32,
-
-    // Decorrelation parameters
-    pub(super) decorrelation_lfo_rate_hz: f32,
-    pub(super) velvet_noise_duration_ms: f32,
-    pub(super) velvet_noise_density: f32,
-
-    // Height channel parameters
-    pub(super) height_hf_cap_hz: f32,
-    pub(super) height_transient_reduction: Smoother,
-    pub(super) height_direct_leak: Smoother,
-
-    // Surround routing parameters
-    pub(super) surround_direct_bleed: Smoother,
-    pub(super) rear_ambient_boost: Smoother,
-    pub(super) rear_late_reflection: Smoother,
-
-    // Ambient/coherence parameters
-    pub(super) ambient_boost: Smoother,
-
+pub(super) struct UpmixerDialogue {
     // Dialogue detection parameters
     pub(super) dialogue_weight: Smoother,
     pub(super) voice_freq_min_hz: f32,
     pub(super) voice_freq_max_hz: f32,
-
     // Dialogue detection sub-weights
     pub(super) dialogue_centroid_weight: f32,
     pub(super) dialogue_variance_weight: f32,
     pub(super) dialogue_coherence_weight: f32,
+    /// Normalized dialogue centroid weight (w_c in the weighted sum)
+    pub(super) cached_dialogue_w_c: f32,
+    /// Normalized dialogue variance weight (w_v in the weighted sum)
+    pub(super) cached_dialogue_w_v: f32,
+    /// Normalized dialogue coherence weight (w_coh in the weighted sum)
+    pub(super) cached_dialogue_w_coh: f32,
+    // Dialogue Detection State
+    /// Smoothed spectral centroid (Hz) for dialogue detection
+    pub(super) dialogue_spectral_centroid: f32,
+    /// Smoothed temporal envelope variance for dialogue detection
+    pub(super) dialogue_envelope_variance: f32,
+    /// Previous frame RMS energy for envelope variance calculation
+    pub(super) dialogue_prev_rms: f32,
+    /// Dialogue probability (0.0 = no dialogue, 1.0 = strong dialogue)
+    pub(super) dialogue_probability: f32,
+    /// Slower dialogue control used by spatial decomposition and panning.
+    /// Keeping this separate from raw detector probability prevents center/ambient
+    /// and decorrelation controls from zippering when detection jitters.
+    pub(super) dialogue_spatial_control: f32,
+}
 
+pub(super) struct UpmixerMl {
     // ML vocal detection parameters
     pub(super) enable_ml_detection: bool,
     pub(super) ml_model_path: String,
@@ -160,67 +234,74 @@ pub struct UpmixerPlugin {
     pub(super) mfcc_extractor: Option<super::ml_features::MfccExtractor>,
     #[cfg(feature = "onnx")]
     pub(super) ml_inference_handle: Option<super::ml_inference::MlInferenceHandle>,
+}
 
-    // Low-latency mode
-    pub(super) low_latency: bool,
-
-    // Diagnostic bypass parameters
-    pub(super) bypass_decorrelation: bool,
-    pub(super) bypass_transient_detection: bool,
-    pub(super) bypass_all_processing: bool,
-
-    // Frequency resolution for ERB band analysis
-    pub(super) frequency_resolution: String,
-    /// Cached value of `analysis_smoothing_scale()` to avoid allocating a
-    /// normalization `String` on every process block.
-    pub(super) cached_analysis_smoothing_scale: f32,
-
-    // Decorrelation
-    pub(super) decorrelation_filter_left: Vec<Complex<f32>>,
-    pub(super) decorrelation_filter_right: Vec<Complex<f32>>,
-    /// Per-output-channel decorrelation filters (one per surround/height channel)
-    /// Front speakers and LFE get identity filters
-    pub(super) decorrelation_filters: Vec<Vec<Complex<f32>>>,
-
-    // LFO Decorrelation State
-    pub(super) decor_base_phases_left: Vec<f32>,
-    pub(super) decor_base_phases_right: Vec<f32>,
-    pub(super) decor_lfo_phase: f32,
-    /// Precomputed per-bin LFO depth table (depends on sample_rate, fft_size, bandpass_hz, lfe_cutoff_hz)
-    pub(super) cached_lfo_depth_table: Vec<f32>,
-
+pub(super) struct UpmixerSpectral {
     // PCA State (per band)
     pub(super) pca_cov_xx: Vec<f32>,
     pub(super) pca_cov_yy: Vec<f32>,
     pub(super) pca_cov_xy: Vec<Complex<f32>>,
-
     // Crossover complex gain tables (Linkwitz-Riley between mains and LFE)
     // Complex values preserve phase information for accurate crossover behavior
     pub(super) lfe_low_gains: Vec<Complex<f32>>,
     pub(super) mains_high_gains: Vec<Complex<f32>>,
+    // Multi-source extraction (2nd eigenvector)
+    /// Enable secondary source extraction using the 2nd PCA eigenvector.
+    /// When a band contains two uncorrelated sources, the 2nd eigenvector captures
+    /// the direction perpendicular to the dominant source and routes it to surrounds.
+    pub(super) multi_source_extraction: bool,
+    /// Threshold ratio lambda2/lambda1 above which the 2nd source is considered real.
+    /// Range: 0.05-0.5, default 0.1.
+    pub(super) multi_source_threshold: f32,
+    /// Per-bin frequency-domain buffer for the secondary source (2nd eigenvector projection).
+    /// Only populated when multi_source_extraction is enabled.
+    pub(super) direct2: Vec<rustfft::num_complex::Complex<f32>>,
+    /// Per-bin DOA angle (radians) for the secondary source.
+    /// Copied from the ERB band's DOA angle during frequency domain processing.
+    /// Used by panning.rs to steer direct2 to the correct surround speaker.
+    pub(super) direct2_doa_per_bin: Vec<f32>,
+}
 
+pub(super) struct UpmixerHeight {
+    /// Height channel gain (0.0 to 2.0)
+    pub(super) height_gain: Smoother,
+    // Height channel parameters
+    pub(super) height_hf_cap_hz: f32,
+    pub(super) height_transient_reduction: Smoother,
+    pub(super) height_direct_leak: Smoother,
     // Height channel mask per positive-frequency bin (HF emphasis + coherence gating)
     pub(super) height_band_gains: Vec<f32>,
     // Temporal smoothing buffer for height gains (previous frame)
     pub(super) height_band_gains_prev: Vec<f32>,
     // Temporary buffer for height gain smoothing (avoid real-time allocation)
     pub(super) height_band_gains_temp: Vec<f32>,
-
     // Precomputed per-bin frequency weights for height mask (hf_ratio^0.7)
     // Depends only on sample_rate, bandpass_hz, height_hf_cap_hz — recomputed in initialize()
     pub(super) height_freq_weights: Vec<f32>,
+    pub(super) height_transient_env_slow: f32,
+    // --- Height channel spectral flux gating ---
+    /// Previous frame magnitude spectrum for height spectral flux (per bin)
+    pub(super) height_prev_magnitude: Vec<f32>,
+    /// Smoothed spectral flux for height onset detection
+    pub(super) height_spectral_flux_smooth: f32,
+    /// Per-bin height gate multiplier from spectral flux / coherence gating
+    pub(super) height_flux_gate: Vec<f32>,
+}
 
-    // Cached safety cap linear values (avoid per-block powf)
-    // safety_cap_linear = 10^(safety_cap_db / 20)
-    pub(super) safety_cap_linear: f32,
-    // safety_cap_min_scale = 10^(-safety_cap_db / 20)
-    pub(super) safety_cap_min_scale: f32,
+pub(super) struct UpmixerSurround {
+    // Surround routing parameters
+    pub(super) surround_direct_bleed: Smoother,
+    pub(super) rear_ambient_boost: Smoother,
+    pub(super) rear_late_reflection: Smoother,
+    // Ambient/coherence parameters
+    pub(super) ambient_boost: Smoother,
+}
 
+pub(super) struct UpmixerPanning {
     /// Panning gains for left source (pre-calculated for each speaker)
     pub(super) panning_gains_left: Vec<f32>,
     /// Panning gains for right source (pre-calculated for each speaker)
     pub(super) panning_gains_right: Vec<f32>,
-
     // Cached per-speaker flags (computed in recalculate_panning_gains, avoids string/float comparisons in hot path)
     /// True if speaker is front (|azimuth| < 80)
     pub(super) cached_is_front: Vec<bool>,
@@ -230,7 +311,9 @@ pub struct UpmixerPlugin {
     pub(super) cached_is_center: Vec<bool>,
     /// Indices of channels that the HR path processes (front, non-LFE, non-height)
     pub(super) cached_hr_active_channels: Vec<usize>,
+}
 
+pub(super) struct UpmixerCache {
     // Cached bin indices for ERB-band and dialogue processing (recomputed in initialize()
     // and when lfe_cutoff_hz, bandpass_hz, voice_freq_min/max_hz, or sample_rate changes).
     /// Hz per FFT bin: sample_rate / fft_size
@@ -243,33 +326,18 @@ pub struct UpmixerPlugin {
     pub(super) cached_voice_start_bin: usize,
     /// Last bin of the voice frequency range for dialogue detection
     pub(super) cached_voice_end_bin: usize,
-    /// Normalized dialogue centroid weight (w_c in the weighted sum)
-    pub(super) cached_dialogue_w_c: f32,
-    /// Normalized dialogue variance weight (w_v in the weighted sum)
-    pub(super) cached_dialogue_w_v: f32,
-    /// Normalized dialogue coherence weight (w_coh in the weighted sum)
-    pub(super) cached_dialogue_w_coh: f32,
+}
 
-    // Cached sub-harmonic envelope coefficients (recomputed in initialize() and when
-    // subharmonic_freq_hz, subharmonic_attack_ms, subharmonic_release_ms change).
-    /// Phase increment per sample: 2π * subharmonic_freq_hz / sample_rate
-    pub(super) cached_subharmonic_phase_inc: f32,
-    /// One-pole attack coefficient for envelope follower
-    pub(super) cached_subharmonic_attack_coeff: f32,
-    /// One-pole release coefficient for envelope follower
-    pub(super) cached_subharmonic_release_coeff: f32,
-
+pub(super) struct UpmixerMainBuffers {
     // Processing buffers (allocated once, reused)
     /// Time domain buffer for left channel
     pub(super) time_domain_left: Vec<f32>,
     /// Time domain buffer for right channel
     pub(super) time_domain_right: Vec<f32>,
-
     /// Frequency domain buffer for left channel
     pub(super) freq_domain_left: Vec<Complex<f32>>,
     /// Frequency domain buffer for right channel
     pub(super) freq_domain_right: Vec<Complex<f32>>,
-
     // Intermediate buffers for upmixing algorithm
     pub(super) direct: Vec<Complex<f32>>,
     pub(super) direct_left: Vec<Complex<f32>>,
@@ -277,29 +345,24 @@ pub struct UpmixerPlugin {
     pub(super) ambient_left: Vec<Complex<f32>>,
     pub(super) ambient_right: Vec<Complex<f32>>,
     pub(super) lfe: Vec<Complex<f32>>,
-
     // Smoothing buffers for ICC calculation
-
     // Output time-domain buffers (one per output channel, variable length)
     pub(super) time_out_channels: Vec<Vec<f32>>,
-
     /// Input buffer accumulator for block-based processing
     pub(super) input_buffer: Vec<f32>,
     /// Number of samples currently in input buffer
     pub(super) input_buffer_fill: usize,
-
     /// Temporary input block for FFT processing (pre-allocated)
     pub(super) temp_input_block: Vec<f32>,
-
     /// Temporary frequency buffer for IFFT mixing (reused per channel)
     pub(super) temp_freq_out: Vec<Complex<f32>>,
-
     /// Periodic sqrt-Hann window for WOLA analysis/synthesis (pre-computed)
     pub(super) window: Vec<f32>,
-    /// Periodic sqrt-Hann window for high-resolution FFT path
-    pub(super) hr_window: Vec<f32>,
     /// Pre-computed raised-cosine edge taper table for height channels (avoids cos() in hot path)
     pub(super) edge_taper_table: Vec<f32>,
+}
+
+pub(super) struct UpmixerOutput {
     /// Output accumulator for overlap-add (flat interleaved ring buffer)
     /// Layout: [ch0_f0, ch1_f0, ..., ch0_f1, ch1_f1, ...]
     /// Buffer size in frames is always power-of-2 (4 * fft_size) for efficient masking
@@ -314,7 +377,11 @@ pub struct UpmixerPlugin {
     pub(super) output_read_position: usize,
     /// Pre-allocated output block buffer (reused to avoid allocations)
     pub(super) output_block: Vec<f32>,
+}
 
+pub(super) struct UpmixerHrBuffers {
+    /// Periodic sqrt-Hann window for high-resolution FFT path
+    pub(super) hr_window: Vec<f32>,
     // High-resolution direct-path buffers (allocated once, reused)
     /// Input buffer accumulator for HR path (stereo interleaved)
     pub(super) hr_input_buffer: Vec<f32>,
@@ -343,120 +410,77 @@ pub struct UpmixerPlugin {
     pub(super) hr_time_out_channels: Vec<Vec<f32>>,
     /// Next position to add a HR block in the shared accumulator (reserved)
     pub(super) hr_next_add_position: usize,
-
     // HR output accumulator
     pub(super) hr_output_accumulator: Vec<f32>,
     pub(super) hr_output_accumulator_mask: usize,
     pub(super) hr_output_accumulator_fill: usize,
     pub(super) hr_output_read_position: usize,
+}
 
+pub(super) struct UpmixerHrState {
     /// Smooth envelope for enable_hr_direct toggle (0.0=off, 1.0=on)
     pub(super) hr_direct_envelope: f32,
-
     pub(super) hr_transient_env: f32,
-    pub(super) height_transient_env_slow: f32,
     pub(super) hr_energy_smooth: f32,
     /// Previous frame power spectrum (squared magnitude) for spectral flux calculation
     pub(super) prev_power_spectrum: Vec<f32>,
     /// Smoothed spectral flux for transient normalization
     pub(super) spectral_flux_smooth: f32,
-
-    // --- Intensity-vector DOA state (per ERB band) ---
-    /// Smoothed DOA angle per ERB band (radians, from atan2 of active intensity)
-    pub(super) doa_angle: Vec<f32>,
-
-    // --- Height channel spectral flux gating ---
-    /// Previous frame magnitude spectrum for height spectral flux (per bin)
-    pub(super) height_prev_magnitude: Vec<f32>,
-    /// Smoothed spectral flux for height onset detection
-    pub(super) height_spectral_flux_smooth: f32,
-    /// Per-bin height gate multiplier from spectral flux / coherence gating
-    pub(super) height_flux_gate: Vec<f32>,
-
     // Smoothing state
     pub(super) prev_hr_scale: f32,
+}
 
-    // Dialogue Detection State
-    /// Smoothed spectral centroid (Hz) for dialogue detection
-    pub(super) dialogue_spectral_centroid: f32,
-    /// Smoothed temporal envelope variance for dialogue detection
-    pub(super) dialogue_envelope_variance: f32,
-    /// Previous frame RMS energy for envelope variance calculation
-    pub(super) dialogue_prev_rms: f32,
-    /// Dialogue probability (0.0 = no dialogue, 1.0 = strong dialogue)
-    pub(super) dialogue_probability: f32,
-    /// Slower dialogue control used by spatial decomposition and panning.
-    /// Keeping this separate from raw detector probability prevents center/ambient
-    /// and decorrelation controls from zippering when detection jitters.
-    pub(super) dialogue_spatial_control: f32,
-    /// Current adaptive decorrelation strength (0.0 to 1.0)
-    pub(crate) decorrelation_strength: f32,
-    /// Previous decorrelation strength for skipping redundant filter blends
-    pub(super) prev_decorrelation_strength: f32,
-    /// Pre-calculated blended decorrelation filters (one per channel)
-    pub(crate) blended_decorrelation_filters: Vec<Vec<Complex<f32>>>,
-
-    /// Smoother for lfe_cutoff_hz to prevent clicks when changing crossover frequency
-    pub(super) lfe_cutoff_hz_smoother: Smoother,
-    /// Smoother for bandpass_hz to prevent clicks when changing upmix crossover
-    pub(super) bandpass_hz_smoother: Smoother,
-    /// Smoother for height_hf_cap_hz to prevent clicks when changing height HF cap
-    pub(super) height_hf_cap_hz_smoother: Smoother,
-    /// Smoother for safety_cap_db to prevent clicks when changing safety cap
-    pub(super) safety_cap_db_smoother: Smoother,
-
-    /// Cross-fade counter for decorrelation mode/bypass transitions (blocks remaining)
-    pub(super) decorrelation_crossfade_remaining: usize,
-    /// Saved blended filters for cross-fading during decorrelation transitions
-    pub(super) prev_blended_filters_for_crossfade: Vec<Vec<Complex<f32>>>,
-
-    // Multi-source extraction (2nd eigenvector)
-    /// Enable secondary source extraction using the 2nd PCA eigenvector.
-    /// When a band contains two uncorrelated sources, the 2nd eigenvector captures
-    /// the direction perpendicular to the dominant source and routes it to surrounds.
-    pub(super) multi_source_extraction: bool,
-    /// Threshold ratio lambda2/lambda1 above which the 2nd source is considered real.
-    /// Range: 0.05-0.5, default 0.1.
-    pub(super) multi_source_threshold: f32,
-    /// Per-bin frequency-domain buffer for the secondary source (2nd eigenvector projection).
-    /// Only populated when multi_source_extraction is enabled.
-    pub(super) direct2: Vec<rustfft::num_complex::Complex<f32>>,
-    /// Per-bin DOA angle (radians) for the secondary source.
-    /// Copied from the ERB band's DOA angle during frequency domain processing.
-    /// Used by panning.rs to steer direct2 to the correct surround speaker.
-    pub(super) direct2_doa_per_bin: Vec<f32>,
-
-    /// Initial latency counter to ensure OLA buffer is primed before output
-    pub(super) latency_filled: usize,
-    /// Remaining leading silence frames needed to align output with latency_samples().
-    pub(super) startup_padding_remaining: usize,
-    pub(super) cached_parameters: Vec<sotf_host::parameters::Parameter>,
+/// Stereo to multi-channel surround upmixer using FFT-based Direct/Ambient decomposition
+pub struct UpmixerPlugin {
+    pub(super) core: UpmixerCore,
+    pub(super) fft: UpmixerFft,
+    pub(super) gains: UpmixerGains,
+    pub(super) params: UpmixerParams,
+    pub(super) param_smoothers: UpmixerParamSmoothers,
+    pub(super) safety: UpmixerSafety,
+    pub(super) subharmonic: UpmixerSubharmonic,
+    pub(super) decorrelation: UpmixerDecorrelation,
+    pub(super) steering: UpmixerSteering,
+    pub(super) dialogue: UpmixerDialogue,
+    pub(super) ml: UpmixerMl,
+    pub(super) spectral: UpmixerSpectral,
+    pub(super) height: UpmixerHeight,
+    pub(super) surround: UpmixerSurround,
+    pub(super) panning: UpmixerPanning,
+    pub(super) cache: UpmixerCache,
+    pub(super) main_buffers: UpmixerMainBuffers,
+    pub(super) output: UpmixerOutput,
+    pub(super) hr_buffers: UpmixerHrBuffers,
+    pub(super) hr_state: UpmixerHrState,
 }
 
 impl UpmixerPlugin {
     /// Return a snapshot of internal control signals for offline diagnostics.
     pub fn diagnostics(&self) -> UpmixerDiagnostics {
         UpmixerDiagnostics {
-            sample_rate: self.sample_rate,
-            fft_size: self.fft_size,
-            hop_size: self.hop_size,
-            output_channels: self.num_output_channels,
-            speaker_config: self.speaker_config.id.to_string(),
-            dialogue_probability: self.dialogue_probability,
-            dialogue_spatial_control: self.dialogue_spatial_control,
-            dialogue_spectral_centroid_hz: self.dialogue_spectral_centroid,
-            dialogue_envelope_variance: self.dialogue_envelope_variance,
-            decorrelation_strength: self.decorrelation_strength,
-            hr_direct_envelope: self.hr_direct_envelope,
-            hr_transient_env: self.hr_transient_env,
-            height_transient_env: self.height_transient_env_slow,
-            spectral_flux_smooth: self.spectral_flux_smooth,
-            height_spectral_flux_smooth: self.height_spectral_flux_smooth,
-            safety_scale: self.prev_safety_scale.min(self.final_safety_scale),
-            output_accumulator_fill: self.output_accumulator_fill,
-            height_gain: control_stats(&self.height_band_gains),
-            height_flux_gate: control_stats(&self.height_flux_gate),
-            coherence: control_stats(&self.smoothed_coherence),
+            sample_rate: self.core.sample_rate,
+            fft_size: self.core.fft_size,
+            hop_size: self.core.hop_size,
+            output_channels: self.core.num_output_channels,
+            speaker_config: self.core.speaker_config.id.to_string(),
+            dialogue_probability: self.dialogue.dialogue_probability,
+            dialogue_spatial_control: self.dialogue.dialogue_spatial_control,
+            dialogue_spectral_centroid_hz: self.dialogue.dialogue_spectral_centroid,
+            dialogue_envelope_variance: self.dialogue.dialogue_envelope_variance,
+            decorrelation_strength: self.decorrelation.decorrelation_strength,
+            hr_direct_envelope: self.hr_state.hr_direct_envelope,
+            hr_transient_env: self.hr_state.hr_transient_env,
+            height_transient_env: self.height.height_transient_env_slow,
+            spectral_flux_smooth: self.hr_state.spectral_flux_smooth,
+            height_spectral_flux_smooth: self.height.height_spectral_flux_smooth,
+            safety_scale: self
+                .safety
+                .prev_safety_scale
+                .min(self.safety.final_safety_scale),
+            output_accumulator_fill: self.output.output_accumulator_fill,
+            height_gain: control_stats(&self.height.height_band_gains),
+            height_flux_gate: control_stats(&self.height.height_flux_gate),
+            coherence: control_stats(&self.steering.smoothed_coherence),
         }
     }
 
@@ -559,269 +583,466 @@ impl UpmixerPlugin {
         // Allocate output buffers for each channel
         let time_out_channels = vec![vec![0.0; fft_size]; num_output_channels];
 
-        let mut plugin = Self {
+        let core = UpmixerCore {
             fft_size,
+
             hop_size,
+
             sample_rate,
+
             speaker_config,
+
             num_output_channels,
+
             binaural_preview: false,
 
+            latency_filled: 0,
+
+            startup_padding_remaining: fft_size,
+
+            cached_parameters: Vec::new(),
+        };
+
+        let fft = UpmixerFft {
             fft_forward,
+
             fft_inverse,
 
             hr_fft_size,
+
             hr_fft_forward,
+
             hr_fft_inverse,
+        };
 
+        let gains = UpmixerGains {
             gain_front_direct: Smoother::new(gain_front_direct, 5.0, sample_rate),
+
             gain_front_ambient: Smoother::new(gain_front_ambient, 5.0, sample_rate),
+
             gain_rear_ambient: Smoother::new(gain_rear_ambient, 5.0, sample_rate),
-            lfe_cutoff_hz,
+
             stereo_width: Smoother::new(stereo_width, 5.0, sample_rate),
+
             center_spread: Smoother::new(default_center_spread(), 5.0, sample_rate),
-            bandpass_hz,
-            height_gain: Smoother::new(height_gain, 5.0, sample_rate),
+
             lfe_gain: Smoother::new(lfe_gain, 5.0, sample_rate),
-            enable_subharmonic_synth,
-            subharmonic_gain: Smoother::new(subharmonic_gain, 5.0, sample_rate),
-            enable_hr_direct: true, // Enable by default for multi-resolution analysis
+
             hr_sharpen: Smoother::new(1.0, 5.0, sample_rate),
-            safety_cap_db: default_safety_cap_db(),
-            prev_safety_scale: 1.0, // Start with no gain reduction
-            final_safety_scale: 1.0,
-            auto_gain_enabled: false,
-            auto_gain_max_db: 12.0,
-            auto_gain_smoothing_ms: 100.0,
-            auto_gain: None,
-            decorrelation_mode: 0, // Default to Velvet Noise
+        };
 
-            // Sub-harmonic synthesis parameters
-            subharmonic_freq_hz: default_subharmonic_freq_hz(),
-            subharmonic_attack_ms: default_subharmonic_attack_ms(),
-            subharmonic_release_ms: default_subharmonic_release_ms(),
+        let params = UpmixerParams {
+            lfe_cutoff_hz,
 
-            // Decorrelation parameters
-            decorrelation_lfo_rate_hz: default_decorrelation_lfo_rate_hz(),
-            velvet_noise_duration_ms: default_velvet_noise_duration_ms(),
-            velvet_noise_density: default_velvet_noise_density(),
+            bandpass_hz,
 
-            // Height channel parameters
-            height_hf_cap_hz: default_height_hf_cap_hz(),
-            height_transient_reduction: Smoother::new(
-                default_height_transient_reduction(),
-                5.0,
-                sample_rate,
-            ),
-            height_direct_leak: Smoother::new(default_height_direct_leak(), 5.0, sample_rate),
+            enable_hr_direct: true,
 
-            // Surround routing parameters
-            surround_direct_bleed: Smoother::new(default_surround_direct_bleed(), 5.0, sample_rate),
-            rear_ambient_boost: Smoother::new(default_rear_ambient_boost(), 5.0, sample_rate),
-            rear_late_reflection: Smoother::new(default_rear_late_reflection(), 5.0, sample_rate),
-
-            // Ambient/coherence parameters
-            ambient_boost: Smoother::new(default_ambient_boost(), 5.0, sample_rate),
-
-            // Dialogue detection parameters
-            dialogue_weight: Smoother::new(default_dialogue_weight(), 5.0, sample_rate),
-            voice_freq_min_hz: default_voice_freq_min_hz(),
-            voice_freq_max_hz: default_voice_freq_max_hz(),
-            dialogue_centroid_weight: default_dialogue_centroid_weight(),
-            dialogue_variance_weight: default_dialogue_variance_weight(),
-            dialogue_coherence_weight: default_dialogue_coherence_weight(),
-
-            // ML vocal detection parameters
-            enable_ml_detection: false,
-            ml_model_path: String::new(),
-            #[cfg(feature = "onnx")]
-            mfcc_extractor: None,
-            #[cfg(feature = "onnx")]
-            ml_inference_handle: None,
-
-            // Low-latency mode
             low_latency: false,
 
-            // Diagnostic bypass parameters
             bypass_decorrelation: default_bypass_decorrelation(),
+
             bypass_transient_detection: default_bypass_transient_detection(),
+
             bypass_all_processing: default_bypass_all_processing(),
 
-            // Frequency resolution for ERB band analysis
             frequency_resolution: default_frequency_resolution(),
+
             cached_analysis_smoothing_scale: Self::compute_analysis_smoothing_scale(
                 &default_frequency_resolution(),
                 fft_size,
             ),
+        };
 
-            subharmonic_phase: 0.0,
-            subharmonic_envelope: 0.0,
-            subharmonic_amp_envelope: 0.0,
+        let param_smoothers = UpmixerParamSmoothers {
+            lfe_cutoff_hz_smoother: Smoother::new(lfe_cutoff_hz, 5.0, sample_rate),
 
-            erb_bands: Vec::new(), // Will be calculated in initialize()
-            steering_alphas: Vec::new(),
-            coherence_instant: Vec::new(),
-            smoothed_coherence: Vec::new(),
-            smoothed_diffuseness: Vec::new(),
-            diffuseness_initialized: Vec::new(),
-            coherence_history: Vec::new(),
-            coherence_history_idx: 0,
-            decorrelation_filter_left: vec![zero_complex; spectrum_size],
-            decorrelation_filter_right: vec![zero_complex; spectrum_size],
-            decorrelation_filters: Vec::new(),
-            decor_base_phases_left: Vec::new(),
-            decor_base_phases_right: Vec::new(),
-            decor_lfo_phase: 0.0,
-            cached_lfo_depth_table: Vec::new(),
+            bandpass_hz_smoother: Smoother::new(bandpass_hz, 5.0, sample_rate),
 
-            pca_cov_xx: Vec::new(),
-            pca_cov_yy: Vec::new(),
-            pca_cov_xy: Vec::new(),
+            height_hf_cap_hz_smoother: Smoother::new(default_height_hf_cap_hz(), 5.0, sample_rate),
 
-            lfe_low_gains: vec![Complex::new(1.0, 0.0); spectrum_size],
-            mains_high_gains: vec![Complex::new(1.0, 0.0); spectrum_size],
+            safety_cap_db_smoother: Smoother::new(default_safety_cap_db(), 5.0, sample_rate),
+        };
 
-            height_band_gains: vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size],
-            height_band_gains_prev: vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size],
-            height_band_gains_temp: vec![0.0; spectrum_size],
+        let safety = UpmixerSafety {
+            safety_cap_db: default_safety_cap_db(),
 
-            height_freq_weights: vec![0.0; spectrum_size],
+            prev_safety_scale: 1.0,
+
+            final_safety_scale: 1.0,
+
+            auto_gain_enabled: false,
+
+            auto_gain_max_db: 12.0,
+
+            auto_gain_smoothing_ms: 100.0,
+
+            auto_gain: None,
 
             safety_cap_linear: if default_safety_cap_db() >= 0.0 {
                 fast_pow10(default_safety_cap_db() / 20.0)
             } else {
                 1.0
             },
+
             safety_cap_min_scale: if default_safety_cap_db() >= 0.0 {
                 fast_pow10(-default_safety_cap_db() / 20.0)
             } else {
                 0.0
             },
+        };
 
-            panning_gains_left,
-            panning_gains_right,
+        let subharmonic = UpmixerSubharmonic {
+            enable_subharmonic_synth,
 
-            cached_is_front: Vec::new(),
-            cached_is_height: Vec::new(),
-            cached_is_center: Vec::new(),
-            cached_hr_active_channels: Vec::new(),
+            subharmonic_gain: Smoother::new(subharmonic_gain, 5.0, sample_rate),
 
-            // Bin-index caches — will be populated in initialize() once sample_rate is known
-            cached_freq_per_bin: 0.0,
-            cached_lfe_cutoff_bin: 0,
-            cached_bandpass_bin: 0,
-            cached_voice_start_bin: 0,
-            cached_voice_end_bin: 0,
-            cached_dialogue_w_c: 0.333,
-            cached_dialogue_w_v: 0.333,
-            cached_dialogue_w_coh: 0.334,
+            subharmonic_freq_hz: default_subharmonic_freq_hz(),
 
-            // Sub-harmonic coefficient caches — will be populated in initialize()
+            subharmonic_attack_ms: default_subharmonic_attack_ms(),
+
+            subharmonic_release_ms: default_subharmonic_release_ms(),
+
+            subharmonic_phase: 0.0,
+
+            subharmonic_envelope: 0.0,
+
+            subharmonic_amp_envelope: 0.0,
+
             cached_subharmonic_phase_inc: 0.0,
+
             cached_subharmonic_attack_coeff: 0.0,
+
             cached_subharmonic_release_coeff: 0.0,
+        };
 
-            // Allocate all buffers
-            time_domain_left: vec![0.0; fft_size],
-            time_domain_right: vec![0.0; fft_size],
-            freq_domain_left: vec![zero_complex; spectrum_size],
-            freq_domain_right: vec![zero_complex; spectrum_size],
-            direct: vec![zero_complex; spectrum_size],
-            direct_left: vec![zero_complex; spectrum_size],
-            direct_right: vec![zero_complex; spectrum_size],
-            ambient_left: vec![zero_complex; spectrum_size],
-            ambient_right: vec![zero_complex; spectrum_size],
-            lfe: vec![zero_complex; spectrum_size],
+        let decorrelation = UpmixerDecorrelation {
+            decorrelation_mode: 0,
 
-            time_out_channels,
+            decorrelation_lfo_rate_hz: default_decorrelation_lfo_rate_hz(),
 
-            input_buffer: vec![0.0; fft_size * 2], // stereo
-            input_buffer_fill: 0,
+            velvet_noise_duration_ms: default_velvet_noise_duration_ms(),
 
-            temp_input_block: vec![0.0; fft_size * 2], // Pre-allocated temp buffer
-            temp_freq_out: vec![zero_complex; spectrum_size],
+            velvet_noise_density: default_velvet_noise_density(),
 
-            window,
-            hr_window,
-            edge_taper_table,
-            output_accumulator,
-            output_accumulator_mask,
-            output_accumulator_fill: 0,
-            next_add_position: 0,
-            output_read_position: 0,
-            output_block: vec![0.0; fft_size * num_output_channels],
+            decorrelation_filter_left: vec![zero_complex; spectrum_size],
 
-            hr_input_buffer: vec![0.0; hr_fft_size * 2],
-            hr_input_buffer_fill: 0,
-            hr_temp_input_block: vec![0.0; hr_fft_size * 2],
-            hr_temp_freq_out: vec![zero_complex; hr_spectrum_size],
-            hr_time_domain_left: vec![0.0; hr_fft_size],
-            hr_time_domain_right: vec![0.0; hr_fft_size],
-            hr_freq_domain_left: vec![zero_complex; hr_spectrum_size],
-            hr_freq_domain_right: vec![zero_complex; hr_spectrum_size],
-            hr_time_out_channels: vec![vec![0.0; hr_fft_size]; num_output_channels],
+            decorrelation_filter_right: vec![zero_complex; spectrum_size],
 
-            // Pre-allocated temp buffer for delay-compensated HR input
-            hr_delay_temp: vec![0.0; fft_size * 2],
-            // Delay buffer to align physical OLA overlap latency:
-            // main_latency = fft_size - hop_size, hr_latency = hr_fft_size - hr_fft_size/2
-            // delay = max(main_latency - hr_latency, 0) * 2 (stereo interleaved)
-            hr_delay_buffer: vec![0.0; hr_delay_buffer_len(fft_size, hop_size, hr_fft_size)],
-            hr_delay_cursor: 0,
+            decorrelation_filters: Vec::new(),
 
-            // Sized to match main ring buffer (fft_size * 4) since all input feeds HR before drain
-            hr_output_accumulator: vec![0.0; fft_size * 4 * num_output_channels],
-            hr_output_accumulator_mask: (fft_size * 4) - 1,
-            hr_output_accumulator_fill: 0,
-            hr_next_add_position: 0,
-            hr_output_read_position: 0,
+            decor_base_phases_left: Vec::new(),
 
-            hr_direct_envelope: 1.0, // HR enabled by default
-            hr_transient_env: 0.0,
-            height_transient_env_slow: 0.0,
-            hr_energy_smooth: 0.0,
-            prev_power_spectrum: vec![0.0; spectrum_size],
-            spectral_flux_smooth: 0.0,
+            decor_base_phases_right: Vec::new(),
 
-            // Intensity-vector DOA state (will be resized in calculate_erb_bands)
-            doa_angle: Vec::new(),
+            decor_lfo_phase: 0.0,
 
-            // Height spectral flux gating
-            height_prev_magnitude: vec![0.0; spectrum_size],
-            height_spectral_flux_smooth: 0.0,
-            height_flux_gate: vec![0.0; spectrum_size],
+            cached_lfo_depth_table: Vec::new(),
 
-            prev_hr_scale: 0.0,
-
-            dialogue_spectral_centroid: 0.0,
-            dialogue_envelope_variance: 0.0,
-            dialogue_prev_rms: 0.0,
-            dialogue_probability: 0.0,
-            dialogue_spatial_control: 0.0,
             decorrelation_strength: 1.0,
-            prev_decorrelation_strength: -1.0, // Force initial computation
+
+            prev_decorrelation_strength: -1.0,
+
             blended_decorrelation_filters: vec![
                 vec![Complex::new(1.0, 0.0); fft_size / 2 + 1];
                 num_output_channels
             ],
 
-            lfe_cutoff_hz_smoother: Smoother::new(lfe_cutoff_hz, 5.0, sample_rate),
-            bandpass_hz_smoother: Smoother::new(bandpass_hz, 5.0, sample_rate),
-            height_hf_cap_hz_smoother: Smoother::new(default_height_hf_cap_hz(), 5.0, sample_rate),
-            safety_cap_db_smoother: Smoother::new(default_safety_cap_db(), 5.0, sample_rate),
-
             decorrelation_crossfade_remaining: 0,
-            prev_blended_filters_for_crossfade: Vec::new(),
 
-            latency_filled: 0,
-            startup_padding_remaining: fft_size,
+            prev_blended_filters_for_crossfade: Vec::new(),
+        };
+
+        let steering = UpmixerSteering {
+            erb_bands: Vec::new(),
+
+            steering_alphas: Vec::new(),
+
+            coherence_instant: Vec::new(),
+
+            smoothed_coherence: Vec::new(),
+
+            smoothed_diffuseness: Vec::new(),
+
+            diffuseness_initialized: Vec::new(),
+
+            coherence_history: Vec::new(),
+
+            coherence_history_idx: 0,
+
+            doa_angle: Vec::new(),
+        };
+
+        let dialogue = UpmixerDialogue {
+            dialogue_weight: Smoother::new(default_dialogue_weight(), 5.0, sample_rate),
+
+            voice_freq_min_hz: default_voice_freq_min_hz(),
+
+            voice_freq_max_hz: default_voice_freq_max_hz(),
+
+            dialogue_centroid_weight: default_dialogue_centroid_weight(),
+
+            dialogue_variance_weight: default_dialogue_variance_weight(),
+
+            dialogue_coherence_weight: default_dialogue_coherence_weight(),
+
+            cached_dialogue_w_c: 0.333,
+
+            cached_dialogue_w_v: 0.333,
+
+            cached_dialogue_w_coh: 0.334,
+
+            dialogue_spectral_centroid: 0.0,
+
+            dialogue_envelope_variance: 0.0,
+
+            dialogue_prev_rms: 0.0,
+
+            dialogue_probability: 0.0,
+
+            dialogue_spatial_control: 0.0,
+        };
+
+        let ml = UpmixerMl {
+            enable_ml_detection: false,
+
+            ml_model_path: String::new(),
+
+            #[cfg(feature = "onnx")]
+            mfcc_extractor: None,
+
+            #[cfg(feature = "onnx")]
+            ml_inference_handle: None,
+        };
+
+        let spectral = UpmixerSpectral {
+            pca_cov_xx: Vec::new(),
+
+            pca_cov_yy: Vec::new(),
+
+            pca_cov_xy: Vec::new(),
+
+            lfe_low_gains: vec![Complex::new(1.0, 0.0); spectrum_size],
+
+            mains_high_gains: vec![Complex::new(1.0, 0.0); spectrum_size],
 
             multi_source_extraction: false,
-            multi_source_threshold: 0.1,
-            direct2: vec![zero_complex; spectrum_size],
-            direct2_doa_per_bin: vec![0.0; spectrum_size],
 
-            cached_parameters: Vec::new(),
+            multi_source_threshold: 0.1,
+
+            direct2: vec![zero_complex; spectrum_size],
+
+            direct2_doa_per_bin: vec![0.0; spectrum_size],
+        };
+
+        let height = UpmixerHeight {
+            height_gain: Smoother::new(height_gain, 5.0, sample_rate),
+
+            height_hf_cap_hz: default_height_hf_cap_hz(),
+
+            height_transient_reduction: Smoother::new(
+                default_height_transient_reduction(),
+                5.0,
+                sample_rate,
+            ),
+
+            height_direct_leak: Smoother::new(default_height_direct_leak(), 5.0, sample_rate),
+
+            height_band_gains: vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size],
+
+            height_band_gains_prev: vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size],
+
+            height_band_gains_temp: vec![0.0; spectrum_size],
+
+            height_freq_weights: vec![0.0; spectrum_size],
+
+            height_transient_env_slow: 0.0,
+
+            height_prev_magnitude: vec![0.0; spectrum_size],
+
+            height_spectral_flux_smooth: 0.0,
+
+            height_flux_gate: vec![0.0; spectrum_size],
+        };
+
+        let surround = UpmixerSurround {
+            surround_direct_bleed: Smoother::new(default_surround_direct_bleed(), 5.0, sample_rate),
+
+            rear_ambient_boost: Smoother::new(default_rear_ambient_boost(), 5.0, sample_rate),
+
+            rear_late_reflection: Smoother::new(default_rear_late_reflection(), 5.0, sample_rate),
+
+            ambient_boost: Smoother::new(default_ambient_boost(), 5.0, sample_rate),
+        };
+
+        let panning = UpmixerPanning {
+            panning_gains_left,
+
+            panning_gains_right,
+
+            cached_is_front: Vec::new(),
+
+            cached_is_height: Vec::new(),
+
+            cached_is_center: Vec::new(),
+
+            cached_hr_active_channels: Vec::new(),
+        };
+
+        let cache = UpmixerCache {
+            cached_freq_per_bin: 0.0,
+
+            cached_lfe_cutoff_bin: 0,
+
+            cached_bandpass_bin: 0,
+
+            cached_voice_start_bin: 0,
+
+            cached_voice_end_bin: 0,
+        };
+
+        let main_buffers = UpmixerMainBuffers {
+            time_domain_left: vec![0.0; fft_size],
+
+            time_domain_right: vec![0.0; fft_size],
+
+            freq_domain_left: vec![zero_complex; spectrum_size],
+
+            freq_domain_right: vec![zero_complex; spectrum_size],
+
+            direct: vec![zero_complex; spectrum_size],
+
+            direct_left: vec![zero_complex; spectrum_size],
+
+            direct_right: vec![zero_complex; spectrum_size],
+
+            ambient_left: vec![zero_complex; spectrum_size],
+
+            ambient_right: vec![zero_complex; spectrum_size],
+
+            lfe: vec![zero_complex; spectrum_size],
+
+            time_out_channels,
+
+            input_buffer: vec![0.0; fft_size * 2],
+
+            input_buffer_fill: 0,
+
+            temp_input_block: vec![0.0; fft_size * 2],
+
+            temp_freq_out: vec![zero_complex; spectrum_size],
+
+            window,
+
+            edge_taper_table,
+        };
+
+        let output = UpmixerOutput {
+            output_accumulator,
+
+            output_accumulator_mask,
+
+            output_accumulator_fill: 0,
+
+            next_add_position: 0,
+
+            output_read_position: 0,
+
+            output_block: vec![0.0; fft_size * num_output_channels],
+        };
+
+        let hr_buffers = UpmixerHrBuffers {
+            hr_window,
+
+            hr_input_buffer: vec![0.0; hr_fft_size * 2],
+
+            hr_input_buffer_fill: 0,
+
+            hr_temp_input_block: vec![0.0; hr_fft_size * 2],
+
+            hr_temp_freq_out: vec![zero_complex; hr_spectrum_size],
+
+            hr_time_domain_left: vec![0.0; hr_fft_size],
+
+            hr_time_domain_right: vec![0.0; hr_fft_size],
+
+            hr_freq_domain_left: vec![zero_complex; hr_spectrum_size],
+
+            hr_freq_domain_right: vec![zero_complex; hr_spectrum_size],
+
+            hr_time_out_channels: vec![vec![0.0; hr_fft_size]; num_output_channels],
+
+            hr_delay_temp: vec![0.0; fft_size * 2],
+
+            hr_delay_buffer: vec![0.0; hr_delay_buffer_len(fft_size, hop_size, hr_fft_size)],
+
+            hr_delay_cursor: 0,
+
+            hr_output_accumulator: vec![0.0; fft_size * 4 * num_output_channels],
+
+            hr_output_accumulator_mask: (fft_size * 4) - 1,
+
+            hr_output_accumulator_fill: 0,
+
+            hr_next_add_position: 0,
+
+            hr_output_read_position: 0,
+        };
+
+        let hr_state = UpmixerHrState {
+            hr_direct_envelope: 1.0,
+
+            hr_transient_env: 0.0,
+
+            hr_energy_smooth: 0.0,
+
+            prev_power_spectrum: vec![0.0; spectrum_size],
+
+            spectral_flux_smooth: 0.0,
+
+            prev_hr_scale: 0.0,
+        };
+
+        let mut plugin = Self {
+            core,
+
+            fft,
+
+            gains,
+
+            params,
+
+            param_smoothers,
+
+            safety,
+
+            subharmonic,
+
+            decorrelation,
+
+            steering,
+
+            dialogue,
+
+            ml,
+
+            spectral,
+
+            height,
+
+            surround,
+
+            panning,
+
+            cache,
+
+            main_buffers,
+
+            output,
+
+            hr_buffers,
+
+            hr_state,
         };
 
         // Calculate panning gains for stereo sources (left at +30°, right at -30°)
@@ -835,27 +1056,27 @@ impl UpmixerPlugin {
     pub(super) fn speaker_config_index(&self) -> usize {
         SPEAKER_CONFIGS
             .iter()
-            .position(|&s| s == self.speaker_config.id)
+            .position(|&s| s == self.core.speaker_config.id)
             .unwrap_or(2) // default to "5.1" at index 2
     }
 
     pub(super) fn effective_output_channels(&self) -> usize {
-        if self.binaural_preview {
+        if self.core.binaural_preview {
             2
         } else {
-            self.num_output_channels
+            self.core.num_output_channels
         }
     }
 
     pub(super) fn ensure_auto_gain(&mut self) -> PluginResult<()> {
-        if self.auto_gain.is_none() {
-            self.auto_gain = Some(MultichannelAutoGain::new(
-                self.sample_rate,
+        if self.safety.auto_gain.is_none() {
+            self.safety.auto_gain = Some(MultichannelAutoGain::new(
+                self.core.sample_rate,
                 AutoGainParams {
-                    enabled: self.auto_gain_enabled,
+                    enabled: self.safety.auto_gain_enabled,
                     loudness_type: AutoGainLoudnessType::Momentary,
-                    max_gain_db: self.auto_gain_max_db,
-                    smoothing_ms: self.auto_gain_smoothing_ms,
+                    max_gain_db: self.safety.auto_gain_max_db,
+                    smoothing_ms: self.safety.auto_gain_smoothing_ms,
                 },
             )?);
         }
@@ -868,12 +1089,12 @@ impl UpmixerPlugin {
         num_frames: usize,
         out_ch: usize,
     ) -> PluginResult<()> {
-        if !self.auto_gain_enabled || num_frames == 0 {
+        if !self.safety.auto_gain_enabled || num_frames == 0 {
             return Ok(());
         }
         self.ensure_auto_gain()?;
-        let speaker_config = self.speaker_config;
-        let auto_gain = self.auto_gain.as_mut().unwrap();
+        let speaker_config = self.core.speaker_config;
+        let auto_gain = self.safety.auto_gain.as_mut().unwrap();
         auto_gain.measure_and_apply(output, num_frames, out_ch, speaker_config)
     }
 
@@ -902,7 +1123,7 @@ impl UpmixerPlugin {
     }
 
     pub(super) fn frequency_resolution_index(&self) -> usize {
-        match Self::canonical_frequency_resolution(&self.frequency_resolution) {
+        match Self::canonical_frequency_resolution(&self.params.frequency_resolution) {
             "fine_erb" => 1,
             "per_bin" => 2,
             _ => 0,
@@ -926,37 +1147,39 @@ impl UpmixerPlugin {
     }
 
     pub(super) fn analysis_smoothing_scale(&self) -> f32 {
-        self.cached_analysis_smoothing_scale
+        self.params.cached_analysis_smoothing_scale
     }
 
     pub(super) fn reset_analysis_state_for_current_resolution(&mut self) {
-        let canonical = Self::canonical_frequency_resolution(&self.frequency_resolution);
-        self.frequency_resolution = canonical.to_string();
-        self.cached_analysis_smoothing_scale =
-            Self::compute_analysis_smoothing_scale(&self.frequency_resolution, self.fft_size);
+        let canonical = Self::canonical_frequency_resolution(&self.params.frequency_resolution);
+        self.params.frequency_resolution = canonical.to_string();
+        self.params.cached_analysis_smoothing_scale = Self::compute_analysis_smoothing_scale(
+            &self.params.frequency_resolution,
+            self.core.fft_size,
+        );
 
-        if self.sample_rate == 0 || self.fft_size == 0 {
+        if self.core.sample_rate == 0 || self.core.fft_size == 0 {
             return;
         }
 
         self.calculate_erb_bands();
-        let num_bands = self.erb_bands.len();
-        self.steering_alphas = vec![0.15; num_bands];
-        self.pca_cov_xx = vec![0.0; num_bands];
-        self.pca_cov_yy = vec![0.0; num_bands];
-        self.pca_cov_xy = vec![Complex::new(0.0, 0.0); num_bands];
-        self.coherence_instant = vec![0.0; num_bands];
-        self.smoothed_coherence = vec![0.0; num_bands];
-        self.smoothed_diffuseness = vec![0.0; num_bands];
-        self.diffuseness_initialized = vec![false; num_bands];
-        self.coherence_history = vec![[0.0; 5]; num_bands];
-        self.doa_angle = vec![0.0; num_bands];
-        self.coherence_history_idx = 0;
-        self.prev_decorrelation_strength = -1.0;
+        let num_bands = self.steering.erb_bands.len();
+        self.steering.steering_alphas = vec![0.15; num_bands];
+        self.spectral.pca_cov_xx = vec![0.0; num_bands];
+        self.spectral.pca_cov_yy = vec![0.0; num_bands];
+        self.spectral.pca_cov_xy = vec![Complex::new(0.0, 0.0); num_bands];
+        self.steering.coherence_instant = vec![0.0; num_bands];
+        self.steering.smoothed_coherence = vec![0.0; num_bands];
+        self.steering.smoothed_diffuseness = vec![0.0; num_bands];
+        self.steering.diffuseness_initialized = vec![false; num_bands];
+        self.steering.coherence_history = vec![[0.0; 5]; num_bands];
+        self.steering.doa_angle = vec![0.0; num_bands];
+        self.steering.coherence_history_idx = 0;
+        self.decorrelation.prev_decorrelation_strength = -1.0;
     }
 
     pub(super) fn binaural_preview_gains_for_channel(&self, ch: usize) -> (f32, f32) {
-        let Some(speaker) = self.speaker_config.speakers.get(ch) else {
+        let Some(speaker) = self.core.speaker_config.speakers.get(ch) else {
             return (0.0, 0.0);
         };
 
@@ -986,7 +1209,7 @@ impl UpmixerPlugin {
     ) -> (f32, f32) {
         let mut left = 0.0;
         let mut right = 0.0;
-        for ch in 0..self.num_output_channels {
+        for ch in 0..self.core.num_output_channels {
             let sample = accumulator[base + ch];
             let (left_gain, right_gain) = self.binaural_preview_gains_for_channel(ch);
             left += sample * left_gain;
@@ -1000,64 +1223,84 @@ impl UpmixerPlugin {
     pub(super) fn param_value(&self, index: usize) -> Option<f64> {
         match index {
             0 => Some(self.speaker_config_index() as f64),
-            1 => Some(self.gain_front_direct.target() as f64),
-            2 => Some(self.gain_front_ambient.target() as f64),
-            3 => Some(self.gain_rear_ambient.target() as f64),
-            4 => Some(self.height_gain.target() as f64),
-            5 => Some(self.lfe_gain.target() as f64),
-            6 => Some(self.lfe_cutoff_hz_smoother.target() as f64),
-            7 => Some(if self.enable_subharmonic_synth {
+            1 => Some(self.gains.gain_front_direct.target() as f64),
+            2 => Some(self.gains.gain_front_ambient.target() as f64),
+            3 => Some(self.gains.gain_rear_ambient.target() as f64),
+            4 => Some(self.height.height_gain.target() as f64),
+            5 => Some(self.gains.lfe_gain.target() as f64),
+            6 => Some(self.param_smoothers.lfe_cutoff_hz_smoother.target() as f64),
+            7 => Some(if self.subharmonic.enable_subharmonic_synth {
                 1.0
             } else {
                 0.0
             }),
-            8 => Some(self.subharmonic_gain.target() as f64),
-            9 => Some(self.subharmonic_freq_hz as f64),
-            10 => Some(self.subharmonic_attack_ms as f64),
-            11 => Some(self.subharmonic_release_ms as f64),
-            12 => Some(self.stereo_width.target() as f64),
-            13 => Some(self.center_spread.target() as f64),
-            14 => Some(self.bandpass_hz_smoother.target() as f64),
-            15 => Some(if self.enable_hr_direct { 1.0 } else { 0.0 }),
-            16 => Some(self.hr_sharpen.target() as f64),
-            17 => Some(self.ambient_boost.target() as f64),
-            18 => Some(self.decorrelation_mode as f64),
-            19 => Some(self.decorrelation_lfo_rate_hz as f64),
-            20 => Some(self.velvet_noise_duration_ms as f64),
-            21 => Some(self.velvet_noise_density as f64),
-            22 => Some(self.height_hf_cap_hz_smoother.target() as f64),
-            23 => Some(self.height_transient_reduction.target() as f64),
-            24 => Some(self.height_direct_leak.target() as f64),
-            25 => Some(self.surround_direct_bleed.target() as f64),
-            26 => Some(self.rear_ambient_boost.target() as f64),
-            27 => Some(self.rear_late_reflection.target() as f64),
-            28 => Some(self.dialogue_weight.target() as f64),
-            29 => Some(self.voice_freq_min_hz as f64),
-            30 => Some(self.voice_freq_max_hz as f64),
-            31 => Some(self.dialogue_centroid_weight as f64),
-            32 => Some(self.dialogue_variance_weight as f64),
-            33 => Some(self.dialogue_coherence_weight as f64),
-            34 => Some(self.safety_cap_db_smoother.target() as f64),
-            35 => Some(if self.low_latency { 1.0 } else { 0.0 }),
+            8 => Some(self.subharmonic.subharmonic_gain.target() as f64),
+            9 => Some(self.subharmonic.subharmonic_freq_hz as f64),
+            10 => Some(self.subharmonic.subharmonic_attack_ms as f64),
+            11 => Some(self.subharmonic.subharmonic_release_ms as f64),
+            12 => Some(self.gains.stereo_width.target() as f64),
+            13 => Some(self.gains.center_spread.target() as f64),
+            14 => Some(self.param_smoothers.bandpass_hz_smoother.target() as f64),
+            15 => Some(if self.params.enable_hr_direct {
+                1.0
+            } else {
+                0.0
+            }),
+            16 => Some(self.gains.hr_sharpen.target() as f64),
+            17 => Some(self.surround.ambient_boost.target() as f64),
+            18 => Some(self.decorrelation.decorrelation_mode as f64),
+            19 => Some(self.decorrelation.decorrelation_lfo_rate_hz as f64),
+            20 => Some(self.decorrelation.velvet_noise_duration_ms as f64),
+            21 => Some(self.decorrelation.velvet_noise_density as f64),
+            22 => Some(self.param_smoothers.height_hf_cap_hz_smoother.target() as f64),
+            23 => Some(self.height.height_transient_reduction.target() as f64),
+            24 => Some(self.height.height_direct_leak.target() as f64),
+            25 => Some(self.surround.surround_direct_bleed.target() as f64),
+            26 => Some(self.surround.rear_ambient_boost.target() as f64),
+            27 => Some(self.surround.rear_late_reflection.target() as f64),
+            28 => Some(self.dialogue.dialogue_weight.target() as f64),
+            29 => Some(self.dialogue.voice_freq_min_hz as f64),
+            30 => Some(self.dialogue.voice_freq_max_hz as f64),
+            31 => Some(self.dialogue.dialogue_centroid_weight as f64),
+            32 => Some(self.dialogue.dialogue_variance_weight as f64),
+            33 => Some(self.dialogue.dialogue_coherence_weight as f64),
+            34 => Some(self.param_smoothers.safety_cap_db_smoother.target() as f64),
+            35 => Some(if self.params.low_latency { 1.0 } else { 0.0 }),
             36 => Some(self.frequency_resolution_index() as f64),
-            37 => Some(if self.bypass_decorrelation { 1.0 } else { 0.0 }),
-            38 => Some(if self.bypass_transient_detection {
+            37 => Some(if self.params.bypass_decorrelation {
                 1.0
             } else {
                 0.0
             }),
-            39 => Some(if self.bypass_all_processing { 1.0 } else { 0.0 }),
-            40 => Some(if self.enable_ml_detection { 1.0 } else { 0.0 }),
-            41 => Some(if self.multi_source_extraction {
+            38 => Some(if self.params.bypass_transient_detection {
                 1.0
             } else {
                 0.0
             }),
-            42 => Some(self.multi_source_threshold as f64),
-            43 => Some(if self.binaural_preview { 1.0 } else { 0.0 }),
-            44 => Some(if self.auto_gain_enabled { 1.0 } else { 0.0 }),
-            45 => Some(self.auto_gain_max_db as f64),
-            46 => Some(self.auto_gain_smoothing_ms as f64),
+            39 => Some(if self.params.bypass_all_processing {
+                1.0
+            } else {
+                0.0
+            }),
+            40 => Some(if self.ml.enable_ml_detection {
+                1.0
+            } else {
+                0.0
+            }),
+            41 => Some(if self.spectral.multi_source_extraction {
+                1.0
+            } else {
+                0.0
+            }),
+            42 => Some(self.spectral.multi_source_threshold as f64),
+            43 => Some(if self.core.binaural_preview { 1.0 } else { 0.0 }),
+            44 => Some(if self.safety.auto_gain_enabled {
+                1.0
+            } else {
+                0.0
+            }),
+            45 => Some(self.safety.auto_gain_max_db as f64),
+            46 => Some(self.safety.auto_gain_smoothing_ms as f64),
             _ => None,
         }
     }
@@ -1069,63 +1312,81 @@ impl UpmixerPlugin {
         match index {
             // 0 => speaker_config -- handled as side effect in set_parameter
             0 => {} // no-op, side effect handles this
-            1 => self.gain_front_direct.set_target(value as f32),
-            2 => self.gain_front_ambient.set_target(value as f32),
-            3 => self.gain_rear_ambient.set_target(value as f32),
-            4 => self.height_gain.set_target(value as f32),
-            5 => self.lfe_gain.set_target(value as f32),
-            6 => self.lfe_cutoff_hz_smoother.set_target(value as f32),
-            7 => self.enable_subharmonic_synth = value > 0.5,
-            8 => self.subharmonic_gain.set_target(value as f32),
-            9 => self.subharmonic_freq_hz = value as f32,
-            10 => self.subharmonic_attack_ms = value as f32,
-            11 => self.subharmonic_release_ms = value as f32,
-            12 => self.stereo_width.set_target(value as f32),
-            13 => self.center_spread.set_target(value as f32),
-            14 => self.bandpass_hz_smoother.set_target(value as f32),
-            15 => self.enable_hr_direct = value > 0.5,
-            16 => self.hr_sharpen.set_target(value as f32),
-            17 => self.ambient_boost.set_target(value as f32),
-            18 => self.decorrelation_mode = value as usize,
-            19 => self.decorrelation_lfo_rate_hz = value as f32,
-            20 => self.velvet_noise_duration_ms = value as f32,
-            21 => self.velvet_noise_density = value as f32,
-            22 => self.height_hf_cap_hz_smoother.set_target(value as f32),
-            23 => self.height_transient_reduction.set_target(value as f32),
-            24 => self.height_direct_leak.set_target(value as f32),
-            25 => self.surround_direct_bleed.set_target(value as f32),
-            26 => self.rear_ambient_boost.set_target(value as f32),
-            27 => self.rear_late_reflection.set_target(value as f32),
-            28 => self.dialogue_weight.set_target(value as f32),
-            29 => self.voice_freq_min_hz = value as f32,
-            30 => self.voice_freq_max_hz = value as f32,
-            31 => self.dialogue_centroid_weight = value as f32,
-            32 => self.dialogue_variance_weight = value as f32,
-            33 => self.dialogue_coherence_weight = value as f32,
-            34 => self.safety_cap_db_smoother.set_target(value as f32),
-            35 => self.low_latency = value > 0.5,
+            1 => self.gains.gain_front_direct.set_target(value as f32),
+            2 => self.gains.gain_front_ambient.set_target(value as f32),
+            3 => self.gains.gain_rear_ambient.set_target(value as f32),
+            4 => self.height.height_gain.set_target(value as f32),
+            5 => self.gains.lfe_gain.set_target(value as f32),
+            6 => self
+                .param_smoothers
+                .lfe_cutoff_hz_smoother
+                .set_target(value as f32),
+            7 => self.subharmonic.enable_subharmonic_synth = value > 0.5,
+            8 => self.subharmonic.subharmonic_gain.set_target(value as f32),
+            9 => self.subharmonic.subharmonic_freq_hz = value as f32,
+            10 => self.subharmonic.subharmonic_attack_ms = value as f32,
+            11 => self.subharmonic.subharmonic_release_ms = value as f32,
+            12 => self.gains.stereo_width.set_target(value as f32),
+            13 => self.gains.center_spread.set_target(value as f32),
+            14 => self
+                .param_smoothers
+                .bandpass_hz_smoother
+                .set_target(value as f32),
+            15 => self.params.enable_hr_direct = value > 0.5,
+            16 => self.gains.hr_sharpen.set_target(value as f32),
+            17 => self.surround.ambient_boost.set_target(value as f32),
+            18 => self.decorrelation.decorrelation_mode = value as usize,
+            19 => self.decorrelation.decorrelation_lfo_rate_hz = value as f32,
+            20 => self.decorrelation.velvet_noise_duration_ms = value as f32,
+            21 => self.decorrelation.velvet_noise_density = value as f32,
+            22 => self
+                .param_smoothers
+                .height_hf_cap_hz_smoother
+                .set_target(value as f32),
+            23 => self
+                .height
+                .height_transient_reduction
+                .set_target(value as f32),
+            24 => self.height.height_direct_leak.set_target(value as f32),
+            25 => self.surround.surround_direct_bleed.set_target(value as f32),
+            26 => self.surround.rear_ambient_boost.set_target(value as f32),
+            27 => self.surround.rear_late_reflection.set_target(value as f32),
+            28 => self.dialogue.dialogue_weight.set_target(value as f32),
+            29 => self.dialogue.voice_freq_min_hz = value as f32,
+            30 => self.dialogue.voice_freq_max_hz = value as f32,
+            31 => self.dialogue.dialogue_centroid_weight = value as f32,
+            32 => self.dialogue.dialogue_variance_weight = value as f32,
+            33 => self.dialogue.dialogue_coherence_weight = value as f32,
+            34 => self
+                .param_smoothers
+                .safety_cap_db_smoother
+                .set_target(value as f32),
+            35 => self.params.low_latency = value > 0.5,
             36 => {
-                self.frequency_resolution =
+                self.params.frequency_resolution =
                     Self::frequency_resolution_from_index(value as usize).to_string();
-                self.cached_analysis_smoothing_scale =
-                    Self::compute_analysis_smoothing_scale(&self.frequency_resolution, self.fft_size);
+                self.params.cached_analysis_smoothing_scale =
+                    Self::compute_analysis_smoothing_scale(
+                        &self.params.frequency_resolution,
+                        self.core.fft_size,
+                    );
             }
-            37 => self.bypass_decorrelation = value > 0.5,
-            38 => self.bypass_transient_detection = value > 0.5,
-            39 => self.bypass_all_processing = value > 0.5,
-            40 => self.enable_ml_detection = value > 0.5,
-            41 => self.multi_source_extraction = value > 0.5,
-            42 => self.multi_source_threshold = value as f32,
-            43 => self.binaural_preview = value > 0.5,
-            44 => self.auto_gain_enabled = value > 0.5,
-            45 => self.auto_gain_max_db = value as f32,
-            46 => self.auto_gain_smoothing_ms = value as f32,
+            37 => self.params.bypass_decorrelation = value > 0.5,
+            38 => self.params.bypass_transient_detection = value > 0.5,
+            39 => self.params.bypass_all_processing = value > 0.5,
+            40 => self.ml.enable_ml_detection = value > 0.5,
+            41 => self.spectral.multi_source_extraction = value > 0.5,
+            42 => self.spectral.multi_source_threshold = value as f32,
+            43 => self.core.binaural_preview = value > 0.5,
+            44 => self.safety.auto_gain_enabled = value > 0.5,
+            45 => self.safety.auto_gain_max_db = value as f32,
+            46 => self.safety.auto_gain_smoothing_ms = value as f32,
             _ => {}
         }
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = param_bridge::build_parameters(UP, |i| self.param_value(i));
+        self.core.cached_parameters = param_bridge::build_parameters(UP, |i| self.param_value(i));
     }
 
     /// Create a new upmixer plugin from configuration parameters
@@ -1133,111 +1394,141 @@ impl UpmixerPlugin {
         // Low-latency mode halves the FFT size from 2048 to 1024 (21ms vs 43ms at 48kHz).
         // If the user explicitly set a custom fft_size, low_latency overrides it.
         // Round up to the nearest power of two to satisfy the invariant required by new().
-        let fft_size = if params.low_latency {
+        let fft_size = if params.core.low_latency {
             1024
         } else {
-            params.fft_size.next_power_of_two()
+            params.core.fft_size.next_power_of_two()
         };
         let mut plugin = Self::new(
             fft_size,
-            &params.speaker_config,
-            params.gain_front_direct,
-            params.gain_front_ambient,
-            params.gain_rear_ambient,
-            params.lfe_cutoff_hz,
-            params.stereo_width,
-            params.bandpass_hz,
-            params.height_gain,
-            params.lfe_gain,
-            params.enable_subharmonic_synth,
-            params.subharmonic_gain,
+            &params.core.speaker_config,
+            params.gains.gain_front_direct,
+            params.gains.gain_front_ambient,
+            params.gains.gain_rear_ambient,
+            params.core.lfe_cutoff_hz,
+            params.gains.stereo_width,
+            params.core.bandpass_hz,
+            params.height.height_gain,
+            params.gains.lfe_gain,
+            params.subharmonic.enable_subharmonic_synth,
+            params.subharmonic.subharmonic_gain,
         );
         plugin
+            .gains
             .center_spread
-            .set_target(params.center_spread.clamp(0.0, 1.0));
-        plugin.enable_hr_direct = params.enable_hr_direct;
-        plugin.hr_direct_envelope = if params.enable_hr_direct { 1.0 } else { 0.0 };
+            .set_target(params.gains.center_spread.clamp(0.0, 1.0));
+        plugin.params.enable_hr_direct = params.core.enable_hr_direct;
+        plugin.hr_state.hr_direct_envelope = if params.core.enable_hr_direct {
+            1.0
+        } else {
+            0.0
+        };
         plugin
+            .gains
             .hr_sharpen
-            .set_target(params.hr_sharpen.clamp(0.0, 1.0));
-        plugin.safety_cap_db = params.safety_cap_db.max(0.0);
+            .set_target(params.gains.hr_sharpen.clamp(0.0, 1.0));
+        plugin.safety.safety_cap_db = params.core.safety_cap_db.max(0.0);
         plugin
+            .param_smoothers
             .safety_cap_db_smoother
-            .set_target(params.safety_cap_db.max(0.0));
+            .set_target(params.core.safety_cap_db.max(0.0));
         plugin.update_safety_cap_cache();
-        plugin.decorrelation_mode = params.decorrelation_mode;
+        plugin.decorrelation.decorrelation_mode = params.decorrelation.decorrelation_mode;
 
         // Sub-harmonic synthesis parameters
-        plugin.subharmonic_freq_hz = params.subharmonic_freq_hz.clamp(20.0, 80.0);
-        plugin.subharmonic_attack_ms = params.subharmonic_attack_ms.clamp(1.0, 100.0);
-        plugin.subharmonic_release_ms = params.subharmonic_release_ms.clamp(10.0, 500.0);
+        plugin.subharmonic.subharmonic_freq_hz =
+            params.subharmonic.subharmonic_freq_hz.clamp(20.0, 80.0);
+        plugin.subharmonic.subharmonic_attack_ms =
+            params.subharmonic.subharmonic_attack_ms.clamp(1.0, 100.0);
+        plugin.subharmonic.subharmonic_release_ms =
+            params.subharmonic.subharmonic_release_ms.clamp(10.0, 500.0);
 
         // Decorrelation parameters
-        plugin.decorrelation_lfo_rate_hz = params.decorrelation_lfo_rate_hz.clamp(0.01, 1.0);
-        plugin.velvet_noise_duration_ms = params.velvet_noise_duration_ms.clamp(10.0, 100.0);
-        plugin.velvet_noise_density = params.velvet_noise_density.clamp(500.0, 5000.0);
+        plugin.decorrelation.decorrelation_lfo_rate_hz = params
+            .decorrelation
+            .decorrelation_lfo_rate_hz
+            .clamp(0.01, 1.0);
+        plugin.decorrelation.velvet_noise_duration_ms = params
+            .decorrelation
+            .velvet_noise_duration_ms
+            .clamp(10.0, 100.0);
+        plugin.decorrelation.velvet_noise_density = params
+            .decorrelation
+            .velvet_noise_density
+            .clamp(500.0, 5000.0);
 
         // Height channel parameters
-        plugin.height_hf_cap_hz = params.height_hf_cap_hz.clamp(8000.0, 20000.0);
+        plugin.height.height_hf_cap_hz = params.height.height_hf_cap_hz.clamp(8000.0, 20000.0);
         plugin
+            .param_smoothers
             .height_hf_cap_hz_smoother
-            .set_target(params.height_hf_cap_hz.clamp(8000.0, 20000.0));
+            .set_target(params.height.height_hf_cap_hz.clamp(8000.0, 20000.0));
         plugin
+            .height
             .height_transient_reduction
-            .set_target(params.height_transient_reduction.clamp(0.0, 1.0));
+            .set_target(params.height.height_transient_reduction.clamp(0.0, 1.0));
         plugin
+            .height
             .height_direct_leak
-            .set_target(params.height_direct_leak.clamp(0.0, 0.5));
+            .set_target(params.height.height_direct_leak.clamp(0.0, 0.5));
 
         // Surround routing parameters
         plugin
+            .surround
             .surround_direct_bleed
-            .set_target(params.surround_direct_bleed.clamp(0.0, 1.0));
+            .set_target(params.surround.surround_direct_bleed.clamp(0.0, 1.0));
         plugin
+            .surround
             .rear_ambient_boost
-            .set_target(params.rear_ambient_boost.clamp(1.0, 3.0));
+            .set_target(params.surround.rear_ambient_boost.clamp(1.0, 3.0));
         plugin
+            .surround
             .rear_late_reflection
-            .set_target(params.rear_late_reflection.clamp(0.0, 0.5));
+            .set_target(params.surround.rear_late_reflection.clamp(0.0, 0.5));
 
         // Ambient/coherence parameters
         plugin
+            .surround
             .ambient_boost
-            .set_target(params.ambient_boost.clamp(0.5, 2.0));
+            .set_target(params.surround.ambient_boost.clamp(0.5, 2.0));
 
         // Dialogue detection parameters
         plugin
+            .dialogue
             .dialogue_weight
-            .set_target(params.dialogue_weight.clamp(0.0, 1.0));
-        plugin.voice_freq_min_hz = params.voice_freq_min_hz.clamp(200.0, 800.0);
-        plugin.voice_freq_max_hz = params.voice_freq_max_hz.clamp(2000.0, 5000.0);
+            .set_target(params.dialogue.dialogue_weight.clamp(0.0, 1.0));
+        plugin.dialogue.voice_freq_min_hz = params.dialogue.voice_freq_min_hz.clamp(200.0, 800.0);
+        plugin.dialogue.voice_freq_max_hz = params.dialogue.voice_freq_max_hz.clamp(2000.0, 5000.0);
 
         // Dialogue detection sub-weights
-        plugin.dialogue_centroid_weight = params.dialogue_centroid_weight.clamp(0.0, 1.0);
-        plugin.dialogue_variance_weight = params.dialogue_variance_weight.clamp(0.0, 1.0);
-        plugin.dialogue_coherence_weight = params.dialogue_coherence_weight.clamp(0.0, 1.0);
+        plugin.dialogue.dialogue_centroid_weight =
+            params.dialogue.dialogue_centroid_weight.clamp(0.0, 1.0);
+        plugin.dialogue.dialogue_variance_weight =
+            params.dialogue.dialogue_variance_weight.clamp(0.0, 1.0);
+        plugin.dialogue.dialogue_coherence_weight =
+            params.dialogue.dialogue_coherence_weight.clamp(0.0, 1.0);
 
         // ML vocal detection parameters
-        plugin.enable_ml_detection = params.enable_ml_detection;
-        plugin.ml_model_path = params.ml_model_path;
+        plugin.ml.enable_ml_detection = params.ml.enable_ml_detection;
+        plugin.ml.ml_model_path = params.ml.ml_model_path;
 
         // Low-latency mode
-        plugin.low_latency = params.low_latency;
+        plugin.params.low_latency = params.core.low_latency;
 
         // Diagnostic bypass parameters
-        plugin.bypass_decorrelation = params.bypass_decorrelation;
-        plugin.bypass_transient_detection = params.bypass_transient_detection;
-        plugin.bypass_all_processing = params.bypass_all_processing;
+        plugin.params.bypass_decorrelation = params.bypass.bypass_decorrelation;
+        plugin.params.bypass_transient_detection = params.bypass.bypass_transient_detection;
+        plugin.params.bypass_all_processing = params.bypass.bypass_all_processing;
 
         // Frequency resolution (canonicalized for analyzer band selection)
-        plugin.frequency_resolution =
-            Self::canonical_frequency_resolution(&params.frequency_resolution).to_string();
-        plugin.multi_source_extraction = params.multi_source_extraction;
-        plugin.multi_source_threshold = params.multi_source_threshold;
-        plugin.binaural_preview = params.binaural_preview;
-        plugin.auto_gain_enabled = params.auto_gain_enabled;
-        plugin.auto_gain_max_db = params.auto_gain_max_db;
-        plugin.auto_gain_smoothing_ms = params.auto_gain_smoothing_ms;
+        plugin.params.frequency_resolution =
+            Self::canonical_frequency_resolution(&params.core.frequency_resolution).to_string();
+        plugin.spectral.multi_source_extraction = params.spectral.multi_source_extraction;
+        plugin.spectral.multi_source_threshold = params.spectral.multi_source_threshold;
+        plugin.core.binaural_preview = params.core.binaural_preview;
+        plugin.safety.auto_gain_enabled = params.output.auto_gain_enabled;
+        plugin.safety.auto_gain_max_db = params.output.auto_gain_max_db;
+        plugin.safety.auto_gain_smoothing_ms = params.output.auto_gain_smoothing_ms;
 
         plugin.rebuild_cached_parameters();
         plugin
@@ -1248,90 +1539,93 @@ impl UpmixerPlugin {
     /// This will cause a brief audio glitch (~20-40ms) as the ring buffers are drained.
     pub(super) fn resize_fft(&mut self, new_fft_size: usize) {
         debug_assert!(new_fft_size.is_power_of_two());
-        let old_fft_size = self.fft_size;
+        let old_fft_size = self.core.fft_size;
         if new_fft_size == old_fft_size {
             return;
         }
 
-        self.fft_size = new_fft_size;
-        self.hop_size = new_fft_size / 2;
+        self.core.fft_size = new_fft_size;
+        self.core.hop_size = new_fft_size / 2;
 
         // Recreate FFT planners
         let mut planner = RealFftPlanner::<f32>::new();
-        self.fft_forward = planner.plan_fft_forward(new_fft_size);
-        self.fft_inverse = planner.plan_fft_inverse(new_fft_size);
+        self.fft.fft_forward = planner.plan_fft_forward(new_fft_size);
+        self.fft.fft_inverse = planner.plan_fft_inverse(new_fft_size);
 
-        self.window = periodic_sqrt_hann_window(new_fft_size);
+        self.main_buffers.window = periodic_sqrt_hann_window(new_fft_size);
 
         let spectrum_size = new_fft_size / 2 + 1;
         let zero_complex = Complex::new(0.0, 0.0);
-        let nch = self.num_output_channels;
+        let nch = self.core.num_output_channels;
 
         // Buffers sized to fft_size
-        self.time_domain_left = vec![0.0; new_fft_size];
-        self.time_domain_right = vec![0.0; new_fft_size];
-        self.output_block = vec![0.0; new_fft_size * nch];
-        self.time_out_channels = vec![vec![0.0; new_fft_size]; nch];
+        self.main_buffers.time_domain_left = vec![0.0; new_fft_size];
+        self.main_buffers.time_domain_right = vec![0.0; new_fft_size];
+        self.output.output_block = vec![0.0; new_fft_size * nch];
+        self.main_buffers.time_out_channels = vec![vec![0.0; new_fft_size]; nch];
 
         // Buffers sized to spectrum_size
-        self.freq_domain_left = vec![zero_complex; spectrum_size];
-        self.freq_domain_right = vec![zero_complex; spectrum_size];
-        self.direct = vec![zero_complex; spectrum_size];
-        self.direct_left = vec![zero_complex; spectrum_size];
-        self.direct_right = vec![zero_complex; spectrum_size];
-        self.ambient_left = vec![zero_complex; spectrum_size];
-        self.ambient_right = vec![zero_complex; spectrum_size];
-        self.lfe = vec![zero_complex; spectrum_size];
-        self.temp_freq_out = vec![zero_complex; spectrum_size];
-        self.decorrelation_filter_left = vec![zero_complex; spectrum_size];
-        self.decorrelation_filter_right = vec![zero_complex; spectrum_size];
-        self.lfe_low_gains = vec![Complex::new(1.0, 0.0); spectrum_size];
-        self.mains_high_gains = vec![Complex::new(1.0, 0.0); spectrum_size];
-        self.height_band_gains = vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size];
-        self.height_band_gains_prev = vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size];
-        self.height_band_gains_temp = vec![0.0; spectrum_size];
-        self.height_freq_weights = vec![0.0; spectrum_size];
-        self.prev_power_spectrum = vec![0.0; spectrum_size];
-        self.height_prev_magnitude = vec![0.0; spectrum_size];
-        self.height_flux_gate = vec![0.0; spectrum_size];
-        self.blended_decorrelation_filters = vec![vec![Complex::new(1.0, 0.0); spectrum_size]; nch];
-        self.prev_decorrelation_strength = -1.0; // Force recompute on next process()
-        self.direct2 = vec![zero_complex; spectrum_size];
-        self.direct2_doa_per_bin = vec![0.0; spectrum_size];
+        self.main_buffers.freq_domain_left = vec![zero_complex; spectrum_size];
+        self.main_buffers.freq_domain_right = vec![zero_complex; spectrum_size];
+        self.main_buffers.direct = vec![zero_complex; spectrum_size];
+        self.main_buffers.direct_left = vec![zero_complex; spectrum_size];
+        self.main_buffers.direct_right = vec![zero_complex; spectrum_size];
+        self.main_buffers.ambient_left = vec![zero_complex; spectrum_size];
+        self.main_buffers.ambient_right = vec![zero_complex; spectrum_size];
+        self.main_buffers.lfe = vec![zero_complex; spectrum_size];
+        self.main_buffers.temp_freq_out = vec![zero_complex; spectrum_size];
+        self.decorrelation.decorrelation_filter_left = vec![zero_complex; spectrum_size];
+        self.decorrelation.decorrelation_filter_right = vec![zero_complex; spectrum_size];
+        self.spectral.lfe_low_gains = vec![Complex::new(1.0, 0.0); spectrum_size];
+        self.spectral.mains_high_gains = vec![Complex::new(1.0, 0.0); spectrum_size];
+        self.height.height_band_gains = vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size];
+        self.height.height_band_gains_prev =
+            vec![frequency_domain::HEIGHT_MASK_FLOOR; spectrum_size];
+        self.height.height_band_gains_temp = vec![0.0; spectrum_size];
+        self.height.height_freq_weights = vec![0.0; spectrum_size];
+        self.hr_state.prev_power_spectrum = vec![0.0; spectrum_size];
+        self.height.height_prev_magnitude = vec![0.0; spectrum_size];
+        self.height.height_flux_gate = vec![0.0; spectrum_size];
+        self.decorrelation.blended_decorrelation_filters =
+            vec![vec![Complex::new(1.0, 0.0); spectrum_size]; nch];
+        self.decorrelation.prev_decorrelation_strength = -1.0; // Force recompute on next process()
+        self.spectral.direct2 = vec![zero_complex; spectrum_size];
+        self.spectral.direct2_doa_per_bin = vec![0.0; spectrum_size];
 
         // Buffers sized to fft_size * 2 (stereo interleaved)
-        self.input_buffer = vec![0.0; new_fft_size * 2];
-        self.temp_input_block = vec![0.0; new_fft_size * 2];
+        self.main_buffers.input_buffer = vec![0.0; new_fft_size * 2];
+        self.main_buffers.temp_input_block = vec![0.0; new_fft_size * 2];
 
         // Ring buffer (fft_size * 4 frames)
         let accumulator_frames = new_fft_size * 4;
-        self.output_accumulator = vec![0.0; accumulator_frames * nch];
-        self.output_accumulator_mask = accumulator_frames - 1;
+        self.output.output_accumulator = vec![0.0; accumulator_frames * nch];
+        self.output.output_accumulator_mask = accumulator_frames - 1;
 
         // HR-path buffers that depend on main fft_size
-        let hop_size = self.hop_size;
-        let hr_fft_size = self.hr_fft_size;
-        self.hr_delay_temp = vec![0.0; new_fft_size * 2];
-        self.hr_delay_buffer = vec![0.0; hr_delay_buffer_len(new_fft_size, hop_size, hr_fft_size)];
-        self.hr_delay_cursor = 0;
-        self.hr_output_accumulator = vec![0.0; accumulator_frames * nch];
-        self.hr_output_accumulator_mask = accumulator_frames - 1;
+        let hop_size = self.core.hop_size;
+        let hr_fft_size = self.fft.hr_fft_size;
+        self.hr_buffers.hr_delay_temp = vec![0.0; new_fft_size * 2];
+        self.hr_buffers.hr_delay_buffer =
+            vec![0.0; hr_delay_buffer_len(new_fft_size, hop_size, hr_fft_size)];
+        self.hr_buffers.hr_delay_cursor = 0;
+        self.hr_buffers.hr_output_accumulator = vec![0.0; accumulator_frames * nch];
+        self.hr_buffers.hr_output_accumulator_mask = accumulator_frames - 1;
 
         // Reset all STFT state counters
-        self.input_buffer_fill = 0;
-        self.output_accumulator_fill = 0;
-        self.next_add_position = 0;
-        self.output_read_position = 0;
-        self.hr_input_buffer_fill = 0;
-        self.hr_output_accumulator_fill = 0;
-        self.hr_next_add_position = 0;
-        self.hr_output_read_position = 0;
-        self.latency_filled = 0;
-        self.startup_padding_remaining = new_fft_size;
+        self.main_buffers.input_buffer_fill = 0;
+        self.output.output_accumulator_fill = 0;
+        self.output.next_add_position = 0;
+        self.output.output_read_position = 0;
+        self.hr_buffers.hr_input_buffer_fill = 0;
+        self.hr_buffers.hr_output_accumulator_fill = 0;
+        self.hr_buffers.hr_next_add_position = 0;
+        self.hr_buffers.hr_output_read_position = 0;
+        self.core.latency_filled = 0;
+        self.core.startup_padding_remaining = new_fft_size;
 
         // Re-initialize all derived state (ERB bands, decorrelation filters, crossover
         // gains, bin caches, smoothers, MFCC, etc.)
-        let _ = self.initialize(self.sample_rate);
+        let _ = self.initialize(self.core.sample_rate);
 
         self.rebuild_cached_parameters();
     }
@@ -1341,26 +1635,26 @@ impl UpmixerPlugin {
     #[cfg(feature = "onnx")]
     pub(super) fn try_start_ml_inference(&mut self) {
         // Shut down any existing handle first
-        self.ml_inference_handle = None;
+        self.ml.ml_inference_handle = None;
 
-        if !self.enable_ml_detection || self.ml_model_path.is_empty() {
+        if !self.ml.enable_ml_detection || self.ml.ml_model_path.is_empty() {
             return;
         }
 
-        match super::ml_inference::MlInferenceHandle::new(&self.ml_model_path) {
+        match super::ml_inference::MlInferenceHandle::new(&self.ml.ml_model_path) {
             Ok(handle) => {
                 log::info!(
                     "ML vocal detection started with model: {}",
-                    self.ml_model_path
+                    self.ml.ml_model_path
                 );
-                self.ml_inference_handle = Some(handle);
+                self.ml.ml_inference_handle = Some(handle);
             }
             Err(e) => {
                 log::warn!(
                     "Failed to start ML vocal detection, falling back to heuristic: {}",
                     e
                 );
-                self.ml_inference_handle = None;
+                self.ml.ml_inference_handle = None;
             }
         }
     }
@@ -1372,12 +1666,15 @@ impl UpmixerPlugin {
 
     #[cfg(feature = "onnx")]
     pub(super) fn try_ml_inference(&mut self) -> Option<f32> {
-        if self.enable_ml_detection
-            && self.ml_inference_handle.is_some()
-            && let Some(ref mut extractor) = self.mfcc_extractor
+        if self.ml.enable_ml_detection
+            && self.ml.ml_inference_handle.is_some()
+            && let Some(ref mut extractor) = self.ml.mfcc_extractor
         {
-            let features = *extractor.compute(&self.freq_domain_left, &self.freq_domain_right);
-            if let Some(ref mut handle) = self.ml_inference_handle {
+            let features = *extractor.compute(
+                &self.main_buffers.freq_domain_left,
+                &self.main_buffers.freq_domain_right,
+            );
+            if let Some(ref mut handle) = self.ml.ml_inference_handle {
                 handle.send_features(&features);
                 return handle.read_v_prob();
             }
@@ -1394,13 +1691,13 @@ impl UpmixerPlugin {
 impl Plugin for UpmixerPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new(
-            format!("Stereo to {} Upmixer", self.speaker_config.name),
+            format!("Stereo to {} Upmixer", self.core.speaker_config.name),
             "2.1.0",
             "SotF",
         )
         .with_description(format!(
             "Converts stereo to {} using FFT-based Direct/Ambient decomposition and VBAP panning (Smoothed)",
-            self.speaker_config.name
+            self.core.speaker_config.name
         ))
     }
 
@@ -1413,7 +1710,7 @@ impl Plugin for UpmixerPlugin {
     }
 
     fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
-        self.cached_parameters.clone()
+        self.core.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
@@ -1422,8 +1719,8 @@ impl Plugin for UpmixerPlugin {
             let path = value
                 .as_string()
                 .ok_or_else(|| "ml_model_path must be a string".to_string())?;
-            self.ml_model_path = path.to_string();
-            if self.enable_ml_detection {
+            self.ml.ml_model_path = path.to_string();
+            if self.ml.enable_ml_detection {
                 self.try_start_ml_inference();
             }
             self.rebuild_cached_parameters();
@@ -1448,38 +1745,38 @@ impl Plugin for UpmixerPlugin {
             18 => {
                 // decorrelation_mode: crossfade + regenerate filters
                 std::mem::swap(
-                    &mut self.prev_blended_filters_for_crossfade,
-                    &mut self.blended_decorrelation_filters,
+                    &mut self.decorrelation.prev_blended_filters_for_crossfade,
+                    &mut self.decorrelation.blended_decorrelation_filters,
                 );
-                let spec_size = self.fft_size / 2 + 1;
-                let num_ch = self.num_output_channels;
-                if self.blended_decorrelation_filters.len() != num_ch {
-                    self.blended_decorrelation_filters =
+                let spec_size = self.core.fft_size / 2 + 1;
+                let num_ch = self.core.num_output_channels;
+                if self.decorrelation.blended_decorrelation_filters.len() != num_ch {
+                    self.decorrelation.blended_decorrelation_filters =
                         vec![vec![Complex::new(1.0, 0.0); spec_size]; num_ch];
                 } else {
-                    for ch_filters in &mut self.blended_decorrelation_filters {
+                    for ch_filters in &mut self.decorrelation.blended_decorrelation_filters {
                         ch_filters.fill(Complex::new(1.0, 0.0));
                     }
                 }
-                self.decorrelation_crossfade_remaining = 25;
+                self.decorrelation.decorrelation_crossfade_remaining = 25;
                 self.generate_decorrelation_filters();
-                self.prev_decorrelation_strength = -1.0;
+                self.decorrelation.prev_decorrelation_strength = -1.0;
             }
             20
                 // velvet_noise_duration_ms: regenerate if in velvet mode
-                if self.decorrelation_mode == 0 => {
+                if self.decorrelation.decorrelation_mode == 0 => {
                     self.generate_velvet_noise_decorrelators();
                 }
             21
                 // velvet_noise_density: regenerate if in velvet mode
-                if self.decorrelation_mode == 0 => {
+                if self.decorrelation.decorrelation_mode == 0 => {
                     self.generate_velvet_noise_decorrelators();
                 }
             29 | 30 => self.recache_bin_indices(), // voice_freq_min/max_hz
             31..=33 => self.recache_dialogue_weights(), // dialogue sub-weights
             35 => {
                 // low_latency: resize FFT
-                let new_fft_size = if self.low_latency { 1024 } else { 2048 };
+                let new_fft_size = if self.params.low_latency { 1024 } else { 2048 };
                 self.resize_fft(new_fft_size);
             }
             36 => {
@@ -1488,40 +1785,40 @@ impl Plugin for UpmixerPlugin {
             37 => {
                 // bypass_decorrelation: crossfade + regenerate filters
                 std::mem::swap(
-                    &mut self.prev_blended_filters_for_crossfade,
-                    &mut self.blended_decorrelation_filters,
+                    &mut self.decorrelation.prev_blended_filters_for_crossfade,
+                    &mut self.decorrelation.blended_decorrelation_filters,
                 );
-                let spec_size = self.fft_size / 2 + 1;
-                let num_ch = self.num_output_channels;
-                if self.blended_decorrelation_filters.len() != num_ch {
-                    self.blended_decorrelation_filters =
+                let spec_size = self.core.fft_size / 2 + 1;
+                let num_ch = self.core.num_output_channels;
+                if self.decorrelation.blended_decorrelation_filters.len() != num_ch {
+                    self.decorrelation.blended_decorrelation_filters =
                         vec![vec![Complex::new(1.0, 0.0); spec_size]; num_ch];
                 } else {
-                    for ch_filters in &mut self.blended_decorrelation_filters {
+                    for ch_filters in &mut self.decorrelation.blended_decorrelation_filters {
                         ch_filters.fill(Complex::new(1.0, 0.0));
                     }
                 }
-                self.decorrelation_crossfade_remaining = 25;
+                self.decorrelation.decorrelation_crossfade_remaining = 25;
                 self.generate_decorrelation_filters();
-                self.prev_decorrelation_strength = -1.0;
+                self.decorrelation.prev_decorrelation_strength = -1.0;
             }
             40 => self.try_start_ml_inference(), // enable_ml_detection
             44 => {
-                if self.auto_gain_enabled {
+                if self.safety.auto_gain_enabled {
                     self.ensure_auto_gain()?;
                 }
-                if let Some(auto_gain) = &mut self.auto_gain {
-                    auto_gain.set_enabled(self.auto_gain_enabled);
+                if let Some(auto_gain) = &mut self.safety.auto_gain {
+                    auto_gain.set_enabled(self.safety.auto_gain_enabled);
                 }
             }
             45 => {
-                if let Some(auto_gain) = &mut self.auto_gain {
-                    auto_gain.set_max_gain_db(self.auto_gain_max_db);
+                if let Some(auto_gain) = &mut self.safety.auto_gain {
+                    auto_gain.set_max_gain_db(self.safety.auto_gain_max_db);
                 }
             }
             46 => {
-                if let Some(auto_gain) = &mut self.auto_gain {
-                    auto_gain.set_smoothing_ms(self.auto_gain_smoothing_ms);
+                if let Some(auto_gain) = &mut self.safety.auto_gain {
+                    auto_gain.set_smoothing_ms(self.safety.auto_gain_smoothing_ms);
                 }
             }
             _ => {}
@@ -1533,7 +1830,7 @@ impl Plugin for UpmixerPlugin {
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         // ml_model_path is not in PARAMS, handle it manually
         if id.0 == "ml_model_path" {
-            return Some(ParameterValue::String(self.ml_model_path.clone()));
+            return Some(ParameterValue::String(self.ml.ml_model_path.clone()));
         }
         param_bridge::get_parameter(UP, id, |i| self.param_value(i))
     }
@@ -1549,36 +1846,38 @@ impl Plugin for UpmixerPlugin {
             ));
         }
 
-        self.sample_rate = sample_rate;
+        self.core.sample_rate = sample_rate;
 
         // Calculate ERB bands
         self.calculate_erb_bands();
 
         // Resize state vectors based on number of bands
-        let num_bands = self.erb_bands.len();
-        self.steering_alphas = vec![0.15; num_bands];
-        self.pca_cov_xx = vec![0.0; num_bands];
-        self.pca_cov_yy = vec![0.0; num_bands];
-        self.pca_cov_xy = vec![Complex::new(0.0, 0.0); num_bands];
-        self.coherence_instant = vec![0.0; num_bands];
-        self.smoothed_coherence = vec![0.0; num_bands];
-        self.coherence_history = vec![[0.0; 5]; num_bands];
-        self.coherence_history_idx = 0;
+        let num_bands = self.steering.erb_bands.len();
+        self.steering.steering_alphas = vec![0.15; num_bands];
+        self.spectral.pca_cov_xx = vec![0.0; num_bands];
+        self.spectral.pca_cov_yy = vec![0.0; num_bands];
+        self.spectral.pca_cov_xy = vec![Complex::new(0.0, 0.0); num_bands];
+        self.steering.coherence_instant = vec![0.0; num_bands];
+        self.steering.smoothed_coherence = vec![0.0; num_bands];
+        self.steering.coherence_history = vec![[0.0; 5]; num_bands];
+        self.steering.coherence_history_idx = 0;
 
         // Initialize spectral flux buffers
-        let spectrum_size = self.fft_size / 2 + 1;
-        self.prev_power_spectrum = vec![0.0; spectrum_size];
-        self.spectral_flux_smooth = 0.0;
+        let spectrum_size = self.core.fft_size / 2 + 1;
+        self.hr_state.prev_power_spectrum = vec![0.0; spectrum_size];
+        self.hr_state.spectral_flux_smooth = 0.0;
 
         // Initialize height spectral flux gate buffers
-        self.height_prev_magnitude = vec![0.0; spectrum_size];
-        self.height_spectral_flux_smooth = 0.0;
-        self.height_flux_gate = vec![0.15; spectrum_size]; // Start at floor value
-        self.height_band_gains
+        self.height.height_prev_magnitude = vec![0.0; spectrum_size];
+        self.height.height_spectral_flux_smooth = 0.0;
+        self.height.height_flux_gate = vec![0.15; spectrum_size]; // Start at floor value
+        self.height
+            .height_band_gains
             .fill(super::frequency_domain::HEIGHT_MASK_FLOOR);
-        self.height_band_gains_prev
+        self.height
+            .height_band_gains_prev
             .fill(super::frequency_domain::HEIGHT_MASK_FLOOR);
-        self.height_band_gains_temp.fill(0.0);
+        self.height.height_band_gains_temp.fill(0.0);
 
         // Generate decorrelation filters
         self.generate_decorrelation_filters();
@@ -1587,10 +1886,10 @@ impl Plugin for UpmixerPlugin {
         self.generate_per_channel_decorrelation_filters();
 
         // Pre-allocate blended decorrelation filters to avoid hot-path allocation
-        let spectrum_size = self.fft_size / 2 + 1;
-        self.blended_decorrelation_filters =
-            vec![vec![Complex::new(1.0, 0.0); spectrum_size]; self.num_output_channels];
-        self.prev_decorrelation_strength = -1.0; // Force recompute on first process()
+        let spectrum_size = self.core.fft_size / 2 + 1;
+        self.decorrelation.blended_decorrelation_filters =
+            vec![vec![Complex::new(1.0, 0.0); spectrum_size]; self.core.num_output_channels];
+        self.decorrelation.prev_decorrelation_strength = -1.0; // Force recompute on first process()
 
         // Precompute LFO depth table (per-bin, depends on sample_rate/fft_size/bandpass/lfe cutoff)
         self.precompute_lfo_depth_table();
@@ -1606,32 +1905,50 @@ impl Plugin for UpmixerPlugin {
 
         // Initialize smoothers
         let time_ms = 50.0;
-        self.gain_front_direct.set_time(time_ms, sample_rate);
-        self.gain_front_ambient.set_time(time_ms, sample_rate);
-        self.gain_rear_ambient.set_time(time_ms, sample_rate);
-        self.height_gain.set_time(time_ms, sample_rate);
-        self.lfe_gain.set_time(time_ms, sample_rate);
-        self.subharmonic_gain.set_time(time_ms, sample_rate);
-        self.stereo_width.set_time(time_ms, sample_rate);
-        self.center_spread.set_time(time_ms, sample_rate);
-        self.ambient_boost.set_time(time_ms, sample_rate);
-        self.dialogue_weight.set_time(time_ms, sample_rate);
-        self.surround_direct_bleed.set_time(time_ms, sample_rate);
-        self.rear_ambient_boost.set_time(time_ms, sample_rate);
-        self.rear_late_reflection.set_time(time_ms, sample_rate);
-        self.height_direct_leak.set_time(time_ms, sample_rate);
-        self.height_transient_reduction
+        self.gains.gain_front_direct.set_time(time_ms, sample_rate);
+        self.gains.gain_front_ambient.set_time(time_ms, sample_rate);
+        self.gains.gain_rear_ambient.set_time(time_ms, sample_rate);
+        self.height.height_gain.set_time(time_ms, sample_rate);
+        self.gains.lfe_gain.set_time(time_ms, sample_rate);
+        self.subharmonic
+            .subharmonic_gain
             .set_time(time_ms, sample_rate);
-        self.hr_sharpen.set_time(time_ms, sample_rate);
-        self.lfe_cutoff_hz_smoother.set_time(time_ms, sample_rate);
-        self.bandpass_hz_smoother.set_time(time_ms, sample_rate);
-        self.height_hf_cap_hz_smoother
+        self.gains.stereo_width.set_time(time_ms, sample_rate);
+        self.gains.center_spread.set_time(time_ms, sample_rate);
+        self.surround.ambient_boost.set_time(time_ms, sample_rate);
+        self.dialogue.dialogue_weight.set_time(time_ms, sample_rate);
+        self.surround
+            .surround_direct_bleed
             .set_time(time_ms, sample_rate);
-        self.safety_cap_db_smoother.set_time(time_ms, sample_rate);
+        self.surround
+            .rear_ambient_boost
+            .set_time(time_ms, sample_rate);
+        self.surround
+            .rear_late_reflection
+            .set_time(time_ms, sample_rate);
+        self.height
+            .height_direct_leak
+            .set_time(time_ms, sample_rate);
+        self.height
+            .height_transient_reduction
+            .set_time(time_ms, sample_rate);
+        self.gains.hr_sharpen.set_time(time_ms, sample_rate);
+        self.param_smoothers
+            .lfe_cutoff_hz_smoother
+            .set_time(time_ms, sample_rate);
+        self.param_smoothers
+            .bandpass_hz_smoother
+            .set_time(time_ms, sample_rate);
+        self.param_smoothers
+            .height_hf_cap_hz_smoother
+            .set_time(time_ms, sample_rate);
+        self.param_smoothers
+            .safety_cap_db_smoother
+            .set_time(time_ms, sample_rate);
 
-        if let Some(auto_gain) = &mut self.auto_gain {
+        if let Some(auto_gain) = &mut self.safety.auto_gain {
             auto_gain.set_sample_rate(sample_rate)?;
-        } else if self.auto_gain_enabled {
+        } else if self.safety.auto_gain_enabled {
             self.ensure_auto_gain()?;
         }
 
@@ -1647,15 +1964,17 @@ impl Plugin for UpmixerPlugin {
         self.recache_subharmonic_coeffs();
 
         // Cache analysis smoothing scale to avoid allocating in the hot path.
-        self.cached_analysis_smoothing_scale =
-            Self::compute_analysis_smoothing_scale(&self.frequency_resolution, self.fft_size);
+        self.params.cached_analysis_smoothing_scale = Self::compute_analysis_smoothing_scale(
+            &self.params.frequency_resolution,
+            self.core.fft_size,
+        );
 
         // Initialize MFCC extractor (needed if ML is toggled on later)
         #[cfg(feature = "onnx")]
         {
-            self.mfcc_extractor = Some(super::ml_features::MfccExtractor::new(
+            self.ml.mfcc_extractor = Some(super::ml_features::MfccExtractor::new(
                 sample_rate,
-                self.fft_size,
+                self.core.fft_size,
             ));
         }
 
@@ -1667,28 +1986,28 @@ impl Plugin for UpmixerPlugin {
 
     fn reset(&mut self) {
         // Clear buffers
-        self.input_buffer_fill = 0;
-        self.hr_input_buffer_fill = 0;
+        self.main_buffers.input_buffer_fill = 0;
+        self.hr_buffers.hr_input_buffer_fill = 0;
         let zero = Complex::new(0.0, 0.0);
 
         // Clear real-valued time domain buffers
-        self.time_domain_left.fill(0.0);
-        self.time_domain_right.fill(0.0);
-        self.hr_time_domain_left.fill(0.0);
-        self.hr_time_domain_right.fill(0.0);
+        self.main_buffers.time_domain_left.fill(0.0);
+        self.main_buffers.time_domain_right.fill(0.0);
+        self.hr_buffers.hr_time_domain_left.fill(0.0);
+        self.hr_buffers.hr_time_domain_right.fill(0.0);
 
         // Clear complex frequency domain buffers
         for buf in [
-            &mut self.freq_domain_left,
-            &mut self.freq_domain_right,
-            &mut self.direct,
-            &mut self.direct_left,
-            &mut self.direct_right,
-            &mut self.ambient_left,
-            &mut self.ambient_right,
-            &mut self.lfe,
-            &mut self.hr_freq_domain_left,
-            &mut self.hr_freq_domain_right,
+            &mut self.main_buffers.freq_domain_left,
+            &mut self.main_buffers.freq_domain_right,
+            &mut self.main_buffers.direct,
+            &mut self.main_buffers.direct_left,
+            &mut self.main_buffers.direct_right,
+            &mut self.main_buffers.ambient_left,
+            &mut self.main_buffers.ambient_right,
+            &mut self.main_buffers.lfe,
+            &mut self.hr_buffers.hr_freq_domain_left,
+            &mut self.hr_buffers.hr_freq_domain_right,
         ]
         .iter_mut()
         {
@@ -1696,77 +2015,79 @@ impl Plugin for UpmixerPlugin {
         }
 
         // Clear output channels
-        for channel_buf in self.time_out_channels.iter_mut() {
+        for channel_buf in self.main_buffers.time_out_channels.iter_mut() {
             channel_buf.fill(0.0);
         }
 
         // Clear HR output channels
-        for channel_buf in self.hr_time_out_channels.iter_mut() {
+        for channel_buf in self.hr_buffers.hr_time_out_channels.iter_mut() {
             channel_buf.fill(0.0);
         }
 
-        self.output_accumulator.fill(0.0);
-        self.output_accumulator_fill = 0;
-        self.output_block.fill(0.0);
-        self.next_add_position = 0;
-        self.output_read_position = 0;
-        self.latency_filled = 0;
-        self.startup_padding_remaining = self.fft_size;
+        self.output.output_accumulator.fill(0.0);
+        self.output.output_accumulator_fill = 0;
+        self.output.output_block.fill(0.0);
+        self.output.next_add_position = 0;
+        self.output.output_read_position = 0;
+        self.core.latency_filled = 0;
+        self.core.startup_padding_remaining = self.core.fft_size;
 
         // Clear HR input and temp blocks
-        self.hr_input_buffer.fill(0.0);
-        self.hr_temp_input_block.fill(0.0);
-        self.hr_delay_buffer.fill(0.0);
-        self.hr_delay_cursor = 0;
+        self.hr_buffers.hr_input_buffer.fill(0.0);
+        self.hr_buffers.hr_temp_input_block.fill(0.0);
+        self.hr_buffers.hr_delay_buffer.fill(0.0);
+        self.hr_buffers.hr_delay_cursor = 0;
 
-        self.hr_output_accumulator.fill(0.0);
-        self.hr_output_accumulator_fill = 0;
-        self.hr_next_add_position = 0;
-        self.hr_output_read_position = 0;
+        self.hr_buffers.hr_output_accumulator.fill(0.0);
+        self.hr_buffers.hr_output_accumulator_fill = 0;
+        self.hr_buffers.hr_next_add_position = 0;
+        self.hr_buffers.hr_output_read_position = 0;
 
         // Reset state vectors
-        self.steering_alphas.fill(0.15);
-        self.pca_cov_xx.fill(0.0);
-        self.pca_cov_yy.fill(0.0);
-        self.pca_cov_xy.fill(Complex::new(0.0, 0.0));
-        self.coherence_instant.fill(0.0);
-        self.smoothed_coherence.fill(0.0);
-        self.smoothed_diffuseness.fill(0.0);
-        self.diffuseness_initialized.fill(false);
-        self.hr_transient_env = 0.0;
-        self.hr_energy_smooth = 0.0;
-        self.prev_power_spectrum.fill(0.0);
-        self.spectral_flux_smooth = 0.0;
-        self.doa_angle.fill(0.0);
-        self.height_prev_magnitude.fill(0.0);
-        self.height_spectral_flux_smooth = 0.0;
-        self.height_flux_gate.fill(0.15);
-        self.dialogue_spatial_control = self.dialogue_probability;
-        self.prev_hr_scale = 0.0;
-        self.coherence_history_idx = 0;
-        for h in &mut self.coherence_history {
+        self.steering.steering_alphas.fill(0.15);
+        self.spectral.pca_cov_xx.fill(0.0);
+        self.spectral.pca_cov_yy.fill(0.0);
+        self.spectral.pca_cov_xy.fill(Complex::new(0.0, 0.0));
+        self.steering.coherence_instant.fill(0.0);
+        self.steering.smoothed_coherence.fill(0.0);
+        self.steering.smoothed_diffuseness.fill(0.0);
+        self.steering.diffuseness_initialized.fill(false);
+        self.hr_state.hr_transient_env = 0.0;
+        self.hr_state.hr_energy_smooth = 0.0;
+        self.hr_state.prev_power_spectrum.fill(0.0);
+        self.hr_state.spectral_flux_smooth = 0.0;
+        self.steering.doa_angle.fill(0.0);
+        self.height.height_prev_magnitude.fill(0.0);
+        self.height.height_spectral_flux_smooth = 0.0;
+        self.height.height_flux_gate.fill(0.15);
+        self.dialogue.dialogue_spatial_control = self.dialogue.dialogue_probability;
+        self.hr_state.prev_hr_scale = 0.0;
+        self.steering.coherence_history_idx = 0;
+        for h in &mut self.steering.coherence_history {
             *h = [0.0; 5];
         }
 
         // Force recomputation of blended decorrelation filters
-        self.prev_decorrelation_strength = -1.0;
+        self.decorrelation.prev_decorrelation_strength = -1.0;
 
         // Initialize height mask to floor value to avoid startup ramp artifact
-        self.height_band_gains
+        self.height
+            .height_band_gains
             .fill(super::frequency_domain::HEIGHT_MASK_FLOOR);
-        self.height_band_gains_prev
+        self.height
+            .height_band_gains_prev
             .fill(super::frequency_domain::HEIGHT_MASK_FLOOR);
-        self.height_band_gains_temp.fill(0.0);
+        self.height.height_band_gains_temp.fill(0.0);
 
-        self.prev_safety_scale = 1.0;
-        self.final_safety_scale = 1.0;
-        if let Some(auto_gain) = &mut self.auto_gain {
+        self.safety.prev_safety_scale = 1.0;
+        self.safety.final_safety_scale = 1.0;
+        if let Some(auto_gain) = &mut self.safety.auto_gain {
             auto_gain.reset();
         }
 
         // Reset MFCC extractor state
         #[cfg(feature = "onnx")]
-        if let Some(ref mut extractor) = self.mfcc_extractor {
+        if let Some(ref mut extractor) = self.ml.mfcc_extractor {
             extractor.reset();
         }
     }
@@ -1798,79 +2119,84 @@ impl Plugin for UpmixerPlugin {
             ));
         }
 
-        if self.auto_gain_enabled {
+        if self.safety.auto_gain_enabled {
             self.ensure_auto_gain()?;
-            if let Some(auto_gain) = &mut self.auto_gain {
+            if let Some(auto_gain) = &mut self.safety.auto_gain {
                 auto_gain.measure_input(input)?;
             }
         }
 
         // Update smoothers by the number of frames in this block
-        self.gain_front_direct.next_n(n);
-        self.gain_front_ambient.next_n(n);
-        self.gain_rear_ambient.next_n(n);
-        self.height_gain.next_n(n);
-        self.lfe_gain.next_n(n);
-        self.subharmonic_gain.next_n(n);
-        self.stereo_width.next_n(n);
-        self.center_spread.next_n(n);
-        self.ambient_boost.next_n(n);
-        self.dialogue_weight.next_n(n);
-        self.surround_direct_bleed.next_n(n);
-        self.rear_ambient_boost.next_n(n);
-        self.rear_late_reflection.next_n(n);
-        self.height_direct_leak.next_n(n);
-        self.height_transient_reduction.next_n(n);
-        self.hr_sharpen.next_n(n);
+        self.gains.gain_front_direct.next_n(n);
+        self.gains.gain_front_ambient.next_n(n);
+        self.gains.gain_rear_ambient.next_n(n);
+        self.height.height_gain.next_n(n);
+        self.gains.lfe_gain.next_n(n);
+        self.subharmonic.subharmonic_gain.next_n(n);
+        self.gains.stereo_width.next_n(n);
+        self.gains.center_spread.next_n(n);
+        self.surround.ambient_boost.next_n(n);
+        self.dialogue.dialogue_weight.next_n(n);
+        self.surround.surround_direct_bleed.next_n(n);
+        self.surround.rear_ambient_boost.next_n(n);
+        self.surround.rear_late_reflection.next_n(n);
+        self.height.height_direct_leak.next_n(n);
+        self.height.height_transient_reduction.next_n(n);
+        self.gains.hr_sharpen.next_n(n);
 
         // Update frequency/table-generating parameter smoothers and regenerate tables if changed
         {
-            let prev_lfe = self.lfe_cutoff_hz;
-            let prev_bp = self.bandpass_hz;
-            let prev_hf = self.height_hf_cap_hz;
-            let prev_sc = self.safety_cap_db;
+            let prev_lfe = self.params.lfe_cutoff_hz;
+            let prev_bp = self.params.bandpass_hz;
+            let prev_hf = self.height.height_hf_cap_hz;
+            let prev_sc = self.safety.safety_cap_db;
 
-            let new_lfe = self.lfe_cutoff_hz_smoother.next_n(n);
-            let new_bp = self.bandpass_hz_smoother.next_n(n);
-            let new_hf = self.height_hf_cap_hz_smoother.next_n(n);
-            let new_sc = self.safety_cap_db_smoother.next_n(n);
+            let new_lfe = self.param_smoothers.lfe_cutoff_hz_smoother.next_n(n);
+            let new_bp = self.param_smoothers.bandpass_hz_smoother.next_n(n);
+            let new_hf = self.param_smoothers.height_hf_cap_hz_smoother.next_n(n);
+            let new_sc = self.param_smoothers.safety_cap_db_smoother.next_n(n);
 
             if (new_lfe - prev_lfe).abs() > 0.01 {
-                self.lfe_cutoff_hz = new_lfe;
+                self.params.lfe_cutoff_hz = new_lfe;
                 self.update_crossover_gains();
                 self.recache_bin_indices();
             }
             if (new_bp - prev_bp).abs() > 0.01 {
-                self.bandpass_hz = new_bp;
+                self.params.bandpass_hz = new_bp;
                 self.precompute_height_freq_weights();
                 self.recache_bin_indices();
             }
             if (new_hf - prev_hf).abs() > 0.1 {
-                self.height_hf_cap_hz = new_hf;
+                self.height.height_hf_cap_hz = new_hf;
                 self.precompute_height_freq_weights();
             }
             if (new_sc - prev_sc).abs() > 0.001 {
-                self.safety_cap_db = new_sc;
+                self.safety.safety_cap_db = new_sc;
                 self.update_safety_cap_cache();
             }
         }
 
         // Update HR direct envelope for smooth enable/disable transitions
         {
-            let hr_target = if self.enable_hr_direct { 1.0 } else { 0.0 };
-            let hr_alpha = if hr_target > self.hr_direct_envelope {
+            let hr_target = if self.params.enable_hr_direct {
+                1.0
+            } else {
+                0.0
+            };
+            let hr_alpha = if hr_target > self.hr_state.hr_direct_envelope {
                 0.1
             } else {
                 0.05
             };
-            self.hr_direct_envelope += hr_alpha * (hr_target - self.hr_direct_envelope);
-            if self.hr_direct_envelope < 1e-4 {
-                self.hr_direct_envelope = 0.0;
+            self.hr_state.hr_direct_envelope +=
+                hr_alpha * (hr_target - self.hr_state.hr_direct_envelope);
+            if self.hr_state.hr_direct_envelope < 1e-4 {
+                self.hr_state.hr_direct_envelope = 0.0;
             }
         }
 
         // If bypass is enabled, just copy stereo input to output and return
-        if self.bypass_all_processing {
+        if self.params.bypass_all_processing {
             let num_frames = context.num_frames;
             for i in 0..num_frames {
                 let left = input[i * 2];
@@ -1894,40 +2220,44 @@ impl Plugin for UpmixerPlugin {
 
         let mut input_pos = 0;
         let mut output_pos = 0;
-        let mask = self.output_accumulator_mask;
-        let nch = self.num_output_channels;
+        let mask = self.output.output_accumulator_mask;
+        let nch = self.core.num_output_channels;
 
         while input_pos < context.num_frames || output_pos < context.num_frames {
             let mut made_progress = false;
 
             // Step 1: Fill input buffer if we have more input
             if input_pos < context.num_frames {
-                let samples_to_copy =
-                    (input_samples - input_pos * 2).min(self.fft_size * 2 - self.input_buffer_fill);
+                let samples_to_copy = (input_samples - input_pos * 2)
+                    .min(self.core.fft_size * 2 - self.main_buffers.input_buffer_fill);
 
                 if samples_to_copy > 0 {
                     made_progress = true;
                     let input_slice = &input[input_pos * 2..input_pos * 2 + samples_to_copy];
 
-                    self.input_buffer
-                        [self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
+                    self.main_buffers.input_buffer[self.main_buffers.input_buffer_fill
+                        ..self.main_buffers.input_buffer_fill + samples_to_copy]
                         .copy_from_slice(input_slice);
 
                     // Also add to HR input buffer if HR is enabled.
                     // First pass input through the delay buffer to temporally align
                     // the HR path with the main path (compensates for the difference
                     // in OLA latency: main_latency - hr_latency).
-                    if self.hr_direct_envelope > 0.0 {
-                        let delay_temp = &mut self.hr_delay_temp[..samples_to_copy];
-                        if self.hr_delay_buffer.is_empty() {
+                    if self.hr_state.hr_direct_envelope > 0.0 {
+                        let delay_temp = &mut self.hr_buffers.hr_delay_temp[..samples_to_copy];
+                        if self.hr_buffers.hr_delay_buffer.is_empty() {
                             delay_temp.copy_from_slice(input_slice);
                         } else {
                             for i in 0..samples_to_copy {
-                                delay_temp[i] = self.hr_delay_buffer[self.hr_delay_cursor];
-                                self.hr_delay_buffer[self.hr_delay_cursor] = input_slice[i];
-                                self.hr_delay_cursor += 1;
-                                if self.hr_delay_cursor >= self.hr_delay_buffer.len() {
-                                    self.hr_delay_cursor = 0;
+                                delay_temp[i] = self.hr_buffers.hr_delay_buffer
+                                    [self.hr_buffers.hr_delay_cursor];
+                                self.hr_buffers.hr_delay_buffer[self.hr_buffers.hr_delay_cursor] =
+                                    input_slice[i];
+                                self.hr_buffers.hr_delay_cursor += 1;
+                                if self.hr_buffers.hr_delay_cursor
+                                    >= self.hr_buffers.hr_delay_buffer.len()
+                                {
+                                    self.hr_buffers.hr_delay_cursor = 0;
                                 }
                             }
                         }
@@ -1936,92 +2266,101 @@ impl Plugin for UpmixerPlugin {
                         let mut hr_input_offset = 0;
 
                         while remaining_hr_samples > 0 {
-                            let hr_capacity = self.hr_fft_size * 2 - self.hr_input_buffer_fill;
+                            let hr_capacity =
+                                self.fft.hr_fft_size * 2 - self.hr_buffers.hr_input_buffer_fill;
                             let hr_chunk = remaining_hr_samples.min(hr_capacity);
 
-                            self.hr_input_buffer
-                                [self.hr_input_buffer_fill..self.hr_input_buffer_fill + hr_chunk]
+                            self.hr_buffers.hr_input_buffer[self.hr_buffers.hr_input_buffer_fill
+                                ..self.hr_buffers.hr_input_buffer_fill + hr_chunk]
                                 .copy_from_slice(
-                                    &self.hr_delay_temp
+                                    &self.hr_buffers.hr_delay_temp
                                         [hr_input_offset..hr_input_offset + hr_chunk],
                                 );
 
-                            self.hr_input_buffer_fill += hr_chunk;
+                            self.hr_buffers.hr_input_buffer_fill += hr_chunk;
                             hr_input_offset += hr_chunk;
                             remaining_hr_samples -= hr_chunk;
 
                             // Process HR block if buffer is full
-                            if self.hr_input_buffer_fill >= self.hr_fft_size * 2 {
+                            if self.hr_buffers.hr_input_buffer_fill >= self.fft.hr_fft_size * 2 {
                                 // Copy to temp block
-                                self.hr_temp_input_block[..self.hr_fft_size * 2]
-                                    .copy_from_slice(&self.hr_input_buffer[..self.hr_fft_size * 2]);
+                                self.hr_buffers.hr_temp_input_block[..self.fft.hr_fft_size * 2]
+                                    .copy_from_slice(
+                                        &self.hr_buffers.hr_input_buffer
+                                            [..self.fft.hr_fft_size * 2],
+                                    );
 
                                 // Temporary take
-                                let temp_input = std::mem::take(&mut self.hr_temp_input_block);
+                                let temp_input =
+                                    std::mem::take(&mut self.hr_buffers.hr_temp_input_block);
                                 self.process_hr_block(&temp_input);
-                                self.hr_temp_input_block = temp_input;
+                                self.hr_buffers.hr_temp_input_block = temp_input;
 
                                 // 50% overlap hop: hr_fft_size interleaved samples = hr_fft_size/2 frames
-                                let hr_hop = self.hr_fft_size;
-                                let remaining = self.hr_input_buffer_fill - hr_hop;
-                                self.hr_input_buffer
-                                    .copy_within(hr_hop..self.hr_input_buffer_fill, 0);
-                                self.hr_input_buffer_fill = remaining;
+                                let hr_hop = self.fft.hr_fft_size;
+                                let remaining = self.hr_buffers.hr_input_buffer_fill - hr_hop;
+                                self.hr_buffers
+                                    .hr_input_buffer
+                                    .copy_within(hr_hop..self.hr_buffers.hr_input_buffer_fill, 0);
+                                self.hr_buffers.hr_input_buffer_fill = remaining;
                             }
                         }
                     }
 
-                    self.input_buffer_fill += samples_to_copy;
+                    self.main_buffers.input_buffer_fill += samples_to_copy;
                     input_pos += samples_to_copy / 2;
                 }
             }
 
             // Step 2: Process FFT block if we have enough input
-            while self.input_buffer_fill >= self.fft_size * 2 {
+            while self.main_buffers.input_buffer_fill >= self.core.fft_size * 2 {
                 made_progress = true;
                 // Copy to temp buffer
-                self.temp_input_block[..self.fft_size * 2]
-                    .copy_from_slice(&self.input_buffer[..self.fft_size * 2]);
+                self.main_buffers.temp_input_block[..self.core.fft_size * 2]
+                    .copy_from_slice(&self.main_buffers.input_buffer[..self.core.fft_size * 2]);
 
-                let temp_input = std::mem::take(&mut self.temp_input_block);
-                let mut output_block = std::mem::take(&mut self.output_block);
+                let temp_input = std::mem::take(&mut self.main_buffers.temp_input_block);
+                let mut output_block = std::mem::take(&mut self.output.output_block);
                 self.process_fft_block(&temp_input, &mut output_block);
 
-                self.temp_input_block = temp_input;
+                self.main_buffers.temp_input_block = temp_input;
                 // Guard: ensure the new block fits in the ring buffer before writing.
                 // Ring capacity is 4*fft_size frames; each block adds hop_size frames.
                 debug_assert!(
-                    self.output_accumulator_fill + self.hop_size
-                        <= self.output_accumulator_mask + 1,
+                    self.output.output_accumulator_fill + self.core.hop_size
+                        <= self.output.output_accumulator_mask + 1,
                     "Main accumulator overflow: fill {} + hop {} > capacity {}",
-                    self.output_accumulator_fill,
-                    self.hop_size,
-                    self.output_accumulator_mask + 1,
+                    self.output.output_accumulator_fill,
+                    self.core.hop_size,
+                    self.output.output_accumulator_mask + 1,
                 );
 
                 // Accumulate to ring buffer (flat interleaved)
-                for i in 0..self.fft_size {
-                    let write_idx = (self.next_add_position + i) & mask;
+                for i in 0..self.core.fft_size {
+                    let write_idx = (self.output.next_add_position + i) & mask;
                     let acc_base = write_idx * nch;
                     let src_base = i * nch;
                     for ch in 0..nch {
-                        self.output_accumulator[acc_base + ch] += output_block[src_base + ch];
+                        self.output.output_accumulator[acc_base + ch] +=
+                            output_block[src_base + ch];
                     }
                 }
 
-                self.output_block = output_block;
+                self.output.output_block = output_block;
 
                 // Advance positions
-                self.next_add_position = (self.next_add_position + self.hop_size) & mask;
+                self.output.next_add_position =
+                    (self.output.next_add_position + self.core.hop_size) & mask;
 
-                self.output_accumulator_fill += self.hop_size;
-                self.latency_filled += self.hop_size;
+                self.output.output_accumulator_fill += self.core.hop_size;
+                self.core.latency_filled += self.core.hop_size;
 
                 // Shift input buffer
-                let shift_amount = self.hop_size * 2;
-                self.input_buffer
-                    .copy_within(shift_amount..self.input_buffer_fill, 0);
-                self.input_buffer_fill -= shift_amount;
+                let shift_amount = self.core.hop_size * 2;
+                self.main_buffers
+                    .input_buffer
+                    .copy_within(shift_amount..self.main_buffers.input_buffer_fill, 0);
+                self.main_buffers.input_buffer_fill -= shift_amount;
             }
 
             // Step 3: Drain available output from ring buffer (flat interleaved).
@@ -2029,17 +2368,19 @@ impl Plugin for UpmixerPlugin {
             // small host blocks can drop the unread tail of the input block and later
             // starve the OLA reservoir.
             if output_pos < context.num_frames {
-                if self.startup_padding_remaining > 0 {
+                if self.core.startup_padding_remaining > 0 {
                     let frames_to_pad = self
+                        .core
                         .startup_padding_remaining
                         .min(context.num_frames - output_pos);
                     output_pos += frames_to_pad;
-                    self.startup_padding_remaining -= frames_to_pad;
+                    self.core.startup_padding_remaining -= frames_to_pad;
                     made_progress = true;
                 }
 
                 let frames_to_drain = if output_pos < context.num_frames {
-                    self.output_accumulator_fill
+                    self.output
+                        .output_accumulator_fill
                         .min(context.num_frames - output_pos)
                 } else {
                     0
@@ -2048,34 +2389,35 @@ impl Plugin for UpmixerPlugin {
                 if frames_to_drain > 0 {
                     made_progress = true;
                     for i in 0..frames_to_drain {
-                        let read_idx = (self.output_read_position + i) & mask;
+                        let read_idx = (self.output.output_read_position + i) & mask;
                         let acc_base = read_idx * nch;
                         let out_base = (output_pos + i) * out_nch;
-                        if self.binaural_preview {
+                        if self.core.binaural_preview {
                             let (left, right) = self.fold_accumulator_frame_to_binaural(
-                                &self.output_accumulator,
+                                &self.output.output_accumulator,
                                 acc_base,
                             );
                             output[out_base] = left;
                             output[out_base + 1] = right;
                             for ch in 0..nch {
-                                self.output_accumulator[acc_base + ch] = 0.0;
+                                self.output.output_accumulator[acc_base + ch] = 0.0;
                             }
                         } else {
                             for ch in 0..nch {
-                                output[out_base + ch] = self.output_accumulator[acc_base + ch];
+                                output[out_base + ch] =
+                                    self.output.output_accumulator[acc_base + ch];
                                 // Clear after reading for next overlap-add cycle
-                                self.output_accumulator[acc_base + ch] = 0.0;
+                                self.output.output_accumulator[acc_base + ch] = 0.0;
                             }
                         }
                     }
-                    self.output_read_position =
-                        (self.output_read_position + frames_to_drain) & mask;
-                    self.output_accumulator_fill -= frames_to_drain;
+                    self.output.output_read_position =
+                        (self.output.output_read_position + frames_to_drain) & mask;
+                    self.output.output_accumulator_fill -= frames_to_drain;
 
                     // Drain HR output and mix into the frames we just wrote
-                    if self.hr_direct_envelope > 0.0 {
-                        if self.binaural_preview {
+                    if self.hr_state.hr_direct_envelope > 0.0 {
+                        if self.core.binaural_preview {
                             self.mix_hr_output_binaural(
                                 &mut output[output_pos * out_nch..],
                                 frames_to_drain,
@@ -2086,11 +2428,11 @@ impl Plugin for UpmixerPlugin {
                                 frames_to_drain,
                             );
                         }
-                    } else if self.hr_output_accumulator_fill > 0 {
+                    } else if self.hr_buffers.hr_output_accumulator_fill > 0 {
                         // HR disabled: reset ring buffer state so no stale data lingers.
-                        self.hr_output_accumulator_fill = 0;
-                        self.hr_output_read_position = 0;
-                        self.hr_next_add_position = 0;
+                        self.hr_buffers.hr_output_accumulator_fill = 0;
+                        self.hr_buffers.hr_output_read_position = 0;
+                        self.hr_buffers.hr_next_add_position = 0;
                     }
 
                     output_pos += frames_to_drain;
@@ -2113,6 +2455,6 @@ impl Plugin for UpmixerPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        self.fft_size
+        self.core.fft_size
     }
 }

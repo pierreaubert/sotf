@@ -68,7 +68,7 @@
 
 ## Deferred (cross-crate or out of scope)
 
-- **`parameters()` Vec clone** (review §3 major): Requires `InPlacePlugin` trait API change
+- **`parameters()` Vec clone** (review §3 major): Requires `ParametricInPlacePlugin` trait API change
   across all 30+ plugin crates. Deferred.
 - **`Biquad<f64>` → `Biquad<f32>` for Bauer/Meier** (review §3 minor): Requires verifying
   no precision regression; deferred.

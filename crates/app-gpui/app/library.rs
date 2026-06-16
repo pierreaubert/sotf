@@ -72,7 +72,7 @@ impl App {
         match self.library_state.library.add_directory(path) {
             Ok(needs_scan) => {
                 if needs_scan {
-                    self.needs_rescan = true;
+                    self.scan.needs_rescan = true;
                     self.ui_state.toast_message =
                         Some(ToastMessage::success("Directory added. Press 's' to scan."));
                 } else {
@@ -124,13 +124,13 @@ impl App {
         self.library_state.scan_in_progress = true;
         self.library_state.scan_progress_tracks = 0;
         self.library_state.scan_progress_albums = 0;
-        self.scan_total_files = 0;
-        self.scan_started_at = Some(std::time::Instant::now());
-        self.scan_progress_elapsed_secs = 0;
-        self.scan_progress_eta_secs = None;
-        self.scan_progress_tracks_per_sec = 0.0;
-        self.scan_progress_phase = "Starting".to_string();
-        self.scan_status_hidden = false;
+        self.scan.total_files = 0;
+        self.scan.started_at = Some(std::time::Instant::now());
+        self.scan.progress_elapsed_secs = 0;
+        self.scan.progress_eta_secs = None;
+        self.scan.progress_tracks_per_sec = 0.0;
+        self.scan.progress_phase = "Starting".to_string();
+        self.scan.status_hidden = false;
 
         let directories: Vec<std::path::PathBuf> = self
             .library_state
@@ -140,44 +140,45 @@ impl App {
             .map(|d| d.path.clone())
             .collect();
         self.install_external_plugin_runtime_sandbox();
-        self.library_scanner = Some(sotf_audio_player::LibraryScanner::start_force(directories));
+        self.scan.library_scanner =
+            Some(sotf_audio_player::LibraryScanner::start_force(directories));
 
         Ok(())
     }
 
     /// Scan for ReplayGain
     pub fn scan_replay_gain(&mut self) {
-        if let Err(e) = self.scan_ctrl.replay_gain_manager.start_scan() {
+        if let Err(e) = self.scan.ctrl.replay_gain_manager.start_scan() {
             self.ui_state.toast_message = Some(ToastMessage::error(format!(
                 "Failed to start ReplayGain scan: {}",
                 e
             )));
-        } else if self.scan_ctrl.replay_gain_manager.in_progress {
-            self.scan_status_hidden = false;
+        } else if self.scan.ctrl.replay_gain_manager.in_progress {
+            self.scan.status_hidden = false;
         }
     }
 
     /// Scan for Bliss audio analysis (tempo, features for similarity)
     pub fn scan_bliss(&mut self) {
-        if let Err(e) = self.scan_ctrl.bliss_manager.start_scan() {
+        if let Err(e) = self.scan.ctrl.bliss_manager.start_scan() {
             self.ui_state.toast_message = Some(ToastMessage::error(format!(
                 "Failed to start bliss analysis scan: {}",
                 e
             )));
-        } else if self.scan_ctrl.bliss_manager.in_progress {
-            self.scan_status_hidden = false;
+        } else if self.scan.ctrl.bliss_manager.in_progress {
+            self.scan.status_hidden = false;
         }
     }
 
     /// Compute waveforms for tracks
     pub fn compute_waveform(&mut self) {
-        if let Err(e) = self.scan_ctrl.waveform_manager.start_scan() {
+        if let Err(e) = self.scan.ctrl.waveform_manager.start_scan() {
             self.ui_state.toast_message = Some(ToastMessage::error(format!(
                 "Failed to start waveform analysis: {}",
                 e
             )));
-        } else if self.scan_ctrl.waveform_manager.in_progress {
-            self.scan_status_hidden = false;
+        } else if self.scan.ctrl.waveform_manager.in_progress {
+            self.scan.status_hidden = false;
         }
     }
 
@@ -208,8 +209,8 @@ impl App {
     pub fn clear_local_library(&mut self) {
         match self.library_state.clear_library_content() {
             Ok(removed) => {
-                self.selected_directory_index = 0;
-                self.needs_rescan = false;
+                self.library_view.selected_directory_index = 0;
+                self.scan.needs_rescan = false;
                 self.install_external_plugin_runtime_sandbox();
                 self.ui_state.toast_message = Some(ToastMessage::success(format!(
                     "Cleared local library data ({} tracks removed)",
@@ -228,7 +229,7 @@ impl App {
     /// Remove the selected directory from the library
     pub fn remove_selected_directory(&mut self) {
         let tree_items = self.get_directory_tree_items();
-        if let Some((path, level, _)) = tree_items.get(self.selected_directory_index) {
+        if let Some((path, level, _)) = tree_items.get(self.library_view.selected_directory_index) {
             if *level == 0 {
                 if let Some(dir_index) = self
                     .library_state
@@ -239,10 +240,10 @@ impl App {
                     && self.library_state.remove_directory(dir_index).is_some()
                 {
                     let tree_items = self.get_directory_tree_items();
-                    if self.selected_directory_index >= tree_items.len()
-                        && self.selected_directory_index > 0
+                    if self.library_view.selected_directory_index >= tree_items.len()
+                        && self.library_view.selected_directory_index > 0
                     {
-                        self.selected_directory_index = tree_items.len() - 1;
+                        self.library_view.selected_directory_index = tree_items.len() - 1;
                     }
                     self.ui_state.toast_message =
                         Some(ToastMessage::success("Directory removed and cleaned up."));
@@ -262,7 +263,7 @@ impl App {
 
     /// Cancel the ongoing library scan
     pub fn cancel_library_scan(&mut self) {
-        if let Some(scanner) = &self.library_scanner {
+        if let Some(scanner) = &self.scan.library_scanner {
             scanner.cancel();
             self.ui_state.toast_message = Some(ToastMessage::info("Cancelling scan..."));
         }
@@ -277,13 +278,13 @@ impl App {
         self.library_state.scan_in_progress = true;
         self.library_state.scan_progress_tracks = 0;
         self.library_state.scan_progress_albums = 0;
-        self.scan_total_files = 0;
-        self.scan_started_at = Some(std::time::Instant::now());
-        self.scan_progress_elapsed_secs = 0;
-        self.scan_progress_eta_secs = None;
-        self.scan_progress_tracks_per_sec = 0.0;
-        self.scan_progress_phase = "Starting".to_string();
-        self.scan_status_hidden = false;
+        self.scan.total_files = 0;
+        self.scan.started_at = Some(std::time::Instant::now());
+        self.scan.progress_elapsed_secs = 0;
+        self.scan.progress_eta_secs = None;
+        self.scan.progress_tracks_per_sec = 0.0;
+        self.scan.progress_phase = "Starting".to_string();
+        self.scan.status_hidden = false;
 
         let directories: Vec<std::path::PathBuf> = self
             .library_state
@@ -293,7 +294,7 @@ impl App {
             .map(|d| d.path.clone())
             .collect();
         self.install_external_plugin_runtime_sandbox();
-        self.library_scanner = Some(sotf_audio_player::LibraryScanner::start(directories));
+        self.scan.library_scanner = Some(sotf_audio_player::LibraryScanner::start(directories));
 
         Ok(())
     }
@@ -302,7 +303,7 @@ impl App {
     pub fn update_library_scan(&mut self) {
         let mut reload_needed = false;
 
-        if let Some(scanner) = self.library_scanner.take() {
+        if let Some(scanner) = self.scan.library_scanner.take() {
             let mut done = false;
             while let Some(msg) = scanner.try_recv() {
                 match msg {
@@ -314,19 +315,19 @@ impl App {
                     } => {
                         self.library_state.scan_progress_tracks = tracks;
                         self.library_state.scan_progress_albums = albums;
-                        self.scan_total_files = total_files;
-                        self.scan_progress_phase = phase.to_string();
+                        self.scan.total_files = total_files;
+                        self.scan.progress_phase = phase.to_string();
                         self.update_library_scan_timing();
                     }
                     sotf_audio_player::LibraryScanMessage::Complete { tracks, albums } => {
                         self.library_state.scan_progress_tracks = tracks;
                         self.library_state.scan_progress_albums = albums;
-                        if self.scan_total_files == 0 {
-                            self.scan_total_files = tracks;
+                        if self.scan.total_files == 0 {
+                            self.scan.total_files = tracks;
                         }
                         self.update_library_scan_timing();
-                        self.scan_progress_eta_secs = Some(0);
-                        self.scan_progress_phase = "Complete".to_string();
+                        self.scan.progress_eta_secs = Some(0);
+                        self.scan.progress_phase = "Complete".to_string();
                         self.ui_state.toast_message = Some(ToastMessage::success(format!(
                             "Scan complete. Library now has {} tracks in {} albums.",
                             tracks, albums
@@ -345,10 +346,10 @@ impl App {
 
             if done {
                 self.library_state.scan_in_progress = false;
-                self.needs_rescan = false;
-                self.scan_started_at = None;
+                self.scan.needs_rescan = false;
+                self.scan.started_at = None;
             } else {
-                self.library_scanner = Some(scanner);
+                self.scan.library_scanner = Some(scanner);
             }
         }
 
@@ -365,24 +366,24 @@ impl App {
     }
 
     fn update_library_scan_timing(&mut self) {
-        let Some(started_at) = self.scan_started_at else {
+        let Some(started_at) = self.scan.started_at else {
             return;
         };
         let elapsed = started_at.elapsed().as_secs();
-        self.scan_progress_elapsed_secs = elapsed;
+        self.scan.progress_elapsed_secs = elapsed;
 
         if elapsed == 0 {
-            self.scan_progress_tracks_per_sec = 0.0;
-            self.scan_progress_eta_secs = None;
+            self.scan.progress_tracks_per_sec = 0.0;
+            self.scan.progress_eta_secs = None;
             return;
         }
 
         let tracks = self.library_state.scan_progress_tracks;
-        self.scan_progress_tracks_per_sec = tracks as f32 / elapsed as f32;
-        self.scan_progress_eta_secs =
-            if self.scan_total_files > tracks && self.scan_progress_tracks_per_sec > 0.0 {
+        self.scan.progress_tracks_per_sec = tracks as f32 / elapsed as f32;
+        self.scan.progress_eta_secs =
+            if self.scan.total_files > tracks && self.scan.progress_tracks_per_sec > 0.0 {
                 Some(
-                    ((self.scan_total_files - tracks) as f32 / self.scan_progress_tracks_per_sec)
+                    ((self.scan.total_files - tracks) as f32 / self.scan.progress_tracks_per_sec)
                         as u64,
                 )
             } else {
@@ -398,7 +399,8 @@ impl App {
     /// Toggle directory expansion (lazily loads children on first expand)
     pub fn toggle_directory_expansion(&mut self) {
         let tree_items = self.get_directory_tree_items();
-        if let Some((path, _level, _)) = tree_items.get(self.selected_directory_index) {
+        if let Some((path, _level, _)) = tree_items.get(self.library_view.selected_directory_index)
+        {
             self.library_state.library.toggle_directory_expanded(path);
         }
     }

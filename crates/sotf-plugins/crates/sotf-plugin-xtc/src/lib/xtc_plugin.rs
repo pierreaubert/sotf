@@ -35,15 +35,8 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-/// Crosstalk Cancellation plugin
-///
-/// Optimized with:
-/// - Block-based I/O processing (no sample-by-sample loops)
-/// - SIMD complex multiplication for frequency domain filtering
-/// - SIMD windowed overlap-add
-/// - Contiguous buffer access patterns (no modulo in hot path)
-/// - Asynchronous filter recomputation to avoid audio glitches
-pub struct XtcPlugin {
+/// FFT / STFT configuration and shared resources.
+pub(super) struct XtcFftConfig {
     /// FFT size (must be power of 2)
     pub(super) fft_size: usize,
 
@@ -52,9 +45,6 @@ pub struct XtcPlugin {
 
     /// Sample rate
     pub(super) sample_rate: u32,
-
-    /// Configuration parameters
-    pub(super) params: XtcPluginParams,
 
     /// Forward FFT planner
     pub(super) fft_forward: Arc<dyn RealToComplex<f32>>,
@@ -67,7 +57,10 @@ pub struct XtcPlugin {
 
     /// Combined scale factor: COLA normalization / FFT size
     pub(super) output_scale: f32,
+}
 
+/// Input staging buffers.
+pub(super) struct XtcInputBuffers {
     /// Input buffer: holds fft_size samples per channel
     /// Uses linear buffer with shift instead of ring buffer to avoid modulo
     pub(super) input_buffer_l: Vec<f32>,
@@ -76,23 +69,13 @@ pub struct XtcPlugin {
     /// Number of samples currently in input buffer (0 to fft_size)
     pub(super) input_fill: usize,
 
-    /// Output accumulator for overlap-add (flat interleaved ring buffer)
-    /// Layout: [L0, R0, L1, R1, ...]
-    /// Buffer size in frames is always power-of-2 (4 * fft_size) for efficient masking
-    pub(super) output_accumulator: Vec<f32>,
-    /// Bitmask for ring buffer frame index (buffer_frames - 1)
-    pub(super) output_accumulator_mask: usize,
-    /// Number of valid frames in output accumulator
-    pub(super) output_accumulator_fill: usize,
-    /// Next frame position to add a block (tracks overlap-add offset)
-    pub(super) next_add_position: usize,
-    /// Current read frame position in the output accumulator ring buffer
-    pub(super) output_read_position: usize,
-
     /// Temporary buffers for block processing (avoid per-call allocation)
     pub(super) temp_input_l: Vec<f32>,
     pub(super) temp_input_r: Vec<f32>,
+}
 
+/// Working buffers used during the FFT / IFFT stages.
+pub(super) struct XtcWorkBuffers {
     /// Working buffers for FFT
     pub(super) fft_buffer: Vec<f32>,
     pub(super) fft_output_l: Vec<Complex<f32>>,
@@ -102,7 +85,11 @@ pub struct XtcPlugin {
 
     /// Working buffer for crossfade: holds IFFT of prev_filters result
     pub(super) prev_ifft_output: Vec<f32>,
+}
 
+/// Thread-safe filter state, including the current filters, asynchronous updates,
+/// crossfade smoothing, and room/HRTF data.
+pub(super) struct XtcFilterState {
     /// Thread-safe crosstalk cancellation filters (lock-free via ArcSwap)
     pub(super) filters: Arc<ArcSwap<XtcFilters>>,
 
@@ -132,7 +119,28 @@ pub struct XtcPlugin {
 
     /// Hash of room-related parameters for cache invalidation (Optimization 4)
     pub(super) room_params_hash: u64,
+}
 
+/// Overlap-add output ring buffer state.
+pub(super) struct XtcOutputBuffers {
+    /// Output accumulator for overlap-add (flat interleaved ring buffer)
+    /// Layout: [L0, R0, L1, R1, ...]
+    /// Buffer size in frames is always power-of-2 (4 * fft_size) for efficient masking
+    pub(super) output_accumulator: Vec<f32>,
+    /// Bitmask for ring buffer frame index (buffer_frames - 1)
+    pub(super) output_accumulator_mask: usize,
+    /// Number of valid frames in output accumulator
+    pub(super) output_accumulator_fill: usize,
+    /// Next frame position to add a block (tracks overlap-add offset)
+    pub(super) next_add_position: usize,
+    /// Current read frame position in the output accumulator ring buffer
+    pub(super) output_read_position: usize,
+    /// Initial latency counter to ensure OLA buffer is primed before output
+    pub(super) latency_filled: usize,
+}
+
+/// Output dynamics processing (auto-gain + peak limiter).
+pub(super) struct XtcDynamics {
     /// Auto-gain compensation to match output loudness to input
     pub(super) auto_gain: Option<AutoGain>,
 
@@ -145,10 +153,10 @@ pub struct XtcPlugin {
 
     /// Per-sample release coefficient for the limiter (~50ms release).
     pub(super) limiter_release_coeff: f32,
+}
 
-    /// Initial latency counter to ensure OLA buffer is primed before output
-    pub(super) latency_filled: usize,
-
+/// Diagnostic and parameter caching state.
+pub(super) struct XtcDiagnostics {
     /// Diagnostic data cache (Real-time safe)
     pub(super) cache: RealTimeCache<XtcData>,
 
@@ -156,6 +164,40 @@ pub struct XtcPlugin {
     pub(super) cache_update_counter: usize,
 
     pub(super) cached_parameters: Vec<Parameter>,
+}
+
+/// Crosstalk Cancellation plugin
+///
+/// Optimized with:
+/// - Block-based I/O processing (no sample-by-sample loops)
+/// - SIMD complex multiplication for frequency domain filtering
+/// - SIMD windowed overlap-add
+/// - Contiguous buffer access patterns (no modulo in hot path)
+/// - Asynchronous filter recomputation to avoid audio glitches
+pub struct XtcPlugin {
+    /// Configuration parameters
+    pub(super) params: XtcPluginParams,
+
+    /// FFT / STFT configuration and shared resources
+    pub(super) fft: XtcFftConfig,
+
+    /// Input staging buffers
+    pub(super) input: XtcInputBuffers,
+
+    /// Overlap-add output ring buffer state
+    pub(super) output: XtcOutputBuffers,
+
+    /// Working buffers for FFT / IFFT
+    pub(super) work: XtcWorkBuffers,
+
+    /// Filter state, asynchronous updates, crossfade smoothing, room/HRTF data
+    pub(super) filter_state: XtcFilterState,
+
+    /// Output dynamics (auto-gain + peak limiter)
+    pub(super) dynamics: XtcDynamics,
+
+    /// Diagnostic and parameter caching state
+    pub(super) diagnostics: XtcDiagnostics,
 }
 
 impl XtcPlugin {
@@ -265,52 +307,66 @@ impl XtcPlugin {
         };
 
         let mut p = Self {
-            fft_size,
-            hop_size,
-            sample_rate,
             params: params.clone(),
-            fft_forward,
-            fft_inverse,
-            analysis_window,
-            output_scale,
-            input_buffer_l: vec![0.0; fft_size],
-            input_buffer_r: vec![0.0; fft_size],
-            input_fill: 0,
-            output_accumulator: vec![0.0; fft_size * 4 * output_channels],
-            output_accumulator_mask: (fft_size * 4) - 1,
-            output_accumulator_fill: 0,
-            next_add_position: 0,
-            output_read_position: 0,
-            temp_input_l: vec![0.0; MAX_PROCESS_FRAMES],
-            temp_input_r: vec![0.0; MAX_PROCESS_FRAMES],
-            fft_buffer: vec![0.0; fft_size],
-            fft_output_l: vec![Complex::new(0.0, 0.0); num_bins],
-            fft_output_r: vec![Complex::new(0.0, 0.0); num_bins],
-            ifft_input: vec![Complex::new(0.0, 0.0); num_bins],
-            ifft_output: vec![0.0; fft_size],
-            prev_ifft_output: vec![0.0; fft_size],
-            filters,
-            cached_current_filters,
-            pending_filter_update: Arc::new(ArcSwap::from_pointee(None)),
-            filter_update_generation: Arc::new(AtomicU64::new(0)),
-            prev_filters: None,
-            crossfade_progress: 1.0, // Start fully faded to current
-            progress_per_hop: 0.0,
-            hrtf_transfer_functions,
-            room_reflection_cache,
-            room_params_hash,
-            auto_gain,
-            limiter_envelope: 1.0,
-            limiter_attack_coeff: math_audio_dsp::fast_math::fast_exp(
-                -1.0 / (0.2 * 0.001 * sample_rate as f32),
-            ),
-            limiter_release_coeff: math_audio_dsp::fast_math::fast_exp(
-                -1.0 / (50.0 * 0.001 * sample_rate as f32),
-            ),
-            latency_filled: 0,
-            cache: RealTimeCache::new(XtcData::default()),
-            cache_update_counter: 0,
-            cached_parameters: Vec::new(),
+            fft: XtcFftConfig {
+                fft_size,
+                hop_size,
+                sample_rate,
+                fft_forward,
+                fft_inverse,
+                analysis_window,
+                output_scale,
+            },
+            input: XtcInputBuffers {
+                input_buffer_l: vec![0.0; fft_size],
+                input_buffer_r: vec![0.0; fft_size],
+                input_fill: 0,
+                temp_input_l: vec![0.0; MAX_PROCESS_FRAMES],
+                temp_input_r: vec![0.0; MAX_PROCESS_FRAMES],
+            },
+            output: XtcOutputBuffers {
+                output_accumulator: vec![0.0; fft_size * 4 * output_channels],
+                output_accumulator_mask: (fft_size * 4) - 1,
+                output_accumulator_fill: 0,
+                next_add_position: 0,
+                output_read_position: 0,
+                latency_filled: 0,
+            },
+            work: XtcWorkBuffers {
+                fft_buffer: vec![0.0; fft_size],
+                fft_output_l: vec![Complex::new(0.0, 0.0); num_bins],
+                fft_output_r: vec![Complex::new(0.0, 0.0); num_bins],
+                ifft_input: vec![Complex::new(0.0, 0.0); num_bins],
+                ifft_output: vec![0.0; fft_size],
+                prev_ifft_output: vec![0.0; fft_size],
+            },
+            filter_state: XtcFilterState {
+                filters,
+                cached_current_filters,
+                pending_filter_update: Arc::new(ArcSwap::from_pointee(None)),
+                filter_update_generation: Arc::new(AtomicU64::new(0)),
+                prev_filters: None,
+                crossfade_progress: 1.0, // Start fully faded to current
+                progress_per_hop: 0.0,
+                hrtf_transfer_functions,
+                room_reflection_cache,
+                room_params_hash,
+            },
+            dynamics: XtcDynamics {
+                auto_gain,
+                limiter_envelope: 1.0,
+                limiter_attack_coeff: math_audio_dsp::fast_math::fast_exp(
+                    -1.0 / (0.2 * 0.001 * sample_rate as f32),
+                ),
+                limiter_release_coeff: math_audio_dsp::fast_math::fast_exp(
+                    -1.0 / (50.0 * 0.001 * sample_rate as f32),
+                ),
+            },
+            diagnostics: XtcDiagnostics {
+                cache: RealTimeCache::new(XtcData::default()),
+                cache_update_counter: 0,
+                cached_parameters: Vec::new(),
+            },
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -415,31 +471,31 @@ impl XtcPlugin {
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = param_bridge::build_parameters(XT, |i| self.param_value(i));
+        self.diagnostics.cached_parameters = param_bridge::build_parameters(XT, |i| self.param_value(i));
         // Append parameters not in PARAMS
-        self.cached_parameters.push(Parameter::new_bool(
+        self.diagnostics.cached_parameters.push(Parameter::new_bool(
             "enabled",
             "Enabled",
             self.params.enabled,
         ));
-        self.cached_parameters.push(Parameter::new_float(
+        self.diagnostics.cached_parameters.push(Parameter::new_float(
             "kappa_target",
             "Kappa Target",
             self.params.kappa_target,
             1.0,
             1000.0,
         ));
-        self.cached_parameters.push(Parameter::new_string(
+        self.diagnostics.cached_parameters.push(Parameter::new_string(
             "hrtf_file",
             "HRTF File",
             self.params.hrtf_file.clone().unwrap_or_default(),
         ));
-        self.cached_parameters.push(Parameter::new_string(
+        self.diagnostics.cached_parameters.push(Parameter::new_string(
             "source_mode",
             "Source Mode",
             self.params.source_mode.clone(),
         ));
-        self.cached_parameters.push(Parameter::new_string(
+        self.diagnostics.cached_parameters.push(Parameter::new_string(
             "recommended_matrix_file",
             "roomEQ Matrix",
             self.params
@@ -447,7 +503,7 @@ impl XtcPlugin {
                 .clone()
                 .unwrap_or_default(),
         ));
-        self.cached_parameters.push(Parameter::new_string(
+        self.diagnostics.cached_parameters.push(Parameter::new_string(
             "itd_modeling",
             "ITD Mode",
             self.params.itd_modeling.clone(),
@@ -460,9 +516,9 @@ impl XtcPlugin {
     }
 
     pub(super) fn set_crossfade_rate(&mut self) {
-        let smooth_samples = self.params.head_tracking_smooth_s * self.sample_rate as f32;
-        self.progress_per_hop = if smooth_samples > 0.0 {
-            self.hop_size as f32 / smooth_samples
+        let smooth_samples = self.params.head_tracking_smooth_s * self.fft.sample_rate as f32;
+        self.filter_state.progress_per_hop = if smooth_samples > 0.0 {
+            self.fft.hop_size as f32 / smooth_samples
         } else {
             1.0
         };
@@ -472,25 +528,25 @@ impl XtcPlugin {
     ///
     /// Optimization 3 & 4: Uses geometry cache and room reflection cache to avoid redundant computation.
     pub(super) fn update_filters(&mut self, sync: bool) {
-        let num_bins = self.fft_size / 2 + 1;
-        let sample_rate = self.sample_rate;
+        let num_bins = self.fft.fft_size / 2 + 1;
+        let sample_rate = self.fft.sample_rate;
 
         self.set_crossfade_rate();
 
         if sync {
             let new_hash = compute_room_params_hash(&self.params);
-            let room_data = if new_hash != self.room_params_hash {
+            let room_data = if new_hash != self.filter_state.room_params_hash {
                 compute_room_reflection_data(
                     &self.params,
                     sample_rate,
                     num_bins,
-                    Some(self.fft_forward.clone()),
+                    Some(self.fft.fft_forward.clone()),
                 )
             } else {
-                self.room_reflection_cache.clone()
+                self.filter_state.room_reflection_cache.clone()
             };
-            self.room_reflection_cache = room_data.clone();
-            self.room_params_hash = new_hash;
+            self.filter_state.room_reflection_cache = room_data.clone();
+            self.filter_state.room_params_hash = new_hash;
 
             let hrtf_data = if self.params.source_mode != "roomeq_recommended" {
                 if let Some(ref hrtf_path) = self.params.hrtf_file {
@@ -503,7 +559,7 @@ impl XtcPlugin {
             } else {
                 None
             };
-            self.hrtf_transfer_functions = hrtf_data.clone();
+            self.filter_state.hrtf_transfer_functions = hrtf_data.clone();
 
             let new_filters = if self.params.source_mode == "roomeq_recommended" {
                 let Some(matrix_path) = self.params.recommended_matrix_file.as_deref() else {
@@ -527,26 +583,26 @@ impl XtcPlugin {
                 )
             };
             let new_filters = Arc::new(new_filters);
-            let previous_output_channels = self.cached_current_filters.output_channels();
+            let previous_output_channels = self.filter_state.cached_current_filters.output_channels();
             let next_output_channels = new_filters.output_channels();
-            self.filters.store(Arc::clone(&new_filters));
-            self.cached_current_filters = new_filters;
+            self.filter_state.filters.store(Arc::clone(&new_filters));
+            self.filter_state.cached_current_filters = new_filters;
             if previous_output_channels != next_output_channels {
                 self.resize_output_accumulator(next_output_channels);
-                self.auto_gain = None;
+                self.dynamics.auto_gain = None;
             }
-            self.pending_filter_update.store(Arc::new(None));
+            self.filter_state.pending_filter_update.store(Arc::new(None));
         } else {
             // Asynchronous update using rayon. The audio thread starts the
             // crossfade only when it adopts a completed update.
             let generation = self
-                .filter_update_generation
+                .filter_state.filter_update_generation
                 .fetch_add(1, Ordering::Relaxed)
                 + 1;
             let params = self.params.clone();
-            let pending_filter_update = self.pending_filter_update.clone();
-            let requested_generation = self.filter_update_generation.clone();
-            let fft_forward = self.fft_forward.clone();
+            let pending_filter_update = self.filter_state.pending_filter_update.clone();
+            let requested_generation = self.filter_state.filter_update_generation.clone();
+            let fft_forward = self.fft.fft_forward.clone();
             rayon::spawn(move || {
                 let room_params_hash = compute_room_params_hash(&params);
                 let room_data =
@@ -597,46 +653,46 @@ impl XtcPlugin {
     }
 
     pub(super) fn adopt_pending_filters(&mut self) {
-        let update = self.pending_filter_update.load_full();
+        let update = self.filter_state.pending_filter_update.load_full();
         let Some(update) = update.as_ref() else {
             return;
         };
 
-        if update.generation != self.filter_update_generation.load(Ordering::Acquire) {
-            self.pending_filter_update.store(Arc::new(None));
+        if update.generation != self.filter_state.filter_update_generation.load(Ordering::Acquire) {
+            self.filter_state.pending_filter_update.store(Arc::new(None));
             return;
         }
 
-        let previous = self.filters.load_full();
+        let previous = self.filter_state.filters.load_full();
         let previous_output_channels = previous.output_channels();
-        self.filters.store(Arc::clone(&update.filters));
-        self.cached_current_filters = Arc::clone(&update.filters);
-        self.hrtf_transfer_functions = update.hrtf_transfer_functions.clone();
-        self.room_reflection_cache = update.room_reflection_cache.clone();
-        self.room_params_hash = update.room_params_hash;
+        self.filter_state.filters.store(Arc::clone(&update.filters));
+        self.filter_state.cached_current_filters = Arc::clone(&update.filters);
+        self.filter_state.hrtf_transfer_functions = update.hrtf_transfer_functions.clone();
+        self.filter_state.room_reflection_cache = update.room_reflection_cache.clone();
+        self.filter_state.room_params_hash = update.room_params_hash;
         let next_output_channels = update.filters.output_channels();
         if previous_output_channels == next_output_channels {
-            self.prev_filters = Some(previous);
-            self.crossfade_progress = 0.0;
+            self.filter_state.prev_filters = Some(previous);
+            self.filter_state.crossfade_progress = 0.0;
         } else {
-            self.prev_filters = None;
-            self.crossfade_progress = 1.0;
+            self.filter_state.prev_filters = None;
+            self.filter_state.crossfade_progress = 1.0;
             self.resize_output_accumulator(next_output_channels);
-            self.auto_gain = None;
+            self.dynamics.auto_gain = None;
         }
-        self.pending_filter_update.store(Arc::new(None));
+        self.filter_state.pending_filter_update.store(Arc::new(None));
     }
 
     pub(super) fn resize_output_accumulator(&mut self, output_channels: usize) {
-        let required_len = self.fft_size * 4 * output_channels;
-        if self.output_accumulator.len() != required_len {
-            self.output_accumulator.resize(required_len, 0.0);
+        let required_len = self.fft.fft_size * 4 * output_channels;
+        if self.output.output_accumulator.len() != required_len {
+            self.output.output_accumulator.resize(required_len, 0.0);
         }
-        self.output_accumulator.fill(0.0);
-        self.output_accumulator_fill = 0;
-        self.next_add_position = 0;
-        self.output_read_position = 0;
-        self.latency_filled = 0;
+        self.output.output_accumulator.fill(0.0);
+        self.output.output_accumulator_fill = 0;
+        self.output.next_add_position = 0;
+        self.output.output_read_position = 0;
+        self.output.latency_filled = 0;
     }
 
     /// Process one STFT frame using SIMD-optimized operations.
@@ -648,216 +704,216 @@ impl XtcPlugin {
     pub(super) fn process_stft_frame(&mut self) {
         // Window and FFT left channel (SIMD optimized)
         window_mul_simd(
-            &mut self.fft_buffer,
-            &self.input_buffer_l,
-            &self.analysis_window,
+            &mut self.work.fft_buffer,
+            &self.input.input_buffer_l,
+            &self.fft.analysis_window,
         );
-        self.fft_forward
-            .process(&mut self.fft_buffer, &mut self.fft_output_l)
+        self.fft.fft_forward
+            .process(&mut self.work.fft_buffer, &mut self.work.fft_output_l)
             .expect("FFT processing failed");
 
         // Window and FFT right channel (SIMD optimized)
         window_mul_simd(
-            &mut self.fft_buffer,
-            &self.input_buffer_r,
-            &self.analysis_window,
+            &mut self.work.fft_buffer,
+            &self.input.input_buffer_r,
+            &self.fft.analysis_window,
         );
-        self.fft_forward
-            .process(&mut self.fft_buffer, &mut self.fft_output_r)
+        self.fft.fft_forward
+            .process(&mut self.work.fft_buffer, &mut self.work.fft_output_r)
             .expect("FFT processing failed");
 
-        let scale = self.output_scale;
-        let fft_size = self.fft_size;
-        let mask = self.output_accumulator_mask;
+        let scale = self.fft.output_scale;
+        let fft_size = self.fft.fft_size;
+        let mask = self.output.output_accumulator_mask;
 
         // Diagnostic bypass: skip all XTC filter math, just IFFT the windowed input.
         // This tests whether the STFT framework (windowing + OLA) itself is clean.
         if self.params.bypass_xtc_filters {
-            let output_channels = self.cached_current_filters.output_channels();
+            let output_channels = self.filter_state.cached_current_filters.output_channels();
 
             // Left channel: IFFT the FFT output directly (identity in freq domain)
-            self.ifft_input.copy_from_slice(&self.fft_output_l);
-            let n = self.ifft_input.len();
-            self.ifft_input[0].im = 0.0;
-            self.ifft_input[n - 1].im = 0.0;
-            self.fft_inverse
-                .process(&mut self.ifft_input, &mut self.ifft_output)
+            self.work.ifft_input.copy_from_slice(&self.work.fft_output_l);
+            let n = self.work.ifft_input.len();
+            self.work.ifft_input[0].im = 0.0;
+            self.work.ifft_input[n - 1].im = 0.0;
+            self.fft.fft_inverse
+                .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                 .expect("IFFT processing failed");
 
             // Accumulate Left
             for i in 0..fft_size {
-                let idx = (self.next_add_position + i) & mask;
-                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
-                self.output_accumulator[idx * output_channels] += s;
+                let idx = (self.output.next_add_position + i) & mask;
+                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
+                self.output.output_accumulator[idx * output_channels] += s;
             }
 
             // Right channel
-            self.ifft_input.copy_from_slice(&self.fft_output_r);
-            self.ifft_input[0].im = 0.0;
-            self.ifft_input[n - 1].im = 0.0;
-            self.fft_inverse
-                .process(&mut self.ifft_input, &mut self.ifft_output)
+            self.work.ifft_input.copy_from_slice(&self.work.fft_output_r);
+            self.work.ifft_input[0].im = 0.0;
+            self.work.ifft_input[n - 1].im = 0.0;
+            self.fft.fft_inverse
+                .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                 .expect("IFFT processing failed");
 
             // Accumulate Right
             for i in 0..fft_size {
-                let idx = (self.next_add_position + i) & mask;
-                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
+                let idx = (self.output.next_add_position + i) & mask;
+                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
                 if output_channels > 1 {
-                    self.output_accumulator[idx * output_channels + 1] += s;
+                    self.output.output_accumulator[idx * output_channels + 1] += s;
                 }
             }
-        } else if let Some(speaker_filters) = self.cached_current_filters.speaker_filters.as_ref() {
-            let current_filters = &self.cached_current_filters;
+        } else if let Some(speaker_filters) = self.filter_state.cached_current_filters.speaker_filters.as_ref() {
+            let current_filters = &self.filter_state.cached_current_filters;
             let output_channels = current_filters.output_channels();
-            let can_crossfade = self.crossfade_progress < 1.0
+            let can_crossfade = self.filter_state.crossfade_progress < 1.0
                 && self
-                    .prev_filters
+                    .filter_state.prev_filters
                     .as_ref()
                     .and_then(|prev| prev.speaker_filters.as_ref())
                     .is_some_and(|prev| prev.len() == output_channels);
-            let alpha = self.crossfade_progress;
+            let alpha = self.filter_state.crossfade_progress;
 
             for (speaker_idx, filters_for_speaker) in speaker_filters.iter().enumerate() {
                 if can_crossfade {
-                    let prev_filters = self.prev_filters.as_ref().unwrap();
+                    let prev_filters = self.filter_state.prev_filters.as_ref().unwrap();
                     let prev_speaker_filters = prev_filters.speaker_filters.as_ref().unwrap();
                     // Blend prev and current filters in frequency domain → 1 IFFT instead of 2.
                     apply_filter_pair_blended(
-                        &mut self.ifft_input,
-                        &self.fft_output_l,
-                        &self.fft_output_r,
+                        &mut self.work.ifft_input,
+                        &self.work.fft_output_l,
+                        &self.work.fft_output_r,
                         &prev_speaker_filters[speaker_idx][0],
                         &prev_speaker_filters[speaker_idx][1],
                         &filters_for_speaker[0],
                         &filters_for_speaker[1],
                         alpha,
                     );
-                    self.fft_inverse
-                        .process(&mut self.ifft_input, &mut self.ifft_output)
+                    self.fft.fft_inverse
+                        .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                         .expect("IFFT processing failed");
 
                     for i in 0..fft_size {
-                        let idx = (self.next_add_position + i) & mask;
-                        let s = self.ifft_output[i] * self.analysis_window[i] * scale;
-                        self.output_accumulator[idx * output_channels + speaker_idx] += s;
+                        let idx = (self.output.next_add_position + i) & mask;
+                        let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
+                        self.output.output_accumulator[idx * output_channels + speaker_idx] += s;
                     }
                 } else {
                     apply_filter_pair(
-                        &mut self.ifft_input,
-                        &self.fft_output_l,
-                        &self.fft_output_r,
+                        &mut self.work.ifft_input,
+                        &self.work.fft_output_l,
+                        &self.work.fft_output_r,
                         &filters_for_speaker[0],
                         &filters_for_speaker[1],
                     );
-                    self.fft_inverse
-                        .process(&mut self.ifft_input, &mut self.ifft_output)
+                    self.fft.fft_inverse
+                        .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                         .expect("IFFT processing failed");
 
                     for i in 0..fft_size {
-                        let idx = (self.next_add_position + i) & mask;
-                        let s = self.ifft_output[i] * self.analysis_window[i] * scale;
-                        self.output_accumulator[idx * output_channels + speaker_idx] += s;
+                        let idx = (self.output.next_add_position + i) & mask;
+                        let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
+                        self.output.output_accumulator[idx * output_channels + speaker_idx] += s;
                     }
                 }
             }
-        } else if self.crossfade_progress < 1.0
-            && let Some(prev_filters) = self.prev_filters.as_ref()
+        } else if self.filter_state.crossfade_progress < 1.0
+            && let Some(prev_filters) = self.filter_state.prev_filters.as_ref()
         {
-            let alpha = self.crossfade_progress;
+            let alpha = self.filter_state.crossfade_progress;
             // Use cached filter snapshot (loaded once per process() call)
-            let current_filters = &self.cached_current_filters;
+            let current_filters = &self.filter_state.cached_current_filters;
 
             // --- Left channel with frequency-domain crossfade (1 IFFT instead of 2) ---
             // Blend prev and current filters per bin, then run a single IFFT.
             // Valid because IFFT is linear: (1-α)·IFFT(prev) + α·IFFT(curr) = IFFT(blended).
             apply_filter_left_blended(
-                &mut self.ifft_input,
-                &self.fft_output_l,
-                &self.fft_output_r,
+                &mut self.work.ifft_input,
+                &self.work.fft_output_l,
+                &self.work.fft_output_r,
                 prev_filters,
                 current_filters,
                 alpha,
             );
-            self.fft_inverse
-                .process(&mut self.ifft_input, &mut self.ifft_output)
+            self.fft.fft_inverse
+                .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                 .expect("IFFT processing failed");
 
             for i in 0..fft_size {
-                let idx = (self.next_add_position + i) & mask;
-                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
-                self.output_accumulator[idx * 2] += s;
+                let idx = (self.output.next_add_position + i) & mask;
+                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
+                self.output.output_accumulator[idx * 2] += s;
             }
 
             // --- Right channel with frequency-domain crossfade (1 IFFT instead of 2) ---
             apply_filter_right_blended(
-                &mut self.ifft_input,
-                &self.fft_output_l,
-                &self.fft_output_r,
+                &mut self.work.ifft_input,
+                &self.work.fft_output_l,
+                &self.work.fft_output_r,
                 prev_filters,
                 current_filters,
                 alpha,
             );
-            self.fft_inverse
-                .process(&mut self.ifft_input, &mut self.ifft_output)
+            self.fft.fft_inverse
+                .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                 .expect("IFFT processing failed");
 
             for i in 0..fft_size {
-                let idx = (self.next_add_position + i) & mask;
-                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
-                self.output_accumulator[idx * 2 + 1] += s;
+                let idx = (self.output.next_add_position + i) & mask;
+                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
+                self.output.output_accumulator[idx * 2 + 1] += s;
             }
         } else {
             // Normal path: no crossfade needed
-            let filters = &self.cached_current_filters;
+            let filters = &self.filter_state.cached_current_filters;
 
             // Left channel
             apply_filter_left(
-                &mut self.ifft_input,
-                &self.fft_output_l,
-                &self.fft_output_r,
+                &mut self.work.ifft_input,
+                &self.work.fft_output_l,
+                &self.work.fft_output_r,
                 filters,
             );
-            self.fft_inverse
-                .process(&mut self.ifft_input, &mut self.ifft_output)
+            self.fft.fft_inverse
+                .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                 .expect("IFFT processing failed");
 
             for i in 0..fft_size {
-                let idx = (self.next_add_position + i) & mask;
-                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
-                self.output_accumulator[idx * 2] += s;
+                let idx = (self.output.next_add_position + i) & mask;
+                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
+                self.output.output_accumulator[idx * 2] += s;
             }
 
             // Right channel
             apply_filter_right(
-                &mut self.ifft_input,
-                &self.fft_output_l,
-                &self.fft_output_r,
+                &mut self.work.ifft_input,
+                &self.work.fft_output_l,
+                &self.work.fft_output_r,
                 filters,
             );
-            self.fft_inverse
-                .process(&mut self.ifft_input, &mut self.ifft_output)
+            self.fft.fft_inverse
+                .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                 .expect("IFFT processing failed");
 
             for i in 0..fft_size {
-                let idx = (self.next_add_position + i) & mask;
-                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
-                self.output_accumulator[idx * 2 + 1] += s;
+                let idx = (self.output.next_add_position + i) & mask;
+                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
+                self.output.output_accumulator[idx * 2 + 1] += s;
             }
         }
 
         // Update positions
-        self.next_add_position = (self.next_add_position + self.hop_size) & mask;
+        self.output.next_add_position = (self.output.next_add_position + self.fft.hop_size) & mask;
 
         // Start draining immediately to match physical latency.
-        self.output_accumulator_fill += self.hop_size;
-        self.latency_filled += self.hop_size;
+        self.output.output_accumulator_fill += self.fft.hop_size;
+        self.output.latency_filled += self.fft.hop_size;
 
         // Advance crossfade progress
-        if self.crossfade_progress < 1.0 {
-            self.crossfade_progress = (self.crossfade_progress + self.progress_per_hop).min(1.0);
-            if self.crossfade_progress >= 1.0 {
-                self.prev_filters = None; // Release old filters
+        if self.filter_state.crossfade_progress < 1.0 {
+            self.filter_state.crossfade_progress = (self.filter_state.crossfade_progress + self.filter_state.progress_per_hop).min(1.0);
+            if self.filter_state.crossfade_progress >= 1.0 {
+                self.filter_state.prev_filters = None; // Release old filters
             }
         }
     }
@@ -865,13 +921,13 @@ impl XtcPlugin {
     /// Shift input buffer left by hop_size and clear tail
     #[inline(always)]
     pub(super) fn shift_input_buffer(&mut self) {
-        let overlap = self.fft_size - self.hop_size;
-        self.input_buffer_l.copy_within(self.hop_size.., 0);
-        self.input_buffer_r.copy_within(self.hop_size.., 0);
+        let overlap = self.fft.fft_size - self.fft.hop_size;
+        self.input.input_buffer_l.copy_within(self.fft.hop_size.., 0);
+        self.input.input_buffer_r.copy_within(self.fft.hop_size.., 0);
         // Clear the tail (will be filled with new samples)
-        self.input_buffer_l[overlap..].fill(0.0);
-        self.input_buffer_r[overlap..].fill(0.0);
-        self.input_fill = overlap;
+        self.input.input_buffer_l[overlap..].fill(0.0);
+        self.input.input_buffer_r[overlap..].fill(0.0);
+        self.input.input_fill = overlap;
     }
 }
 
@@ -879,7 +935,7 @@ impl Plugin for XtcPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Crosstalk Cancellation (XTC)", "2.0.0", "SotF").with_description(format!(
             "Crosstalk cancellation (Async) - FFT size: {}, speakers at {}° and {}m",
-            self.fft_size, self.params.speaker_angle_deg, self.params.distance_m
+            self.fft.fft_size, self.params.speaker_angle_deg, self.params.distance_m
         ))
     }
 
@@ -888,11 +944,11 @@ impl Plugin for XtcPlugin {
     }
 
     fn output_channels(&self) -> usize {
-        self.cached_current_filters.output_channels()
+        self.filter_state.cached_current_filters.output_channels()
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        self.cached_parameters.clone()
+        self.diagnostics.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
@@ -942,8 +998,8 @@ impl Plugin for XtcPlugin {
                         candidate.source_mode = v.to_string();
                         validate_roomeq_recommended_source(
                             &candidate,
-                            self.sample_rate,
-                            self.fft_size / 2 + 1,
+                            self.fft.sample_rate,
+                            self.fft.fft_size / 2 + 1,
                         )?;
                     }
                     self.params.source_mode = v.to_string();
@@ -974,8 +1030,8 @@ impl Plugin for XtcPlugin {
                     candidate.recommended_matrix_file = Some(v.to_string());
                     validate_roomeq_recommended_source(
                         &candidate,
-                        self.sample_rate,
-                        self.fft_size / 2 + 1,
+                        self.fft.sample_rate,
+                        self.fft.fft_size / 2 + 1,
                     )?;
                 }
                 self.params.recommended_matrix_file = Some(v.to_string());
@@ -1012,18 +1068,18 @@ impl Plugin for XtcPlugin {
             15..=19 => true, // room
             20 => {
                 // bypass_xtc_filters
-                self.limiter_envelope = 1.0;
+                self.dynamics.limiter_envelope = 1.0;
                 false
             }
             21 | 22 => true, // bypass_spectral_normalization, bypass_neumann_refinement
             23 => {
                 // auto_gain_enabled
                 if self.output_channels() != 2 {
-                    self.auto_gain = None;
-                } else if self.params.auto_gain_enabled && self.auto_gain.is_none() {
-                    self.auto_gain = Some(AutoGain::new(
+                    self.dynamics.auto_gain = None;
+                } else if self.params.auto_gain_enabled && self.dynamics.auto_gain.is_none() {
+                    self.dynamics.auto_gain = Some(AutoGain::new(
                         2,
-                        self.sample_rate,
+                        self.fft.sample_rate,
                         AutoGainParams {
                             enabled: true,
                             loudness_type: Default::default(),
@@ -1032,20 +1088,20 @@ impl Plugin for XtcPlugin {
                         },
                     )?);
                 } else if !self.params.auto_gain_enabled {
-                    self.auto_gain = None;
+                    self.dynamics.auto_gain = None;
                 }
                 false
             }
             24 => {
                 // auto_gain_max_db
-                if let Some(ag) = &mut self.auto_gain {
+                if let Some(ag) = &mut self.dynamics.auto_gain {
                     ag.set_max_gain_db(self.params.auto_gain_max_db);
                 }
                 false
             }
             25 => {
                 // auto_gain_smoothing_ms
-                if let Some(ag) = &mut self.auto_gain {
+                if let Some(ag) = &mut self.dynamics.auto_gain {
                     ag.set_smoothing_ms(self.params.auto_gain_smoothing_ms);
                 }
                 false
@@ -1093,23 +1149,23 @@ impl Plugin for XtcPlugin {
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
+        Some(self.diagnostics.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
-        self.sample_rate = sample_rate;
-        self.limiter_attack_coeff =
+        self.fft.sample_rate = sample_rate;
+        self.dynamics.limiter_attack_coeff =
             math_audio_dsp::fast_math::fast_exp(-1.0 / (0.2 * 0.001 * sample_rate as f32));
-        self.limiter_release_coeff =
+        self.dynamics.limiter_release_coeff =
             math_audio_dsp::fast_math::fast_exp(-1.0 / (50.0 * 0.001 * sample_rate as f32));
         self.update_filters(true); // Synchronous for initialization
 
         // Pre-allocate temp buffers to the validated maximum XTC block size.
         // After this, the resize() check in process() is a guaranteed no-op.
-        self.temp_input_l.resize(MAX_PROCESS_FRAMES, 0.0);
-        self.temp_input_r.resize(MAX_PROCESS_FRAMES, 0.0);
+        self.input.temp_input_l.resize(MAX_PROCESS_FRAMES, 0.0);
+        self.input.temp_input_r.resize(MAX_PROCESS_FRAMES, 0.0);
 
-        if let Some(ag) = &mut self.auto_gain {
+        if let Some(ag) = &mut self.dynamics.auto_gain {
             ag.set_sample_rate(sample_rate).map_err(|e| e.to_string())?;
         }
 
@@ -1118,24 +1174,24 @@ impl Plugin for XtcPlugin {
 
     fn reset(&mut self) {
         // Clear all buffers
-        self.input_buffer_l.fill(0.0);
-        self.input_buffer_r.fill(0.0);
-        self.output_accumulator.fill(0.0);
-        self.output_accumulator_fill = 0;
-        self.next_add_position = 0;
-        self.output_read_position = 0;
-        self.prev_ifft_output.fill(0.0);
-        self.input_fill = 0;
-        self.latency_filled = 0;
+        self.input.input_buffer_l.fill(0.0);
+        self.input.input_buffer_r.fill(0.0);
+        self.output.output_accumulator.fill(0.0);
+        self.output.output_accumulator_fill = 0;
+        self.output.next_add_position = 0;
+        self.output.output_read_position = 0;
+        self.work.prev_ifft_output.fill(0.0);
+        self.input.input_fill = 0;
+        self.output.latency_filled = 0;
 
         // Reset crossfade state
-        self.prev_filters = None;
-        self.crossfade_progress = 1.0;
+        self.filter_state.prev_filters = None;
+        self.filter_state.crossfade_progress = 1.0;
 
-        if let Some(ag) = &mut self.auto_gain {
+        if let Some(ag) = &mut self.dynamics.auto_gain {
             ag.reset();
         }
-        self.limiter_envelope = 1.0;
+        self.dynamics.limiter_envelope = 1.0;
     }
 
     fn process(
@@ -1165,15 +1221,15 @@ impl Plugin for XtcPlugin {
         }
 
         // Measure loudness (throttled to 1/10 blocks to save CPU)
-        self.cache_update_counter += 1;
+        self.diagnostics.cache_update_counter += 1;
         let mut do_measure = false;
-        if self.cache_update_counter >= 10 {
-            self.cache_update_counter = 0;
+        if self.diagnostics.cache_update_counter >= 10 {
+            self.diagnostics.cache_update_counter = 0;
             do_measure = true;
         }
 
         // Measure input loudness for auto-gain (before any processing)
-        if do_measure && let Some(ag) = &mut self.auto_gain {
+        if do_measure && let Some(ag) = &mut self.dynamics.auto_gain {
             let _ = ag.measure_input(input);
         }
 
@@ -1194,11 +1250,11 @@ impl Plugin for XtcPlugin {
             // Still update diagnostic cache when bypassed
             if do_measure {
                 let ag_data = self
-                    .auto_gain
+                    .dynamics.auto_gain
                     .as_ref()
                     .map(|ag| ag.get_data())
                     .unwrap_or_default();
-                self.cache.update(|d| {
+                self.diagnostics.cache.update(|d| {
                     d.auto_gain = ag_data;
                     d.limiter_envelope = 1.0;
                 });
@@ -1207,64 +1263,64 @@ impl Plugin for XtcPlugin {
         }
 
         // Snapshot current filters once per process() call (avoids per-frame ArcSwap::load atomic ops)
-        self.cached_current_filters = arc_swap::Guard::into_inner(self.filters.load());
+        self.filter_state.cached_current_filters = arc_swap::Guard::into_inner(self.filter_state.filters.load());
 
         let mut output_pos = 0;
-        let mask = self.output_accumulator_mask;
+        let mask = self.output.output_accumulator_mask;
         let mut block_start = 0;
 
         while block_start < num_frames && output_pos < num_frames {
-            let block_frames = self.temp_input_l.len().min(num_frames - block_start);
+            let block_frames = self.input.temp_input_l.len().min(num_frames - block_start);
             let input_start = block_start * 2;
             let input_end = input_start + block_frames * 2;
 
             deinterleave_stereo(
                 &input[input_start..input_end],
-                &mut self.temp_input_l[..block_frames],
-                &mut self.temp_input_r[..block_frames],
+                &mut self.input.temp_input_l[..block_frames],
+                &mut self.input.temp_input_r[..block_frames],
             );
 
             let mut input_pos = 0;
             while output_pos < num_frames {
                 // Step 1: Fill input buffer from deinterleaved temp buffers
                 if input_pos < block_frames {
-                    let samples_needed = self.fft_size - self.input_fill;
+                    let samples_needed = self.fft.fft_size - self.input.input_fill;
                     let samples_available_in = block_frames - input_pos;
                     let to_copy = samples_needed.min(samples_available_in);
 
                     if to_copy > 0 {
-                        self.input_buffer_l[self.input_fill..self.input_fill + to_copy]
-                            .copy_from_slice(&self.temp_input_l[input_pos..input_pos + to_copy]);
-                        self.input_buffer_r[self.input_fill..self.input_fill + to_copy]
-                            .copy_from_slice(&self.temp_input_r[input_pos..input_pos + to_copy]);
-                        self.input_fill += to_copy;
+                        self.input.input_buffer_l[self.input.input_fill..self.input.input_fill + to_copy]
+                            .copy_from_slice(&self.input.temp_input_l[input_pos..input_pos + to_copy]);
+                        self.input.input_buffer_r[self.input.input_fill..self.input.input_fill + to_copy]
+                            .copy_from_slice(&self.input.temp_input_r[input_pos..input_pos + to_copy]);
+                        self.input.input_fill += to_copy;
                         input_pos += to_copy;
                     }
                 }
 
                 // Step 2: Process ALL possible STFT frames from current input
-                while self.input_fill >= self.fft_size {
+                while self.input.input_fill >= self.fft.fft_size {
                     self.process_stft_frame();
                     self.shift_input_buffer();
                 }
 
                 // Step 3: Copy available output to output buffer
-                let frames_to_drain = self.output_accumulator_fill.min(num_frames - output_pos);
+                let frames_to_drain = self.output.output_accumulator_fill.min(num_frames - output_pos);
 
                 if frames_to_drain > 0 {
                     for i in 0..frames_to_drain {
-                        let read_idx = (self.output_read_position + i) & mask;
+                        let read_idx = (self.output.output_read_position + i) & mask;
                         let acc_base = read_idx * output_channels;
                         let out_base = (output_pos + i) * output_channels;
                         output[out_base..out_base + output_channels].copy_from_slice(
-                            &self.output_accumulator[acc_base..acc_base + output_channels],
+                            &self.output.output_accumulator[acc_base..acc_base + output_channels],
                         );
                         // Clear after reading for next overlap-add cycle
-                        self.output_accumulator[acc_base..acc_base + output_channels].fill(0.0);
+                        self.output.output_accumulator[acc_base..acc_base + output_channels].fill(0.0);
                     }
-                    self.output_read_position =
-                        (self.output_read_position + frames_to_drain) & mask;
-                    self.output_accumulator_fill -= frames_to_drain;
+                    self.output.output_read_position =
+                        (self.output.output_read_position + frames_to_drain) & mask;
+                    self.output.output_accumulator_fill -= frames_to_drain;
                     output_pos += frames_to_drain;
                 } else if input_pos >= block_frames {
                     break;
@@ -1276,14 +1332,14 @@ impl Plugin for XtcPlugin {
 
         // Auto-gain: measure the UNCOMPENSATED output from the plugin filters.
         // This ensures the gain calculation is stable and doesn't oscillate.
-        if let Some(ag) = &mut self.auto_gain {
+        if let Some(ag) = &mut self.dynamics.auto_gain {
             if do_measure {
                 let _ = ag.measure_output(&output[..output_pos * output_channels]);
 
                 // Update diagnostic cache (Real-time safe, throttled)
                 let ag_data = ag.get_data();
-                let limiter_env = self.limiter_envelope;
-                self.cache.update(|d| {
+                let limiter_env = self.dynamics.limiter_envelope;
+                self.diagnostics.cache.update(|d| {
                     d.auto_gain = ag_data;
                     d.limiter_envelope = limiter_env;
                 });
@@ -1308,17 +1364,17 @@ impl Plugin for XtcPlugin {
                 } else {
                     1.0
                 };
-                if target_gr < self.limiter_envelope {
+                if target_gr < self.dynamics.limiter_envelope {
                     // Smooth attack (~0.2ms) to avoid per-sample gain jumps
-                    self.limiter_envelope =
-                        target_gr + self.limiter_attack_coeff * (self.limiter_envelope - target_gr);
+                    self.dynamics.limiter_envelope =
+                        target_gr + self.dynamics.limiter_attack_coeff * (self.dynamics.limiter_envelope - target_gr);
                 } else {
-                    self.limiter_envelope = target_gr
-                        + self.limiter_release_coeff * (self.limiter_envelope - target_gr);
+                    self.dynamics.limiter_envelope = target_gr
+                        + self.dynamics.limiter_release_coeff * (self.dynamics.limiter_envelope - target_gr);
                 }
                 for ch in 0..output_channels {
                     let idx = base + ch;
-                    output[idx] *= self.limiter_envelope;
+                    output[idx] *= self.dynamics.limiter_envelope;
                     // Hard clamp: the one-pole envelope has finite attack time, so a
                     // few samples can overshoot during transient onset. Clamp to ±1.0
                     // as a safety ceiling — matches standard digital limiter practice.
@@ -1339,6 +1395,6 @@ impl Plugin for XtcPlugin {
         // With 75% overlap (hop_size = fft_size/4) and immediate draining of the first
         // hop after filling the first STFT frame, the first output sample appears after
         // fft_size - hop_size input samples (= 3/4 of fft_size for 75% overlap).
-        self.fft_size - self.hop_size
+        self.fft.fft_size - self.fft.hop_size
     }
 }

@@ -1,6 +1,6 @@
 // Integration tests for Gate plugin
 
-use sotf_host::{InPlacePluginAdapter, PluginHost};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, PluginHost};
 use sotf_plugin_gate::{GateData, GatePlugin};
 
 // ---------------------------------------------------------------------------
@@ -30,7 +30,7 @@ use sotf_plugin_gate::{GateData, GatePlugin};
 ///   - gain_B ≈ gain_A.
 #[test]
 fn test_attack_controls_gate_open_speed() {
-    use sotf_host::{InPlacePlugin, ProcessContext};
+        use sotf_host::plugin::ProcessContext;
     let sr = 48000u32;
 
     let silence_frames = (0.3 * sr as f32) as usize; // 300 ms settle
@@ -104,7 +104,7 @@ fn test_attack_controls_gate_open_speed() {
 /// true even when channel 0 has full attenuation.
 #[test]
 fn test_linked_mode_is_open_false_when_gated() {
-    use sotf_host::{InPlacePlugin, ProcessContext};
+        use sotf_host::plugin::ProcessContext;
 
     let sr = 48000u32;
     // Linked stereo gate, threshold -30 dB.  No hold so gate closes cleanly.
@@ -163,7 +163,7 @@ fn test_gate_silences_quiet_signals() {
 
     // Add gate at -40dB
     let gate = GatePlugin::new(2, -40.0, 10.0, 1.0, 10.0, 100.0);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(gate)))
+    host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(gate)))
         .unwrap();
 
     // Test with quiet signal (should be gated)
@@ -194,7 +194,7 @@ fn test_gate_passes_loud_signals() {
 
     // Add gate at -40dB
     let gate = GatePlugin::new(2, -40.0, 10.0, 1.0, 10.0, 100.0);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(gate)))
+    host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(gate)))
         .unwrap();
 
     // Test with loud signal (should pass through)
@@ -231,7 +231,8 @@ fn test_gate_hysteresis_prevents_chatter() {
     // A signal oscillating between -22dB and -18dB should not cause rapid
     // open/close transitions. With hysteresis, once open (at -18dB > -20dB),
     // the gate stays open until signal drops below -24dB (which -22dB does not).
-    use sotf_host::{InPlacePlugin, ParameterId, ParameterValue, ProcessContext};
+        use sotf_host::parameters::{ParameterId, ParameterValue};
+    use sotf_host::plugin::ProcessContext;
     use sotf_plugin_gate::GatePlugin;
 
     let sr = 48000u32;
@@ -239,7 +240,7 @@ fn test_gate_hysteresis_prevents_chatter() {
     gate.initialize(sr).unwrap();
 
     // Set hysteresis to 4dB
-    gate.set_parameter(
+    gate.parametric_set_parameter(
         ParameterId::from("hysteresis_db"),
         ParameterValue::Float(4.0),
     )

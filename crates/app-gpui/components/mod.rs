@@ -20,8 +20,8 @@ pub use plugins::{
     render_plugin_content,
 };
 
-use crate::app::types::PluginUpdateType;
 use crate::app::SettingsTab;
+use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::plugins::editing::PluginEditingManager;
@@ -294,7 +294,8 @@ impl PlayerView {
                     .ok();
             }
 
-            state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+            state.app.plugin_state.update_state.pending_plugin_update =
+                Some(PluginUpdateType::Structural);
             state.app.sync_spectrum_visible();
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                 "Cleared EQ from playback",

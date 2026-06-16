@@ -20,7 +20,7 @@
     // Enable toggle
     let mut mm_toggle = Toggle::new((base_id.clone(), "mm-enabled"))
         .size(ToggleSize::Sm)
-        .checked(config.use_multi_measurement)
+        .checked(config.system_optimization.use_multi_measurement)
         .theme(toggle_theme.clone());
 
     if let Some(ref h) = on_use_multi_measurement_change_rc {
@@ -35,7 +35,7 @@
             .child(mm_toggle),
     );
 
-    if config.use_multi_measurement {
+    if config.system_optimization.use_multi_measurement {
         // Strategy select
         let strategy_options: Vec<SelectOption> = MULTI_MEASUREMENT_STRATEGY_OPTIONS
             .iter()
@@ -45,7 +45,7 @@
         let mut strategy_select = Select::new((base_id.clone(), "mm-strategy"))
             .label("Strategy")
             .options(strategy_options)
-            .selected(&config.multi_measurement_strategy)
+            .selected(&config.system_optimization.multi_measurement_strategy)
             .is_open(ui_state.multi_measurement_strategy_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -63,9 +63,9 @@
         section = section.child(strategy_select);
 
         // Strategy-dependent params
-        if config.multi_measurement_strategy == "variance_penalized" {
+        if config.system_optimization.multi_measurement_strategy == "variance_penalized" {
             let mut lambda_input = NumberInput::new((base_id.clone(), "mm-variance-lambda"))
-                .value(config.multi_measurement_variance_lambda)
+                .value(config.system_optimization.multi_measurement_variance_lambda)
                 .min(ParamLimits::VARIANCE_LAMBDA.min)
                 .max(ParamLimits::VARIANCE_LAMBDA.max)
                 .step(ParamLimits::VARIANCE_LAMBDA.step)
@@ -84,13 +84,14 @@
         }
 
         // Per-measurement weights (for weighted_sum strategy)
-        if config.multi_measurement_strategy == "weighted_sum" && !config.multi_measurement_weights.is_empty() {
+        if config.system_optimization.multi_measurement_strategy == "weighted_sum" && !config.system_optimization.multi_measurement_weights.is_empty() {
             section = section.child(
                 Text::label("Measurement Weights").color(theme.header_color),
             );
 
-            for (i, weight) in config.multi_measurement_weights.iter().enumerate() {
+            for (i, weight) in config.system_optimization.multi_measurement_weights.iter().enumerate() {
                 let label = config
+                    .system_optimization
                     .multi_measurement_labels
                     .get(i)
                     .cloned()

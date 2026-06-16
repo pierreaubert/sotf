@@ -1,6 +1,6 @@
+use super::TransferCurveElement;
 use super::misc::theme_to_vertical_slider_theme;
 use super::param_section_style::ParamSectionStyle;
-use super::TransferCurveElement;
 use crate::app::AppState;
 use crate::app::constants::spacing;
 use crate::app::state::app::KnobDragState;
@@ -463,7 +463,7 @@ pub fn render_vertical_slider_sized(
         .label(label.to_string())
         .selected(is_selected)
         .theme(theme_to_vertical_slider_theme(theme))
-        .design_tokens(theme.design_tokens.clone())
+        .design_tokens(theme.layout.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
@@ -476,7 +476,7 @@ pub fn render_vertical_slider_sized(
             let entity = entity.clone();
             move |start_y, start_value, _, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.knob_drag = Some(KnobDragState {
+                    state.app.drag.knob_drag = Some(KnobDragState {
                         plugin_idx,
                         param_idx: idx,
                         start_y,
@@ -545,7 +545,7 @@ pub fn render_vertical_slider_with_ticks(
         .size(VerticalSliderSize::Md)
         .selected(is_selected)
         .theme(theme_to_vertical_slider_theme(theme))
-        .design_tokens(theme.design_tokens.clone())
+        .design_tokens(theme.layout.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
@@ -558,7 +558,7 @@ pub fn render_vertical_slider_with_ticks(
             let entity = entity.clone();
             move |start_y, start_value, _, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.knob_drag = Some(KnobDragState {
+                    state.app.drag.knob_drag = Some(KnobDragState {
                         plugin_idx,
                         param_idx: idx,
                         start_y,
@@ -666,7 +666,7 @@ pub fn render_transfer_curve_with_level(
                     is_limiter,
                     input_level_db,
                     accent: theme.accent,
-                    compressed_color: theme.meter_clip,
+                    compressed_color: theme.feedback.meter_clip,
                     operating_point_color: theme.warning,
                     bg: theme.background,
                     grid_color: theme.border,
@@ -743,7 +743,7 @@ pub fn render_interactive_transfer_curve(
                         let start_x: f32 = event.position.x.into();
                         let start_y: f32 = event.position.y.into();
                         entity.update(cx, |state, _| {
-                            state.app.knob_drag = Some(KnobDragState {
+                            state.app.drag.knob_drag = Some(KnobDragState {
                                 plugin_idx,
                                 param_idx: 0,
                                 start_y,
@@ -759,7 +759,7 @@ pub fn render_interactive_transfer_curve(
                         return;
                     }
                     entity_drag.update(cx, |state, _| {
-                        let Some(ref drag) = state.app.knob_drag else {
+                        let Some(ref drag) = state.app.drag.knob_drag else {
                             return;
                         };
                         if drag.plugin_idx != plugin_idx {
@@ -798,7 +798,7 @@ pub fn render_interactive_transfer_curve(
                     let entity = entity.clone();
                     move |_, _, cx| {
                         entity.update(cx, |state, _| {
-                            state.app.knob_drag = None;
+                            state.app.drag.knob_drag = None;
                         });
                     }
                 })
@@ -829,7 +829,7 @@ pub fn render_interactive_transfer_curve(
                     is_limiter,
                     input_level_db,
                     accent: theme.accent,
-                    compressed_color: theme.meter_clip,
+                    compressed_color: theme.feedback.meter_clip,
                     operating_point_color: theme.warning,
                     bg: theme.background,
                     grid_color: theme.border,
@@ -959,7 +959,7 @@ pub fn render_knob_sized(
         .scale(scale)
         .selected(is_selected)
         .theme(theme.to_potentiometer_theme())
-        .design_tokens(theme.design_tokens.clone())
+        .design_tokens(theme.layout.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
@@ -972,7 +972,7 @@ pub fn render_knob_sized(
             let entity = entity.clone();
             move |start_y, start_value, _, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.knob_drag = Some(KnobDragState {
+                    state.app.drag.knob_drag = Some(KnobDragState {
                         plugin_idx,
                         param_idx: idx,
                         start_y,

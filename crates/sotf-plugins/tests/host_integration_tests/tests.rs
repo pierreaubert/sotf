@@ -1,7 +1,6 @@
-use sotf_plugins::{
-    DawHost, DenoiserPlugin, DownmixPlugin, GainPlugin, GraphEdge, InPlacePluginAdapter, Plugin,
-    UpmixerPlugin, XtcPlugin, XtcPluginParams,
-};
+use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, 
+    DawHost, DenoiserPlugin, DownmixPlugin, GainPlugin, GraphEdge,  Plugin,
+    UpmixerPlugin, XtcPlugin, XtcPluginParams};
 
 #[test]
 fn test_cycle_detection() {
@@ -9,7 +8,7 @@ fn test_cycle_detection() {
     let n1 = g
         .add_node(
             "g1".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -17,7 +16,7 @@ fn test_cycle_detection() {
     let n2 = g
         .add_node(
             "g2".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -33,7 +32,7 @@ fn test_latency_calculation() {
     let n1 = g
         .add_node(
             "g1".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -41,7 +40,7 @@ fn test_latency_calculation() {
     let n2 = g
         .add_node(
             "g2".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -57,7 +56,7 @@ fn test_reset() {
     let n1 = g
         .add_node(
             "g1".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -65,7 +64,7 @@ fn test_reset() {
     let n2 = g
         .add_node(
             "g2".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -78,12 +77,12 @@ fn test_reset() {
 #[test]
 fn test_pluginhost_api_channel_mismatch() {
     let mut g = DawHost::new(2, 48000);
-    g.add_plugin(Box::new(InPlacePluginAdapter::new(
+    g.add_plugin(Box::new(ParametricPluginAdapter::new(
         GainPlugin::with_smoothing(2, 0.0, 0.0),
     )))
     .unwrap();
     assert!(
-        g.add_plugin(Box::new(InPlacePluginAdapter::new(
+        g.add_plugin(Box::new(ParametricPluginAdapter::new(
             GainPlugin::with_smoothing(5, 0.0, 0.0)
         )))
         .is_err()
@@ -138,7 +137,7 @@ fn test_xtc_in_host() {
 fn test_denoiser_in_host() {
     let d = DenoiserPlugin::new(2, false);
     let mut g = DawHost::new(2, 48000);
-    g.add_plugin(Box::new(InPlacePluginAdapter::new(d)))
+    g.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(d)))
         .unwrap();
     let nf = 256;
     let i = vec![0.5; nf * 2];

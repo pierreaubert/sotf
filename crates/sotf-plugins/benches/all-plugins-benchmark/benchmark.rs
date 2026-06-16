@@ -4,13 +4,12 @@ use super::consts::SAMPLE_RATE;
 use super::consts::generate_test_buffer;
 use criterion::Criterion;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use sotf_plugins::{
+use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, 
     AaePlugin, AaePluginParams, ChannelMuteSoloPlugin, CrossoverPlugin, DeclickPlugin, DelayPlugin,
-    EqPlugin, ExpanderPlugin, GatePlugin, HissReducerPlugin, InPlacePluginAdapter, LimiterPlugin,
+    EqPlugin, ExpanderPlugin, GatePlugin, HissReducerPlugin,  LimiterPlugin,
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
-    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
-    SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
-};
+    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig,
+    SpeechDenoiserPlugin};
 use std::hint::black_box;
 
 pub(super) fn benchmark_eq(c: &mut Criterion) {
@@ -25,7 +24,7 @@ pub(super) fn benchmark_eq(c: &mut Criterion) {
             1.0,
             3.0,
         )];
-        let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(CHANNELS, filters));
+        let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(CHANNELS, filters));
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
@@ -79,7 +78,7 @@ pub(super) fn benchmark_eq(c: &mut Criterion) {
                 3.0,
             ),
         ];
-        let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(CHANNELS, filters));
+        let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(CHANNELS, filters));
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
@@ -112,7 +111,7 @@ pub(super) fn benchmark_eq(c: &mut Criterion) {
             ),
         ];
         let channels = 6;
-        let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(channels, filters));
+        let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(channels, filters));
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(BUFFER_SIZE, channels);
@@ -141,7 +140,7 @@ pub(super) fn benchmark_eq(c: &mut Criterion) {
             1.0,
             3.0,
         )];
-        let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(CHANNELS, filters));
+        let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(CHANNELS, filters));
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(buf_size, CHANNELS);
@@ -515,7 +514,7 @@ pub(super) fn benchmark_loudness(c: &mut Criterion) {
             reference_level_db: 69.0,
             ..Default::default()
         };
-        let mut plugin = InPlacePluginAdapter::new(
+        let mut plugin = ParametricPluginAdapter::new(
             LoudnessCompensationPlugin::from_params(CHANNELS, params).unwrap(),
         );
         Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
@@ -537,9 +536,9 @@ pub(super) fn benchmark_loudness(c: &mut Criterion) {
         });
     }
 
-    // Loudness Compensation (implements Plugin, not InPlacePlugin)
+    // Loudness Compensation
     {
-        let mut plugin = InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
+        let mut plugin = ParametricInPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
             CHANNELS, 200.0, 3.0, 6000.0, 2.0,
         ));
         plugin.initialize(SAMPLE_RATE).unwrap();

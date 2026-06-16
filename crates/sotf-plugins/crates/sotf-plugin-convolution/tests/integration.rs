@@ -4,9 +4,7 @@
 //! `InPlacePluginAdapter`) as a black box: instantiation, parameter get/set,
 //! audio processing, error paths and state transitions.
 
-use sotf_host::{
-    InPlacePlugin, InPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext,
-};
+use sotf_host::{ParametricInPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 use std::io::Write;
 
@@ -45,7 +43,7 @@ fn write_delta_ir(path: &std::path::Path, sample_rate: u32) -> std::io::Result<(
 
 #[test]
 fn convolution_plugin_info_and_channels() {
-    let plugin = InPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
+    let plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     assert_eq!(plugin.info().name, "Convolution");
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 2);
@@ -61,13 +59,15 @@ fn convolution_instantiate_from_params() {
         zero_latency_head: false,
         head_taps: 64,
     };
-    let plugin = ConvolutionPlugin::from_params(2, 44100, params).unwrap();
-    assert_eq!(plugin.channels(), 2);
+    let plugin = ParametricInPlacePluginAdapter::new(
+        ConvolutionPlugin::from_params(2, 44100, params).unwrap(),
+    );
+    assert_eq!(plugin.output_channels(), 2);
 }
 
 #[test]
 fn convolution_parameter_roundtrip() {
-    let mut plugin = InPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
+    let mut plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     plugin.initialize(44100).unwrap();
 
     let params_before = plugin.parameters();
@@ -118,7 +118,7 @@ fn convolution_parameter_roundtrip() {
 
 #[test]
 fn convolution_unknown_parameter_error() {
-    let mut plugin = InPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
+    let mut plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     let err = plugin
         .set_parameter(
             ParameterId::from("does_not_exist"),
@@ -130,7 +130,7 @@ fn convolution_unknown_parameter_error() {
 
 #[test]
 fn convolution_process_without_ir_passes_input() {
-    let mut plugin = InPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
+    let mut plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     plugin.initialize(44100).unwrap();
 
     let num_frames = 128;
@@ -154,7 +154,7 @@ fn convolution_process_with_ir() {
     let ir_path = tmp_dir.join("delta_ir.wav");
     write_delta_ir(&ir_path, 44100).unwrap();
 
-    let mut plugin = InPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
+    let mut plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     plugin.initialize(44100).unwrap();
 
     plugin
@@ -194,7 +194,7 @@ fn convolution_process_with_ir() {
 
 #[test]
 fn convolution_ir_file_not_found_error() {
-    let mut plugin = InPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
+    let mut plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     plugin.initialize(44100).unwrap();
 
     let err = plugin
@@ -219,7 +219,7 @@ fn convolution_reset_clears_processing_state() {
     let ir_path = tmp_dir.join("delta_ir.wav");
     write_delta_ir(&ir_path, 44100).unwrap();
 
-    let mut plugin = InPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
+    let mut plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     plugin.initialize(44100).unwrap();
     plugin
         .set_parameter(
@@ -251,7 +251,7 @@ fn convolution_reset_clears_processing_state() {
 
 #[test]
 fn convolution_mix_zero_is_dry() {
-    let mut plugin = InPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
+    let mut plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     plugin.initialize(44100).unwrap();
     plugin
         .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
@@ -270,7 +270,7 @@ fn convolution_mix_zero_is_dry() {
 
 #[test]
 fn convolution_gain_db_state_change() {
-    let mut plugin = InPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
+    let mut plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     plugin.initialize(44100).unwrap();
 
     plugin

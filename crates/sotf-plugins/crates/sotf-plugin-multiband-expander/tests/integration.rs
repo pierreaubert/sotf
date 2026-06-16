@@ -1,6 +1,6 @@
 // Integration tests for sotf-plugin-multiband-expander exercising the public Plugin trait.
 
-use sotf_host::{InPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
+use sotf_host::{ParametricInPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugin_multiband_expander::{MultibandExpanderPlugin, MultibandExpanderPluginParams};
 
 fn sine_buffer(num_frames: usize, channels: usize, freq: f32, sample_rate: u32) -> Vec<f32> {
@@ -21,7 +21,7 @@ fn rms(samples: &[f32]) -> f32 {
 }
 
 fn process_blocks(
-    adapter: &mut InPlacePluginAdapter<MultibandExpanderPlugin>,
+    adapter: &mut ParametricInPlacePluginAdapter<MultibandExpanderPlugin>,
     input: &[f32],
     output: &mut [f32],
     sample_rate: u32,
@@ -45,7 +45,7 @@ fn process_blocks(
 #[test]
 fn plugin_info_and_channels() {
     let plugin = MultibandExpanderPlugin::new(2);
-    let adapter = InPlacePluginAdapter::new(plugin);
+    let adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     assert!(adapter.info().name.contains("Multiband Expander"));
     assert_eq!(adapter.input_channels(), 2);
@@ -56,7 +56,7 @@ fn plugin_info_and_channels() {
 #[test]
 fn plugin_processes_stereo_sine() {
     let plugin = MultibandExpanderPlugin::new(2);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let input = sine_buffer(2048, 2, 1000.0, 48000);
@@ -72,7 +72,7 @@ fn plugin_processes_stereo_sine() {
 #[test]
 fn parameter_roundtrip() {
     let plugin = MultibandExpanderPlugin::new(2);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     adapter
         .set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-50.0))
@@ -127,7 +127,7 @@ fn expansion_attenuates_quiet_signal() {
         mix: 1.0,
         ..Default::default()
     };
-    let mut plugin = InPlacePluginAdapter::new(MultibandExpanderPlugin::with_params(2, params));
+    let mut plugin = ParametricInPlacePluginAdapter::new(MultibandExpanderPlugin::with_params(2, params));
     plugin.initialize(48000).unwrap();
 
     let num_frames = 8192;
@@ -159,7 +159,7 @@ fn dry_mix_passthrough() {
         ..Default::default()
     };
     let plugin = MultibandExpanderPlugin::with_params(2, params);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let num_frames = 2048;
@@ -188,7 +188,7 @@ fn spectral_mode_processes_audio() {
         ..Default::default()
     };
     let plugin = MultibandExpanderPlugin::with_params(2, params);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let input = sine_buffer(4096, 2, 1000.0, 48000);
@@ -203,7 +203,7 @@ fn spectral_mode_processes_audio() {
 #[test]
 fn changing_num_bands_works() {
     let plugin = MultibandExpanderPlugin::new(2);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     adapter
@@ -222,7 +222,7 @@ fn changing_num_bands_works() {
 #[test]
 fn reset_then_process_is_stable() {
     let plugin = MultibandExpanderPlugin::new(2);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let input = sine_buffer(1024, 2, 800.0, 48000);
@@ -244,7 +244,7 @@ fn reset_then_process_is_stable() {
 #[test]
 fn unknown_parameter_is_rejected() {
     let plugin = MultibandExpanderPlugin::new(2);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     let result = adapter.set_parameter(
         ParameterId::from("does_not_exist"),
@@ -256,7 +256,7 @@ fn unknown_parameter_is_rejected() {
 #[test]
 fn invalid_parameter_value_is_rejected() {
     let plugin = MultibandExpanderPlugin::new(2);
-    let adapter = InPlacePluginAdapter::new(plugin);
+    let adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     let result =
         adapter.validate_parameter(&ParameterId::from("ratio"), &ParameterValue::Float(25.0));

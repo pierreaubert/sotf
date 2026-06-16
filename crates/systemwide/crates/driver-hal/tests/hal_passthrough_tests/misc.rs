@@ -1,5 +1,5 @@
 use sotf_plugins::{
-    BiquadFilterConfig, EqPlugin, EqPluginParams, InPlacePluginAdapter, Plugin, ProcessContext,
+    BiquadFilterConfig, EqPlugin, EqPluginParams, ParametricPluginAdapter, Plugin, ProcessContext,
 };
 
 /// Magic number for shared memory header validation: 'SOTF'
@@ -100,7 +100,7 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
 
     let sample_rate = 48000;
     let num_channels = 2;
-    let mut plugin = InPlacePluginAdapter::new(
+    let mut plugin = ParametricPluginAdapter::new(
         EqPlugin::from_params(num_channels, sample_rate, params)
             .expect("Failed to create EQ plugin"),
     );
@@ -171,7 +171,7 @@ fn test_eq_empty_filters_passthrough_bit_exact() {
 
     let sample_rate = 48000;
     let num_channels = 2;
-    let mut plugin = InPlacePluginAdapter::new(
+    let mut plugin = ParametricPluginAdapter::new(
         EqPlugin::from_params(num_channels, sample_rate, params)
             .expect("Failed to create EQ plugin"),
     );

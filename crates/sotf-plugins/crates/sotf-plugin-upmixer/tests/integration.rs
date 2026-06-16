@@ -17,10 +17,8 @@ fn upmixer_plugin_info_and_channels() {
 
 #[test]
 fn upmixer_instantiate_from_params_custom_config() {
-    let params = UpmixerPluginParams {
-        speaker_config: "7.1".to_string(),
-        ..Default::default()
-    };
+    let mut params = UpmixerPluginParams::default();
+    params.core.speaker_config = "7.1".to_string();
     let plugin = UpmixerPlugin::from_params(params);
     assert_eq!(plugin.output_channels(), 8);
 }
@@ -119,10 +117,8 @@ fn upmixer_process_stereo_to_surround() {
 
 #[test]
 fn upmixer_bypass_all_processing_passes_stereo() {
-    let params = UpmixerPluginParams {
-        bypass_all_processing: true,
-        ..Default::default()
-    };
+    let mut params = UpmixerPluginParams::default();
+    params.bypass.bypass_all_processing = true;
     let mut plugin = UpmixerPlugin::from_params(params);
     plugin.initialize(44100).unwrap();
 
@@ -207,4 +203,24 @@ fn upmixer_invalid_sample_rate_error() {
     let mut plugin = UpmixerPlugin::from_params(UpmixerPluginParams::default());
     let err = plugin.initialize(0).unwrap_err();
     assert!(err.contains("Invalid sample rate"));
+}
+
+#[test]
+fn upmixer_params_serde_flatten_roundtrip() {
+    let original = UpmixerPluginParams::default();
+    let json = serde_json::to_value(&original).unwrap();
+    // Flat serialization: no nested "core"/"gains" objects.
+    assert!(json.get("fft_size").is_some());
+    assert!(json.get("core").is_none());
+
+    // Empty JSON and flat keys deserialize correctly.
+    let from_empty: UpmixerPluginParams = serde_json::from_str("{}").unwrap();
+    assert_eq!(from_empty.core.fft_size, original.core.fft_size);
+
+    let from_flat: UpmixerPluginParams =
+        serde_json::from_str(r#"{"fft_size":1024,"speaker_config":"7.1","height_gain":0.8}"#)
+            .unwrap();
+    assert_eq!(from_flat.core.fft_size, 1024);
+    assert_eq!(from_flat.core.speaker_config, "7.1");
+    assert_eq!(from_flat.height.height_gain, 0.8);
 }

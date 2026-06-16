@@ -114,8 +114,8 @@ impl Default for MyPluginParams {
 Choose the right trait:
 - **`Plugin`** — if the plugin changes channel count (e.g. stereo -> 5.1).
   Implement `process(input, output, context)`.
-- **`InPlacePlugin`** — if input and output channel counts are equal.
-  Implement `process_in_place(buffer, context)`. Wrapped by `InPlacePluginAdapter`
+- **`ParametricInPlacePlugin`** — if input and output channel counts are equal.
+  Implement `process_in_place(buffer, context)`. Wrapped by `ParametricInPlacePluginAdapter`
   in the factory.
 
 Hot-path rules:
@@ -185,12 +185,12 @@ use crate::{MyPlugin, MyPluginParams, ...};
     let params: MyPluginParams = serde_json::from_value(parameters.clone())
         .map_err(|e| format!("Failed to parse <name> params: {e}"))?;
     let plugin = MyPlugin::from_params(params);
-    Ok(Box::new(plugin))  // or InPlacePluginAdapter::new(plugin)
+    Ok(Box::new(plugin))  // or ParametricInPlacePluginAdapter::new(plugin)
 }
 ```
 
 If the plugin changes channel count (like upmixer/AAE), don't wrap in
-`InPlacePluginAdapter` — return `Box::new(plugin)` directly.
+`ParametricInPlacePluginAdapter` — return `Box::new(plugin)` directly.
 
 ---
 

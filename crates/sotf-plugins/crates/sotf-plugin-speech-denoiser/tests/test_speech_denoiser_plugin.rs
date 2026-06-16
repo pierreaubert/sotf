@@ -1,5 +1,6 @@
 use sotf_host::parameters::ParameterValue;
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 use sotf_plugin_speech_denoiser::{SPEECH_DENOISER_FRAME_SIZE, SpeechDenoiserPlugin};
 
 #[test]

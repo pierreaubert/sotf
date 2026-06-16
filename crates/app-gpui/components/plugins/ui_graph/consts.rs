@@ -137,8 +137,8 @@ pub(super) fn dispatch_plugin_node_action(
             .and_then(|v| v.as_str())
             .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
         state.update(cx, |state, _cx| {
-            state.app.plugin_state.editing_plugin_node = Some(node_id);
-            state.app.plugin_state.editing_graph_node_uuid = plugin_uuid;
+            state.app.plugin_state.graph_state.editing_plugin_node = Some(node_id);
+            state.app.plugin_state.graph_state.editing_graph_node_uuid = plugin_uuid;
             state.app.ui_state.input_mode = crate::app::InputMode::EditingPluginNode;
         });
         return;
@@ -277,10 +277,10 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
     plugin_graph.update_channel_dependent_plugins();
 
     // 6) Forget the edited node if it was deleted.
-    if let Some(uuid) = state.app.plugin_state.editing_graph_node_uuid
+    if let Some(uuid) = state.app.plugin_state.graph_state.editing_graph_node_uuid
         && !surviving_plugin_ids.contains(&uuid)
     {
-        state.app.plugin_state.editing_graph_node_uuid = None;
-        state.app.plugin_state.editing_plugin_node = None;
+        state.app.plugin_state.graph_state.editing_graph_node_uuid = None;
+        state.app.plugin_state.graph_state.editing_plugin_node = None;
     }
 }

@@ -7,7 +7,7 @@ Core traits, host, and shared utilities for SOTF audio plugins.
 Central infrastructure crate that all `sotf-plugin-*` crates depend on. Provides the plugin trait system, DAG-based host, parameter system, analyzers, and shared DSP utilities (re-exported from math-dsp and math-iir-fir).
 
 ### Core Plugin System
-- `plugin.rs` — `Plugin` trait (variable I/O channels) and `InPlacePlugin` trait (same I/O channels, adapted via `InPlacePluginAdapter`)
+- `plugin.rs` — `Plugin` trait (variable I/O channels) and `ParametricInPlacePlugin` trait (same I/O channels, adapted via `ParametricInPlacePluginAdapter`)
 - `host.rs` — `DawHost` / `Host`: DAG-based plugin routing with parallel processing, topological sorting, cycle detection
 - `error.rs` — Plugin error types
 
@@ -47,7 +47,7 @@ FIR crossover, LR4 crossover.
 ## Key Public API
 
 - `Plugin` trait: `process(&mut self, input: &[f32], output: &mut [f32], context: &ProcessContext)` (`plugin.rs`)
-- `InPlacePlugin` trait: `process_in_place(&mut self, buffer: &mut [f32], context: &ProcessContext)` (`plugin.rs`)
+- `ParametricInPlacePlugin` trait: `process_in_place(&mut self, buffer: &mut [f32], context: &ProcessContext)` (`plugin.rs`)
 - `DawHost`: DAG-based host with `add_node()`, `add_edge()`, `build()`, `process()` (`host.rs`)
 - `PluginFactoryFn`: function signature for plugin factories (`lib.rs`)
 

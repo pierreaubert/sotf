@@ -73,19 +73,19 @@ pub trait PluginEditingManager {
 
 impl PluginEditingManager for App {
     fn sync_spectrum_visible(&mut self) {
-        self.spectrum_visible = self.plugin_state.has_enabled_spectrum_analyzer();
+        self.layout.spectrum_visible = self.plugin_state.has_enabled_spectrum_analyzer();
     }
 
     fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) {
         let effect = self.plugin_state.add_plugin(plugin_type);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         self.sync_spectrum_visible();
     }
 
     fn toggle_plugin(&mut self, index: usize) {
         self.plugin_state.clear_confirmations();
         let effect = self.plugin_state.toggle_plugin(index);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         self.sync_spectrum_visible();
     }
 
@@ -97,7 +97,7 @@ impl PluginEditingManager for App {
                 .rack_theme_state
                 .swap_overrides(index, index - 1);
         }
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn move_plugin_down(&mut self, index: usize) {
@@ -108,7 +108,7 @@ impl PluginEditingManager for App {
                 .rack_theme_state
                 .swap_overrides(index, index + 1);
         }
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn select_next_plugin(&mut self) {
@@ -127,7 +127,7 @@ impl PluginEditingManager for App {
         if matches!(effect, sotf_audio_player::PluginUpdateEffect::Structural) {
             self.plugin_state.rack_theme_state.on_plugin_removed(index);
         }
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         self.sync_spectrum_visible();
     }
 
@@ -150,7 +150,7 @@ impl PluginEditingManager for App {
     fn adjust_selected_param(&mut self, delta: f64) -> bool {
         let (adjusted, effect) = self.plugin_state.adjust_selected_param(delta);
         if adjusted {
-            self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+            self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         }
         adjusted
     }
@@ -158,17 +158,17 @@ impl PluginEditingManager for App {
     fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64) {
         // When editing a graph node (non-linear graph), redirect to the
         // node-ID-based path so the update reaches the correct engine plugin.
-        if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+        if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             let effect = self
                 .plugin_state
                 .set_plugin_param_by_node_id(node_id, param_idx, value);
-            self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+            self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
             return;
         }
         let effect = self
             .plugin_state
             .set_plugin_param(plugin_idx, param_idx, value);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn set_plugin_param_string(
@@ -177,17 +177,17 @@ impl PluginEditingManager for App {
         param_idx: usize,
         value: String,
     ) -> Result<(), String> {
-        if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+        if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             let effect = self
                 .plugin_state
                 .set_plugin_param_string_by_node_id(node_id, param_idx, value)?;
-            self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+            self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
             return Ok(());
         }
         let effect = self
             .plugin_state
             .set_plugin_param_string(plugin_idx, param_idx, value)?;
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }
 
@@ -202,39 +202,39 @@ impl PluginEditingManager for App {
         let effect = self
             .plugin_state
             .set_spectrum_tilt_correction(plugin_idx, correction);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn set_spectrum_tilt_reference(&mut self, plugin_idx: usize, reference: TiltReferenceFreq) {
         let effect = self
             .plugin_state
             .set_spectrum_tilt_reference(plugin_idx, reference);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize) {
-        if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+        if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             let effect = self
                 .plugin_state
                 .reset_plugin_param_by_node_id(node_id, param_idx);
-            self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+            self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
             return;
         }
         let effect = self.plugin_state.reset_plugin_param(plugin_idx, param_idx);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn load_apo_file(&mut self) -> Result<(), String> {
         let path = std::path::Path::new(&self.input_state.apo_file_input);
         let effect = self.plugin_state.load_apo_filters(path)?;
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }
 
     fn load_sofa_file(&mut self) -> Result<(), String> {
         let sofa_file_path = self.input_state.sofa_file_input.clone();
         let effect = self.plugin_state.load_sofa_path(sofa_file_path)?;
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }
 
@@ -242,45 +242,45 @@ impl PluginEditingManager for App {
         // In graph view, `editing_plugin_index` may not be set — the
         // user double-clicked a graph node, populating
         // `editing_graph_node_uuid` instead. Redirect.
-        let effect = if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+        let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             self.plugin_state.add_eq_band_by_node_id(node_id)?
         } else {
             self.plugin_state.add_eq_band()?
         };
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }
 
     fn remove_eq_band(&mut self, band_idx: usize) -> Result<(), String> {
-        let effect = if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+        let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             self.plugin_state
                 .remove_eq_band_by_node_id(node_id, band_idx)?
         } else {
             self.plugin_state.remove_eq_band(band_idx)?
         };
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }
 
     fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<(), String> {
-        let effect = if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+        let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             self.plugin_state
                 .toggle_eq_band_mute_by_node_id(node_id, band_idx)?
         } else {
             self.plugin_state.toggle_eq_band_mute(band_idx)?
         };
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }
 
     fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<(), String> {
-        let effect = if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+        let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             self.plugin_state
                 .toggle_eq_band_solo_by_node_id(node_id, band_idx)?
         } else {
             self.plugin_state.toggle_eq_band_solo(band_idx)?
         };
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         Ok(())
     }
 
@@ -288,21 +288,21 @@ impl PluginEditingManager for App {
         let effect = self
             .plugin_state
             .set_eq_per_channel_mode(plugin_idx, per_channel);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn cycle_eq_filter_topology(&mut self, plugin_idx: usize, band_idx: usize) {
         let effect = self
             .plugin_state
             .cycle_eq_filter_topology(plugin_idx, band_idx);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn cycle_eq_filter_lambda(&mut self, plugin_idx: usize, band_idx: usize) {
         let effect = self
             .plugin_state
             .cycle_eq_filter_lambda(plugin_idx, band_idx);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn add_eq_kautz_section(
@@ -316,12 +316,12 @@ impl PluginEditingManager for App {
         let effect = self
             .plugin_state
             .add_eq_kautz_section(plugin_idx, band_idx, pole_freq, q, gain);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn pop_eq_kautz_section(&mut self, plugin_idx: usize, band_idx: usize) {
         let effect = self.plugin_state.pop_eq_kautz_section(plugin_idx, band_idx);
-        self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn refresh_plugin_presets(&mut self) {
@@ -411,7 +411,8 @@ impl PluginEditingManager for App {
                         warnings.join("; ")
                     )));
                 }
-                self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+                self.plugin_state.update_state.pending_plugin_update =
+                    effect_to_update_type(effect);
                 self.sync_spectrum_visible();
             }
             Err(e) => {
@@ -445,7 +446,8 @@ impl PluginEditingManager for App {
                         warnings.join("; ")
                     )));
                 }
-                self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+                self.plugin_state.update_state.pending_plugin_update =
+                    effect_to_update_type(effect);
                 self.sync_spectrum_visible();
             }
             Err(e) => {
@@ -464,8 +466,8 @@ impl PluginEditingManager for App {
     }
 
     fn toggle_chain_bypass(&mut self) {
-        self.plugin_state.chain_bypass = !self.plugin_state.chain_bypass;
-        let bypass = self.plugin_state.chain_bypass;
+        self.plugin_state.chain_state.chain_bypass = !self.plugin_state.chain_state.chain_bypass;
+        let bypass = self.plugin_state.chain_state.chain_bypass;
         for i in 0..self.plugin_state.graph.len() {
             if let Some(plugin) = self.plugin_state.graph.get_plugin_mut(i)
                 && !plugin.is_permanent()
@@ -473,27 +475,28 @@ impl PluginEditingManager for App {
                 plugin.enabled = !bypass;
             }
         }
-        self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+        self.plugin_state.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         self.sync_spectrum_visible();
     }
 
     fn toggle_chain_autogain(&mut self) {
-        self.plugin_state.chain_autogain = !self.plugin_state.chain_autogain;
-        self.plugin_state.chain_autogain_last_frame = 0;
-        if self.plugin_state.chain_autogain {
+        self.plugin_state.chain_state.chain_autogain =
+            !self.plugin_state.chain_state.chain_autogain;
+        self.plugin_state.chain_state.chain_autogain_last_frame = 0;
+        if self.plugin_state.chain_state.chain_autogain {
             self.plugin_state.graph.set_chain_auto_gain(Some(0.0));
         } else {
             self.plugin_state.graph.set_chain_auto_gain(None);
         }
-        self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+        self.plugin_state.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
     }
 
     fn toggle_plugin_solo(&mut self, index: usize) {
         let plugins = self.plugin_state.graph.plugins();
 
-        if self.plugin_state.soloed_plugin_index == Some(index) {
+        if self.plugin_state.chain_state.soloed_plugin_index == Some(index) {
             // Un-solo: restore previous states
-            let states = std::mem::take(&mut self.plugin_state.pre_solo_enabled_states);
+            let states = std::mem::take(&mut self.plugin_state.chain_state.pre_solo_enabled_states);
             for i in 0..self.plugin_state.graph.len() {
                 if let Some(plugin) = self.plugin_state.graph.get_plugin_mut(i)
                     && let Some(&was_enabled) = states.get(i)
@@ -501,11 +504,11 @@ impl PluginEditingManager for App {
                     plugin.enabled = was_enabled;
                 }
             }
-            self.plugin_state.soloed_plugin_index = None;
+            self.plugin_state.chain_state.soloed_plugin_index = None;
         } else {
             // Solo: save states and disable all except target and permanent
             let states: Vec<bool> = plugins.iter().map(|p| p.enabled).collect();
-            self.plugin_state.pre_solo_enabled_states = states;
+            self.plugin_state.chain_state.pre_solo_enabled_states = states;
             for i in 0..self.plugin_state.graph.len() {
                 if let Some(plugin) = self.plugin_state.graph.get_plugin_mut(i) {
                     if plugin.is_permanent() {
@@ -514,9 +517,9 @@ impl PluginEditingManager for App {
                     plugin.enabled = i == index;
                 }
             }
-            self.plugin_state.soloed_plugin_index = Some(index);
+            self.plugin_state.chain_state.soloed_plugin_index = Some(index);
         }
-        self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+        self.plugin_state.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         self.sync_spectrum_visible();
     }
 
@@ -552,7 +555,7 @@ impl PluginEditingManager for App {
                 break;
             }
         }
-        self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+        self.plugin_state.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
     }
 
     fn apply_matrix_ms(&mut self) {
@@ -587,6 +590,6 @@ impl PluginEditingManager for App {
                 break;
             }
         }
-        self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+        self.plugin_state.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
     }
 }

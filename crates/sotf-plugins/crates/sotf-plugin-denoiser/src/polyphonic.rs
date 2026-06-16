@@ -27,29 +27,29 @@ impl DenoiserPlugin {
     /// 2. Smooth gains across frequency bins (prevents musical noise)
     /// 3. Apply temporal smoothing with attack/release envelope
     pub(super) fn calculate_polyphonic_gains(&mut self) {
-        let floor_linear = self.floor_linear;
-        let bin_hz = self.sample_rate as f32 / self.fft_size as f32;
+        let floor_linear = self.coeffs.floor_linear;
+        let bin_hz = self.config.sample_rate as f32 / self.config.fft_size as f32;
 
         let mut total_reduction = 0.0_f32;
         let mut bin_count = 0;
 
-        for ch in 0..self.channels {
+        for ch in 0..self.config.channels {
             // Pass 1: Initialize all bins to floor gain
-            for k in 0..self.spectrum_size {
-                self.gain[ch][k] = floor_linear;
+            for k in 0..self.config.spectrum_size {
+                self.gains.gain[ch][k] = floor_linear;
             }
 
             // Apply cosine-tapered gain around detected tonal peaks.
             // For each peak, the center bin(s) get unity gain, and surrounding
             // bins within the taper zone get a smooth cosine blend from 1.0
             // down to floor_linear.
-            let peaks = self.pnd_analyzers[ch].current_matched_peaks();
+            let peaks = self.auxiliary.pnd_analyzers[ch].current_matched_peaks();
             for &(freq_hz, _mag) in peaks {
                 let center_k = (freq_hz / bin_hz).round() as usize;
 
                 // Apply cosine taper around the peak center
                 let taper_start = center_k.saturating_sub(TAPER_HALF_WIDTH);
-                let taper_end = (center_k + TAPER_HALF_WIDTH).min(self.spectrum_size - 1);
+                let taper_end = (center_k + TAPER_HALF_WIDTH).min(self.config.spectrum_size - 1);
 
                 for k in taper_start..=taper_end {
                     let dist = (k as f32 - center_k as f32).abs();
@@ -64,7 +64,7 @@ impl DenoiserPlugin {
                         floor_linear + cosine_weight * (1.0 - floor_linear)
                     };
                     // Take the max in case of overlapping tapers from adjacent peaks
-                    self.gain[ch][k] = self.gain[ch][k].max(taper_gain);
+                    self.gains.gain[ch][k] = self.gains.gain[ch][k].max(taper_gain);
                 }
             }
 
@@ -74,26 +74,26 @@ impl DenoiserPlugin {
             // Pass 2b: Psychoacoustic masking — skip denoising for masked bins.
             // Guard: only apply masking when speech presence probability is above 0.1
             // to prevent noise masking itself on noise-only frames.
-            if self.psychoacoustic_masking {
+            if self.params.psychoacoustic_masking {
                 self.compute_masking_thresholds(ch);
-                for k in 0..self.spectrum_size {
-                    if self.speech_presence[ch][k] >= 0.1 && self.is_noise_masked(ch, k) {
-                        self.gain[ch][k] = 1.0;
+                for k in 0..self.config.spectrum_size {
+                    if self.mcra.speech_presence[ch][k] >= 0.1 && self.is_noise_masked(ch, k) {
+                        self.gains.gain[ch][k] = 1.0;
                     }
                 }
             }
 
             // Pass 3: Apply temporal smoothing with attack/release
-            for k in 0..self.spectrum_size {
-                let target_gain = self.gain[ch][k];
-                let prev_gain = self.smoothed_gain[ch][k];
+            for k in 0..self.config.spectrum_size {
+                let target_gain = self.gains.gain[ch][k];
+                let prev_gain = self.gains.smoothed_gain[ch][k];
                 let coeff = if target_gain > prev_gain {
-                    self.attack_coeff
+                    self.coeffs.attack_coeff
                 } else {
-                    self.release_coeff
+                    self.coeffs.release_coeff
                 };
                 let smoothed = target_gain + coeff * (prev_gain - target_gain);
-                self.smoothed_gain[ch][k] = smoothed;
+                self.gains.smoothed_gain[ch][k] = smoothed;
 
                 total_reduction += (1.0 - smoothed).max(0.0);
                 bin_count += 1;
@@ -103,7 +103,7 @@ impl DenoiserPlugin {
         // Update average reduction in dB for monitoring
         if bin_count > 0 {
             let avg_gain = 1.0 - (total_reduction / bin_count as f32);
-            self.avg_reduction_db = if avg_gain > EPSILON {
+            self.ui.avg_reduction_db = if avg_gain > EPSILON {
                 -20.0 * avg_gain.log10()
             } else {
                 60.0

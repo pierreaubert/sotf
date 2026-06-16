@@ -9,11 +9,12 @@ use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, peq_butterworth_highpass};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_bridge;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
-use sotf_host::{DetectionMode, LevelDetector, LookaheadBuffer};
+use sotf_host::{ParametricInPlacePlugin, DetectionMode, LevelDetector, LookaheadBuffer};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -294,7 +295,7 @@ impl GatePlugin {
     }
 }
 
-impl InPlacePlugin for GatePlugin {
+impl ParametricInPlacePlugin for GatePlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Gate", "1.3.0", "SotF")
     }
@@ -308,37 +309,53 @@ impl InPlacePlugin for GatePlugin {
             self.channels
         }
     }
-    fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        let idx = param_bridge::set_parameter(GT, &id, &value, |i, v| self.set_param_value(i, v))?;
-        // Side effects
-        match idx {
-            0 => self.threshold_smoother.set_target(self.threshold_db), // threshold
-            2 | 4 => self.update_coefficients(),                        // attack or release
-            3 => self.update_hold_samples(),                            // hold
-            5 => self.mix_smoother.set_target(self.mix),                // mix
-            7 | 8 => self.rebuild_sidechain_hpf(),                      // sidechain_hpf_hz or order
-            9 => {
-                // detection_mode
-                let mode = if self.detection_mode_index == 1 {
-                    DetectionMode::Rms { window_ms: 10.0 }
-                } else {
-                    DetectionMode::Peak
-                };
-                for det in &mut self.level_detectors {
-                    det.set_mode(mode);
+    fn current_values(&self) -> ParameterSet {
+        self.cached_parameters
+            .iter()
+            .map(|p| (p.id.clone(), p.default_value.clone()))
+            .collect()
+    }
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            let idx = param_bridge::set_parameter(GT, &id, &value, |i, v| {
+                self.set_param_value(i, v);
+            })?;
+            // Side effects
+            match idx {
+                0 => self.threshold_smoother.set_target(self.threshold_db), // threshold
+                2 | 4 => self.update_coefficients(),                        // attack or release
+                3 => self.update_hold_samples(),                            // hold
+                5 => self.mix_smoother.set_target(self.mix),                // mix
+                7 | 8 => self.rebuild_sidechain_hpf(),                      // sidechain_hpf_hz or order
+                9 => {
+                    // detection_mode
+                    let mode = if self.detection_mode_index == 1 {
+                        DetectionMode::Rms { window_ms: 10.0 }
+                    } else {
+                        DetectionMode::Peak
+                    };
+                    for det in &mut self.level_detectors {
+                        det.set_mode(mode);
+                    }
                 }
+                14 => self.update_lookahead_delay(), // lookahead_ms
+                _ => {}
             }
-            14 => self.update_lookahead_delay(), // lookahead_ms
-            _ => {}
         }
         self.rebuild_cached_parameters();
         Ok(())
     }
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        param_bridge::get_parameter(GT, id, |i| self.param_value(i))
+    fn parametric_set_parameter(
+        &mut self,
+        id: ParameterId,
+        value: ParameterValue,
+    ) -> PluginResult<()> {
+        let mut values = ParameterSet::new();
+        values.insert(id, value);
+        self.apply_values(values)
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;

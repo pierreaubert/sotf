@@ -33,7 +33,12 @@ use super::parse::parse_crossfeed_preset;
 use super::types::PluginArgs;
 use math_audio_iir_fir::Biquad;
 use sotf_audio::LoudnessCompensation;
-use sotf_audio::plugins::{EQFilter, PluginChain, PluginSettings, PluginType};
+use sotf_audio::plugins::{
+    EQFilter, PluginChain, PluginSettings, PluginType, UpmixerAmbientAnalysisSettings,
+    UpmixerBypassSettings, UpmixerDecorrelationSettings, UpmixerDialogueSettings,
+    UpmixerGainSettings, UpmixerHeightSettings, UpmixerLfeSettings, UpmixerOutputSettings,
+    UpmixerSubharmonicSettings,
+};
 use sotf_audio::{AudioEngineManager, PluginConfig, StreamingState};
 use std::path::PathBuf;
 use std::thread::sleep;
@@ -284,53 +289,76 @@ pub(super) fn build_rack_mode_plugins(
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Upmixer {
                         speaker_config: plugins.upmixer.config.clone(),
-                        gain_front_direct: plugins.upmixer.gain_front_direct as f64,
-                        gain_front_ambient: plugins.upmixer.gain_front_ambient as f64,
-                        gain_rear_ambient: plugins.upmixer.gain_rear_ambient as f64,
-                        height_gain: plugins.upmixer.height_gain as f64,
-                        stereo_width: plugins.upmixer.stereo_width as f64,
-                        center_spread: plugins.upmixer.center_spread as f64,
-                        surround_direct_bleed: plugins.upmixer.surround_direct_bleed as f64,
-                        rear_late_reflection: plugins.upmixer.rear_late_reflection as f64,
-                        lfe_cutoff_hz: plugins.upmixer.lfe_cutoff_hz as f64,
-                        lfe_gain: plugins.upmixer.lfe_gain as f64,
-                        bandpass_hz: plugins.upmixer.bandpass_hz as f64,
-                        enable_subharmonic_synth: plugins.upmixer.subharmonic,
-                        subharmonic_gain: plugins.upmixer.subharmonic_gain as f64,
-                        subharmonic_freq_hz: plugins.upmixer.subharmonic_freq_hz as f64,
-                        subharmonic_attack_ms: plugins.upmixer.subharmonic_attack_ms as f64,
-                        subharmonic_release_ms: plugins.upmixer.subharmonic_release_ms as f64,
-                        decorrelation_mode: plugins.upmixer.decorrelation_mode,
-                        decorrelation_lfo_rate_hz: plugins.upmixer.decorrelation_lfo_rate_hz as f64,
-                        velvet_noise_duration_ms: plugins.upmixer.velvet_noise_duration_ms as f64,
-                        velvet_noise_density: plugins.upmixer.velvet_noise_density as f64,
-                        enable_hr_direct: plugins.upmixer.hr_direct,
-                        hr_sharpen: plugins.upmixer.hr_sharpen as f64,
-                        height_hf_cap_hz: plugins.upmixer.height_hf_cap_hz as f64,
-                        height_transient_reduction: plugins.upmixer.height_transient_reduction
-                            as f64,
-                        height_direct_leak: plugins.upmixer.height_direct_leak as f64,
-                        ambient_boost: plugins.upmixer.ambient_boost as f64,
-                        safety_cap_db: plugins.upmixer.safety_cap_db as f64,
-                        rear_ambient_boost: plugins.upmixer.rear_ambient_boost as f64,
-                        dialogue_weight: plugins.upmixer.dialogue_weight as f64,
-                        voice_freq_min_hz: plugins.upmixer.voice_freq_min_hz as f64,
-                        voice_freq_max_hz: plugins.upmixer.voice_freq_max_hz as f64,
-                        dialogue_centroid_weight: plugins.upmixer.dialogue_centroid_weight as f64,
-                        dialogue_variance_weight: plugins.upmixer.dialogue_variance_weight as f64,
-                        dialogue_coherence_weight: plugins.upmixer.dialogue_coherence_weight as f64,
-                        bypass_decorrelation: plugins.upmixer.bypass_decorrelation,
-                        bypass_transient_detection: plugins.upmixer.bypass_transient_detection,
-                        bypass_all_processing: plugins.upmixer.bypass_all_processing,
-                        enable_ml_detection: plugins.upmixer.enable_ml_detection,
-                        low_latency: plugins.upmixer.low_latency,
-                        frequency_resolution: 0,
-                        multi_source_extraction: false,
-                        multi_source_threshold: 0.3,
-                        binaural_preview: false,
-                        auto_gain_enabled: false,
-                        auto_gain_max_db: 12.0,
-                        auto_gain_smoothing_ms: 100.0,
+                        gains: UpmixerGainSettings {
+                            gain_front_direct: plugins.upmixer.gain_front_direct as f64,
+                            gain_front_ambient: plugins.upmixer.gain_front_ambient as f64,
+                            gain_rear_ambient: plugins.upmixer.gain_rear_ambient as f64,
+                            height_gain: plugins.upmixer.height_gain as f64,
+                            stereo_width: plugins.upmixer.stereo_width as f64,
+                            center_spread: plugins.upmixer.center_spread as f64,
+                            surround_direct_bleed: plugins.upmixer.surround_direct_bleed as f64,
+                            rear_late_reflection: plugins.upmixer.rear_late_reflection as f64,
+                            ambient_boost: plugins.upmixer.ambient_boost as f64,
+                            rear_ambient_boost: plugins.upmixer.rear_ambient_boost as f64,
+                        },
+                        lfe: UpmixerLfeSettings {
+                            lfe_cutoff_hz: plugins.upmixer.lfe_cutoff_hz as f64,
+                            lfe_gain: plugins.upmixer.lfe_gain as f64,
+                            bandpass_hz: plugins.upmixer.bandpass_hz as f64,
+                        },
+                        subharmonic: UpmixerSubharmonicSettings {
+                            enable_subharmonic_synth: plugins.upmixer.subharmonic,
+                            subharmonic_gain: plugins.upmixer.subharmonic_gain as f64,
+                            subharmonic_freq_hz: plugins.upmixer.subharmonic_freq_hz as f64,
+                            subharmonic_attack_ms: plugins.upmixer.subharmonic_attack_ms as f64,
+                            subharmonic_release_ms: plugins.upmixer.subharmonic_release_ms as f64,
+                        },
+                        decorrelation: UpmixerDecorrelationSettings {
+                            decorrelation_mode: plugins.upmixer.decorrelation_mode,
+                            decorrelation_lfo_rate_hz: plugins.upmixer.decorrelation_lfo_rate_hz
+                                as f64,
+                            velvet_noise_duration_ms: plugins.upmixer.velvet_noise_duration_ms
+                                as f64,
+                            velvet_noise_density: plugins.upmixer.velvet_noise_density as f64,
+                        },
+                        height: UpmixerHeightSettings {
+                            enable_hr_direct: plugins.upmixer.hr_direct,
+                            hr_sharpen: plugins.upmixer.hr_sharpen as f64,
+                            height_hf_cap_hz: plugins.upmixer.height_hf_cap_hz as f64,
+                            height_transient_reduction: plugins.upmixer.height_transient_reduction
+                                as f64,
+                            height_direct_leak: plugins.upmixer.height_direct_leak as f64,
+                        },
+                        ambient_analysis: UpmixerAmbientAnalysisSettings {
+                            safety_cap_db: plugins.upmixer.safety_cap_db as f64,
+                            low_latency: plugins.upmixer.low_latency,
+                            frequency_resolution: 0,
+                        },
+                        dialogue: UpmixerDialogueSettings {
+                            dialogue_weight: plugins.upmixer.dialogue_weight as f64,
+                            voice_freq_min_hz: plugins.upmixer.voice_freq_min_hz as f64,
+                            voice_freq_max_hz: plugins.upmixer.voice_freq_max_hz as f64,
+                            dialogue_centroid_weight: plugins.upmixer.dialogue_centroid_weight
+                                as f64,
+                            dialogue_variance_weight: plugins.upmixer.dialogue_variance_weight
+                                as f64,
+                            dialogue_coherence_weight: plugins.upmixer.dialogue_coherence_weight
+                                as f64,
+                        },
+                        bypass: UpmixerBypassSettings {
+                            bypass_decorrelation: plugins.upmixer.bypass_decorrelation,
+                            bypass_transient_detection: plugins.upmixer.bypass_transient_detection,
+                            bypass_all_processing: plugins.upmixer.bypass_all_processing,
+                        },
+                        output: UpmixerOutputSettings {
+                            enable_ml_detection: plugins.upmixer.enable_ml_detection,
+                            multi_source_extraction: false,
+                            multi_source_threshold: 0.3,
+                            binaural_preview: false,
+                            auto_gain_enabled: false,
+                            auto_gain_max_db: 12.0,
+                            auto_gain_smoothing_ms: 100.0,
+                        },
                     };
                 }
                 log::info!("Rack: Added Upmixer plugin ({})", plugins.upmixer.config);

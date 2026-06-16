@@ -43,7 +43,7 @@ impl PlayerView {
             (
                 state.app.ui_state.theme.clone(),
                 state.app.measurement_state.room_eq_state.step,
-                state.app.current_hint.clone(),
+                state.app.tutorial.current_hint.clone(),
             )
         };
 

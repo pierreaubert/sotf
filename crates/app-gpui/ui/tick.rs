@@ -77,28 +77,28 @@ impl PlayerView {
             spectrum_present: state.app.playback.spectrum_info.is_some(),
             has_toast: state.app.ui_state.toast_message.is_some(),
             federation_scan_active: state.app.federation.scan_progress.is_some(),
-            scan_status_hidden: state.app.scan_status_hidden,
+            scan_status_hidden: state.app.scan.status_hidden,
             library_scan_active: state.app.library_state.scan_in_progress,
             library_scan_tracks: state.app.library_state.scan_progress_tracks,
             library_scan_albums: state.app.library_state.scan_progress_albums,
-            library_scan_total_files: state.app.scan_total_files,
-            library_scan_elapsed_secs: state.app.scan_progress_elapsed_secs,
-            library_scan_eta_secs: state.app.scan_progress_eta_secs,
-            library_scan_rate_tenths: (state.app.scan_progress_tracks_per_sec.max(0.0) * 10.0)
+            library_scan_total_files: state.app.scan.total_files,
+            library_scan_elapsed_secs: state.app.scan.progress_elapsed_secs,
+            library_scan_eta_secs: state.app.scan.progress_eta_secs,
+            library_scan_rate_tenths: (state.app.scan.progress_tracks_per_sec.max(0.0) * 10.0)
                 as u32,
-            library_scan_phase_len: state.app.scan_progress_phase.len(),
-            replay_gain_scan_active: state.app.scan_ctrl.replay_gain_manager.in_progress,
-            replay_gain_processed: state.app.scan_ctrl.replay_gain_manager.processed,
-            replay_gain_total: state.app.scan_ctrl.replay_gain_manager.total,
-            replay_gain_album_done: state.app.scan_ctrl.replay_gain_manager.album_gain_done,
-            replay_gain_album_total: state.app.scan_ctrl.replay_gain_manager.album_gain_total,
-            waveform_scan_active: state.app.scan_ctrl.waveform_manager.in_progress,
-            waveform_processed: state.app.scan_ctrl.waveform_manager.processed,
-            waveform_total: state.app.scan_ctrl.waveform_manager.total,
-            bliss_scan_active: state.app.scan_ctrl.bliss_manager.in_progress,
-            bliss_processed: state.app.scan_ctrl.bliss_manager.processed,
-            bliss_total: state.app.scan_ctrl.bliss_manager.total,
-            library_stats_computing: state.app.library_stats_computing,
+            library_scan_phase_len: state.app.scan.progress_phase.len(),
+            replay_gain_scan_active: state.app.scan.ctrl.replay_gain_manager.in_progress,
+            replay_gain_processed: state.app.scan.ctrl.replay_gain_manager.processed,
+            replay_gain_total: state.app.scan.ctrl.replay_gain_manager.total,
+            replay_gain_album_done: state.app.scan.ctrl.replay_gain_manager.album_gain_done,
+            replay_gain_album_total: state.app.scan.ctrl.replay_gain_manager.album_gain_total,
+            waveform_scan_active: state.app.scan.ctrl.waveform_manager.in_progress,
+            waveform_processed: state.app.scan.ctrl.waveform_manager.processed,
+            waveform_total: state.app.scan.ctrl.waveform_manager.total,
+            bliss_scan_active: state.app.scan.ctrl.bliss_manager.in_progress,
+            bliss_processed: state.app.scan.ctrl.bliss_manager.processed,
+            bliss_total: state.app.scan.ctrl.bliss_manager.total,
+            library_stats_computing: state.app.library_view.stats_computing,
             remote_server_probe_revision: state.app.remote.server_probe_revision,
             remote_album_page_revision: state.app.remote.remote_album_page_revision,
         }
@@ -130,11 +130,11 @@ impl PlayerView {
         let layout_mode = state.app.ui_state.layout_mode;
         let should_update_spectrum = frame_count.is_multiple_of(2);
         let include_spectrum = should_update_spectrum
-            && (state.app.spectrum_visible || current_screen == Screen::Spectrum);
+            && (state.app.layout.spectrum_visible || current_screen == Screen::Spectrum);
         let include_rack_data = screen_shows_rack_data(current_screen, layout_mode);
         let include_compressor = include_rack_data;
         let include_level_meters = include_rack_data;
-        let can_update_autogain = state.app.plugin_state.pending_plugin_update.is_none();
+        let can_update_autogain = state.app.plugin_state.update_state.pending_plugin_update.is_none();
 
         let player_handle = state.player.clone();
         let mut player = player_handle.lock();
@@ -210,11 +210,11 @@ impl PlayerView {
         const DEAD_BAND_DB: f64 = 0.25;
         const MAX_GAIN_DB: f64 = 24.0;
 
-        if !state.app.plugin_state.chain_autogain {
+        if !state.app.plugin_state.chain_state.chain_autogain {
             return None;
         }
 
-        let last_frame = state.app.plugin_state.chain_autogain_last_frame;
+        let last_frame = state.app.plugin_state.chain_state.chain_autogain_last_frame;
         if last_frame != 0 && frame_count.wrapping_sub(last_frame) < UPDATE_INTERVAL_FRAMES {
             return None;
         }
@@ -249,7 +249,7 @@ impl PlayerView {
             .plugin_state
             .graph
             .set_chain_auto_gain(Some(next_gain_db));
-        state.app.plugin_state.chain_autogain_last_frame = frame_count;
+        state.app.plugin_state.chain_state.chain_autogain_last_frame = frame_count;
 
         state
             .app
@@ -348,7 +348,7 @@ impl PlayerView {
     fn tick_background_tasks(state: &mut AppState) {
         state.app.check_library_on_startup();
 
-        state.app.scan_ctrl.update_all();
+        state.app.scan.ctrl.update_all();
         state.app.update_library_scan();
         state.app.update_federation_scan();
         state.app.update_cast_discovery();
@@ -377,10 +377,10 @@ impl PlayerView {
 
         state.app.library_state.ensure_cache_valid();
 
-        let pending = state.app.pending_library_stats.lock().take();
+        let pending = state.app.library_view.pending_stats.lock().take();
         if let Some(stats) = pending {
-            state.app.library_stats = stats;
-            state.app.library_stats_computing = false;
+            state.app.library_view.stats = stats;
+            state.app.library_view.stats_computing = false;
         }
     }
 }

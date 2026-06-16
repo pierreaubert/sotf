@@ -1,10 +1,9 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{
-    BandCompressorParams, InPlacePluginAdapter, MultibandCompressorPlugin,
-    MultibandCompressorPluginParams, Plugin,
-};
+use sotf_plugins::{ParametricInPlacePluginAdapter, 
+    BandCompressorParams, MultibandCompressorPlugin,
+    MultibandCompressorPluginParams, Plugin};
 
 pub(super) struct CompressorFuzzer;
 
@@ -54,6 +53,6 @@ impl PluginFuzzer for CompressorFuzzer {
             sidechain_hpf_hz
         );
 
-        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+        (Box::new(ParametricInPlacePluginAdapter::new(plugin)), desc)
     }
 }

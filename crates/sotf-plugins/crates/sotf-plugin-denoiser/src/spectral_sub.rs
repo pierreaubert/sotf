@@ -26,11 +26,11 @@ impl DenoiserPlugin {
     /// Combines with existing Wiener gains via minimum: the more
     /// conservative (lower) gain wins at each bin.
     pub(super) fn calculate_spectral_subtraction_gains_for_channel(&mut self, channel: usize) {
-        let alpha = self.spectral_sub_alpha;
-        let beta = self.spectral_sub_beta;
-        let transparency = self.transparency;
+        let alpha = self.spectral_sub.spectral_sub_alpha;
+        let beta = self.spectral_sub.spectral_sub_beta;
+        let transparency = self.params.transparency;
 
-        for k in 0..self.spectrum_size {
+        for k in 0..self.config.spectrum_size {
             let signal_power = self.get_power_at_bin(channel, k).max(EPSILON);
             let noise_power = self.get_effective_noise_power(channel, k);
 
@@ -43,7 +43,7 @@ impl DenoiserPlugin {
             let gain = gain + transparency * (1.0 - gain);
 
             // Combine with existing gain (minimum of Wiener and spectral sub)
-            self.gain[channel][k] = self.gain[channel][k].min(gain);
+            self.gains.gain[channel][k] = self.gains.gain[channel][k].min(gain);
         }
     }
 }

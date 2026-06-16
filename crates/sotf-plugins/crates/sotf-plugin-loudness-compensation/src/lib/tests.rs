@@ -1,12 +1,13 @@
 use super::consts::ISO_FILTER_COUNT;
 use super::loudness_compensation_plugin::LoudnessCompensationPlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 #[test]
 fn test_loudness_basic() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     let mut b = vec![0.5; 1000];
     p.process_in_place(&mut b, &ProcessContext::new(48000, 1000))
         .unwrap();
@@ -19,7 +20,7 @@ fn test_loudness_basic() {
 #[test]
 fn test_param_change_no_click() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     // Process a block to establish filter state
     let mut b = vec![0.3f32; 4800];
@@ -71,7 +72,7 @@ fn test_three_band_topology_filter_count() {
 #[test]
 fn test_manual_cascaded_shelf_approximates_requested_passband_gain() {
     let mut p = LoudnessCompensationPlugin::new(1, 200.0, 12.0, 10000.0, 0.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     let gain_db: f64 = p.filters[0]
         .iter()
@@ -86,7 +87,7 @@ fn test_manual_cascaded_shelf_approximates_requested_passband_gain() {
 #[test]
 fn test_mid_disabled_sets_peak_gain_zero() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     // Confirm mid is enabled by default
     assert!(p.mid_enabled);
@@ -116,7 +117,7 @@ fn test_mid_disabled_sets_peak_gain_zero() {
 
     // Path B: mid enabled but gain=0
     let mut p2 = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p2, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p2, 48000).unwrap();
     p2.set_parameter(ParameterId::from("mid_gain"), ParameterValue::Float(0.0))
         .unwrap();
     let mut buf_b = signal.clone();
@@ -139,11 +140,11 @@ fn test_mid_disabled_sets_peak_gain_zero() {
 fn test_loudness_comp_applies_gain() {
     // Process a low-frequency signal (within the low shelf)
     let mut p_low = LoudnessCompensationPlugin::new(1, 100.0, 12.0, 10000.0, 12.0);
-    InPlacePlugin::initialize(&mut p_low, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p_low, 48000).unwrap();
 
     // Process a mid-frequency signal (outside both shelves)
     let mut p_mid = LoudnessCompensationPlugin::new(1, 100.0, 12.0, 10000.0, 12.0);
-    InPlacePlugin::initialize(&mut p_mid, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p_mid, 48000).unwrap();
 
     let nf = 9600;
     let sr = 48000.0f32;
@@ -195,7 +196,7 @@ fn test_iso226_mode_has_seven_filters_per_channel() {
 fn test_iso226_mode_equal_levels_passthrough() {
     // When playback_level == reference_level, ISO 226 mode should be near-passthrough
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
         .unwrap();
     p.set_parameter(
@@ -234,7 +235,7 @@ fn test_iso226_mode_equal_levels_passthrough() {
 fn test_iso226_mode_low_volume_boosts_bass() {
     // At lower playback level, bass should be boosted relative to mid
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
         .unwrap();
     p.set_parameter(
@@ -260,7 +261,7 @@ fn test_iso226_mode_low_volume_boosts_bass() {
 
     // Process a 1 kHz signal with a fresh plugin at same settings
     let mut p2 = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
-    InPlacePlugin::initialize(&mut p2, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p2, 48000).unwrap();
     p2.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
         .unwrap();
     p2.set_parameter(
@@ -293,7 +294,7 @@ fn test_iso226_mode_low_volume_boosts_bass() {
 #[test]
 fn test_mode_switch_via_set_parameter() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     assert_eq!(p.mode_index, 0);
 
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
@@ -330,7 +331,7 @@ fn test_get_parameter_new_fields() {
 fn test_auto_mode_applies_compensation() {
     // Auto mode with volume=-20 should produce bass boost
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
         .unwrap();
     p.set_parameter(
@@ -356,7 +357,7 @@ fn test_auto_mode_applies_compensation() {
 
     // Process a 1 kHz signal with a fresh plugin at same settings
     let mut p2 = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
-    InPlacePlugin::initialize(&mut p2, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p2, 48000).unwrap();
     p2.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
         .unwrap();
     p2.set_parameter(
@@ -391,7 +392,7 @@ fn test_auto_mode_zero_volume_flat_response() {
     // Auto mode with volume=0 and reference=83 means estimated_spl = 83 = reference
     // => no compensation (flat response)
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
         .unwrap();
     p.set_parameter(
@@ -428,7 +429,7 @@ fn test_auto_mode_zero_volume_flat_response() {
 #[test]
 fn test_auto_mode_switch_via_set_parameter() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     assert_eq!(p.mode_index, 0);
 
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
@@ -454,7 +455,7 @@ fn test_auto_mode_switch_via_set_parameter() {
 fn test_comp_gain_does_not_allow_clipping_in_iso_mode() {
     // Use a large bass boost scenario: playback=40, reference=83 -> big delta at bass
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
         .unwrap();
     p.set_parameter(
@@ -510,7 +511,7 @@ fn test_comp_gain_does_not_allow_clipping_in_iso_mode() {
 #[test]
 fn test_auto_gain_measurement_not_stale_after_one_block() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(
         ParameterId::from("auto_gain_enabled"),
         ParameterValue::Bool(true),
@@ -581,7 +582,7 @@ fn test_post_mode_output_measurement_after_compensation() {
         ..Default::default()
     };
     let mut p = LoudnessCompensationPlugin::from_params(1, params).unwrap();
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     let nf = 4800; // 100ms per block
     let ctx = ProcessContext::new(48000, nf);
@@ -639,7 +640,7 @@ fn test_post_mode_output_measurement_after_compensation() {
 #[test]
 fn test_manual_mode_level_change_does_not_corrupt() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     assert_eq!(p.mode_index, 0);
 
     // Change ISO-related params in manual mode — must be a no-op for filter bank
@@ -672,7 +673,7 @@ fn test_manual_mode_level_change_does_not_corrupt() {
 #[test]
 fn test_set_get_parameter_all_fields() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     // low_gain
     p.set_parameter(ParameterId::from("low_gain"), ParameterValue::Float(8.5))
@@ -881,7 +882,7 @@ fn test_set_parameter_type_errors_preserve_state() {
 #[test]
 fn test_set_parameter_mode_out_of_range_rejected_by_validation() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     assert_eq!(p.mode_index, 0);
     let result = p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(5));
     assert!(
@@ -894,7 +895,7 @@ fn test_set_parameter_mode_out_of_range_rejected_by_validation() {
 #[test]
 fn test_set_parameter_mode_float_rejected_by_validation() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     let result = p.set_parameter(ParameterId::from("mode"), ParameterValue::Float(2.0));
     assert!(
         result.is_err(),
@@ -931,7 +932,7 @@ fn test_set_parameter_non_finite_float_rejected_by_validation() {
 #[test]
 fn test_set_parameter_auto_gain_position_pre_creates_auto_gain() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     assert!(p.auto_gain.is_none());
 
     p.set_parameter(
@@ -951,7 +952,7 @@ fn test_set_parameter_auto_gain_position_pre_creates_auto_gain() {
 #[test]
 fn test_set_parameter_auto_gain_position_disabled_removes_auto_gain() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     // Enable first
     p.set_parameter(
@@ -975,7 +976,7 @@ fn test_set_parameter_auto_gain_position_disabled_removes_auto_gain() {
 #[test]
 fn test_set_parameter_auto_gain_max_db_updates_existing_auto_gain() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(
         ParameterId::from("auto_gain_enabled"),
         ParameterValue::Bool(true),
@@ -1004,7 +1005,7 @@ fn test_set_parameter_auto_gain_max_db_without_auto_gain_no_panic() {
 #[test]
 fn test_set_parameter_auto_gain_smoothing_ms_updates_existing_auto_gain() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(
         ParameterId::from("auto_gain_enabled"),
         ParameterValue::Bool(true),
@@ -1033,7 +1034,7 @@ fn test_set_parameter_auto_gain_smoothing_ms_without_auto_gain_no_panic() {
 #[test]
 fn test_set_parameter_playback_volume_db_manual_mode_no_rebuild() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     assert_eq!(p.mode_index, 0);
 
     // Save iso_deltas before
@@ -1053,7 +1054,7 @@ fn test_set_parameter_playback_volume_db_manual_mode_no_rebuild() {
 #[test]
 fn test_set_parameter_playback_volume_db_auto_mode_triggers_rebuild() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
         .unwrap();
     p.set_parameter(
@@ -1077,7 +1078,7 @@ fn test_set_parameter_playback_volume_db_auto_mode_triggers_rebuild() {
 #[test]
 fn test_set_parameter_playback_level_db_auto_mode_no_panic() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
         .unwrap();
 
@@ -1095,7 +1096,7 @@ fn test_set_parameter_playback_level_db_auto_mode_no_panic() {
 #[test]
 fn test_set_parameter_reference_level_db_auto_mode_triggers_rebuild() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
         .unwrap();
 
@@ -1122,7 +1123,7 @@ fn test_set_parameter_reference_level_db_auto_mode_triggers_rebuild() {
 #[test]
 fn test_set_parameter_playback_level_db_iso_mode_rebuilds() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
         .unwrap();
 
@@ -1140,7 +1141,7 @@ fn test_set_parameter_playback_level_db_iso_mode_rebuilds() {
 #[test]
 fn test_set_parameter_playback_level_db_manual_mode_no_rebuild() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     assert_eq!(p.mode_index, 0);
 
     let deltas_before = p.iso_deltas;
@@ -1161,17 +1162,17 @@ fn test_set_parameter_playback_level_db_manual_mode_no_rebuild() {
 fn test_initialize_different_sample_rate() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
     assert_eq!(p.sample_rate, 48000);
-    InPlacePlugin::initialize(&mut p, 96000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 96000).unwrap();
     assert_eq!(p.sample_rate, 96000);
 }
 
 #[test]
 fn test_initialize_rebuilds_filters() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     // Change sample rate
-    InPlacePlugin::initialize(&mut p, 44100).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 44100).unwrap();
 
     // Filters should have been rebuilt for new sample rate
     let mut b = vec![0.5f32; 480];
@@ -1187,7 +1188,7 @@ fn test_initialize_rebuilds_filters() {
 #[test]
 fn test_reset_clears_filter_state() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     // Process to establish state
     let mut b = vec![0.3f32; 4800];
@@ -1196,7 +1197,7 @@ fn test_reset_clears_filter_state() {
     let last_before = b[4799];
 
     // Reset should clear filter delay state
-    InPlacePlugin::reset(&mut p);
+    ParametricInPlacePlugin::reset(&mut p);
 
     // Process another block — first sample should differ because state was reset
     let mut b2 = vec![0.3f32; 480];
@@ -1227,7 +1228,7 @@ fn test_process_in_place_pre_mode() {
         ..Default::default()
     };
     let mut p = LoudnessCompensationPlugin::from_params(1, params).unwrap();
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     let nf = 4800;
     let ctx = ProcessContext::new(48000, nf);
@@ -1256,7 +1257,7 @@ fn test_process_in_place_pre_mode() {
 #[test]
 fn test_process_in_place_disabled_mode() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     let nf = 480;
     let ctx = ProcessContext::new(48000, nf);
@@ -1268,7 +1269,7 @@ fn test_process_in_place_disabled_mode() {
 #[test]
 fn test_process_in_place_stereo() {
     let mut p = LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     let nf = 480;
     let ctx = ProcessContext::new(48000, nf);
@@ -1281,7 +1282,7 @@ fn test_process_in_place_stereo() {
 #[test]
 fn test_process_in_place_empty_buffer() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     let mut b: Vec<f32> = vec![];
     let ctx = ProcessContext::new(48000, 0);
@@ -1293,7 +1294,7 @@ fn test_process_in_place_empty_buffer() {
 #[test]
 fn test_process_in_place_single_frame() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     let mut b = vec![0.5f32];
     let ctx = ProcessContext::new(48000, 1);
@@ -1314,7 +1315,7 @@ fn test_get_data_none_without_auto_gain() {
 #[test]
 fn test_get_data_some_with_auto_gain() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(
         ParameterId::from("auto_gain_enabled"),
         ParameterValue::Bool(true),
@@ -1366,7 +1367,7 @@ fn test_from_params_pre_position() {
 #[test]
 fn test_maybe_rebuild_skips_small_volume_change() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
         .unwrap();
     p.set_parameter(
@@ -1395,7 +1396,7 @@ fn test_maybe_rebuild_skips_small_volume_change() {
 #[test]
 fn test_maybe_rebuild_skips_non_auto_mode() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     assert_eq!(p.mode_index, 0);
 
     let deltas_before = p.iso_deltas;
@@ -1413,7 +1414,7 @@ fn test_maybe_rebuild_skips_non_auto_mode() {
 #[test]
 fn test_update_comp_gain_smoother_manual_mode_mid_disabled() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
     p.set_parameter(
         ParameterId::from("mid_enabled"),
         ParameterValue::Bool(false),
@@ -1432,7 +1433,7 @@ fn test_update_comp_gain_smoother_manual_mode_mid_disabled() {
 #[test]
 fn test_process_sample_all_modes() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     // Manual mode
     let s_manual = p.process_sample(0, 0.5);
@@ -1452,7 +1453,7 @@ fn test_process_sample_all_modes() {
 #[test]
 fn test_info() {
     let p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    let info = InPlacePlugin::info(&p);
+    let info = ParametricInPlacePlugin::info(&p);
     assert_eq!(info.name, "Loudness Compensation");
     assert_eq!(info.version, "3.0.0");
     assert_eq!(info.author, "Sotf");
@@ -1461,16 +1462,16 @@ fn test_info() {
 #[test]
 fn test_channels() {
     let p1 = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    assert_eq!(InPlacePlugin::channels(&p1), 1);
+    assert_eq!(ParametricInPlacePlugin::channels(&p1), 1);
 
     let p2 = LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0);
-    assert_eq!(InPlacePlugin::channels(&p2), 2);
+    assert_eq!(ParametricInPlacePlugin::channels(&p2), 2);
 }
 
 #[test]
 fn test_parameters_returns_clone() {
     let p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    let params = InPlacePlugin::parameters(&p);
+    let params = ParametricInPlacePlugin::parameters(&p);
     assert!(!params.is_empty());
     // Should contain at least the expected parameters
     assert!(params.iter().any(|param| param.id.0 == "low_gain"));
@@ -1480,13 +1481,13 @@ fn test_parameters_returns_clone() {
 #[test]
 fn test_rebuild_cached_parameters_updates_values() {
     let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-    InPlacePlugin::initialize(&mut p, 48000).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
 
     // Change a field directly and rebuild
     p.low_gain = 12.0;
     p.rebuild_cached_parameters();
 
-    let params = InPlacePlugin::parameters(&p);
+    let params = ParametricInPlacePlugin::parameters(&p);
     let low_gain_param = params
         .iter()
         .find(|param| param.id.0 == "low_gain")

@@ -1,4 +1,4 @@
-use sotf_plugins::{DawHost, InPlacePluginAdapter, LoudnessMonitorPlugin};
+use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, DawHost,  LoudnessMonitorPlugin};
 use std::time::Instant;
 
 #[sotf_test::slow]
@@ -12,12 +12,12 @@ fn test_plugin_chain_performance_with_monitor_96khz() {
 
     // EQ
     let eq = sotf_plugins::EqPlugin::new(channels, vec![]);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(eq)))
+    host.add_plugin(Box::new(ParametricPluginAdapter::new(eq)))
         .unwrap();
 
     // Compressor
     let comp = sotf_plugins::CompressorPlugin::new(channels);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(comp)))
+    host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(comp)))
         .unwrap();
 
     // Monitor

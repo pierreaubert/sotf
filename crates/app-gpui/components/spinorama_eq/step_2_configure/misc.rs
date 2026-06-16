@@ -1,6 +1,7 @@
 use crate::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
 use crate::components::autoeq::{
-    AutoEqConfig, AutoEqForm, AutoEqFormUiState, DetailLevel, SPINORAMA_LOSS_TYPE_OPTIONS,
+    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, DetailLevel, EqDesignConfig,
+    GoalsConfig, SPINORAMA_LOSS_TYPE_OPTIONS,
 };
 use crate::components::design::Ds;
 use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
@@ -31,43 +32,50 @@ impl PlayerView {
         // Build AutoEqConfig from our SpinoramaOptimizerConfig
         let config = &spinorama.optimizer_config;
         let autoeq_config = AutoEqConfig {
-            opt_mode,
-            num_filters: config.num_filters,
-            sample_rate: config.sample_rate,
-            fir_taps: config.fir_taps,
-            fir_phase: config.fir_phase.clone(),
-            min_db: config.min_db,
-            max_db: config.max_db,
-            min_q: config.min_q,
-            max_q: config.max_q,
-            min_freq: config.min_freq,
-            max_freq: config.max_freq,
-            peq_model: config.peq_model.clone(),
-            algo: config.algorithm.to_autoeq_string().to_string(),
-            population: config.population,
-            maxeval: config.max_iter,
-            tolerance: config.tolerance,
-            atolerance: config.atolerance,
-            bo_initial_samples: config.bo_initial_samples,
-            bo_batch_size: config.bo_batch_size,
-            bo_posterior_std_threshold: config.bo_posterior_std_threshold,
-            bo_acquisition: config.bo_acquisition.clone(),
-            bo_ehvi: config.bo_ehvi,
-            de_f: config.de_f,
-            de_cr: config.de_cr,
-            strategy: config.strategy.clone(),
-            adaptive_weight_f: config.adaptive_weight_f,
-            adaptive_weight_cr: config.adaptive_weight_cr,
-            refine: config.refine,
-            local_algo: config.local_algo.clone(),
-            smooth: config.smooth,
-            smooth_n: config.smooth_n,
-            psychoacoustic: config.psychoacoustic,
-            asymmetric_loss: config.loss_function == "flat-asymmetric",
-            spacing_weight: config.spacing_weight,
-            min_spacing_oct: config.min_spacing_oct,
-            loss_type: config.loss_function.clone(),
-            target_curve: config.target_curve.short_name().to_string(),
+            eq_design: EqDesignConfig {
+                opt_mode,
+                num_filters: config.num_filters,
+                sample_rate: config.sample_rate,
+                fir_taps: config.fir_taps,
+                fir_phase: config.fir_phase.clone(),
+                min_db: config.min_db,
+                max_db: config.max_db,
+                min_q: config.min_q,
+                max_q: config.max_q,
+                min_freq: config.min_freq,
+                max_freq: config.max_freq,
+                peq_model: config.peq_model.clone(),
+                spacing_weight: config.spacing_weight,
+                min_spacing_oct: config.min_spacing_oct,
+            },
+            algorithm: AlgorithmConfig {
+                algo: config.algorithm.to_autoeq_string().to_string(),
+                population: config.population,
+                maxeval: config.max_iter,
+                tolerance: config.tolerance,
+                atolerance: config.atolerance,
+                bo_initial_samples: config.bo_initial_samples,
+                bo_batch_size: config.bo_batch_size,
+                bo_posterior_std_threshold: config.bo_posterior_std_threshold,
+                bo_acquisition: config.bo_acquisition.clone(),
+                bo_ehvi: config.bo_ehvi,
+                de_f: config.de_f,
+                de_cr: config.de_cr,
+                strategy: config.strategy.clone(),
+                adaptive_weight_f: config.adaptive_weight_f,
+                adaptive_weight_cr: config.adaptive_weight_cr,
+                refine: config.refine,
+                local_algo: config.local_algo.clone(),
+                smooth: config.smooth,
+                smooth_n: config.smooth_n,
+                psychoacoustic: config.psychoacoustic,
+                asymmetric_loss: config.loss_function == "flat-asymmetric",
+            },
+            goals: GoalsConfig {
+                loss_type: config.loss_function.clone(),
+                target_curve: config.target_curve.short_name().to_string(),
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -1165,7 +1173,9 @@ impl PlayerView {
                     .x_label("Iteration")
                     .y_label("Loss")
                     .label("Loss")
-                    .color(rgba_to_u32(theme.graph_colors.filter_response))
+                    .color(rgba_to_u32(
+                        theme.plugin_palette.graph_colors.filter_response,
+                    ))
                     .stroke_width(2.0)
                     .theme(chart_theme.clone())
                     .size(700.0, 250.0);
@@ -1183,7 +1193,7 @@ impl PlayerView {
                             &score_iterations,
                             &scores,
                             Some("Score"),
-                            rgba_to_u32(theme.graph_colors.target),
+                            rgba_to_u32(theme.plugin_palette.graph_colors.target),
                             2.0,
                             1.0,
                         )

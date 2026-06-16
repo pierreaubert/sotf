@@ -16,7 +16,9 @@ use num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
@@ -444,7 +446,7 @@ impl FirDesignerPlugin {
     }
 }
 
-impl InPlacePlugin for FirDesignerPlugin {
+impl ParametricInPlacePlugin for FirDesignerPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("FIR Designer", env!("CARGO_PKG_VERSION"), "SOTF")
             .with_description("FIR magnitude and phase designer")
@@ -454,156 +456,172 @@ impl InPlacePlugin for FirDesignerPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        let id_str = id.as_str();
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(
+            ParameterId::from("num_filters"),
+            ParameterValue::Int(self.num_filters as i32),
+        );
+        values.insert(
+            ParameterId::from("fir_length"),
+            ParameterValue::Int(self.fir_length_index as i32),
+        );
+        values.insert(
+            ParameterId::from("phase_mode"),
+            ParameterValue::Int(self.phase_mode_index as i32),
+        );
+        values.insert(
+            ParameterId::from("auto_gain"),
+            ParameterValue::Bool(self.auto_gain),
+        );
+        values.insert(ParameterId::from("mix"), ParameterValue::Float(self.mix_value));
+        for (i, band) in self.bands.iter().enumerate() {
+            values.insert(
+                ParameterId::from(format!("band_{}_type", i).as_str()),
+                ParameterValue::Int(filter_type_to_index(band.filter_type) as i32),
+            );
+            values.insert(
+                ParameterId::from(format!("band_{}_freq", i).as_str()),
+                ParameterValue::Float(band.frequency as f32),
+            );
+            values.insert(
+                ParameterId::from(format!("band_{}_q", i).as_str()),
+                ParameterValue::Float(band.q as f32),
+            );
+            values.insert(
+                ParameterId::from(format!("band_{}_gain", i).as_str()),
+                ParameterValue::Float(band.gain_db as f32),
+            );
+            values.insert(
+                ParameterId::from(format!("band_{}_active", i).as_str()),
+                ParameterValue::Bool(band.active),
+            );
+        }
+        values
+    }
 
-        match id_str {
-            "num_filters" => {
-                if let ParameterValue::Int(v) = value {
-                    let new_count = (v as usize).clamp(1, 10);
-                    if new_count != self.num_filters {
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            let id_str = id.as_str();
+
+            match id_str {
+                "num_filters" => {
+                    if let ParameterValue::Int(v) = value {
+                        let new_count = (v as usize).clamp(1, 10);
+                        if new_count != self.num_filters {
+                            let sr = self.sample_rate as f64;
+                            self.num_filters = new_count;
+                            // Grow bands if needed
+                            while self.bands.len() < new_count {
+                                self.bands.push(EqBand::new(
+                                    BiquadFilterType::Peak,
+                                    1000.0,
+                                    1.0,
+                                    0.0,
+                                    true,
+                                    sr,
+                                ));
+                            }
+                            // Shrink if needed (just adjust num_filters, keep bands allocated)
+                            self.fir_dirty = true;
+                            self.rebuild_cached_parameters();
+                        }
+                    }
+                }
+                "fir_length" => {
+                    if let ParameterValue::Int(v) = value {
+                        let idx = (v as usize).min(FIR_LENGTH_OPTIONS.len() - 1);
+                        if idx != self.fir_length_index {
+                            self.fir_length_index = idx;
+                            self.fir_coeffs.resize(self.fir_length(), 0.0);
+                            self.resize_fft_buffers();
+                            self.fir_dirty = true;
+                            self.rebuild_cached_parameters();
+                        }
+                    }
+                }
+                "phase_mode" => {
+                    if let ParameterValue::Int(v) = value {
+                        let idx = (v as usize).min(PHASE_MODE_OPTIONS.len() - 1);
+                        if idx != self.phase_mode_index {
+                            self.phase_mode_index = idx;
+                            self.fir_dirty = true;
+                            self.rebuild_cached_parameters();
+                        }
+                    }
+                }
+                "auto_gain" => {
+                    if let ParameterValue::Bool(v) = value {
+                        self.auto_gain = v;
+                        self.fir_dirty = true;
+                        self.rebuild_cached_parameters();
+                    }
+                }
+                "mix" => {
+                    if let ParameterValue::Float(v) = value {
+                        self.mix_value = v;
+                        self.mix_smoother.set_target(v);
+                        self.rebuild_cached_parameters();
+                    }
+                }
+                _ => {
+                    // Try per-band parameters: band_{i}_{param}
+                    if let Some(rest) = id_str.strip_prefix("band_")
+                        && let Some((idx_str, param)) = rest.split_once('_')
+                        && let Ok(idx) = idx_str.parse::<usize>()
+                        && idx < self.bands.len()
+                    {
                         let sr = self.sample_rate as f64;
-                        self.num_filters = new_count;
-                        // Grow bands if needed
-                        while self.bands.len() < new_count {
-                            self.bands.push(EqBand::new(
-                                BiquadFilterType::Peak,
-                                1000.0,
-                                1.0,
-                                0.0,
-                                true,
-                                sr,
-                            ));
-                        }
-                        // Shrink if needed (just adjust num_filters, keep bands allocated)
-                        self.fir_dirty = true;
-                        self.rebuild_cached_parameters();
-                    }
-                }
-            }
-            "fir_length" => {
-                if let ParameterValue::Int(v) = value {
-                    let idx = (v as usize).min(FIR_LENGTH_OPTIONS.len() - 1);
-                    if idx != self.fir_length_index {
-                        self.fir_length_index = idx;
-                        self.fir_coeffs.resize(self.fir_length(), 0.0);
-                        self.resize_fft_buffers();
-                        self.fir_dirty = true;
-                        self.rebuild_cached_parameters();
-                    }
-                }
-            }
-            "phase_mode" => {
-                if let ParameterValue::Int(v) = value {
-                    let idx = (v as usize).min(PHASE_MODE_OPTIONS.len() - 1);
-                    if idx != self.phase_mode_index {
-                        self.phase_mode_index = idx;
-                        self.fir_dirty = true;
-                        self.rebuild_cached_parameters();
-                    }
-                }
-            }
-            "auto_gain" => {
-                if let ParameterValue::Bool(v) = value {
-                    self.auto_gain = v;
-                    self.fir_dirty = true;
-                    self.rebuild_cached_parameters();
-                }
-            }
-            "mix" => {
-                if let ParameterValue::Float(v) = value {
-                    self.mix_value = v;
-                    self.mix_smoother.set_target(v);
-                    self.rebuild_cached_parameters();
-                }
-            }
-            _ => {
-                // Try per-band parameters: band_{i}_{param}
-                if let Some(rest) = id_str.strip_prefix("band_")
-                    && let Some((idx_str, param)) = rest.split_once('_')
-                    && let Ok(idx) = idx_str.parse::<usize>()
-                    && idx < self.bands.len()
-                {
-                    let sr = self.sample_rate as f64;
-                    let band = &self.bands[idx];
-                    let mut ft = band.filter_type;
-                    let mut freq = band.frequency;
-                    let mut q = band.q;
-                    let mut gain = band.gain_db;
-                    let mut active = band.active;
+                        let band = &self.bands[idx];
+                        let mut ft = band.filter_type;
+                        let mut freq = band.frequency;
+                        let mut q = band.q;
+                        let mut gain = band.gain_db;
+                        let mut active = band.active;
 
-                    match param {
-                        "type" => {
-                            if let ParameterValue::Int(v) = value {
-                                ft = index_to_filter_type(v as usize);
+                        match param {
+                            "type" => {
+                                if let ParameterValue::Int(v) = value {
+                                    ft = index_to_filter_type(v as usize);
+                                }
                             }
-                        }
-                        "freq" => {
-                            if let ParameterValue::Float(v) = value {
-                                freq = v as f64;
+                            "freq" => {
+                                if let ParameterValue::Float(v) = value {
+                                    freq = v as f64;
+                                }
                             }
-                        }
-                        "q" => {
-                            if let ParameterValue::Float(v) = value {
-                                q = v as f64;
+                            "q" => {
+                                if let ParameterValue::Float(v) = value {
+                                    q = v as f64;
+                                }
                             }
-                        }
-                        "gain" => {
-                            if let ParameterValue::Float(v) = value {
-                                gain = v as f64;
+                            "gain" => {
+                                if let ParameterValue::Float(v) = value {
+                                    gain = v as f64;
+                                }
                             }
-                        }
-                        "active" => {
-                            if let ParameterValue::Bool(v) = value {
-                                active = v;
+                            "active" => {
+                                if let ParameterValue::Bool(v) = value {
+                                    active = v;
+                                }
                             }
+                            _ => return Err(format!("Unknown band parameter: {param}")),
                         }
-                        _ => return Err(format!("Unknown band parameter: {param}")),
-                    }
 
-                    self.bands[idx].update(ft, freq, q, gain, active, sr);
-                    self.fir_dirty = true;
-                    self.rebuild_cached_parameters();
+                        self.bands[idx].update(ft, freq, q, gain, active, sr);
+                        self.fir_dirty = true;
+                        self.rebuild_cached_parameters();
+                    } else {
+                        return Err(format!("Unknown parameter: {}", id));
+                    }
                 }
             }
         }
         Ok(())
-    }
-
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        let id_str = id.as_str();
-        match id_str {
-            "num_filters" => Some(ParameterValue::Int(self.num_filters as i32)),
-            "fir_length" => Some(ParameterValue::Int(self.fir_length_index as i32)),
-            "phase_mode" => Some(ParameterValue::Int(self.phase_mode_index as i32)),
-            "auto_gain" => Some(ParameterValue::Bool(self.auto_gain)),
-            "mix" => Some(ParameterValue::Float(self.mix_value)),
-            _ => {
-                // Try per-band parameters
-                if let Some(rest) = id_str.strip_prefix("band_")
-                    && let Some((idx_str, param)) = rest.split_once('_')
-                    && let Ok(idx) = idx_str.parse::<usize>()
-                    && idx < self.bands.len()
-                {
-                    let band = &self.bands[idx];
-                    return match param {
-                        "type" => Some(ParameterValue::Int(
-                            filter_type_to_index(band.filter_type) as i32
-                        )),
-                        "freq" => Some(ParameterValue::Float(band.frequency as f32)),
-                        "q" => Some(ParameterValue::Float(band.q as f32)),
-                        "gain" => Some(ParameterValue::Float(band.gain_db as f32)),
-                        "active" => Some(ParameterValue::Bool(band.active)),
-                        _ => None,
-                    };
-                }
-                None
-            }
-        }
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

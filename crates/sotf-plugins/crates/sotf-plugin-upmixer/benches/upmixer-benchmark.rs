@@ -233,10 +233,8 @@ fn bench_upmixer_production_config(c: &mut Criterion) {
     for &config in &configs {
         group.bench_with_input(BenchmarkId::from_parameter(config), &config, |b, &cfg| {
             use sotf_plugin_upmixer::UpmixerPluginParams;
-            let params = UpmixerPluginParams {
-                speaker_config: cfg.to_string(),
-                ..serde_json::from_str("{}").unwrap()
-            };
+            let mut params: UpmixerPluginParams = serde_json::from_str("{}").unwrap();
+            params.core.speaker_config = cfg.to_string();
             let mut upmixer = UpmixerPlugin::from_params(params);
             upmixer.initialize(sample_rate).unwrap();
 

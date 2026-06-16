@@ -958,19 +958,19 @@ impl PlayerView {
                             .child(self.render_color_swatch(
                                 &d,
                                 "EQ",
-                                preview_theme.plugin_colors.eq,
+                                preview_theme.plugin_palette.plugin_colors.eq,
                                 preview_theme.text_primary,
                             ))
                             .child(self.render_color_swatch(
                                 &d,
                                 "Meter",
-                                preview_theme.meter_normal,
+                                preview_theme.feedback.meter_normal,
                                 preview_theme.text_primary,
                             ))
                             .child(self.render_color_swatch(
                                 &d,
                                 "Graph",
-                                preview_theme.graph_colors.corrected,
+                                preview_theme.plugin_palette.graph_colors.corrected,
                                 preview_theme.text_primary,
                             )),
                     )

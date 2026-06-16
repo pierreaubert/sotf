@@ -4,8 +4,10 @@ use crate::params::PARAMS as SP;
 use plugins_denoiser::rnnoise::RnnoiseBackend;
 use serde::{Deserialize, Serialize};
 use sotf_host::param_bridge;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 
 /// RNNoise processes fixed 480-sample frames at 48 kHz.
 pub const SPEECH_DENOISER_FRAME_SIZE: usize = 480;
@@ -63,7 +65,7 @@ impl SpeechDenoiserPlugin {
     }
 }
 
-impl InPlacePlugin for SpeechDenoiserPlugin {
+impl ParametricInPlacePlugin for SpeechDenoiserPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Speech Denoiser", "1.0.0", "SotF")
             .with_description("RNNoise speech denoiser")
@@ -73,22 +75,30 @@ impl InPlacePlugin for SpeechDenoiserPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        param_bridge::set_parameter(SP, &id, &value, |i, v| {
-            if i == 0 {
-                self.enabled = v > 0.5;
-            }
-        })?;
-        self.rebuild_cached_parameters();
-        Ok(())
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(
+            ParameterId::from("enabled"),
+            ParameterValue::Bool(self.enabled),
+        );
+        values
     }
 
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        param_bridge::get_parameter(SP, id, |i| self.param_value(i))
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            match id.as_str() {
+                "enabled" => {
+                    self.enabled = value.as_bool().unwrap_or(self.enabled);
+                }
+                _ => return Err(format!("Unknown parameter: {id}")),
+            }
+        }
+        self.rebuild_cached_parameters();
+        Ok(())
     }
 
     /// Initialize the plugin at the given sample rate.

@@ -116,7 +116,7 @@ impl PlayerView {
                 let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
                 let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
                 // Invalidate the workflow canvas so the graph view rebuilds
-                state.app.plugin_state.workflow_canvas = None;
+                state.app.plugin_state.graph_state.workflow_canvas = None;
                 if state.app.plugin_state.is_rack_available() {
                     let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
                     log::warn!(
@@ -306,8 +306,8 @@ impl PlayerView {
     fn toggle_simple_view(&mut self, _: &ToggleSimpleView, _: &mut Window, cx: &mut Context<Self>) {
         use crate::app::state::plugin::PluginUiView;
         self.state.update(cx, |state, _cx| {
-            state.app.plugin_state.plugin_ui_view =
-                if state.app.plugin_state.plugin_ui_view.is_simple() {
+            state.app.plugin_state.plugin_ui_state.plugin_ui_view =
+                if state.app.plugin_state.plugin_ui_state.plugin_ui_view.is_simple() {
                     PluginUiView::UI
                 } else {
                     PluginUiView::Simple

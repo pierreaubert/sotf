@@ -91,7 +91,7 @@ pub fn render_mb_compressor_plugin(
                         .on_change(move |val, _window, cx| {
                             bands_entity.update(cx, |state, _| {
                                 state.app.set_plugin_param(plugin_idx, 0, val);
-                                state.app.plugin_state.pending_plugin_update =
+                                state.app.plugin_state.update_state.pending_plugin_update =
                                     Some(PluginUpdateType::Structural);
                             });
                         }),

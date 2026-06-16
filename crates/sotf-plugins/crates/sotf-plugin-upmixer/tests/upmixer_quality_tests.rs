@@ -8,8 +8,8 @@ fn test_upmixer_voice_leakage() {
     let fft_size = 2048;
     let sample_rate = 48000;
     let mut params = UpmixerPluginParams::default();
-    params.fft_size = fft_size;
-    params.speaker_config = "5.1".to_string();
+    params.core.fft_size = fft_size;
+    params.core.speaker_config = "5.1".to_string();
 
     let mut plugin = UpmixerPlugin::from_params(params);
     plugin.initialize(sample_rate).unwrap();
@@ -61,11 +61,11 @@ fn test_upmixer_phase_alignment_extraction() {
     let fft_size = 2048;
     let sample_rate = 48000;
     let mut params = UpmixerPluginParams::default();
-    params.fft_size = fft_size;
-    params.speaker_config = "5.1".to_string();
-    params.stereo_width = 1.0; // Full center extraction
-    params.enable_hr_direct = false; // Disable HR path for pure PCA test
-    params.dialogue_weight = 0.0; // Disable dialogue-based steering
+    params.core.fft_size = fft_size;
+    params.core.speaker_config = "5.1".to_string();
+    params.gains.stereo_width = 1.0; // Full center extraction
+    params.core.enable_hr_direct = false; // Disable HR path for pure PCA test
+    params.dialogue.dialogue_weight = 0.0; // Disable dialogue-based steering
 
     let mut plugin = UpmixerPlugin::from_params(params);
     plugin.initialize(sample_rate).unwrap();

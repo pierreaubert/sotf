@@ -5,9 +5,8 @@
 //! intentionally change channel counts (upmix followed by downmix) and chains
 //! that place a mismatched plugin at the end.
 
-use sotf_plugins::{
-    CompressorPlugin, EqPlugin, GainPlugin, InPlacePluginAdapter, LimiterPlugin, PluginHost,
-};
+use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, 
+    CompressorPlugin, EqPlugin, GainPlugin,  LimiterPlugin, PluginHost};
 use sotf_plugins::factory::create_plugin;
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -49,16 +48,16 @@ fn channel_preserving_chain_maintains_count() {
             1.0,
             3.0,
         )];
-        let eq = InPlacePluginAdapter::new(EqPlugin::new(channels, filters));
+        let eq = ParametricPluginAdapter::new(EqPlugin::new(channels, filters));
         host.add_plugin(Box::new(eq)).unwrap();
 
-        let compressor = InPlacePluginAdapter::new(CompressorPlugin::new(channels));
+        let compressor = ParametricInPlacePluginAdapter::new(CompressorPlugin::new(channels));
         host.add_plugin(Box::new(compressor)).unwrap();
 
-        let gain = InPlacePluginAdapter::new(GainPlugin::new(channels, -3.0));
+        let gain = ParametricPluginAdapter::new(GainPlugin::new(channels, -3.0));
         host.add_plugin(Box::new(gain)).unwrap();
 
-        let limiter = InPlacePluginAdapter::new(LimiterPlugin::new(
+        let limiter = ParametricInPlacePluginAdapter::new(LimiterPlugin::new(
             channels, -1.0, 50.0, 5.0, false,
         ));
         host.add_plugin(Box::new(limiter)).unwrap();
@@ -143,7 +142,7 @@ fn mismatched_plugin_at_end_is_rejected_gracefully() {
     let mut host = PluginHost::new(2, SAMPLE_RATE);
 
     // Valid 2ch -> 2ch plugin.
-    let gain = InPlacePluginAdapter::new(GainPlugin::new(2, -3.0));
+    let gain = ParametricPluginAdapter::new(GainPlugin::new(2, -3.0));
     host.add_plugin(Box::new(gain)).unwrap();
     assert_eq!(host.plugin_count(), 1);
     assert_eq!(host.output_channels(), 2);
@@ -183,7 +182,7 @@ fn mono_stereo_chain_changes_and_restores_count() {
     let mut host = PluginHost::new(2, SAMPLE_RATE);
 
     // First a channel-preserving plugin at 2ch.
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(
+    host.add_plugin(Box::new(ParametricPluginAdapter::new(GainPlugin::new(
         2, -3.0,
     ))))
     .unwrap();

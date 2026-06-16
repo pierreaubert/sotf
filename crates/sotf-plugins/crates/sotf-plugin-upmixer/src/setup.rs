@@ -43,33 +43,36 @@ impl UpmixerPlugin {
         let new_config = get_speaker_config(config_id)
             .ok_or_else(|| format!("Invalid speaker config: {}", config_id))?;
 
-        if new_config.total_channels == self.num_output_channels {
+        if new_config.total_channels == self.core.num_output_channels {
             // Same channel count, just update config and panning gains
-            self.speaker_config = new_config;
+            self.core.speaker_config = new_config;
             self.recalculate_panning_gains();
             self.rebuild_cached_parameters();
             return Ok(());
         }
 
         // Different channel count - need to reallocate buffers
-        self.speaker_config = new_config;
-        self.num_output_channels = new_config.total_channels;
+        self.core.speaker_config = new_config;
+        self.core.num_output_channels = new_config.total_channels;
 
         // Reallocate output buffers
         // Note: time_out_channels are now real (f32) for RealFFT inverse output
-        self.time_out_channels = vec![vec![0.0; self.fft_size]; self.num_output_channels];
+        self.main_buffers.time_out_channels =
+            vec![vec![0.0; self.core.fft_size]; self.core.num_output_channels];
         // Also reallocate HR output buffers which depend on channel count
-        self.hr_time_out_channels = vec![vec![0.0; self.hr_fft_size]; self.num_output_channels];
-        let accumulator_frames = self.fft_size * 4;
+        self.hr_buffers.hr_time_out_channels =
+            vec![vec![0.0; self.fft.hr_fft_size]; self.core.num_output_channels];
+        let accumulator_frames = self.core.fft_size * 4;
         debug_assert!(accumulator_frames.is_power_of_two());
-        self.output_accumulator = vec![0.0; accumulator_frames * self.num_output_channels];
-        self.output_accumulator_mask = accumulator_frames - 1;
-        self.output_block = vec![0.0; self.fft_size * self.num_output_channels];
+        self.output.output_accumulator =
+            vec![0.0; accumulator_frames * self.core.num_output_channels];
+        self.output.output_accumulator_mask = accumulator_frames - 1;
+        self.output.output_block = vec![0.0; self.core.fft_size * self.core.num_output_channels];
         // Re-allocate blended decorrelation filters for new channel count
-        let spectrum_size = self.fft_size / 2 + 1;
-        self.blended_decorrelation_filters =
-            vec![vec![Complex::new(1.0, 0.0); spectrum_size]; self.num_output_channels];
-        self.prev_decorrelation_strength = -1.0; // Force recompute
+        let spectrum_size = self.core.fft_size / 2 + 1;
+        self.decorrelation.blended_decorrelation_filters =
+            vec![vec![Complex::new(1.0, 0.0); spectrum_size]; self.core.num_output_channels];
+        self.decorrelation.prev_decorrelation_strength = -1.0; // Force recompute
 
         self.recalculate_panning_gains();
         self.reset();
@@ -86,19 +89,19 @@ impl UpmixerPlugin {
         // This maintains front-back separation while ensuring rear speakers get audio
         const WRAP_ATTENUATION: f32 = 0.7;
 
-        self.panning_gains_left.clear();
-        self.panning_gains_right.clear();
+        self.panning.panning_gains_left.clear();
+        self.panning.panning_gains_right.clear();
 
-        for speaker in self.speaker_config.speakers.iter() {
+        for speaker in self.core.speaker_config.speakers.iter() {
             if speaker.is_lfe {
-                self.panning_gains_left.push(0.5);
-                self.panning_gains_right.push(0.5);
+                self.panning.panning_gains_left.push(0.5);
+                self.panning.panning_gains_right.push(0.5);
             } else if speaker.label == "C" {
                 // Zero out center speaker in standard panning gains.
                 // The upmixer handles the center speaker explicitly using the extracted
                 // 'direct' signal and the center_spread parameter.
-                self.panning_gains_left.push(0.0);
-                self.panning_gains_right.push(0.0);
+                self.panning.panning_gains_left.push(0.0);
+                self.panning.panning_gains_right.push(0.0);
             } else {
                 // Rear speakers (|azimuth| > 90°) need wrap-around panning
                 // because they're more than 90° from both L/R source positions
@@ -138,45 +141,45 @@ impl UpmixerPlugin {
                     )
                 };
 
-                self.panning_gains_left.push(left_gain);
-                self.panning_gains_right.push(right_gain);
+                self.panning.panning_gains_left.push(left_gain);
+                self.panning.panning_gains_right.push(right_gain);
             }
         }
 
         // Cache per-speaker flags to avoid string/float comparisons in hot path
-        self.cached_is_front.clear();
-        self.cached_is_height.clear();
-        self.cached_is_center.clear();
-        self.cached_hr_active_channels.clear();
-        for (i, speaker) in self.speaker_config.speakers.iter().enumerate() {
+        self.panning.cached_is_front.clear();
+        self.panning.cached_is_height.clear();
+        self.panning.cached_is_center.clear();
+        self.panning.cached_hr_active_channels.clear();
+        for (i, speaker) in self.core.speaker_config.speakers.iter().enumerate() {
             let is_front = speaker.azimuth.abs() < 80.0;
             let is_height = speaker.elevation > 10.0;
             let is_center = speaker.label == "C";
-            self.cached_is_front.push(is_front);
-            self.cached_is_height.push(is_height);
-            self.cached_is_center.push(is_center);
+            self.panning.cached_is_front.push(is_front);
+            self.panning.cached_is_height.push(is_height);
+            self.panning.cached_is_center.push(is_center);
             // HR path processes front, non-LFE, non-height channels
             if !speaker.is_lfe && !is_height && speaker.azimuth.abs() < 80.0 {
-                self.cached_hr_active_channels.push(i);
+                self.panning.cached_hr_active_channels.push(i);
             }
         }
 
         // Normalize gains using energy-preserving normalization
         // For each source (left and right), normalize so sum of squared gains = 1
-        let left_energy: f32 = self.panning_gains_left.iter().map(|g| g * g).sum();
-        let right_energy: f32 = self.panning_gains_right.iter().map(|g| g * g).sum();
+        let left_energy: f32 = self.panning.panning_gains_left.iter().map(|g| g * g).sum();
+        let right_energy: f32 = self.panning.panning_gains_right.iter().map(|g| g * g).sum();
 
         if left_energy > 0.0 {
             let left_scale = 1.0 / left_energy.sqrt();
-            for i in 0..self.num_output_channels {
-                self.panning_gains_left[i] *= left_scale;
+            for i in 0..self.core.num_output_channels {
+                self.panning.panning_gains_left[i] *= left_scale;
             }
         }
 
         if right_energy > 0.0 {
             let right_scale = 1.0 / right_energy.sqrt();
-            for i in 0..self.num_output_channels {
-                self.panning_gains_right[i] *= right_scale;
+            for i in 0..self.core.num_output_channels {
+                self.panning.panning_gains_right[i] *= right_scale;
             }
         }
     }
@@ -186,13 +189,13 @@ impl UpmixerPlugin {
     /// These depend only on sample_rate, bandpass_hz, height_hf_cap_hz and fft_size,
     /// all of which are constant between initialize() calls (or parameter changes).
     pub(super) fn precompute_height_freq_weights(&mut self) {
-        let spectrum_size = self.fft_size / 2 + 1;
-        self.height_freq_weights.resize(spectrum_size, 0.0);
+        let spectrum_size = self.core.fft_size / 2 + 1;
+        self.height.height_freq_weights.resize(spectrum_size, 0.0);
 
-        let nyquist = self.sample_rate as f32 / 2.0;
-        let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
-        let hf_end = self.height_hf_cap_hz.min(nyquist);
-        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+        let nyquist = self.core.sample_rate as f32 / 2.0;
+        let hf_start = self.params.bandpass_hz.max(self.params.lfe_cutoff_hz);
+        let hf_end = self.height.height_hf_cap_hz.min(nyquist);
+        let freq_per_bin = self.core.sample_rate as f32 / self.core.fft_size as f32;
 
         for i in 0..spectrum_size {
             let freq = i as f32 * freq_per_bin;
@@ -203,20 +206,20 @@ impl UpmixerPlugin {
             } else {
                 (freq - hf_start) / (hf_end - hf_start)
             };
-            self.height_freq_weights[i] = hf_ratio.powf(0.7);
+            self.height.height_freq_weights[i] = hf_ratio.powf(0.7);
         }
     }
 
     /// Update cached safety_cap linear values from safety_cap_db
     pub(super) fn update_safety_cap_cache(&mut self) {
-        if self.safety_cap_db >= 0.0 {
-            self.safety_cap_linear =
-                math_audio_dsp::fast_math::fast_pow10(self.safety_cap_db / 20.0);
-            self.safety_cap_min_scale =
-                math_audio_dsp::fast_math::fast_pow10(-self.safety_cap_db / 20.0);
+        if self.safety.safety_cap_db >= 0.0 {
+            self.safety.safety_cap_linear =
+                math_audio_dsp::fast_math::fast_pow10(self.safety.safety_cap_db / 20.0);
+            self.safety.safety_cap_min_scale =
+                math_audio_dsp::fast_math::fast_pow10(-self.safety.safety_cap_db / 20.0);
         } else {
-            self.safety_cap_linear = 1.0;
-            self.safety_cap_min_scale = 0.0;
+            self.safety.safety_cap_linear = 1.0;
+            self.safety.safety_cap_min_scale = 0.0;
         }
     }
 
@@ -230,15 +233,15 @@ impl UpmixerPlugin {
     /// - "per_bin": each FFT bin is its own band (freq_size bands)
     ///   Maximum resolution — each band is exactly 1 bin wide
     pub(super) fn calculate_erb_bands(&mut self) {
-        self.erb_bands.clear();
-        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
-        let freq_size = self.fft_size / 2; // Positive-frequency bins (Nyquist exclusive)
+        self.steering.erb_bands.clear();
+        let freq_per_bin = self.core.sample_rate as f32 / self.core.fft_size as f32;
+        let freq_size = self.core.fft_size / 2; // Positive-frequency bins (Nyquist exclusive)
 
-        match Self::canonical_frequency_resolution(&self.frequency_resolution) {
+        match Self::canonical_frequency_resolution(&self.params.frequency_resolution) {
             "per_bin" => {
                 // One band per FFT bin: band[k] starts at bin k
                 for bin in 0..=freq_size {
-                    self.erb_bands.push(bin);
+                    self.steering.erb_bands.push(bin);
                 }
             }
             "fine_erb" => {
@@ -246,7 +249,7 @@ impl UpmixerPlugin {
                 // Glasberg & Moore (1990): ERB(f) = 24.7 * (4.37 * f/1000 + 1)
                 let mut current_bin = 0;
                 while current_bin < freq_size {
-                    self.erb_bands.push(current_bin);
+                    self.steering.erb_bands.push(current_bin);
                     let center_freq = current_bin as f32 * freq_per_bin;
                     let erb_width = 24.7 * (4.37 * center_freq / 1000.0 + 1.0);
                     // Half-bandwidth step keeps at least 1 bin minimum
@@ -254,8 +257,8 @@ impl UpmixerPlugin {
                     current_bin += bins_width;
                 }
                 // Ensure we cover up to Nyquist
-                if *self.erb_bands.last().unwrap() < freq_size {
-                    self.erb_bands.push(freq_size);
+                if *self.steering.erb_bands.last().unwrap() < freq_size {
+                    self.steering.erb_bands.push(freq_size);
                 }
             }
             // "erb" is the default; unknown values also fall through to standard ERB
@@ -264,22 +267,22 @@ impl UpmixerPlugin {
                 // ERB(f) = 24.7 * (4.37 * f/1000 + 1)
                 let mut current_bin = 0;
                 while current_bin < freq_size {
-                    self.erb_bands.push(current_bin);
+                    self.steering.erb_bands.push(current_bin);
                     let center_freq = current_bin as f32 * freq_per_bin;
                     let erb_width = 24.7 * (4.37 * center_freq / 1000.0 + 1.0);
                     let bins_width = (erb_width / freq_per_bin).max(1.0).round() as usize;
                     current_bin += bins_width;
                 }
                 // Ensure we cover up to Nyquist
-                if *self.erb_bands.last().unwrap() < freq_size {
-                    self.erb_bands.push(freq_size);
+                if *self.steering.erb_bands.last().unwrap() < freq_size {
+                    self.steering.erb_bands.push(freq_size);
                 }
             }
         }
 
         // Resize per-band DOA state to match band count
-        let num_bands = self.erb_bands.len();
-        self.doa_angle.resize(num_bands, 0.0);
+        let num_bands = self.steering.erb_bands.len();
+        self.steering.doa_angle.resize(num_bands, 0.0);
     }
 
     /// Recompute all cached bin indices that depend on sample_rate, fft_size,
@@ -287,26 +290,26 @@ impl UpmixerPlugin {
     ///
     /// Call this in `initialize()` and whenever any of those parameters change.
     pub(super) fn recache_bin_indices(&mut self) {
-        if self.sample_rate == 0 || self.fft_size == 0 {
+        if self.core.sample_rate == 0 || self.core.fft_size == 0 {
             return;
         }
-        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
-        self.cached_freq_per_bin = freq_per_bin;
+        let freq_per_bin = self.core.sample_rate as f32 / self.core.fft_size as f32;
+        self.cache.cached_freq_per_bin = freq_per_bin;
 
-        self.cached_lfe_cutoff_bin =
-            ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
-        self.cached_bandpass_bin =
-            ((self.bandpass_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
+        self.cache.cached_lfe_cutoff_bin = ((self.params.lfe_cutoff_hz * self.core.fft_size as f32)
+            / self.core.sample_rate as f32) as usize;
+        self.cache.cached_bandpass_bin = ((self.params.bandpass_hz * self.core.fft_size as f32)
+            / self.core.sample_rate as f32) as usize;
 
-        let spectrum_size = self.fft_size / 2 + 1;
+        let spectrum_size = self.core.fft_size / 2 + 1;
         let (voice_start_bin, voice_end_bin) = inclusive_voice_bin_range(
-            self.voice_freq_min_hz,
-            self.voice_freq_max_hz,
+            self.dialogue.voice_freq_min_hz,
+            self.dialogue.voice_freq_max_hz,
             freq_per_bin,
             spectrum_size,
         );
-        self.cached_voice_start_bin = voice_start_bin;
-        self.cached_voice_end_bin = voice_end_bin;
+        self.cache.cached_voice_start_bin = voice_start_bin;
+        self.cache.cached_voice_end_bin = voice_end_bin;
 
         self.recache_dialogue_weights();
     }
@@ -316,17 +319,17 @@ impl UpmixerPlugin {
     /// Call this whenever `dialogue_centroid_weight`, `dialogue_variance_weight`, or
     /// `dialogue_coherence_weight` changes.
     pub(super) fn recache_dialogue_weights(&mut self) {
-        let w_sum = self.dialogue_centroid_weight
-            + self.dialogue_variance_weight
-            + self.dialogue_coherence_weight;
+        let w_sum = self.dialogue.dialogue_centroid_weight
+            + self.dialogue.dialogue_variance_weight
+            + self.dialogue.dialogue_coherence_weight;
         if w_sum > 1e-9 {
-            self.cached_dialogue_w_c = self.dialogue_centroid_weight / w_sum;
-            self.cached_dialogue_w_v = self.dialogue_variance_weight / w_sum;
-            self.cached_dialogue_w_coh = self.dialogue_coherence_weight / w_sum;
+            self.dialogue.cached_dialogue_w_c = self.dialogue.dialogue_centroid_weight / w_sum;
+            self.dialogue.cached_dialogue_w_v = self.dialogue.dialogue_variance_weight / w_sum;
+            self.dialogue.cached_dialogue_w_coh = self.dialogue.dialogue_coherence_weight / w_sum;
         } else {
-            self.cached_dialogue_w_c = 0.333;
-            self.cached_dialogue_w_v = 0.333;
-            self.cached_dialogue_w_coh = 0.334;
+            self.dialogue.cached_dialogue_w_c = 0.333;
+            self.dialogue.cached_dialogue_w_v = 0.333;
+            self.dialogue.cached_dialogue_w_coh = 0.334;
         }
     }
 
@@ -335,16 +338,20 @@ impl UpmixerPlugin {
     /// Call this in `initialize()` and whenever `subharmonic_freq_hz`,
     /// `subharmonic_attack_ms`, or `subharmonic_release_ms` changes.
     pub(super) fn recache_subharmonic_coeffs(&mut self) {
-        if self.sample_rate == 0 {
+        if self.core.sample_rate == 0 {
             return;
         }
-        let sr = self.sample_rate as f32;
-        self.cached_subharmonic_phase_inc =
-            2.0 * std::f32::consts::PI * self.subharmonic_freq_hz / sr;
-        self.cached_subharmonic_attack_coeff =
-            subharmonic_envelope_coeff(self.subharmonic_attack_ms, self.sample_rate);
-        self.cached_subharmonic_release_coeff =
-            subharmonic_envelope_coeff(self.subharmonic_release_ms, self.sample_rate);
+        let sr = self.core.sample_rate as f32;
+        self.subharmonic.cached_subharmonic_phase_inc =
+            2.0 * std::f32::consts::PI * self.subharmonic.subharmonic_freq_hz / sr;
+        self.subharmonic.cached_subharmonic_attack_coeff = subharmonic_envelope_coeff(
+            self.subharmonic.subharmonic_attack_ms,
+            self.core.sample_rate,
+        );
+        self.subharmonic.cached_subharmonic_release_coeff = subharmonic_envelope_coeff(
+            self.subharmonic.subharmonic_release_ms,
+            self.core.sample_rate,
+        );
     }
 }
 

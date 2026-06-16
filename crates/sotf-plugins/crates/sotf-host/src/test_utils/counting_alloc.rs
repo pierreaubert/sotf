@@ -1,18 +1,19 @@
 use super::misc::ALLOC_COUNT;
 use super::misc::COUNTING_ENABLED;
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::Ordering;
 
 pub struct CountingAlloc;
 
 /// # Safety
-/// This implementation is safe as it only increments an atomic counter.
+/// This implementation is safe as it only increments a thread-local counter.
 /// It uses `System` allocator for the actual memory operations.
 unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if COUNTING_ENABLED.load(Ordering::Relaxed) {
-            ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-        }
+        let _ = COUNTING_ENABLED.try_with(|enabled| {
+            if enabled.get() {
+                let _ = ALLOC_COUNT.try_with(|count| count.set(count.get() + 1));
+            }
+        });
         unsafe { System.alloc(layout) }
     }
 

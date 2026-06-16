@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{DelayPlugin, DelayPluginParams, InPlacePluginAdapter, Plugin};
+use sotf_plugins::{ParametricInPlacePluginAdapter, DelayPlugin, DelayPluginParams, Plugin};
 
 pub(super) struct DelayFuzzer;
 
@@ -28,7 +28,7 @@ impl PluginFuzzer for DelayFuzzer {
         );
 
         (
-            Box::new(InPlacePluginAdapter::new(
+            Box::new(ParametricInPlacePluginAdapter::new(
                 DelayPlugin::from_params(channels, params).expect("valid delay params"),
             )),
             desc,

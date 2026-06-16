@@ -14,7 +14,8 @@
 // Run with:
 //   cargo run -p sotf-plugins --example restore_mono --release -- input.wav output.wav
 
-use sotf_host::plugin::{InPlacePluginAdapter, Plugin, ProcessContext};
+use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::ParametricInPlacePluginAdapter;
 use sotf_plugin_declick::{DeclickPlugin, DeclickPluginParams};
 use sotf_plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 use sotf_plugin_hiss_reducer::{HissReducerPlugin, HissReducerPluginParams};
@@ -94,7 +95,7 @@ fn main() {
         sensitivity: 5.0,
     };
     let declick = DeclickPlugin::from_params(1, declick_params);
-    let mut declick_plugin = InPlacePluginAdapter::new(declick);
+    let mut declick_plugin = ParametricInPlacePluginAdapter::new(declick);
     declick_plugin
         .initialize(sample_rate)
         .expect("Failed to initialize declick");
@@ -117,7 +118,7 @@ fn main() {
         strength: 0.7,
     };
     let hiss = HissReducerPlugin::from_params(1, hiss_params);
-    let mut hiss_plugin = InPlacePluginAdapter::new(hiss);
+    let mut hiss_plugin = ParametricInPlacePluginAdapter::new(hiss);
     hiss_plugin
         .initialize(sample_rate)
         .expect("Failed to initialize hiss reducer");
@@ -144,7 +145,7 @@ fn main() {
     };
 
     let denoiser = DenoiserPlugin::from_params(1, denoiser_params);
-    let mut denoiser_plugin = InPlacePluginAdapter::new(denoiser);
+    let mut denoiser_plugin = ParametricInPlacePluginAdapter::new(denoiser);
     denoiser_plugin
         .initialize(sample_rate)
         .expect("Failed to initialize denoiser");
@@ -273,9 +274,9 @@ fn main() {
     println!("\n=== Done ===");
 }
 
-/// Process a mono InPlacePluginAdapter (wraps InPlacePlugin → Plugin).
+/// Process a mono Plugin.
 fn process_plugin_mono(
-    plugin: &mut InPlacePluginAdapter<impl sotf_host::plugin::InPlacePlugin>,
+    plugin: &mut impl Plugin,
     input: &[f32],
     total_frames: usize,
     sample_rate: u32,

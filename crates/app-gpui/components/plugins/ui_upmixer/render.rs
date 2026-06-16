@@ -162,11 +162,12 @@ fn render_tab_bar(
             )
             .on_click(move |_, _window, cx| {
                 entity.update(cx, |state, cx| {
-                    state.app.upmixer_tab = if state.app.upmixer_tab == config_idx {
-                        0
-                    } else {
-                        config_idx
-                    };
+                    state.app.plugin_ui.upmixer_tab =
+                        if state.app.plugin_ui.upmixer_tab == config_idx {
+                            0
+                        } else {
+                            config_idx
+                        };
                     cx.notify();
                 });
             })

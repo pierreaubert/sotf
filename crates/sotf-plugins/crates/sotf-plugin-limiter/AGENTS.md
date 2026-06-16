@@ -6,7 +6,7 @@ Peak limiter plugin with true peak detection, lookahead, dual release, ISP mode,
 
 ```
 src/
-  lib.rs    -- LimiterPlugin (InPlacePlugin), LimiterPluginParams, LimiterData
+  lib.rs    -- LimiterPlugin (ParametricInPlacePlugin), LimiterPluginParams, LimiterData
   params.rs -- Centralized parameter specs
 ```
 
@@ -14,7 +14,7 @@ Data flow: Input -> true peak detection (optional, 4x oversampled) -> gain compu
 
 **Key types:**
 
-- `LimiterPlugin` -- Main plugin implementing `InPlacePlugin`. Uses `TruePeakDetector` and `DualRelease` from sotf-host.
+- `LimiterPlugin` -- Main plugin implementing `ParametricInPlacePlugin`. Uses `TruePeakDetector` and `DualRelease` from sotf-host.
 - `LimiterPluginParams` -- Serde config with limiter parameters.
 - `LimiterData` -- Real-time monitoring: gain reduction (dB), peak level, is_limiting flag, per-channel ISP dBTP.
 
@@ -23,7 +23,7 @@ Data flow: Input -> true peak detection (optional, 4x oversampled) -> gain compu
 - `LimiterPlugin::new(channels, threshold_db) -> Self` (`lib.rs`)
 - `LimiterPlugin::from_params(channels, params) -> Self` (`lib.rs`)
 - Exposes `LimiterData` via `analyzer_data()` for UI monitoring
-- Implements `InPlacePlugin` trait
+- Implements `ParametricInPlacePlugin` trait
 
 **Parameters:** `threshold` (-24 to 0 dBFS), `release` (1-5000 ms), `lookahead` (0-10 ms), `soft` (bool, soft knee), `true_peak` (bool, 4x oversampled detection), `isp_mode` (bool, inter-sample peak correction), `dual_release` (bool, fast+slow envelope), `mix` (0-1), `feed_forward` (bool), `link_amount` (0-1, stereo link).
 

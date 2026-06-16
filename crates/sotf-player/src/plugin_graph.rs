@@ -9,7 +9,8 @@
 use serde::{Deserialize, Serialize};
 use sotf_audio::PluginConfig;
 use sotf_audio::plugins::{
-    ChannelConflict, Plugin, PluginSettings, PluginType, resize_matrix, upmixer_output_channels,
+    ChannelConflict, Plugin, PluginSettings, PluginType, UpmixerOutputSettings, resize_matrix,
+    upmixer_output_channels,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use uuid::Uuid;
@@ -1054,7 +1055,7 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    binaural_preview,
+                    output: UpmixerOutputSettings { binaural_preview, .. },
                     ..
                 } => {
                     current_channels =
@@ -1170,7 +1171,7 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    binaural_preview,
+                    output: UpmixerOutputSettings { binaural_preview, .. },
                     ..
                 } => {
                     return upmixer_settings_output_channels(speaker_config, *binaural_preview);
@@ -1203,7 +1204,7 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    binaural_preview,
+                    output: UpmixerOutputSettings { binaural_preview, .. },
                     ..
                 } => {
                     return Some(if *binaural_preview {
@@ -1236,7 +1237,7 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    binaural_preview,
+                    output: UpmixerOutputSettings { binaural_preview, .. },
                     ..
                 } => {
                     config = Some(if *binaural_preview {
@@ -1381,7 +1382,7 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    binaural_preview,
+                    output: UpmixerOutputSettings { binaural_preview, .. },
                     ..
                 } => {
                     running_channels =
@@ -1602,7 +1603,7 @@ impl PluginGraph {
                 match &node.plugin.settings {
                     PluginSettings::Upmixer {
                         speaker_config,
-                        binaural_preview,
+                        output: UpmixerOutputSettings { binaural_preview, .. },
                         ..
                     } => {
                         current_channels =

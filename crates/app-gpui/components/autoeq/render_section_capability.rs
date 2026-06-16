@@ -35,7 +35,7 @@
             continue;
         }
 
-        let is_selected = config.opt_mode == *mode_id;
+        let is_selected = config.eq_design.opt_mode == *mode_id;
         let on_opt_mode_change = on_opt_mode_change_rc.clone();
         let mode_id_owned = mode_id.to_string();
 

@@ -4,7 +4,8 @@ use super::misc::DEFAULT_FADE_MS;
 use super::types::ChannelMuteSoloParams;
 use super::types::ChannelState;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 mod misc;
 

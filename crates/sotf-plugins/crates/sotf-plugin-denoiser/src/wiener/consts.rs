@@ -21,19 +21,19 @@ impl DenoiserPlugin {
     /// 2. Smooth gains across frequency bins (prevents musical noise)
     /// 3. Apply temporal smoothing with attack/release envelope
     pub(in super::super) fn calculate_wiener_gains(&mut self) {
-        let reduction_factor = self.reduction_linear;
-        let floor_linear = self.floor_linear;
-        let transparency = self.transparency;
+        let reduction_factor = self.coeffs.reduction_linear;
+        let floor_linear = self.coeffs.floor_linear;
+        let transparency = self.params.transparency;
 
         let mut total_reduction = 0.0_f32;
         let mut bin_count = 0;
 
-        let dd_enabled = self.dd_enabled;
-        let dd_alpha = self.dd_alpha;
+        let dd_enabled = self.decision_directed.dd_enabled;
+        let dd_alpha = self.decision_directed.dd_alpha;
 
-        for ch in 0..self.channels {
+        for ch in 0..self.config.channels {
             // Pass 1: Compute instantaneous Wiener gain
-            for k in 0..self.spectrum_size {
+            for k in 0..self.config.spectrum_size {
                 let signal_power = self.get_power_at_bin(ch, k);
                 let noise_power = self.get_effective_noise_power(ch, k);
 
@@ -41,8 +41,8 @@ impl DenoiserPlugin {
                 let snr_priori = if dd_enabled {
                     // Decision-Directed (Ephraim-Malah) approach:
                     // SNR_dd = α * G²_prev * P_prev / σ_n² + (1-α) * max(P/σ_n² - 1, 0)
-                    let prev_gain = self.smoothed_gain[ch][k];
-                    let prev_pow = self.prev_power[ch][k];
+                    let prev_gain = self.gains.smoothed_gain[ch][k];
+                    let prev_pow = self.decision_directed.prev_power[ch][k];
                     let ml_term = (signal_power / noise_power.max(EPSILON) - 1.0).max(0.0);
                     let dd_term = prev_gain * prev_gain * prev_pow / noise_power.max(EPSILON);
                     dd_alpha * dd_term + (1.0 - dd_alpha) * ml_term
@@ -51,7 +51,7 @@ impl DenoiserPlugin {
                 };
 
                 // Store current power for next frame's DD computation
-                self.prev_power[ch][k] = signal_power;
+                self.decision_directed.prev_power[ch][k] = signal_power;
 
                 // Calculate Wiener gain with reduction control in denominator
                 // This preserves gain in high-SNR (clean) regions while reducing
@@ -60,50 +60,50 @@ impl DenoiserPlugin {
 
                 // Blend toward dry signal based on transparency (0 = full denoise, 1 = pass-through)
                 let gain = gain + transparency * (1.0 - gain);
-                self.gain[ch][k] = gain;
+                self.gains.gain[ch][k] = gain;
             }
 
             // Pass 1b: Spectral subtraction (combine with Wiener via min)
-            if self.spectral_sub_enabled {
+            if self.spectral_sub.spectral_sub_enabled {
                 self.calculate_spectral_subtraction_gains_for_channel(ch);
             }
 
             // Pass 1c: Formant preservation — floor gains at spectral envelope peaks
             // so that speech formant structure survives noise reduction.
-            if self.formant_preserver.enabled {
+            if self.auxiliary.formant_preserver.enabled {
                 self.apply_formant_preservation(ch);
             }
 
             // Pass 1d: 3-bin median filter to suppress isolated musical noise
             // spikes. Applied before spectral/temporal smoothing so that the
             // smoother operates on clean gain curves.
-            Self::median_smooth_gains(&mut self.gain[ch], self.spectrum_size);
+            Self::median_smooth_gains(&mut self.gains.gain[ch], self.config.spectrum_size);
 
             // Pass 1e: Harmonic/percussive differential denoising
             // Tonal bins get stronger denoising (noise is diffuse), transient bins get gentler
-            if self.harmonic_percussive {
+            if self.params.harmonic_percussive {
                 // Compute magnitudes for separator
-                for k in 0..self.spectrum_size {
-                    self.tt_magnitudes[k] = self.get_power_at_bin(ch, k).sqrt();
+                for k in 0..self.config.spectrum_size {
+                    self.tonal_transient.tt_magnitudes[k] = self.get_power_at_bin(ch, k).sqrt();
                 }
-                self.tonal_transient_seps[ch].process(
-                    &self.tt_magnitudes[..self.spectrum_size],
-                    &mut self.tt_tonal_mask[..self.spectrum_size],
-                    &mut self.tt_transient_mask[..self.spectrum_size],
+                self.tonal_transient.tonal_transient_seps[ch].process(
+                    &self.tonal_transient.tt_magnitudes[..self.config.spectrum_size],
+                    &mut self.tonal_transient.tt_tonal_mask[..self.config.spectrum_size],
+                    &mut self.tonal_transient.tt_transient_mask[..self.config.spectrum_size],
                 );
-                for k in 0..self.spectrum_size {
+                for k in 0..self.config.spectrum_size {
                     // Transient-dominant bins: preserve attacks by blending gain toward 1.0.
                     // A weight of 1.0 means fully transient → keep the signal as-is (gain=1.0).
                     // A weight of 0.0 means fully tonal → apply the computed Wiener gain unchanged.
                     // The 0.5 factor gives a half-strength blend at full transient weight.
-                    let transient_weight = self.tt_transient_mask[k];
+                    let transient_weight = self.tonal_transient.tt_transient_mask[k];
                     let t = transient_weight * 0.5;
-                    self.gain[ch][k] = self.gain[ch][k] * (1.0 - t) + t;
+                    self.gains.gain[ch][k] = self.gains.gain[ch][k] * (1.0 - t) + t;
                 }
             }
 
             // Pass 2: Smooth gains across frequency bins
-            if self.spectral_smoothing_enabled {
+            if self.params.spectral_smoothing_enabled {
                 self.smooth_gains_across_frequency(ch);
             }
 
@@ -113,35 +113,35 @@ impl DenoiserPlugin {
             // the noise power, so the noise can "mask itself" (especially at low
             // frequencies where Bark spreading is wide), incorrectly bypassing
             // denoising on bins that should be attenuated.
-            if self.psychoacoustic_masking {
+            if self.params.psychoacoustic_masking {
                 self.compute_masking_thresholds(ch);
-                for k in 0..self.spectrum_size {
-                    if self.speech_presence[ch][k] >= 0.1 && self.is_noise_masked(ch, k) {
-                        self.gain[ch][k] = 1.0;
+                for k in 0..self.config.spectrum_size {
+                    if self.mcra.speech_presence[ch][k] >= 0.1 && self.is_noise_masked(ch, k) {
+                        self.gains.gain[ch][k] = 1.0;
                     }
                 }
             }
 
             // Pass 3: Apply temporal smoothing with attack/release
-            if self.temporal_smoothing_enabled {
-                for k in 0..self.spectrum_size {
-                    let gain = self.gain[ch][k];
-                    let prev_gain = self.smoothed_gain[ch][k];
+            if self.params.temporal_smoothing_enabled {
+                for k in 0..self.config.spectrum_size {
+                    let gain = self.gains.gain[ch][k];
+                    let prev_gain = self.gains.smoothed_gain[ch][k];
                     let coeff = if gain > prev_gain {
-                        self.attack_coeff
+                        self.coeffs.attack_coeff
                     } else {
-                        self.release_coeff
+                        self.coeffs.release_coeff
                     };
                     let smoothed = gain + coeff * (prev_gain - gain);
-                    self.smoothed_gain[ch][k] = smoothed;
+                    self.gains.smoothed_gain[ch][k] = smoothed;
 
                     total_reduction += (1.0 - smoothed).max(0.0);
                     bin_count += 1;
                 }
             } else {
-                for k in 0..self.spectrum_size {
-                    self.smoothed_gain[ch][k] = self.gain[ch][k];
-                    total_reduction += (1.0 - self.gain[ch][k]).max(0.0);
+                for k in 0..self.config.spectrum_size {
+                    self.gains.smoothed_gain[ch][k] = self.gains.gain[ch][k];
+                    total_reduction += (1.0 - self.gains.gain[ch][k]).max(0.0);
                     bin_count += 1;
                 }
             }
@@ -149,23 +149,23 @@ impl DenoiserPlugin {
 
         // Spatial denoising (after all per-channel passes complete)
         // Applied to both channels simultaneously using inter-channel coherence
-        if self.spatial_denoise && self.channels >= 2 {
-            let strength = self.spatial_strength;
-            for k in 0..self.spectrum_size {
+        if self.params.spatial_denoise && self.config.channels >= 2 {
+            let strength = self.params.spatial_strength;
+            for k in 0..self.config.spectrum_size {
                 let coherence = self.compute_spatial_coherence(k);
                 let incoherence = 1.0 - coherence;
                 let extra_reduction = incoherence * strength * 0.3;
-                self.smoothed_gain[0][k] =
-                    (self.smoothed_gain[0][k] - extra_reduction).max(floor_linear);
-                self.smoothed_gain[1][k] =
-                    (self.smoothed_gain[1][k] - extra_reduction).max(floor_linear);
+                self.gains.smoothed_gain[0][k] =
+                    (self.gains.smoothed_gain[0][k] - extra_reduction).max(floor_linear);
+                self.gains.smoothed_gain[1][k] =
+                    (self.gains.smoothed_gain[1][k] - extra_reduction).max(floor_linear);
             }
         }
 
         // Update average reduction in dB for monitoring
         if bin_count > 0 {
             let avg_gain = 1.0 - (total_reduction / bin_count as f32);
-            self.avg_reduction_db = if avg_gain > EPSILON {
+            self.ui.avg_reduction_db = if avg_gain > EPSILON {
                 -20.0 * fast_log10(avg_gain)
             } else {
                 60.0 // Max reduction
@@ -218,8 +218,8 @@ impl DenoiserPlugin {
             return 1.0;
         }
 
-        let instant_cross = self.freq_domain[0][k] * self.freq_domain[1][k].conj();
-        let cross_state = &mut self.spatial_cross[k];
+        let instant_cross = self.fft.freq_domain[0][k] * self.fft.freq_domain[1][k].conj();
+        let cross_state = &mut self.spatial.spatial_cross[k];
         if cross_state.re == 0.0 && cross_state.im == 0.0 {
             *cross_state = instant_cross;
         } else {
@@ -230,7 +230,7 @@ impl DenoiserPlugin {
         }
         let raw = (cross_state.re * cross_state.re + cross_state.im * cross_state.im) / (p0 * p1);
 
-        let coherence = &mut self.spatial_coherence[k];
+        let coherence = &mut self.spatial.spatial_coherence[k];
         *coherence = raw.clamp(0.0, 1.0);
         *coherence
     }
@@ -260,18 +260,18 @@ impl DenoiserPlugin {
     ///
     /// Uses replicate boundary conditions at edges.
     pub(in super::super) fn smooth_gains_across_frequency(&mut self, channel: usize) {
-        let (c0, c1, c2) = self.freq_smooth_kernel;
+        let (c0, c1, c2) = self.gains.freq_smooth_kernel;
         if c1 == 0.0 && c2 == 0.0 {
             return; // No smoothing needed
         }
 
-        let n = self.spectrum_size;
+        let n = self.config.spectrum_size;
 
         // Copy current gains to scratch buffer
-        self.freq_smooth_temp[..n].copy_from_slice(&self.gain[channel][..n]);
+        self.gains.freq_smooth_temp[..n].copy_from_slice(&self.gains.gain[channel][..n]);
 
-        let src = &self.freq_smooth_temp;
-        let dst = &mut self.gain[channel];
+        let src = &self.gains.freq_smooth_temp;
+        let dst = &mut self.gains.gain[channel];
 
         // Apply 5-tap Gaussian kernel split into three segments to enable autovectorization.
         // The main body (k=2..n-2) uses direct index arithmetic with no boundary checks,
@@ -321,7 +321,7 @@ impl DenoiserPlugin {
     /// - SNR <= snr_low: use wide result (blend = 1)
     /// - Between: linear interpolation
     pub(super) fn apply_adaptive_spectral_smoothing(&mut self, channel: usize) {
-        let n = self.spectrum_size;
+        let n = self.config.spectrum_size;
 
         // SNR thresholds for adaptive blend (in linear power ratio)
         // 3 dB = power ratio ~2, 10 dB = power ratio ~10
@@ -330,21 +330,21 @@ impl DenoiserPlugin {
         let snr_range_inv = 1.0 / (snr_high - snr_low);
 
         // Copy narrow-smoothed gains to scratch for wide smoothing input
-        self.freq_smooth_temp[..n].copy_from_slice(&self.gain[channel][..n]);
+        self.gains.freq_smooth_temp[..n].copy_from_slice(&self.gains.gain[channel][..n]);
 
         // Access freq_domain and noise_psd directly to avoid borrow conflicts
-        // with self.gain[channel].
+        // with self.gains.gain[channel].
         let radius: usize = 3;
-        let use_captured = self.use_captured_profile && self.has_noise_profile;
+        let use_captured = self.noise_profile.use_captured_profile && self.noise_profile.has_noise_profile;
 
         for k in 0..n {
             // Inline get_power_at_bin and get_effective_noise_power to avoid
             // borrowing &self while gain[channel] is mutably borrowed.
-            let signal_power = self.freq_domain[channel][k].norm_sqr();
+            let signal_power = self.fft.freq_domain[channel][k].norm_sqr();
             let noise_power = if use_captured {
-                self.noise_profile_storage[channel][k].max(EPSILON)
+                self.noise_profile.noise_profile_storage[channel][k].max(EPSILON)
             } else {
-                self.noise_psd[channel][k].max(EPSILON)
+                self.mcra.noise_psd[channel][k].max(EPSILON)
             };
             let local_snr = signal_power / noise_power;
 
@@ -362,13 +362,13 @@ impl DenoiserPlugin {
             let count = (hi - lo + 1) as f32;
             let mut sum = 0.0_f32;
             for j in lo..=hi {
-                sum += self.freq_smooth_temp[j];
+                sum += self.gains.freq_smooth_temp[j];
             }
             let wide_val = sum / count;
-            let narrow_val = self.freq_smooth_temp[k];
+            let narrow_val = self.gains.freq_smooth_temp[k];
 
             // Blend narrow toward wide based on local SNR
-            self.gain[channel][k] = narrow_val + blend * (wide_val - narrow_val);
+            self.gains.gain[channel][k] = narrow_val + blend * (wide_val - narrow_val);
         }
     }
 
@@ -387,34 +387,34 @@ impl DenoiserPlugin {
 
     /// Update attack/release coefficients when parameters change
     pub(in super::super) fn update_envelope_coefficients(&mut self) {
-        self.attack_coeff = Self::time_to_coeff(self.attack_ms, self.sample_rate, self.hop_size);
-        self.release_coeff = Self::time_to_coeff(self.release_ms, self.sample_rate, self.hop_size);
-        self.reduction_linear = 10.0_f32.powf(self.reduction_db / 10.0);
-        self.floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
+        self.coeffs.attack_coeff = Self::time_to_coeff(self.params.attack_ms, self.config.sample_rate, self.config.hop_size);
+        self.coeffs.release_coeff = Self::time_to_coeff(self.params.release_ms, self.config.sample_rate, self.config.hop_size);
+        self.coeffs.reduction_linear = 10.0_f32.powf(self.params.reduction_db / 10.0);
+        self.coeffs.floor_linear = 10.0_f32.powf(self.params.floor_db / 20.0);
     }
 
     /// Compute average estimated noise floor in dB (averaged across channels).
-    /// Writes into `self.cached_noise_floor_buf` to avoid allocations.
+    /// Writes into `self.ui.cached_noise_floor_buf` to avoid allocations.
     pub(in super::super) fn compute_noise_floor_db(&mut self) {
-        let num_display_bands = self.cached_noise_floor_buf.len();
-        let bins_per_band = (self.spectrum_size / num_display_bands).max(1);
+        let num_display_bands = self.ui.cached_noise_floor_buf.len();
+        let bins_per_band = (self.config.spectrum_size / num_display_bands).max(1);
 
         for band in 0..num_display_bands {
             let start_bin = band * bins_per_band;
-            let end_bin = ((band + 1) * bins_per_band).min(self.spectrum_size);
+            let end_bin = ((band + 1) * bins_per_band).min(self.config.spectrum_size);
 
             let mut sum = 0.0_f32;
             let mut count = 0;
 
             for k in start_bin..end_bin {
-                for ch in 0..self.channels {
-                    let power = self.noise_psd[ch][k].max(EPSILON);
+                for ch in 0..self.config.channels {
+                    let power = self.mcra.noise_psd[ch][k].max(EPSILON);
                     sum += power;
                     count += 1;
                 }
             }
 
-            self.cached_noise_floor_buf[band] = if count > 0 {
+            self.ui.cached_noise_floor_buf[band] = if count > 0 {
                 let avg_power = sum / count as f32;
                 10.0 * fast_log10(avg_power)
             } else {
@@ -429,29 +429,29 @@ impl DenoiserPlugin {
     /// and before spectral/temporal smoothing (Pass 2/3) so that the floored
     /// gains propagate through smoothing naturally.
     pub(in super::super) fn apply_formant_preservation(&mut self, channel: usize) {
-        if !self.formant_preserver.enabled {
+        if !self.auxiliary.formant_preserver.enabled {
             return;
         }
 
         // Compute log-magnitude for the current frame
-        let n = self.spectrum_size;
+        let n = self.config.spectrum_size;
         for k in 0..n {
-            let power = self.freq_domain[channel][k].norm_sqr();
+            let power = self.fft.freq_domain[channel][k].norm_sqr();
             // log10(power + ε) → log-magnitude (×10 gives power-dB, but ratio is
             // what matters here, so any consistent scaling works)
-            self.formant_preserver.log_mag_scratch[k] = fast_log10(power.max(EPSILON));
+            self.auxiliary.formant_preserver.log_mag_scratch[k] = fast_log10(power.max(EPSILON));
         }
 
         // Estimate the spectral envelope via moving average of log-magnitude
-        self.formant_preserver.estimate_envelope();
+        self.auxiliary.formant_preserver.estimate_envelope();
 
         // Floor gains at formant peaks
-        let strength = self.formant_preserver.strength;
-        let envelope = &self.formant_preserver.envelope;
+        let strength = self.auxiliary.formant_preserver.strength;
+        let envelope = &self.auxiliary.formant_preserver.envelope;
         let mean_env: f32 = envelope.iter().sum::<f32>() / n as f32;
         let floor_gain = strength * 0.3;
 
-        for (env_val, gain_val) in envelope.iter().zip(self.gain[channel].iter_mut()).take(n) {
+        for (env_val, gain_val) in envelope.iter().zip(self.gains.gain[channel].iter_mut()).take(n) {
             if *env_val > mean_env + 0.13 {
                 // 0.13 in log10(power) units = 1.3 dB above mean (10 * 0.13 = 1.3 dB)
                 *gain_val = gain_val.max(floor_gain);
@@ -460,29 +460,29 @@ impl DenoiserPlugin {
     }
 
     /// Compute current SNR estimate per band in dB (averaged across channels).
-    /// Writes into `self.cached_snr_buf` to avoid allocations.
+    /// Writes into `self.ui.cached_snr_buf` to avoid allocations.
     pub(in super::super) fn compute_snr_db(&mut self) {
-        let num_display_bands = self.cached_snr_buf.len();
-        let bins_per_band = (self.spectrum_size / num_display_bands).max(1);
+        let num_display_bands = self.ui.cached_snr_buf.len();
+        let bins_per_band = (self.config.spectrum_size / num_display_bands).max(1);
 
         for band in 0..num_display_bands {
             let start_bin = band * bins_per_band;
-            let end_bin = ((band + 1) * bins_per_band).min(self.spectrum_size);
+            let end_bin = ((band + 1) * bins_per_band).min(self.config.spectrum_size);
 
             let mut sum_snr = 0.0_f32;
             let mut count = 0;
 
             for k in start_bin..end_bin {
-                for ch in 0..self.channels {
+                for ch in 0..self.config.channels {
                     let signal_power = self.get_power_at_bin(ch, k).max(EPSILON);
-                    let noise_power = self.noise_psd[ch][k].max(EPSILON);
+                    let noise_power = self.mcra.noise_psd[ch][k].max(EPSILON);
                     let bin_snr = signal_power / noise_power;
                     sum_snr += bin_snr;
                     count += 1;
                 }
             }
 
-            self.cached_snr_buf[band] = if count > 0 {
+            self.ui.cached_snr_buf[band] = if count > 0 {
                 let avg_snr = sum_snr / count as f32;
                 10.0 * fast_log10(avg_snr)
             } else {

@@ -1,5 +1,4 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
-use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, CountingAlloc, ProcessContext, run_standard_tests};
 use sotf_plugin_delay::{DelayPlugin, DelayPluginParams};
 
 #[global_allocator]
@@ -47,7 +46,7 @@ fn main() {
     println!("  Impulse Position: PASS");
 
     // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
+    let mut plugin = ParametricInPlacePluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "DelayPlugin");
 
     println!("\n[ALL PASS] Delay QA Complete.");

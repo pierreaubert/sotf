@@ -310,7 +310,7 @@ impl PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.add_plugin(&pt);
                                     state.app.update_level_meter_groups();
-                                    state.app.show_add_plugin_menu = false;
+                                    state.app.plugin_ui.show_add_plugin_menu = false;
                                 });
                                 cx.notify();
                             }),
@@ -401,8 +401,8 @@ impl PlayerView {
                 let is_editing = editing_idx.is_some();
                 let _plugin_enabled = plugin.enabled;
 
-                let plugin_ui_view = self.state.read(cx).app.plugin_state.plugin_ui_view.clone();
-                let controller_picker_open = self.state.read(cx).app.plugin_state.controller_picker_open;
+                let plugin_ui_view = self.state.read(cx).app.plugin_state.plugin_ui_state.plugin_ui_view.clone();
+                let controller_picker_open = self.state.read(cx).app.plugin_state.plugin_ui_state.controller_picker_open;
                 let state_for_toggle = self.state.clone();
 
                 el.child(
@@ -456,7 +456,7 @@ impl PlayerView {
                                                     let state_c = state_c.clone();
                                                     move |is_open, _window, cx| {
                                                         state_c.update(cx, |s, cx| {
-                                                            s.app.plugin_state.controller_picker_open = is_open;
+                                                            s.app.plugin_state.plugin_ui_state.controller_picker_open = is_open;
                                                             cx.notify();
                                                         });
                                                     }
@@ -473,8 +473,8 @@ impl PlayerView {
                                                             _ => PluginUiView::UI,
                                                         };
                                                         state_c.update(cx, |s, _| {
-                                                            s.app.plugin_state.plugin_ui_view = view;
-                                                            s.app.plugin_state.controller_picker_open = false;
+                                                            s.app.plugin_state.plugin_ui_state.plugin_ui_view = view;
+                                                            s.app.plugin_state.plugin_ui_state.controller_picker_open = false;
                                                         });
                                                     }
                                                 }),
@@ -497,7 +497,7 @@ impl PlayerView {
                                 }
                             } else { "5.1".to_string() }
                         };
-                        let upmixer_config_open = state_c.read(cx).app.upmixer_config_open;
+                        let upmixer_config_open = state_c.read(cx).app.plugin_ui.upmixer_config_open;
                         let theme2 = theme.clone();
                         el.child(
                             div().flex().items_center().gap(d.gap)
@@ -522,7 +522,7 @@ impl PlayerView {
                                                 let state_c = state_c.clone();
                                                 move |is_open, _window, cx| {
                                                     state_c.update(cx, |state, cx| {
-                                                        state.app.upmixer_config_open = is_open;
+                                                        state.app.plugin_ui.upmixer_config_open = is_open;
                                                         cx.notify();
                                                     });
                                                 }
@@ -534,7 +534,7 @@ impl PlayerView {
                                                     let idx = configs.iter().position(|c| *c == value.as_ref()).unwrap_or(0);
                                                     state_c.update(cx, |state, _| {
                                                         state.app.set_plugin_param(selected_idx, 0, idx as f64); // param 0 = speaker_config
-                                                        state.app.upmixer_config_open = false;
+                                                        state.app.plugin_ui.upmixer_config_open = false;
                                                         state.app.update_level_meter_groups();
                                                     });
                                                 }
@@ -625,14 +625,14 @@ impl PlayerView {
                         tint_hover: theme.accent,
                     };
 
-                    let output_collapsed = state.app.output_meter_collapsed;
+                    let output_collapsed = state.app.layout.output_meter_collapsed;
                     // Auto-fit: default to min width, allow user to expand up to 2x
                     let max_meter_width = min_meter_width * 2.0;
                     // If stored width is below minimum (e.g. channel count increased), snap to min
-                    let output_meter_width = if state.app.output_meter_width < min_meter_width {
+                    let output_meter_width = if state.app.layout.output_meter_width < min_meter_width {
                         min_meter_width
                     } else {
-                        state.app.output_meter_width.min(max_meter_width)
+                        state.app.layout.output_meter_width.min(max_meter_width)
                     };
                     let plugin_bg = state
                         .app
@@ -733,13 +733,13 @@ impl PlayerView {
                                     };
 
                                     let app_st = self.state.read(cx);
-                                    let upmixer_config_open = app_st.app.upmixer_config_open;
+                                    let upmixer_config_open = app_st.app.plugin_ui.upmixer_config_open;
                                     let selected_eq_band = app_st.app.plugin_state.selected_eq_band;
-                                    let spectrum_tilt_open = app_st.app.spectrum_tilt_select_open;
-                                    let spectrum_ref_open = app_st.app.spectrum_reference_select_open;
+                                    let spectrum_tilt_open = app_st.app.plugin_ui.spectrum_tilt_select_open;
+                                    let spectrum_ref_open = app_st.app.plugin_ui.spectrum_reference_select_open;
                                     let plugin_graph = app_st.app.plugin_state.graph.clone();
                                     let midi_overlay = app_st.app.plugin_state.midi_mapping.build_overlay(&[]);
-                                    let plugin_ui_view = app_st.app.plugin_state.plugin_ui_view.clone();
+                                    let plugin_ui_view = app_st.app.plugin_state.plugin_ui_state.plugin_ui_view.clone();
 
                                     let midi_ref = if midi_overlay.has_controller() {
                                         Some(midi_overlay)
@@ -815,15 +815,15 @@ impl PlayerView {
                                 .collapsed(output_collapsed)
                                 .on_toggle(move |collapsed, _window, cx| {
                                     state_for_output_toggle.update(cx, |s, _| {
-                                        s.app.output_meter_collapsed = collapsed;
+                                        s.app.layout.output_meter_collapsed = collapsed;
                                     });
                                 })
                                 .on_drag_start(move |pos, _window, cx| {
                                     state_for_output_drag.update(cx, |s, _| {
-                                        s.app.dragging_divider = Some(DividerDragState {
+                                        s.app.layout.dragging_divider = Some(DividerDragState {
                                             divider_type: DividerType::OutputMeter,
                                             start_x: pos,
-                                            start_width: s.app.output_meter_width,
+                                            start_width: s.app.layout.output_meter_width,
                                         });
                                     });
                                 }),

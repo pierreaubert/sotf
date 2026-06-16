@@ -178,8 +178,12 @@ impl PlayerView {
                         let (playback_state, was_playing) =
                             Self::sync_playback_data(state, frame_count, compressor_cache);
 
-                        if let Some(update_type) =
-                            state.app.plugin_state.pending_plugin_update.take()
+                        if let Some(update_type) = state
+                            .app
+                            .plugin_state
+                            .update_state
+                            .pending_plugin_update
+                            .take()
                         {
                             log::warn!("[GPUI] Applying pending plugin update: {:?}", update_type);
                             // Structural plugin graph changes invalidate
@@ -210,8 +214,8 @@ impl PlayerView {
                     let (needs_stats, is_stats_computing) = {
                         let state = view.state.read(cx);
                         (
-                            !state.app.library_stats.valid,
-                            state.app.library_stats_computing,
+                            !state.app.library_view.stats.valid,
+                            state.app.library_view.stats_computing,
                         )
                     };
                     if needs_stats && !is_stats_computing {
@@ -285,13 +289,13 @@ impl PlayerView {
             let state = self.state.read(cx);
             (
                 state.app.library_state.library.albums.clone(),
-                state.app.pending_library_stats.clone(),
+                state.app.library_view.pending_stats.clone(),
             )
         };
 
         // Mark as computing
         self.state.update(cx, |state, _cx| {
-            state.app.library_stats_computing = true;
+            state.app.library_view.stats_computing = true;
         });
 
         // Spawn background task
@@ -463,7 +467,7 @@ impl PlayerView {
         }
 
         if added > 0 {
-            state.app.needs_rescan = true;
+            state.app.scan.needs_rescan = true;
             match state.app.rescan_library() {
                 Ok(()) => {
                     state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
@@ -564,7 +568,7 @@ impl PlayerView {
             }
 
             // Stop background managers
-            state.app.scan_ctrl.stop_all();
+            state.app.scan.ctrl.stop_all();
 
             // Stop audio playback - this stops the audio engine threads
             if let Err(e) = state.player.lock().stop() {
@@ -1123,9 +1127,9 @@ impl PlayerView {
                 track_channels,
                 conflicts.len()
             );
-            state.app.channel_conflicts = conflicts;
-            state.app.channel_conflict_path = Some(source);
-            state.app.channel_conflict_track_channels = track_channels;
+            state.app.modal.channel_conflicts = conflicts;
+            state.app.modal.channel_conflict_path = Some(source);
+            state.app.modal.channel_conflict_track_channels = track_channels;
             state.app.ui_state.input_mode = crate::app::InputMode::ChannelConflict;
             return;
         }
@@ -1315,7 +1319,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.state.update(cx, |state, _cx| {
-            state.app.knob_drag = Some(crate::app::state::app::KnobDragState {
+            state.app.drag.knob_drag = Some(crate::app::state::app::KnobDragState {
                 plugin_idx: action.plugin_idx,
                 param_idx: action.param_idx,
                 start_y: action.start_y,
@@ -1444,13 +1448,13 @@ impl PlayerView {
                                         .set_plugin_param_string(plugin_idx, param_idx, content);
                                     // Store the source file path for display
                                     if path_id == "a" {
-                                        state.app.plugin_state.ab_compare_file_a = Some(file_path);
-                                        state.app.plugin_state.ab_path_a = plugins;
+                                        state.app.plugin_state.ab_compare_state.ab_compare_file_a = Some(file_path);
+                                        state.app.plugin_state.ab_compare_state.ab_path_a = plugins;
                                     } else {
-                                        state.app.plugin_state.ab_compare_file_b = Some(file_path);
-                                        state.app.plugin_state.ab_path_b = plugins;
+                                        state.app.plugin_state.ab_compare_state.ab_compare_file_b = Some(file_path);
+                                        state.app.plugin_state.ab_compare_state.ab_path_b = plugins;
                                     }
-                                    state.app.plugin_state.ab_add_menu_target = None;
+                                    state.app.plugin_state.ab_compare_state.ab_add_menu_target = None;
                                     cx.notify();
                                 });
                             } else {
@@ -1483,11 +1487,11 @@ impl PlayerView {
 
         self.state.update(cx, |state, _cx| {
             let plugins = if action.path == 0 {
-                state.app.plugin_state.ab_compare_file_a = None;
-                &mut state.app.plugin_state.ab_path_a
+                state.app.plugin_state.ab_compare_state.ab_compare_file_a = None;
+                &mut state.app.plugin_state.ab_compare_state.ab_path_a
             } else {
-                state.app.plugin_state.ab_compare_file_b = None;
-                &mut state.app.plugin_state.ab_path_b
+                state.app.plugin_state.ab_compare_state.ab_compare_file_b = None;
+                &mut state.app.plugin_state.ab_compare_state.ab_path_b
             };
             add_path_plugin(plugins, &action.plugin_type);
             let json = encode_path_config(plugins);
@@ -1495,7 +1499,7 @@ impl PlayerView {
             let _ = state
                 .app
                 .set_plugin_param_string(plugin_idx, param_idx, json);
-            state.app.plugin_state.ab_add_menu_target = None;
+            state.app.plugin_state.ab_compare_state.ab_add_menu_target = None;
         });
         cx.notify();
     }
@@ -1514,11 +1518,11 @@ impl PlayerView {
 
         self.state.update(cx, |state, _cx| {
             let plugins = if action.path == 0 {
-                state.app.plugin_state.ab_compare_file_a = None;
-                &mut state.app.plugin_state.ab_path_a
+                state.app.plugin_state.ab_compare_state.ab_compare_file_a = None;
+                &mut state.app.plugin_state.ab_compare_state.ab_path_a
             } else {
-                state.app.plugin_state.ab_compare_file_b = None;
-                &mut state.app.plugin_state.ab_path_b
+                state.app.plugin_state.ab_compare_state.ab_compare_file_b = None;
+                &mut state.app.plugin_state.ab_compare_state.ab_path_b
             };
             remove_path_plugin(plugins, action.sub_idx);
             let json = encode_path_config(plugins);
@@ -1543,11 +1547,11 @@ impl PlayerView {
 
         self.state.update(cx, |state, _cx| {
             let plugins = if action.path == 0 {
-                state.app.plugin_state.ab_compare_file_a = None;
-                &mut state.app.plugin_state.ab_path_a
+                state.app.plugin_state.ab_compare_state.ab_compare_file_a = None;
+                &mut state.app.plugin_state.ab_compare_state.ab_path_a
             } else {
-                state.app.plugin_state.ab_compare_file_b = None;
-                &mut state.app.plugin_state.ab_path_b
+                state.app.plugin_state.ab_compare_state.ab_compare_file_b = None;
+                &mut state.app.plugin_state.ab_compare_state.ab_path_b
             };
             move_path_plugin(plugins, action.from, action.to);
             let json = encode_path_config(plugins);
@@ -1571,8 +1575,8 @@ impl PlayerView {
             } else {
                 ABPathTarget::B
             };
-            state.app.plugin_state.ab_add_menu_target =
-                if state.app.plugin_state.ab_add_menu_target == Some(target) {
+            state.app.plugin_state.ab_compare_state.ab_add_menu_target =
+                if state.app.plugin_state.ab_compare_state.ab_add_menu_target == Some(target) {
                     None
                 } else {
                     Some(target)

@@ -2,7 +2,11 @@ use super::types::CustomViewRenderContext;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::*;
-use sotf_audio_player::PluginSettings;
+use sotf_audio_player::{
+    PluginSettings, UpmixerAmbientAnalysisSettings, UpmixerBypassSettings,
+    UpmixerDecorrelationSettings, UpmixerDialogueSettings, UpmixerGainSettings,
+    UpmixerHeightSettings, UpmixerLfeSettings, UpmixerOutputSettings, UpmixerSubharmonicSettings,
+};
 
 pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
     use super::super::ui_eq;
@@ -249,60 +253,87 @@ pub(super) fn render_upmixer(
     use super::super::ui_upmixer;
     if let PluginSettings::Upmixer {
         speaker_config,
-        gain_front_direct,
-        gain_front_ambient,
-        gain_rear_ambient,
-        height_gain,
-        stereo_width,
-        center_spread,
-        surround_direct_bleed,
-        rear_late_reflection,
-        lfe_cutoff_hz,
-        lfe_gain,
-        bandpass_hz,
-        enable_subharmonic_synth,
-        subharmonic_gain,
-        subharmonic_freq_hz,
-        subharmonic_attack_ms,
-        subharmonic_release_ms,
-        decorrelation_mode,
-        decorrelation_lfo_rate_hz,
-        velvet_noise_duration_ms,
-        velvet_noise_density,
-        enable_hr_direct,
-        hr_sharpen,
-        height_hf_cap_hz,
-        height_transient_reduction,
-        height_direct_leak,
-        ambient_boost,
-        safety_cap_db,
-        low_latency,
-        frequency_resolution,
-        rear_ambient_boost,
-        dialogue_weight,
-        voice_freq_min_hz,
-        voice_freq_max_hz,
-        dialogue_centroid_weight,
-        dialogue_variance_weight,
-        dialogue_coherence_weight,
-        bypass_decorrelation,
-        bypass_transient_detection,
-        bypass_all_processing,
-        enable_ml_detection,
-        multi_source_extraction,
-        multi_source_threshold,
-        binaural_preview,
-        auto_gain_enabled,
-        auto_gain_max_db,
-        auto_gain_smoothing_ms,
+        gains:
+            UpmixerGainSettings {
+                gain_front_direct,
+                gain_front_ambient,
+                gain_rear_ambient,
+                height_gain,
+                stereo_width,
+                center_spread,
+                surround_direct_bleed,
+                rear_late_reflection,
+                ambient_boost,
+                rear_ambient_boost,
+            },
+        lfe:
+            UpmixerLfeSettings {
+                lfe_cutoff_hz,
+                lfe_gain,
+                bandpass_hz,
+            },
+        subharmonic:
+            UpmixerSubharmonicSettings {
+                enable_subharmonic_synth,
+                subharmonic_gain,
+                subharmonic_freq_hz,
+                subharmonic_attack_ms,
+                subharmonic_release_ms,
+            },
+        decorrelation:
+            UpmixerDecorrelationSettings {
+                decorrelation_mode,
+                decorrelation_lfo_rate_hz,
+                velvet_noise_duration_ms,
+                velvet_noise_density,
+            },
+        height:
+            UpmixerHeightSettings {
+                enable_hr_direct,
+                hr_sharpen,
+                height_hf_cap_hz,
+                height_transient_reduction,
+                height_direct_leak,
+            },
+        ambient_analysis:
+            UpmixerAmbientAnalysisSettings {
+                safety_cap_db,
+                low_latency,
+                frequency_resolution,
+            },
+        dialogue:
+            UpmixerDialogueSettings {
+                dialogue_weight,
+                voice_freq_min_hz,
+                voice_freq_max_hz,
+                dialogue_centroid_weight,
+                dialogue_variance_weight,
+                dialogue_coherence_weight,
+            },
+        bypass:
+            UpmixerBypassSettings {
+                bypass_decorrelation,
+                bypass_transient_detection,
+                bypass_all_processing,
+            },
+        output:
+            UpmixerOutputSettings {
+                enable_ml_detection,
+                multi_source_extraction,
+                multi_source_threshold,
+                binaural_preview,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
+            },
     } = ctx.settings
     {
         let (upmixer_tab, loudness_info, spatial_spider) = {
             let app = &ctx.entity.read(cx).app;
             (
-                app.upmixer_tab,
+                app.plugin_ui.upmixer_tab,
                 app.playback.loudness_info.clone(),
-                app.spatial_spider.clone(),
+                app.plugin_ui.spatial_spider.clone(),
             )
         };
         let d = Ds::from_cx(cx);

@@ -1,5 +1,5 @@
 use crate::plugin::{Plugin, ProcessContext};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::cell::Cell;
 use std::time::Instant;
 
 /// Generate a DC buffer at a specific dB level.
@@ -8,17 +8,18 @@ pub fn generate_dc(db: f32, num_samples: usize) -> Vec<f32> {
     vec![amp; num_samples]
 }
 
-pub static ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-pub static COUNTING_ENABLED: AtomicBool = AtomicBool::new(false);
+thread_local! {
+    pub static ALLOC_COUNT: Cell<usize> = const { Cell::new(0) };
+    pub static COUNTING_ENABLED: Cell<bool> = const { Cell::new(false) };
+}
 
 /// Run a closure and assert it performs zero heap allocations.
 pub fn assert_no_allocs<F: FnOnce()>(label: &str, f: F) {
-    ALLOC_COUNT.store(0, Ordering::SeqCst);
-    COUNTING_ENABLED.store(true, Ordering::SeqCst);
+    ALLOC_COUNT.with(|c| c.set(0));
+    COUNTING_ENABLED.with(|c| c.set(true));
     f();
-    COUNTING_ENABLED.store(false, Ordering::SeqCst);
-    let count = ALLOC_COUNT.load(Ordering::SeqCst);
+    COUNTING_ENABLED.with(|c| c.set(false));
+    let count = ALLOC_COUNT.with(|c| c.get());
     if count > 0 {
         panic!(
             "{} failed: {} allocations detected in hot path",

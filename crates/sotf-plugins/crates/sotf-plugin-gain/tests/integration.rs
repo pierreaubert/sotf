@@ -1,13 +1,14 @@
 // ============================================================================
 // Integration tests for sotf-plugin-gain
 //
-// These tests exercise the crate's public API through the `InPlacePlugin`
+// These tests exercise the crate's public API through the `ParametricPlugin`
 // trait as a black box. No internal modules are imported.
 // ============================================================================
 
 use sotf_host::db_to_linear;
+use sotf_host::parametric_plugin::ParametricPlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::plugin::ProcessContext;
 use sotf_plugin_gain::{GainPlugin, GainPluginParams};
 
 const SR: u32 = 48000;
@@ -20,11 +21,11 @@ const FRAMES: usize = 512;
 #[test]
 fn new_plugin_has_expected_metadata() {
     let plugin = GainPlugin::new(2, 0.0);
-    let info = plugin.info();
+    let info = plugin.plugin_info();
     assert_eq!(info.name, "Gain");
     assert_eq!(info.version, "1.2.0");
     assert_eq!(info.author, "Sotf");
-    assert_eq!(plugin.channels(), 2);
+    assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.latency_samples(), 0);
 }
 
@@ -35,7 +36,7 @@ fn from_params_uses_global_gain_when_channel_gains_empty() {
         channel_gains: vec![],
     };
     let plugin = GainPlugin::from_params(2, params).unwrap();
-    assert_eq!(plugin.channels(), 2);
+    assert_eq!(plugin.input_channels(), 2);
     assert!(!plugin.is_per_channel());
     assert_eq!(plugin.gain_db(), -12.0);
 }
@@ -80,7 +81,7 @@ fn new_per_channel_rejects_empty_vec() {
 #[test]
 fn parameters_include_expected_controls() {
     let plugin = GainPlugin::new(2, 0.0);
-    let params = plugin.parameters();
+    let params = plugin.parametric_parameters();
     let ids: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
     assert!(ids.contains(&"gain_db"));
     assert!(ids.contains(&"smoothing_ms"));
@@ -89,7 +90,7 @@ fn parameters_include_expected_controls() {
 #[test]
 fn parameters_include_per_channel_gains() {
     let plugin = GainPlugin::new_per_channel(vec![0.0, -6.0, 6.0]).unwrap();
-    let params = plugin.parameters();
+    let params = plugin.parametric_parameters();
     let ids: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
     assert!(ids.contains(&"gain_db_0"));
     assert!(ids.contains(&"gain_db_1"));
@@ -99,12 +100,12 @@ fn parameters_include_per_channel_gains() {
 #[test]
 fn gain_db_roundtrip() {
     let mut plugin = GainPlugin::new(2, 0.0);
-    plugin.initialize(SR).unwrap();
+    plugin.plugin_initialize(SR).unwrap();
     plugin
-        .set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-6.0))
+        .parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-6.0))
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("gain_db")),
+        plugin.parametric_get_parameter(&ParameterId::from("gain_db")),
         Some(ParameterValue::Float(-6.0))
     );
 }
@@ -112,15 +113,15 @@ fn gain_db_roundtrip() {
 #[test]
 fn smoothing_ms_roundtrip() {
     let mut plugin = GainPlugin::new(2, 0.0);
-    plugin.initialize(SR).unwrap();
+    plugin.plugin_initialize(SR).unwrap();
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("smoothing_ms"),
             ParameterValue::Float(50.0),
         )
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("smoothing_ms")),
+        plugin.parametric_get_parameter(&ParameterId::from("smoothing_ms")),
         Some(ParameterValue::Float(50.0))
     );
 }
@@ -128,19 +129,19 @@ fn smoothing_ms_roundtrip() {
 #[test]
 fn per_channel_gain_roundtrip() {
     let mut plugin = GainPlugin::new_per_channel(vec![0.0, 0.0]).unwrap();
-    plugin.initialize(SR).unwrap();
+    plugin.plugin_initialize(SR).unwrap();
     plugin
-        .set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(3.0))
+        .parametric_set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(3.0))
         .unwrap();
     plugin
-        .set_parameter(ParameterId::from("gain_db_1"), ParameterValue::Float(-3.0))
+        .parametric_set_parameter(ParameterId::from("gain_db_1"), ParameterValue::Float(-3.0))
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("gain_db_0")),
+        plugin.parametric_get_parameter(&ParameterId::from("gain_db_0")),
         Some(ParameterValue::Float(3.0))
     );
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("gain_db_1")),
+        plugin.parametric_get_parameter(&ParameterId::from("gain_db_1")),
         Some(ParameterValue::Float(-3.0))
     );
 }
@@ -152,10 +153,11 @@ fn per_channel_gain_roundtrip() {
 #[test]
 fn initialize_then_process_works() {
     let mut plugin = GainPlugin::new(2, 0.0);
-    plugin.initialize(SR).unwrap();
-    let mut buffer = vec![0.5f32; FRAMES * 2];
+    plugin.plugin_initialize(SR).unwrap();
+    let input = vec![0.5f32; FRAMES * 2];
+    let mut buffer = vec![0.0f32; input.len()];
     let frames = plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SR, FRAMES))
+        .process(&input, &mut buffer, &ProcessContext::new(SR, FRAMES))
         .unwrap();
     assert_eq!(frames, FRAMES);
 }
@@ -163,11 +165,12 @@ fn initialize_then_process_works() {
 #[test]
 fn reset_does_not_break_processing() {
     let mut plugin = GainPlugin::new(2, 0.0);
-    plugin.initialize(SR).unwrap();
-    plugin.reset();
-    let mut buffer = vec![0.5f32; FRAMES * 2];
+    plugin.plugin_initialize(SR).unwrap();
+    plugin.plugin_reset();
+    let input = vec![0.5f32; FRAMES * 2];
+    let mut buffer = vec![0.0f32; input.len()];
     let frames = plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SR, FRAMES))
+        .process(&input, &mut buffer, &ProcessContext::new(SR, FRAMES))
         .unwrap();
     assert_eq!(frames, FRAMES);
 }
@@ -175,15 +178,16 @@ fn reset_does_not_break_processing() {
 #[test]
 fn initialize_changes_sample_rate() {
     let mut plugin = GainPlugin::with_smoothing(1, 0.0, 20.0);
-    plugin.initialize(44100).unwrap();
+    plugin.plugin_initialize(44100).unwrap();
     plugin.set_gain_db(-6.0);
 
     // Process enough samples at 96k to let the smoother settle.
-    plugin.initialize(96000).unwrap();
+    plugin.plugin_initialize(96000).unwrap();
     let num_frames = 19200;
-    let mut buf = vec![1.0f32; num_frames];
+    let input = vec![1.0f32; num_frames];
+    let mut buf = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut buf, &ProcessContext::new(96000, num_frames))
+        .process(&input, &mut buf, &ProcessContext::new(96000, num_frames))
         .unwrap();
     let target = db_to_linear(-6.0);
     assert!((buf[num_frames - 1] - target).abs() < 0.01);
@@ -196,11 +200,11 @@ fn initialize_changes_sample_rate() {
 #[test]
 fn unity_gain_passthrough() {
     let mut plugin = GainPlugin::with_smoothing(2, 0.0, 0.0);
-    plugin.initialize(SR).unwrap();
+    plugin.plugin_initialize(SR).unwrap();
     let input = vec![0.1f32, 0.2, 0.3, 0.4];
-    let mut buffer = input.clone();
+    let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SR, 2))
+        .process(&input, &mut buffer, &ProcessContext::new(SR, 2))
         .unwrap();
     for (i, (&out, &inp)) in buffer.iter().zip(input.iter()).enumerate() {
         assert!(
@@ -215,11 +219,11 @@ fn unity_gain_passthrough() {
 #[test]
 fn positive_gain_scales_signal() {
     let mut plugin = GainPlugin::with_smoothing(2, 6.0, 0.0);
-    plugin.initialize(SR).unwrap();
+    plugin.plugin_initialize(SR).unwrap();
     let input = vec![0.1f32, 0.2, 0.3, 0.4];
-    let mut buffer = input.clone();
+    let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SR, 2))
+        .process(&input, &mut buffer, &ProcessContext::new(SR, 2))
         .unwrap();
     let expected_linear = db_to_linear(6.0);
     for (i, (&out, &inp)) in buffer.iter().zip(input.iter()).enumerate() {
@@ -235,11 +239,11 @@ fn positive_gain_scales_signal() {
 #[test]
 fn negative_gain_attenuates_signal() {
     let mut plugin = GainPlugin::with_smoothing(2, -6.0, 0.0);
-    plugin.initialize(SR).unwrap();
+    plugin.plugin_initialize(SR).unwrap();
     let input = vec![1.0f32, 1.0, 1.0, 1.0];
-    let mut buffer = input.clone();
+    let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SR, 2))
+        .process(&input, &mut buffer, &ProcessContext::new(SR, 2))
         .unwrap();
     let expected = db_to_linear(-6.0);
     for (i, &out) in buffer.iter().enumerate() {
@@ -255,11 +259,11 @@ fn negative_gain_attenuates_signal() {
 #[test]
 fn per_channel_gains_apply_correctly() {
     let mut plugin = GainPlugin::new_per_channel(vec![0.0f32, -6.0]).unwrap();
-    plugin.initialize(SR).unwrap();
+    plugin.plugin_initialize(SR).unwrap();
     let input = vec![1.0f32, 1.0, 1.0, 1.0];
-    let mut buffer = input.clone();
+    let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SR, 2))
+        .process(&input, &mut buffer, &ProcessContext::new(SR, 2))
         .unwrap();
     let ch0_gain = db_to_linear(0.0);
     let ch1_gain = db_to_linear(-6.0);
@@ -272,11 +276,12 @@ fn per_channel_gains_apply_correctly() {
 #[test]
 fn zero_frames_returns_zero_and_leaves_buffer() {
     let mut plugin = GainPlugin::new(2, 6.0);
-    plugin.initialize(SR).unwrap();
-    let mut buffer = vec![0.5f32, 0.6, 0.7, 0.8];
-    let original = buffer.clone();
+    plugin.plugin_initialize(SR).unwrap();
+    let input = vec![0.5f32, 0.6, 0.7, 0.8];
+    let original = input.clone();
+    let mut buffer = vec![0.0f32; input.len()];
     let processed = plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SR, 0))
+        .process(&input, &mut buffer, &ProcessContext::new(SR, 0))
         .unwrap();
     assert_eq!(processed, 0);
     assert_eq!(buffer, original);
@@ -289,8 +294,8 @@ fn zero_frames_returns_zero_and_leaves_buffer() {
 #[test]
 fn set_unknown_parameter_fails() {
     let mut plugin = GainPlugin::new(2, 0.0);
-    plugin.initialize(SR).unwrap();
-    let result = plugin.set_parameter(ParameterId::from("nonexistent"), ParameterValue::Float(1.0));
+    plugin.plugin_initialize(SR).unwrap();
+    let result = plugin.parametric_set_parameter(ParameterId::from("nonexistent"), ParameterValue::Float(1.0));
     match result {
         Ok(_) => panic!("expected unknown parameter error"),
         Err(err) => {
@@ -304,15 +309,15 @@ fn set_unknown_parameter_fails() {
 #[test]
 fn set_gain_out_of_range_fails() {
     let mut plugin = GainPlugin::new(2, 0.0);
-    plugin.initialize(SR).unwrap();
+    plugin.plugin_initialize(SR).unwrap();
     assert!(
         plugin
-            .set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(21.0))
+            .parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(21.0))
             .is_err()
     );
     assert!(
         plugin
-            .set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-61.0))
+            .parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-61.0))
             .is_err()
     );
 }
@@ -320,10 +325,10 @@ fn set_gain_out_of_range_fails() {
 #[test]
 fn set_smoothing_out_of_range_fails() {
     let mut plugin = GainPlugin::new(2, 0.0);
-    plugin.initialize(SR).unwrap();
+    plugin.plugin_initialize(SR).unwrap();
     assert!(
         plugin
-            .set_parameter(
+            .parametric_set_parameter(
                 ParameterId::from("smoothing_ms"),
                 ParameterValue::Float(201.0)
             )
@@ -331,7 +336,7 @@ fn set_smoothing_out_of_range_fails() {
     );
     assert!(
         plugin
-            .set_parameter(
+            .parametric_set_parameter(
                 ParameterId::from("smoothing_ms"),
                 ParameterValue::Float(-1.0)
             )
@@ -342,10 +347,10 @@ fn set_smoothing_out_of_range_fails() {
 #[test]
 fn set_non_finite_gain_fails() {
     let mut plugin = GainPlugin::new(2, 0.0);
-    plugin.initialize(SR).unwrap();
+    plugin.plugin_initialize(SR).unwrap();
     assert!(
         plugin
-            .set_parameter(
+            .parametric_set_parameter(
                 ParameterId::from("gain_db"),
                 ParameterValue::Float(f32::NAN)
             )
@@ -353,7 +358,7 @@ fn set_non_finite_gain_fails() {
     );
     assert!(
         plugin
-            .set_parameter(
+            .parametric_set_parameter(
                 ParameterId::from("gain_db"),
                 ParameterValue::Float(f32::INFINITY)
             )
@@ -364,8 +369,8 @@ fn set_non_finite_gain_fails() {
 #[test]
 fn set_channel_gain_out_of_bounds_fails() {
     let mut plugin = GainPlugin::new(2, 0.0);
-    plugin.initialize(SR).unwrap();
-    let result = plugin.set_parameter(ParameterId::from("gain_db_5"), ParameterValue::Float(0.0));
+    plugin.plugin_initialize(SR).unwrap();
+    let result = plugin.parametric_set_parameter(ParameterId::from("gain_db_5"), ParameterValue::Float(0.0));
     match result {
         Ok(_) => panic!("expected out-of-bounds channel gain error"),
         Err(err) => {
@@ -377,12 +382,13 @@ fn set_channel_gain_out_of_bounds_fails() {
 #[test]
 fn output_is_finite_for_finite_input() {
     let mut plugin = GainPlugin::new(2, 12.0);
-    plugin.initialize(SR).unwrap();
-    let mut buffer: Vec<f32> = (0..FRAMES * 2)
+    plugin.plugin_initialize(SR).unwrap();
+    let input: Vec<f32> = (0..FRAMES * 2)
         .map(|i| (i as f32 * 0.1).sin() * 0.5)
         .collect();
+    let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SR, FRAMES))
+        .process(&input, &mut buffer, &ProcessContext::new(SR, FRAMES))
         .unwrap();
     assert!(buffer.iter().all(|s| s.is_finite()));
 }

@@ -1,7 +1,8 @@
 // Integration tests for sotf-plugin-de-esser — exercises the public API only.
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 use sotf_plugin_de_esser::{DeEsserPlugin, DeEsserPluginParams};
 
 fn make_sine(freq_hz: f32, sample_rate: u32, num_frames: usize, amplitude: f32) -> Vec<f32> {
@@ -50,9 +51,9 @@ fn parameter_roundtrip() {
 
     for &(id, ref value) in cases {
         plugin
-            .set_parameter(ParameterId::from(id), value.clone())
+            .parametric_set_parameter(ParameterId::from(id), value.clone())
             .unwrap();
-        let got = plugin.get_parameter(&ParameterId::from(id));
+        let got = plugin.parametric_get_parameter(&ParameterId::from(id));
         assert_eq!(
             got,
             Some(value.clone()),
@@ -68,24 +69,24 @@ fn mode_variants_roundtrip() {
     plugin.initialize(48000).unwrap();
 
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("mode"),
             ParameterValue::String("Wideband".to_string()),
         )
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("mode")),
+        plugin.parametric_get_parameter(&ParameterId::from("mode")),
         Some(ParameterValue::String("Wideband".to_string()))
     );
 
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("mode"),
             ParameterValue::String("Split-Band".to_string()),
         )
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("mode")),
+        plugin.parametric_get_parameter(&ParameterId::from("mode")),
         Some(ParameterValue::String("Split-Band".to_string()))
     );
 }
@@ -98,18 +99,18 @@ fn invalid_parameter_rejected() {
     // Out of range.
     assert!(
         plugin
-            .set_parameter(ParameterId::from("frequency"), ParameterValue::Float(100.0))
+            .parametric_set_parameter(ParameterId::from("frequency"), ParameterValue::Float(100.0))
             .is_err()
     );
     assert!(
         plugin
-            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(-0.1))
+            .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(-0.1))
             .is_err()
     );
     // NaN.
     assert!(
         plugin
-            .set_parameter(
+            .parametric_set_parameter(
                 ParameterId::from("threshold"),
                 ParameterValue::Float(f32::NAN)
             )
@@ -118,13 +119,13 @@ fn invalid_parameter_rejected() {
     // Unknown parameter.
     assert!(
         plugin
-            .set_parameter(ParameterId::from("unknown"), ParameterValue::Float(1.0))
+            .parametric_set_parameter(ParameterId::from("unknown"), ParameterValue::Float(1.0))
             .is_err()
     );
 
     assert!(
         plugin
-            .get_parameter(&ParameterId::from("unknown"))
+            .parametric_get_parameter(&ParameterId::from("unknown"))
             .is_none()
     );
 }
@@ -421,23 +422,23 @@ fn from_params_clamps_out_of_bounds() {
         },
     );
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("frequency")),
+        plugin.parametric_get_parameter(&ParameterId::from("frequency")),
         Some(ParameterValue::Float(2000.0))
     );
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("q")),
+        plugin.parametric_get_parameter(&ParameterId::from("q")),
         Some(ParameterValue::Float(5.0))
     );
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("threshold")),
+        plugin.parametric_get_parameter(&ParameterId::from("threshold")),
         Some(ParameterValue::Float(0.0))
     );
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("ratio")),
+        plugin.parametric_get_parameter(&ParameterId::from("ratio")),
         Some(ParameterValue::Float(1.0))
     );
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("mix")),
+        plugin.parametric_get_parameter(&ParameterId::from("mix")),
         Some(ParameterValue::Float(0.0))
     );
 }
@@ -445,7 +446,7 @@ fn from_params_clamps_out_of_bounds() {
 #[test]
 fn parameters_list_contains_expected_ids() {
     let plugin = DeEsserPlugin::new(1);
-    let params = plugin.parameters();
+    let params = plugin.parametric_parameters();
     let ids: Vec<_> = params.iter().map(|p| p.id.clone()).collect();
     assert!(ids.contains(&ParameterId::from("frequency")));
     assert!(ids.contains(&ParameterId::from("q")));

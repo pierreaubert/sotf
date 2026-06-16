@@ -2,7 +2,7 @@ use super::dither_plugin::DitherPlugin;
 use super::misc::random_f32;
 use super::misc::xorshift64;
 use super::types::DitherPluginParams;
-use sotf_host::InPlacePlugin;
+use sotf_host::ParametricInPlacePlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::ProcessContext;
 

@@ -59,7 +59,8 @@ fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
 #[test]
 fn test_room_eq_to_room_config_disables_imported_ctc_config() {
     let mut state = RoomEqState::default();
-    state.model.channel_measurements = vec![make_dummy_measurement("L"), make_dummy_measurement("R")];
+    state.model.channel_measurements =
+        vec![make_dummy_measurement("L"), make_dummy_measurement("R")];
     state.model.ctc_config = Some(autoeq::roomeq::CtcConfig {
         enabled: true,
         matrix_source: "measured".to_string(),

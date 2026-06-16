@@ -68,14 +68,16 @@ impl PlayerView {
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Xs)
                                         .theme(theme.to_button_theme())
-                                        .on_click_event(cx.listener(|view, _, _, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state
-                                                    .app
-                                                    .install_external_plugin_runtime_sandbox();
-                                            });
-                                            cx.notify();
-                                        })),
+                                        .on_click_event(
+                                            cx.listener(|view, _, _, cx| {
+                                                view.state.update(cx, |state, _cx| {
+                                                    state
+                                                        .app
+                                                        .install_external_plugin_runtime_sandbox();
+                                                });
+                                                cx.notify();
+                                            }),
+                                        ),
                                     )
                                     .child(
                                         Button::new(
@@ -85,24 +87,31 @@ impl PlayerView {
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Xs)
                                         .theme(theme.to_button_theme())
-                                        .on_click_event(cx.listener(|view, _, _, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                let mut scanner = sotf_plugins::PluginScanner::new();
-                                                scanner.scan_all();
-                                                state.app.plugin_state.scanned_external_plugins =
-                                                    scanner.plugins.clone();
-                                                state
-                                                    .app
-                                                    .ui_state
-                                                    .toast_message = Some(crate::app::ToastMessage::success(
-                                                    format!(
-                                                        "Found {} external plugins",
-                                                        state.app.plugin_state.scanned_external_plugins.len()
-                                                    ),
-                                                ));
-                                            });
-                                            cx.notify();
-                                        })),
+                                        .on_click_event(
+                                            cx.listener(|view, _, _, cx| {
+                                                view.state.update(cx, |state, _cx| {
+                                                    let mut scanner =
+                                                        sotf_plugins::PluginScanner::new();
+                                                    scanner.scan_all();
+                                                    state
+                                                        .app
+                                                        .plugin_state
+                                                        .scanned_external_plugins =
+                                                        scanner.plugins.clone();
+                                                    state.app.ui_state.toast_message = Some(
+                                                        crate::app::ToastMessage::success(format!(
+                                                            "Found {} external plugins",
+                                                            state
+                                                                .app
+                                                                .plugin_state
+                                                                .scanned_external_plugins
+                                                                .len()
+                                                        )),
+                                                    );
+                                                });
+                                                cx.notify();
+                                            }),
+                                        ),
                                     )
                                     .build(),
                             )

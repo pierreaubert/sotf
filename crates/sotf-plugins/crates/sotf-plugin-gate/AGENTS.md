@@ -6,7 +6,7 @@ Noise gate plugin with sidechain HPF, configurable detection modes, lookahead, h
 
 ```
 src/
-  lib.rs    -- GatePlugin (InPlacePlugin), GatePluginParams, GateData
+  lib.rs    -- GatePlugin (ParametricInPlacePlugin), GatePluginParams, GateData
   params.rs -- Centralized parameter specs
 ```
 
@@ -14,7 +14,7 @@ Data flow: Input -> optional sidechain HPF (Butterworth) -> level detection (pea
 
 **Key types:**
 
-- `GatePlugin` -- Main plugin implementing `InPlacePlugin`. Uses `LevelDetector` and `LookaheadBuffer` from sotf-host.
+- `GatePlugin` -- Main plugin implementing `ParametricInPlacePlugin`. Uses `LevelDetector` and `LookaheadBuffer` from sotf-host.
 - `GatePluginParams` -- Serde config with all gate parameters.
 - `GateData` -- Real-time monitoring data (input levels, open/closed state, per-channel attenuation).
 
@@ -23,7 +23,7 @@ Data flow: Input -> optional sidechain HPF (Butterworth) -> level detection (pea
 - `GatePlugin::new(channels) -> Self` -- Default construction (`lib.rs`)
 - `GatePlugin::from_params(channels, params) -> Self` -- From JSON config (`lib.rs`)
 - Exposes `GateData` via `analyzer_data()` for UI monitoring
-- Implements `InPlacePlugin` trait
+- Implements `ParametricInPlacePlugin` trait
 
 **Parameters:** `threshold` (-80 to 0 dB), `ratio` (1:1 to 100:1), `attack` (0.01-100 ms), `hold` (0-500 ms), `release` (1-5000 ms), `mix` (0-1), `link_channels` (bool), `sidechain_hpf_hz`, `sidechain_hpf_order` (6/12/18/24 dB/oct), `detection_mode` (peak/rms), `sidechain_external` (bool), `range_db` (max attenuation cap), `hysteresis_db`, `knee_db`, `lookahead_ms` (0-20 ms).
 

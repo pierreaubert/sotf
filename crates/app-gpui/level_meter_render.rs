@@ -137,10 +137,7 @@ mod tests {
 
     #[test]
     fn build_channel_meter_data_maps_peaks_and_peak_hold() {
-        let channels = vec![
-            make_channel(0, "L"),
-            make_channel(1, "R"),
-        ];
+        let channels = vec![make_channel(0, "L"), make_channel(1, "R")];
         let loudness = make_loudness(vec![1.0, 0.01]);
         let peak_hold = vec![0.5, 0.0];
 
@@ -148,9 +145,18 @@ mod tests {
 
         assert_eq!(data.len(), 2);
         assert_eq!(data[0].name, "L");
-        assert!(data[0].fill_ratio > data[1].fill_ratio, "L should be higher than R");
-        assert!(data[0].peak_hold_ratio.is_some(), "L peak hold should be visible");
-        assert!(data[1].peak_hold_ratio.is_none(), "R peak hold should be hidden");
+        assert!(
+            data[0].fill_ratio > data[1].fill_ratio,
+            "L should be higher than R"
+        );
+        assert!(
+            data[0].peak_hold_ratio.is_some(),
+            "L peak hold should be visible"
+        );
+        assert!(
+            data[1].peak_hold_ratio.is_none(),
+            "R peak hold should be hidden"
+        );
         assert_eq!(data[0].yellow_threshold, data[1].yellow_threshold);
     }
 

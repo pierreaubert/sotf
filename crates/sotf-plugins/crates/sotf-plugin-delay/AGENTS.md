@@ -6,7 +6,7 @@ Audio delay plugin with feedback, LFO modulation, allpass feedback, and 4-point 
 
 ```
 src/
-  lib.rs        -- DelayPlugin (InPlacePlugin), DelayPluginParams, AllpassState
+  lib.rs        -- DelayPlugin (ParametricParametricInPlacePlugin), DelayPluginParams, AllpassState
   params.rs     -- Centralized parameter specs
   param_specs.rs -- Parameter spec definitions
 ```
@@ -15,7 +15,7 @@ Data flow: Input -> write to circular delay buffer -> read with fractional delay
 
 **Key types:**
 
-- `DelayPlugin` -- Main plugin implementing `InPlacePlugin`. Uses a flat circular buffer (`buffer[pos * channels + ch]`).
+- `DelayPlugin` -- Main plugin implementing `ParametricParametricInPlacePlugin`. Uses a flat circular buffer (`buffer[pos * channels + ch]`).
 - `DelayPluginParams` -- Serde config: delay_ms, feedback, mix, LFO rate/depth, allpass toggle.
 - `AllpassState` -- First-order allpass filter for the feedback path. Transfer function: `H(z) = (coeff + z^-1) / (1 + coeff * z^-1)`.
 
@@ -23,7 +23,7 @@ Data flow: Input -> write to circular delay buffer -> read with fractional delay
 
 - `DelayPlugin::new(channels, delay_ms, feedback, mix) -> Self` (`lib.rs`)
 - `DelayPlugin::from_params(channels, params) -> Self` (`lib.rs`)
-- Implements `InPlacePlugin` trait
+- Implements `ParametricParametricInPlacePlugin` trait
 
 **Parameters:** `delay_ms` (0.1-5000 ms), `feedback` (0-0.95), `mix` (0-1), `lfo_rate_hz` (0-10 Hz), `lfo_depth_ms` (0-5 ms), `allpass_feedback` (bool).
 

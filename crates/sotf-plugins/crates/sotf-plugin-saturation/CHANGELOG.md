@@ -57,7 +57,7 @@
   requires significant restructuring of the oversampled path and ADAA path. Deferred as a
   larger refactor.
 - **Performance 3.3/3.4** (`parameters()` clones Vec, `rebuild_cached_parameters` on every
-  `set_parameter`): Requires changing the `InPlacePlugin` trait signature to return `&[Parameter]`
+  `set_parameter`): Requires changing the `ParametricInPlacePlugin` trait signature to return `&[Parameter]`
   — a cross-crate change. Deferred.
 - **Acoustics 1.5** (soft_clip minimum drive = 1.0 means no clean path): Behaviour is
   intentional per current design; documented in comment but not changed.

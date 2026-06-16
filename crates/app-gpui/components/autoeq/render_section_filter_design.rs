@@ -16,9 +16,9 @@
     );
 
     // Determine which subsections to show
-    let is_iir = matches!(config.opt_mode.as_str(), "iir" | "mixed" | "mixed_phase");
-    let is_fir = matches!(config.opt_mode.as_str(), "fir" | "mixed" | "mixed_phase");
-    let is_mixed = matches!(config.opt_mode.as_str(), "mixed" | "mixed_phase");
+    let is_iir = matches!(config.eq_design.opt_mode.as_str(), "iir" | "mixed" | "mixed_phase");
+    let is_fir = matches!(config.eq_design.opt_mode.as_str(), "fir" | "mixed" | "mixed_phase");
+    let is_mixed = matches!(config.eq_design.opt_mode.as_str(), "mixed" | "mixed_phase");
 
     // --- IIR Subsection ---
     if is_iir {
@@ -26,7 +26,7 @@
 
         // Sample rate + Num filters (side by side)
         let mut sr_input = NumberInput::new((base_id.clone(), "fd-sample-rate"))
-            .value(config.sample_rate as f64)
+            .value(config.eq_design.sample_rate as f64)
             .min(ParamLimits::SAMPLE_RATE.min)
             .max(ParamLimits::SAMPLE_RATE.max)
             .step(ParamLimits::SAMPLE_RATE.step)
@@ -42,7 +42,7 @@
         }
 
         let mut nf_input = NumberInput::new((base_id.clone(), "fd-num-filters"))
-            .value(config.num_filters as f64)
+            .value(config.eq_design.num_filters as f64)
             .min(ParamLimits::NUM_FILTERS.min)
             .max(ParamLimits::NUM_FILTERS.max)
             .step(ParamLimits::NUM_FILTERS.step)
@@ -73,7 +73,7 @@
         let mut peq_select = Select::new((base_id.clone(), "fd-peq-model"))
             .label("Filter Type")
             .options(peq_options)
-            .selected(&config.peq_model)
+            .selected(&config.eq_design.peq_model)
             .is_open(ui_state.peq_model_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -92,7 +92,7 @@
 
         // Frequency range
         let mut min_freq_input = NumberInput::new((base_id.clone(), "fd-min-freq"))
-            .value(config.min_freq)
+            .value(config.eq_design.min_freq)
             .min(ParamLimits::FREQUENCY.min)
             .max(ParamLimits::FREQUENCY.max)
             .step(ParamLimits::FREQUENCY.step)
@@ -108,7 +108,7 @@
         }
 
         let mut max_freq_input = NumberInput::new((base_id.clone(), "fd-max-freq"))
-            .value(config.max_freq)
+            .value(config.eq_design.max_freq)
             .min(ParamLimits::FREQUENCY.min)
             .max(ParamLimits::FREQUENCY.max)
             .step(ParamLimits::FREQUENCY.step)
@@ -132,7 +132,7 @@
 
         // Q range
         let mut min_q_input = NumberInput::new((base_id.clone(), "fd-min-q"))
-            .value(config.min_q)
+            .value(config.eq_design.min_q)
             .min(ParamLimits::Q.min)
             .max(ParamLimits::Q.max)
             .step(ParamLimits::Q.step)
@@ -148,7 +148,7 @@
         }
 
         let mut max_q_input = NumberInput::new((base_id.clone(), "fd-max-q"))
-            .value(config.max_q)
+            .value(config.eq_design.max_q)
             .min(ParamLimits::Q.min)
             .max(ParamLimits::Q.max)
             .step(ParamLimits::Q.step)
@@ -172,7 +172,7 @@
 
         // dB range
         let mut min_db_input = NumberInput::new((base_id.clone(), "fd-min-db"))
-            .value(config.min_db)
+            .value(config.eq_design.min_db)
             .min(ParamLimits::DB.min)
             .max(ParamLimits::DB.max)
             .step(ParamLimits::DB.step)
@@ -188,7 +188,7 @@
         }
 
         let mut max_db_input = NumberInput::new((base_id.clone(), "fd-max-db"))
-            .value(config.max_db)
+            .value(config.eq_design.max_db)
             .min(ParamLimits::DB.min)
             .max(ParamLimits::DB.max)
             .step(ParamLimits::DB.step)
@@ -212,7 +212,7 @@
 
         // Spacing weight + min spacing
         let mut sw_input = NumberInput::new((base_id.clone(), "fd-spacing-weight"))
-            .value(config.spacing_weight)
+            .value(config.eq_design.spacing_weight)
             .min(ParamLimits::SPACING_WEIGHT.min)
             .max(ParamLimits::SPACING_WEIGHT.max)
             .step(ParamLimits::SPACING_WEIGHT.step)
@@ -228,7 +228,7 @@
         }
 
         let mut ms_input = NumberInput::new((base_id.clone(), "fd-min-spacing"))
-            .value(config.min_spacing_oct)
+            .value(config.eq_design.min_spacing_oct)
             .min(ParamLimits::MIN_SPACING_OCT.min)
             .max(ParamLimits::MIN_SPACING_OCT.max)
             .step(ParamLimits::MIN_SPACING_OCT.step)
@@ -256,7 +256,7 @@
         section = section.child(Text::label("FIR Parameters").color(theme.header_color));
 
         let mut taps_input = NumberInput::new((base_id.clone(), "fd-fir-taps"))
-            .value(config.fir_taps as f64)
+            .value(config.eq_design.fir_taps as f64)
             .min(ParamLimits::FIR_TAPS.min)
             .max(ParamLimits::FIR_TAPS.max)
             .step(ParamLimits::FIR_TAPS.step)
@@ -282,7 +282,7 @@
         let mut phase_select = Select::new((base_id.clone(), "fd-fir-phase"))
             .label("Regularization")
             .options(phase_options)
-            .selected(&config.fir_phase)
+            .selected(&config.eq_design.fir_phase)
             .is_open(ui_state.fir_phase_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -306,7 +306,7 @@
             section.child(Text::label("Crossover Configuration").color(theme.header_color));
 
         let mut xo_freq_input = NumberInput::new((base_id.clone(), "fd-xo-freq"))
-            .value(config.mixed_crossover_freq)
+            .value(config.v2.mixed_crossover_freq)
             .min(ParamLimits::MIXED_CROSSOVER_FREQ.min)
             .max(ParamLimits::MIXED_CROSSOVER_FREQ.max)
             .step(ParamLimits::MIXED_CROSSOVER_FREQ.step)
@@ -329,7 +329,7 @@
         let mut xo_type_select = Select::new((base_id.clone(), "fd-xo-type"))
             .label("Crossover Type")
             .options(xo_type_options)
-            .selected(&config.mixed_crossover_type)
+            .selected(&config.v2.mixed_crossover_type)
             .is_open(ui_state.mixed_crossover_type_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -352,7 +352,7 @@
         let mut fir_band_select = Select::new((base_id.clone(), "fd-fir-band"))
             .label("FIR Band")
             .options(fir_band_options)
-            .selected(&config.mixed_fir_band)
+            .selected(&config.v2.mixed_fir_band)
             .is_open(ui_state.mixed_fir_band_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -384,7 +384,7 @@
         {
             let mut excursion_toggle = Toggle::new((base_id.clone(), "fd-excursion-enabled"))
                 .size(ToggleSize::Sm)
-                .checked(config.use_excursion_protection)
+                .checked(config.room_correction.use_excursion_protection)
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_use_excursion_protection_change_rc {
@@ -403,10 +403,10 @@
                     .child(excursion_toggle),
             );
 
-            if config.use_excursion_protection {
+            if config.room_correction.use_excursion_protection {
                 let mut auto_f3_toggle = Toggle::new((base_id.clone(), "fd-excursion-auto-f3"))
                     .size(ToggleSize::Sm)
-                    .checked(config.excursion_auto_detect_f3)
+                    .checked(config.room_correction.excursion_auto_detect_f3)
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_excursion_auto_detect_f3_change_rc {
@@ -425,9 +425,9 @@
                         .child(auto_f3_toggle),
                 );
 
-                if !config.excursion_auto_detect_f3 {
+                if !config.room_correction.excursion_auto_detect_f3 {
                     let mut f3_input = NumberInput::new((base_id.clone(), "fd-excursion-manual-f3"))
-                        .value(config.excursion_manual_f3)
+                        .value(config.room_correction.excursion_manual_f3)
                         .min(10.0)
                         .max(500.0)
                         .step(1.0)
@@ -452,7 +452,7 @@
                 let mut hp_select = Select::new((base_id.clone(), "fd-excursion-hp-type"))
                     .label("Filter Type")
                     .options(hp_options)
-                    .selected(&config.excursion_filter_type)
+                    .selected(&config.room_correction.excursion_filter_type)
                     .is_open(ui_state.excursion_filter_type_open)
                     .size(SelectSize::Xs)
                     .theme(theme.select_theme.clone());
@@ -467,7 +467,7 @@
                 }
 
                 let mut order_input = NumberInput::new((base_id.clone(), "fd-excursion-order"))
-                    .value(config.excursion_filter_order as f64)
+                    .value(config.room_correction.excursion_filter_order as f64)
                     .min(2.0)
                     .max(8.0)
                     .step(2.0)
@@ -490,7 +490,7 @@
                 );
 
                 let mut margin_input = NumberInput::new((base_id.clone(), "fd-excursion-margin"))
-                    .value(config.excursion_margin_octaves)
+                    .value(config.room_correction.excursion_margin_octaves)
                     .min(0.0)
                     .max(1.0)
                     .step(0.05)
@@ -513,7 +513,7 @@
         {
             let mut schroeder_toggle = Toggle::new((base_id.clone(), "fd-schroeder-enabled"))
                 .size(ToggleSize::Sm)
-                .checked(config.use_schroeder_split)
+                .checked(config.room_correction.use_schroeder_split)
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_use_schroeder_split_change_rc {
@@ -532,9 +532,9 @@
                     .child(schroeder_toggle),
             );
 
-            if config.use_schroeder_split {
+            if config.room_correction.use_schroeder_split {
                 let mut s_freq_input = NumberInput::new((base_id.clone(), "fd-schroeder-freq"))
-                    .value(config.schroeder_freq)
+                    .value(config.room_correction.schroeder_freq)
                     .min(ParamLimits::SCHROEDER_FREQ.min)
                     .max(ParamLimits::SCHROEDER_FREQ.max)
                     .step(ParamLimits::SCHROEDER_FREQ.step)
@@ -552,7 +552,7 @@
                 section = section.child(s_freq_input);
 
                 let mut low_q_input = NumberInput::new((base_id.clone(), "fd-schroeder-low-q"))
-                    .value(config.schroeder_low_max_q)
+                    .value(config.room_correction.schroeder_low_max_q)
                     .min(1.0)
                     .max(20.0)
                     .step(0.5)
@@ -568,7 +568,7 @@
                 }
 
                 let mut high_q_input = NumberInput::new((base_id.clone(), "fd-schroeder-high-q"))
-                    .value(config.schroeder_high_max_q)
+                    .value(config.room_correction.schroeder_high_max_q)
                     .min(0.5)
                     .max(5.0)
                     .step(0.1)
@@ -592,7 +592,7 @@
 
                 let mut boost_toggle = Toggle::new((base_id.clone(), "fd-schroeder-boost"))
                     .size(ToggleSize::Sm)
-                    .checked(config.schroeder_low_allow_boost)
+                    .checked(config.room_correction.schroeder_low_allow_boost)
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_schroeder_low_allow_boost_change_rc {
@@ -602,7 +602,7 @@
 
                 let mut shelve_toggle = Toggle::new((base_id.clone(), "fd-schroeder-shelve"))
                     .size(ToggleSize::Sm)
-                    .checked(config.schroeder_high_shelving_only)
+                    .checked(config.room_correction.schroeder_high_shelving_only)
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_schroeder_high_shelving_only_change_rc {

@@ -1,9 +1,8 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{
-    ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState, InPlacePluginAdapter, Plugin,
-};
+use sotf_plugins::{ParametricInPlacePluginAdapter, 
+    ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState, Plugin};
 
 pub(super) struct ChannelMuteSoloFuzzer;
 
@@ -54,6 +53,6 @@ impl PluginFuzzer for ChannelMuteSoloFuzzer {
             }
         );
 
-        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+        (Box::new(ParametricInPlacePluginAdapter::new(plugin)), desc)
     }
 }

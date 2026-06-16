@@ -9,15 +9,14 @@
 // - Check for NaN/Inf values.
 // - Confirm no crashes on invalid config.
 
-use sotf_plugins::{
+use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, 
     ABComparePlugin, BandMergePlugin, BandSplitPlugin, BinauralDecoderPlugin,
     ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin, CrossoverPlugin,
     DelayPlugin, DenoiserPlugin, DownmixPlugin, EqPlugin, ExpanderPlugin, GainPlugin, GatePlugin,
-    InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin,
+     LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin,
     MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
-    ParameterValue, Plugin, PndPlugin, ProcessContext, ResamplerPlugin, RoomModel,
-    SpectrumAnalyzerPlugin, UpmixerPlugin, XtcPlugin, XtcPluginParams,
-};
+    ParameterValue, Plugin, PndPlugin, ProcessContext,
+    ResamplerPlugin, RoomModel, SpectrumAnalyzerPlugin, UpmixerPlugin, XtcPlugin, XtcPluginParams};
 
 const SAMPLE_RATE: u32 = 48000;
 const BUFFER_SIZE: usize = 1024;
@@ -27,36 +26,36 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     let mut plugins: Vec<Box<dyn Plugin>> = Vec::new();
 
     // 1. Eq
-    plugins.push(Box::new(InPlacePluginAdapter::new(EqPlugin::new(
+    plugins.push(Box::new(ParametricPluginAdapter::new(EqPlugin::new(
         2,
         vec![],
     ))));
 
     // 2. Gain
-    plugins.push(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))));
+    plugins.push(Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, 0.0))));
 
     // 3. Compressor
-    plugins.push(Box::new(InPlacePluginAdapter::new(CompressorPlugin::new(
-        2,
-    ))));
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
+        CompressorPlugin::new(2),
+    )));
 
     // 4. Limiter
-    plugins.push(Box::new(InPlacePluginAdapter::new(LimiterPlugin::new(
-        2, -1.0, 50.0, 5.0, false,
-    ))));
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
+        LimiterPlugin::new(2, -1.0, 50.0, 5.0, false),
+    )));
 
     // 5. Gate
-    plugins.push(Box::new(InPlacePluginAdapter::new(GatePlugin::new(
-        2, -40.0, 10.0, 1.0, 10.0, 100.0,
-    ))));
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
+        GatePlugin::new(2, -40.0, 10.0, 1.0, 10.0, 100.0),
+    )));
 
     // 6. Delay
-    plugins.push(Box::new(InPlacePluginAdapter::new(DelayPlugin::new(
-        2, 100.0, 0.3, 0.5,
-    ))));
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
+        DelayPlugin::new(2, 100.0, 0.3, 0.5),
+    )));
 
     // 7. Loudness Compensation
-    plugins.push(Box::new(InPlacePluginAdapter::new(
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
         LoudnessCompensationPlugin::new(2, 200.0, 3.0, 6000.0, 2.0),
     )));
 
@@ -91,9 +90,9 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     )));
 
     // 12. Denoiser
-    plugins.push(Box::new(InPlacePluginAdapter::new(DenoiserPlugin::new(
-        2, false,
-    ))));
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
+        DenoiserPlugin::new(2, false),
+    )));
 
     // 13. Pnd
     plugins.push(Box::new(PndPlugin::new(2)));
@@ -105,12 +104,12 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     plugins.push(Box::new(BandSplitPlugin::new(2, 1000.0, "LR24").unwrap()));
 
     // 16. ChannelMuteSolo
-    plugins.push(Box::new(InPlacePluginAdapter::new(
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
         ChannelMuteSoloPlugin::new(2, true),
     )));
 
     // 17. Crossfeed
-    plugins.push(Box::new(InPlacePluginAdapter::new(
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
         CrossfeedPlugin::new(Default::default()).unwrap(),
     )));
 
@@ -118,7 +117,7 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     plugins.push(Box::new(DownmixPlugin::new(6)));
 
     // 19. FletcherMunson → LoudnessCompensation Auto mode
-    plugins.push(Box::new(InPlacePluginAdapter::new(
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
         LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0),
     )));
 
@@ -129,12 +128,12 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     plugins.push(Box::new(MonoToStereoPlugin::new()));
 
     // 22. MultibandCompressor
-    plugins.push(Box::new(InPlacePluginAdapter::new(
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
         MultibandCompressorPlugin::new(2),
     )));
 
     // 23. MultibandExpander
-    plugins.push(Box::new(InPlacePluginAdapter::new(
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
         MultibandExpanderPlugin::new(2),
     )));
 
@@ -153,13 +152,14 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     ));
 
     // 28. Convolution
-    plugins.push(Box::new(InPlacePluginAdapter::new(ConvolutionPlugin::new(
-        2,
-        SAMPLE_RATE,
-    ))));
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
+        ConvolutionPlugin::new(2, SAMPLE_RATE),
+    )));
 
     // 29. Expander
-    plugins.push(Box::new(InPlacePluginAdapter::new(ExpanderPlugin::new(2))));
+    plugins.push(Box::new(ParametricInPlacePluginAdapter::new(
+        ExpanderPlugin::new(2),
+    )));
 
     plugins
 }

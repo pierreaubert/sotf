@@ -38,21 +38,21 @@ impl DenoiserPlugin {
     /// Precompute Bark mapping and per-bin spreading ranges for all FFT bins.
     /// Called during initialize() when sample_rate is known.
     pub(super) fn precompute_bark_mapping(&mut self) {
-        let bin_hz = self.sample_rate as f32 / self.fft_size as f32;
-        for k in 0..self.spectrum_size {
+        let bin_hz = self.config.sample_rate as f32 / self.config.fft_size as f32;
+        for k in 0..self.config.spectrum_size {
             let freq = k as f32 * bin_hz;
-            self.bark_map[k] = Self::freq_to_bark(freq);
+            self.masking.bark_map[k] = Self::freq_to_bark(freq);
         }
 
         // Precompute the (lo, hi) bin range within MAX_SPREAD_BARK for each bin.
         // bark_map is monotonically non-decreasing, so we can use partition_point.
-        for j in 0..self.spectrum_size {
-            let bark_j = self.bark_map[j];
-            let lo = self.bark_map[..self.spectrum_size]
+        for j in 0..self.config.spectrum_size {
+            let bark_j = self.masking.bark_map[j];
+            let lo = self.masking.bark_map[..self.config.spectrum_size]
                 .partition_point(|&b| b < bark_j - MAX_SPREAD_BARK);
-            let hi = self.bark_map[..self.spectrum_size]
+            let hi = self.masking.bark_map[..self.config.spectrum_size]
                 .partition_point(|&b| b <= bark_j + MAX_SPREAD_BARK);
-            self.bark_bin_range[j] = (lo, hi);
+            self.masking.bark_bin_range[j] = (lo, hi);
         }
     }
 
@@ -63,25 +63,25 @@ impl DenoiserPlugin {
     /// Thresholds are stored in dB domain to avoid expensive powf() conversion.
     /// Comparison in `is_noise_masked` also works in dB.
     pub(super) fn compute_masking_thresholds(&mut self, channel: usize) {
-        let n = self.spectrum_size;
+        let n = self.config.spectrum_size;
 
         // Compute signal power in dB using fast approximation (1 fast_log10 per bin)
         for k in 0..n {
             let power = self.get_power_at_bin(channel, k).max(EPSILON);
-            self.masking_signal_power[k] = 10.0 * fast_log10(power);
+            self.masking.masking_signal_power[k] = 10.0 * fast_log10(power);
         }
 
         // Initialize threshold to very low value (dB)
-        self.masking_threshold[..n].fill(f32::NEG_INFINITY);
+        self.masking.masking_threshold[..n].fill(f32::NEG_INFINITY);
 
         // For each masker bin, spread its masking energy only to nearby bins
         for j in 0..n {
-            let masker_db = self.masking_signal_power[j] + MASKING_OFFSET_DB;
-            let bark_j = self.bark_map[j];
-            let (lo, hi) = self.bark_bin_range[j];
+            let masker_db = self.masking.masking_signal_power[j] + MASKING_OFFSET_DB;
+            let bark_j = self.masking.bark_map[j];
+            let (lo, hi) = self.masking.bark_bin_range[j];
 
             for k in lo..hi {
-                let bark_diff = self.bark_map[k] - bark_j;
+                let bark_diff = self.masking.bark_map[k] - bark_j;
 
                 // Compute spreading attenuation
                 let spread_db = if bark_diff < 0.0 {
@@ -95,8 +95,8 @@ impl DenoiserPlugin {
                 let threshold_contribution = masker_db + spread_db;
 
                 // Take the maximum (most dominant masker wins)
-                if threshold_contribution > self.masking_threshold[k] {
-                    self.masking_threshold[k] = threshold_contribution;
+                if threshold_contribution > self.masking.masking_threshold[k] {
+                    self.masking.masking_threshold[k] = threshold_contribution;
                 }
             }
         }
@@ -111,6 +111,6 @@ impl DenoiserPlugin {
     pub(super) fn is_noise_masked(&self, channel: usize, bin: usize) -> bool {
         let noise_power = self.get_noise_power(channel, bin);
         let noise_db = 10.0 * fast_log10(noise_power);
-        noise_db < self.masking_threshold[bin]
+        noise_db < self.masking.masking_threshold[bin]
     }
 }

@@ -41,6 +41,47 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+pub(super) struct DawQueueEndpoints {
+    pub(super) parameter_event_tx: Option<Producer<ParameterEvent>>,
+    pub(super) parameter_event_rx: Consumer<ParameterEvent>,
+    pub(super) parameter_event_scratch: Vec<ParameterEvent>,
+    pub(super) graph_mutation_tx: Option<Producer<GraphMutation>>,
+    pub(super) graph_mutation_rx: Consumer<GraphMutation>,
+}
+
+pub(super) struct DawQueueState {
+    pub(super) graph_next_node_id: Arc<AtomicUsize>,
+    pub(super) dropped_parameter_events: u64,
+    pub(super) dropped_graph_mutations: u64,
+}
+
+pub(super) struct DawAutomationState {
+    /// Parameter automation state. Key = (NodeId, ParameterId).
+    /// Evaluated before each processing stage.
+    pub(super) automation: Vec<AutomationSlot>,
+    /// Control-thread lookup for automation slots. The audio path iterates
+    /// `automation` by index and never hashes `(NodeId, ParameterId)`.
+    pub(super) automation_index: HashMap<(NodeId, ParameterId), usize>,
+    /// Current playback position in samples, advanced each process() call.
+    pub(super) playback_position: usize,
+}
+
+pub(super) struct DawConfig {
+    pub(super) sample_rate: u32,
+    pub(super) parallel_enabled: bool,
+    pub(super) initial_input_channels: usize,
+    /// Whether plugins may request their own preferred oversampling wrapper.
+    pub(super) plugin_preferred_oversampling_enabled: bool,
+    /// Force an oversampling wrapper around all same-I/O plugins when set.
+    pub(super) forced_oversampling_factor: Option<u32>,
+    /// Current immutable topology snapshot, published with ArcSwap after build.
+    pub(super) topology: Arc<ArcSwap<GraphTopology>>,
+    pub(super) f64_input_scratch: Vec<f32>,
+    pub(super) f64_output_scratch: Vec<f32>,
+    pub(super) f64_chain_scratch: Vec<f64>,
+    pub(super) f64_chain_scratch_alt: Vec<f64>,
+}
+
 pub struct DawHost {
     pub(super) nodes: HashMap<NodeId, GraphNode>,
     /// Plugin storage indexed by NodeId — disjoint from `nodes` for borrow checker.
@@ -51,11 +92,8 @@ pub struct DawHost {
     pub(super) stages: Vec<ProcessingStage>,
     pub(super) input_nodes: Vec<NodeId>,
     pub(super) output_nodes: Vec<NodeId>,
-    pub(super) sample_rate: u32,
     pub(super) next_node_id: NodeId,
-    pub(super) parallel_enabled: bool,
     pub(super) chain_nodes: Vec<NodeId>,
-    pub(super) initial_input_channels: usize,
     pub(super) built: bool,
     pub(super) process_buffers: Option<ProcessBuffers<f32>>,
     pub(super) process_buffers_f64: Option<ProcessBuffers<f64>>,
@@ -67,10 +105,6 @@ pub struct DawHost {
     pub(super) cached_frames_identity: bool,
     /// True if all plugins return input_rate unchanged from output_sample_rate()
     pub(super) cached_rate_identity: bool,
-    /// Whether plugins may request their own preferred oversampling wrapper.
-    pub(super) plugin_preferred_oversampling_enabled: bool,
-    /// Force an oversampling wrapper around all same-I/O plugins when set.
-    pub(super) forced_oversampling_factor: Option<u32>,
     /// Cached per-node output frame ratios for non-identity chains (rare)
     /// Only populated when cached_frames_identity is false
     pub(super) cached_output_frame_ratios: Vec<(NodeId, f64)>,
@@ -86,30 +120,12 @@ pub struct DawHost {
     /// Per-node cumulative latency from graph inputs, computed during build().
     /// Used to calculate compensation delays at merge points.
     pub(super) node_latency_from_input: Vec<usize>,
-    /// Parameter automation state. Key = (NodeId, ParameterId).
-    /// Evaluated before each processing stage.
-    pub(super) automation: Vec<AutomationSlot>,
-    /// Control-thread lookup for automation slots. The audio path iterates
-    /// `automation` by index and never hashes `(NodeId, ParameterId)`.
-    pub(super) automation_index: HashMap<(NodeId, ParameterId), usize>,
-    /// Current playback position in samples, advanced each process() call.
-    pub(super) playback_position: usize,
     /// Pre-allocated scratch buffer for automation updates (avoids per-process() heap allocation).
     pub(super) automation_scratch: Vec<(usize, f32)>,
-    /// Current immutable topology snapshot, published with ArcSwap after build.
-    pub(super) topology: Arc<ArcSwap<GraphTopology>>,
-    pub(super) f64_input_scratch: Vec<f32>,
-    pub(super) f64_output_scratch: Vec<f32>,
-    pub(super) f64_chain_scratch: Vec<f64>,
-    pub(super) f64_chain_scratch_alt: Vec<f64>,
-    pub(super) parameter_event_tx: Option<Producer<ParameterEvent>>,
-    pub(super) parameter_event_rx: Consumer<ParameterEvent>,
-    pub(super) parameter_event_scratch: Vec<ParameterEvent>,
-    pub(super) dropped_parameter_events: u64,
-    pub(super) graph_mutation_tx: Option<Producer<GraphMutation>>,
-    pub(super) graph_mutation_rx: Consumer<GraphMutation>,
-    pub(super) graph_next_node_id: Arc<AtomicUsize>,
-    pub(super) dropped_graph_mutations: u64,
+    pub(super) queues: DawQueueEndpoints,
+    pub(super) queue_state: DawQueueState,
+    pub(super) automation_state: DawAutomationState,
+    pub(super) config: DawConfig,
 }
 
 impl DawHost {
@@ -125,11 +141,8 @@ impl DawHost {
             stages: Vec::new(),
             input_nodes: Vec::new(),
             output_nodes: Vec::new(),
-            sample_rate,
             next_node_id: 0,
-            parallel_enabled: true,
             chain_nodes: Vec::new(),
-            initial_input_channels: channels,
             built: false,
             process_buffers: None,
             process_buffers_f64: None,
@@ -139,42 +152,53 @@ impl DawHost {
             has_variable_frame_plugin: false,
             cached_frames_identity: true,
             cached_rate_identity: true,
-            plugin_preferred_oversampling_enabled: true,
-            forced_oversampling_factor: None,
             cached_output_frame_ratios: Vec::new(),
             analyzer_indices: Vec::new(),
             cached_latency: None,
             bypassed: Vec::new(),
             node_latency_from_input: Vec::new(),
-            automation: Vec::new(),
-            automation_index: HashMap::new(),
-            playback_position: 0,
             automation_scratch: Vec::new(),
-            topology: Arc::new(ArcSwap::from_pointee(GraphTopology::empty())),
-            f64_input_scratch: Vec::new(),
-            f64_output_scratch: Vec::new(),
-            f64_chain_scratch: Vec::new(),
-            f64_chain_scratch_alt: Vec::new(),
-            parameter_event_tx: Some(parameter_event_tx),
-            parameter_event_rx,
-            parameter_event_scratch: Vec::with_capacity(PARAMETER_EVENT_QUEUE_CAPACITY),
-            dropped_parameter_events: 0,
-            graph_mutation_tx: Some(graph_mutation_tx),
-            graph_mutation_rx,
-            graph_next_node_id,
-            dropped_graph_mutations: 0,
+            queues: DawQueueEndpoints {
+                parameter_event_tx: Some(parameter_event_tx),
+                parameter_event_rx,
+                parameter_event_scratch: Vec::with_capacity(PARAMETER_EVENT_QUEUE_CAPACITY),
+                graph_mutation_tx: Some(graph_mutation_tx),
+                graph_mutation_rx,
+            },
+            queue_state: DawQueueState {
+                graph_next_node_id,
+                dropped_parameter_events: 0,
+                dropped_graph_mutations: 0,
+            },
+            automation_state: DawAutomationState {
+                automation: Vec::new(),
+                automation_index: HashMap::new(),
+                playback_position: 0,
+            },
+            config: DawConfig {
+                sample_rate,
+                parallel_enabled: true,
+                initial_input_channels: channels,
+                plugin_preferred_oversampling_enabled: true,
+                forced_oversampling_factor: None,
+                topology: Arc::new(ArcSwap::from_pointee(GraphTopology::empty())),
+                f64_input_scratch: Vec::new(),
+                f64_output_scratch: Vec::new(),
+                f64_chain_scratch: Vec::new(),
+                f64_chain_scratch_alt: Vec::new(),
+            },
         }
     }
     pub fn new_default(sr: u32) -> Self {
         Self::new(2, sr)
     }
     pub fn set_parallel_enabled(&mut self, e: bool) {
-        self.parallel_enabled = e;
+        self.config.parallel_enabled = e;
     }
 
     /// Enable or disable plugins' `preferred_oversampling()` requests.
     pub fn set_plugin_preferred_oversampling_enabled(&mut self, enabled: bool) {
-        self.plugin_preferred_oversampling_enabled = enabled;
+        self.config.plugin_preferred_oversampling_enabled = enabled;
     }
 
     /// Force a host oversampling wrapper around same-I/O plugins.
@@ -187,7 +211,7 @@ impl DawHost {
                 "Invalid forced oversampling factor {factor}: expected 2 or 4"
             ));
         }
-        self.forced_oversampling_factor = factor;
+        self.config.forced_oversampling_factor = factor;
         Ok(())
     }
 
@@ -208,43 +232,44 @@ impl DawHost {
             last_value: 0.0,
         };
         let key = (node_id, param_id.clone());
-        if let Some(&idx) = self.automation_index.get(&key) {
-            self.automation[idx].automation = auto;
+        if let Some(&idx) = self.automation_state.automation_index.get(&key) {
+            self.automation_state.automation[idx].automation = auto;
             return;
         }
-        let idx = self.automation.len();
-        self.automation.push(AutomationSlot {
+        let idx = self.automation_state.automation.len();
+        self.automation_state.automation.push(AutomationSlot {
             node_id,
             param_id,
             automation: auto,
         });
-        self.automation_index.insert(key, idx);
+        self.automation_state.automation_index.insert(key, idx);
     }
 
     /// Remove automation for a specific parameter on a node.
     pub fn clear_automation(&mut self, node_id: NodeId, param_id: &ParameterId) {
         let key = (node_id, param_id.clone());
-        let Some(idx) = self.automation_index.remove(&key) else {
+        let Some(idx) = self.automation_state.automation_index.remove(&key) else {
             return;
         };
-        self.automation.swap_remove(idx);
-        if idx < self.automation.len() {
-            let moved = &self.automation[idx];
-            self.automation_index
+        self.automation_state.automation.swap_remove(idx);
+        if idx < self.automation_state.automation.len() {
+            let moved = &self.automation_state.automation[idx];
+            self.automation_state
+                .automation_index
                 .insert((moved.node_id, moved.param_id.clone()), idx);
         }
     }
 
     /// Remove all automation.
     pub fn clear_all_automation(&mut self) {
-        self.automation.clear();
-        self.automation_index.clear();
+        self.automation_state.automation.clear();
+        self.automation_state.automation_index.clear();
     }
 
     /// Reset playback position to 0.
     pub fn reset_playback_position(&mut self) {
-        self.playback_position = 0;
-        for slot in &mut self.automation {
+        self.automation_state.playback_position = 0;
+        for slot in &mut self.automation_state.automation {
             slot.automation.position = 0;
         }
     }
@@ -266,26 +291,29 @@ impl DawHost {
 
     /// Returns a lock-free handle to the current immutable topology snapshot.
     pub fn topology_handle(&self) -> Arc<ArcSwap<GraphTopology>> {
-        Arc::clone(&self.topology)
+        Arc::clone(&self.config.topology)
     }
 
     /// Atomically load the current topology snapshot.
     pub fn current_topology(&self) -> Arc<GraphTopology> {
-        self.topology.load_full()
+        self.config.topology.load_full()
     }
 
     pub(super) fn publish_topology_snapshot(&self) {
-        self.topology.store(Arc::new(self.topology_snapshot()));
+        self.config
+            .topology
+            .store(Arc::new(self.topology_snapshot()));
     }
 
     pub(super) fn reserve_node_id(&mut self) -> NodeId {
-        let externally_reserved = self.graph_next_node_id.load(Ordering::Acquire);
+        let externally_reserved = self.queue_state.graph_next_node_id.load(Ordering::Acquire);
         if externally_reserved > self.next_node_id {
             self.next_node_id = externally_reserved;
         }
         let id = self.next_node_id;
         self.next_node_id += 1;
-        self.graph_next_node_id
+        self.queue_state
+            .graph_next_node_id
             .store(self.next_node_id, Ordering::Release);
         id
     }
@@ -307,11 +335,12 @@ impl DawHost {
         }
         if id >= self.next_node_id {
             self.next_node_id = id + 1;
-            self.graph_next_node_id
+            self.queue_state
+                .graph_next_node_id
                 .store(self.next_node_id, Ordering::Release);
         }
         plugin = self.auto_oversample_plugin(plugin)?;
-        plugin.initialize(self.sample_rate)?;
+        plugin.initialize(self.config.sample_rate)?;
         let input_channels = plugin.input_channels();
         let output_channels = plugin.output_channels();
         self.nodes.insert(
@@ -346,8 +375,8 @@ impl DawHost {
         &self,
         plugin: Box<dyn Plugin>,
     ) -> Result<Box<dyn Plugin>, String> {
-        let factor = self.forced_oversampling_factor.or_else(|| {
-            if self.plugin_preferred_oversampling_enabled {
+        let factor = self.config.forced_oversampling_factor.or_else(|| {
+            if self.config.plugin_preferred_oversampling_enabled {
                 plugin.preferred_oversampling()
             } else {
                 None
@@ -498,7 +527,7 @@ impl DawHost {
         plugin: Box<dyn Plugin>,
     ) -> Result<NodeId, String> {
         let expected = if self.chain_nodes.is_empty() {
-            self.initial_input_channels
+            self.config.initial_input_channels
         } else {
             self.nodes[self.chain_nodes.last().unwrap()].output_channels()
         };
@@ -641,14 +670,14 @@ impl DawHost {
 
     pub fn input_channels(&self) -> usize {
         if self.chain_nodes.is_empty() {
-            self.initial_input_channels
+            self.config.initial_input_channels
         } else {
             self.nodes[&self.chain_nodes[0]].input_channels()
         }
     }
     pub fn output_channels(&self) -> usize {
         if self.chain_nodes.is_empty() {
-            self.initial_input_channels
+            self.config.initial_input_channels
         } else {
             self.nodes[self.chain_nodes.last().unwrap()].output_channels()
         }
@@ -748,17 +777,18 @@ impl DawHost {
         }
 
         let event = ParameterEvent::new(node_id, param_id, value, sample_offset);
-        let producer = self.parameter_event_tx.as_mut().ok_or_else(|| {
+        let producer = self.queues.parameter_event_tx.as_mut().ok_or_else(|| {
             "parameter event sender has been taken; use the returned ParameterEventSender"
                 .to_string()
         })?;
         producer.push(event).map_err(|err| {
-            self.dropped_parameter_events = self.dropped_parameter_events.saturating_add(1);
+            self.queue_state.dropped_parameter_events =
+                self.queue_state.dropped_parameter_events.saturating_add(1);
             crate::rate_limited_log!(
                 warn,
                 5,
                 "host: parameter event queue full; dropped {} events",
-                self.dropped_parameter_events
+                self.queue_state.dropped_parameter_events
             );
             format!("parameter event queue full: {err:?}")
         })
@@ -770,7 +800,8 @@ impl DawHost {
     /// control/UI side. `DawHost` keeps the consumer and continues draining
     /// events in `process()`.
     pub fn take_parameter_event_sender(&mut self) -> Option<ParameterEventSender> {
-        self.parameter_event_tx
+        self.queues
+            .parameter_event_tx
             .take()
             .map(|producer| ParameterEventSender {
                 producer,
@@ -784,11 +815,12 @@ impl DawHost {
     /// control/UI side. `DawHost` keeps the consumer, applies queued graph
     /// changes before processing, and publishes the rebuilt topology snapshot.
     pub fn take_graph_mutation_sender(&mut self) -> Option<GraphMutationSender> {
-        self.graph_mutation_tx
+        self.queues
+            .graph_mutation_tx
             .take()
             .map(|producer| GraphMutationSender {
                 producer,
-                next_node_id: Arc::clone(&self.graph_next_node_id),
+                next_node_id: Arc::clone(&self.queue_state.graph_next_node_id),
                 dropped_mutations: 0,
             })
     }
@@ -814,7 +846,7 @@ impl DawHost {
 
     pub(super) fn drain_parameter_events_into(&mut self, events: &mut Vec<ParameterEvent>) {
         events.clear();
-        while let Ok(event) = self.parameter_event_rx.pop() {
+        while let Ok(event) = self.queues.parameter_event_rx.pop() {
             events.push(event);
         }
     }
@@ -1056,7 +1088,7 @@ impl DawHost {
 
     /// Number of parameter events dropped because the RT queue was full.
     pub fn dropped_parameter_events(&self) -> u64 {
-        self.dropped_parameter_events
+        self.queue_state.dropped_parameter_events
     }
 
     /// Queue a graph mutation through the host-owned producer.
@@ -1064,16 +1096,17 @@ impl DawHost {
     /// This is useful before handing the producer to another thread. After
     /// `take_graph_mutation_sender()` is called, use that sender instead.
     pub(super) fn queue_graph_mutation(&mut self, mutation: GraphMutation) -> Result<(), String> {
-        let producer = self.graph_mutation_tx.as_mut().ok_or_else(|| {
+        let producer = self.queues.graph_mutation_tx.as_mut().ok_or_else(|| {
             "graph mutation sender has been taken; use the returned GraphMutationSender".to_string()
         })?;
         producer.push(mutation).map_err(|err| {
-            self.dropped_graph_mutations = self.dropped_graph_mutations.saturating_add(1);
+            self.queue_state.dropped_graph_mutations =
+                self.queue_state.dropped_graph_mutations.saturating_add(1);
             crate::rate_limited_log!(
                 warn,
                 5,
                 "host: graph mutation queue full; dropped {} mutations",
-                self.dropped_graph_mutations
+                self.queue_state.dropped_graph_mutations
             );
             format!("graph mutation queue full: {err:?}")
         })
@@ -1109,11 +1142,11 @@ impl DawHost {
 
     /// Number of graph mutations dropped because the RT queue was full.
     pub fn dropped_graph_mutations(&self) -> u64 {
-        self.dropped_graph_mutations
+        self.queue_state.dropped_graph_mutations
     }
 
     pub(super) fn drain_graph_mutations(&mut self) -> Result<(), String> {
-        while let Ok(mutation) = self.graph_mutation_rx.pop() {
+        while let Ok(mutation) = self.queues.graph_mutation_rx.pop() {
             self.apply_graph_mutation(mutation)?;
         }
         Ok(())
@@ -1206,10 +1239,10 @@ impl DawHost {
         if !self.built {
             self.build()?;
         }
-        let mut events = std::mem::take(&mut self.parameter_event_scratch);
+        let mut events = std::mem::take(&mut self.queues.parameter_event_scratch);
         self.drain_parameter_events_into(&mut events);
         let result = self.process_with_parameter_events(input, output, &mut events);
-        self.parameter_event_scratch = events;
+        self.queues.parameter_event_scratch = events;
         result
     }
 
@@ -1223,7 +1256,7 @@ impl DawHost {
             return self.process_block_without_parameter_events(
                 input,
                 output,
-                self.playback_position as u64,
+                self.automation_state.playback_position as u64,
             );
         }
 
@@ -1234,18 +1267,22 @@ impl DawHost {
                 input,
                 output,
                 events,
-                self.playback_position as u64,
+                self.automation_state.playback_position as u64,
             );
         }
 
         for event in events.drain(..) {
             self.apply_parameter_event(event)?;
         }
-        self.process_block_without_parameter_events(input, output, self.playback_position as u64)
+        self.process_block_without_parameter_events(
+            input,
+            output,
+            self.automation_state.playback_position as u64,
+        )
     }
 
     pub(super) fn can_split_parameter_event_block(&self, input: &[f32], output: &[f32]) -> bool {
-        if !self.automation.is_empty()
+        if !self.automation_state.automation.is_empty()
             || self.has_variable_frame_plugin
             || !self.cached_frames_identity
             || !self.cached_rate_identity
@@ -1344,10 +1381,10 @@ impl DawHost {
 
         for stage in &self.stages {
             if let Some(parallel_result) = Self::process_stage_parallel(
-                self.parallel_enabled,
+                self.config.parallel_enabled,
                 stage,
                 input,
-                self.sample_rate,
+                self.config.sample_rate,
                 cf,
                 stage_block_start_sample,
                 &mut self.plugins,
@@ -1402,7 +1439,7 @@ impl DawHost {
                     cf
                 } else {
                     let p = self.plugins[nid].as_mut().unwrap();
-                    let context = ProcessContext::new(self.sample_rate, cf)
+                    let context = ProcessContext::new(self.config.sample_rate, cf)
                         .with_sample_position(stage_block_start_sample);
                     let mof = Self::plugin_output_frames_for_input_isolated(
                         p.as_ref(),
@@ -1454,7 +1491,7 @@ impl DawHost {
             cf = nf;
         }
         // Advance playback position for automation
-        self.playback_position += nf;
+        self.automation_state.playback_position += nf;
 
         // BufferGuard's Drop impl returns bufs to self.process_buffers when
         // `guard` falls out of scope here.
@@ -1465,12 +1502,12 @@ impl DawHost {
         // Apply automation: evaluate curves at current position and set parameters.
         // `eval_curve` interprets (sample, num_frames) as a position within a window,
         // so we use each automation's relative position and advance it by nf each call.
-        if self.automation.is_empty() {
+        if self.automation_state.automation.is_empty() {
             return;
         }
 
         self.automation_scratch.clear();
-        for (idx, slot) in self.automation.iter().enumerate() {
+        for (idx, slot) in self.automation_state.automation.iter().enumerate() {
             let auto = &slot.automation;
             if let Some(curve) = auto.curve.as_ref() {
                 let total_frames = match curve {
@@ -1501,7 +1538,7 @@ impl DawHost {
         }
         for i in 0..self.automation_scratch.len() {
             let (idx, val) = self.automation_scratch[i];
-            let slot = &mut self.automation[idx];
+            let slot = &mut self.automation_state.automation[idx];
             if let Some(p) = self.plugins[slot.node_id].as_mut() {
                 let result = catch_unwind(AssertUnwindSafe(|| {
                     p.set_parameter(slot.param_id.clone(), ParameterValue::Float(val))
@@ -1543,10 +1580,10 @@ impl DawHost {
         if !self.built {
             self.build()?;
         }
-        let mut events = std::mem::take(&mut self.parameter_event_scratch);
+        let mut events = std::mem::take(&mut self.queues.parameter_event_scratch);
         self.drain_parameter_events_into(&mut events);
         let result = self.process_f64_with_parameter_events(input, output, &mut events);
-        self.parameter_event_scratch = events;
+        self.queues.parameter_event_scratch = events;
         result
     }
 
@@ -1560,7 +1597,7 @@ impl DawHost {
             return self.process_f64_without_parameter_events(
                 input,
                 output,
-                self.playback_position as u64,
+                self.automation_state.playback_position as u64,
             );
         }
 
@@ -1571,14 +1608,18 @@ impl DawHost {
                 input,
                 output,
                 events,
-                self.playback_position as u64,
+                self.automation_state.playback_position as u64,
             );
         }
 
         for event in events.drain(..) {
             self.apply_parameter_event(event)?;
         }
-        self.process_f64_without_parameter_events(input, output, self.playback_position as u64)
+        self.process_f64_without_parameter_events(
+            input,
+            output,
+            self.automation_state.playback_position as u64,
+        )
     }
 
     pub(super) fn can_split_parameter_event_block_f64(
@@ -1586,7 +1627,9 @@ impl DawHost {
         input: &[f64],
         output: &[f64],
     ) -> bool {
-        if !self.automation.is_empty() || !self.cached_frames_identity || !self.cached_rate_identity
+        if !self.automation_state.automation.is_empty()
+            || !self.cached_frames_identity
+            || !self.cached_rate_identity
         {
             return false;
         }
@@ -1670,8 +1713,8 @@ impl DawHost {
         if self.can_process_f64_graph_native() {
             return self.process_f64_graph_native(input, output, block_start_sample);
         }
-        let mut input_scratch = std::mem::take(&mut self.f64_input_scratch);
-        let mut output_scratch = std::mem::take(&mut self.f64_output_scratch);
+        let mut input_scratch = std::mem::take(&mut self.config.f64_input_scratch);
+        let mut output_scratch = std::mem::take(&mut self.config.f64_output_scratch);
 
         ensure_len(&mut input_scratch, input.len());
         for (dst, &src) in input_scratch[..input.len()].iter_mut().zip(input.iter()) {
@@ -1689,8 +1732,8 @@ impl DawHost {
         let frames = match result {
             Ok(frames) => frames,
             Err(err) => {
-                self.f64_input_scratch = input_scratch;
-                self.f64_output_scratch = output_scratch;
+                self.config.f64_input_scratch = input_scratch;
+                self.config.f64_output_scratch = output_scratch;
                 return Err(err);
             }
         };
@@ -1698,8 +1741,8 @@ impl DawHost {
             *dst = src as f64;
         }
 
-        self.f64_input_scratch = input_scratch;
-        self.f64_output_scratch = output_scratch;
+        self.config.f64_input_scratch = input_scratch;
+        self.config.f64_output_scratch = output_scratch;
         Ok(frames)
     }
 
@@ -1805,7 +1848,7 @@ impl DawHost {
                     cf
                 } else {
                     let plugin = self.plugins[nid].as_mut().unwrap();
-                    let context = ProcessContext::new(self.sample_rate, cf)
+                    let context = ProcessContext::new(self.config.sample_rate, cf)
                         .with_sample_position(block_start_sample);
                     let max_output_frames = Self::plugin_output_frames_for_input_isolated(
                         plugin.as_ref(),
@@ -1861,7 +1904,7 @@ impl DawHost {
             output[cf * out_ch..].fill(0.0);
             cf = nf;
         }
-        self.playback_position += nf;
+        self.automation_state.playback_position += nf;
 
         Ok(cf)
     }
@@ -1872,8 +1915,8 @@ impl DawHost {
         output: &mut [f64],
         block_start_sample: u64,
     ) -> Result<usize, String> {
-        let mut scratch_a = std::mem::take(&mut self.f64_chain_scratch);
-        let mut scratch_b = std::mem::take(&mut self.f64_chain_scratch_alt);
+        let mut scratch_a = std::mem::take(&mut self.config.f64_chain_scratch);
+        let mut scratch_b = std::mem::take(&mut self.config.f64_chain_scratch_alt);
 
         ensure_len(&mut scratch_a, input.len());
         scratch_a[..input.len()].copy_from_slice(input);
@@ -1881,7 +1924,7 @@ impl DawHost {
         let mut current_in_a = true;
         let mut current_len = input.len();
         let mut current_frames = input.len() / self.input_channels();
-        let mut current_rate = self.sample_rate;
+        let mut current_rate = self.config.sample_rate;
 
         for idx in 0..self.chain_nodes.len() {
             let nid = self.chain_nodes[idx];
@@ -1903,8 +1946,8 @@ impl DawHost {
 
             let frames = if is_last {
                 if output.len() < output_len {
-                    self.f64_chain_scratch = scratch_a;
-                    self.f64_chain_scratch_alt = scratch_b;
+                    self.config.f64_chain_scratch = scratch_a;
+                    self.config.f64_chain_scratch_alt = scratch_b;
                     return Err(format!(
                         "f64 output too small: need {output_len} samples, got {}",
                         output.len()
@@ -1976,9 +2019,9 @@ impl DawHost {
             };
         }
 
-        self.f64_chain_scratch = scratch_a;
-        self.f64_chain_scratch_alt = scratch_b;
-        self.playback_position += input.len() / self.input_channels();
+        self.config.f64_chain_scratch = scratch_a;
+        self.config.f64_chain_scratch_alt = scratch_b;
+        self.automation_state.playback_position += input.len() / self.input_channels();
         Ok(current_frames)
     }
 

@@ -1,6 +1,6 @@
 // Tests for basic Delay plugin
 
-use sotf_host::{InPlacePluginAdapter, PluginHost};
+use sotf_host::{ParametricInPlacePluginAdapter, PluginHost};
 use sotf_plugin_delay::DelayPlugin;
 
 #[test]
@@ -9,7 +9,7 @@ fn test_delay_plugin() {
 
     // 10ms delay, 0 feedback, 100% wet
     let delay = DelayPlugin::new(2, 10.0, 0.0, 1.0);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(delay)))
+    host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(delay)))
         .unwrap();
 
     // Input impulse

@@ -24,7 +24,7 @@ impl PlayerView {
         let meter_display_mode = state.app.level_meters.display_mode;
         let window_height = state.app.ui_state.window_height;
         let window_width = state.app.ui_state.window_width;
-        let hide_meters_for_rack = state.app.hide_queue_meters_for_rack;
+        let hide_meters_for_rack = state.app.layout.hide_queue_meters_for_rack;
 
         // Calculate available width for the queue panel (between library and rack)
         let library_width = if layout.library_panel_collapsed {
@@ -378,8 +378,7 @@ impl PlayerView {
                 .or(selected_idx);
 
             let theme = state.app.ui_state.theme.clone();
-            let summaries =
-                crate::queue_render::queue_accordion_summaries(&state.app.queue_state);
+            let summaries = crate::queue_render::queue_accordion_summaries(&state.app.queue_state);
 
             (theme, queue_len, expanded_idx, summaries)
         };

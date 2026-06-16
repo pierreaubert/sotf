@@ -5,7 +5,7 @@
 // This file demonstrates how to use the EQ plugin with IIR biquad filters.
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use sotf_host::{InPlacePluginAdapter, Plugin, ProcessContext};
+use sotf_host::{ParametricPluginAdapter, Plugin, ProcessContext};
 use sotf_plugin_eq::EqPlugin;
 
 #[test]
@@ -16,7 +16,7 @@ fn test_eq_plugin_basic() {
         Biquad::new(BiquadFilterType::Highshelf, 8000.0, 48000.0, 0.707, 6.0), // +6dB treble
     ];
 
-    let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(2, filters)); // 2 channels (stereo)
+    let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(2, filters)); // 2 channels (stereo)
     plugin.initialize(48000).unwrap();
 
     // Create test signal: 1kHz sine wave
@@ -61,7 +61,7 @@ fn test_eq_plugin_parametric() {
         Biquad::new(BiquadFilterType::Highshelf, 10000.0, 48000.0, 0.707, 3.0),
     ];
 
-    let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(2, filters));
+    let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(2, filters));
     plugin.initialize(48000).unwrap();
 
     // Process a sweep or noise to test frequency response
@@ -111,7 +111,7 @@ fn test_eq_plugin_filter_update() {
     )];
 
     let eq = EqPlugin::new(2, initial_filters);
-    let mut plugin = InPlacePluginAdapter::new(eq);
+    let mut plugin = ParametricPluginAdapter::new(eq);
     plugin.initialize(48000).unwrap();
 
     // Process with initial filter
@@ -124,7 +124,7 @@ fn test_eq_plugin_filter_update() {
     plugin.process(&input, &mut output1, &context).unwrap();
 
     // Update to different filter (Note: we need to access the inner plugin if we want to call set_filters)
-    // Actually, InPlacePluginAdapter doesn't expose the inner plugin easily.
+    // Actually, ParametricPluginAdapter doesn't expose the inner plugin easily.
     // Let's just recreate it or use trait methods if possible.
     // For this test, I'll just use the trait parameters if available or access inner via unsafe/re-wrapping.
     // Better: fix EqPlugin to support set_filters via parameters? It already does!
@@ -171,7 +171,7 @@ fn test_eq_plugin_multi_channel() {
         3.0,
     )];
 
-    let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(5, filters)); // 5.0 surround
+    let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(5, filters)); // 5.0 surround
     plugin.initialize(48000).unwrap();
 
     let num_frames = 1024;

@@ -50,8 +50,8 @@ fn test_upmixer_stft_roundtrip_gain() {
     let fft_size = 2048;
     let sample_rate = 48000;
     let mut params = UpmixerPluginParams::default();
-    params.fft_size = fft_size;
-    params.bypass_all_processing = true; // Test OLA framework only
+    params.core.fft_size = fft_size;
+    params.bypass.bypass_all_processing = true; // Test OLA framework only
 
     let mut plugin = UpmixerPlugin::from_params(params);
     plugin.initialize(sample_rate).unwrap();

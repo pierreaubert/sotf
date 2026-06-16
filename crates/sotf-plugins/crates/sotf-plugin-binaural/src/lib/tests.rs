@@ -27,8 +27,8 @@ fn test_binaural_decoder_creation() {
     );
     assert_eq!(plugin.input_channels(), 5);
     assert_eq!(plugin.output_channels(), 2);
-    assert_eq!(plugin.fft_size, 4096);
-    assert_eq!(plugin.hop_size, 1024);
+    assert_eq!(plugin.config.fft_size, 4096);
+    assert_eq!(plugin.config.hop_size, 1024);
 }
 
 /// 5.1 surround (6 input channels) should produce binaural stereo (2 output channels).
@@ -98,11 +98,17 @@ fn test_crossfade_fields_initialized() {
         RoomModel::default(),
     );
 
-    assert!(plugin.crossfade_prev_state.is_none());
-    assert_eq!(plugin.crossfade_remaining, 0);
-    assert_eq!(plugin.crossfade_total, 0);
-    assert_eq!(plugin.crossfade_sum_left.len(), plugin.freq_size);
-    assert_eq!(plugin.crossfade_sum_right.len(), plugin.freq_size);
+    assert!(plugin.crossfade.crossfade_prev_state.is_none());
+    assert_eq!(plugin.crossfade.crossfade_remaining, 0);
+    assert_eq!(plugin.crossfade.crossfade_total, 0);
+    assert_eq!(
+        plugin.crossfade.crossfade_sum_left.len(),
+        plugin.config.freq_size
+    );
+    assert_eq!(
+        plugin.crossfade.crossfade_sum_right.len(),
+        plugin.config.freq_size
+    );
 }
 
 #[test]
@@ -123,9 +129,12 @@ fn test_crossfade_triggers_on_state_change() {
     plugin.initialize(44100).unwrap();
 
     // Simulate state change by storing a new state
-    let freq_size = plugin.freq_size;
+    let freq_size = plugin.config.freq_size;
     let new_state = Arc::new(BinauralState {
-        hrtf_filters_freq: vec![vec![Complex::new(0.5, 0.0); freq_size * 2]; plugin.input_channels],
+        hrtf_filters_freq: vec![
+            vec![Complex::new(0.5, 0.0); freq_size * 2];
+            plugin.config.input_channels
+        ],
         diffuse_field_eq_filter: None,
         _hrtf_data: None,
     });
@@ -133,14 +142,14 @@ fn test_crossfade_triggers_on_state_change() {
 
     // Process a block -- this should detect the state change and start crossfade
     // Fill input buffer to trigger a block
-    plugin.input_buffer.fill(0.0);
-    plugin.input_fill = plugin.fft_size;
+    plugin.input.input_buffer.fill(0.0);
+    plugin.input.input_fill = plugin.config.fft_size;
     plugin.process_audio_block();
 
     // Crossfade should have been initiated and partially consumed
     // After one hop, remaining should be total - hop_size
     assert!(
-        plugin.crossfade_total > 0,
+        plugin.crossfade.crossfade_total > 0,
         "Crossfade total should be > 0 after state change"
     );
 }
@@ -163,9 +172,12 @@ fn test_crossfade_completes() {
     plugin.initialize(44100).unwrap();
 
     // Trigger a state change
-    let freq_size = plugin.freq_size;
+    let freq_size = plugin.config.freq_size;
     let new_state = Arc::new(BinauralState {
-        hrtf_filters_freq: vec![vec![Complex::new(0.5, 0.0); freq_size * 2]; plugin.input_channels],
+        hrtf_filters_freq: vec![
+            vec![Complex::new(0.5, 0.0); freq_size * 2];
+            plugin.config.input_channels
+        ],
         diffuse_field_eq_filter: None,
         _hrtf_data: None,
     });
@@ -174,14 +186,14 @@ fn test_crossfade_completes() {
     // Process enough blocks to complete the crossfade
     // 50ms at 44100 Hz = 2205 samples; hop_size=256 => ~9 hops
     for _ in 0..20 {
-        plugin.input_buffer.fill(0.0);
-        plugin.input_fill = plugin.fft_size;
+        plugin.input.input_buffer.fill(0.0);
+        plugin.input.input_fill = plugin.config.fft_size;
         plugin.process_audio_block();
     }
 
     // After enough blocks, crossfade should be complete
-    assert_eq!(plugin.crossfade_remaining, 0);
-    assert!(plugin.crossfade_prev_state.is_none());
+    assert_eq!(plugin.crossfade.crossfade_remaining, 0);
+    assert!(plugin.crossfade.crossfade_prev_state.is_none());
 }
 
 #[test]
@@ -282,24 +294,27 @@ fn test_reset_clears_crossfade() {
     plugin.initialize(44100).unwrap();
 
     // Trigger a state change
-    let freq_size = plugin.freq_size;
+    let freq_size = plugin.config.freq_size;
     let new_state = Arc::new(BinauralState {
-        hrtf_filters_freq: vec![vec![Complex::new(0.5, 0.0); freq_size * 2]; plugin.input_channels],
+        hrtf_filters_freq: vec![
+            vec![Complex::new(0.5, 0.0); freq_size * 2];
+            plugin.config.input_channels
+        ],
         diffuse_field_eq_filter: None,
         _hrtf_data: None,
     });
     plugin.state.store(new_state);
 
     // Process one block to start crossfade
-    plugin.input_buffer.fill(0.0);
-    plugin.input_fill = plugin.fft_size;
+    plugin.input.input_buffer.fill(0.0);
+    plugin.input.input_fill = plugin.config.fft_size;
     plugin.process_audio_block();
 
     // Now reset
     plugin.reset();
 
-    assert!(plugin.crossfade_prev_state.is_none());
-    assert_eq!(plugin.crossfade_remaining, 0);
+    assert!(plugin.crossfade.crossfade_prev_state.is_none());
+    assert_eq!(plugin.crossfade.crossfade_remaining, 0);
 }
 
 /// Verify that the `crossfade_ms` parameter can be get/set and that the change
@@ -368,16 +383,19 @@ fn test_crossfade_ms_parameter_set_get_and_affects_duration() {
 
     // Now verify that the duration used in process_audio_block() reflects the
     // new setting. Trigger a state change and measure crossfade_total.
-    let freq_size = plugin.freq_size;
+    let freq_size = plugin.config.freq_size;
     let new_state = Arc::new(BinauralState {
-        hrtf_filters_freq: vec![vec![Complex::new(0.5, 0.0); freq_size * 2]; plugin.input_channels],
+        hrtf_filters_freq: vec![
+            vec![Complex::new(0.5, 0.0); freq_size * 2];
+            plugin.config.input_channels
+        ],
         diffuse_field_eq_filter: None,
         _hrtf_data: None,
     });
     plugin.state.store(new_state);
 
-    plugin.input_buffer.fill(0.0);
-    plugin.input_fill = plugin.fft_size;
+    plugin.input.input_buffer.fill(0.0);
+    plugin.input.input_fill = plugin.config.fft_size;
     plugin.process_audio_block();
 
     // At 44100 Hz and 200ms, crossfade_samples = 44100 * 0.200 = 8820.
@@ -385,12 +403,12 @@ fn test_crossfade_ms_parameter_set_get_and_affects_duration() {
     // crossfade_hops = ceil(8820 / 256) = 35.
     // crossfade_total = 35 * 256 = 8960.
     let expected_samples = (44100.0_f32 * 0.200) as usize; // 8820
-    let hop = plugin.hop_size;
+    let hop = plugin.config.hop_size;
     let expected_hops = expected_samples.div_ceil(hop);
     let expected_total = expected_hops * hop;
 
     assert_eq!(
-        plugin.crossfade_total, expected_total,
+        plugin.crossfade.crossfade_total, expected_total,
         "crossfade_total should reflect the 200ms setting"
     );
 }
@@ -677,7 +695,7 @@ fn test_spectral_crossfade_no_tonal_shift() {
             0.0,
             RoomModel::default(),
         );
-        p.crossfade_mode_index = mode;
+        p.config.crossfade_mode_index = mode;
         p.initialize(sample_rate).unwrap();
         p
     };
@@ -713,8 +731,8 @@ fn test_spectral_crossfade_no_tonal_shift() {
     linear_plugin.state.store(state_a.clone());
     spectral_plugin.state.store(state_a.clone());
     // Force state snapshot update
-    linear_plugin.current_state_snapshot = linear_plugin.state.load_full();
-    spectral_plugin.current_state_snapshot = spectral_plugin.state.load_full();
+    linear_plugin.crossfade.current_state_snapshot = linear_plugin.state.load_full();
+    spectral_plugin.crossfade.current_state_snapshot = spectral_plugin.state.load_full();
 
     // Process a few frames to fill pipeline
     let num_frames = fft_size * 4;
@@ -860,14 +878,14 @@ fn test_crossfade_mode_parameter_set_get() {
         plugin.get_parameter(&ParameterId::from("crossfade_mode")),
         Some(ParameterValue::Int(1))
     );
-    assert_eq!(plugin.crossfade_mode_index, 1);
+    assert_eq!(plugin.config.crossfade_mode_index, 1);
 
     // Out-of-range value (2) is clamped to max valid index (1) by param_bridge
     plugin
         .set_parameter(ParameterId::from("crossfade_mode"), ParameterValue::Int(2))
         .unwrap();
     assert_eq!(
-        plugin.crossfade_mode_index, 1,
+        plugin.config.crossfade_mode_index, 1,
         "Out-of-range mode should be clamped to max"
     );
 
@@ -875,7 +893,7 @@ fn test_crossfade_mode_parameter_set_get() {
     plugin
         .set_parameter(ParameterId::from("crossfade_mode"), ParameterValue::Int(0))
         .unwrap();
-    assert_eq!(plugin.crossfade_mode_index, 0);
+    assert_eq!(plugin.config.crossfade_mode_index, 0);
 }
 
 /// A1: Reflection panning — front source (az=0) must be centred (L==R).
@@ -1055,7 +1073,7 @@ fn test_reflection_delay_clamped_to_buffer_size() {
     plugin.initialize(sr).unwrap();
 
     // Inject a reflection whose delay exceeds delay_line capacity (16384 samples).
-    plugin.cached_reflections.push(room::Reflection {
+    plugin.room.cached_reflections.push(room::Reflection {
         delay_samples: 100_000, // Far beyond 16384
         gain: 0.5,
         left_gain: 0.7,
@@ -1066,15 +1084,15 @@ fn test_reflection_delay_clamped_to_buffer_size() {
     });
 
     // Clamp manually (mimicking what initialize does post-build).
-    let max_delay = plugin.reflection_delay_mask;
-    for r in &mut plugin.cached_reflections {
+    let max_delay = plugin.room.reflection_delay_mask;
+    for r in &mut plugin.room.cached_reflections {
         if r.delay_samples > max_delay {
             r.delay_samples = max_delay;
         }
     }
 
     // All delays must now be within the buffer.
-    for r in &plugin.cached_reflections {
+    for r in &plugin.room.cached_reflections {
         assert!(
             r.delay_samples <= max_delay,
             "delay {} exceeds buffer mask {}",
@@ -1132,14 +1150,14 @@ fn test_set_parameter_hrtf_file_empty_clears_path() {
         0.0,
         RoomModel::default(),
     );
-    plugin.hrtf_path = Some(std::path::PathBuf::from("/some/path.sofa"));
+    plugin.config.hrtf_path = Some(std::path::PathBuf::from("/some/path.sofa"));
     plugin
         .set_parameter(
             ParameterId::from("hrtf_file"),
             ParameterValue::String("".to_string()),
         )
         .unwrap();
-    assert!(plugin.hrtf_path.is_none());
+    assert!(plugin.config.hrtf_path.is_none());
 }
 
 #[test]
@@ -1157,14 +1175,14 @@ fn test_set_parameter_hrtf_database_dir_empty() {
         0.0,
         RoomModel::default(),
     );
-    plugin.hrtf_database_dir = "/previous".to_string();
+    plugin.config.hrtf_database_dir = "/previous".to_string();
     plugin
         .set_parameter(
             ParameterId::from("hrtf_database_dir"),
             ParameterValue::String("".to_string()),
         )
         .unwrap();
-    assert_eq!(plugin.hrtf_database_dir, "");
+    assert_eq!(plugin.config.hrtf_database_dir, "");
 }
 
 #[test]
@@ -1188,7 +1206,7 @@ fn test_set_parameter_head_width_cm_valid() {
             ParameterValue::Float(20.0),
         )
         .unwrap();
-    assert_eq!(plugin.head_width_cm, 20.0);
+    assert_eq!(plugin.config.head_width_cm, 20.0);
 }
 
 #[test]
@@ -1212,7 +1230,7 @@ fn test_set_parameter_head_width_cm_out_of_range_ignored() {
             ParameterValue::Float(5.0),
         )
         .unwrap();
-    assert_eq!(plugin.head_width_cm, 15.0);
+    assert_eq!(plugin.config.head_width_cm, 15.0);
 }
 
 #[test]
@@ -1236,7 +1254,7 @@ fn test_set_parameter_ear_height_cm_valid() {
             ParameterValue::Float(12.0),
         )
         .unwrap();
-    assert_eq!(plugin.ear_height_cm, 12.0);
+    assert_eq!(plugin.config.ear_height_cm, 12.0);
 }
 
 #[test]
@@ -1260,7 +1278,7 @@ fn test_set_parameter_ear_height_cm_out_of_range_ignored() {
             ParameterValue::Float(2.0),
         )
         .unwrap();
-    assert_eq!(plugin.ear_height_cm, 10.0);
+    assert_eq!(plugin.config.ear_height_cm, 10.0);
 }
 
 #[test]
@@ -1286,7 +1304,7 @@ fn test_set_parameter_late_reverb_params() {
             ParameterValue::Bool(true),
         )
         .unwrap();
-    assert!(plugin.late_reverb_enabled);
+    assert!(plugin.config.late_reverb_enabled);
 
     plugin
         .set_parameter(
@@ -1294,7 +1312,7 @@ fn test_set_parameter_late_reverb_params() {
             ParameterValue::Float(0.5),
         )
         .unwrap();
-    assert_eq!(plugin.late_reverb_mix, 0.5);
+    assert_eq!(plugin.config.late_reverb_mix, 0.5);
 
     plugin
         .set_parameter(
@@ -1302,7 +1320,7 @@ fn test_set_parameter_late_reverb_params() {
             ParameterValue::Float(2.0),
         )
         .unwrap();
-    assert_eq!(plugin.late_reverb_rt60, 2.0);
+    assert_eq!(plugin.config.late_reverb_rt60, 2.0);
 
     plugin
         .set_parameter(
@@ -1310,7 +1328,7 @@ fn test_set_parameter_late_reverb_params() {
             ParameterValue::Float(0.5),
         )
         .unwrap();
-    assert_eq!(plugin.late_reverb_damping, 0.5);
+    assert_eq!(plugin.config.late_reverb_damping, 0.5);
 }
 
 #[test]
@@ -1334,7 +1352,7 @@ fn test_set_parameter_externalization() {
             ParameterValue::Float(0.75),
         )
         .unwrap();
-    assert!((plugin.externalization.target() - 0.75).abs() < 1e-4);
+    assert!((plugin.smoothing.externalization.target() - 0.75).abs() < 1e-4);
 }
 
 #[test]
@@ -1358,7 +1376,7 @@ fn test_set_parameter_near_field_strength() {
             ParameterValue::Float(0.5),
         )
         .unwrap();
-    assert!((plugin.near_field_strength - 0.5).abs() < 1e-4);
+    assert!((plugin.config.near_field_strength - 0.5).abs() < 1e-4);
 }
 
 #[test]
@@ -1406,9 +1424,9 @@ fn test_initialize_sets_sample_rate_and_lfe_filter() {
         RoomModel::default(),
     );
     plugin.initialize(96000).unwrap();
-    assert_eq!(plugin.sample_rate, 96000);
-    assert!(!plugin.lfe_lowpass_filter.is_empty());
-    assert!(plugin.lfe_gain > 0.0);
+    assert_eq!(plugin.config.sample_rate, 96000);
+    assert!(!plugin.coefficients.lfe_lowpass_filter.is_empty());
+    assert!(plugin.coefficients.lfe_gain > 0.0);
 }
 
 #[test]
@@ -1426,9 +1444,9 @@ fn test_initialize_with_nonexistent_srir_file_falls_back_to_ism() {
         0.0,
         RoomModel::default(),
     );
-    plugin.srir_file = Some(std::path::PathBuf::from("/nonexistent/path.wav"));
+    plugin.config.srir_file = Some(std::path::PathBuf::from("/nonexistent/path.wav"));
     plugin.initialize(48000).unwrap();
-    assert!(!plugin.cached_reflections.is_empty());
+    assert!(!plugin.room.cached_reflections.is_empty());
 }
 
 #[test]
@@ -1452,8 +1470,8 @@ fn test_initialize_clamps_reflection_delays() {
         },
     );
     plugin.initialize(48000).unwrap();
-    let max_delay = plugin.reflection_delay_mask;
-    for r in &plugin.cached_reflections {
+    let max_delay = plugin.room.reflection_delay_mask;
+    for r in &plugin.room.cached_reflections {
         assert!(
             r.delay_samples <= max_delay,
             "delay {} exceeds buffer mask {}",
@@ -1478,6 +1496,6 @@ fn test_initialize_empty_hrtf_database_dir_no_crash() {
         0.0,
         RoomModel::default(),
     );
-    plugin.hrtf_database_dir = "".to_string();
+    plugin.config.hrtf_database_dir = "".to_string();
     plugin.initialize(48000).unwrap();
 }

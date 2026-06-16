@@ -114,10 +114,10 @@ mod tests {
 
     #[test]
     fn test_detect_latency_zero() {
-        use sotf_plugins::{GainPlugin, InPlacePlugin, InPlacePluginAdapter, detect_latency};
+use sotf_plugins::{GainPlugin, ParametricPlugin, ParametricPluginAdapter, detect_latency};
         let mut inner = GainPlugin::new(2, 0.0);
-        inner.initialize(48000).unwrap();
-        let mut plugin = InPlacePluginAdapter::new(inner);
+        inner.plugin_initialize(48000).unwrap();
+        let mut plugin = ParametricPluginAdapter::new(inner);
 
         let latency = detect_latency(&mut plugin, 48000.0);
         assert_eq!(latency, 0);
@@ -125,10 +125,10 @@ mod tests {
 
     #[test]
     fn test_performance_profiler() {
-        use sotf_plugins::{GainPlugin, InPlacePlugin, InPlacePluginAdapter, PerformanceProfiler};
+use sotf_plugins::{GainPlugin, ParametricPlugin, ParametricPluginAdapter, PerformanceProfiler};
         let mut inner = GainPlugin::new(2, 0.0);
-        inner.initialize(48000).unwrap();
-        let mut plugin = InPlacePluginAdapter::new(inner);
+        inner.plugin_initialize(48000).unwrap();
+        let mut plugin = ParametricPluginAdapter::new(inner);
 
         let profiler = PerformanceProfiler::new("Gain", 48000.0, 2, 512);
         let cpu = profiler.profile(&mut plugin, 0.1);

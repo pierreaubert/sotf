@@ -222,11 +222,9 @@ plugin configuration (JSON preset or programmatic API).
 ```rust
 use sotf_plugins::UpmixerPluginParams;
 
-let params = UpmixerPluginParams {
-    enable_ml_detection: true,
-    ml_model_path: "crates/sotf-plugins/models/vocal_detector.onnx".into(),
-    ..Default::default()
-};
+let mut params = UpmixerPluginParams::default();
+params.ml.enable_ml_detection = true;
+params.ml.ml_model_path = "crates/sotf-plugins/models/vocal_detector.onnx".into();
 ```
 
 ## Verification

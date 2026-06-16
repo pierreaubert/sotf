@@ -13,7 +13,10 @@ pub mod theme;
 pub mod ui_state;
 
 // Re-export all public types
-pub use config::{AutoEqConfig, ParamLimits};
+pub use config::{
+    AlgorithmConfig, AutoEqConfig, EqDesignConfig, GoalsConfig, ParamLimits, RoomCorrectionConfig,
+    SystemOptimizationConfig, V2Config,
+};
 pub use constants::*;
 pub use form::{AutoEqForm, AutoEqLayoutMode};
 pub use i18n::{AutoEqI18nExt, AutoEqI18nState, DocKey};

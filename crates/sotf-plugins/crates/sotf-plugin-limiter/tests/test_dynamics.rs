@@ -2,7 +2,7 @@
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::ProcessContext;
-use sotf_host::{InPlacePlugin, InPlacePluginAdapter, PluginHost};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, PluginHost};
 use sotf_plugin_limiter::LimiterPlugin;
 
 #[test]
@@ -11,7 +11,7 @@ fn test_limiter_prevents_clipping() {
 
     // Add limiter at -0.1dB (hard limiting)
     let limiter = LimiterPlugin::new(2, -0.1, 50.0, 5.0, false);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(limiter)))
+    host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(limiter)))
         .unwrap();
 
     // Test with signal that would clip
@@ -45,7 +45,7 @@ fn test_limiter_soft_mode() {
 
     // Add soft limiter at -0.1dB
     let limiter = LimiterPlugin::new(2, -0.1, 50.0, 5.0, true);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(limiter)))
+    host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(limiter)))
         .unwrap();
 
     // Test with signal that would clip
@@ -82,11 +82,8 @@ fn test_feed_forward_lookahead_tracks_peak() {
         false,
     );
     plugin.initialize(48000).unwrap();
-    plugin
-        .set_parameter(
-            ParameterId::from("feed_forward"),
-            ParameterValue::Bool(true),
-        )
+    plugin.parametric_set_parameter(ParameterId::from("feed_forward"),
+    ParameterValue::Bool(true),)
         .unwrap();
 
     // Build a buffer with a loud transient in the middle.

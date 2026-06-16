@@ -8,7 +8,7 @@
 // - Different buffer sizes and sample rates
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use sotf_plugins::{GainPlugin, InPlacePlugin, InPlacePluginAdapter, PluginHost, ProcessContext};
+use sotf_plugins::{ParametricPluginAdapter, GainPlugin,   PluginHost, ProcessContext};
 use std::hint::black_box;
 
 // ============================================================================
@@ -105,7 +105,7 @@ fn benchmark_host_chain(c: &mut Criterion) {
 
         for _ in 0..chain_length {
             let gain = GainPlugin::new(2, 0.0);
-            host.add_plugin(Box::new(InPlacePluginAdapter::new(gain)))
+            host.add_plugin(Box::new(ParametricPluginAdapter::new(gain)))
                 .unwrap();
         }
 
@@ -127,7 +127,7 @@ fn benchmark_host_chain(c: &mut Criterion) {
 
         for _ in 0..3 {
             let gain = GainPlugin::new(2, 0.0);
-            host.add_plugin(Box::new(InPlacePluginAdapter::new(gain)))
+            host.add_plugin(Box::new(ParametricPluginAdapter::new(gain)))
                 .unwrap();
         }
 
@@ -148,7 +148,7 @@ fn benchmark_host_chain(c: &mut Criterion) {
 
         for _ in 0..3 {
             let gain = GainPlugin::new(2, 0.0);
-            host.add_plugin(Box::new(InPlacePluginAdapter::new(gain)))
+            host.add_plugin(Box::new(ParametricPluginAdapter::new(gain)))
                 .unwrap();
         }
 
@@ -237,7 +237,7 @@ fn benchmark_per_sample_cost(c: &mut Criterion) {
 
             for _ in 0..plugin_count {
                 let gain = GainPlugin::new(channels, 0.0);
-                host.add_plugin(Box::new(InPlacePluginAdapter::new(gain)))
+                host.add_plugin(Box::new(ParametricPluginAdapter::new(gain)))
                     .unwrap();
             }
 

@@ -1455,10 +1455,11 @@ impl PlayerView {
             }
 
             // Mark that plugin chain was modified and needs sync
-            state.app.plugin_state.plugin_graph_modified = true;
-            state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+            state.app.plugin_state.update_state.plugin_graph_modified = true;
+            state.app.plugin_state.update_state.pending_plugin_update =
+                Some(PluginUpdateType::Structural);
             // Invalidate the workflow canvas so the graph view rebuilds
-            state.app.plugin_state.workflow_canvas = None;
+            state.app.plugin_state.graph_state.workflow_canvas = None;
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(format!(
                 "Applied {} filter Spinorama EQ",
                 num_filters

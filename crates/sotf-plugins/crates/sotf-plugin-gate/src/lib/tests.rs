@@ -2,7 +2,8 @@ use super::gate_data::GateData;
 use super::gate_plugin::GatePlugin;
 use super::types::GatePluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 #[test]
 fn test_gate_basic() {
@@ -22,7 +23,7 @@ fn test_hold_samples_precomputed_and_updated() {
     p.initialize(96000).unwrap();
     assert_eq!(p.hold_samples, 960);
 
-    p.set_parameter(ParameterId::from("hold"), ParameterValue::Float(1.5))
+    p.parametric_set_parameter(ParameterId::from("hold"), ParameterValue::Float(1.5))
         .unwrap();
     assert_eq!(p.hold_samples, 144);
 }
@@ -420,9 +421,9 @@ fn test_set_parameter_all_params_roundtrip() {
     ];
 
     for &(id, ref value) in cases {
-        p.set_parameter(ParameterId::from(id), value.clone())
+        p.parametric_set_parameter(ParameterId::from(id), value.clone())
             .unwrap();
-        let got = p.get_parameter(&ParameterId::from(id));
+        let got = p.parametric_get_parameter(&ParameterId::from(id));
         assert_eq!(got, Some(value.clone()), "roundtrip failed for {}", id);
     }
 }
@@ -433,22 +434,22 @@ fn test_set_parameter_clamps_out_of_bounds() {
     p.initialize(48000).unwrap();
 
     // param_bridge clamps floats to range instead of returning Err
-    p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(10.0))
+    p.parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Float(10.0))
         .unwrap();
     assert_eq!(p.threshold_db, 0.0);
 
-    p.set_parameter(
+    p.parametric_set_parameter(
         ParameterId::from("threshold"),
         ParameterValue::Float(-100.0),
     )
     .unwrap();
     assert_eq!(p.threshold_db, -80.0);
 
-    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(2.0))
+    p.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(2.0))
         .unwrap();
     assert_eq!(p.mix, 1.0);
 
-    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(-0.5))
+    p.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(-0.5))
         .unwrap();
     assert_eq!(p.mix, 0.0);
 }
@@ -458,7 +459,7 @@ fn test_set_parameter_unknown_id_returns_error() {
     let mut p = GatePlugin::new(1, -20.0, 10.0, 1.0, 0.0, 50.0);
     p.initialize(48000).unwrap();
 
-    let result = p.set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0));
+    let result = p.parametric_set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0));
     assert!(result.is_err());
 }
 
@@ -468,7 +469,7 @@ fn test_set_parameter_type_mismatch_returns_error() {
     p.initialize(48000).unwrap();
 
     // threshold is float, not bool
-    let result = p.set_parameter(ParameterId::from("threshold"), ParameterValue::Bool(true));
+    let result = p.parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Bool(true));
     assert!(result.is_err());
 }
 
@@ -762,7 +763,7 @@ fn test_process_in_place_mix_half() {
 
     // from_params sets p.mix but does not update the mix smoother target.
     // Explicitly set the parameter so the smoother ramps to 0.5.
-    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+    p.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
         .unwrap();
 
     // Warm-up: let the mix smoother settle (5ms time constant → ~50ms enough)

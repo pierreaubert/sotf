@@ -210,8 +210,11 @@ impl Plugin for ChannelChangingPlugin {
 #[test]
 fn host_chain_upmixes_then_processes_stereo_output() {
     let mut host = DawHost::new(1, SAMPLE_RATE);
-    host.add_plugin(Box::new(ChannelChangingPlugin { in_ch: 1, out_ch: 2 }))
-        .unwrap();
+    host.add_plugin(Box::new(ChannelChangingPlugin {
+        in_ch: 1,
+        out_ch: 2,
+    }))
+    .unwrap();
     host.add_plugin(Box::new(GainPlugin::new(2, 2.0))).unwrap();
 
     let frames = 16usize;
@@ -233,8 +236,11 @@ fn host_chain_upmixes_then_processes_stereo_output() {
 #[test]
 fn host_chain_downmixes_then_processes_mono_output() {
     let mut host = DawHost::new(2, SAMPLE_RATE);
-    host.add_plugin(Box::new(ChannelChangingPlugin { in_ch: 2, out_ch: 1 }))
-        .unwrap();
+    host.add_plugin(Box::new(ChannelChangingPlugin {
+        in_ch: 2,
+        out_ch: 1,
+    }))
+    .unwrap();
     host.add_plugin(Box::new(GainPlugin::new(1, 3.0))).unwrap();
 
     let frames = 16usize;
@@ -261,7 +267,10 @@ fn host_rejects_channel_mismatched_chain_append() {
 
     // A plugin expecting 5 inputs cannot follow a plugin that produces 2 outputs.
     let result = host.add_plugin(Box::new(GainPlugin::new(5, 1.0)));
-    assert!(result.is_err(), "expected channel mismatch error, got {result:?}");
+    assert!(
+        result.is_err(),
+        "expected channel mismatch error, got {result:?}"
+    );
 }
 
 // ----------------------------------------------------------------------------
@@ -284,7 +293,10 @@ fn host_passes_expected_num_frames_to_plugins() {
         let input = vec![0.25_f32; frames * 2];
         let mut output = vec![0.0_f32; frames * 2];
         let processed = host.process(&input, &mut output).unwrap();
-        assert_eq!(processed, frames, "host should return the input frame count");
+        assert_eq!(
+            processed, frames,
+            "host should return the input frame count"
+        );
     }
 
     let a = recordings_a.lock().unwrap();
@@ -564,7 +576,11 @@ fn host_catches_f64_process_panic_without_aborting() {
         fn parameters(&self) -> Vec<Parameter> {
             Vec::new()
         }
-        fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> Result<(), String> {
+        fn set_parameter(
+            &mut self,
+            _id: ParameterId,
+            _value: ParameterValue,
+        ) -> Result<(), String> {
             Err("no parameters".into())
         }
         fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {

@@ -4,12 +4,12 @@ TPDF dither with F-weighted noise shaping for bit-depth reduction.
 
 ## Architecture
 
-- `lib.rs` — Main `DitherPlugin`, implements `InPlacePlugin` trait
+- `lib.rs` — Main `DitherPlugin`, implements `ParametricParametricInPlacePlugin` trait
 - `params.rs` — Parameter definitions
 
 ## Key Public API
 
-- `DitherPlugin` implementing `InPlacePlugin`
+- `DitherPlugin` implementing `ParametricParametricInPlacePlugin`
 
 ## Testing
 

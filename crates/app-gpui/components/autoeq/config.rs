@@ -141,10 +141,9 @@ impl ParamLimits {
     };
 }
 
-/// AutoEQ optimization configuration - matches OptimizationParams from sotf-audio-player
-#[derive(Debug, Clone)]
-pub struct AutoEqConfig {
-    // EQ Design Parameters
+/// EQ design parameters: mode, filter ranges, and IIR/FIR configuration.
+#[derive(Debug, Clone, Default)]
+pub struct EqDesignConfig {
     /// Optimization mode (IIR, FIR, Mixed)
     pub opt_mode: String,
     /// Number of FIR taps (for FIR/Mixed mode)
@@ -173,8 +172,11 @@ pub struct AutoEqConfig {
     pub spacing_weight: f64,
     /// Minimum spacing between filters in octaves (0.01-1.0)
     pub min_spacing_oct: f64,
+}
 
-    // Algorithm Parameters
+/// Optimization algorithm parameters: DE, BO, refinement, and smoothing.
+#[derive(Debug, Clone, Default)]
+pub struct AlgorithmConfig {
     /// Optimization algorithm (e.g., "autoeq:de", "autoeq:cobyla")
     pub algo: String,
     /// Population size for evolutionary algorithms
@@ -195,8 +197,6 @@ pub struct AutoEqConfig {
     pub bo_acquisition: String,
     /// Use qEHVI for multi-objective BO where supported
     pub bo_ehvi: bool,
-
-    // DE-specific Parameters
     /// Mutation factor (F) for DE
     pub de_f: f64,
     /// Crossover rate (CR) for DE
@@ -207,33 +207,35 @@ pub struct AutoEqConfig {
     pub adaptive_weight_f: f64,
     /// Adaptive weight for CR parameter (DE adaptive strategies only)
     pub adaptive_weight_cr: f64,
-
-    // Refinement Parameters
     /// Enable local refinement after global optimization
     pub refine: bool,
     /// Local algorithm for refinement
     pub local_algo: String,
-
-    // Smoothing Parameters
     /// Enable smoothing
     pub smooth: bool,
     /// Smoothing window size (1-24)
     pub smooth_n: usize,
-
     /// Enable psychoacoustic variable smoothing
     pub psychoacoustic: bool,
     /// Enable asymmetric loss weighting
     pub asymmetric_loss: bool,
+}
 
-    // Goals & Configuration
+/// High-level optimization goals and system configuration.
+#[derive(Debug, Clone, Default)]
+pub struct GoalsConfig {
     /// Loss function type (e.g., "flat", "score")
     pub loss_type: String,
     /// Target curve (e.g., "flat", "harman")
     pub target_curve: String,
     /// System type (e.g., "stereo", "multisub")
     pub system_type: String,
+}
 
-    // --- Advanced Room Correction (Scenario B) ---
+/// Advanced room correction settings: target response, excursion protection,
+/// Schroeder split, subwoofer and channel matching.
+#[derive(Debug, Clone, Default)]
+pub struct RoomCorrectionConfig {
     /// Enable target tilt
     pub use_target_tilt: bool,
     /// Tilt type: flat, harman, custom
@@ -275,7 +277,6 @@ pub struct AutoEqConfig {
     /// Low freq max_db override (None = use global max_db)
     pub schroeder_low_max_db: Option<f64>,
 
-    // --- Subwoofer & Channel Matching ---
     /// Enable subwoofer-specific optimizer overrides
     pub use_sub_config: bool,
     /// Sub: number of PEQ filters
@@ -294,8 +295,11 @@ pub struct AutoEqConfig {
     pub channel_matching_threshold_db: f64,
     /// Channel matching: max additional filters per channel
     pub channel_matching_max_filters: usize,
+}
 
-    // --- v2 fields ---
+/// Version 2 feature flags: delay, seed, VoG, broadband matching, and mixed-mode crossover.
+#[derive(Debug, Clone, Default)]
+pub struct V2Config {
     /// Allow inter-speaker delay optimization
     pub allow_delay: bool,
     /// Enable seed for reproducible results
@@ -314,8 +318,11 @@ pub struct AutoEqConfig {
     pub mixed_crossover_type: String,
     /// Mixed mode FIR band ("low" or "high")
     pub mixed_fir_band: String,
+}
 
-    // --- Advanced System Optimization (Scenario A) ---
+/// Advanced system optimization: phase alignment, multi-seat, and multi-measurement.
+#[derive(Debug, Clone, Default)]
+pub struct SystemOptimizationConfig {
     /// Enable phase alignment
     pub use_phase_alignment: bool,
     /// Phase alignment min freq
@@ -336,7 +343,6 @@ pub struct AutoEqConfig {
     /// Max deviation in dB
     pub multi_seat_max_deviation_db: f64,
 
-    // --- Multi-Measurement Optimization ---
     /// Enable multi-measurement optimization
     pub use_multi_measurement: bool,
     /// Multi-measurement strategy
@@ -349,109 +355,132 @@ pub struct AutoEqConfig {
     pub multi_measurement_labels: Vec<String>,
 }
 
+/// AutoEQ optimization configuration - matches OptimizationParams from sotf-audio-player
+#[derive(Debug, Clone)]
+pub struct AutoEqConfig {
+    /// EQ design parameters.
+    pub eq_design: EqDesignConfig,
+    /// Optimization algorithm parameters.
+    pub algorithm: AlgorithmConfig,
+    /// Goals and system configuration.
+    pub goals: GoalsConfig,
+    /// Advanced room correction settings.
+    pub room_correction: RoomCorrectionConfig,
+    /// Version 2 features.
+    pub v2: V2Config,
+    /// Advanced system optimization settings.
+    pub system_optimization: SystemOptimizationConfig,
+}
+
 impl Default for AutoEqConfig {
     fn default() -> Self {
         Self {
-            opt_mode: "iir".to_string(),
-            fir_taps: 4096,
-            fir_phase: "kirkeby".to_string(),
-            num_filters: 10,
-            sample_rate: 48000,
-            min_db: -12.0,
-            max_db: 6.0,
-            min_q: 0.5,
-            max_q: 10.0,
-            min_freq: 20.0,
-            max_freq: 20000.0,
-            peq_model: "pk".to_string(),
-            spacing_weight: 1.0,
-            min_spacing_oct: 0.08,
-            algo: "autoeq:de".to_string(),
-            population: 100,
-            maxeval: 10000,
-            tolerance: 0.00001,
-            atolerance: 0.00001,
-            bo_initial_samples: 0,
-            bo_batch_size: 0,
-            bo_posterior_std_threshold: 0.0,
-            bo_acquisition: "qei".to_string(),
-            bo_ehvi: false,
-            de_f: 0.8,
-            de_cr: 0.9,
-            strategy: "currenttobest1bin".to_string(),
-            adaptive_weight_f: 0.8,
-            adaptive_weight_cr: 0.7,
-            refine: true,
-            local_algo: "cobyla".to_string(),
-            smooth: false,
-            smooth_n: 6,
-            psychoacoustic: true,
-            asymmetric_loss: true,
-            loss_type: "flat".to_string(),
-            target_curve: "flat".to_string(),
-            system_type: "stereo".to_string(),
+            eq_design: EqDesignConfig {
+                opt_mode: "iir".to_string(),
+                fir_taps: 4096,
+                fir_phase: "kirkeby".to_string(),
+                num_filters: 10,
+                sample_rate: 48000,
+                min_db: -12.0,
+                max_db: 6.0,
+                min_q: 0.5,
+                max_q: 10.0,
+                min_freq: 20.0,
+                max_freq: 20000.0,
+                peq_model: "pk".to_string(),
+                spacing_weight: 1.0,
+                min_spacing_oct: 0.08,
+            },
+            algorithm: AlgorithmConfig {
+                algo: "autoeq:de".to_string(),
+                population: 100,
+                maxeval: 10000,
+                tolerance: 0.00001,
+                atolerance: 0.00001,
+                bo_initial_samples: 0,
+                bo_batch_size: 0,
+                bo_posterior_std_threshold: 0.0,
+                bo_acquisition: "qei".to_string(),
+                bo_ehvi: false,
+                de_f: 0.8,
+                de_cr: 0.9,
+                strategy: "currenttobest1bin".to_string(),
+                adaptive_weight_f: 0.8,
+                adaptive_weight_cr: 0.7,
+                refine: true,
+                local_algo: "cobyla".to_string(),
+                smooth: false,
+                smooth_n: 6,
+                psychoacoustic: true,
+                asymmetric_loss: true,
+            },
+            goals: GoalsConfig {
+                loss_type: "flat".to_string(),
+                target_curve: "flat".to_string(),
+                system_type: "stereo".to_string(),
+            },
+            room_correction: RoomCorrectionConfig {
+                use_target_tilt: false,
+                tilt_type: "harman".to_string(),
+                tilt_slope: -0.8,
+                tilt_reference_freq: 1000.0,
+                tilt_bass_shelf_db: 0.0,
+                tilt_bass_shelf_freq: 200.0,
 
-            // Scenario B defaults
-            use_target_tilt: false,
-            tilt_type: "harman".to_string(),
-            tilt_slope: -0.8,
-            tilt_reference_freq: 1000.0,
-            tilt_bass_shelf_db: 0.0,
-            tilt_bass_shelf_freq: 200.0,
+                use_excursion_protection: false,
+                excursion_auto_detect_f3: true,
+                excursion_manual_f3: 40.0,
+                excursion_filter_order: 4,
+                excursion_filter_type: "lr".to_string(),
+                excursion_margin_octaves: 0.25,
 
-            use_excursion_protection: false,
-            excursion_auto_detect_f3: true,
-            excursion_manual_f3: 40.0,
-            excursion_filter_order: 4,
-            excursion_filter_type: "lr".to_string(),
-            excursion_margin_octaves: 0.25,
+                use_schroeder_split: false,
+                schroeder_freq: 300.0,
+                schroeder_low_max_q: 10.0,
+                schroeder_low_allow_boost: false,
+                schroeder_high_max_q: 1.0,
+                schroeder_high_shelving_only: false,
+                schroeder_low_max_db: None,
 
-            use_schroeder_split: false,
-            schroeder_freq: 300.0,
-            schroeder_low_max_q: 10.0,
-            schroeder_low_allow_boost: false,
-            schroeder_high_max_q: 1.0,
-            schroeder_high_shelving_only: false,
-            schroeder_low_max_db: None,
+                use_sub_config: false,
+                sub_num_filters: 10,
+                sub_max_db: 18.0,
+                sub_min_db: -18.0,
+                sub_min_q: 0.5,
+                sub_max_q: 10.0,
+                use_channel_matching: false,
+                channel_matching_threshold_db: 1.5,
+                channel_matching_max_filters: 3,
+            },
+            v2: V2Config {
+                allow_delay: false,
+                seed_enabled: false,
+                seed: 42,
+                vog_enabled: false,
+                vog_reference_channel: "C".to_string(),
+                broadband_target_matching: false,
+                mixed_crossover_freq: 300.0,
+                mixed_crossover_type: "LR24".to_string(),
+                mixed_fir_band: "low".to_string(),
+            },
+            system_optimization: SystemOptimizationConfig {
+                use_phase_alignment: false,
+                phase_min_freq: 60.0,
+                phase_max_freq: 100.0,
+                phase_optimize_polarity: true,
+                phase_max_delay_ms: 30.0,
 
-            use_sub_config: false,
-            sub_num_filters: 10,
-            sub_max_db: 18.0,
-            sub_min_db: -18.0,
-            sub_min_q: 0.5,
-            sub_max_q: 10.0,
-            use_channel_matching: false,
-            channel_matching_threshold_db: 1.5,
-            channel_matching_max_filters: 3,
+                use_multi_seat: false,
+                multi_seat_strategy: "variance".to_string(),
+                multi_seat_primary_seat: 0,
+                multi_seat_max_deviation_db: 6.0,
 
-            // v2 defaults
-            allow_delay: false,
-            seed_enabled: false,
-            seed: 42,
-            vog_enabled: false,
-            vog_reference_channel: "C".to_string(),
-            broadband_target_matching: false,
-            mixed_crossover_freq: 300.0,
-            mixed_crossover_type: "LR24".to_string(),
-            mixed_fir_band: "low".to_string(),
-
-            // Scenario A defaults
-            use_phase_alignment: false,
-            phase_min_freq: 60.0,
-            phase_max_freq: 100.0,
-            phase_optimize_polarity: true,
-            phase_max_delay_ms: 30.0,
-
-            use_multi_seat: false,
-            multi_seat_strategy: "variance".to_string(),
-            multi_seat_primary_seat: 0,
-            multi_seat_max_deviation_db: 6.0,
-
-            use_multi_measurement: false,
-            multi_measurement_strategy: "average".to_string(),
-            multi_measurement_variance_lambda: 1.0,
-            multi_measurement_weights: Vec::new(),
-            multi_measurement_labels: Vec::new(),
+                use_multi_measurement: false,
+                multi_measurement_strategy: "average".to_string(),
+                multi_measurement_variance_lambda: 1.0,
+                multi_measurement_weights: Vec::new(),
+                multi_measurement_labels: Vec::new(),
+            },
         }
     }
 }

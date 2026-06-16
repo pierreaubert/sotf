@@ -2,6 +2,7 @@
 
 use proptest::prelude::*;
 use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePluginAdapter;
 use sotf_host::plugin::{InPlacePlugin, ProcessContext};
 use sotf_plugin_transient_shaper::{TransientShaperPlugin, TransientShaperPluginParams};
 
@@ -15,7 +16,7 @@ proptest! {
         output_gain in -12.0f32..12.0f32,
         mix in 0.0f32..1.0f32,
     ) {
-        let mut p = TransientShaperPlugin::new(1);
+        let mut p = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::new(1));
         p.initialize(48000).unwrap();
         p.set_parameter(ParameterId::from("attack"), ParameterValue::Float(attack))
             .unwrap();
@@ -46,7 +47,7 @@ proptest! {
         output_gain in -12.0f32..12.0f32,
         mix in 0.0f32..1.0f32,
     ) {
-        let mut p = TransientShaperPlugin::new(1);
+        let mut p = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::new(1));
         p.initialize(48000).unwrap();
 
         p.set_parameter(ParameterId::from("attack"), ParameterValue::Float(attack))
@@ -85,7 +86,7 @@ proptest! {
 
     #[test]
     fn bypass_preserves_input(sample in -1.0f32..1.0f32) {
-        let mut p = TransientShaperPlugin::from_params(
+        let mut p = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(
             1,
             TransientShaperPluginParams {
                 attack: 0.0,
@@ -94,7 +95,7 @@ proptest! {
                 output_gain_db: 0.0,
                 mix: 0.0,
             },
-        );
+        ));
         p.initialize(48000).unwrap();
 
         // Warm up the mix smoother to converge to 0
@@ -117,7 +118,7 @@ proptest! {
 
     #[test]
     fn output_gain_monotonic(sample in 0.1f32..0.5f32, gain_db in 0.0f32..12.0f32) {
-        let mut p_low = TransientShaperPlugin::from_params(
+        let mut p_low = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(
             1,
             TransientShaperPluginParams {
                 attack: 0.0,
@@ -126,10 +127,10 @@ proptest! {
                 output_gain_db: 0.0,
                 mix: 0.0,
             },
-        );
+        ));
         p_low.initialize(48000).unwrap();
 
-        let mut p_high = TransientShaperPlugin::from_params(
+        let mut p_high = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(
             1,
             TransientShaperPluginParams {
                 attack: 0.0,
@@ -138,7 +139,7 @@ proptest! {
                 output_gain_db: gain_db,
                 mix: 0.0,
             },
-        );
+        ));
         p_high.initialize(48000).unwrap();
 
         let frames = 128usize;

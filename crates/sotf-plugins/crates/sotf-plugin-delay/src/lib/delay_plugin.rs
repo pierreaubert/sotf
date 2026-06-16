@@ -3,7 +3,9 @@ use super::misc::MAX_DELAY_MS;
 use super::misc::parse_channel_delay_id;
 use super::types::DelayPluginParams;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
@@ -257,121 +259,147 @@ impl DelayPlugin {
     }
 }
 
-impl InPlacePlugin for DelayPlugin {
+impl ParametricInPlacePlugin for DelayPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Delay", "2.0.0", "SotF")
     }
     fn channels(&self) -> usize {
         self.channels
     }
-    fn parameters(&self) -> Vec<Parameter> {
+
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(ParameterId::from("delay_ms"), ParameterValue::Float(self.delay_ms));
+        values.insert(ParameterId::from("feedback"), ParameterValue::Float(self.feedback));
+        values.insert(ParameterId::from("mix"), ParameterValue::Float(self.mix));
+        values.insert(ParameterId::from("lfo_rate_hz"), ParameterValue::Float(self.lfo_rate_hz));
+        values.insert(
+            ParameterId::from("lfo_depth_ms"),
+            ParameterValue::Float(self.lfo_depth_ms),
+        );
+        values.insert(
+            ParameterId::from("allpass_feedback"),
+            ParameterValue::Bool(self.allpass_feedback),
+        );
+        values.insert(
+            ParameterId::from("allpass_coeff"),
+            ParameterValue::Float(self.allpass_coeff),
+        );
+        if self.is_per_channel() {
+            for (ch, &ms) in self.channel_delays_ms.iter().enumerate() {
+                values.insert(ParameterId(format!("delay_ms_{ch}")), ParameterValue::Float(ms));
+            }
+        }
+        values
+    }
 
-        if id == self.param_delay_ms {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "delay_ms must be a float".to_string())?;
-            if v.is_finite() {
-                self.delay_ms = v;
-                self.delay_smoother
-                    .set_target(self.delay_ms * self.sample_rate as f32 / 1000.0);
-            }
-        } else if id == self.param_feedback {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "feedback must be a float".to_string())?;
-            if v.is_finite() {
-                self.feedback = v;
-                self.feedback_smoother.set_target(self.feedback);
-            }
-        } else if id == self.param_mix {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "mix must be a float".to_string())?;
-            if v.is_finite() {
-                self.mix = v;
-                self.mix_smoother.set_target(self.mix);
-            }
-        } else if id == self.param_lfo_rate_hz {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "lfo_rate_hz must be a float".to_string())?;
-            if v.is_finite() {
-                self.lfo_rate_hz = v;
-            }
-        } else if id == self.param_lfo_depth_ms {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "lfo_depth_ms must be a float".to_string())?;
-            if v.is_finite() {
-                self.lfo_depth_ms = v;
-            }
-        } else if id == self.param_allpass_feedback {
-            let v = value
-                .as_bool()
-                .ok_or_else(|| "allpass_feedback must be a bool".to_string())?;
-            self.allpass_feedback = v;
-            if !v {
-                // Reset allpass states when disabling
-                for ap in &mut self.allpass_states {
-                    ap.reset();
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            if id == self.param_delay_ms {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "delay_ms must be a float".to_string())?;
+                if v.is_finite() {
+                    self.delay_ms = v;
+                    self.delay_smoother
+                        .set_target(self.delay_ms * self.sample_rate as f32 / 1000.0);
                 }
-            }
-        } else if id == self.param_allpass_coeff {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "allpass_coeff must be a float".to_string())?;
-            if v.is_finite() {
-                self.allpass_coeff = v.clamp(0.0, 0.99);
-                for ap in &mut self.allpass_states {
-                    ap.set_coeff(self.allpass_coeff);
+            } else if id == self.param_feedback {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "feedback must be a float".to_string())?;
+                if v.is_finite() {
+                    self.feedback = v;
+                    self.feedback_smoother.set_target(self.feedback);
                 }
-            }
-        } else if let Some(ch) = parse_channel_delay_id(id.as_str()) {
-            if !self.is_per_channel() || ch >= self.channels {
-                return Err(format!("invalid per-channel delay id: {}", id.as_str()));
-            }
-            let v = value
-                .as_float()
-                .ok_or_else(|| "channel delay must be a float".to_string())?;
-            if v.is_finite() && v >= 0.0 {
-                self.channel_delays_ms[ch] = v;
-                let target_samples = v * self.sample_rate as f32 / 1000.0;
-                if ch < self.channel_delay_smoothers.len() {
-                    self.channel_delay_smoothers[ch].set_target(target_samples);
+            } else if id == self.param_mix {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "mix must be a float".to_string())?;
+                if v.is_finite() {
+                    self.mix = v;
+                    self.mix_smoother.set_target(self.mix);
                 }
+            } else if id == self.param_lfo_rate_hz {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "lfo_rate_hz must be a float".to_string())?;
+                if v.is_finite() {
+                    self.lfo_rate_hz = v;
+                }
+            } else if id == self.param_lfo_depth_ms {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "lfo_depth_ms must be a float".to_string())?;
+                if v.is_finite() {
+                    self.lfo_depth_ms = v;
+                }
+            } else if id == self.param_allpass_feedback {
+                let v = value
+                    .as_bool()
+                    .ok_or_else(|| "allpass_feedback must be a bool".to_string())?;
+                self.allpass_feedback = v;
+                if !v {
+                    // Reset allpass states when disabling
+                    for ap in &mut self.allpass_states {
+                        ap.reset();
+                    }
+                }
+            } else if id == self.param_allpass_coeff {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "allpass_coeff must be a float".to_string())?;
+                if v.is_finite() {
+                    self.allpass_coeff = v.clamp(0.0, 0.99);
+                    for ap in &mut self.allpass_states {
+                        ap.set_coeff(self.allpass_coeff);
+                    }
+                }
+            } else if let Some(ch) = parse_channel_delay_id(id.as_str()) {
+                if !self.is_per_channel() || ch >= self.channels {
+                    return Err(format!("invalid per-channel delay id: {}", id.as_str()));
+                }
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "channel delay must be a float".to_string())?;
+                if v.is_finite() && v >= 0.0 {
+                    self.channel_delays_ms[ch] = v;
+                    let target_samples = v * self.sample_rate as f32 / 1000.0;
+                    if ch < self.channel_delay_smoothers.len() {
+                        self.channel_delay_smoothers[ch].set_target(target_samples);
+                    }
+                }
+            } else {
+                return Err(format!("Unknown parameter: {}", id));
             }
         }
         self.rebuild_cached_parameters();
         Ok(())
     }
 
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_delay_ms {
-            Some(ParameterValue::Float(self.delay_ms))
-        } else if id == &self.param_feedback {
-            Some(ParameterValue::Float(self.feedback))
-        } else if id == &self.param_mix {
-            Some(ParameterValue::Float(self.mix))
-        } else if id == &self.param_lfo_rate_hz {
-            Some(ParameterValue::Float(self.lfo_rate_hz))
-        } else if id == &self.param_lfo_depth_ms {
-            Some(ParameterValue::Float(self.lfo_depth_ms))
-        } else if id == &self.param_allpass_feedback {
-            Some(ParameterValue::Bool(self.allpass_feedback))
-        } else if id == &self.param_allpass_coeff {
-            Some(ParameterValue::Float(self.allpass_coeff))
-        } else if let Some(ch) = parse_channel_delay_id(id.as_str()) {
-            self.channel_delays_ms
-                .get(ch)
-                .copied()
-                .map(ParameterValue::Float)
+    fn parametric_validate_parameter(
+        &self,
+        id: &ParameterId,
+        value: &ParameterValue,
+    ) -> PluginResult<()> {
+        // Per-channel delay IDs are dynamic: validate mode/channel bounds first, then
+        // validate against the matching schema entry (which includes NaN/finite checks).
+        if let Some(ch) = parse_channel_delay_id(id.as_str()) {
+            if !self.is_per_channel() {
+                return Err(format!("invalid per-channel delay id: {}", id.as_str()));
+            }
+            if ch >= self.channels {
+                return Err(format!("Invalid channel index in {}", id));
+            }
+        }
+        if let Some(param) = self.parameter_schema().iter().find(|p| &p.id == id) {
+            param.validate(value).map_err(|e| format!("{}: {}", id, e))
         } else {
-            None
+            Err(format!("Unknown parameter: {}", id))
         }
     }
 

@@ -14,9 +14,9 @@ use sotf_plugins::param_specs::{ParamSpec, ParamType};
 /// "misaligned boxes" effect).
 pub(super) fn cell_inner_theme(theme: &Theme) -> Theme {
     let mut out = theme.clone();
-    out.design_tokens.knob_label_style =
+    out.layout.design_tokens.knob_label_style =
         gpui_audio_kit::audio_design_tokens::AudioDesignTokens::LABEL_UNDERLINED;
-    out.design_tokens.meter_label_style =
+    out.layout.design_tokens.meter_label_style =
         gpui_audio_kit::audio_design_tokens::AudioDesignTokens::LABEL_UNDERLINED;
     out
 }

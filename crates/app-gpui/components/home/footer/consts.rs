@@ -98,12 +98,12 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let library_active = state.app.library_state.scan_in_progress;
-        let replay_gain_active = state.app.scan_ctrl.replay_gain_manager.in_progress;
-        let waveform_active = state.app.scan_ctrl.waveform_manager.in_progress;
-        let bliss_active = state.app.scan_ctrl.bliss_manager.in_progress;
+        let replay_gain_active = state.app.scan.ctrl.replay_gain_manager.in_progress;
+        let waveform_active = state.app.scan.ctrl.waveform_manager.in_progress;
+        let bliss_active = state.app.scan.ctrl.bliss_manager.in_progress;
         let any_active = library_active || replay_gain_active || waveform_active || bliss_active;
 
-        if !any_active || state.app.scan_status_hidden {
+        if !any_active || state.app.scan.status_hidden {
             return div().into_any_element();
         }
 
@@ -119,7 +119,7 @@ impl PlayerView {
             .border_color(theme.text_primary)
             .when(any_active, |row| {
                 let tracks = state.app.library_state.scan_progress_tracks;
-                let total = state.app.scan_total_files;
+                let total = state.app.scan.total_files;
                 let progress = if total > 0 && tracks < total {
                     Some((tracks as f32 / total as f32).clamp(0.0, 1.0))
                 } else {
@@ -132,16 +132,16 @@ impl PlayerView {
                         tracks,
                         state.app.library_state.scan_progress_albums,
                         total,
-                        state.app.scan_progress_elapsed_secs,
-                        state.app.scan_progress_tracks_per_sec,
-                        state.app.scan_progress_eta_secs,
-                        &state.app.scan_progress_phase,
+                        state.app.scan.progress_elapsed_secs,
+                        state.app.scan.progress_tracks_per_sec,
+                        state.app.scan.progress_eta_secs,
+                        &state.app.scan.progress_phase,
                     ),
                     &theme,
                 ))
             })
             .when(any_active, |row| {
-                let mgr = &state.app.scan_ctrl.replay_gain_manager;
+                let mgr = &state.app.scan.ctrl.replay_gain_manager;
                 let (progress, detail) =
                     if mgr.album_gain_total > 0 && mgr.album_gain_done < mgr.album_gain_total {
                         (
@@ -163,7 +163,7 @@ impl PlayerView {
                 row.child(self.render_scan_status_item("ReplayGain", progress, detail, &theme))
             })
             .when(any_active, |row| {
-                let mgr = &state.app.scan_ctrl.waveform_manager;
+                let mgr = &state.app.scan.ctrl.waveform_manager;
                 let (progress, detail) =
                     if mgr.total > 0 && mgr.processed >= mgr.total && !waveform_active {
                         (Some(1.0), "done".to_string())
@@ -180,7 +180,7 @@ impl PlayerView {
                 row.child(self.render_scan_status_item("Wave", progress, detail, &theme))
             })
             .when(any_active, |row| {
-                let mgr = &state.app.scan_ctrl.bliss_manager;
+                let mgr = &state.app.scan.ctrl.bliss_manager;
                 let (progress, detail) =
                     if mgr.total > 0 && mgr.processed >= mgr.total && !bliss_active {
                         (Some(1.0), "done".to_string())
@@ -204,7 +204,7 @@ impl PlayerView {
                     .theme(theme.to_button_theme())
                     .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
-                            state.app.scan_status_hidden = true;
+                            state.app.scan.status_hidden = true;
                         });
                         cx.notify();
                     })),
@@ -685,8 +685,8 @@ impl PlayerView {
         };
 
         let text_muted = theme.text_muted;
-        let progress_bar_bg = theme.progress_bar_bg;
-        let progress_bar_fill = theme.progress_bar_fill;
+        let progress_bar_bg = theme.feedback.progress_bar_bg;
+        let progress_bar_fill = theme.feedback.progress_bar_fill;
 
         let theme_clone = {
             let state = self.state.read(cx);
@@ -1112,10 +1112,11 @@ impl PlayerView {
                     }
 
                     view.state.update(cx, |state, _cx| {
-                        state.app.volume_drag = Some(crate::app::state::app::VolumeDragState {
-                            start_y: event.position.y.into(),
-                            start_value: state.app.playback.volume,
-                        });
+                        state.app.drag.volume_drag =
+                            Some(crate::app::state::app::VolumeDragState {
+                                start_y: event.position.y.into(),
+                                start_value: state.app.playback.volume,
+                            });
                     });
                 }),
             )
@@ -1239,10 +1240,11 @@ impl PlayerView {
                     }
                     // Start volume drag
                     view.state.update(cx, |state, _cx| {
-                        state.app.volume_drag = Some(crate::app::state::app::VolumeDragState {
-                            start_y: event.position.y.into(),
-                            start_value: state.app.playback.volume,
-                        });
+                        state.app.drag.volume_drag =
+                            Some(crate::app::state::app::VolumeDragState {
+                                start_y: event.position.y.into(),
+                                start_value: state.app.playback.volume,
+                            });
                     });
                 }),
             )

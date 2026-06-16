@@ -4,12 +4,12 @@ Linear-phase EQ — parametric EQ with FIR convolution for zero phase distortion
 
 ## Architecture
 
-- `lib.rs` — Main `LinearPhaseEqPlugin`, implements `InPlacePlugin` trait
+- `lib.rs` — Main `LinearPhaseEqPlugin`, implements `ParametricParametricInPlacePlugin` trait
 - `params.rs` — Parameter definitions
 
 ## Key Public API
 
-- `LinearPhaseEqPlugin` implementing `InPlacePlugin`
+- `LinearPhaseEqPlugin` implementing `ParametricParametricInPlacePlugin`
 
 ## Testing
 

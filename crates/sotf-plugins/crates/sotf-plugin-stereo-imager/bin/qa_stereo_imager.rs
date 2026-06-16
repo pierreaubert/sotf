@@ -1,5 +1,6 @@
-use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
-use sotf_host::{CountingAlloc, run_standard_tests};
+use sotf_host::parametric_in_place_plugin::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter};
+use sotf_host::plugin::{InPlacePluginAdapter, ProcessContext};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, ParametricInPlacePlugin, ParametricPlugin, CountingAlloc, run_standard_tests};
 use sotf_plugin_stereo_imager::{StereoImagerPlugin, StereoImagerPluginParams};
 
 #[global_allocator]
@@ -50,7 +51,7 @@ fn main() {
     );
 
     // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
+    let mut plugin = ParametricPluginAdapter::new(ParametricInPlacePluginAdapter::new(inner));
     run_standard_tests(&mut plugin, "StereoImagerPlugin");
 
     println!("\n[ALL PASS] StereoImager QA Complete.");

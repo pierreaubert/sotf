@@ -4,12 +4,12 @@ FIR Designer — FIR magnitude and phase design from parametric target bands.
 
 ## Architecture
 
-- `lib.rs` — Main `FirDesignerPlugin`, implements `InPlacePlugin` trait
+- `lib.rs` — Main `FirDesignerPlugin`, implements `ParametricInPlacePlugin` trait
 - `params.rs` — Parameter definitions
 
 ## Key Public API
 
-- `FirDesignerPlugin` implementing `InPlacePlugin`
+- `FirDesignerPlugin` implementing `ParametricInPlacePlugin`
 
 ## Testing
 

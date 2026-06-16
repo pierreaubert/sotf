@@ -18,8 +18,10 @@ use sotf_host::detector::LevelDetector;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::{LogSmoother, Smoother};
 use std::any::Any;
@@ -90,10 +92,23 @@ impl MultibandExpanderPlugin {
             pk(ME, "num_bands").max_f64() as usize,
         );
         let sr = 44100;
+        let default_xfs = [200.0f32, 2000.0, 8000.0, 12000.0];
         let mut xfs = params.crossover_frequencies.clone();
-        while xfs.len() < 4 {
-            xfs.push(1000.0);
+        for (i, &d) in default_xfs.iter().enumerate() {
+            if xfs.get(i).map_or(true, |&v| v == 0.0) {
+                if i < xfs.len() {
+                    xfs[i] = d;
+                } else {
+                    xfs.push(d);
+                }
+            }
         }
+        while xfs.len() < 4 {
+            xfs.push(default_xfs[xfs.len()]);
+        }
+        let ratio = if params.ratio == 0.0 { 2.0 } else { params.ratio };
+        let attack_ms = if params.attack_ms == 0.0 { 1.0 } else { params.attack_ms };
+        let release_ms = if params.release_ms == 0.0 { 100.0 } else { params.release_ms };
         let mut bexps = Vec::with_capacity(nb);
         for _ in 0..nb {
             bexps.push(BandExpander {
@@ -148,7 +163,7 @@ impl MultibandExpanderPlugin {
         let spectral = if mode_str == "spectral" {
             let fft_size = 1024;
             let mut ss = SpectralState::new(fft_size, channels, sr, &xfs, nb);
-            ss.update_band_coefficients(nb, &band_params, params.attack_ms, params.release_ms, sr);
+            ss.update_band_coefficients(nb, &band_params, attack_ms, release_ms, sr);
             Some(ss)
         } else {
             None
@@ -161,9 +176,9 @@ impl MultibandExpanderPlugin {
             _crossover_preset: params.crossover_preset,
             crossover_frequencies: xfs.clone(),
             threshold_db: params.threshold_db,
-            ratio: params.ratio,
-            attack_ms: params.attack_ms,
-            release_ms: params.release_ms,
+            ratio,
+            attack_ms,
+            release_ms,
             knee_db: params.knee_db,
             range_db: params.range_db,
             hysteresis_db: params.hysteresis_db,
@@ -841,17 +856,13 @@ impl MultibandExpanderPlugin {
     }
 }
 
-impl InPlacePlugin for MultibandExpanderPlugin {
-    fn info(&self) -> PluginInfo {
-        PluginInfo::new("Multiband Expander", "1.2.0", "Sotf")
-    }
-    fn channels(&self) -> usize {
-        self.channels
-    }
-    fn parameters(&self) -> Vec<Parameter> {
+impl MultibandExpanderPlugin {
+    /// Backward-compatible parameter list accessor.
+    pub fn parameters(&self) -> Vec<Parameter> {
         self.cached_parameters.clone()
     }
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+
+    pub fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         // Handle processing_mode separately (not in GLOBAL_PARAMS)
         if id.0 == "processing_mode" {
             let idx = value
@@ -1145,7 +1156,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         self.rebuild_cached_parameters();
         Ok(())
     }
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+
+    pub fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         // Handle processing_mode separately (not in GLOBAL_PARAMS)
         if id.0 == "processing_mode" {
             let idx = if self.processing_mode == "spectral" {
@@ -1223,6 +1235,35 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             None
         }
     }
+}
+
+impl ParametricInPlacePlugin for MultibandExpanderPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Multiband Expander", "1.2.0", "Sotf")
+    }
+    fn channels(&self) -> usize {
+        self.channels
+    }
+    fn parameter_schema(&self) -> ParameterSchema {
+        self.cached_parameters.clone()
+    }
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            self.set_parameter(id, value)?;
+        }
+        Ok(())
+    }
+
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        for param in &self.cached_parameters {
+            if let Some(value) = self.get_parameter(&param.id) {
+                values.insert(param.id.clone(), value);
+            }
+        }
+        values
+    }
+
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;
         self.build_crossovers();

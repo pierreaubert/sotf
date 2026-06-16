@@ -4,7 +4,8 @@
 
 use proptest::prelude::*;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 use sotf_plugin_fir_designer::{BandConfig, FirDesignerPlugin, FirDesignerPluginParams};
 
 fn mono_buffer_strategy() -> impl Strategy<Value = Vec<f32>> {

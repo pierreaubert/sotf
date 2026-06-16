@@ -13,10 +13,10 @@ fn test_upmixer_bypass_fidelity() {
     let sample_rate = 48000;
     let fft_size = 2048;
     let mut params = UpmixerPluginParams::default();
-    params.fft_size = fft_size;
+    params.core.fft_size = fft_size;
     // Full processing — NOT bypass. bypass_all_processing copies input directly
     // and never touches the STFT, so it can't catch combined_scale bugs.
-    params.bypass_all_processing = false;
+    params.bypass.bypass_all_processing = false;
 
     let mut plugin = UpmixerPlugin::from_params(params);
     plugin.initialize(sample_rate).unwrap();
@@ -191,10 +191,10 @@ fn test_upmixer_envelope_stability() {
     let sample_rate = 48000;
     let fft_size = 2048;
     let mut params = UpmixerPluginParams::default();
-    params.fft_size = fft_size;
-    params.bypass_all_processing = false;
-    params.decorrelation_mode = 1; // LFO mode — exercises Bug 1 code path
-    params.speaker_config = "7.1".to_string();
+    params.core.fft_size = fft_size;
+    params.bypass.bypass_all_processing = false;
+    params.decorrelation.decorrelation_mode = 1; // LFO mode — exercises Bug 1 code path
+    params.core.speaker_config = "7.1".to_string();
 
     let mut plugin = UpmixerPlugin::from_params(params);
     plugin.initialize(sample_rate).unwrap();
@@ -340,8 +340,8 @@ fn test_upmixer_prime_block_size_fidelity() {
     let sample_rate = 48000;
     let fft_size = 2048;
     let mut params = UpmixerPluginParams::default();
-    params.fft_size = fft_size;
-    params.bypass_all_processing = false;
+    params.core.fft_size = fft_size;
+    params.bypass.bypass_all_processing = false;
 
     let mut plugin = UpmixerPlugin::from_params(params);
     plugin.initialize(sample_rate).unwrap();

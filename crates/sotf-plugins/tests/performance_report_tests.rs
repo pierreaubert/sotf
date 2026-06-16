@@ -1,7 +1,7 @@
 #![cfg(any(feature = "qa", debug_assertions))]
 
 mod tests {
-    use sotf_plugins::{CompressorPlugin, GainPlugin, InPlacePluginAdapter, PerformanceProfiler};
+use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, CompressorPlugin, GainPlugin,  PerformanceProfiler};
 
     #[test]
     fn test_generate_performance_summary() {
@@ -11,13 +11,13 @@ mod tests {
         let gain = GainPlugin::new(2, 0.0);
         plugins.push((
             "Gain".to_string(),
-            Box::new(InPlacePluginAdapter::new(gain)),
+            Box::new(ParametricPluginAdapter::new(gain)),
         ));
 
         let compressor = CompressorPlugin::new(2);
         plugins.push((
             "Compressor".to_string(),
-            Box::new(InPlacePluginAdapter::new(compressor)),
+            Box::new(ParametricInPlacePluginAdapter::new(compressor)),
         ));
 
         println!(

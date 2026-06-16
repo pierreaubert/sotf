@@ -28,7 +28,7 @@ impl PlayerView {
 
         // Now read all values including cached stats
         let state = self.state.read(cx);
-        let stats = &state.app.library_stats;
+        let stats = &state.app.library_view.stats;
 
         let remote_library_active = state.app.remote.server_store.selected_server_id.is_some();
         let remote_library_summary = state.app.remote.current_state.as_ref().map(|s| &s.library);
@@ -243,12 +243,12 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .p(d.pad_y)
-            .when(state.app.is_loading_initial_data, |el| {
+            .when(state.app.library_view.loading_initial_data, |el| {
                 el.justify_center()
                     .items_center()
                     .child(div().child(Spinner::new().size(SpinnerSize::Lg)))
             })
-            .when(!state.app.is_loading_initial_data, |el| {
+            .when(!state.app.library_view.loading_initial_data, |el| {
                 let state_for_clear = self.state.clone();
                 el.child(
                     div()

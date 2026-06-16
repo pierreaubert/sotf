@@ -24,7 +24,7 @@
         let mut system_type_select = Select::new((base_id.clone(), "goals-system-type"))
             .label("System Type")
             .options(system_type_options)
-            .selected(&config.system_type)
+            .selected(&config.goals.system_type)
             .is_open(ui_state.system_type_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -60,7 +60,7 @@
     let mut loss_type_select = Select::new((base_id.clone(), "goals-loss-type"))
         .label("Optimization Mode")
         .options(loss_type_options)
-        .selected(&config.loss_type)
+        .selected(&config.goals.loss_type)
         .is_open(ui_state.loss_type_open)
         .disabled(disabled)
         .size(SelectSize::Xs)
@@ -103,7 +103,7 @@
     let mut target_curve_select = Select::new((base_id.clone(), "goals-target-curve"))
         .label("Target Curve")
         .options(target_curve_options)
-        .selected(&config.target_curve)
+        .selected(&config.goals.target_curve)
         .is_open(ui_state.target_curve_open)
         .disabled(disabled)
         .size(SelectSize::Xs)
@@ -123,7 +123,7 @@
     section = section.child(target_curve_select);
 
     // Show "Edit" button when custom target curve is selected
-    if config.target_curve == "custom"
+    if config.goals.target_curve == "custom"
         && let Some(ref handler) = on_edit_custom_target_rc
     {
         let h = handler.clone();

@@ -4,12 +4,12 @@ Spectral compressor — per-bin frequency domain dynamics.
 
 ## Architecture
 
-- `lib.rs` — Main `SpectralCompressorPlugin`, implements `InPlacePlugin` trait
+- `lib.rs` — Main `SpectralCompressorPlugin`, implements `ParametricInPlacePlugin` trait
 - `params.rs` — Parameter definitions
 
 ## Key Public API
 
-- `SpectralCompressorPlugin` implementing `InPlacePlugin`
+- `SpectralCompressorPlugin` implementing `ParametricInPlacePlugin`
 
 ## Testing
 

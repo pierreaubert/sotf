@@ -30,18 +30,16 @@ pub(super) fn run_diagnostic(args: Vec<String>) -> Result<(), String> {
     let opts = parse_diagnostic_options(args)?;
     let input = load_audio_stereo(&opts.input_path)?;
 
-    let mut params = UpmixerPluginParams {
-        fft_size: opts.fft_size,
-        speaker_config: opts.speaker_config.clone(),
-        frequency_resolution: opts.frequency_resolution.clone(),
-        enable_hr_direct: opts.enable_hr_direct,
-        bypass_decorrelation: opts.bypass_decorrelation,
-        bypass_transient_detection: opts.bypass_transient_detection,
-        ..Default::default()
-    };
+    let mut params = UpmixerPluginParams::default();
+    params.core.fft_size = opts.fft_size;
+    params.core.speaker_config = opts.speaker_config.clone();
+    params.core.frequency_resolution = opts.frequency_resolution.clone();
+    params.core.enable_hr_direct = opts.enable_hr_direct;
+    params.bypass.bypass_decorrelation = opts.bypass_decorrelation;
+    params.bypass.bypass_transient_detection = opts.bypass_transient_detection;
     if let Some(model_path) = opts.ml_model_path.clone() {
-        params.enable_ml_detection = true;
-        params.ml_model_path = model_path;
+        params.ml.enable_ml_detection = true;
+        params.ml.ml_model_path = model_path;
     }
 
     let mut plugin = UpmixerPlugin::from_params(params);
@@ -270,10 +268,10 @@ pub(super) fn run_isolation_variant(
     let mut produced_total = 0usize;
     let mut prev_diag: Option<UpmixerDiagnostics> = None;
     let mut prev_output_last = vec![0.0_f32; out_channels];
-    let hop_size = if variant.params.low_latency {
+    let hop_size = if variant.params.core.low_latency {
         512
     } else {
-        variant.params.fft_size / 2
+        variant.params.core.fft_size / 2
     };
     let mut artifact_tracker = ArtifactTracker::new(out_channels, 64, Some(hop_size));
     let mut max_deltas = DiagnosticMaxDeltas::default();
@@ -347,13 +345,11 @@ pub(super) fn run_isolation_variant(
 
 pub(super) fn run_self_qa() {
     let sample_rate = 48000;
-    let params = UpmixerPluginParams {
-        fft_size: 2048,
-        speaker_config: "5.1".to_string(),
-        gain_front_direct: 1.0,
-        center_spread: 0.0,
-        ..Default::default()
-    };
+    let mut params = UpmixerPluginParams::default();
+    params.core.fft_size = 2048;
+    params.core.speaker_config = "5.1".to_string();
+    params.gains.gain_front_direct = 1.0;
+    params.gains.center_spread = 0.0;
 
     let mut plugin = UpmixerPlugin::from_params(params);
     plugin.initialize(sample_rate).unwrap();

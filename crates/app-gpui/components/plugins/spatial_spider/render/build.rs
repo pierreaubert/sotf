@@ -60,7 +60,7 @@ pub(super) fn build_header(
                 .on_change(move |checked, _, cx| {
                     if checked {
                         e_2d.update(cx, |st, cx| {
-                            st.app.spatial_spider.view_mode = SpiderViewMode::Disc2D;
+                            st.app.plugin_ui.spatial_spider.view_mode = SpiderViewMode::Disc2D;
                             cx.notify();
                         });
                     }
@@ -83,7 +83,7 @@ pub(super) fn build_header(
                 .on_change(move |checked, _, cx| {
                     if checked {
                         e_3d.update(cx, |st, cx| {
-                            st.app.spatial_spider.view_mode = SpiderViewMode::View3D;
+                            st.app.plugin_ui.spatial_spider.view_mode = SpiderViewMode::View3D;
                             cx.notify();
                         });
                     }
@@ -106,7 +106,7 @@ pub(super) fn build_header(
                 .on_change(move |checked, _, cx| {
                     if checked {
                         e_spl.update(cx, |st, cx| {
-                            st.app.spatial_spider.spider_mode = SpiderMode::Spl;
+                            st.app.plugin_ui.spatial_spider.spider_mode = SpiderMode::Spl;
                             cx.notify();
                         });
                     }
@@ -128,7 +128,7 @@ pub(super) fn build_header(
                     move |checked, _, cx| {
                         if checked {
                             e_corr.update(cx, |st, cx| {
-                                st.app.spatial_spider.spider_mode =
+                                st.app.plugin_ui.spatial_spider.spider_mode =
                                     SpiderMode::CorrelationFromRef {
                                         ref_channel: ref_ch,
                                     };
@@ -214,7 +214,7 @@ pub(super) fn build_ref_channel_select(
                     let entity = entity.clone();
                     move |open, _window, cx| {
                         entity.update(cx, |st, cx| {
-                            st.app.spatial_spider.ref_channel_select_open = open;
+                            st.app.plugin_ui.spatial_spider.ref_channel_select_open = open;
                             cx.notify();
                         });
                     }
@@ -229,18 +229,18 @@ pub(super) fn build_ref_channel_select(
                             .map(|s| s.channel)
                             .unwrap_or(0);
                         entity.update(cx, |st, cx| {
-                            st.app.spatial_spider.correlation_ref_channel = picked;
+                            st.app.plugin_ui.spatial_spider.correlation_ref_channel = picked;
                             if let SpiderMode::CorrelationFromRef { .. } =
-                                st.app.spatial_spider.spider_mode
+                                st.app.plugin_ui.spatial_spider.spider_mode
                             {
-                                st.app.spatial_spider.spider_mode =
+                                st.app.plugin_ui.spatial_spider.spider_mode =
                                     SpiderMode::CorrelationFromRef {
                                         ref_channel: picked,
                                     };
                             }
                             // Close the dropdown after a selection so the
                             // next click reopens it cleanly.
-                            st.app.spatial_spider.ref_channel_select_open = false;
+                            st.app.plugin_ui.spatial_spider.ref_channel_select_open = false;
                             cx.notify();
                         });
                     }

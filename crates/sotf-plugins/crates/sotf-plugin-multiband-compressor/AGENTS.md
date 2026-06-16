@@ -4,13 +4,13 @@ Multiband dynamic range compression (2-5 bands).
 
 ## Architecture
 
-- `lib.rs` — Main plugin struct, implements `InPlacePlugin` trait
+- `lib.rs` — Main plugin struct, implements `ParametricInPlacePlugin` trait
 - `params.rs` — Parameter definitions and JSON deserialization
 
 
 ## Key Public API
 
-- Main plugin struct implementing `sotf_host::plugin::InPlacePlugin`
+- Main plugin struct implementing `sotf_host::plugin::ParametricInPlacePlugin`
 - Plugin parameters via `params.rs`
 
 ## Testing

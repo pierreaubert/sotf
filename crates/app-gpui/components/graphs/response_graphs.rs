@@ -20,10 +20,12 @@ const CHANNEL_COLORS_FALLBACK: [u32; 6] = [
 
 /// Get a channel color as u32 from the theme, with fallback.
 pub fn channel_color(theme: &Theme, idx: usize) -> u32 {
-    if theme.channel_colors.is_empty() {
+    if theme.plugin_palette.channel_colors.is_empty() {
         CHANNEL_COLORS_FALLBACK[idx % CHANNEL_COLORS_FALLBACK.len()]
     } else {
-        rgba_to_u32(theme.channel_colors[idx % theme.channel_colors.len()])
+        rgba_to_u32(
+            theme.plugin_palette.channel_colors[idx % theme.plugin_palette.channel_colors.len()],
+        )
     }
 }
 

@@ -2,7 +2,8 @@
 #[allow(unused_imports)]
 use super::*;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 #[path = "tests/current.rs"]
 mod current;
@@ -24,13 +25,13 @@ use misc::SAMPLE_RATE;
 fn test_denoiser_creation() {
     let denoiser = DenoiserPlugin::new(2, false);
     assert_eq!(denoiser.channels(), 2);
-    assert_eq!(denoiser.fft_size, 2048);
+    assert_eq!(denoiser.config.fft_size, 2048);
 }
 
 #[test]
 fn test_denoiser_low_latency() {
     let denoiser = DenoiserPlugin::new(2, true);
-    assert_eq!(denoiser.fft_size, 512);
+    assert_eq!(denoiser.config.fft_size, 512);
 }
 
 #[test]
@@ -41,8 +42,8 @@ fn test_denoiser_from_params() {
         ..Default::default()
     };
     let denoiser = DenoiserPlugin::from_params(2, params);
-    assert_eq!(denoiser.reduction_db, 20.0);
-    assert_eq!(denoiser.floor_db, -40.0);
+    assert_eq!(denoiser.params.reduction_db, 20.0);
+    assert_eq!(denoiser.params.floor_db, -40.0);
 }
 
 #[test]
@@ -107,7 +108,7 @@ fn test_low_latency_accepts_warm_4096_frame_in_place_blocks() {
 
     assert_eq!(plugin.max_in_place_frames(), num_frames);
     assert!(
-        plugin.output_accumulator[0].len() >= num_frames + plugin.fft_size,
+        plugin.io.output_accumulator[0].len() >= num_frames + plugin.config.fft_size,
         "output ring must reserve one FFT-sized overlap tail beyond the safe in-place block"
     );
 
@@ -524,7 +525,7 @@ fn test_multi_resolution_mode() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     // Verify parameter round-trip
-    let got = plugin.get_parameter(&ParameterId::from("multi_resolution"));
+    let got = plugin.parametric_get_parameter(&ParameterId::from("multi_resolution"));
     assert_eq!(
         got,
         Some(ParameterValue::Bool(true)),
@@ -546,22 +547,22 @@ fn test_multi_resolution_mode() {
 
     // Also verify we can toggle it off via set_parameter without panicking
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("multi_resolution"),
             ParameterValue::Bool(false),
         )
         .unwrap();
-    let got_off = plugin.get_parameter(&ParameterId::from("multi_resolution"));
+    let got_off = plugin.parametric_get_parameter(&ParameterId::from("multi_resolution"));
     assert_eq!(got_off, Some(ParameterValue::Bool(false)));
 
     // And toggle back on
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("multi_resolution"),
             ParameterValue::Bool(true),
         )
         .unwrap();
-    let got_on = plugin.get_parameter(&ParameterId::from("multi_resolution"));
+    let got_on = plugin.parametric_get_parameter(&ParameterId::from("multi_resolution"));
     assert_eq!(got_on, Some(ParameterValue::Bool(true)));
 
     // Process another block with it re-enabled
@@ -584,7 +585,7 @@ fn test_bootstrap_noise_floor_seeding() {
     let mut plugin = DenoiserPlugin::from_params(1, params);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
-    let block_size = plugin.fft_size; // one FFT frame = 1 "frame" of STFT
+    let block_size = plugin.config.fft_size; // one FFT frame = 1 "frame" of STFT
 
     // Phase 1: Feed 5 blocks of noise to seed the noise floor
     for _ in 0..5 {
@@ -673,8 +674,8 @@ fn test_mcra_fast_adaptation() {
     }
 
     // Record the converged noise PSD at a mid-frequency bin
-    let mid_bin = plugin.spectrum_size / 4;
-    let old_noise_psd = plugin.noise_psd[0][mid_bin];
+    let mid_bin = plugin.config.spectrum_size / 4;
+    let old_noise_psd = plugin.mcra.noise_psd[0][mid_bin];
     assert!(
         old_noise_psd > 0.0,
         "Noise PSD should have converged after warmup"
@@ -689,7 +690,7 @@ fn test_mcra_fast_adaptation() {
         plugin.process_in_place(&mut noise, &context).unwrap();
     }
 
-    let new_noise_psd = plugin.noise_psd[0][mid_bin];
+    let new_noise_psd = plugin.mcra.noise_psd[0][mid_bin];
 
     // The new noise PSD should be significantly larger than the old one
     // (the louder noise is 20 dB = 100x more power)
@@ -787,22 +788,22 @@ fn test_learn_noise_resets_mcra() {
 
     // Frame counter should be well past bootstrap
     assert!(
-        plugin.frame_counter[0] > 5,
+        plugin.mcra.frame_counter[0] > 5,
         "Should be past bootstrap. frame_counter={}",
-        plugin.frame_counter[0]
+        plugin.mcra.frame_counter[0]
     );
 
     // Trigger learn_noise
     plugin
-        .set_parameter(ParameterId::from("learn_noise"), ParameterValue::Bool(true))
+        .parametric_set_parameter(ParameterId::from("learn_noise"), ParameterValue::Bool(true))
         .unwrap();
 
     // Frame counter should be reset to 0 (re-entered bootstrap)
     assert_eq!(
-        plugin.frame_counter[0], 0,
+        plugin.mcra.frame_counter[0], 0,
         "learn_noise should reset MCRA (frame_counter back to 0)"
     );
-    assert!(plugin.is_learning, "Should be in learning mode");
+    assert!(plugin.noise_profile.is_learning, "Should be in learning mode");
 }
 
 /// Issue #2: Harmonic/percussive mode must NOT pull a high Wiener gain DOWN to 0.5.
@@ -865,7 +866,7 @@ fn test_harmonic_percussive_transient_gain_not_forced_to_half() {
     let mut plugin = DenoiserPlugin::from_params(1, params);
     plugin.initialize(SAMPLE_RATE).unwrap();
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("harmonic_percussive"),
             ParameterValue::Bool(true),
         )
@@ -913,7 +914,7 @@ fn test_multi_resolution_no_double_smoothing() {
     // without extra smoothing. We verify that current_flux and gains are finite
     // and that the code path was exercised.
     let mrs = plugin
-        .multi_res_state
+        .multi_res.multi_res_state
         .as_ref()
         .expect("multi_res_state should be Some when multi_resolution=true");
 
@@ -1002,7 +1003,7 @@ fn test_pnd_fed_block_not_sample_by_sample() {
     plugin.process_in_place(&mut input, &ctx).unwrap();
 
     // Skip the latency period (first fft_size frames) — those will be silence
-    let skip = plugin.latency_samples() * plugin.channels;
+    let skip = plugin.latency_samples() * plugin.config.channels;
     let sum: f32 = input[skip..].iter().map(|x| x.abs()).sum();
     assert!(
         sum > 0.0,
@@ -1016,7 +1017,7 @@ fn test_fft_returns_result() {
     let mut plugin = DenoiserPlugin::new(2, false);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
-    let input = vec![0.5f32; plugin.fft_size * plugin.channels];
+    let input = vec![0.5f32; plugin.config.fft_size * plugin.config.channels];
 
     let fwd = plugin.apply_window_and_forward_fft(&input);
     assert!(fwd.is_ok(), "FFT forward should return Ok on valid input");

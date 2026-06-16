@@ -95,7 +95,7 @@ fn render_preset_buttons(
                     } = plugin.settings
                 {
                     apply_matrix_preset(in_ch, out_ch, matrix, &preset_name);
-                    state.app.plugin_state.pending_plugin_update =
+                    state.app.plugin_state.update_state.pending_plugin_update =
                         Some(PluginUpdateType::Structural);
                 }
             });
@@ -364,7 +364,7 @@ fn render_msd_button(
                             }
                         }
                     }
-                    state.app.plugin_state.pending_plugin_update =
+                    state.app.plugin_state.update_state.pending_plugin_update =
                         Some(PluginUpdateType::Structural);
                 }
             });
@@ -521,7 +521,7 @@ fn render_matrix_cell(
                         if output_idx < channel_states.len() {
                             channel_states[output_idx] = sotf_plugins::ChannelState::default();
                         }
-                        state.app.plugin_state.pending_plugin_update =
+                        state.app.plugin_state.update_state.pending_plugin_update =
                             Some(PluginUpdateType::Structural);
                     }
                 } else {
@@ -542,7 +542,7 @@ fn render_matrix_cell(
                         if idx < matrix.len() {
                             // Toggle: if > 0.5, set to 0; otherwise set to 1
                             matrix[idx] = if matrix[idx] > 0.5 { 0.0 } else { 1.0 };
-                            state.app.plugin_state.pending_plugin_update =
+                            state.app.plugin_state.update_state.pending_plugin_update =
                                 Some(PluginUpdateType::Structural);
                         }
                     }
@@ -583,7 +583,7 @@ fn render_matrix_cell(
                             let new_db = (current_db + delta).clamp(MIN_DB, MAX_DB);
                             // Preserve sign, apply new magnitude
                             matrix[idx] = sign * db_to_linear(new_db);
-                            state.app.plugin_state.pending_plugin_update =
+                            state.app.plugin_state.update_state.pending_plugin_update =
                                 Some(PluginUpdateType::Structural);
                         }
                     }

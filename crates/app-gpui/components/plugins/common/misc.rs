@@ -41,7 +41,7 @@ pub(in super::super) fn theme_to_vertical_slider_theme(theme: &Theme) -> Vertica
         text_muted: theme.text_muted,
         text_on_accent: theme.text_on_accent,
         background_secondary: theme.background_secondary,
-        peak_marker: theme.meter_colors.peak,
+        peak_marker: theme.plugin_palette.meter_colors.peak,
     }
 }
 

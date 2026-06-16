@@ -31,6 +31,7 @@ impl PlayerView {
             .read(cx)
             .app
             .plugin_state
+            .graph_state
             .workflow_canvas
             .is_some();
 
@@ -113,8 +114,9 @@ impl PlayerView {
                             .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
 
                         state.update(cx, |state, _cx| {
-                            state.app.plugin_state.editing_plugin_node = Some(node_id);
-                            state.app.plugin_state.editing_graph_node_uuid = graph_node_uuid;
+                            state.app.plugin_state.graph_state.editing_plugin_node = Some(node_id);
+                            state.app.plugin_state.graph_state.editing_graph_node_uuid =
+                                graph_node_uuid;
                             state.app.ui_state.input_mode =
                                 crate::app::InputMode::EditingPluginNode;
                         });
@@ -134,9 +136,9 @@ impl PlayerView {
                         let workflow_graph = canvas.read(cx).graph().clone();
                         state.update(cx, |state, _cx| {
                             reconcile_plugin_graph_with_canvas(state, &workflow_graph);
-                            state.app.plugin_state.pending_plugin_update =
+                            state.app.plugin_state.update_state.pending_plugin_update =
                                 Some(crate::app::types::PluginUpdateType::Structural);
-                            state.app.plugin_state.plugin_graph_modified = true;
+                            state.app.plugin_state.update_state.plugin_graph_modified = true;
                         });
                     });
                 });
@@ -171,7 +173,7 @@ impl PlayerView {
 
             // Store the canvas entity
             self.state.update(cx, |state, _cx| {
-                state.app.plugin_state.workflow_canvas = Some(canvas);
+                state.app.plugin_state.graph_state.workflow_canvas = Some(canvas);
             });
         }
     }
@@ -186,6 +188,7 @@ impl PlayerView {
             let (nc, cc) = state
                 .app
                 .plugin_state
+                .graph_state
                 .workflow_canvas
                 .as_ref()
                 .map(|canvas| {
@@ -196,7 +199,7 @@ impl PlayerView {
             let pc = state.app.plugin_state.graph.len();
             (
                 state.app.ui_state.theme.clone(),
-                state.app.plugin_state.workflow_canvas.clone(),
+                state.app.plugin_state.graph_state.workflow_canvas.clone(),
                 nc,
                 cc,
                 pc,
@@ -221,7 +224,7 @@ impl PlayerView {
                     .child(self.render_graph_palette(cx))
                     // Canvas area with drop support
                     .child({
-                        let drag_highlight = Theme::opacity_8pct(theme.drag_over_border);
+                        let drag_highlight = Theme::opacity_8pct(theme.feedback.drag_over_border);
                         div()
                             .id("graph-canvas-area")
                             .flex_1()
@@ -244,7 +247,14 @@ impl PlayerView {
     /// `PluginGraph` (persistent data model) so the node survives canvas
     /// rebuilds.
     pub(super) fn handle_palette_drop(&mut self, data: &PaletteDragData, cx: &mut Context<Self>) {
-        let canvas = self.state.read(cx).app.plugin_state.workflow_canvas.clone();
+        let canvas = self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .graph_state
+            .workflow_canvas
+            .clone();
         if let Some(canvas) = canvas {
             // Offset drop position by existing node count so nodes don't stack
             let node_count = self.state.read(cx).app.plugin_state.graph.nodes.len()
@@ -409,8 +419,14 @@ impl PlayerView {
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    if let Some(canvas) =
-                                        view.state.read(cx).app.plugin_state.workflow_canvas.clone()
+                                    if let Some(canvas) = view
+                                        .state
+                                        .read(cx)
+                                        .app
+                                        .plugin_state
+                                        .graph_state
+                                        .workflow_canvas
+                                        .clone()
                                     {
                                         canvas.update(cx, |canvas, cx| {
                                             canvas.reset_viewport(cx);
@@ -620,11 +636,12 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
 
         // Get the node being edited
-        let node_id = state.app.plugin_state.editing_plugin_node;
+        let node_id = state.app.plugin_state.graph_state.editing_plugin_node;
         let node_info = node_id.and_then(|id| {
             state
                 .app
                 .plugin_state
+                .graph_state
                 .workflow_canvas
                 .as_ref()
                 .and_then(|canvas| {
@@ -706,14 +723,14 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(theme.overlay_bg)
+            .bg(theme.feedback.overlay_bg)
             .on_mouse_down(MouseButton::Left, {
                 let state = state_for_close.clone();
                 move |_, _, cx| {
                     state.update(cx, |state, _cx| {
                         state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                        state.app.plugin_state.editing_plugin_node = None;
-                        state.app.plugin_state.editing_graph_node_uuid = None;
+                        state.app.plugin_state.graph_state.editing_plugin_node = None;
+                        state.app.plugin_state.graph_state.editing_graph_node_uuid = None;
                     });
                 }
             })
@@ -803,11 +820,15 @@ impl PlayerView {
                                                 state.update(cx, |state, _cx| {
                                                     state.app.ui_state.input_mode =
                                                         crate::app::InputMode::Normal;
-                                                    state.app.plugin_state.editing_plugin_node =
-                                                        None;
                                                     state
                                                         .app
                                                         .plugin_state
+                                                        .graph_state
+                                                        .editing_plugin_node = None;
+                                                    state
+                                                        .app
+                                                        .plugin_state
+                                                        .graph_state
                                                         .editing_graph_node_uuid = None;
                                                 });
                                             })
@@ -1009,8 +1030,8 @@ impl PlayerView {
                 state.app.plugin_state.graph.clone(),
                 state.app.playback.loudness_info.clone(),
                 state.app.plugin_state.selected_eq_band,
-                state.app.spectrum_tilt_select_open,
-                state.app.spectrum_reference_select_open,
+                state.app.plugin_ui.spectrum_tilt_select_open,
+                state.app.plugin_ui.spectrum_reference_select_open,
                 if is_editing {
                     state.app.plugin_state.plugin_param_selection
                 } else {

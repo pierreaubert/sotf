@@ -14,7 +14,7 @@ impl UpmixerPlugin {
     #[inline]
     pub(super) fn apply_final_safety_cap(&mut self, output: &mut [f32], num_frames: usize) {
         let output_channels = self.effective_output_channels();
-        if self.safety_cap_db < 0.0 || num_frames == 0 || output_channels == 0 {
+        if self.safety.safety_cap_db < 0.0 || num_frames == 0 || output_channels == 0 {
             return;
         }
 
@@ -26,22 +26,23 @@ impl UpmixerPlugin {
 
         let max_abs = sotf_host::simd::find_max_abs_simd(samples);
         let mut target_scale = 1.0_f32;
-        if max_abs.is_finite() && max_abs > self.safety_cap_linear && max_abs > 0.0 {
-            target_scale = self.safety_cap_linear / max_abs;
+        if max_abs.is_finite() && max_abs > self.safety.safety_cap_linear && max_abs > 0.0 {
+            target_scale = self.safety.safety_cap_linear / max_abs;
         }
 
         // Attack immediately to guarantee the emitted chunk is capped. Release
         // slowly so recovery does not pump between adjacent host buffers.
         let release_coeff = 0.02_f32;
-        let applied_scale = if target_scale < self.final_safety_scale {
+        let applied_scale = if target_scale < self.safety.final_safety_scale {
             target_scale
         } else {
-            self.final_safety_scale + release_coeff * (target_scale - self.final_safety_scale)
+            self.safety.final_safety_scale
+                + release_coeff * (target_scale - self.safety.final_safety_scale)
         };
 
-        self.final_safety_scale = applied_scale.clamp(0.0, 1.0);
-        if (self.final_safety_scale - 1.0).abs() > 1e-6 {
-            sotf_host::simd::scale_add_simd_inplace(samples, self.final_safety_scale);
+        self.safety.final_safety_scale = applied_scale.clamp(0.0, 1.0);
+        if (self.safety.final_safety_scale - 1.0).abs() > 1e-6 {
+            sotf_host::simd::scale_add_simd_inplace(samples, self.safety.final_safety_scale);
         }
     }
 
@@ -49,24 +50,27 @@ impl UpmixerPlugin {
     #[inline]
     pub(super) fn extract_output_and_scale(&mut self, output: &mut [f32], combined_scale: f32) {
         // ... (skipping some comments)
-        let taper_len = self.edge_taper_table.len();
-        for ch in 0..self.num_output_channels {
+        let taper_len = self.main_buffers.edge_taper_table.len();
+        for ch in 0..self.core.num_output_channels {
             // Flush denormals in the time-domain buffers before scaling/limiting.
             // This prevents performance spikes and keeps the peak detector accurate.
-            flush_denormals_inplace(&mut self.time_out_channels[ch]);
+            flush_denormals_inplace(&mut self.main_buffers.time_out_channels[ch]);
 
             // Synthesis window for WOLA. Frequency-domain routing can change phase
             // and magnitude enough that the analysis window alone no longer
             // guarantees tapered IFFT block edges.
-            sotf_host::simd::window_mul_simd_inplace(&mut self.time_out_channels[ch], &self.window);
+            sotf_host::simd::window_mul_simd_inplace(
+                &mut self.main_buffers.time_out_channels[ch],
+                &self.main_buffers.window,
+            );
 
-            let speaker = &self.speaker_config.speakers[ch];
+            let speaker = &self.core.speaker_config.speakers[ch];
             if speaker.elevation > 10.0 {
-                let taper_end = taper_len.min(self.fft_size / 2);
+                let taper_end = taper_len.min(self.core.fft_size / 2);
                 for i in 0..taper_end {
-                    let fade = self.edge_taper_table[i];
-                    self.time_out_channels[ch][i] *= fade;
-                    self.time_out_channels[ch][self.fft_size - 1 - i] *= fade;
+                    let fade = self.main_buffers.edge_taper_table[i];
+                    self.main_buffers.time_out_channels[ch][i] *= fade;
+                    self.main_buffers.time_out_channels[ch][self.core.fft_size - 1 - i] *= fade;
                 }
             }
         }
@@ -78,20 +82,21 @@ impl UpmixerPlugin {
         // erratic peaks that would modulate the safety cap and cause scratchiness in
         // the bed channels (L/R/C/surround).
         let mut target_safety_scale = 1.0_f32;
-        if self.safety_cap_db >= 0.0 {
+        if self.safety.safety_cap_db >= 0.0 {
             let mut max_abs = 0.0_f32;
-            for ch in 0..self.num_output_channels {
-                if self.cached_is_height[ch] {
+            for ch in 0..self.core.num_output_channels {
+                if self.panning.cached_is_height[ch] {
                     continue;
                 }
-                let ch_max = sotf_host::simd::find_max_abs_simd(&self.time_out_channels[ch]);
+                let ch_max =
+                    sotf_host::simd::find_max_abs_simd(&self.main_buffers.time_out_channels[ch]);
                 if ch_max > max_abs {
                     max_abs = ch_max;
                 }
             }
 
             if max_abs > 0.0 {
-                let cap_linear = self.safety_cap_linear;
+                let cap_linear = self.safety.safety_cap_linear;
                 let effective_peak = max_abs * combined_scale;
                 // Guard against division by zero or negative values (defensive)
                 if effective_peak > 0.0 && effective_peak.is_finite() && effective_peak > cap_linear
@@ -105,26 +110,26 @@ impl UpmixerPlugin {
         // Use asymmetric smoothing: fast attack (protect against clipping) but slow release.
         let attack_coeff = 0.5_f32; // Fast attack to catch peaks
         let release_coeff = 0.05_f32; // Slow release to avoid pumping
-        let smoothing = if target_safety_scale < self.prev_safety_scale {
+        let smoothing = if target_safety_scale < self.safety.prev_safety_scale {
             attack_coeff // Going down (reducing gain) - fast
         } else {
             release_coeff // Going up (restoring gain) - slow
         };
 
         // Calculate the target scale for the end of this block
-        let end_scale =
-            self.prev_safety_scale + smoothing * (target_safety_scale - self.prev_safety_scale);
+        let end_scale = self.safety.prev_safety_scale
+            + smoothing * (target_safety_scale - self.safety.prev_safety_scale);
 
-        let start_scale = self.prev_safety_scale;
-        self.prev_safety_scale = end_scale;
+        let start_scale = self.safety.prev_safety_scale;
+        self.safety.prev_safety_scale = end_scale;
 
-        for i in 0..self.fft_size {
-            let idx = i * self.num_output_channels;
-            let t = i as f32 / self.fft_size as f32;
+        for i in 0..self.core.fft_size {
+            let idx = i * self.core.num_output_channels;
+            let t = i as f32 / self.core.fft_size as f32;
             let block_safety_scale = start_scale + t * (end_scale - start_scale);
             let final_scale = combined_scale * block_safety_scale;
-            for ch in 0..self.num_output_channels {
-                output[idx + ch] = self.time_out_channels[ch][i] * final_scale;
+            for ch in 0..self.core.num_output_channels {
+                output[idx + ch] = self.main_buffers.time_out_channels[ch][i] * final_scale;
             }
         }
 

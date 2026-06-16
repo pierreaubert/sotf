@@ -2,8 +2,7 @@ use super::misc::generate_test_audio;
 use super::types::create_mock_shared_memory;
 use driver_hal::SharedAudioBuffer;
 use sotf_plugins::{
-    BiquadFilterConfig, EqPlugin, EqPluginParams, InPlacePlugin, InPlacePluginAdapter, Plugin,
-    ProcessContext,
+    BiquadFilterConfig, EqPlugin, EqPluginParams, ParametricPluginAdapter, Plugin, ProcessContext,
 };
 use sotf_plugins::{GainPlugin, GainPluginParams};
 
@@ -107,7 +106,7 @@ fn test_hal_with_eq_zero_gain_passthrough() {
         auto_gain: Default::default(),
     };
 
-    let mut plugin = InPlacePluginAdapter::new(
+    let mut plugin = ParametricPluginAdapter::new(
         EqPlugin::from_params(channel_count as usize, sample_rate, params)
             .expect("Failed to create EQ plugin"),
     );
@@ -201,7 +200,7 @@ fn test_eq_zero_gain_with_silence() {
 
     let sample_rate = 48000;
     let num_channels = 2;
-    let mut plugin = InPlacePluginAdapter::new(
+    let mut plugin = ParametricPluginAdapter::new(
         EqPlugin::from_params(num_channels, sample_rate, params)
             .expect("Failed to create EQ plugin"),
     );
@@ -242,31 +241,30 @@ fn test_volume_control_global_gain() {
     let num_frames = 256;
 
     // Create GainPlugin with -6dB (approximately 0.5x)
-    let mut plugin = GainPlugin::new(num_channels, -6.0);
+    let mut plugin = ParametricPluginAdapter::new(GainPlugin::new(num_channels, -6.0));
     plugin
         .initialize(sample_rate)
         .expect("Failed to initialize");
 
     // Generate test audio
-    let mut buffer: Vec<f32> = (0..num_frames * num_channels)
+    let input: Vec<f32> = (0..num_frames * num_channels)
         .map(|i| {
             let t = (i / num_channels) as f32 / sample_rate as f32;
             (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.8
         })
         .collect();
 
-    let original_buffer = buffer.clone();
-
+    let mut output = vec![0.0f32; input.len()];
     let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin
-        .process_in_place(&mut buffer, &context)
+        .process(&input, &mut output, &context)
         .expect("Failed to process");
 
     // Verify attenuation (should be approximately half amplitude)
     // -6dB ≈ 0.501x linear gain
     let expected_gain = 10.0_f32.powf(-6.0 / 20.0);
-    for (i, (orig, processed)) in original_buffer.iter().zip(buffer.iter()).enumerate() {
+    for (i, (orig, processed)) in input.iter().zip(output.iter()).enumerate() {
         let expected = orig * expected_gain;
         assert!(
             (processed - expected).abs() < 0.001,
@@ -290,25 +288,27 @@ fn test_volume_control_per_channel() {
         gain_db: 0.0,
         channel_gains: vec![0.0, -6.0],
     };
-    let mut plugin =
-        GainPlugin::from_params(num_channels, params).expect("Failed to create plugin");
+    let mut plugin = ParametricPluginAdapter::new(
+        GainPlugin::from_params(num_channels, params).expect("Failed to create plugin"),
+    );
     plugin
         .initialize(sample_rate)
         .expect("Failed to initialize");
 
     // Generate identical audio on both channels
-    let mut buffer: Vec<f32> = (0..num_frames)
+    let input: Vec<f32> = (0..num_frames)
         .flat_map(|i| {
             let t = i as f32 / sample_rate as f32;
             let sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.8;
             [sample, sample] // Same sample on L and R
         })
         .collect();
+    let mut buffer = vec![0.0f32; input.len()];
 
     let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin
-        .process_in_place(&mut buffer, &context)
+        .process(&input, &mut buffer, &context)
         .expect("Failed to process");
 
     // Verify per-channel gains
@@ -345,26 +345,28 @@ fn test_volume_control_multichannel() {
         gain_db: 0.0,
         channel_gains: channel_gains.clone(),
     };
-    let mut plugin =
-        GainPlugin::from_params(num_channels, params).expect("Failed to create plugin");
+    let mut plugin = ParametricPluginAdapter::new(
+        GainPlugin::from_params(num_channels, params).expect("Failed to create plugin"),
+    );
     plugin
         .initialize(sample_rate)
         .expect("Failed to initialize");
 
     // Generate audio with same amplitude on all channels
     let amplitude = 0.8;
-    let mut buffer: Vec<f32> = (0..num_frames)
+    let input: Vec<f32> = (0..num_frames)
         .flat_map(|i| {
             let t = i as f32 / sample_rate as f32;
             let sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * amplitude;
             vec![sample; num_channels]
         })
         .collect();
+    let mut buffer = vec![0.0f32; input.len()];
 
     let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin
-        .process_in_place(&mut buffer, &context)
+        .process(&input, &mut buffer, &context)
         .expect("Failed to process");
 
     // Verify each channel has correct gain applied
@@ -412,7 +414,7 @@ fn test_eq_zero_gain_preserves_full_scale() {
 
     let sample_rate = 48000;
     let num_channels = 2;
-    let mut plugin = InPlacePluginAdapter::new(
+    let mut plugin = ParametricPluginAdapter::new(
         EqPlugin::from_params(num_channels, sample_rate, params)
             .expect("Failed to create EQ plugin"),
     );

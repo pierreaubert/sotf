@@ -6,6 +6,7 @@
 // ============================================================================
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePluginAdapter;
 use sotf_host::plugin::{InPlacePlugin, ProcessContext};
 use sotf_plugin_stereo_imager::{StereoImagerPlugin, StereoImagerPluginParams};
 
@@ -18,7 +19,7 @@ const FRAMES: usize = 512;
 
 #[test]
 fn new_plugin_has_expected_metadata() {
-    let plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    let plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
     let info = plugin.info();
     assert_eq!(info.name, "StereoImager");
     assert_eq!(info.author, "SotF");
@@ -38,7 +39,7 @@ fn from_params_uses_provided_values() {
         mono_bass: true,
         mix: 0.75,
     };
-    let plugin = StereoImagerPlugin::from_params(2, params);
+    let plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::from_params(2, params));
     assert_eq!(plugin.channels(), 2);
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("width")),
@@ -60,7 +61,7 @@ fn from_params_uses_provided_values() {
 
 #[test]
 fn parameters_include_expected_controls() {
-    let plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    let plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
     let params = plugin.parameters();
     let ids: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
     assert!(ids.contains(&"width"));
@@ -87,7 +88,7 @@ fn all_parameters_roundtrip() {
     ];
 
     for &(id, ref value) in cases {
-        let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+        let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
         plugin.initialize(SR).unwrap();
         plugin
             .set_parameter(ParameterId::from(id), value.clone())
@@ -99,7 +100,7 @@ fn all_parameters_roundtrip() {
 
 #[test]
 fn unknown_parameter_get_returns_none() {
-    let plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    let plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("nonexistent")),
         None
@@ -112,7 +113,7 @@ fn unknown_parameter_get_returns_none() {
 
 #[test]
 fn initialize_then_process_works() {
-    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
     plugin.initialize(SR).unwrap();
     let mut buffer: Vec<f32> = (0..FRAMES * 2)
         .map(|i| (i as f32 * 0.1).sin() * 0.5)
@@ -125,7 +126,7 @@ fn initialize_then_process_works() {
 
 #[test]
 fn reset_then_process_still_works() {
-    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
     plugin.initialize(SR).unwrap();
     let mut buffer: Vec<f32> = (0..FRAMES * 2)
         .map(|i| (i as f32 * 0.1).sin() * 0.5)
@@ -148,7 +149,7 @@ fn reset_then_process_still_works() {
 
 #[test]
 fn initialize_at_multiple_sample_rates() {
-    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
     plugin.initialize(44100).unwrap();
     plugin.initialize(96000).unwrap();
     let mut buffer = vec![0.5f32; FRAMES * 2];
@@ -168,7 +169,7 @@ fn mix_zero_is_passthrough() {
         mix: 0.0,
         ..StereoImagerPluginParams::default()
     };
-    let mut plugin = StereoImagerPlugin::new(2, params);
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, params));
     plugin.initialize(SR).unwrap();
 
     let mut buffer: Vec<f32> = (0..FRAMES * 2)
@@ -198,7 +199,7 @@ fn width_one_is_passthrough_for_constant_signal() {
         mix: 1.0,
         ..StereoImagerPluginParams::default()
     };
-    let mut plugin = StereoImagerPlugin::new(2, params);
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, params));
     plugin.initialize(SR).unwrap();
 
     // Long constant stereo signal to let crossover transients settle.
@@ -243,7 +244,7 @@ fn width_zero_collapses_to_mono() {
         mix: 1.0,
         ..StereoImagerPluginParams::default()
     };
-    let mut plugin = StereoImagerPlugin::new(2, params);
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, params));
     plugin.initialize(SR).unwrap();
 
     let num_frames = 10000;
@@ -282,7 +283,7 @@ fn width_two_widens_stereo() {
         mix: 1.0,
         ..StereoImagerPluginParams::default()
     };
-    let mut plugin = StereoImagerPlugin::new(2, params);
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, params));
     plugin.initialize(SR).unwrap();
 
     let num_frames = 10000;
@@ -315,7 +316,7 @@ fn mono_bass_collapses_low_frequencies() {
         mono_bass: true,
         mix: 1.0,
     };
-    let mut plugin = StereoImagerPlugin::new(2, params);
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, params));
     plugin.initialize(SR).unwrap();
 
     let num_frames = 10000;
@@ -345,7 +346,7 @@ fn mono_bass_collapses_low_frequencies() {
 
 #[test]
 fn output_is_finite_for_sine_input() {
-    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
     plugin.initialize(SR).unwrap();
     let mut buffer: Vec<f32> = (0..FRAMES * 2)
         .map(|i| (i as f32 * 0.1).sin() * 0.5)
@@ -362,7 +363,7 @@ fn output_is_finite_for_sine_input() {
 
 #[test]
 fn set_unknown_parameter_fails() {
-    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
     plugin.initialize(SR).unwrap();
     let err = plugin
         .set_parameter(ParameterId::from("nonexistent"), ParameterValue::Float(1.0))
@@ -372,7 +373,7 @@ fn set_unknown_parameter_fails() {
 
 #[test]
 fn set_parameter_out_of_range_fails() {
-    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
     plugin.initialize(SR).unwrap();
 
     assert!(
@@ -399,7 +400,7 @@ fn set_parameter_out_of_range_fails() {
 
 #[test]
 fn non_stereo_channels_pass_through_unchanged() {
-    let mut plugin = StereoImagerPlugin::new(1, StereoImagerPluginParams::default());
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(1, StereoImagerPluginParams::default()));
     plugin.initialize(SR).unwrap();
     let mut buffer = vec![0.5, 0.3, 0.7, 0.1];
     let original = buffer.clone();
@@ -411,7 +412,7 @@ fn non_stereo_channels_pass_through_unchanged() {
 
 #[test]
 fn process_empty_buffer_returns_zero() {
-    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(2, StereoImagerPluginParams::default()));
     plugin.initialize(SR).unwrap();
     let mut buffer = vec![];
     let frames = plugin

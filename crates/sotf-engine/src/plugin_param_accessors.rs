@@ -14,66 +14,72 @@ use sotf_plugins::param_specs::{self, ParamSpec};
 use sotf_plugins::plugin_layout::PluginLayout;
 
 macro_rules! field_to_f64 {
-    ($field:ident, f64) => {
+    ($field:expr, f64) => {
         Some(*$field)
     };
-    ($field:ident, bool) => {
+    ($field:expr, bool) => {
         Some(b2f(*$field))
     };
-    ($field:ident, usize) => {
+    ($field:expr, usize) => {
         Some(*$field as f64)
     };
-    ($field:ident, i32) => {
+    ($field:expr, i32) => {
         Some(*$field as f64)
     };
-    ($field:ident, f32) => {
+    ($field:expr, f32) => {
         Some(*$field as f64)
     };
-    ($field:ident, skip) => {
+    ($field:expr, skip) => {
         None
     };
-    ($field:ident, [enum $to:path, $from:path]) => {
+    ($field:expr, [enum $to:path, $from:path]) => {
         Some($to($field))
     };
-    ($field:ident, [str $to:path, $from:path]) => {
+    ($field:expr, [str $to:path, $from:path]) => {
         Some($to($field))
     };
 }
 macro_rules! f64_to_field {
-    ($field:ident, $val:ident, f64) => {
+    ($field:expr, $val:ident, f64) => {
         *$field = $val
     };
-    ($field:ident, $val:ident, bool) => {
+    ($field:expr, $val:ident, bool) => {
         *$field = f2b($val)
     };
-    ($field:ident, $val:ident, usize) => {
+    ($field:expr, $val:ident, usize) => {
         *$field = $val as usize
     };
-    ($field:ident, $val:ident, i32) => {
+    ($field:expr, $val:ident, i32) => {
         *$field = $val as i32
     };
-    ($field:ident, $val:ident, f32) => {
+    ($field:expr, $val:ident, f32) => {
         *$field = $val as f32
     };
-    ($field:ident, $val:ident, skip) => {};
-    ($field:ident, $val:ident, [enum $to:path, $from:path]) => {
+    ($field:expr, $val:ident, skip) => {};
+    ($field:expr, $val:ident, [enum $to:path, $from:path]) => {
         *$field = $from($val)
     };
-    ($field:ident, $val:ident, [str $to:path, $from:path]) => {
+    ($field:expr, $val:ident, [str $to:path, $from:path]) => {
         *$field = $from($val)
     };
 }
 macro_rules! impl_param_accessors {
     (
-        $(
-            $Variant:ident {
+        normal: [
+            $($Variant:ident {
                 params: $params:expr,
                 layout: $layout_val:expr,
                 fields: [$($field:ident : $ty:tt),* $(,)?]
-            }
-        ),+
-        $(,)?
-        ;
+            }),* $(,)?
+        ];
+        manual: [
+            $($ManualVariant:ident {
+                params: $manual_params:expr,
+                layout: $manual_layout_val:expr,
+                manual: [$manual_get:ident, $manual_set:ident],
+                fields: [$($manual_field:ident : $manual_ty:tt),* $(,)?]
+            }),* $(,)?
+        ];
         no_params_unit: [$($NoParamUnit:ident),* $(,)?];
         no_params_struct: [$($NoParamStruct:ident),* $(,)?]
     ) => {
@@ -85,7 +91,14 @@ macro_rules! impl_param_accessors {
                 concat!("PARAMS length mismatch for ", stringify!($Variant),
                     ": fields and param_specs array must have the same number of entries")
             );
-        )+
+        )*
+        $(
+            const _: () = assert!(
+                impl_param_accessors!(@count $($manual_field)*) == $manual_params.len(),
+                concat!("PARAMS length mismatch for ", stringify!($ManualVariant),
+                    ": fields and param_specs array must have the same number of entries")
+            );
+        )*
 
         impl PluginSettings {
             /// Return the static `PARAMS` array for this plugin variant.
@@ -98,7 +111,8 @@ macro_rules! impl_param_accessors {
             /// (LoudnessMonitor, SpectrumAnalyzer, ChannelMuteSolo, Matrix).
             pub fn param_specs(&self) -> &'static [ParamSpec] {
                 match self {
-                    $(Self::$Variant { .. } => $params,)+
+                    $(Self::$Variant { .. } => $params,)*
+                    $(Self::$ManualVariant { .. } => $manual_params,)*
                     $(Self::$NoParamUnit => &[],)*
                     $(Self::$NoParamStruct { .. } => &[],)*
                 }
@@ -111,7 +125,8 @@ macro_rules! impl_param_accessors {
             /// require band selection UI (MultibandCompressor, MultibandExpander).
             pub fn layout(&self) -> Option<&'static PluginLayout> {
                 match self {
-                    $(Self::$Variant { .. } => $layout_val,)+
+                    $(Self::$Variant { .. } => $layout_val,)*
+                    $(Self::$ManualVariant { .. } => $manual_layout_val,)*
                     $(Self::$NoParamUnit => None,)*
                     $(Self::$NoParamStruct { .. } => None,)*
                 }
@@ -129,7 +144,10 @@ macro_rules! impl_param_accessors {
                         Self::$Variant { $($field,)* .. } => {
                             impl_param_accessors!(@get index; 0usize; $($field : $ty,)*)
                         }
-                    )+
+                    )*
+                    $(
+                        Self::$ManualVariant { .. } => self.$manual_get(index),
+                    )*
                     $(Self::$NoParamUnit => None,)*
                     $(Self::$NoParamStruct { .. } => None,)*
                 }
@@ -147,7 +165,10 @@ macro_rules! impl_param_accessors {
                         Self::$Variant { $($field,)* .. } => {
                             impl_param_accessors!(@set index, value; 0usize; $($field : $ty,)*)
                         }
-                    )+
+                    )*
+                    $(
+                        Self::$ManualVariant { .. } => self.$manual_set(index, value),
+                    )*
                     $(Self::$NoParamUnit => {},)*
                     $(Self::$NoParamStruct { .. } => {},)*
                 }
@@ -196,6 +217,7 @@ macro_rules! impl_param_accessors {
     };
 }
 impl_param_accessors! {
+    normal: [
     Gain {
         params: param_specs::gain::PARAMS,
         layout: Some(&param_specs::gain::LAYOUT),
@@ -256,32 +278,6 @@ impl_param_accessors! {
             auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
             mode: usize, playback_level_db: f64, reference_level_db: f64,
             playback_volume_db: f64,
-        ]
-    },
-    Upmixer {
-        params: param_specs::upmixer::PARAMS,
-        layout: Some(&param_specs::upmixer::LAYOUT),
-        fields: [
-            speaker_config: [str speaker_config_to_index, index_to_speaker_config],
-            gain_front_direct: f64, gain_front_ambient: f64, gain_rear_ambient: f64,
-            height_gain: f64, lfe_gain: f64, lfe_cutoff_hz: f64,
-            enable_subharmonic_synth: bool, subharmonic_gain: f64, subharmonic_freq_hz: f64,
-            subharmonic_attack_ms: f64, subharmonic_release_ms: f64,
-            stereo_width: f64, center_spread: f64, bandpass_hz: f64,
-            enable_hr_direct: bool, hr_sharpen: f64, ambient_boost: f64,
-            decorrelation_mode: usize, decorrelation_lfo_rate_hz: f64,
-            velvet_noise_duration_ms: f64, velvet_noise_density: f64,
-            height_hf_cap_hz: f64, height_transient_reduction: f64, height_direct_leak: f64,
-            surround_direct_bleed: f64, rear_ambient_boost: f64, rear_late_reflection: f64,
-            dialogue_weight: f64, voice_freq_min_hz: f64, voice_freq_max_hz: f64,
-            dialogue_centroid_weight: f64, dialogue_variance_weight: f64, dialogue_coherence_weight: f64,
-            safety_cap_db: f64,
-            low_latency: bool, frequency_resolution: usize,
-            bypass_decorrelation: bool, bypass_transient_detection: bool,
-            bypass_all_processing: bool, enable_ml_detection: bool,
-            multi_source_extraction: bool, multi_source_threshold: f64,
-            binaural_preview: bool,
-            auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
         ]
     },
     Convolution {
@@ -579,12 +575,185 @@ impl_param_accessors! {
             tilt_reference: [enum tilt_reference_to_index, index_to_tilt_reference],
         ]
     }
-    ;
+    ];
+    manual: [
+        Upmixer {
+            params: param_specs::upmixer::PARAMS,
+            layout: Some(&param_specs::upmixer::LAYOUT),
+            manual: [upmixer_param_value, upmixer_set_param_value],
+            fields: [
+                speaker_config: [str speaker_config_to_index, index_to_speaker_config],
+                gain_front_direct: f64, gain_front_ambient: f64, gain_rear_ambient: f64,
+                height_gain: f64, lfe_gain: f64, lfe_cutoff_hz: f64,
+                enable_subharmonic_synth: bool, subharmonic_gain: f64, subharmonic_freq_hz: f64,
+                subharmonic_attack_ms: f64, subharmonic_release_ms: f64,
+                stereo_width: f64, center_spread: f64, bandpass_hz: f64,
+                enable_hr_direct: bool, hr_sharpen: f64, ambient_boost: f64,
+                decorrelation_mode: usize, decorrelation_lfo_rate_hz: f64,
+                velvet_noise_duration_ms: f64, velvet_noise_density: f64,
+                height_hf_cap_hz: f64, height_transient_reduction: f64, height_direct_leak: f64,
+                surround_direct_bleed: f64, rear_ambient_boost: f64, rear_late_reflection: f64,
+                dialogue_weight: f64, voice_freq_min_hz: f64, voice_freq_max_hz: f64,
+                dialogue_centroid_weight: f64, dialogue_variance_weight: f64, dialogue_coherence_weight: f64,
+                safety_cap_db: f64,
+                low_latency: bool, frequency_resolution: usize,
+                bypass_decorrelation: bool, bypass_transient_detection: bool,
+                bypass_all_processing: bool, enable_ml_detection: bool,
+                multi_source_extraction: bool, multi_source_threshold: f64,
+                binaural_preview: bool,
+                auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
+            ]
+        }
+    ];
     no_params_unit: [LoudnessMonitor];
     no_params_struct: [Matrix, FletcherMunson]
 }
 
 mod aae;
+// Manual param accessors for Upmixer, whose variant fields are split into
+// serde-flattened sub-structs. Keeping these in one place preserves the
+// index↔field mapping from the old monolithic variant.
+impl PluginSettings {
+    fn upmixer_param_value(&self, index: usize) -> Option<f64> {
+        let Self::Upmixer {
+            speaker_config,
+            gains,
+            lfe,
+            subharmonic,
+            decorrelation,
+            height,
+            ambient_analysis,
+            dialogue,
+            bypass,
+            output,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        match index {
+            0 => Some(speaker_config_to_index(speaker_config)),
+            1 => Some(gains.gain_front_direct),
+            2 => Some(gains.gain_front_ambient),
+            3 => Some(gains.gain_rear_ambient),
+            4 => Some(gains.height_gain),
+            5 => Some(lfe.lfe_gain),
+            6 => Some(lfe.lfe_cutoff_hz),
+            7 => Some(b2f(subharmonic.enable_subharmonic_synth)),
+            8 => Some(subharmonic.subharmonic_gain),
+            9 => Some(subharmonic.subharmonic_freq_hz),
+            10 => Some(subharmonic.subharmonic_attack_ms),
+            11 => Some(subharmonic.subharmonic_release_ms),
+            12 => Some(gains.stereo_width),
+            13 => Some(gains.center_spread),
+            14 => Some(lfe.bandpass_hz),
+            15 => Some(b2f(height.enable_hr_direct)),
+            16 => Some(height.hr_sharpen),
+            17 => Some(gains.ambient_boost),
+            18 => Some(decorrelation.decorrelation_mode as f64),
+            19 => Some(decorrelation.decorrelation_lfo_rate_hz),
+            20 => Some(decorrelation.velvet_noise_duration_ms),
+            21 => Some(decorrelation.velvet_noise_density),
+            22 => Some(height.height_hf_cap_hz),
+            23 => Some(height.height_transient_reduction),
+            24 => Some(height.height_direct_leak),
+            25 => Some(gains.surround_direct_bleed),
+            26 => Some(gains.rear_ambient_boost),
+            27 => Some(gains.rear_late_reflection),
+            28 => Some(dialogue.dialogue_weight),
+            29 => Some(dialogue.voice_freq_min_hz),
+            30 => Some(dialogue.voice_freq_max_hz),
+            31 => Some(dialogue.dialogue_centroid_weight),
+            32 => Some(dialogue.dialogue_variance_weight),
+            33 => Some(dialogue.dialogue_coherence_weight),
+            34 => Some(ambient_analysis.safety_cap_db),
+            35 => Some(b2f(ambient_analysis.low_latency)),
+            36 => Some(ambient_analysis.frequency_resolution as f64),
+            37 => Some(b2f(bypass.bypass_decorrelation)),
+            38 => Some(b2f(bypass.bypass_transient_detection)),
+            39 => Some(b2f(bypass.bypass_all_processing)),
+            40 => Some(b2f(output.enable_ml_detection)),
+            41 => Some(b2f(output.multi_source_extraction)),
+            42 => Some(output.multi_source_threshold),
+            43 => Some(b2f(output.binaural_preview)),
+            44 => Some(b2f(output.auto_gain_enabled)),
+            45 => Some(output.auto_gain_max_db),
+            46 => Some(output.auto_gain_smoothing_ms),
+            _ => None,
+        }
+    }
+
+    fn upmixer_set_param_value(&mut self, index: usize, value: f64) {
+        let Self::Upmixer {
+            speaker_config,
+            gains,
+            lfe,
+            subharmonic,
+            decorrelation,
+            height,
+            ambient_analysis,
+            dialogue,
+            bypass,
+            output,
+            ..
+        } = self
+        else {
+            return;
+        };
+        match index {
+            0 => *speaker_config = index_to_speaker_config(value),
+            1 => gains.gain_front_direct = value,
+            2 => gains.gain_front_ambient = value,
+            3 => gains.gain_rear_ambient = value,
+            4 => gains.height_gain = value,
+            5 => lfe.lfe_gain = value,
+            6 => lfe.lfe_cutoff_hz = value,
+            7 => subharmonic.enable_subharmonic_synth = f2b(value),
+            8 => subharmonic.subharmonic_gain = value,
+            9 => subharmonic.subharmonic_freq_hz = value,
+            10 => subharmonic.subharmonic_attack_ms = value,
+            11 => subharmonic.subharmonic_release_ms = value,
+            12 => gains.stereo_width = value,
+            13 => gains.center_spread = value,
+            14 => lfe.bandpass_hz = value,
+            15 => height.enable_hr_direct = f2b(value),
+            16 => height.hr_sharpen = value,
+            17 => gains.ambient_boost = value,
+            18 => decorrelation.decorrelation_mode = value as usize,
+            19 => decorrelation.decorrelation_lfo_rate_hz = value,
+            20 => decorrelation.velvet_noise_duration_ms = value,
+            21 => decorrelation.velvet_noise_density = value,
+            22 => height.height_hf_cap_hz = value,
+            23 => height.height_transient_reduction = value,
+            24 => height.height_direct_leak = value,
+            25 => gains.surround_direct_bleed = value,
+            26 => gains.rear_ambient_boost = value,
+            27 => gains.rear_late_reflection = value,
+            28 => dialogue.dialogue_weight = value,
+            29 => dialogue.voice_freq_min_hz = value,
+            30 => dialogue.voice_freq_max_hz = value,
+            31 => dialogue.dialogue_centroid_weight = value,
+            32 => dialogue.dialogue_variance_weight = value,
+            33 => dialogue.dialogue_coherence_weight = value,
+            34 => ambient_analysis.safety_cap_db = value,
+            35 => ambient_analysis.low_latency = f2b(value),
+            36 => ambient_analysis.frequency_resolution = value as usize,
+            37 => bypass.bypass_decorrelation = f2b(value),
+            38 => bypass.bypass_transient_detection = f2b(value),
+            39 => bypass.bypass_all_processing = f2b(value),
+            40 => output.enable_ml_detection = f2b(value),
+            41 => output.multi_source_extraction = f2b(value),
+            42 => output.multi_source_threshold = value,
+            43 => output.binaural_preview = f2b(value),
+            44 => output.auto_gain_enabled = f2b(value),
+            45 => output.auto_gain_max_db = value,
+            46 => output.auto_gain_smoothing_ms = value,
+            _ => {}
+        }
+    }
+}
+
+
 mod ambisonics;
 mod crossfeed;
 mod crossover;

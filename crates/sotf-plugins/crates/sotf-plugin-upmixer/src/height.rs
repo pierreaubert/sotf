@@ -86,20 +86,20 @@ impl UpmixerPlugin {
     /// Updates `height_flux_gate` per-bin and `height_spectral_flux_smooth` baseline.
     #[inline]
     pub(super) fn compute_height_flux_gate(&mut self) {
-        let spec_size = self.fft_size / 2 + 1;
-        let bandpass_bin = self.cached_bandpass_bin;
+        let spec_size = self.core.fft_size / 2 + 1;
+        let bandpass_bin = self.cache.cached_bandpass_bin;
 
         // Compute per-bin spectral flux (half-wave rectified)
         let mut total_flux = 0.0_f32;
         let mut bin_count = 0_u32;
 
         for i in bandpass_bin..spec_size {
-            let l = self.freq_domain_left[i];
-            let r = self.freq_domain_right[i];
+            let l = self.main_buffers.freq_domain_left[i];
+            let r = self.main_buffers.freq_domain_right[i];
             let current_mag = (l.norm_sqr() + r.norm_sqr()).sqrt();
-            let prev_mag = self.height_prev_magnitude[i];
+            let prev_mag = self.height.height_prev_magnitude[i];
             let diff = current_mag - prev_mag;
-            self.height_prev_magnitude[i] = current_mag;
+            self.height.height_prev_magnitude[i] = current_mag;
 
             if diff > 0.0 {
                 total_flux += diff;
@@ -115,22 +115,22 @@ impl UpmixerPlugin {
         };
 
         // Bootstrap baseline
-        if self.height_spectral_flux_smooth < 1e-12 && avg_flux > 0.0 {
-            self.height_spectral_flux_smooth = avg_flux;
+        if self.height.height_spectral_flux_smooth < 1e-12 && avg_flux > 0.0 {
+            self.height.height_spectral_flux_smooth = avg_flux;
         }
 
         // Smooth the flux baseline
-        let flux_alpha = if avg_flux > self.height_spectral_flux_smooth {
+        let flux_alpha = if avg_flux > self.height.height_spectral_flux_smooth {
             HEIGHT_FLUX_SMOOTH_ALPHA
         } else {
             HEIGHT_FLUX_SMOOTH_ALPHA * 0.3 // Slower release for baseline
         };
-        self.height_spectral_flux_smooth +=
-            flux_alpha * (avg_flux - self.height_spectral_flux_smooth);
+        self.height.height_spectral_flux_smooth +=
+            flux_alpha * (avg_flux - self.height.height_spectral_flux_smooth);
 
         // Compute onset ratio (how much current flux exceeds baseline)
-        let onset_ratio = if self.height_spectral_flux_smooth > 1e-9 {
-            (avg_flux / self.height_spectral_flux_smooth - 1.0).max(0.0)
+        let onset_ratio = if self.height.height_spectral_flux_smooth > 1e-9 {
+            (avg_flux / self.height.height_spectral_flux_smooth - 1.0).max(0.0)
         } else {
             0.0
         };
@@ -145,10 +145,10 @@ impl UpmixerPlugin {
 
         // Combine onset gate with per-band coherence-based reverb gate
         // Low coherence bands get a higher gate (more suitable for height)
-        for band_idx in 0..self.erb_bands.len() {
-            let start = self.erb_bands[band_idx];
-            let end = if band_idx + 1 < self.erb_bands.len() {
-                self.erb_bands[band_idx + 1]
+        for band_idx in 0..self.steering.erb_bands.len() {
+            let start = self.steering.erb_bands[band_idx];
+            let end = if band_idx + 1 < self.steering.erb_bands.len() {
+                self.steering.erb_bands[band_idx + 1]
             } else {
                 spec_size
             };
@@ -156,8 +156,8 @@ impl UpmixerPlugin {
             if start < bandpass_bin {
                 // Below bandpass: no height content
                 for i in start..end.min(bandpass_bin) {
-                    self.height_flux_gate[i] = smooth_slew_limited(
-                        self.height_flux_gate[i],
+                    self.height.height_flux_gate[i] = smooth_slew_limited(
+                        self.height.height_flux_gate[i],
                         HEIGHT_GATE_FLOOR,
                         HEIGHT_GATE_ATTACK_ALPHA,
                         HEIGHT_GATE_RELEASE_ALPHA,
@@ -174,8 +174,8 @@ impl UpmixerPlugin {
             }
 
             // Use smoothed coherence for this band: low coherence = reverb tail
-            let band_coh = if band_idx < self.smoothed_coherence.len() {
-                self.smoothed_coherence[band_idx]
+            let band_coh = if band_idx < self.steering.smoothed_coherence.len() {
+                self.steering.smoothed_coherence[band_idx]
             } else {
                 0.5
             };
@@ -185,8 +185,8 @@ impl UpmixerPlugin {
             let combined = (onset_gate + reverb_gate).clamp(HEIGHT_GATE_FLOOR, 1.0);
 
             for i in band_start..end {
-                self.height_flux_gate[i] = smooth_slew_limited(
-                    self.height_flux_gate[i],
+                self.height.height_flux_gate[i] = smooth_slew_limited(
+                    self.height.height_flux_gate[i],
                     combined,
                     HEIGHT_GATE_ATTACK_ALPHA,
                     HEIGHT_GATE_RELEASE_ALPHA,
@@ -210,8 +210,8 @@ impl UpmixerPlugin {
     /// This reduces "grainy" artifacts from bin-level processing within ERB bands.
     #[inline]
     pub(super) fn smooth_height_gains(&mut self) {
-        let n = self.fft_size / 2 + 1;
-        let mut smoothed = std::mem::take(&mut self.height_band_gains_temp);
+        let n = self.core.fft_size / 2 + 1;
+        let mut smoothed = std::mem::take(&mut self.height.height_band_gains_temp);
 
         // Spectral smoothing: edge-separated 5-point moving average.
         // Handling edge bins separately eliminates per-iteration count tracking
@@ -219,41 +219,41 @@ impl UpmixerPlugin {
         match n {
             0 => {}
             1 => {
-                smoothed[0] = self.height_band_gains[0];
+                smoothed[0] = self.height.height_band_gains[0];
             }
             2 => {
-                let s = (self.height_band_gains[0] + self.height_band_gains[1]) * 0.5;
+                let s = (self.height.height_band_gains[0] + self.height.height_band_gains[1]) * 0.5;
                 smoothed[0] = s;
                 smoothed[1] = s;
             }
             3 => {
-                let s = (self.height_band_gains[0]
-                    + self.height_band_gains[1]
-                    + self.height_band_gains[2])
+                let s = (self.height.height_band_gains[0]
+                    + self.height.height_band_gains[1]
+                    + self.height.height_band_gains[2])
                     / 3.0;
                 smoothed[0] = s;
                 smoothed[1] = s;
                 smoothed[2] = s;
             }
             4 => {
-                smoothed[0] = (self.height_band_gains[0]
-                    + self.height_band_gains[1]
-                    + self.height_band_gains[2])
+                smoothed[0] = (self.height.height_band_gains[0]
+                    + self.height.height_band_gains[1]
+                    + self.height.height_band_gains[2])
                     / 3.0;
-                let mid = (self.height_band_gains[0]
-                    + self.height_band_gains[1]
-                    + self.height_band_gains[2]
-                    + self.height_band_gains[3])
+                let mid = (self.height.height_band_gains[0]
+                    + self.height.height_band_gains[1]
+                    + self.height.height_band_gains[2]
+                    + self.height.height_band_gains[3])
                     * 0.25;
                 smoothed[1] = mid;
                 smoothed[2] = mid;
-                smoothed[3] = (self.height_band_gains[1]
-                    + self.height_band_gains[2]
-                    + self.height_band_gains[3])
+                smoothed[3] = (self.height.height_band_gains[1]
+                    + self.height.height_band_gains[2]
+                    + self.height.height_band_gains[3])
                     / 3.0;
             }
             _ => {
-                let src = &self.height_band_gains[..n];
+                let src = &self.height.height_band_gains[..n];
 
                 // First 2 bins: partial window
                 smoothed[0] = (src[0] + src[1] + src[2]) / 3.0;
@@ -275,7 +275,7 @@ impl UpmixerPlugin {
         // This focuses height content on onsets and reverberant tails
         for (s, &gate) in smoothed
             .iter_mut()
-            .zip(self.height_flux_gate.iter())
+            .zip(self.height.height_flux_gate.iter())
             .take(n)
         {
             *s *= gate;
@@ -286,9 +286,10 @@ impl UpmixerPlugin {
         for (s, (gain, prev)) in smoothed
             .iter()
             .zip(
-                self.height_band_gains
+                self.height
+                    .height_band_gains
                     .iter_mut()
-                    .zip(self.height_band_gains_prev.iter_mut()),
+                    .zip(self.height.height_band_gains_prev.iter_mut()),
             )
             .take(n)
         {
@@ -300,7 +301,7 @@ impl UpmixerPlugin {
             *prev = blended;
         }
 
-        self.height_band_gains_temp = smoothed;
+        self.height.height_band_gains_temp = smoothed;
     }
 }
 

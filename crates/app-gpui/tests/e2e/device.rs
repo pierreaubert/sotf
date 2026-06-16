@@ -58,14 +58,12 @@ pub fn find_virtual_output_device() -> Option<String> {
             }
         }
 
-        VIRTUAL_OUTPUT_CANDIDATES
-            .iter()
-            .find_map(|candidate| {
-                devices
-                    .iter()
-                    .find(|name| name.contains(candidate))
-                    .cloned()
-            })
+        VIRTUAL_OUTPUT_CANDIDATES.iter().find_map(|candidate| {
+            devices
+                .iter()
+                .find(|name| name.contains(candidate))
+                .cloned()
+        })
     })
     .unwrap_or(None)
 }

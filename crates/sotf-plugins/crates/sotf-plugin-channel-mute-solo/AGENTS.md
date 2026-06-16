@@ -6,7 +6,7 @@ Per-channel mute, solo, and dim plugin with smoothed gain transitions for click-
 
 ```
 src/
-  lib.rs    -- ChannelMuteSoloPlugin (InPlacePlugin), ChannelState, ChannelMuteSoloParams
+  lib.rs    -- ChannelMuteSoloPlugin (ParametricParametricInPlacePlugin), ChannelState, ChannelMuteSoloParams
   params.rs -- Centralized parameter specs
 ```
 
@@ -14,7 +14,7 @@ Data flow: Per-channel state (muted/soloed/dimmed) -> target gain computation ->
 
 **Key types:**
 
-- `ChannelMuteSoloPlugin` -- Main plugin implementing `InPlacePlugin`. Per-channel `Smoother` instances for click-free transitions.
+- `ChannelMuteSoloPlugin` -- Main plugin implementing `ParametricParametricInPlacePlugin`. Per-channel `Smoother` instances for click-free transitions.
 - `ChannelState` -- Per-channel flags: `muted`, `soloed`, `dimmed`. Serde-serializable.
 - `ChannelMuteSoloParams` -- Config: `enabled`, `channel_states`, `dim_gain_db`, `fade_ms`.
 
@@ -28,7 +28,7 @@ Data flow: Per-channel state (muted/soloed/dimmed) -> target gain computation ->
 - `set_channel_states(states)` -- Bulk update
 - `set_dim_gain_db(db)` -- Configure dim attenuation
 - `set_fade_ms(ms)` -- Configure transition time
-- Implements `InPlacePlugin` trait
+- Implements `ParametricParametricInPlacePlugin` trait
 
 **Parameters:** `enabled` (bool), `channel_states` (JSON string), `dim_gain_db` (-60 to 0 dB, default -20), `fade_ms` (0-100 ms, default 5), `mute_{N}` / `solo_{N}` / `dim_{N}` (per-channel bool).
 

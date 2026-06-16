@@ -6,7 +6,8 @@ use super::dynamic_eq_plugin_params::DynamicEqPluginParams;
 use super::misc::bandpass_edges;
 use super::params::MAX_BANDS;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 mod misc;
 

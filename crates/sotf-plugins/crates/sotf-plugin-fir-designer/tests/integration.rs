@@ -6,9 +6,10 @@
 // workflows.
 // ============================================================================
 
-use sotf_host::InPlacePluginAdapter;
+use sotf_host::ParametricInPlacePluginAdapter;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, Plugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::{Plugin, ProcessContext};
 use sotf_plugin_fir_designer::{BandConfig, FirDesignerPlugin, FirDesignerPluginParams};
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -54,7 +55,7 @@ fn parameters_include_global_and_band_params() {
     };
     let plugin = FirDesignerPlugin::from_params(1, SAMPLE_RATE, params).unwrap();
 
-    let ids: Vec<String> = plugin.parameters().iter().map(|p| p.id.0.clone()).collect();
+    let ids: Vec<String> = plugin.parametric_parameters().iter().map(|p| p.id.0.clone()).collect();
 
     assert!(ids.contains(&"num_filters".to_string()));
     assert!(ids.contains(&"fir_length".to_string()));
@@ -151,7 +152,7 @@ fn dry_mix_is_passthrough() {
 
 #[test]
 fn plugin_adapter_exposes_plugin_trait() {
-    let mut plugin = InPlacePluginAdapter::new(FirDesignerPlugin::new(1, SAMPLE_RATE));
+    let mut plugin = ParametricInPlacePluginAdapter::new(FirDesignerPlugin::new(1, SAMPLE_RATE));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     assert_eq!(plugin.input_channels(), 1);
@@ -178,42 +179,37 @@ fn plugin_adapter_exposes_plugin_trait() {
 fn parameter_roundtrip_global_params() {
     let mut plugin = FirDesignerPlugin::new(1, SAMPLE_RATE);
 
-    plugin
-        .set_parameter(ParameterId::from("num_filters"), ParameterValue::Int(3))
+    plugin.parametric_set_parameter(ParameterId::from("num_filters"), ParameterValue::Int(3))
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("num_filters")),
         Some(ParameterValue::Int(3))
     );
 
-    plugin
-        .set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(2))
+    plugin.parametric_set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(2))
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("fir_length")),
         Some(ParameterValue::Int(2))
     );
 
-    plugin
-        .set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(1))
+    plugin.parametric_set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(1))
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("phase_mode")),
         Some(ParameterValue::Int(1))
     );
 
-    plugin
-        .set_parameter(ParameterId::from("auto_gain"), ParameterValue::Bool(true))
+    plugin.parametric_set_parameter(ParameterId::from("auto_gain"), ParameterValue::Bool(true))
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("auto_gain")),
         Some(ParameterValue::Bool(true))
     );
 
-    plugin
-        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+    plugin.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
         .unwrap();
-    let got = plugin.get_parameter(&ParameterId::from("mix"));
+    let got = plugin.parametric_get_parameter(&ParameterId::from("mix"));
     assert!(
         matches!(got, Some(ParameterValue::Float(v)) if (v - 0.5).abs() < 0.001),
         "mix round-trip drift: {:?}",
@@ -239,41 +235,31 @@ fn parameter_roundtrip_band_params() {
     };
     let mut plugin = FirDesignerPlugin::from_params(1, SAMPLE_RATE, params).unwrap();
 
-    plugin
-        .set_parameter(
-            ParameterId::from("band_0_freq"),
-            ParameterValue::Float(500.0),
-        )
+    plugin.parametric_set_parameter(ParameterId::from("band_0_freq"),
+    ParameterValue::Float(500.0),)
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("band_0_freq")),
         Some(ParameterValue::Float(500.0))
     );
 
-    plugin
-        .set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.0))
+    plugin.parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.0))
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("band_0_q")),
         Some(ParameterValue::Float(2.0))
     );
 
-    plugin
-        .set_parameter(
-            ParameterId::from("band_0_gain"),
-            ParameterValue::Float(-3.0),
-        )
+    plugin.parametric_set_parameter(ParameterId::from("band_0_gain"),
+    ParameterValue::Float(-3.0),)
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("band_0_gain")),
         Some(ParameterValue::Float(-3.0))
     );
 
-    plugin
-        .set_parameter(
-            ParameterId::from("band_0_active"),
-            ParameterValue::Bool(false),
-        )
+    plugin.parametric_set_parameter(ParameterId::from("band_0_active"),
+    ParameterValue::Bool(false),)
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("band_0_active")),
@@ -300,8 +286,7 @@ fn phase_mode_transition_changes_latency() {
     let mut plugin = FirDesignerPlugin::from_params(1, SAMPLE_RATE, params).unwrap();
     assert_eq!(plugin.latency_samples(), (1024 - 1) / 2);
 
-    plugin
-        .set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(1))
+    plugin.parametric_set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(1))
         .unwrap();
     assert_eq!(plugin.latency_samples(), 0);
 }
@@ -357,12 +342,10 @@ fn reset_returns_deterministic_state() {
 #[test]
 fn unknown_band_parameter_errors() {
     let mut plugin = FirDesignerPlugin::new(1, SAMPLE_RATE);
-    let result = plugin.set_parameter(
-        ParameterId::from("band_0_not_real"),
-        ParameterValue::Float(1.0),
-    );
+    let result = plugin.parametric_set_parameter(ParameterId::from("band_0_not_real"),
+    ParameterValue::Float(1.0),);
     assert!(result.is_err(), "unknown band parameter should error");
-    assert!(result.unwrap_err().contains("Unknown band parameter"));
+    assert!(result.unwrap_err().contains("Unknown parameter"));
 }
 
 #[test]

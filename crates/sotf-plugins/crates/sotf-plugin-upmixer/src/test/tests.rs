@@ -13,8 +13,8 @@ mod upmixer_tests {
         );
         assert_eq!(plugin.input_channels(), 2);
         assert_eq!(plugin.output_channels(), 6);
-        assert_eq!(plugin.fft_size, 2048);
-        assert_eq!(plugin.speaker_config.id, "5.1");
+        assert_eq!(plugin.core.fft_size, 2048);
+        assert_eq!(plugin.core.speaker_config.id, "5.1");
     }
 
     #[test]
@@ -24,8 +24,8 @@ mod upmixer_tests {
         );
         assert_eq!(plugin.input_channels(), 2);
         assert_eq!(plugin.output_channels(), 12);
-        assert_eq!(plugin.fft_size, 2048);
-        assert_eq!(plugin.speaker_config.id, "7.1.4");
+        assert_eq!(plugin.core.fft_size, 2048);
+        assert_eq!(plugin.core.speaker_config.id, "7.1.4");
     }
 
     #[test]
@@ -67,8 +67,8 @@ mod upmixer_tests {
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
         plugin.initialize(44100).unwrap();
-        assert_eq!(plugin.frequency_resolution, "erb");
-        let erb_band_count = plugin.erb_bands.len();
+        assert_eq!(plugin.params.frequency_resolution, "erb");
+        let erb_band_count = plugin.steering.erb_bands.len();
 
         plugin
             .set_parameter(
@@ -76,8 +76,8 @@ mod upmixer_tests {
                 ParameterValue::Int(1),
             )
             .unwrap();
-        assert_eq!(plugin.frequency_resolution, "fine_erb");
-        assert!(plugin.erb_bands.len() > erb_band_count);
+        assert_eq!(plugin.params.frequency_resolution, "fine_erb");
+        assert!(plugin.steering.erb_bands.len() > erb_band_count);
         assert_eq!(
             plugin
                 .get_parameter(&ParameterId::from("frequency_resolution"))
@@ -92,10 +92,10 @@ mod upmixer_tests {
                 ParameterValue::Int(2),
             )
             .unwrap();
-        assert_eq!(plugin.frequency_resolution, "per_bin");
-        assert_eq!(plugin.erb_bands.len(), plugin.fft_size / 2 + 1);
-        assert_eq!(plugin.pca_cov_xx.len(), plugin.erb_bands.len());
-        assert_eq!(plugin.coherence_history.len(), plugin.erb_bands.len());
+        assert_eq!(plugin.params.frequency_resolution, "per_bin");
+        assert_eq!(plugin.steering.erb_bands.len(), plugin.core.fft_size / 2 + 1);
+        assert_eq!(plugin.spectral.pca_cov_xx.len(), plugin.steering.erb_bands.len());
+        assert_eq!(plugin.steering.coherence_history.len(), plugin.steering.erb_bands.len());
     }
 
     #[test]
@@ -111,7 +111,7 @@ mod upmixer_tests {
                 ParameterValue::Float(0.8),
             )
             .unwrap();
-        assert_eq!(plugin.gain_front_direct.target(), 0.8);
+        assert_eq!(plugin.gains.gain_front_direct.target(), 0.8);
 
         // Test getting parameters
         let value = plugin.get_parameter(&ParameterId::from("gain_rear_ambient"));
@@ -124,7 +124,7 @@ mod upmixer_tests {
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
 
-        assert!((plugin.center_spread.target() - 0.0).abs() < 1e-6);
+        assert!((plugin.gains.center_spread.target() - 0.0).abs() < 1e-6);
 
         plugin
             .set_parameter(
@@ -132,7 +132,7 @@ mod upmixer_tests {
                 ParameterValue::Float(0.7),
             )
             .unwrap();
-        assert!((plugin.center_spread.target() - 0.7).abs() < 1e-6);
+        assert!((plugin.gains.center_spread.target() - 0.7).abs() < 1e-6);
 
         // Values outside [0.0, 1.0] are clamped by param_bridge
         plugin
@@ -141,7 +141,7 @@ mod upmixer_tests {
                 ParameterValue::Float(1.5),
             )
             .unwrap();
-        assert!((plugin.center_spread.target() - 1.0).abs() < 1e-6); // clamped to max
+        assert!((plugin.gains.center_spread.target() - 1.0).abs() < 1e-6); // clamped to max
 
         // Test lower bound clamping
         plugin
@@ -150,7 +150,7 @@ mod upmixer_tests {
                 ParameterValue::Float(-0.5),
             )
             .unwrap();
-        assert!((plugin.center_spread.target() - 0.0).abs() < 1e-6); // clamped to min
+        assert!((plugin.gains.center_spread.target() - 0.0).abs() < 1e-6); // clamped to min
     }
 
     #[test]
@@ -159,7 +159,7 @@ mod upmixer_tests {
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
 
-        assert!((plugin.stereo_width.target() - 0.5).abs() < 1e-6);
+        assert!((plugin.gains.stereo_width.target() - 0.5).abs() < 1e-6);
 
         plugin
             .set_parameter(
@@ -167,7 +167,7 @@ mod upmixer_tests {
                 ParameterValue::Float(0.3),
             )
             .unwrap();
-        assert!((plugin.stereo_width.target() - 0.3).abs() < 1e-6);
+        assert!((plugin.gains.stereo_width.target() - 0.3).abs() < 1e-6);
 
         // Values outside [0.0, 1.0] are clamped by param_bridge
         plugin
@@ -176,7 +176,7 @@ mod upmixer_tests {
                 ParameterValue::Float(2.0),
             )
             .unwrap();
-        assert!((plugin.stereo_width.target() - 1.0).abs() < 1e-6); // clamped to max
+        assert!((plugin.gains.stereo_width.target() - 1.0).abs() < 1e-6); // clamped to max
 
         // Test lower bound clamping
         plugin
@@ -185,7 +185,7 @@ mod upmixer_tests {
                 ParameterValue::Float(-1.0),
             )
             .unwrap();
-        assert!((plugin.stereo_width.target() - 0.0).abs() < 1e-6); // clamped to min
+        assert!((plugin.gains.stereo_width.target() - 0.0).abs() < 1e-6); // clamped to min
     }
 
     #[test]
@@ -235,21 +235,21 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        let fft_size = plugin.fft_size;
+        let fft_size = plugin.core.fft_size;
         let mut input = vec![0.0f32; fft_size * 2];
         for i in 0..fft_size {
             let t = i as f32 / 44100.0;
             input[i * 2] = (2.0 * std::f32::consts::PI * 200.0 * t).sin() * 0.5;
             input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 2000.0 * t).sin() * 0.5;
         }
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
         plugin.process_fft_block(&input, &mut output);
 
-        let num_bands = plugin.erb_bands.len();
+        let num_bands = plugin.steering.erb_bands.len();
         assert!(num_bands >= 3);
 
-        let low_alpha = plugin.steering_alphas[0];
-        let high_alpha = plugin.steering_alphas[num_bands.saturating_sub(2)];
+        let low_alpha = plugin.steering.steering_alphas[0];
+        let high_alpha = plugin.steering.steering_alphas[num_bands.saturating_sub(2)];
         assert!(
             high_alpha > low_alpha,
             "Expected higher-band steering alpha to be larger than low-band (low={}, high={})",
@@ -265,9 +265,9 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        let fft_size = plugin.fft_size;
+        let fft_size = plugin.core.fft_size;
         let mut input = vec![0.0f32; fft_size * 2];
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
 
         // Process enough coherent frames to fill the median filter ring buffer (5 entries)
         // and let the mode-dependent one-pole smoother converge near the instant value.
@@ -281,12 +281,12 @@ mod upmixer_tests {
             plugin.process_fft_block(&input, &mut output);
         }
 
-        let num_bands = plugin.erb_bands.len();
+        let num_bands = plugin.steering.erb_bands.len();
         assert!(num_bands >= 3);
         let band_idx = num_bands / 2;
 
-        let coh1_inst = plugin.coherence_instant[band_idx];
-        let coh1_smooth = plugin.smoothed_coherence[band_idx];
+        let coh1_inst = plugin.steering.coherence_instant[band_idx];
+        let coh1_smooth = plugin.steering.smoothed_coherence[band_idx];
         assert!(
             coh1_inst > 0.5,
             "Instant coherence should be high for correlated signal: {}",
@@ -308,8 +308,8 @@ mod upmixer_tests {
 
         plugin.process_fft_block(&input, &mut output);
 
-        let coh2_inst = plugin.coherence_instant[band_idx];
-        let coh2_smooth = plugin.smoothed_coherence[band_idx];
+        let coh2_inst = plugin.steering.coherence_instant[band_idx];
+        let coh2_smooth = plugin.steering.smoothed_coherence[band_idx];
 
         // Instant coherence should drop
         assert!(
@@ -333,10 +333,10 @@ mod upmixer_tests {
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
-        plugin.decorrelation_mode = 1; // Enable LFO mode for time-varying decorrelation
+        plugin.decorrelation.decorrelation_mode = 1; // Enable LFO mode for time-varying decorrelation
         plugin.initialize(44100).unwrap();
 
-        let fft_size = plugin.fft_size;
+        let fft_size = plugin.core.fft_size;
         let mut input = vec![0.0f32; fft_size * 2];
         for i in 0..fft_size {
             let t = i as f32 / 44100.0;
@@ -344,17 +344,17 @@ mod upmixer_tests {
             input[i * 2] = s;
             input[i * 2 + 1] = -s;
         }
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
 
         plugin.process_fft_block(&input, &mut output);
-        let half = plugin.fft_size / 2;
+        let half = plugin.core.fft_size / 2;
         let idx = half.saturating_sub(10).max(1);
-        let before_l = plugin.decorrelation_filter_left[idx];
-        let before_r = plugin.decorrelation_filter_right[idx];
+        let before_l = plugin.decorrelation.decorrelation_filter_left[idx];
+        let before_r = plugin.decorrelation.decorrelation_filter_right[idx];
 
         plugin.process_fft_block(&input, &mut output);
-        let after_l = plugin.decorrelation_filter_left[idx];
-        let after_r = plugin.decorrelation_filter_right[idx];
+        let after_l = plugin.decorrelation.decorrelation_filter_left[idx];
+        let after_r = plugin.decorrelation.decorrelation_filter_right[idx];
 
         let diff_l = (after_l - before_l).norm();
         let diff_r = (after_r - before_r).norm();
@@ -367,11 +367,11 @@ mod upmixer_tests {
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
         plugin.initialize(44100).unwrap();
-        plugin.enable_hr_direct = true;
+        plugin.params.enable_hr_direct = true;
 
-        let fft_size = plugin.fft_size;
+        let fft_size = plugin.core.fft_size;
         let mut input = vec![0.0f32; fft_size * 2];
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
 
         // First block: low-energy high-frequency tone
         for i in 0..fft_size {
@@ -381,7 +381,7 @@ mod upmixer_tests {
             input[i * 2 + 1] = s;
         }
         plugin.process_fft_block(&input, &mut output);
-        let env1 = plugin.hr_transient_env;
+        let env1 = plugin.hr_state.hr_transient_env;
 
         // Second block: large step in HF energy (simulate transient)
         for i in 0..fft_size {
@@ -391,7 +391,7 @@ mod upmixer_tests {
             input[i * 2 + 1] = s;
         }
         plugin.process_fft_block(&input, &mut output);
-        let env2 = plugin.hr_transient_env;
+        let env2 = plugin.hr_state.hr_transient_env;
 
         assert!(env2 > env1);
         assert!(env2 > 0.0);
@@ -409,10 +409,9 @@ mod upmixer_tests {
                 2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
             );
             plugin.initialize(44100).unwrap();
-            plugin
-                .center_spread
+            plugin.gains.center_spread
                 .set_target(center_spread.clamp(0.0, 1.0));
-            plugin.center_spread.next_n(4096);
+            plugin.gains.center_spread.next_n(4096);
 
             // Process enough frames to overcome latency
             let num_frames = 4096;
@@ -424,7 +423,7 @@ mod upmixer_tests {
                 input[i * 2 + 1] = s;
             }
 
-            let mut output = vec![0.0f32; num_frames * plugin.num_output_channels];
+            let mut output = vec![0.0f32; num_frames * plugin.core.num_output_channels];
             let context = ProcessContext::new(44100, num_frames);
             plugin.process(&input, &mut output, &context).unwrap();
 
@@ -432,7 +431,7 @@ mod upmixer_tests {
             let center_idx = 2usize;
             let mut energy = 0.0f32;
             for i in 0..num_frames {
-                let s = output[i * plugin.num_output_channels + center_idx];
+                let s = output[i * plugin.core.num_output_channels + center_idx];
                 energy += s * s;
             }
             energy
@@ -460,13 +459,13 @@ mod upmixer_tests {
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
         plugin.initialize(44100).unwrap();
-        plugin.enable_hr_direct = true;
-        plugin.hr_direct_envelope = 1.0;
-        plugin.hr_sharpen.set_target(1.0);
+        plugin.params.enable_hr_direct = true;
+        plugin.hr_state.hr_direct_envelope = 1.0;
+        plugin.gains.hr_sharpen.set_target(1.0);
         // Force transient envelope high so HR path is active
-        plugin.hr_transient_env = 1.0;
+        plugin.hr_state.hr_transient_env = 1.0;
 
-        let fft_size = plugin.fft_size;
+        let fft_size = plugin.core.fft_size;
         let mut input = vec![0.0f32; fft_size * 2];
 
         // 4 kHz coherent sine (L=R), safely above hf_cut (>= 1 kHz)
@@ -478,7 +477,7 @@ mod upmixer_tests {
         }
 
         // Clear time_out_channels first
-        for ch_buf in plugin.time_out_channels.iter_mut() {
+        for ch_buf in plugin.main_buffers.time_out_channels.iter_mut() {
             ch_buf.fill(0.0);
         }
 
@@ -486,13 +485,13 @@ mod upmixer_tests {
         plugin.process_hr_block(&input);
 
         // Measure per-channel energy in the HR output block
-        let mut energies = vec![0.0f32; plugin.num_output_channels];
+        let mut energies = vec![0.0f32; plugin.core.num_output_channels];
         for (ch, energy) in energies
             .iter_mut()
             .enumerate()
-            .take(plugin.num_output_channels)
+            .take(plugin.core.num_output_channels)
         {
-            for &sample in plugin.hr_time_out_channels[ch][..plugin.hr_fft_size].iter() {
+            for &sample in plugin.hr_buffers.hr_time_out_channels[ch][..plugin.fft.hr_fft_size].iter() {
                 *energy += sample.powi(2);
             }
         }
@@ -510,7 +509,7 @@ mod upmixer_tests {
             .iter()
             .enumerate()
             .skip(3)
-            .take(plugin.num_output_channels - 3)
+            .take(plugin.core.num_output_channels - 3)
         {
             assert!(
                 energy < 1e-6,
@@ -535,10 +534,10 @@ mod upmixer_tests {
         plugin.initialize(44100).unwrap();
 
         // Force the HR path to be fully active
-        plugin.enable_hr_direct = true;
-        plugin.hr_direct_envelope = 1.0;
-        plugin.hr_sharpen.set_target(1.0);
-        plugin.hr_transient_env = 1.0;
+        plugin.params.enable_hr_direct = true;
+        plugin.hr_state.hr_direct_envelope = 1.0;
+        plugin.gains.hr_sharpen.set_target(1.0);
+        plugin.hr_state.hr_transient_env = 1.0;
 
         // Make sure direct path doesn't mask the HR path by setting its smoothing
         // to be very fast and target to 0 if possible, but the plugin initialization
@@ -563,7 +562,7 @@ mod upmixer_tests {
             input[i * 2 + 1] = s;
         }
 
-        let mut output = vec![0.0f32; num_frames * plugin.num_output_channels];
+        let mut output = vec![0.0f32; num_frames * plugin.core.num_output_channels];
         let context = ProcessContext::new(44100, num_frames);
 
         // Process a few blocks to get past latency
@@ -582,7 +581,7 @@ mod upmixer_tests {
         for offset in (0..num_frames).step_by(hr_hop) {
             let mut block_energy = 0.0f32;
             for i in 0..hr_hop {
-                block_energy += output[(offset + i) * plugin.num_output_channels].powi(2);
+                block_energy += output[(offset + i) * plugin.core.num_output_channels].powi(2);
             }
 
             if block_energy < 1e-9 {
@@ -641,17 +640,17 @@ mod upmixer_tests {
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
         assert_eq!(plugin.output_channels(), 6);
-        assert_eq!(plugin.speaker_config.id, "5.1");
+        assert_eq!(plugin.core.speaker_config.id, "5.1");
 
         // Change to 7.1.4
         plugin.change_speaker_config("7.1.4").unwrap();
         assert_eq!(plugin.output_channels(), 12);
-        assert_eq!(plugin.speaker_config.id, "7.1.4");
+        assert_eq!(plugin.core.speaker_config.id, "7.1.4");
 
         // Change back to 5.1
         plugin.change_speaker_config("5.1").unwrap();
         assert_eq!(plugin.output_channels(), 6);
-        assert_eq!(plugin.speaker_config.id, "5.1");
+        assert_eq!(plugin.core.speaker_config.id, "5.1");
     }
 
     #[test]
@@ -660,14 +659,14 @@ mod upmixer_tests {
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 0.5, 1.0, false, 0.5,
         );
-        assert_eq!(plugin.height_gain.target(), 0.5);
+        assert_eq!(plugin.height.height_gain.target(), 0.5);
         assert_eq!(plugin.output_channels(), 10); // 5.1.4 has 10 channels
 
         // Change height gain via parameter
         plugin
             .set_parameter(ParameterId::from("height_gain"), ParameterValue::Float(1.5))
             .unwrap();
-        assert_eq!(plugin.height_gain.target(), 1.5);
+        assert_eq!(plugin.height.height_gain.target(), 1.5);
     }
 
     #[test]
@@ -931,7 +930,7 @@ mod upmixer_tests {
         plugin
             .set_parameter(ParameterId::from("speaker_config"), ParameterValue::Int(0))
             .unwrap();
-        assert_eq!(plugin.speaker_config.id, "2.0");
+        assert_eq!(plugin.core.speaker_config.id, "2.0");
         assert_eq!(plugin.output_channels(), 2);
         let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
         assert_eq!(value, Some(ParameterValue::Int(0)));
@@ -940,7 +939,7 @@ mod upmixer_tests {
         plugin
             .set_parameter(ParameterId::from("speaker_config"), ParameterValue::Int(1))
             .unwrap();
-        assert_eq!(plugin.speaker_config.id, "5.0");
+        assert_eq!(plugin.core.speaker_config.id, "5.0");
         assert_eq!(plugin.output_channels(), 5);
         let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
         assert_eq!(value, Some(ParameterValue::Int(1)));
@@ -949,7 +948,7 @@ mod upmixer_tests {
         plugin
             .set_parameter(ParameterId::from("speaker_config"), ParameterValue::Int(3))
             .unwrap();
-        assert_eq!(plugin.speaker_config.id, "7.1");
+        assert_eq!(plugin.core.speaker_config.id, "7.1");
         assert_eq!(plugin.output_channels(), 8);
         let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
         assert_eq!(value, Some(ParameterValue::Int(3)));
@@ -1035,15 +1034,14 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        let nbins = plugin.lfe_low_gains.len();
-        assert_eq!(nbins, plugin.mains_high_gains.len());
+        let nbins = plugin.spectral.lfe_low_gains.len();
+        assert_eq!(nbins, plugin.spectral.mains_high_gains.len());
 
         // Raw LR4 crossover paths preserve the complex summed response. They
         // are intentionally not forced into per-bin power normalization.
-        for (idx, (&low, &high)) in plugin
-            .lfe_low_gains
+        for (idx, (&low, &high)) in plugin.spectral.lfe_low_gains
             .iter()
-            .zip(plugin.mains_high_gains.iter())
+            .zip(plugin.spectral.mains_high_gains.iter())
             .enumerate()
         {
             let summed = low + high;
@@ -1056,19 +1054,19 @@ mod upmixer_tests {
         }
 
         // Sanity check around cutoff: low dominates below, high dominates above
-        let cutoff = plugin.lfe_cutoff_hz;
+        let cutoff = plugin.params.lfe_cutoff_hz;
         let mut cutoff_bin =
-            ((cutoff * plugin.fft_size as f32) / plugin.sample_rate as f32) as usize;
+            ((cutoff * plugin.core.fft_size as f32) / plugin.core.sample_rate as f32) as usize;
         cutoff_bin = cutoff_bin.min(nbins - 2).max(1);
         let below = cutoff_bin / 2;
         let above = (cutoff_bin * 3 / 2).min(nbins - 1);
 
         assert!(
-            plugin.lfe_low_gains[below].norm() > plugin.lfe_low_gains[cutoff_bin].norm(),
+            plugin.spectral.lfe_low_gains[below].norm() > plugin.spectral.lfe_low_gains[cutoff_bin].norm(),
             "Low gain should decrease toward cutoff"
         );
         assert!(
-            plugin.mains_high_gains[above].norm() > plugin.mains_high_gains[cutoff_bin].norm(),
+            plugin.spectral.mains_high_gains[above].norm() > plugin.spectral.mains_high_gains[cutoff_bin].norm(),
             "High gain should increase above cutoff"
         );
     }
@@ -1080,14 +1078,14 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        let spectrum_size = plugin.fft_size / 2 + 1;
-        assert_eq!(plugin.decorrelation_filter_left.len(), spectrum_size);
-        assert_eq!(plugin.decorrelation_filter_right.len(), spectrum_size);
+        let spectrum_size = plugin.core.fft_size / 2 + 1;
+        assert_eq!(plugin.decorrelation.decorrelation_filter_left.len(), spectrum_size);
+        assert_eq!(plugin.decorrelation.decorrelation_filter_right.len(), spectrum_size);
 
         // Magnitude should be 1.0 for all bins (these are all-pass filters)
         for i in 0..spectrum_size {
-            let mag_l = plugin.decorrelation_filter_left[i].norm();
-            let mag_r = plugin.decorrelation_filter_right[i].norm();
+            let mag_l = plugin.decorrelation.decorrelation_filter_left[i].norm();
+            let mag_r = plugin.decorrelation.decorrelation_filter_right[i].norm();
             assert!(
                 (mag_l - 1.0).abs() < 1e-6,
                 "Left decorrelator magnitude not 1 at bin {}: {}",
@@ -1104,12 +1102,12 @@ mod upmixer_tests {
 
         // DC and Nyquist must be real (phase = 0 or π)
         assert!(
-            plugin.decorrelation_filter_left[0].im.abs() < 1e-6
-                && plugin.decorrelation_filter_right[0].im.abs() < 1e-6
+            plugin.decorrelation.decorrelation_filter_left[0].im.abs() < 1e-6
+                && plugin.decorrelation.decorrelation_filter_right[0].im.abs() < 1e-6
         );
         assert!(
-            plugin.decorrelation_filter_left[spectrum_size - 1].im.abs() < 1e-6
-                && plugin.decorrelation_filter_right[spectrum_size - 1]
+            plugin.decorrelation.decorrelation_filter_left[spectrum_size - 1].im.abs() < 1e-6
+                && plugin.decorrelation.decorrelation_filter_right[spectrum_size - 1]
                     .im
                     .abs()
                     < 1e-6
@@ -1124,7 +1122,7 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        let fft_size = plugin.fft_size;
+        let fft_size = plugin.core.fft_size;
         let mut input = vec![0.0f32; fft_size * 2];
         for i in 0..fft_size {
             let t = i as f32 / 44100.0;
@@ -1132,7 +1130,7 @@ mod upmixer_tests {
             input[i * 2] = s;
             input[i * 2 + 1] = s;
         }
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
 
         plugin.process_fft_block(&input, &mut output);
 
@@ -1141,12 +1139,12 @@ mod upmixer_tests {
         // the signal is essentially silent, the mask can reach 1.0 but
         // contributes nothing audibly.
         let mut max_mask = 0.0f32;
-        for i in 0..plugin.height_band_gains.len() {
-            let l = plugin.freq_domain_left[i];
-            let r = plugin.freq_domain_right[i];
+        for i in 0..plugin.height.height_band_gains.len() {
+            let l = plugin.main_buffers.freq_domain_left[i];
+            let r = plugin.main_buffers.freq_domain_right[i];
             let energy = l.norm_sqr() + r.norm_sqr();
-            if energy > 1e-6_f32 && plugin.height_band_gains[i] > max_mask {
-                max_mask = plugin.height_band_gains[i];
+            if energy > 1e-6_f32 && plugin.height.height_band_gains[i] > max_mask {
+                max_mask = plugin.height.height_band_gains[i];
             }
         }
         assert!(
@@ -1167,7 +1165,7 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        let fft_size = plugin.fft_size;
+        let fft_size = plugin.core.fft_size;
         let mut input = vec![0.0f32; fft_size * 2];
         for i in 0..fft_size {
             let t = i as f32 / 44100.0;
@@ -1175,17 +1173,17 @@ mod upmixer_tests {
             input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.5;
             // Right: 880 Hz
         }
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
 
         // Process multiple frames to let temporal smoothing converge
         for _ in 0..10 {
             plugin.process_fft_block(&input, &mut output);
         }
 
-        let nbins = plugin.height_band_gains.len();
+        let nbins = plugin.height.height_band_gains.len();
         let start = (nbins as f32 * 0.75) as usize;
         let mut max_mask_hf = 0.0f32;
-        for &m in &plugin.height_band_gains[start..] {
+        for &m in &plugin.height.height_band_gains[start..] {
             if m > max_mask_hf {
                 max_mask_hf = m;
             }
@@ -1212,16 +1210,15 @@ mod upmixer_tests {
             input[i * 2] = (2.0 * std::f32::consts::PI * 8000.0 * t).sin() * 0.5;
             input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 11000.0 * t).sin() * 0.5;
         }
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
 
         for _ in 0..10 {
             plugin.process_fft_block(&input, &mut output);
         }
 
-        let bandpass_bin = plugin
-            .cached_bandpass_bin
-            .min(plugin.height_band_gains.len());
-        for (bin, &gain) in plugin.height_band_gains[..bandpass_bin].iter().enumerate() {
+        let bandpass_bin = plugin.cache.cached_bandpass_bin
+            .min(plugin.height.height_band_gains.len());
+        for (bin, &gain) in plugin.height.height_band_gains[..bandpass_bin].iter().enumerate() {
             assert!(
                 (gain - crate::frequency_domain::HEIGHT_MASK_FLOOR).abs() < 1e-6,
                 "height gain below bandpass should stay at floor, bin {bin} = {gain}"
@@ -1564,13 +1561,13 @@ mod upmixer_tests {
             fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
         plugin.initialize(44100).unwrap();
-        plugin.safety_cap_db = -1.0;
+        plugin.safety.safety_cap_db = -1.0;
 
-        for ch_buf in plugin.time_out_channels.iter_mut() {
+        for ch_buf in plugin.main_buffers.time_out_channels.iter_mut() {
             ch_buf.fill(1.0);
         }
 
-        let nch = plugin.num_output_channels;
+        let nch = plugin.core.num_output_channels;
         let mut output = vec![0.0_f32; fft_size * nch];
         plugin.extract_output_and_scale(&mut output, 1.0);
 
@@ -1593,7 +1590,7 @@ mod upmixer_tests {
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
-        plugin.decorrelation_mode = 0; // Velvet noise mode
+        plugin.decorrelation.decorrelation_mode = 0; // Velvet noise mode
         plugin.initialize(44100).unwrap();
 
         let mut input = vec![0.0_f32; 2048 * 2];
@@ -1623,7 +1620,7 @@ mod upmixer_tests {
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
-        plugin.decorrelation_mode = 1; // LFO mode
+        plugin.decorrelation.decorrelation_mode = 1; // LFO mode
         plugin.initialize(44100).unwrap();
 
         let mut input = vec![0.0_f32; 2048 * 2];
@@ -1723,7 +1720,7 @@ mod upmixer_tests {
             false, 0.5,
         );
         plugin.initialize(44100).unwrap();
-        plugin.center_spread.set_target(0.0); // Focus direct sound to center speaker
+        plugin.gains.center_spread.set_target(0.0); // Focus direct sound to center speaker
 
         // Create a mono sine wave input
         let num_blocks = 32;
@@ -1805,8 +1802,8 @@ mod upmixer_tests {
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
         plugin.initialize(44100).unwrap();
-        plugin.enable_hr_direct = true;
-        plugin.hr_sharpen.set_target(1.0);
+        plugin.params.enable_hr_direct = true;
+        plugin.gains.hr_sharpen.set_target(1.0);
 
         let buffer_size = 1024;
         let context = ProcessContext::new(44100, buffer_size);
@@ -1827,7 +1824,7 @@ mod upmixer_tests {
                 .process(&input_quiet, &mut output_buffer, &context)
                 .unwrap();
         }
-        let env_after_quiet = plugin.hr_transient_env;
+        let env_after_quiet = plugin.hr_state.hr_transient_env;
 
         // --- Phase 2: Transient (large energy jump) ---
         let mut input_transient = vec![0.0_f32; buffer_size * 2];
@@ -1845,7 +1842,7 @@ mod upmixer_tests {
         plugin
             .process(&input_transient, &mut output_buffer, &context)
             .unwrap();
-        let env_after_transient = plugin.hr_transient_env;
+        let env_after_transient = plugin.hr_state.hr_transient_env;
 
         // --- Assertions ---
         assert!(
@@ -1979,9 +1976,9 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        let fft_size = plugin.fft_size;
+        let fft_size = plugin.core.fft_size;
         let mut input = vec![0.0f32; fft_size * 2];
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
 
         // Frame 1: strong correlated sine (populates direct[i] in upmix band)
         for i in 0..fft_size {
@@ -1999,12 +1996,12 @@ mod upmixer_tests {
         // After processing silence, direct[i] must be zero for bins below bandpass_bin
         // (LFE band + pass-through band). These bins are NOT in the upmix path
         // and were never being cleared before the fix.
-        let bandpass_bin = plugin.cached_bandpass_bin;
+        let bandpass_bin = plugin.cache.cached_bandpass_bin;
         let spectrum_size = fft_size / 2 + 1;
         let check_end = bandpass_bin.min(spectrum_size);
 
         for i in 0..check_end {
-            let norm = plugin.direct[i].norm();
+            let norm = plugin.main_buffers.direct[i].norm();
             assert!(
                 norm < 1e-10,
                 "direct[{}] should be zero after silence frame, got norm={}",
@@ -2026,19 +2023,19 @@ mod upmixer_tests {
         plugin.initialize(44100).unwrap();
 
         // Set safety_cap_db to 0.0 (strictest cap: 0 dBFS = unity)
-        plugin.safety_cap_db = 0.0;
-        plugin.safety_cap_db_smoother.set_target(0.0);
-        plugin.safety_cap_db_smoother.next_n(4096);
+        plugin.safety.safety_cap_db = 0.0;
+        plugin.param_smoothers.safety_cap_db_smoother.set_target(0.0);
+        plugin.param_smoothers.safety_cap_db_smoother.next_n(4096);
         plugin.update_safety_cap_cache();
 
         // Verify the cache was computed correctly for 0 dB
         assert!(
-            (plugin.safety_cap_linear - 1.0).abs() < 0.01,
+            (plugin.safety.safety_cap_linear - 1.0).abs() < 0.01,
             "safety_cap_linear should be ~1.0 for 0 dB, got {}",
-            plugin.safety_cap_linear,
+            plugin.safety.safety_cap_linear,
         );
 
-        let num_ch = plugin.num_output_channels;
+        let num_ch = plugin.core.num_output_channels;
         let block_size = 2048;
 
         // Feed multiple blocks of hot signal so the safety cap's one-pole
@@ -2109,12 +2106,12 @@ mod upmixer_tests {
                 2048, config, 1.6, 1.2, 1.2, 120.0, 0.5, 250.0, 0.0, 1.0, false, 0.5,
             );
             plugin.initialize(44100).unwrap();
-            plugin.safety_cap_db = 0.0;
-            plugin.safety_cap_db_smoother.set_target(0.0);
-            plugin.safety_cap_db_smoother.next_n(4096);
+            plugin.safety.safety_cap_db = 0.0;
+            plugin.param_smoothers.safety_cap_db_smoother.set_target(0.0);
+            plugin.param_smoothers.safety_cap_db_smoother.next_n(4096);
             plugin.update_safety_cap_cache();
 
-            let num_ch = plugin.num_output_channels;
+            let num_ch = plugin.core.num_output_channels;
             let mut output = vec![0.0f32; num_frames * num_ch];
             plugin.process(&input, &mut output, &context).unwrap();
 
@@ -2126,7 +2123,7 @@ mod upmixer_tests {
                 "post-OLA safety cap should keep emitted {config} samples at unity, got {peak}",
             );
             assert!(
-                plugin.final_safety_scale < 1.0,
+                plugin.safety.final_safety_scale < 1.0,
                 "{config} test signal should exercise the final post-OLA limiter",
             );
         }
@@ -2147,7 +2144,7 @@ mod upmixer_tests {
             plugin.initialize(sample_rate).unwrap();
 
             let mut input = vec![0.0_f32; prime_block * 2];
-            let mut output = vec![0.0_f32; prime_block * plugin.num_output_channels];
+            let mut output = vec![0.0_f32; prime_block * plugin.core.num_output_channels];
 
             for block_idx in 0..total_blocks {
                 for i in 0..prime_block {
@@ -2167,8 +2164,8 @@ mod upmixer_tests {
                     "{config} emitted a short block at block {block_idx}: \
                      produced {produced}/{prime_block}, output_accumulator_fill={}, \
                      input_buffer_frames={}",
-                    plugin.output_accumulator_fill,
-                    plugin.input_buffer_fill / 2,
+                    plugin.output.output_accumulator_fill,
+                    plugin.main_buffers.input_buffer_fill / 2,
                 );
             }
         }
@@ -2308,8 +2305,8 @@ mod upmixer_tests {
         plugin.initialize(44100).unwrap();
 
         // Enable multi-source extraction with a low threshold so it activates easily
-        plugin.multi_source_extraction = true;
-        plugin.multi_source_threshold = 0.1;
+        plugin.spectral.multi_source_extraction = true;
+        plugin.spectral.multi_source_threshold = 0.1;
 
         // Build one FFT block of two uncorrelated, differently-panned sources:
         // L = 1 kHz sine (source 1 panned hard left)
@@ -2321,7 +2318,7 @@ mod upmixer_tests {
             input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 3000.0 * t).sin() * 0.5;
             // Right only
         }
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
 
         // Run enough blocks for the ERB covariance state to accumulate meaningful signal
         for _ in 0..10 {
@@ -2329,9 +2326,9 @@ mod upmixer_tests {
         }
 
         // Measure the L2 energy of direct2 in the upmix region (above bandpass_bin)
-        let bandpass_bin = plugin.cached_bandpass_bin;
+        let bandpass_bin = plugin.cache.cached_bandpass_bin;
         let spec_size = fft_size / 2 + 1;
-        let direct2_energy: f32 = plugin.direct2[bandpass_bin..spec_size]
+        let direct2_energy: f32 = plugin.spectral.direct2[bandpass_bin..spec_size]
             .iter()
             .map(|c| c.norm_sqr())
             .sum();
@@ -2344,10 +2341,10 @@ mod upmixer_tests {
         );
 
         // Also verify the feature flag works: disabling should yield zero direct2
-        plugin.multi_source_extraction = false;
+        plugin.spectral.multi_source_extraction = false;
         plugin.process_fft_block(&input, &mut output);
 
-        let direct2_energy_disabled: f32 = plugin.direct2[bandpass_bin..spec_size]
+        let direct2_energy_disabled: f32 = plugin.spectral.direct2[bandpass_bin..spec_size]
             .iter()
             .map(|c| c.norm_sqr())
             .sum();
@@ -2369,8 +2366,8 @@ mod upmixer_tests {
         plugin.initialize(44100).unwrap();
 
         // Enable multi-source extraction with default threshold
-        plugin.multi_source_extraction = true;
-        plugin.multi_source_threshold = 0.1;
+        plugin.spectral.multi_source_extraction = true;
+        plugin.spectral.multi_source_threshold = 0.1;
 
         // Mono source: L = R = same 1 kHz sine → covariance matrix has a single dominant eigenvector
         // lambda1 ≈ 1.0 (all energy in one direction), lambda2 ≈ 0.0 → ratio << threshold
@@ -2381,16 +2378,16 @@ mod upmixer_tests {
             input[i * 2] = s; // Left = Right (pure mono)
             input[i * 2 + 1] = s;
         }
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
 
         // Run multiple blocks so covariance converges
         for _ in 0..20 {
             plugin.process_fft_block(&input, &mut output);
         }
 
-        let bandpass_bin = plugin.cached_bandpass_bin;
+        let bandpass_bin = plugin.cache.cached_bandpass_bin;
         let spec_size = fft_size / 2 + 1;
-        let direct2_energy: f32 = plugin.direct2[bandpass_bin..spec_size]
+        let direct2_energy: f32 = plugin.spectral.direct2[bandpass_bin..spec_size]
             .iter()
             .map(|c| c.norm_sqr())
             .sum();
@@ -2413,8 +2410,8 @@ mod upmixer_tests {
         );
 
         // Default should be false
-        assert!(!plugin.multi_source_extraction);
-        assert!((plugin.multi_source_threshold - 0.1).abs() < 1e-6);
+        assert!(!plugin.spectral.multi_source_extraction);
+        assert!((plugin.spectral.multi_source_threshold - 0.1).abs() < 1e-6);
 
         // Enable via set_parameter
         plugin
@@ -2423,7 +2420,7 @@ mod upmixer_tests {
                 ParameterValue::Bool(true),
             )
             .unwrap();
-        assert!(plugin.multi_source_extraction);
+        assert!(plugin.spectral.multi_source_extraction);
 
         // Verify get_parameter returns the updated value
         let val = plugin.get_parameter(&ParameterId::from("multi_source_extraction"));
@@ -2436,7 +2433,7 @@ mod upmixer_tests {
                 ParameterValue::Float(0.25),
             )
             .unwrap();
-        assert!((plugin.multi_source_threshold - 0.25).abs() < 1e-6);
+        assert!((plugin.spectral.multi_source_threshold - 0.25).abs() < 1e-6);
 
         let val = plugin.get_parameter(&ParameterId::from("multi_source_threshold"));
         assert_eq!(val, Some(ParameterValue::Float(0.25)));
@@ -2449,9 +2446,9 @@ mod upmixer_tests {
             )
             .unwrap();
         assert!(
-            (plugin.multi_source_threshold - 0.05).abs() < 1e-6,
+            (plugin.spectral.multi_source_threshold - 0.05).abs() < 1e-6,
             "Threshold should be clamped to min 0.05, got {}",
-            plugin.multi_source_threshold
+            plugin.spectral.multi_source_threshold
         );
 
         plugin
@@ -2461,9 +2458,9 @@ mod upmixer_tests {
             )
             .unwrap();
         assert!(
-            (plugin.multi_source_threshold - 0.5).abs() < 1e-6,
+            (plugin.spectral.multi_source_threshold - 0.5).abs() < 1e-6,
             "Threshold should be clamped to max 0.5, got {}",
-            plugin.multi_source_threshold
+            plugin.spectral.multi_source_threshold
         );
     }
 
@@ -2503,8 +2500,8 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        let freq_per_bin = srate / plugin.fft_size as f64;
-        let num_bins = plugin.lfe_low_gains.len();
+        let freq_per_bin = srate / plugin.core.fft_size as f64;
+        let num_bins = plugin.spectral.lfe_low_gains.len();
 
         // Check that plugin gains match raw LR4 at several key frequencies
         let test_bins = [
@@ -2531,8 +2528,8 @@ mod upmixer_tests {
             let raw_high_h = high_resp * high_resp;
 
             // Get plugin gains (cast f32 -> f64 for comparison)
-            let plugin_low = plugin.lfe_low_gains[bin];
-            let plugin_high = plugin.mains_high_gains[bin];
+            let plugin_low = plugin.spectral.lfe_low_gains[bin];
+            let plugin_high = plugin.spectral.mains_high_gains[bin];
             let plugin_low_f64 = Complex::new(plugin_low.re as f64, plugin_low.im as f64);
             let plugin_high_f64 = Complex::new(plugin_high.re as f64, plugin_high.im as f64);
 
@@ -2575,8 +2572,8 @@ mod upmixer_tests {
         let high_resp = high_section.complex_response(worst_f);
         let raw_low_h = low_resp * low_resp;
         let raw_high_h = high_resp * high_resp;
-        let plugin_low = plugin.lfe_low_gains[worst_bin];
-        let plugin_high = plugin.mains_high_gains[worst_bin];
+        let plugin_low = plugin.spectral.lfe_low_gains[worst_bin];
+        let plugin_high = plugin.spectral.mains_high_gains[worst_bin];
 
         // If we reach here without assertion failure, the gains match perfectly.
         // Otherwise, this summary helps diagnose the worst-case distortion.
@@ -2607,11 +2604,11 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        let spectrum_size = plugin.fft_size / 2 + 1;
+        let spectrum_size = plugin.core.fft_size / 2 + 1;
         let nyquist_bin = spectrum_size - 1;
 
         // Set voice_freq_max_hz very high so the clamping kicks in
-        plugin.voice_freq_max_hz = 50000.0; // Above Nyquist (22050 Hz)
+        plugin.dialogue.voice_freq_max_hz = 50000.0; // Above Nyquist (22050 Hz)
         plugin.recache_bin_indices();
 
         // With the current code, the clamped voice_end_bin equals the Nyquist bin
@@ -2621,12 +2618,12 @@ mod upmixer_tests {
         // The fix should use an exclusive upper bound: voice_end_bin should be
         // one less than the clamped value, so the range doesn't reach Nyquist.
         assert!(
-            plugin.cached_voice_end_bin < nyquist_bin,
+            plugin.cache.cached_voice_end_bin < nyquist_bin,
             "voice_end_bin ({}) should not reach the Nyquist bin ({}) — \
              the Nyquist bin has zero energy and its inclusion in the inclusive \
              range voice_start_bin..=voice_end_bin is an off-by-one error. \
              The fix should subtract 1 from the clamped end bin.",
-            plugin.cached_voice_end_bin,
+            plugin.cache.cached_voice_end_bin,
             nyquist_bin
         );
     }
@@ -2676,7 +2673,7 @@ mod upmixer_tests {
             plugin.process(&input, &mut output, &context).unwrap();
         }
 
-        let amp_env_after_bass = plugin.subharmonic_amp_envelope;
+        let amp_env_after_bass = plugin.subharmonic.subharmonic_amp_envelope;
         assert!(
             amp_env_after_bass > 0.1,
             "Amp envelope should be charged after bass: {}",
@@ -2696,7 +2693,7 @@ mod upmixer_tests {
                 .unwrap();
         }
 
-        let amp_env_after_silence = plugin.subharmonic_amp_envelope;
+        let amp_env_after_silence = plugin.subharmonic.subharmonic_amp_envelope;
 
         // The release coefficient for 50ms at 44100 Hz is ~0.000453.
         // After 2 blocks (4096 samples): decay ≈ (1 - 0.000453)^4096 ≈ 0.156
@@ -2741,9 +2738,9 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        plugin.multi_source_extraction = true;
+        plugin.spectral.multi_source_extraction = true;
         // Use a very low threshold so extraction activates easily
-        plugin.multi_source_threshold = 0.01;
+        plugin.spectral.multi_source_threshold = 0.01;
 
         // Two uncorrelated sources at different frequencies to produce different DOA
         // angles across the spectrum. L = 1 kHz sine, R = 3 kHz sine.
@@ -2754,7 +2751,7 @@ mod upmixer_tests {
             input[i * 2] = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
             input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 3000.0 * t).sin() * 0.5;
         }
-        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        let mut output = vec![0.0f32; fft_size * plugin.core.num_output_channels];
 
         // Run many blocks for covariance to converge
         for _ in 0..50 {
@@ -2762,14 +2759,14 @@ mod upmixer_tests {
         }
 
         let spec_size = fft_size / 2 + 1;
-        let bandpass_bin = plugin.cached_bandpass_bin;
+        let bandpass_bin = plugin.cache.cached_bandpass_bin;
 
         // Collect DOA values from bins that have non-zero direct2 energy
         let mut doa_values: Vec<(usize, f32)> = Vec::new();
         for i in bandpass_bin..spec_size {
-            let energy = plugin.direct2[i].norm_sqr();
+            let energy = plugin.spectral.direct2[i].norm_sqr();
             if energy > 1e-12 {
-                doa_values.push((i, plugin.direct2_doa_per_bin[i]));
+                doa_values.push((i, plugin.spectral.direct2_doa_per_bin[i]));
             }
         }
 
@@ -2781,8 +2778,8 @@ mod upmixer_tests {
             doa_values.len(),
             bandpass_bin,
             spec_size,
-            plugin.multi_source_extraction,
-            plugin.multi_source_threshold
+            plugin.spectral.multi_source_extraction,
+            plugin.spectral.multi_source_threshold
         );
 
         // Count unique DOA values (using bits representation for exact comparison)
@@ -2793,16 +2790,16 @@ mod upmixer_tests {
         // of ERB bands. With per-bin DOA, it would be close to the number of bins.
         // The fix should compute DOA per-bin (or at least per fine-ERB band).
         assert!(
-            unique_doas.len() > plugin.erb_bands.len(),
+            unique_doas.len() > plugin.steering.erb_bands.len(),
             "Found {} unique DOA values across {} active bins with {} ERB bands. \
              The number of unique DOA values ({}) should exceed the ERB band count ({}) \
              if DOA is computed per-bin. Currently DOA is constant within each ERB band, \
              causing spatial smearing of the secondary source.",
             unique_doas.len(),
             doa_values.len(),
-            plugin.erb_bands.len(),
+            plugin.steering.erb_bands.len(),
             unique_doas.len(),
-            plugin.erb_bands.len()
+            plugin.steering.erb_bands.len()
         );
     }
 }

@@ -6,7 +6,7 @@ FFT-based convolution plugin for impulse response processing, supporting uniform
 
 ```
 src/
-  lib.rs    -- ConvolutionPlugin (InPlacePlugin), ConvolutionPluginParams, ConvolutionState
+  lib.rs    -- ConvolutionPlugin (ParametricInPlacePlugin), ConvolutionPluginParams, ConvolutionState
   nupc.rs   -- Non-Uniform Partitioned Convolution engine
   params.rs -- Centralized parameter specs
 ```
@@ -15,7 +15,7 @@ Data flow: IR file loaded (WAV/FLAC via Symphonia, resampled via rubato if neede
 
 **Key types:**
 
-- `ConvolutionPlugin` -- Main plugin implementing `InPlacePlugin`. Uses `ArcSwap<Option<ConvolutionState>>` for lock-free IR swapping.
+- `ConvolutionPlugin` -- Main plugin implementing `ParametricInPlacePlugin`. Uses `ArcSwap<Option<ConvolutionState>>` for lock-free IR swapping.
 - `ConvolutionState` -- Holds pre-computed frequency-domain IR partitions: `partitions[channel][partition][bin]`.
 - `ConvolutionPluginParams` -- Serde config: `ir_file`, `mix`, `gain_db`, `use_nupc`, `zero_latency_head`, `head_taps`.
 
@@ -25,7 +25,7 @@ Data flow: IR file loaded (WAV/FLAC via Symphonia, resampled via rubato if neede
 
 - `ConvolutionPlugin::new(channels, ir_file, mix, gain_db) -> Self` (`lib.rs`)
 - `ConvolutionPlugin::from_params(channels, params) -> Self` (`lib.rs`)
-- Implements `InPlacePlugin` trait
+- Implements `ParametricInPlacePlugin` trait
 
 **Parameters:** `ir_file` (path string), `mix` (0-1), `gain_db`, `use_nupc` (bool, default true), `zero_latency_head` (bool), `head_taps` (default 128).
 

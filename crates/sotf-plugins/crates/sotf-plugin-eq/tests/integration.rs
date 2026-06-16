@@ -2,15 +2,15 @@
 // Integration tests for sotf-plugin-eq
 //
 // These tests exercise the crate's public API as a black box through the
-// InPlacePlugin trait (and the Plugin adapter) with realistic end-to-end
+// ParametricPlugin trait (and the Plugin adapter) with realistic end-to-end
 // workflows.
 // ============================================================================
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_host::AutoGainParams;
-use sotf_host::InPlacePluginAdapter;
+use sotf_host::parametric_plugin::{ParametricPlugin, ParametricPluginAdapter};
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, Plugin, ProcessContext};
+use sotf_host::plugin::{Plugin, ProcessContext};
 use sotf_plugin_eq::{BiquadFilterConfig, EqFilterTopology, EqPlugin, EqPluginParams};
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -23,7 +23,7 @@ const FRAMES: usize = 64;
 #[test]
 fn info_returns_expected_metadata() {
     let plugin = EqPlugin::new(2, vec![]);
-    let info = plugin.info();
+    let info = plugin.plugin_info();
     assert_eq!(info.name, "Parametric EQ");
     assert_eq!(info.version, "2.0.0");
     assert_eq!(info.author, "SotF");
@@ -32,10 +32,10 @@ fn info_returns_expected_metadata() {
 #[test]
 fn channels_matches_constructor() {
     let plugin = EqPlugin::new(2, vec![]);
-    assert_eq!(plugin.channels(), 2);
+    assert_eq!(plugin.input_channels(), 2);
 
     let plugin = EqPlugin::new(1, vec![]);
-    assert_eq!(plugin.channels(), 1);
+    assert_eq!(plugin.input_channels(), 1);
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn parameters_include_global_and_band_params() {
     let f = Biquad::new(BiquadFilterType::Peak, 1000.0, SAMPLE_RATE as f64, 1.0, 0.0);
     let plugin = EqPlugin::new(1, vec![f]);
 
-    let params = plugin.parameters();
+    let params = plugin.parametric_parameters();
     let ids: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
 
     assert!(ids.contains(&"auto_gain_enabled"));
@@ -63,15 +63,15 @@ fn parameters_include_global_and_band_params() {
 #[test]
 fn empty_chain_is_exact_passthrough() {
     let mut plugin = EqPlugin::new(2, vec![]);
-    plugin.initialize(SAMPLE_RATE).unwrap();
+    plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
     let input: Vec<f32> = (0..FRAMES * 2)
         .map(|i| ((i % 13) as f32 - 6.0) / 7.0)
         .collect();
-    let mut output = input.clone();
+    let mut output = vec![0.0f32; input.len()];
 
     let processed = plugin
-        .process_in_place(&mut output, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(&input, &mut output, &ProcessContext::new(SAMPLE_RATE, FRAMES))
         .unwrap();
 
     assert_eq!(processed, FRAMES);
@@ -105,10 +105,11 @@ fn from_params_builds_processable_plugin() {
     };
 
     let mut plugin = EqPlugin::from_params(2, SAMPLE_RATE, params).unwrap();
-    let mut buffer = vec![0.5f32; FRAMES * 2];
+    let input = vec![0.5f32; FRAMES * 2];
+    let mut buffer = vec![0.0f32; input.len()];
 
     plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(&input, &mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
         .unwrap();
 
     assert!(buffer.iter().all(|s| s.is_finite()));
@@ -116,7 +117,7 @@ fn from_params_builds_processable_plugin() {
 
 #[test]
 fn plugin_adapter_exposes_plugin_trait() {
-    let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(1, vec![]));
+    let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(1, vec![]));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     assert_eq!(plugin.input_channels(), 1);
@@ -151,43 +152,43 @@ fn plugin_adapter_exposes_plugin_trait() {
 #[test]
 fn parameter_roundtrip_global_params() {
     let mut plugin = EqPlugin::new(2, vec![]);
-    plugin.initialize(SAMPLE_RATE).unwrap();
+    plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
     plugin
-        .set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
+        .parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("oversampling")),
+        plugin.parametric_get_parameter(&ParameterId::from("oversampling")),
         Some(ParameterValue::Int(2))
     );
 
     plugin
-        .set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(true))
+        .parametric_set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(true))
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("tdf2")),
+        plugin.parametric_get_parameter(&ParameterId::from("tdf2")),
         Some(ParameterValue::Bool(true))
     );
 
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("topology"),
             ParameterValue::String("SVF".to_string()),
         )
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("topology")),
+        plugin.parametric_get_parameter(&ParameterId::from("topology")),
         Some(ParameterValue::String("SVF".to_string()))
     );
 
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("auto_gain_enabled"),
             ParameterValue::Bool(false),
         )
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("auto_gain_enabled")),
+        plugin.parametric_get_parameter(&ParameterId::from("auto_gain_enabled")),
         Some(ParameterValue::Bool(false))
     );
 }
@@ -196,34 +197,34 @@ fn parameter_roundtrip_global_params() {
 fn parameter_roundtrip_band_params() {
     let f = Biquad::new(BiquadFilterType::Peak, 1000.0, SAMPLE_RATE as f64, 1.0, 0.0);
     let mut plugin = EqPlugin::new(1, vec![f]);
-    plugin.initialize(SAMPLE_RATE).unwrap();
+    plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("band_0_freq"),
             ParameterValue::Float(2500.0),
         )
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("band_0_freq")),
+        plugin.parametric_get_parameter(&ParameterId::from("band_0_freq")),
         Some(ParameterValue::Float(2500.0))
     );
 
     plugin
-        .set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.5))
+        .parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.5))
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("band_0_q")),
+        plugin.parametric_get_parameter(&ParameterId::from("band_0_q")),
         Some(ParameterValue::Float(2.5))
     );
 
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("band_0_gain"),
             ParameterValue::Float(-6.0),
         )
         .unwrap();
-    let got = plugin.get_parameter(&ParameterId::from("band_0_gain"));
+    let got = plugin.parametric_get_parameter(&ParameterId::from("band_0_gain"));
     assert!(
         matches!(got, Some(ParameterValue::Float(v)) if (v - (-6.0)).abs() < 0.01),
         "band gain round-trip drift: {:?}",
@@ -231,10 +232,10 @@ fn parameter_roundtrip_band_params() {
     );
 
     plugin
-        .set_parameter(ParameterId::from("band_0_order"), ParameterValue::Int(4))
+        .parametric_set_parameter(ParameterId::from("band_0_order"), ParameterValue::Int(4))
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("band_0_order")),
+        plugin.parametric_get_parameter(&ParameterId::from("band_0_order")),
         Some(ParameterValue::Int(4))
     );
 }
@@ -243,18 +244,19 @@ fn parameter_roundtrip_band_params() {
 fn topology_switch_to_svf_produces_finite_output() {
     let f = Biquad::new(BiquadFilterType::Peak, 1000.0, SAMPLE_RATE as f64, 1.0, 6.0);
     let mut plugin = EqPlugin::new(2, vec![f]);
-    plugin.initialize(SAMPLE_RATE).unwrap();
+    plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("topology"),
             ParameterValue::String("SVF".to_string()),
         )
         .unwrap();
 
-    let mut buffer = vec![0.25f32; FRAMES * 2];
+    let input = vec![0.25f32; FRAMES * 2];
+    let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(&input, &mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
         .unwrap();
 
     assert!(buffer.iter().all(|s| s.is_finite()));
@@ -263,25 +265,27 @@ fn topology_switch_to_svf_produces_finite_output() {
 #[test]
 fn oversampling_switch_updates_internal_state() {
     let mut plugin = EqPlugin::new(1, vec![]);
-    plugin.initialize(SAMPLE_RATE).unwrap();
+    plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
     // Enable 2x oversampling
     plugin
-        .set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
+        .parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
         .unwrap();
-    let mut buffer = vec![0.1f32; FRAMES];
+    let input = vec![0.1f32; FRAMES];
+    let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(&input, &mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
         .unwrap();
     assert!(buffer.iter().all(|s| s.is_finite()));
 
     // Disable oversampling
     plugin
-        .set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(1))
+        .parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(1))
         .unwrap();
-    let mut buffer = vec![0.1f32; FRAMES];
+    let input = vec![0.1f32; FRAMES];
+    let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(&input, &mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
         .unwrap();
     assert!(buffer.iter().all(|s| s.is_finite()));
 }
@@ -296,20 +300,20 @@ fn reset_returns_detinistic_state() {
         0.0,
     );
     let mut plugin = EqPlugin::new(1, vec![f]);
-    plugin.initialize(SAMPLE_RATE).unwrap();
+    plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
     let input: Vec<f32> = (0..FRAMES).map(|i| ((i % 5) as f32) / 5.0).collect();
 
-    let mut run1 = input.clone();
+    let mut run1 = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut run1, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(&input, &mut run1, &ProcessContext::new(SAMPLE_RATE, FRAMES))
         .unwrap();
 
-    plugin.reset();
+    plugin.plugin_reset();
 
-    let mut run2 = input.clone();
+    let mut run2 = vec![0.0f32; input.len()];
     plugin
-        .process_in_place(&mut run2, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(&input, &mut run2, &ProcessContext::new(SAMPLE_RATE, FRAMES))
         .unwrap();
 
     let max_error: f32 = run1
@@ -331,9 +335,9 @@ fn reset_returns_detinistic_state() {
 #[test]
 fn invalid_oversampling_factor_errors() {
     let mut plugin = EqPlugin::new(1, vec![]);
-    plugin.initialize(SAMPLE_RATE).unwrap();
+    plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
-    let result = plugin.set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(3));
+    let result = plugin.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(3));
     assert!(result.is_err(), "oversampling factor 3 should be rejected");
     assert!(result.unwrap_err().contains("Invalid oversampling"));
 }
@@ -342,9 +346,9 @@ fn invalid_oversampling_factor_errors() {
 fn odd_band_order_errors() {
     let f = Biquad::new(BiquadFilterType::Peak, 1000.0, SAMPLE_RATE as f64, 1.0, 0.0);
     let mut plugin = EqPlugin::new(1, vec![f]);
-    plugin.initialize(SAMPLE_RATE).unwrap();
+    plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
-    let result = plugin.set_parameter(ParameterId::from("band_0_order"), ParameterValue::Int(3));
+    let result = plugin.parametric_set_parameter(ParameterId::from("band_0_order"), ParameterValue::Int(3));
     assert!(result.is_err(), "odd band order should be rejected");
     assert!(result.unwrap_err().contains("even"));
 }
@@ -352,9 +356,9 @@ fn odd_band_order_errors() {
 #[test]
 fn unknown_parameter_errors() {
     let mut plugin = EqPlugin::new(1, vec![]);
-    plugin.initialize(SAMPLE_RATE).unwrap();
+    plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
-    let result = plugin.set_parameter(
+    let result = plugin.parametric_set_parameter(
         ParameterId::from("not_a_real_param"),
         ParameterValue::Float(1.0),
     );

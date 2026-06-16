@@ -21,5 +21,5 @@ cargo test -p sotf-plugin-ab-compare
 
 ## Important Notes
 
-- Implements Plugin trait (not InPlacePlugin) — may route audio differently based on A/B state
+- Implements Plugin trait (not ParametricInPlacePlugin) — may route audio differently based on A/B state
 - Used for blind comparison testing between two signal paths

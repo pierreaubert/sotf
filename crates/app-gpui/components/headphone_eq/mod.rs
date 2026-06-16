@@ -151,7 +151,8 @@ impl PlayerView {
                                         .step
                                         .previous()
                                     {
-                                        state.app.measurement_state.headphone_eq_state.model.step = prev;
+                                        state.app.measurement_state.headphone_eq_state.model.step =
+                                            prev;
                                     }
                                 }
                             }
@@ -176,7 +177,8 @@ impl PlayerView {
                                     if let Some(next) =
                                         state.app.measurement_state.headphone_eq_state.step.next()
                                     {
-                                        state.app.measurement_state.headphone_eq_state.model.step = next;
+                                        state.app.measurement_state.headphone_eq_state.model.step =
+                                            next;
                                     }
                                 }
                             }

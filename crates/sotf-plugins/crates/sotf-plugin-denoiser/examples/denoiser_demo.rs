@@ -8,7 +8,8 @@
 // Run with:
 //   cargo run -p sotf-plugin-denoiser --example denoiser_demo --release -- input.wav output.wav
 
-use sotf_host::plugin::{InPlacePluginAdapter, Plugin, ProcessContext};
+use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::ParametricInPlacePluginAdapter;
 use sotf_plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 use std::env;
 use std::process;
@@ -91,7 +92,7 @@ fn main() {
     println!();
 
     let denoiser = DenoiserPlugin::from_params(channels, params);
-    let mut plugin = InPlacePluginAdapter::new(denoiser);
+    let mut plugin = ParametricInPlacePluginAdapter::new(denoiser);
 
     plugin
         .initialize(sample_rate)

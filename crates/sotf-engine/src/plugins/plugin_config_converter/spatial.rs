@@ -90,6 +90,21 @@ pub fn convert_binaural_decoder(
 pub fn convert_upmixer(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
     let PluginSettings::Upmixer {
         speaker_config,
+        gains,
+        lfe,
+        subharmonic,
+        decorrelation,
+        height,
+        ambient_analysis,
+        dialogue,
+        bypass,
+        output,
+        ..
+    } = settings
+    else {
+        return None;
+    };
+    let crate::plugins::UpmixerGainSettings {
         gain_front_direct,
         gain_front_ambient,
         gain_rear_ambient,
@@ -98,37 +113,53 @@ pub fn convert_upmixer(settings: &PluginSettings, _sample_rate: f64) -> Option<P
         center_spread,
         surround_direct_bleed,
         rear_late_reflection,
+        ambient_boost,
+        rear_ambient_boost,
+    } = gains;
+    let crate::plugins::UpmixerLfeSettings {
         lfe_cutoff_hz,
         lfe_gain,
         bandpass_hz,
+    } = lfe;
+    let crate::plugins::UpmixerSubharmonicSettings {
         enable_subharmonic_synth,
         subharmonic_gain,
         subharmonic_freq_hz,
         subharmonic_attack_ms,
         subharmonic_release_ms,
+    } = subharmonic;
+    let crate::plugins::UpmixerDecorrelationSettings {
         decorrelation_mode,
         decorrelation_lfo_rate_hz,
         velvet_noise_duration_ms,
         velvet_noise_density,
+    } = decorrelation;
+    let crate::plugins::UpmixerHeightSettings {
         enable_hr_direct,
         hr_sharpen,
         height_hf_cap_hz,
         height_transient_reduction,
         height_direct_leak,
-        ambient_boost,
-        safety_cap_db,
+    } = height;
+    let crate::plugins::UpmixerAmbientAnalysisSettings {
         low_latency,
         frequency_resolution,
-        rear_ambient_boost,
+        safety_cap_db,
+    } = ambient_analysis;
+    let crate::plugins::UpmixerDialogueSettings {
         dialogue_weight,
         voice_freq_min_hz,
         voice_freq_max_hz,
         dialogue_centroid_weight,
         dialogue_variance_weight,
         dialogue_coherence_weight,
+    } = dialogue;
+    let crate::plugins::UpmixerBypassSettings {
         bypass_decorrelation,
         bypass_transient_detection,
         bypass_all_processing,
+    } = bypass;
+    let crate::plugins::UpmixerOutputSettings {
         enable_ml_detection,
         multi_source_extraction,
         multi_source_threshold,
@@ -136,10 +167,7 @@ pub fn convert_upmixer(settings: &PluginSettings, _sample_rate: f64) -> Option<P
         auto_gain_enabled,
         auto_gain_max_db,
         auto_gain_smoothing_ms,
-    } = settings
-    else {
-        return None;
-    };
+    } = output;
     Some(PluginConfig::new(
         "upmixer",
         json!({

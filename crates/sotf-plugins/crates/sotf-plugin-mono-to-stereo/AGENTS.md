@@ -21,5 +21,5 @@ cargo test -p sotf-plugin-mono-to-stereo
 
 ## Important Notes
 
-- Plugin trait (not InPlacePlugin) — changes channel count (1 → 2)
+- Plugin trait (not ParametricInPlacePlugin) — changes channel count (1 → 2)
 - Simple duplication or optional decorrelation-based widening

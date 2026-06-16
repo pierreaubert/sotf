@@ -12,6 +12,8 @@ pub(super) struct Response {
 
 impl Response {
     pub(super) fn ok(data: Value) -> Self {
+        let mut data = data;
+        sort_json_value(&mut data);
         Self {
             success: true,
             data: Some(data),
@@ -55,5 +57,26 @@ pub(super) fn serialize_response_safely(response: &Response) -> String {
                 r#"{"success":false,"error":"internal error: response serialization failed"}"#,
             )
         }
+    }
+}
+
+/// Recursively sort object keys in a JSON value so serialization order is
+/// independent of the `serde_json` map implementation / feature flags.
+fn sort_json_value(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = std::mem::take(map).into_iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            for (k, mut v) in entries {
+                sort_json_value(&mut v);
+                map.insert(k, v);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr {
+                sort_json_value(v);
+            }
+        }
+        _ => {}
     }
 }

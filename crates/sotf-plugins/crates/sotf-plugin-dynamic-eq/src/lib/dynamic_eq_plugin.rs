@@ -14,12 +14,15 @@ use super::dynamic_eq_data::DynamicEqData;
 use super::dynamic_eq_plugin_params::DynamicEqPluginParams;
 use super::misc::DB_CONVERSION_FACTOR;
 use super::misc::EPSILON;
-use crate::params::{MAX_BANDS, PARAMS as DQ};
+use crate::params::{BAND_PARAMS, MAX_BANDS, PARAMS as DQ};
 use math_audio_dsp::fast_math::fast_log10;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::param_specs::ParamType;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
@@ -177,7 +180,7 @@ impl DynamicEqPlugin {
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = vec![
+        let mut params = vec![
             Parameter::new_int(
                 "num_bands",
                 "Num Bands",
@@ -253,10 +256,46 @@ impl DynamicEqPlugin {
             .with_group("Output")
             .with_importance(ParameterImportance::Useful),
         ];
+
+        for i in 0..self.num_bands {
+            let band = &self.bands[i];
+            for spec in BAND_PARAMS {
+                let id = format!("band_{i}_{}", spec.engine_key);
+                let p = match spec.param_type {
+                    ParamType::Float { min, max, .. } => {
+                        let value = match spec.engine_key {
+                            "frequency" => band.frequency,
+                            "q" => band.q,
+                            "gain" => band.target_gain_db,
+                            "band_threshold" => band.band_threshold,
+                            "band_ratio" => band.band_ratio,
+                            _ => spec.default_f64() as f32,
+                        };
+                        Parameter::new_float(&id, spec.name, value, min as f32, max as f32)
+                    }
+                    ParamType::Bool { .. } => {
+                        let value = match spec.engine_key {
+                            "active" => band.active,
+                            "solo" => band.solo,
+                            _ => spec.default_bool(),
+                        };
+                        Parameter::new_bool(&id, spec.name, value)
+                    }
+                    _ => continue,
+                };
+                params.push(
+                    p.with_description(spec.doc)
+                        .with_group(spec.group)
+                        .with_importance(ParameterImportance::Useful),
+                );
+            }
+        }
+
+        self.cached_parameters = params;
     }
 }
 
-impl InPlacePlugin for DynamicEqPlugin {
+impl ParametricInPlacePlugin for DynamicEqPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("DynamicEQ", "1.0.0", "SotF")
     }
@@ -265,16 +304,35 @@ impl InPlacePlugin for DynamicEqPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        if !id.0.starts_with("band_") {
-            self.validate_parameter(&id, &value)?;
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(self.param_num_bands.clone(), ParameterValue::Int(self.num_bands as i32));
+        values.insert(self.param_threshold.clone(), ParameterValue::Float(self.threshold_db));
+        values.insert(self.param_ratio.clone(), ParameterValue::Float(self.ratio));
+        values.insert(self.param_attack.clone(), ParameterValue::Float(self.attack_ms));
+        values.insert(self.param_release.clone(), ParameterValue::Float(self.release_ms));
+        values.insert(self.param_knee.clone(), ParameterValue::Float(self.knee_db));
+        values.insert(self.param_link_channels.clone(), ParameterValue::Bool(self.link_channels));
+        values.insert(self.param_mix.clone(), ParameterValue::Float(self.mix));
+        for (i, band) in self.bands[..self.num_bands].iter().enumerate() {
+            values.insert(ParameterId::from(format!("band_{i}_frequency").as_str()), ParameterValue::Float(band.frequency));
+            values.insert(ParameterId::from(format!("band_{i}_q").as_str()), ParameterValue::Float(band.q));
+            values.insert(ParameterId::from(format!("band_{i}_gain").as_str()), ParameterValue::Float(band.target_gain_db));
+            values.insert(ParameterId::from(format!("band_{i}_band_threshold").as_str()), ParameterValue::Float(band.band_threshold));
+            values.insert(ParameterId::from(format!("band_{i}_band_ratio").as_str()), ParameterValue::Float(band.band_ratio));
+            values.insert(ParameterId::from(format!("band_{i}_active").as_str()), ParameterValue::Bool(band.active));
+            values.insert(ParameterId::from(format!("band_{i}_solo").as_str()), ParameterValue::Bool(band.solo));
         }
+        values
+    }
 
-        if id == self.param_num_bands {
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            if id == self.param_num_bands {
             let v = value
                 .as_int()
                 .or_else(|| value.as_float().map(|f| f as i32))
@@ -373,14 +431,14 @@ impl InPlacePlugin for DynamicEqPlugin {
                                 band.target_gain_db = v.clamp(-24.0, 24.0);
                             }
                         }
-                        "threshold" => {
+                        "threshold" | "band_threshold" => {
                             if let Some(v) = value.as_float() {
                                 band.band_threshold = v.clamp(-60.0, 0.0);
                                 band.use_band_threshold =
                                     (band.band_threshold - self.threshold_db).abs() > 0.01;
                             }
                         }
-                        "ratio" => {
+                        "ratio" | "band_ratio" => {
                             if let Some(v) = value.as_float() {
                                 band.band_ratio = v.clamp(1.0, 20.0);
                                 band.use_band_ratio = (band.band_ratio - self.ratio).abs() > 0.01;
@@ -397,51 +455,48 @@ impl InPlacePlugin for DynamicEqPlugin {
                 }
             }
         }
+        }
         self.rebuild_cached_parameters();
         Ok(())
     }
 
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_num_bands {
-            Some(ParameterValue::Int(self.num_bands as i32))
-        } else if id == &self.param_threshold {
-            Some(ParameterValue::Float(self.threshold_db))
-        } else if id == &self.param_ratio {
-            Some(ParameterValue::Float(self.ratio))
-        } else if id == &self.param_attack {
-            Some(ParameterValue::Float(self.attack_ms))
-        } else if id == &self.param_release {
-            Some(ParameterValue::Float(self.release_ms))
-        } else if id == &self.param_knee {
-            Some(ParameterValue::Float(self.knee_db))
-        } else if id == &self.param_link_channels {
-            Some(ParameterValue::Bool(self.link_channels))
-        } else if id == &self.param_mix {
-            Some(ParameterValue::Float(self.mix))
-        } else if let Some(rest) = id.0.strip_prefix("band_") {
-            if let Some(sep) = rest.find('_') {
-                let b_idx = rest[..sep].parse::<usize>().unwrap_or(0);
-                let field = &rest[sep + 1..];
-                if b_idx < self.bands.len() {
-                    let band = &self.bands[b_idx];
-                    match field {
-                        "frequency" | "freq" => Some(ParameterValue::Float(band.frequency)),
-                        "q" => Some(ParameterValue::Float(band.q)),
-                        "gain" => Some(ParameterValue::Float(band.target_gain_db)),
-                        "threshold" => Some(ParameterValue::Float(band.band_threshold)),
-                        "ratio" => Some(ParameterValue::Float(band.band_ratio)),
-                        "active" => Some(ParameterValue::Bool(band.active)),
-                        "solo" => Some(ParameterValue::Bool(band.solo)),
-                        _ => None,
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+    fn parametric_get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        let Some(rest) = id.0.strip_prefix("band_") else {
+            return self.current_values().get(id).cloned();
+        };
+        let Some(sep) = rest.find('_') else {
+            return self.current_values().get(id).cloned();
+        };
+        let Ok(idx) = rest[..sep].parse::<usize>() else {
+            return self.current_values().get(id).cloned();
+        };
+        let field = &rest[sep + 1..];
+        if idx >= self.num_bands {
+            return self.current_values().get(id).cloned();
+        }
+        let band = &self.bands[idx];
+        Some(match field {
+            "frequency" => ParameterValue::Float(band.frequency),
+            "q" => ParameterValue::Float(band.q),
+            "gain" => ParameterValue::Float(band.target_gain_db),
+            "threshold" | "band_threshold" => ParameterValue::Float(band.band_threshold),
+            "ratio" | "band_ratio" => ParameterValue::Float(band.band_ratio),
+            "active" => ParameterValue::Bool(band.active),
+            "solo" => ParameterValue::Bool(band.solo),
+            _ => return None,
+        })
+    }
+
+    fn parametric_set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        if id.0.starts_with("band_") {
+            let mut values = ParameterSet::new();
+            values.insert(id, value);
+            self.apply_values(values)
         } else {
-            None
+            self.parametric_validate_parameter(&id, &value)?;
+            let mut values = ParameterSet::new();
+            values.insert(id, value);
+            self.apply_values(values)
         }
     }
 

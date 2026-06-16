@@ -373,7 +373,8 @@ impl LevelMeterManager for AppState {
                 }
 
                 // Dispatch update to audio engine
-                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.plugin_state.update_state.pending_plugin_update =
+                    Some(PluginUpdateType::Structural);
                 return; // Only update the last matrix plugin found
             }
         }

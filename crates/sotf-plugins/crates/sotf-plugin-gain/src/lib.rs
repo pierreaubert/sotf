@@ -8,7 +8,7 @@ use crate::params::PARAMS as GN;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet, ParametricPlugin};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{apply_gain_simd, apply_per_channel_gain_simd};
 use sotf_host::smoothing::Smoother;
 
@@ -393,42 +393,17 @@ impl ParametricPlugin for GainPlugin {
     }
 }
 
-impl InPlacePlugin for GainPlugin {
-    fn info(&self) -> PluginInfo {
-        ParametricPlugin::plugin_info(self)
-    }
-    fn channels(&self) -> usize {
-        self.channels
-    }
-    fn parameters(&self) -> Vec<Parameter> {
-        ParametricPlugin::parametric_parameters(self)
-    }
-    fn set_parameter(&mut self, id: ParameterId, val: ParameterValue) -> PluginResult<()> {
-        ParametricPlugin::parametric_set_parameter(self, id, val)
-    }
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        ParametricPlugin::parametric_get_parameter(self, id)
-    }
-    fn initialize(&mut self, sr: u32) -> PluginResult<()> {
-        ParametricPlugin::plugin_initialize(self, sr)
-    }
-    fn process_in_place(
-        &mut self,
-        buffer: &mut [f32],
-        context: &ProcessContext,
-    ) -> PluginResult<usize> {
-        self.process_in_place(buffer, context)
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sotf_host::parametric_plugin::ParametricPlugin;
     #[test]
     fn test_unity_gain() {
         let mut p = GainPlugin::new(2, 0.0);
-        let mut b = vec![1.0, 2.0, 3.0, 4.0];
-        p.process_in_place(&mut b, &ProcessContext::new(44100, 2))
+        let input = vec![1.0, 2.0, 3.0, 4.0];
+        let mut b = vec![0.0; input.len()];
+        p.process(&input, &mut b, &ProcessContext::new(44100, 2))
             .unwrap();
         assert!((b[0] - 1.0).abs() < 1e-5);
     }
@@ -440,24 +415,24 @@ mod tests {
     fn test_set_parameter_rejects_out_of_range_gain() {
         let mut p = GainPlugin::new(2, 0.0);
         // +21 dB is above the param spec max of +20 dB — must be rejected.
-        let result = p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(21.0));
+        let result = p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(21.0));
         assert!(
             result.is_err(),
             "gain_db=21.0 should be rejected (spec max is 20.0), but got Ok"
         );
         // -61 dB is below the param spec min of -60 dB — must be rejected.
-        let result = p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-61.0));
+        let result = p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-61.0));
         assert!(
             result.is_err(),
             "gain_db=-61.0 should be rejected (spec min is -60.0), but got Ok"
         );
         // Values within spec range must be accepted.
-        let result = p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(20.0));
+        let result = p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(20.0));
         assert!(
             result.is_ok(),
             "gain_db=20.0 should be accepted (spec max), got Err"
         );
-        let result = p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-60.0));
+        let result = p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-60.0));
         assert!(
             result.is_ok(),
             "gain_db=-60.0 should be accepted (spec min), got Err"
@@ -494,7 +469,7 @@ mod tests {
     fn test_sample_rate_deferred_initialization() {
         let mut p = GainPlugin::with_smoothing(1, 0.0, 20.0);
         // Initialize at 96000 Hz
-        p.initialize(96000).unwrap();
+        p.plugin_initialize(96000).unwrap();
 
         // Set a new gain target
         p.set_gain_db(-6.0);
@@ -503,8 +478,9 @@ mod tests {
         // At 96000 Hz with 20ms smoothing, we need ~5*tau = ~100ms = 9600 samples
         // to converge. Process 200ms worth of samples to be safe.
         let num_frames = 19200; // 200ms at 96kHz
-        let mut buf = vec![1.0f32; num_frames];
-        p.process_in_place(&mut buf, &ProcessContext::new(96000, num_frames))
+        let input = vec![1.0f32; num_frames];
+        let mut buf = vec![0.0f32; input.len()];
+        p.process(&input, &mut buf, &ProcessContext::new(96000, num_frames))
             .unwrap();
 
         // After 200ms, the smoother should have converged to the target gain
@@ -528,12 +504,13 @@ mod tests {
     fn test_channel_gain_before_initialize_uses_host_sample_rate_after_initialize() {
         let mut p = GainPlugin::with_smoothing(1, 0.0, 20.0);
         p.set_channel_gain_db(0, -6.0).unwrap();
-        p.initialize(96000).unwrap();
+        p.plugin_initialize(96000).unwrap();
 
         let target_linear = GainPlugin::db_to_linear(-6.0);
         let num_frames = 19200; // 200ms at 96kHz
-        let mut buf = vec![1.0f32; num_frames];
-        p.process_in_place(&mut buf, &ProcessContext::new(96000, num_frames))
+        let input = vec![1.0f32; num_frames];
+        let mut buf = vec![0.0f32; input.len()];
+        p.process(&input, &mut buf, &ProcessContext::new(96000, num_frames))
             .unwrap();
 
         let last_sample = buf[num_frames - 1];
@@ -564,13 +541,13 @@ mod tests {
     #[test]
     fn test_process_in_place_global_gain_known_output() {
         let mut p = GainPlugin::with_smoothing(2, 6.0, 0.0); // no smoothing
-        p.initialize(48000).unwrap();
+        p.plugin_initialize(48000).unwrap();
 
         let input = vec![0.1f32, 0.2, 0.3, 0.4];
-        let mut buffer = input.clone();
+        let mut buffer = vec![0.0f32; input.len()];
         let context = ProcessContext::new(48000, 2);
 
-        p.process_in_place(&mut buffer, &context).unwrap();
+        p.process(&input, &mut buffer, &context).unwrap();
 
         let expected_linear = 10.0_f32.powf(6.0 / 20.0);
         for (i, (&out, &inp)) in buffer.iter().zip(input.iter()).enumerate() {
@@ -587,14 +564,14 @@ mod tests {
     #[test]
     fn test_process_in_place_per_channel_known_output() {
         let mut p = GainPlugin::new_per_channel(vec![0.0f32, -6.0]).unwrap();
-        p.initialize(48000).unwrap();
+        p.plugin_initialize(48000).unwrap();
 
         // interleaved stereo: [L0, R0, L1, R1]
         let input = vec![1.0f32, 1.0, 1.0, 1.0];
-        let mut buffer = input.clone();
+        let mut buffer = vec![0.0f32; input.len()];
         let context = ProcessContext::new(48000, 2);
 
-        p.process_in_place(&mut buffer, &context).unwrap();
+        p.process(&input, &mut buffer, &context).unwrap();
 
         let ch0_gain = 1.0; // 0 dB -> linear 1.0
         let ch1_gain = 10.0_f32.powf(-6.0 / 20.0);
@@ -610,24 +587,21 @@ mod tests {
         let mut p = GainPlugin::new(2, 0.0);
 
         // gain_db
-        p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-12.0))
+        p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-12.0))
             .unwrap();
         assert!((p.gain_db() - (-12.0)).abs() < 1e-5);
 
         // smoothing_ms
-        p.set_parameter(
-            ParameterId::from("smoothing_ms"),
-            ParameterValue::Float(50.0),
-        )
+        p.parametric_set_parameter(ParameterId::from("smoothing_ms"), ParameterValue::Float(50.0))
         .unwrap();
         assert!((p.smoothing_ms - 50.0).abs() < 1e-5);
 
         // per-channel gain
-        p.set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(3.0))
+        p.parametric_set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(3.0))
             .unwrap();
         assert!((p.channel_gain_db(0).unwrap() - 3.0).abs() < 1e-5);
 
-        p.set_parameter(ParameterId::from("gain_db_1"), ParameterValue::Float(-3.0))
+        p.parametric_set_parameter(ParameterId::from("gain_db_1"), ParameterValue::Float(-3.0))
             .unwrap();
         assert!((p.channel_gain_db(1).unwrap() - (-3.0)).abs() < 1e-5);
     }
@@ -637,14 +611,14 @@ mod tests {
     fn test_set_parameter_rejects_non_finite() {
         let mut p = GainPlugin::new(2, 0.0);
         assert!(
-            p.set_parameter(
+            p.parametric_set_parameter(
                 ParameterId::from("gain_db"),
                 ParameterValue::Float(f32::NAN)
             )
             .is_err()
         );
         assert!(
-            p.set_parameter(
+            p.parametric_set_parameter(
                 ParameterId::from("gain_db"),
                 ParameterValue::Float(f32::INFINITY)
             )
@@ -656,40 +630,38 @@ mod tests {
     #[test]
     fn test_process_in_place_zero_frames() {
         let mut p = GainPlugin::new(2, 6.0);
-        p.initialize(48000).unwrap();
-        let mut buffer = vec![0.5, 0.6, 0.7, 0.8];
+        p.plugin_initialize(48000).unwrap();
+        let input = vec![0.5, 0.6, 0.7, 0.8];
+        let mut buffer = vec![0.0; input.len()];
         let processed = p
-            .process_in_place(&mut buffer, &ProcessContext::new(48000, 0))
+            .process(&input, &mut buffer, &ProcessContext::new(48000, 0))
             .unwrap();
         assert_eq!(processed, 0);
-        assert_eq!(buffer, vec![0.5, 0.6, 0.7, 0.8]);
+        assert_eq!(buffer, input);
     }
 
     /// get_parameter must round-trip the values set by set_parameter.
     #[test]
     fn test_get_parameter_round_trip() {
         let mut p = GainPlugin::new(2, 0.0);
-        p.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-10.0))
+        p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-10.0))
             .unwrap();
         assert_eq!(
-            p.get_parameter(&ParameterId::from("gain_db")),
+            p.parametric_get_parameter(&ParameterId::from("gain_db")),
             Some(ParameterValue::Float(-10.0))
         );
 
-        p.set_parameter(
-            ParameterId::from("smoothing_ms"),
-            ParameterValue::Float(42.0),
-        )
+        p.parametric_set_parameter(ParameterId::from("smoothing_ms"), ParameterValue::Float(42.0))
         .unwrap();
         assert_eq!(
-            p.get_parameter(&ParameterId::from("smoothing_ms")),
+            p.parametric_get_parameter(&ParameterId::from("smoothing_ms")),
             Some(ParameterValue::Float(42.0))
         );
 
-        p.set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(5.0))
+        p.parametric_set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(5.0))
             .unwrap();
         assert_eq!(
-            p.get_parameter(&ParameterId::from("gain_db_0")),
+            p.parametric_get_parameter(&ParameterId::from("gain_db_0")),
             Some(ParameterValue::Float(5.0))
         );
     }
@@ -709,7 +681,7 @@ mod tests {
         // Mutate a channel gain; the cached keys must stay the same.
         p.set_channel_gain_db(1, -6.0).unwrap();
         let keys_before = p.channel_param_keys.clone();
-        let params = p.parameters();
+        let params = p.parametric_parameters();
         assert_eq!(p.channel_param_keys, keys_before);
 
         let ch_params: Vec<_> = params
@@ -726,19 +698,19 @@ mod tests {
     #[test]
     fn test_per_channel_gain_round_trip() {
         let mut p = GainPlugin::new_per_channel(vec![0.0f32, 0.0]).unwrap();
-        p.initialize(48000).unwrap();
+        p.plugin_initialize(48000).unwrap();
 
-        p.set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(3.0))
+        p.parametric_set_parameter(ParameterId::from("gain_db_0"), ParameterValue::Float(3.0))
             .unwrap();
-        p.set_parameter(ParameterId::from("gain_db_1"), ParameterValue::Float(-3.0))
+        p.parametric_set_parameter(ParameterId::from("gain_db_1"), ParameterValue::Float(-3.0))
             .unwrap();
 
         assert_eq!(
-            p.get_parameter(&ParameterId::from("gain_db_0")),
+            p.parametric_get_parameter(&ParameterId::from("gain_db_0")),
             Some(ParameterValue::Float(3.0))
         );
         assert_eq!(
-            p.get_parameter(&ParameterId::from("gain_db_1")),
+            p.parametric_get_parameter(&ParameterId::from("gain_db_1")),
             Some(ParameterValue::Float(-3.0))
         );
     }

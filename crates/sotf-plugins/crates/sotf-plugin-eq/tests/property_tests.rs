@@ -4,7 +4,8 @@
 
 use proptest::prelude::*;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_plugin::ParametricPlugin;
+use sotf_host::plugin::ProcessContext;
 use sotf_plugin_eq::EqPlugin;
 
 // Small, fast buffers: 64 frames stereo = 128 samples.
@@ -23,10 +24,10 @@ proptest! {
     #[test]
     fn process_finite_output_mono(buffer in mono_buffer_strategy()) {
         let mut plugin = EqPlugin::new(1, vec![]);
-        plugin.initialize(48000).unwrap();
+        plugin.plugin_initialize(48000).unwrap();
 
-        let mut buf = buffer.clone();
-        plugin.process_in_place(&mut buf, &ProcessContext::new(48000, 64)).unwrap();
+        let mut buf = vec![0.0f32; buffer.len()];
+        plugin.process(&buffer, &mut buf, &ProcessContext::new(48000, 64)).unwrap();
 
         prop_assert!(buf.iter().all(|s| s.is_finite()),
             "Empty EQ chain should produce finite output");
@@ -41,10 +42,10 @@ proptest! {
             Biquad::new(BiquadFilterType::Highshelf, 8000.0, 48000.0, 0.707, 3.0),
         ];
         let mut plugin = EqPlugin::new(2, f);
-        plugin.initialize(48000).unwrap();
+        plugin.plugin_initialize(48000).unwrap();
 
-        let mut buf = buffer.clone();
-        plugin.process_in_place(&mut buf, &ProcessContext::new(48000, 64)).unwrap();
+        let mut buf = vec![0.0f32; buffer.len()];
+        plugin.process(&buffer, &mut buf, &ProcessContext::new(48000, 64)).unwrap();
 
         prop_assert!(buf.iter().all(|s| s.is_finite()),
             "Active EQ should produce finite output");
@@ -56,10 +57,10 @@ proptest! {
     #[test]
     fn roundtrip_oversampling_factor(factor in prop::sample::select(vec![1i32, 2, 4])) {
         let mut plugin = EqPlugin::new(2, vec![]);
-        plugin.initialize(48000).unwrap();
+        plugin.plugin_initialize(48000).unwrap();
 
-        plugin.set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(factor)).unwrap();
-        let got = plugin.get_parameter(&ParameterId::from("oversampling"));
+        plugin.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(factor)).unwrap();
+        let got = plugin.parametric_get_parameter(&ParameterId::from("oversampling"));
 
         prop_assert_eq!(got, Some(ParameterValue::Int(factor)),
             "oversampling set->get should round-trip");
@@ -68,10 +69,10 @@ proptest! {
     #[test]
     fn roundtrip_tdf2(enabled in prop::bool::ANY) {
         let mut plugin = EqPlugin::new(2, vec![]);
-        plugin.initialize(48000).unwrap();
+        plugin.plugin_initialize(48000).unwrap();
 
-        plugin.set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(enabled)).unwrap();
-        let got = plugin.get_parameter(&ParameterId::from("tdf2"));
+        plugin.parametric_set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(enabled)).unwrap();
+        let got = plugin.parametric_get_parameter(&ParameterId::from("tdf2"));
 
         prop_assert_eq!(got, Some(ParameterValue::Bool(enabled)),
             "tdf2 set->get should round-trip");
@@ -80,11 +81,11 @@ proptest! {
     #[test]
     fn roundtrip_topology(topo in 0usize..2) {
         let mut plugin = EqPlugin::new(2, vec![]);
-        plugin.initialize(48000).unwrap();
+        plugin.plugin_initialize(48000).unwrap();
 
         let name = if topo == 1 { "SVF" } else { "Biquad" };
-        plugin.set_parameter(ParameterId::from("topology"), ParameterValue::String(name.to_string())).unwrap();
-        let got = plugin.get_parameter(&ParameterId::from("topology"));
+        plugin.parametric_set_parameter(ParameterId::from("topology"), ParameterValue::String(name.to_string())).unwrap();
+        let got = plugin.parametric_get_parameter(&ParameterId::from("topology"));
 
         prop_assert_eq!(got, Some(ParameterValue::String(name.to_string())),
             "topology set->get should round-trip");
@@ -96,10 +97,10 @@ proptest! {
 
         let f = vec![Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0)];
         let mut plugin = EqPlugin::new(1, f);
-        plugin.initialize(48000).unwrap();
+        plugin.plugin_initialize(48000).unwrap();
 
-        plugin.set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(gain_db)).unwrap();
-        let got = plugin.get_parameter(&ParameterId::from("band_0_gain"));
+        plugin.parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(gain_db)).unwrap();
+        let got = plugin.parametric_get_parameter(&ParameterId::from("band_0_gain"));
 
         match got {
             Some(ParameterValue::Float(v)) => {
@@ -116,11 +117,11 @@ proptest! {
     #[test]
     fn empty_chain_passthrough(buffer in mono_buffer_strategy()) {
         let mut plugin = EqPlugin::new(1, vec![]);
-        plugin.initialize(48000).unwrap();
+        plugin.plugin_initialize(48000).unwrap();
 
         let input = buffer.clone();
-        let mut output = buffer;
-        plugin.process_in_place(&mut output, &ProcessContext::new(48000, 64)).unwrap();
+        let mut output = vec![0.0f32; input.len()];
+        plugin.process(&input, &mut output, &ProcessContext::new(48000, 64)).unwrap();
 
         let max_error: f32 = input.iter().zip(output.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
         prop_assert!(max_error < 1e-5,
@@ -133,12 +134,12 @@ proptest! {
 
         let f = vec![Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0)];
         let mut plugin = EqPlugin::new(1, f);
-        plugin.initialize(48000).unwrap();
-        plugin.set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false)).unwrap();
+        plugin.plugin_initialize(48000).unwrap();
+        plugin.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false)).unwrap();
 
         let input = buffer.clone();
-        let mut output = buffer;
-        plugin.process_in_place(&mut output, &ProcessContext::new(48000, 64)).unwrap();
+        let mut output = vec![0.0f32; input.len()];
+        plugin.process(&input, &mut output, &ProcessContext::new(48000, 64)).unwrap();
 
         let max_error: f32 = input.iter().zip(output.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
         prop_assert!(max_error < 1e-3,

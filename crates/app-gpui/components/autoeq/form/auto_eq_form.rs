@@ -21,62 +21,45 @@ use gpui::*;
 /// The form adapts its options based on `optimization_type`:
 /// - **Speaker**: Shows system type, target curves include flat, custom, and spinorama curves
 /// - **Headphone**: Hides system type, target curves include Harman curves
-#[derive(IntoElement)]
-pub struct AutoEqForm {
+pub(crate) struct FormMeta {
     pub(crate) layout_mode: AutoEqLayoutMode,
     pub(crate) id: ElementId,
     pub(crate) config: AutoEqConfig,
     pub(crate) ui_state: AutoEqFormUiState,
     pub(crate) disabled: bool,
+    pub(crate) optimization_type: OptimizationType,
+    pub(crate) available_spinorama_curves: Vec<String>,
+    pub(crate) theme: Option<AutoEqFormTheme>,
+    pub(crate) allowed_opt_modes: Option<Vec<String>>,
+    pub(crate) available_width: f32,
+}
+
+#[derive(Default)]
+pub(crate) struct FormVisibility {
     pub(crate) show_goals: bool,
     pub(crate) show_eq_design: bool,
     pub(crate) show_optimization_tuning: bool,
-    pub(crate) theme: Option<AutoEqFormTheme>,
-    pub(crate) allowed_opt_modes: Option<Vec<String>>,
-    /// Type of optimization (Speaker or Headphone) - affects which options are shown
-    pub(crate) optimization_type: OptimizationType,
-    /// Available spinorama curves for speaker mode (e.g., ["ON", "LW", "PIR"])
-    pub(crate) available_spinorama_curves: Vec<String>,
-
-    // Visibility flags for hiding fields not relevant to certain contexts
-    /// Hide DE-specific parameters (strategy, mutation F, crossover CR)
     pub(crate) hide_de_params: bool,
-    /// Hide smoothing toggle and window size
     pub(crate) hide_smoothing: bool,
-    /// Hide spacing weight and min spacing octaves
     pub(crate) hide_spacing: bool,
-    /// Hide tolerance and absolute tolerance
     pub(crate) hide_tolerance: bool,
-    /// Hide sample rate input
     pub(crate) hide_sample_rate: bool,
-    /// Hide phase alignment in Advanced System Optimization
     pub(crate) hide_phase_alignment: bool,
-    /// Hide multi-seat in Advanced System Optimization
     pub(crate) hide_multi_seat: bool,
-    /// Hide the "Scenario A" subtitle text
     pub(crate) hide_scenario_a_text: bool,
-    /// Hide room-specific sections (Advanced Room Correction, System Optimization, Advanced Tuning)
     pub(crate) hide_room_sections: bool,
-    /// Hide multi-measurement optimization section
     pub(crate) hide_multi_measurement: bool,
-    /// Hide the Capability section (IIR/FIR/Mixed selection)
     pub(crate) hide_capability_section: bool,
-    /// Hide the Target distance section (Near/Mid/Far-Field)
     pub(crate) hide_target_distance_section: bool,
-    /// Hide the Optimisation Goal section (Match Target/Natural/Psychoacoustic)
     pub(crate) hide_optimization_goal_section: bool,
-    /// Hide Bass Management subsection in Filter Design
     pub(crate) hide_bass_management: bool,
-    /// Hide Asymmetric Loss toggle in Algorithm section
     pub(crate) hide_asymmetric_loss: bool,
-    /// Hide Broadband Target Matching toggle in Algorithm section
     pub(crate) hide_broadband_matching: bool,
-    /// Override loss type options shown in Goals section
     pub(crate) loss_type_options_override: Option<&'static [(&'static str, &'static str)]>,
-    /// Available width in pixels for responsive layout
-    pub(crate) available_width: f32,
+}
 
-    // EQ Design callbacks
+#[derive(Default)]
+pub(crate) struct EqDesignCallbacks {
     pub(crate) on_opt_mode_change: Option<StringCallback>,
     pub(crate) on_opt_mode_toggle: Option<ToggleCallback>,
     pub(crate) on_fir_taps_change: Option<UsizeCallback>,
@@ -94,8 +77,10 @@ pub struct AutoEqForm {
     pub(crate) on_peq_model_toggle: Option<ToggleCallback>,
     pub(crate) on_spacing_weight_change: Option<F64Callback>,
     pub(crate) on_min_spacing_oct_change: Option<F64Callback>,
+}
 
-    // Optimization callbacks
+#[derive(Default)]
+pub(crate) struct OptimizationCallbacks {
     pub(crate) on_algo_change: Option<StringCallback>,
     pub(crate) on_algo_toggle: Option<ToggleCallback>,
     pub(crate) on_population_change: Option<UsizeCallback>,
@@ -121,8 +106,10 @@ pub struct AutoEqForm {
     pub(crate) on_smooth_n_change: Option<UsizeCallback>,
     pub(crate) on_psychoacoustic_change: Option<BoolCallback>,
     pub(crate) on_asymmetric_loss_change: Option<BoolCallback>,
+}
 
-    // Goals callbacks
+#[derive(Default)]
+pub(crate) struct GoalsCallbacks {
     pub(crate) on_loss_type_change: Option<StringCallback>,
     pub(crate) on_loss_type_toggle: Option<ToggleCallback>,
     pub(crate) on_target_curve_change: Option<StringCallback>,
@@ -130,8 +117,10 @@ pub struct AutoEqForm {
     pub(crate) on_edit_custom_target: Option<ActionCallback>,
     pub(crate) on_system_type_change: Option<StringCallback>,
     pub(crate) on_system_type_toggle: Option<ToggleCallback>,
+}
 
-    // Advanced callbacks
+#[derive(Default)]
+pub(crate) struct RoomCorrectionCallbacks {
     pub(crate) on_use_target_tilt_change: Option<BoolCallback>,
     pub(crate) on_tilt_type_change: Option<StringCallback>,
     pub(crate) on_tilt_type_toggle: Option<ToggleCallback>,
@@ -139,7 +128,6 @@ pub struct AutoEqForm {
     pub(crate) on_tilt_reference_freq_change: Option<F64Callback>,
     pub(crate) on_tilt_bass_shelf_db_change: Option<F64Callback>,
     pub(crate) on_tilt_bass_shelf_freq_change: Option<F64Callback>,
-
     pub(crate) on_use_excursion_protection_change: Option<BoolCallback>,
     pub(crate) on_excursion_auto_detect_f3_change: Option<BoolCallback>,
     pub(crate) on_excursion_manual_f3_change: Option<F64Callback>,
@@ -147,27 +135,26 @@ pub struct AutoEqForm {
     pub(crate) on_excursion_filter_type_change: Option<StringCallback>,
     pub(crate) on_excursion_filter_type_toggle: Option<ToggleCallback>,
     pub(crate) on_excursion_margin_octaves_change: Option<F64Callback>,
-
     pub(crate) on_use_schroeder_split_change: Option<BoolCallback>,
     pub(crate) on_schroeder_freq_change: Option<F64Callback>,
     pub(crate) on_schroeder_low_max_q_change: Option<F64Callback>,
     pub(crate) on_schroeder_low_allow_boost_change: Option<BoolCallback>,
     pub(crate) on_schroeder_high_max_q_change: Option<F64Callback>,
     pub(crate) on_schroeder_high_shelving_only_change: Option<BoolCallback>,
-
     pub(crate) on_use_phase_alignment_change: Option<BoolCallback>,
     pub(crate) on_phase_min_freq_change: Option<F64Callback>,
     pub(crate) on_phase_max_freq_change: Option<F64Callback>,
     pub(crate) on_phase_optimize_polarity_change: Option<BoolCallback>,
     pub(crate) on_phase_max_delay_ms_change: Option<F64Callback>,
-
     pub(crate) on_use_multi_seat_change: Option<BoolCallback>,
     pub(crate) on_multi_seat_strategy_change: Option<StringCallback>,
     pub(crate) on_multi_seat_strategy_toggle: Option<ToggleCallback>,
     pub(crate) on_multi_seat_primary_seat_change: Option<UsizeCallback>,
     pub(crate) on_multi_seat_max_deviation_db_change: Option<F64Callback>,
+}
 
-    // v2 callbacks
+#[derive(Default)]
+pub(crate) struct V2Callbacks {
     pub(crate) on_allow_delay_change: Option<BoolCallback>,
     pub(crate) on_seed_enabled_change: Option<BoolCallback>,
     pub(crate) on_seed_change: Option<UsizeCallback>,
@@ -180,295 +167,321 @@ pub struct AutoEqForm {
     pub(crate) on_mixed_crossover_type_toggle: Option<ToggleCallback>,
     pub(crate) on_mixed_fir_band_change: Option<StringCallback>,
     pub(crate) on_mixed_fir_band_toggle: Option<ToggleCallback>,
+}
 
-    // Multi-measurement callbacks
+#[derive(Default)]
+pub(crate) struct MultiMeasurementCallbacks {
     pub(crate) on_use_multi_measurement_change: Option<BoolCallback>,
     pub(crate) on_multi_measurement_strategy_change: Option<StringCallback>,
     pub(crate) on_multi_measurement_strategy_toggle: Option<ToggleCallback>,
     pub(crate) on_multi_measurement_variance_lambda_change: Option<F64Callback>,
-    #[allow(clippy::type_complexity)]
     pub(crate) on_multi_measurement_weight_change:
         Option<Box<dyn Fn(usize, f64, &mut Window, &mut App)>>,
+}
 
-    /// Callback when the user hovers over a parameter block (drives the docs panel).
+#[derive(Default)]
+pub(crate) struct FormLifecycleCallbacks {
     pub(crate) on_block_focus: Option<StringCallback>,
-    /// Callback when detail level changes (Simple/Intermediate/Expert).
     pub(crate) on_detail_level_change: Option<StringCallback>,
-    /// Callback when preset selection changes.
     pub(crate) on_preset_change: Option<StringCallback>,
-    /// Callback for preset dropdown toggle.
     pub(crate) on_preset_toggle: Option<ToggleCallback>,
-
-    // Complex mode section callbacks
-    /// Callback when target distance preset changes (near/mid/far/custom).
     pub(crate) on_target_distance_change: Option<StringCallback>,
-    /// Callback when optimization goal preset changes (match_target/natural/psychoacoustic).
     pub(crate) on_optimization_goal_change: Option<StringCallback>,
+}
+
+#[derive(IntoElement)]
+pub struct AutoEqForm {
+    pub(crate) meta: FormMeta,
+    pub(crate) visibility: FormVisibility,
+    pub(crate) eq_design: EqDesignCallbacks,
+    pub(crate) optimization: OptimizationCallbacks,
+    pub(crate) goals: GoalsCallbacks,
+    pub(crate) room_correction: RoomCorrectionCallbacks,
+    pub(crate) v2: V2Callbacks,
+    pub(crate) multi_measurement: MultiMeasurementCallbacks,
+    pub(crate) lifecycle: FormLifecycleCallbacks,
 }
 
 impl AutoEqForm {
     /// Create a new AutoEQ form
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
-            id: id.into(),
-            layout_mode: AutoEqLayoutMode::Default,
-            config: AutoEqConfig::default(),
-            ui_state: AutoEqFormUiState::default(),
-            disabled: false,
-            show_goals: true,
-            show_eq_design: true,
-            show_optimization_tuning: true,
-            theme: None,
-            allowed_opt_modes: None,
-            optimization_type: OptimizationType::default(),
-            available_spinorama_curves: Vec::new(),
-            hide_de_params: false,
-            hide_smoothing: false,
-            hide_spacing: false,
-            hide_tolerance: false,
-            hide_sample_rate: false,
-            hide_phase_alignment: false,
-            hide_multi_seat: false,
-            hide_scenario_a_text: false,
-            hide_room_sections: false,
-            hide_multi_measurement: false,
-            hide_capability_section: false,
-            hide_target_distance_section: false,
-            hide_optimization_goal_section: false,
-            hide_bass_management: false,
-            hide_asymmetric_loss: false,
-            hide_broadband_matching: false,
-            loss_type_options_override: None,
-            available_width: 0.0,
-            // Note: loss_type_options_override is initialized above
-            on_opt_mode_change: None,
-            on_opt_mode_toggle: None,
-            on_fir_taps_change: None,
-            on_fir_phase_change: None,
-            on_fir_phase_toggle: None,
-            on_num_filters_change: None,
-            on_sample_rate_change: None,
-            on_min_db_change: None,
-            on_max_db_change: None,
-            on_min_q_change: None,
-            on_max_q_change: None,
-            on_min_freq_change: None,
-            on_max_freq_change: None,
-            on_peq_model_change: None,
-            on_peq_model_toggle: None,
-            on_spacing_weight_change: None,
-            on_min_spacing_oct_change: None,
-            on_algo_change: None,
-            on_algo_toggle: None,
-            on_population_change: None,
-            on_maxeval_change: None,
-            on_tolerance_change: None,
-            on_atolerance_change: None,
-            on_bo_initial_samples_change: None,
-            on_bo_batch_size_change: None,
-            on_bo_posterior_std_threshold_change: None,
-            on_bo_acquisition_change: None,
-            on_bo_acquisition_toggle: None,
-            on_bo_ehvi_change: None,
-            on_de_f_change: None,
-            on_de_cr_change: None,
-            on_strategy_change: None,
-            on_strategy_toggle: None,
-            on_adaptive_weight_f_change: None,
-            on_adaptive_weight_cr_change: None,
-            on_refine_change: None,
-            on_local_algo_change: None,
-            on_local_algo_toggle: None,
-            on_smooth_change: None,
-            on_smooth_n_change: None,
-            on_loss_type_change: None,
-            on_loss_type_toggle: None,
-            on_target_curve_change: None,
-            on_target_curve_toggle: None,
-            on_edit_custom_target: None,
-            on_system_type_change: None,
-            on_system_type_toggle: None,
-            on_psychoacoustic_change: None,
-            on_asymmetric_loss_change: None,
-            on_use_target_tilt_change: None,
-            on_tilt_type_change: None,
-            on_tilt_type_toggle: None,
-            on_tilt_slope_change: None,
-            on_tilt_reference_freq_change: None,
-            on_tilt_bass_shelf_db_change: None,
-            on_tilt_bass_shelf_freq_change: None,
-            on_use_excursion_protection_change: None,
-            on_excursion_auto_detect_f3_change: None,
-            on_excursion_manual_f3_change: None,
-            on_excursion_filter_order_change: None,
-            on_excursion_filter_type_change: None,
-            on_excursion_filter_type_toggle: None,
-            on_excursion_margin_octaves_change: None,
-            on_use_schroeder_split_change: None,
-            on_schroeder_freq_change: None,
-            on_schroeder_low_max_q_change: None,
-            on_schroeder_low_allow_boost_change: None,
-            on_schroeder_high_max_q_change: None,
-            on_schroeder_high_shelving_only_change: None,
-            on_use_phase_alignment_change: None,
-            on_phase_min_freq_change: None,
-            on_phase_max_freq_change: None,
-            on_phase_optimize_polarity_change: None,
-            on_phase_max_delay_ms_change: None,
-            on_use_multi_seat_change: None,
-            on_multi_seat_strategy_change: None,
-            on_multi_seat_strategy_toggle: None,
-            on_multi_seat_primary_seat_change: None,
-            on_multi_seat_max_deviation_db_change: None,
-            on_allow_delay_change: None,
-            on_seed_enabled_change: None,
-            on_seed_change: None,
-            on_vog_enabled_change: None,
-            on_vog_reference_channel_change: None,
-            on_vog_reference_channel_toggle: None,
-            on_broadband_target_matching_change: None,
-            on_mixed_crossover_freq_change: None,
-            on_mixed_crossover_type_change: None,
-            on_mixed_crossover_type_toggle: None,
-            on_mixed_fir_band_change: None,
-            on_mixed_fir_band_toggle: None,
-            on_use_multi_measurement_change: None,
-            on_multi_measurement_strategy_change: None,
-            on_multi_measurement_strategy_toggle: None,
-            on_multi_measurement_variance_lambda_change: None,
-            on_multi_measurement_weight_change: None,
-            on_block_focus: None,
-            on_detail_level_change: None,
-            on_preset_change: None,
-            on_preset_toggle: None,
-            on_target_distance_change: None,
-            on_optimization_goal_change: None,
+            meta: FormMeta {
+                layout_mode: AutoEqLayoutMode::Default,
+                id: id.into(),
+                config: AutoEqConfig::default(),
+                ui_state: AutoEqFormUiState::default(),
+                disabled: false,
+                optimization_type: OptimizationType::default(),
+                available_spinorama_curves: Vec::new(),
+                theme: None,
+                allowed_opt_modes: None,
+                available_width: 0.0,
+            },
+            visibility: FormVisibility {
+                show_goals: true,
+                show_eq_design: true,
+                show_optimization_tuning: true,
+                hide_de_params: false,
+                hide_smoothing: false,
+                hide_spacing: false,
+                hide_tolerance: false,
+                hide_sample_rate: false,
+                hide_phase_alignment: false,
+                hide_multi_seat: false,
+                hide_scenario_a_text: false,
+                hide_room_sections: false,
+                hide_multi_measurement: false,
+                hide_capability_section: false,
+                hide_target_distance_section: false,
+                hide_optimization_goal_section: false,
+                hide_bass_management: false,
+                hide_asymmetric_loss: false,
+                hide_broadband_matching: false,
+                loss_type_options_override: None,
+            },
+            eq_design: EqDesignCallbacks {
+                on_opt_mode_change: None,
+                on_opt_mode_toggle: None,
+                on_fir_taps_change: None,
+                on_fir_phase_change: None,
+                on_fir_phase_toggle: None,
+                on_num_filters_change: None,
+                on_sample_rate_change: None,
+                on_min_db_change: None,
+                on_max_db_change: None,
+                on_min_q_change: None,
+                on_max_q_change: None,
+                on_min_freq_change: None,
+                on_max_freq_change: None,
+                on_peq_model_change: None,
+                on_peq_model_toggle: None,
+                on_spacing_weight_change: None,
+                on_min_spacing_oct_change: None,
+            },
+            optimization: OptimizationCallbacks {
+                on_algo_change: None,
+                on_algo_toggle: None,
+                on_population_change: None,
+                on_maxeval_change: None,
+                on_tolerance_change: None,
+                on_atolerance_change: None,
+                on_bo_initial_samples_change: None,
+                on_bo_batch_size_change: None,
+                on_bo_posterior_std_threshold_change: None,
+                on_bo_acquisition_change: None,
+                on_bo_acquisition_toggle: None,
+                on_bo_ehvi_change: None,
+                on_de_f_change: None,
+                on_de_cr_change: None,
+                on_strategy_change: None,
+                on_strategy_toggle: None,
+                on_adaptive_weight_f_change: None,
+                on_adaptive_weight_cr_change: None,
+                on_refine_change: None,
+                on_local_algo_change: None,
+                on_local_algo_toggle: None,
+                on_smooth_change: None,
+                on_smooth_n_change: None,
+                on_psychoacoustic_change: None,
+                on_asymmetric_loss_change: None,
+            },
+            goals: GoalsCallbacks {
+                on_loss_type_change: None,
+                on_loss_type_toggle: None,
+                on_target_curve_change: None,
+                on_target_curve_toggle: None,
+                on_edit_custom_target: None,
+                on_system_type_change: None,
+                on_system_type_toggle: None,
+            },
+            room_correction: RoomCorrectionCallbacks {
+                on_use_target_tilt_change: None,
+                on_tilt_type_change: None,
+                on_tilt_type_toggle: None,
+                on_tilt_slope_change: None,
+                on_tilt_reference_freq_change: None,
+                on_tilt_bass_shelf_db_change: None,
+                on_tilt_bass_shelf_freq_change: None,
+                on_use_excursion_protection_change: None,
+                on_excursion_auto_detect_f3_change: None,
+                on_excursion_manual_f3_change: None,
+                on_excursion_filter_order_change: None,
+                on_excursion_filter_type_change: None,
+                on_excursion_filter_type_toggle: None,
+                on_excursion_margin_octaves_change: None,
+                on_use_schroeder_split_change: None,
+                on_schroeder_freq_change: None,
+                on_schroeder_low_max_q_change: None,
+                on_schroeder_low_allow_boost_change: None,
+                on_schroeder_high_max_q_change: None,
+                on_schroeder_high_shelving_only_change: None,
+                on_use_phase_alignment_change: None,
+                on_phase_min_freq_change: None,
+                on_phase_max_freq_change: None,
+                on_phase_optimize_polarity_change: None,
+                on_phase_max_delay_ms_change: None,
+                on_use_multi_seat_change: None,
+                on_multi_seat_strategy_change: None,
+                on_multi_seat_strategy_toggle: None,
+                on_multi_seat_primary_seat_change: None,
+                on_multi_seat_max_deviation_db_change: None,
+            },
+            v2: V2Callbacks {
+                on_allow_delay_change: None,
+                on_seed_enabled_change: None,
+                on_seed_change: None,
+                on_vog_enabled_change: None,
+                on_vog_reference_channel_change: None,
+                on_vog_reference_channel_toggle: None,
+                on_broadband_target_matching_change: None,
+                on_mixed_crossover_freq_change: None,
+                on_mixed_crossover_type_change: None,
+                on_mixed_crossover_type_toggle: None,
+                on_mixed_fir_band_change: None,
+                on_mixed_fir_band_toggle: None,
+            },
+            multi_measurement: MultiMeasurementCallbacks {
+                on_use_multi_measurement_change: None,
+                on_multi_measurement_strategy_change: None,
+                on_multi_measurement_strategy_toggle: None,
+                on_multi_measurement_variance_lambda_change: None,
+                on_multi_measurement_weight_change: None,
+            },
+            lifecycle: FormLifecycleCallbacks {
+                on_block_focus: None,
+                on_detail_level_change: None,
+                on_preset_change: None,
+                on_preset_toggle: None,
+                on_target_distance_change: None,
+                on_optimization_goal_change: None,
+            },
         }
     }
 
     /// Set the configuration values
     pub fn config(mut self, config: AutoEqConfig) -> Self {
-        self.config = config;
+        self.meta.config = config;
         self
     }
 
     /// Set UI state
     pub fn ui_state(mut self, ui_state: AutoEqFormUiState) -> Self {
-        self.ui_state = ui_state;
+        self.meta.ui_state = ui_state;
         self
     }
 
     /// Set disabled state
     pub fn disabled(mut self, disabled: bool) -> Self {
-        self.disabled = disabled;
+        self.meta.disabled = disabled;
         self
     }
 
     /// Show/hide Goals section
     pub fn show_goals(mut self, show: bool) -> Self {
-        self.show_goals = show;
+        self.visibility.show_goals = show;
         self
     }
 
     /// Show/hide EQ Design section
     pub fn show_eq_design(mut self, show: bool) -> Self {
-        self.show_eq_design = show;
+        self.visibility.show_eq_design = show;
         self
     }
 
     /// Show/hide Optimization Tuning section
     pub fn show_optimization_tuning(mut self, show: bool) -> Self {
-        self.show_optimization_tuning = show;
+        self.visibility.show_optimization_tuning = show;
         self
     }
 
     /// Set theme
     pub fn theme(mut self, theme: AutoEqFormTheme) -> Self {
-        self.theme = Some(theme);
+        self.meta.theme = Some(theme);
         self
     }
 
     /// Set allowed optimization modes (e.g., vec!["iir".to_string(), "fir".to_string()])
     pub fn allowed_opt_modes(mut self, modes: Vec<String>) -> Self {
-        self.allowed_opt_modes = Some(modes);
+        self.meta.allowed_opt_modes = Some(modes);
         self
     }
 
     /// Set the optimization type (Speaker or Headphone)
     pub fn optimization_type(mut self, opt_type: OptimizationType) -> Self {
-        self.optimization_type = opt_type;
+        self.meta.optimization_type = opt_type;
         self
     }
 
     /// Set available spinorama curves for speaker mode
     pub fn available_spinorama_curves(mut self, curves: Vec<String>) -> Self {
-        self.available_spinorama_curves = curves;
+        self.meta.available_spinorama_curves = curves;
         self
     }
 
     /// Hide DE-specific parameters (strategy, mutation F, crossover CR)
     pub fn hide_de_params(mut self, hide: bool) -> Self {
-        self.hide_de_params = hide;
+        self.visibility.hide_de_params = hide;
         self
     }
 
     /// Hide smoothing toggle and window size
     pub fn hide_smoothing(mut self, hide: bool) -> Self {
-        self.hide_smoothing = hide;
+        self.visibility.hide_smoothing = hide;
         self
     }
 
     /// Hide spacing weight and min spacing octaves
     pub fn hide_spacing(mut self, hide: bool) -> Self {
-        self.hide_spacing = hide;
+        self.visibility.hide_spacing = hide;
         self
     }
 
     /// Hide tolerance and absolute tolerance
     pub fn hide_tolerance(mut self, hide: bool) -> Self {
-        self.hide_tolerance = hide;
+        self.visibility.hide_tolerance = hide;
         self
     }
 
     /// Hide sample rate input
     pub fn hide_sample_rate(mut self, hide: bool) -> Self {
-        self.hide_sample_rate = hide;
+        self.visibility.hide_sample_rate = hide;
         self
     }
 
     /// Hide phase alignment in Advanced System Optimization section
     pub fn hide_phase_alignment(mut self, hide: bool) -> Self {
-        self.hide_phase_alignment = hide;
+        self.visibility.hide_phase_alignment = hide;
         self
     }
 
     /// Hide multi-seat in Advanced System Optimization section
     pub fn hide_multi_seat(mut self, hide: bool) -> Self {
-        self.hide_multi_seat = hide;
+        self.visibility.hide_multi_seat = hide;
         self
     }
 
     /// Hide the "Scenario A" subtitle text
     pub fn hide_scenario_a_text(mut self, hide: bool) -> Self {
-        self.hide_scenario_a_text = hide;
+        self.visibility.hide_scenario_a_text = hide;
         self
     }
 
     /// Hide room-specific sections (Advanced Room Correction, System Optimization, Advanced Tuning)
     pub fn hide_room_sections(mut self, hide: bool) -> Self {
-        self.hide_room_sections = hide;
+        self.visibility.hide_room_sections = hide;
         self
     }
 
     /// Set available width for responsive layout
     pub fn available_width(mut self, width: f32) -> Self {
-        self.available_width = width;
+        self.meta.available_width = width;
         self
     }
 
     /// Set the layout mode (Default or RoomEq)
     pub fn layout_mode(mut self, mode: AutoEqLayoutMode) -> Self {
-        self.layout_mode = mode;
+        self.meta.layout_mode = mode;
         self
     }
     // EQ Design callbacks
@@ -478,7 +491,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_opt_mode_change = Some(Box::new(handler));
+        self.eq_design.on_opt_mode_change = Some(Box::new(handler));
         self
     }
 
@@ -487,7 +500,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_opt_mode_toggle = Some(Box::new(handler));
+        self.eq_design.on_opt_mode_toggle = Some(Box::new(handler));
         self
     }
 
@@ -496,7 +509,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_fir_taps_change = Some(Box::new(handler));
+        self.eq_design.on_fir_taps_change = Some(Box::new(handler));
         self
     }
 
@@ -505,7 +518,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_fir_phase_change = Some(Box::new(handler));
+        self.eq_design.on_fir_phase_change = Some(Box::new(handler));
         self
     }
 
@@ -514,7 +527,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_fir_phase_toggle = Some(Box::new(handler));
+        self.eq_design.on_fir_phase_toggle = Some(Box::new(handler));
         self
     }
 
@@ -523,7 +536,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_num_filters_change = Some(Box::new(handler));
+        self.eq_design.on_num_filters_change = Some(Box::new(handler));
         self
     }
 
@@ -532,7 +545,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_sample_rate_change = Some(Box::new(handler));
+        self.eq_design.on_sample_rate_change = Some(Box::new(handler));
         self
     }
 
@@ -541,7 +554,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_min_db_change = Some(Box::new(handler));
+        self.eq_design.on_min_db_change = Some(Box::new(handler));
         self
     }
 
@@ -550,7 +563,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_max_db_change = Some(Box::new(handler));
+        self.eq_design.on_max_db_change = Some(Box::new(handler));
         self
     }
 
@@ -559,7 +572,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_min_q_change = Some(Box::new(handler));
+        self.eq_design.on_min_q_change = Some(Box::new(handler));
         self
     }
 
@@ -568,7 +581,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_max_q_change = Some(Box::new(handler));
+        self.eq_design.on_max_q_change = Some(Box::new(handler));
         self
     }
 
@@ -577,7 +590,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_min_freq_change = Some(Box::new(handler));
+        self.eq_design.on_min_freq_change = Some(Box::new(handler));
         self
     }
 
@@ -586,7 +599,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_max_freq_change = Some(Box::new(handler));
+        self.eq_design.on_max_freq_change = Some(Box::new(handler));
         self
     }
 
@@ -595,7 +608,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_peq_model_change = Some(Box::new(handler));
+        self.eq_design.on_peq_model_change = Some(Box::new(handler));
         self
     }
 
@@ -604,7 +617,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_peq_model_toggle = Some(Box::new(handler));
+        self.eq_design.on_peq_model_toggle = Some(Box::new(handler));
         self
     }
 
@@ -613,7 +626,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_spacing_weight_change = Some(Box::new(handler));
+        self.eq_design.on_spacing_weight_change = Some(Box::new(handler));
         self
     }
 
@@ -622,7 +635,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_min_spacing_oct_change = Some(Box::new(handler));
+        self.eq_design.on_min_spacing_oct_change = Some(Box::new(handler));
         self
     }
 
@@ -633,7 +646,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_algo_change = Some(Box::new(handler));
+        self.optimization.on_algo_change = Some(Box::new(handler));
         self
     }
 
@@ -642,7 +655,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_algo_toggle = Some(Box::new(handler));
+        self.optimization.on_algo_toggle = Some(Box::new(handler));
         self
     }
 
@@ -651,7 +664,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_population_change = Some(Box::new(handler));
+        self.optimization.on_population_change = Some(Box::new(handler));
         self
     }
 
@@ -660,7 +673,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_maxeval_change = Some(Box::new(handler));
+        self.optimization.on_maxeval_change = Some(Box::new(handler));
         self
     }
 
@@ -669,7 +682,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_tolerance_change = Some(Box::new(handler));
+        self.optimization.on_tolerance_change = Some(Box::new(handler));
         self
     }
 
@@ -678,7 +691,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_atolerance_change = Some(Box::new(handler));
+        self.optimization.on_atolerance_change = Some(Box::new(handler));
         self
     }
 
@@ -687,7 +700,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_bo_initial_samples_change = Some(Box::new(handler));
+        self.optimization.on_bo_initial_samples_change = Some(Box::new(handler));
         self
     }
 
@@ -696,7 +709,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_bo_batch_size_change = Some(Box::new(handler));
+        self.optimization.on_bo_batch_size_change = Some(Box::new(handler));
         self
     }
 
@@ -705,7 +718,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_bo_posterior_std_threshold_change = Some(Box::new(handler));
+        self.optimization.on_bo_posterior_std_threshold_change = Some(Box::new(handler));
         self
     }
 
@@ -714,7 +727,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_bo_acquisition_change = Some(Box::new(handler));
+        self.optimization.on_bo_acquisition_change = Some(Box::new(handler));
         self
     }
 
@@ -723,7 +736,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_bo_acquisition_toggle = Some(Box::new(handler));
+        self.optimization.on_bo_acquisition_toggle = Some(Box::new(handler));
         self
     }
 
@@ -732,7 +745,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_bo_ehvi_change = Some(Box::new(handler));
+        self.optimization.on_bo_ehvi_change = Some(Box::new(handler));
         self
     }
 
@@ -741,7 +754,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_de_f_change = Some(Box::new(handler));
+        self.optimization.on_de_f_change = Some(Box::new(handler));
         self
     }
 
@@ -750,7 +763,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_de_cr_change = Some(Box::new(handler));
+        self.optimization.on_de_cr_change = Some(Box::new(handler));
         self
     }
 
@@ -759,7 +772,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_strategy_change = Some(Box::new(handler));
+        self.optimization.on_strategy_change = Some(Box::new(handler));
         self
     }
 
@@ -768,7 +781,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_strategy_toggle = Some(Box::new(handler));
+        self.optimization.on_strategy_toggle = Some(Box::new(handler));
         self
     }
 
@@ -777,7 +790,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_adaptive_weight_f_change = Some(Box::new(handler));
+        self.optimization.on_adaptive_weight_f_change = Some(Box::new(handler));
         self
     }
 
@@ -786,7 +799,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_adaptive_weight_cr_change = Some(Box::new(handler));
+        self.optimization.on_adaptive_weight_cr_change = Some(Box::new(handler));
         self
     }
 
@@ -795,7 +808,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_refine_change = Some(Box::new(handler));
+        self.optimization.on_refine_change = Some(Box::new(handler));
         self
     }
 
@@ -804,7 +817,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_local_algo_change = Some(Box::new(handler));
+        self.optimization.on_local_algo_change = Some(Box::new(handler));
         self
     }
 
@@ -813,7 +826,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_local_algo_toggle = Some(Box::new(handler));
+        self.optimization.on_local_algo_toggle = Some(Box::new(handler));
         self
     }
 
@@ -822,7 +835,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_smooth_change = Some(Box::new(handler));
+        self.optimization.on_smooth_change = Some(Box::new(handler));
         self
     }
 
@@ -831,7 +844,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_smooth_n_change = Some(Box::new(handler));
+        self.optimization.on_smooth_n_change = Some(Box::new(handler));
         self
     }
 
@@ -840,7 +853,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_psychoacoustic_change = Some(Box::new(handler));
+        self.optimization.on_psychoacoustic_change = Some(Box::new(handler));
         self
     }
 
@@ -849,7 +862,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_asymmetric_loss_change = Some(Box::new(handler));
+        self.optimization.on_asymmetric_loss_change = Some(Box::new(handler));
         self
     }
 
@@ -860,7 +873,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_loss_type_change = Some(Box::new(handler));
+        self.goals.on_loss_type_change = Some(Box::new(handler));
         self
     }
 
@@ -869,7 +882,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_loss_type_toggle = Some(Box::new(handler));
+        self.goals.on_loss_type_toggle = Some(Box::new(handler));
         self
     }
 
@@ -878,7 +891,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_target_curve_change = Some(Box::new(handler));
+        self.goals.on_target_curve_change = Some(Box::new(handler));
         self
     }
 
@@ -887,7 +900,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_target_curve_toggle = Some(Box::new(handler));
+        self.goals.on_target_curve_toggle = Some(Box::new(handler));
         self
     }
 
@@ -896,7 +909,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_edit_custom_target = Some(Box::new(handler));
+        self.goals.on_edit_custom_target = Some(Box::new(handler));
         self
     }
 
@@ -905,7 +918,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_system_type_change = Some(Box::new(handler));
+        self.goals.on_system_type_change = Some(Box::new(handler));
         self
     }
 
@@ -914,7 +927,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_system_type_toggle = Some(Box::new(handler));
+        self.goals.on_system_type_toggle = Some(Box::new(handler));
         self
     }
 
@@ -924,7 +937,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_use_target_tilt_change = Some(Box::new(handler));
+        self.room_correction.on_use_target_tilt_change = Some(Box::new(handler));
         self
     }
 
@@ -932,7 +945,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_tilt_type_change = Some(Box::new(handler));
+        self.room_correction.on_tilt_type_change = Some(Box::new(handler));
         self
     }
 
@@ -940,7 +953,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_tilt_type_toggle = Some(Box::new(handler));
+        self.room_correction.on_tilt_type_toggle = Some(Box::new(handler));
         self
     }
 
@@ -948,7 +961,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_tilt_slope_change = Some(Box::new(handler));
+        self.room_correction.on_tilt_slope_change = Some(Box::new(handler));
         self
     }
 
@@ -956,7 +969,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_tilt_reference_freq_change = Some(Box::new(handler));
+        self.room_correction.on_tilt_reference_freq_change = Some(Box::new(handler));
         self
     }
 
@@ -964,7 +977,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_tilt_bass_shelf_db_change = Some(Box::new(handler));
+        self.room_correction.on_tilt_bass_shelf_db_change = Some(Box::new(handler));
         self
     }
 
@@ -972,7 +985,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_tilt_bass_shelf_freq_change = Some(Box::new(handler));
+        self.room_correction.on_tilt_bass_shelf_freq_change = Some(Box::new(handler));
         self
     }
 
@@ -980,7 +993,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_use_excursion_protection_change = Some(Box::new(handler));
+        self.room_correction.on_use_excursion_protection_change = Some(Box::new(handler));
         self
     }
 
@@ -988,7 +1001,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_excursion_auto_detect_f3_change = Some(Box::new(handler));
+        self.room_correction.on_excursion_auto_detect_f3_change = Some(Box::new(handler));
         self
     }
 
@@ -996,7 +1009,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_excursion_manual_f3_change = Some(Box::new(handler));
+        self.room_correction.on_excursion_manual_f3_change = Some(Box::new(handler));
         self
     }
 
@@ -1004,7 +1017,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_excursion_filter_order_change = Some(Box::new(handler));
+        self.room_correction.on_excursion_filter_order_change = Some(Box::new(handler));
         self
     }
 
@@ -1012,7 +1025,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_excursion_filter_type_change = Some(Box::new(handler));
+        self.room_correction.on_excursion_filter_type_change = Some(Box::new(handler));
         self
     }
 
@@ -1020,7 +1033,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_excursion_filter_type_toggle = Some(Box::new(handler));
+        self.room_correction.on_excursion_filter_type_toggle = Some(Box::new(handler));
         self
     }
 
@@ -1028,7 +1041,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_excursion_margin_octaves_change = Some(Box::new(handler));
+        self.room_correction.on_excursion_margin_octaves_change = Some(Box::new(handler));
         self
     }
 
@@ -1036,7 +1049,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_use_schroeder_split_change = Some(Box::new(handler));
+        self.room_correction.on_use_schroeder_split_change = Some(Box::new(handler));
         self
     }
 
@@ -1044,7 +1057,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_schroeder_freq_change = Some(Box::new(handler));
+        self.room_correction.on_schroeder_freq_change = Some(Box::new(handler));
         self
     }
 
@@ -1052,7 +1065,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_schroeder_low_max_q_change = Some(Box::new(handler));
+        self.room_correction.on_schroeder_low_max_q_change = Some(Box::new(handler));
         self
     }
 
@@ -1060,7 +1073,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_schroeder_low_allow_boost_change = Some(Box::new(handler));
+        self.room_correction.on_schroeder_low_allow_boost_change = Some(Box::new(handler));
         self
     }
 
@@ -1068,7 +1081,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_schroeder_high_max_q_change = Some(Box::new(handler));
+        self.room_correction.on_schroeder_high_max_q_change = Some(Box::new(handler));
         self
     }
 
@@ -1076,7 +1089,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_schroeder_high_shelving_only_change = Some(Box::new(handler));
+        self.room_correction.on_schroeder_high_shelving_only_change = Some(Box::new(handler));
         self
     }
 
@@ -1086,7 +1099,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_use_phase_alignment_change = Some(Box::new(handler));
+        self.room_correction.on_use_phase_alignment_change = Some(Box::new(handler));
         self
     }
 
@@ -1094,7 +1107,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_phase_min_freq_change = Some(Box::new(handler));
+        self.room_correction.on_phase_min_freq_change = Some(Box::new(handler));
         self
     }
 
@@ -1102,7 +1115,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_phase_max_freq_change = Some(Box::new(handler));
+        self.room_correction.on_phase_max_freq_change = Some(Box::new(handler));
         self
     }
 
@@ -1110,7 +1123,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_phase_optimize_polarity_change = Some(Box::new(handler));
+        self.room_correction.on_phase_optimize_polarity_change = Some(Box::new(handler));
         self
     }
 
@@ -1118,7 +1131,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_phase_max_delay_ms_change = Some(Box::new(handler));
+        self.room_correction.on_phase_max_delay_ms_change = Some(Box::new(handler));
         self
     }
 
@@ -1126,7 +1139,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_use_multi_seat_change = Some(Box::new(handler));
+        self.room_correction.on_use_multi_seat_change = Some(Box::new(handler));
         self
     }
 
@@ -1134,7 +1147,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_multi_seat_strategy_change = Some(Box::new(handler));
+        self.room_correction.on_multi_seat_strategy_change = Some(Box::new(handler));
         self
     }
 
@@ -1142,7 +1155,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_multi_seat_strategy_toggle = Some(Box::new(handler));
+        self.room_correction.on_multi_seat_strategy_toggle = Some(Box::new(handler));
         self
     }
 
@@ -1150,7 +1163,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_multi_seat_primary_seat_change = Some(Box::new(handler));
+        self.room_correction.on_multi_seat_primary_seat_change = Some(Box::new(handler));
         self
     }
 
@@ -1158,7 +1171,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_multi_seat_max_deviation_db_change = Some(Box::new(handler));
+        self.room_correction.on_multi_seat_max_deviation_db_change = Some(Box::new(handler));
         self
     }
 
@@ -1168,7 +1181,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_allow_delay_change = Some(Box::new(handler));
+        self.v2.on_allow_delay_change = Some(Box::new(handler));
         self
     }
 
@@ -1176,7 +1189,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_seed_enabled_change = Some(Box::new(handler));
+        self.v2.on_seed_enabled_change = Some(Box::new(handler));
         self
     }
 
@@ -1184,7 +1197,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_seed_change = Some(Box::new(handler));
+        self.v2.on_seed_change = Some(Box::new(handler));
         self
     }
 
@@ -1192,7 +1205,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_vog_enabled_change = Some(Box::new(handler));
+        self.v2.on_vog_enabled_change = Some(Box::new(handler));
         self
     }
 
@@ -1200,7 +1213,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_vog_reference_channel_change = Some(Box::new(handler));
+        self.v2.on_vog_reference_channel_change = Some(Box::new(handler));
         self
     }
 
@@ -1208,7 +1221,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_vog_reference_channel_toggle = Some(Box::new(handler));
+        self.v2.on_vog_reference_channel_toggle = Some(Box::new(handler));
         self
     }
 
@@ -1216,7 +1229,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_broadband_target_matching_change = Some(Box::new(handler));
+        self.v2.on_broadband_target_matching_change = Some(Box::new(handler));
         self
     }
 
@@ -1224,7 +1237,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_mixed_crossover_freq_change = Some(Box::new(handler));
+        self.v2.on_mixed_crossover_freq_change = Some(Box::new(handler));
         self
     }
 
@@ -1232,7 +1245,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_mixed_crossover_type_change = Some(Box::new(handler));
+        self.v2.on_mixed_crossover_type_change = Some(Box::new(handler));
         self
     }
 
@@ -1240,7 +1253,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_mixed_crossover_type_toggle = Some(Box::new(handler));
+        self.v2.on_mixed_crossover_type_toggle = Some(Box::new(handler));
         self
     }
 
@@ -1248,7 +1261,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_mixed_fir_band_change = Some(Box::new(handler));
+        self.v2.on_mixed_fir_band_change = Some(Box::new(handler));
         self
     }
 
@@ -1256,49 +1269,49 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_mixed_fir_band_toggle = Some(Box::new(handler));
+        self.v2.on_mixed_fir_band_toggle = Some(Box::new(handler));
         self
     }
 
     // Multi-measurement callbacks
 
     pub fn hide_multi_measurement(mut self, hide: bool) -> Self {
-        self.hide_multi_measurement = hide;
+        self.visibility.hide_multi_measurement = hide;
         self
     }
 
     pub fn hide_capability_section(mut self, hide: bool) -> Self {
-        self.hide_capability_section = hide;
+        self.visibility.hide_capability_section = hide;
         self
     }
 
     pub fn hide_target_distance_section(mut self, hide: bool) -> Self {
-        self.hide_target_distance_section = hide;
+        self.visibility.hide_target_distance_section = hide;
         self
     }
 
     pub fn hide_optimization_goal_section(mut self, hide: bool) -> Self {
-        self.hide_optimization_goal_section = hide;
+        self.visibility.hide_optimization_goal_section = hide;
         self
     }
 
     pub fn hide_bass_management(mut self, hide: bool) -> Self {
-        self.hide_bass_management = hide;
+        self.visibility.hide_bass_management = hide;
         self
     }
 
     pub fn hide_asymmetric_loss(mut self, hide: bool) -> Self {
-        self.hide_asymmetric_loss = hide;
+        self.visibility.hide_asymmetric_loss = hide;
         self
     }
 
     pub fn hide_broadband_matching(mut self, hide: bool) -> Self {
-        self.hide_broadband_matching = hide;
+        self.visibility.hide_broadband_matching = hide;
         self
     }
 
     pub fn loss_type_options(mut self, options: &'static [(&'static str, &'static str)]) -> Self {
-        self.loss_type_options_override = Some(options);
+        self.visibility.loss_type_options_override = Some(options);
         self
     }
 
@@ -1306,7 +1319,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_use_multi_measurement_change = Some(Box::new(handler));
+        self.multi_measurement.on_use_multi_measurement_change = Some(Box::new(handler));
         self
     }
 
@@ -1314,7 +1327,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_multi_measurement_strategy_change = Some(Box::new(handler));
+        self.multi_measurement.on_multi_measurement_strategy_change = Some(Box::new(handler));
         self
     }
 
@@ -1322,7 +1335,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_multi_measurement_strategy_toggle = Some(Box::new(handler));
+        self.multi_measurement.on_multi_measurement_strategy_toggle = Some(Box::new(handler));
         self
     }
 
@@ -1330,7 +1343,8 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_multi_measurement_variance_lambda_change = Some(Box::new(handler));
+        self.multi_measurement
+            .on_multi_measurement_variance_lambda_change = Some(Box::new(handler));
         self
     }
 
@@ -1338,7 +1352,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(usize, f64, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_multi_measurement_weight_change = Some(Box::new(handler));
+        self.multi_measurement.on_multi_measurement_weight_change = Some(Box::new(handler));
         self
     }
 
@@ -1348,7 +1362,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_block_focus = Some(Box::new(handler));
+        self.lifecycle.on_block_focus = Some(Box::new(handler));
         self
     }
 
@@ -1357,7 +1371,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_detail_level_change = Some(Box::new(handler));
+        self.lifecycle.on_detail_level_change = Some(Box::new(handler));
         self
     }
 
@@ -1366,7 +1380,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_preset_change = Some(Box::new(handler));
+        self.lifecycle.on_preset_change = Some(Box::new(handler));
         self
     }
 
@@ -1375,7 +1389,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_preset_toggle = Some(Box::new(handler));
+        self.lifecycle.on_preset_toggle = Some(Box::new(handler));
         self
     }
 
@@ -1384,7 +1398,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_target_distance_change = Some(Box::new(handler));
+        self.lifecycle.on_target_distance_change = Some(Box::new(handler));
         self
     }
 
@@ -1393,7 +1407,7 @@ impl AutoEqForm {
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_optimization_goal_change = Some(Box::new(handler));
+        self.lifecycle.on_optimization_goal_change = Some(Box::new(handler));
         self
     }
 }

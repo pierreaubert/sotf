@@ -5,7 +5,8 @@
 //! reset, and error paths.
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 use sotf_plugin_delay::{DelayPlugin, DelayPluginParams};
 
 const SR: u32 = 48000;

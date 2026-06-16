@@ -11,8 +11,10 @@ use super::types::TransientShaperPluginParams;
 use crate::params::PARAMS as TS;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::parameters::{Parameter, ParameterImportance};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
@@ -21,15 +23,10 @@ pub struct TransientShaperPlugin {
     pub(super) sample_rate: u32,
 
     // Parameters
-    pub(super) param_attack: ParameterId,
     pub(super) attack_amount: f32, // -1.0 to 1.0 (from -100% to +100%)
-    pub(super) param_sustain: ParameterId,
     pub(super) sustain_amount: f32, // -1.0 to 1.0
-    pub(super) param_sensitivity: ParameterId,
     pub(super) sensitivity_db: f32,
-    pub(super) param_output_gain: ParameterId,
     pub(super) output_gain_db: f32,
-    pub(super) param_mix: ParameterId,
     pub(super) mix: f32,
 
     // Envelope state (per channel)
@@ -60,15 +57,10 @@ impl TransientShaperPlugin {
         let mut p = Self {
             channels,
             sample_rate: sr,
-            param_attack: ParameterId::from("attack"),
             attack_amount: 0.0,
-            param_sustain: ParameterId::from("sustain"),
             sustain_amount: 0.0,
-            param_sensitivity: ParameterId::from("sensitivity"),
             sensitivity_db: 0.0,
-            param_output_gain: ParameterId::from("output_gain"),
             output_gain_db: 0.0,
-            param_mix: ParameterId::from("mix"),
             mix: 1.0,
             fast_env: vec![0.0; channels],
             slow_env: vec![0.0; channels],
@@ -164,7 +156,7 @@ impl TransientShaperPlugin {
     }
 }
 
-impl InPlacePlugin for TransientShaperPlugin {
+impl ParametricInPlacePlugin for TransientShaperPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("TransientShaper", "1.0.0", "SotF")
     }
@@ -173,70 +165,54 @@ impl InPlacePlugin for TransientShaperPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        for param in &self.cached_parameters {
+            values.insert(param.id.clone(), param.default_value.clone());
+        }
+        values
+    }
 
-        if id == self.param_attack {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(TS, "attack").default_f64() as f32);
-            if v.is_finite() {
-                self.attack_amount = (v / 100.0).clamp(-1.0, 1.0);
-                self.attack_smoother.set_target(self.attack_amount);
-            }
-        } else if id == self.param_sustain {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(TS, "sustain").default_f64() as f32);
-            if v.is_finite() {
-                self.sustain_amount = (v / 100.0).clamp(-1.0, 1.0);
-                self.sustain_smoother.set_target(self.sustain_amount);
-            }
-        } else if id == self.param_sensitivity {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(TS, "sensitivity").default_f64() as f32);
-            if v.is_finite() {
-                self.sensitivity_db = v.clamp(-12.0, 12.0);
-            }
-        } else if id == self.param_output_gain {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(TS, "output_gain").default_f64() as f32);
-            if v.is_finite() {
-                self.output_gain_db = v.clamp(-12.0, 12.0);
-            }
-        } else if id == self.param_mix {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(TS, "mix").default_f64() as f32);
-            if v.is_finite() {
-                self.mix = v.clamp(0.0, 1.0);
-                self.mix_smoother.set_target(self.mix);
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            match id.as_str() {
+                "attack" => {
+                    if let Some(v) = value.as_float() && v.is_finite() {
+                        self.attack_amount = (v / 100.0).clamp(-1.0, 1.0);
+                        self.attack_smoother.set_target(self.attack_amount);
+                    }
+                }
+                "sustain" => {
+                    if let Some(v) = value.as_float() && v.is_finite() {
+                        self.sustain_amount = (v / 100.0).clamp(-1.0, 1.0);
+                        self.sustain_smoother.set_target(self.sustain_amount);
+                    }
+                }
+                "sensitivity" => {
+                    if let Some(v) = value.as_float() && v.is_finite() {
+                        self.sensitivity_db = v.clamp(-12.0, 12.0);
+                    }
+                }
+                "output_gain" => {
+                    if let Some(v) = value.as_float() && v.is_finite() {
+                        self.output_gain_db = v.clamp(-12.0, 12.0);
+                    }
+                }
+                "mix" => {
+                    if let Some(v) = value.as_float() && v.is_finite() {
+                        self.mix = v.clamp(0.0, 1.0);
+                        self.mix_smoother.set_target(self.mix);
+                    }
+                }
+                _ => return Err(format!("Unknown parameter: {}", id)),
             }
         }
         self.rebuild_cached_parameters();
         Ok(())
-    }
-
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_attack {
-            Some(ParameterValue::Float(self.attack_amount * 100.0))
-        } else if id == &self.param_sustain {
-            Some(ParameterValue::Float(self.sustain_amount * 100.0))
-        } else if id == &self.param_sensitivity {
-            Some(ParameterValue::Float(self.sensitivity_db))
-        } else if id == &self.param_output_gain {
-            Some(ParameterValue::Float(self.output_gain_db))
-        } else if id == &self.param_mix {
-            Some(ParameterValue::Float(self.mix))
-        } else {
-            None
-        }
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

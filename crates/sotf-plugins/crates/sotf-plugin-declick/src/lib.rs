@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeclickPluginParams {
@@ -72,7 +74,7 @@ impl DeclickPlugin {
     }
 }
 
-impl InPlacePlugin for DeclickPlugin {
+impl ParametricInPlacePlugin for DeclickPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Declick", "1.0.0", "SotF")
             .with_description("Time-domain click and transient repair")
@@ -82,25 +84,33 @@ impl InPlacePlugin for DeclickPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        param_bridge::set_parameter(DC, &id, &value, |i, v| match i {
-            0 => self.enabled = v > 0.5,
-            1 => {
-                self.sensitivity = v as f32;
-                self.suppressor.set_sensitivity(self.sensitivity);
-            }
-            _ => {}
-        })?;
-        self.rebuild_cached_parameters();
-        Ok(())
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(ParameterId::from("enabled"), ParameterValue::Bool(self.enabled));
+        values.insert(
+            ParameterId::from("sensitivity"),
+            ParameterValue::Float(self.sensitivity),
+        );
+        values
     }
 
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        param_bridge::get_parameter(DC, id, |i| self.param_value(i))
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            param_bridge::set_parameter(DC, &id, &value, |i, v| match i {
+                0 => self.enabled = v > 0.5,
+                1 => {
+                    self.sensitivity = v as f32;
+                    self.suppressor.set_sensitivity(self.sensitivity);
+                }
+                _ => {}
+            })?;
+        }
+        self.rebuild_cached_parameters();
+        Ok(())
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

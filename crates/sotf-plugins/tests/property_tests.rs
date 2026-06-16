@@ -6,7 +6,7 @@
 // behavior across a wide range of inputs.
 
 use proptest::prelude::*;
-use sotf_plugins::{GainPlugin, InPlacePlugin, InPlacePluginAdapter, PluginHost};
+use sotf_plugins::{GainPlugin, ParametricPlugin, ParametricPluginAdapter, PluginHost};
 
 // ============================================================================
 // Gain Plugin Tests
@@ -16,12 +16,12 @@ proptest! {
     #[test]
     fn test_gain_plugin_unity_gain(input in (0.0f32..1.0f32).prop_map(|v| vec![v; 1024])) {
         let mut gain = GainPlugin::new(2, 0.0);
-        gain.initialize(48000).unwrap();
+        gain.plugin_initialize(48000).unwrap();
 
         let context = sotf_plugins::ProcessContext::new(48000, 512);
 
         let mut buffer = input.clone();
-        gain.process_in_place(&mut buffer, &context).unwrap();
+        gain.process(&input, &mut buffer, &context).unwrap();
 
         let mut max_error = 0.0f32;
         for (i_chunk, b_chunk) in input.chunks(2).zip(buffer.chunks(2)) {
@@ -36,12 +36,12 @@ proptest! {
     #[test]
     fn test_gain_plugin_6db(input in (0.0f32..1.0f32).prop_map(|v| vec![v; 512])) {
         let mut gain = GainPlugin::new(2, 6.0);
-        gain.initialize(48000).unwrap();
+        gain.plugin_initialize(48000).unwrap();
 
         let context = sotf_plugins::ProcessContext::new(48000, 256);
 
         let mut buffer = input.clone();
-        gain.process_in_place(&mut buffer, &context).unwrap();
+        gain.process(&input, &mut buffer, &context).unwrap();
 
         let expected_scale = 10.0_f32.powf(6.0 / 20.0);
 
@@ -58,12 +58,12 @@ proptest! {
     #[test]
     fn test_gain_plugin_mute(input in (0.0f32..1.0f32).prop_map(|v| vec![v; 256])) {
         let mut gain = GainPlugin::new(2, -60.0);
-        gain.initialize(48000).unwrap();
+        gain.plugin_initialize(48000).unwrap();
 
         let context = sotf_plugins::ProcessContext::new(48000, 128);
 
         let mut buffer = input.clone();
-        gain.process_in_place(&mut buffer, &context).unwrap();
+        gain.process(&input, &mut buffer, &context).unwrap();
 
         // -60 dB = 0.001, so output should be very small
         prop_assert!(buffer.iter().all(|o| o.abs() < 0.01),
@@ -73,12 +73,12 @@ proptest! {
     #[test]
     fn test_gain_plugin_no_nan(input in (0.0f32..1.0f32).prop_map(|v| vec![v; 128]), gain_db in -100.0f32..100.0f32) {
         let mut gain = GainPlugin::new(2, gain_db);
-        gain.initialize(48000).unwrap();
+        gain.plugin_initialize(48000).unwrap();
 
         let context = sotf_plugins::ProcessContext::new(48000, 64);
 
         let mut buffer = input.clone();
-        let result = gain.process_in_place(&mut buffer, &context);
+        let result = gain.process(&input, &mut buffer, &context);
 
         prop_assert!(result.is_ok(), "Process should succeed");
         prop_assert!(buffer.iter().all(|o| o.is_finite()), "Output should not contain NaN/Inf");
@@ -110,7 +110,7 @@ proptest! {
         let mut host = PluginHost::new(2, 48000);
 
         let gain = GainPlugin::new(2, 3.0);
-        host.add_plugin(Box::new(InPlacePluginAdapter::new(gain)))
+        host.add_plugin(Box::new(ParametricPluginAdapter::new(gain)))
             .unwrap();
 
         let mut output = vec![0.0f32; input.len()];
@@ -137,12 +137,12 @@ proptest! {
         let input_energy: f32 = input.iter().map(|x| x * x).sum();
 
         let mut gain = GainPlugin::new(2, 0.0);
-        gain.initialize(48000).unwrap();
+        gain.plugin_initialize(48000).unwrap();
 
         let context = sotf_plugins::ProcessContext::new(48000, 128);
 
         let mut buffer = input.clone();
-        gain.process_in_place(&mut buffer, &context).unwrap();
+        gain.process(&input, &mut buffer, &context).unwrap();
 
         let output_energy: f32 = buffer.iter().map(|x| x * x).sum();
         let ratio = output_energy / input_energy;
@@ -154,12 +154,12 @@ proptest! {
     #[test]
     fn test_gain_linearity(input in (0.0f32..1.0f32).prop_map(|v| vec![v; 128]), gain_db in -60.0f32..60.0f32) {
         let mut gain = GainPlugin::new(2, gain_db);
-        gain.initialize(48000).unwrap();
+        gain.plugin_initialize(48000).unwrap();
 
         let context = sotf_plugins::ProcessContext::new(48000, 64);
 
         let mut buffer = input.clone();
-        gain.process_in_place(&mut buffer, &context).unwrap();
+        gain.process(&input, &mut buffer, &context).unwrap();
 
         let expected_scale = 10.0_f32.powf(gain_db / 20.0);
 
@@ -177,7 +177,7 @@ proptest! {
         let mut host = PluginHost::new(2, 48000);
 
         let gain = GainPlugin::new(2, 0.0);
-        host.add_plugin(Box::new(InPlacePluginAdapter::new(gain)))
+        host.add_plugin(Box::new(ParametricPluginAdapter::new(gain)))
             .unwrap();
 
         let mut output = vec![0.0f32; input.len()];
@@ -199,7 +199,7 @@ fn test_gain_at_boundary_values() {
 
     for gain_db in test_cases {
         let mut gain = GainPlugin::new(2, gain_db);
-        let result = gain.initialize(48000);
+        let result = gain.plugin_initialize(48000);
         assert!(
             result.is_ok(),
             "Initialization should succeed for {} dB",
@@ -210,7 +210,7 @@ fn test_gain_at_boundary_values() {
 
         let input = [0.5f32; 128];
         let mut buffer = input.to_vec();
-        let result = gain.process_in_place(&mut buffer, &context);
+        let result = gain.process(&input, &mut buffer, &context);
 
         assert!(
             result.is_ok(),
@@ -231,7 +231,7 @@ fn test_processing_at_different_sample_rates() {
 
     for sample_rate in sample_rates {
         let mut gain = GainPlugin::new(2, 0.0);
-        let result = gain.initialize(sample_rate);
+        let result = gain.plugin_initialize(sample_rate);
         assert!(
             result.is_ok(),
             "Initialization should succeed for {} Hz",
@@ -242,7 +242,7 @@ fn test_processing_at_different_sample_rates() {
 
         let input = [0.5f32; 128];
         let mut buffer = input.to_vec();
-        let result = gain.process_in_place(&mut buffer, &context);
+        let result = gain.process(&input, &mut buffer, &context);
 
         assert!(
             result.is_ok(),
@@ -258,13 +258,13 @@ fn test_processing_at_different_buffer_sizes() {
 
     for buffer_size in buffer_sizes {
         let mut gain = GainPlugin::new(2, 0.0);
-        gain.initialize(48000).unwrap();
+        gain.plugin_initialize(48000).unwrap();
 
         let context = sotf_plugins::ProcessContext::new(48000, buffer_size);
 
         let input = vec![0.5f32; buffer_size * 2];
         let mut buffer = input.to_vec();
-        let result = gain.process_in_place(&mut buffer, &context);
+        let result = gain.process(&input, &mut buffer, &context);
 
         assert!(
             result.is_ok(),

@@ -448,7 +448,7 @@ fn render_compact_fader(
         .size(VerticalSliderSize::Sm)
         .selected(is_selected)
         .theme(super::super::common::theme_to_vertical_slider_theme(theme))
-        .design_tokens(theme.design_tokens.clone())
+        .design_tokens(theme.layout.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {

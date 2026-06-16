@@ -32,5 +32,5 @@ cargo test -p plugins-bridge
 - "FletcherMunson" is a backward-compat alias that routes to LoudnessCompensation in Auto mode
 - Some plugins need `sample_rate` at construction time (EQ, XTC, Convolution, LinearPhaseEQ); most receive it later via `initialize()`
 - `parse_params()` accepts empty string, `"null"`, or `"{}"` for default parameters
-- `InPlacePlugin` implementations are wrapped in `InPlacePluginAdapter` before returning as `Box<dyn Plugin>`
+- `ParametricInPlacePlugin` implementations are wrapped in `ParametricInPlacePluginAdapter` before returning as `Box<dyn Plugin>`
 - This crate depends on all 30+ `sotf-plugin-*` crates -- it is the dependency aggregation point for plugin wrappers

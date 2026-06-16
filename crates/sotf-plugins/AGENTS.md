@@ -5,12 +5,12 @@ Comprehensive audio plugin system — facade crate re-exporting `sotf-host` infr
 ## Plugin Architecture
 
 Workspace of individual plugin crates under `crates/`:
-- **`sotf-host`**: Core infrastructure — `Plugin`/`InPlacePlugin` traits, `DawHost` (DAG-based host), parameter system, analyzers, SIMD, smoothing, SOFA/HRTF, speaker configs, STFT common, test utilities
+- **`sotf-host`**: Core infrastructure — `Plugin`/`ParametricInPlacePlugin` traits, `DawHost` (DAG-based host), parameter system, analyzers, SIMD, smoothing, SOFA/HRTF, speaker configs, STFT common, test utilities
 - **`sotf-plugin-*`**: Individual plugin crates (30+), each self-contained
 
 Two core traits:
 - `Plugin` (`sotf-host/plugin.rs`): Variable input/output channel counts — `process(&mut self, input: &[f32], output: &mut [f32], context: &ProcessContext) -> PluginResult<()>`
-- `InPlacePlugin` (`sotf-host/plugin.rs`): Same in/out channel count — `process_in_place(&mut self, buffer: &mut [f32], context: &ProcessContext)`, auto-wrapped into `Plugin` via `InPlacePluginAdapter`
+- `ParametricInPlacePlugin` (`sotf-host/plugin.rs`): Same in/out channel count — `process_in_place(&mut self, buffer: &mut [f32], context: &ProcessContext)`, auto-wrapped into `Plugin` via `ParametricInPlacePluginAdapter`
 - `DawHost` (`sotf-host/host.rs`): DAG-based plugin routing with parallel processing
 
 Audio buffers are flat interleaved: `[ch0_frame0, ch1_frame0, ch0_frame1, ch1_frame1, ...]`
@@ -62,7 +62,7 @@ Plugins are constructed directly by consumer code (no factory pattern). `lib.rs`
 ## Infrastructure (in `sotf-host`)
 
 - `host.rs` — DawHost: DAG-based plugin routing with parallel processing
-- `plugin.rs` — Core Plugin/InPlacePlugin traits
+- `plugin.rs` — Core Plugin/ParametricInPlacePlugin traits
 - `parameters.rs` — Parameter system (Float, Int, Bool, Choice)
 - `param_specs.rs` — Centralized parameter defaults/ranges for all plugins
 - `param_registry.rs` — Parameter registry

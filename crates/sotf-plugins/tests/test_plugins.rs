@@ -1,13 +1,13 @@
 // Integration tests for the plugin system
 
-use sotf_plugins::{GainPlugin, InPlacePluginAdapter, PluginHost};
+use sotf_plugins::{ParametricPluginAdapter, GainPlugin,  PluginHost};
 
 #[test]
 fn test_plugin_host_single_plugin() {
     let mut host = PluginHost::new(2, 44100);
 
     let gain_plugin = GainPlugin::new(2, -12.0); // -12 dB
-    let adapter = InPlacePluginAdapter::new(gain_plugin);
+    let adapter = ParametricPluginAdapter::new(gain_plugin);
     host.add_plugin(Box::new(adapter)).unwrap();
 
     let input = vec![1.0, 1.0, 1.0, 1.0]; // 2 frames, 2 channels
@@ -28,11 +28,11 @@ fn test_plugin_host_chain() {
 
     // Chain two gain plugins: -6dB then -6dB = -12dB total
     let gain1 = GainPlugin::new(2, -6.0);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(gain1)))
+    host.add_plugin(Box::new(ParametricPluginAdapter::new(gain1)))
         .unwrap();
 
     let gain2 = GainPlugin::new(2, -6.0);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(gain2)))
+    host.add_plugin(Box::new(ParametricPluginAdapter::new(gain2)))
         .unwrap();
 
     let input = vec![1.0, 1.0, 1.0, 1.0];

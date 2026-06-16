@@ -63,7 +63,7 @@ fn test_upmixer_stereo_to_5ch() {
 
 #[test]
 fn test_upmixer_chain_with_gain() {
-    use sotf_host::InPlacePluginAdapter;
+    use sotf_host::ParametricPluginAdapter;
     use sotf_plugin_gain::GainPlugin;
 
     // Create a processing chain: stereo → upmix to 5ch → gain on 5ch
@@ -77,7 +77,7 @@ fn test_upmixer_chain_with_gain() {
 
     // Add gain to the 6-channel output
     let gain = GainPlugin::new(6, -6.0); // -6dB on all 6 channels
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(gain)))
+    host.add_plugin(Box::new(ParametricPluginAdapter::new(gain)))
         .unwrap();
 
     // Verify final configuration

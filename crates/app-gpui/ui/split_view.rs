@@ -29,7 +29,7 @@ impl PlayerView {
                         layout.is_dragging_queue_list_divider,
                         layout.is_dragging_meters_divider,
                         layout.is_dragging_lufs_divider,
-                        state.app.volume_drag,
+                        state.app.drag.volume_drag,
                         state.app.ui_state.window_height,
                     )
                 };
@@ -126,7 +126,7 @@ impl PlayerView {
                                 // Check for click vs drag
                                 let was_click = state
                                     .app
-                                    .divider_click_start
+                                    .layout.divider_click_start
                                     .map(|start| start.elapsed().as_millis() < 200)
                                     .unwrap_or(false);
 
@@ -145,7 +145,7 @@ impl PlayerView {
                                 // Check for click vs drag
                                 let was_click = state
                                     .app
-                                    .divider_click_start
+                                    .layout.divider_click_start
                                     .map(|start| start.elapsed().as_millis() < 200)
                                     .unwrap_or(false);
 
@@ -166,8 +166,8 @@ impl PlayerView {
                             }
                         });
 
-                        if state.app.volume_drag.is_some() {
-                            state.app.volume_drag = None;
+                        if state.app.drag.volume_drag.is_some() {
+                            state.app.drag.volume_drag = None;
                         }
 
                         if needs_save {

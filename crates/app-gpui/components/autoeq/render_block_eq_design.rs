@@ -24,7 +24,7 @@ if is_fir && !eq_design_iir_before_fir {
 }
 
 // --- Mixed mode config ---
-if config.opt_mode == "mixed" {
+if config.eq_design.opt_mode == "mixed" {
     include!("render_block_eq_mixed.rs");
 }
 
@@ -41,7 +41,7 @@ if is_fir && eq_design_iir_before_fir {
 // --- dB Range ---
 {
     let mut min_db_input = NumberInput::new((base_id.clone(), "min-db"))
-        .value(config.min_db)
+        .value(config.eq_design.min_db)
         .min(ParamLimits::DB.min)
         .max(ParamLimits::DB.max)
         .step(ParamLimits::DB.step)
@@ -58,7 +58,7 @@ if is_fir && eq_design_iir_before_fir {
     }
 
     let mut max_db_input = NumberInput::new((base_id.clone(), "max-db"))
-        .value(config.max_db)
+        .value(config.eq_design.max_db)
         .min(ParamLimits::DB.min)
         .max(ParamLimits::DB.max)
         .step(ParamLimits::DB.step)
@@ -89,7 +89,7 @@ if is_fir && eq_design_iir_before_fir {
 // --- Q Range (IIR only) ---
 if is_iir {
     let mut min_q_input = NumberInput::new((base_id.clone(), "min-q"))
-        .value(config.min_q)
+        .value(config.eq_design.min_q)
         .min(ParamLimits::Q.min)
         .max(ParamLimits::Q.max)
         .step(ParamLimits::Q.step)
@@ -106,7 +106,7 @@ if is_iir {
     }
 
     let mut max_q_input = NumberInput::new((base_id.clone(), "max-q"))
-        .value(config.max_q)
+        .value(config.eq_design.max_q)
         .min(ParamLimits::Q.min)
         .max(ParamLimits::Q.max)
         .step(ParamLimits::Q.step)
@@ -137,7 +137,7 @@ if is_iir {
 // --- Frequency Range ---
 {
     let mut min_freq_input = NumberInput::new((base_id.clone(), "min-freq"))
-        .value(config.min_freq)
+        .value(config.eq_design.min_freq)
         .min(ParamLimits::FREQUENCY.min)
         .max(ParamLimits::FREQUENCY.max)
         .step(ParamLimits::FREQUENCY.step)
@@ -154,7 +154,7 @@ if is_iir {
     }
 
     let mut max_freq_input = NumberInput::new((base_id.clone(), "max-freq"))
-        .value(config.max_freq)
+        .value(config.eq_design.max_freq)
         .min(ParamLimits::FREQUENCY.min)
         .max(ParamLimits::FREQUENCY.max)
         .step(ParamLimits::FREQUENCY.step)
@@ -192,7 +192,7 @@ if is_iir {
     let mut peq_model_select = Select::new((base_id.clone(), "peq-model"))
         .label("PEQ Model")
         .options(peq_model_options)
-        .selected(&config.peq_model)
+        .selected(&config.eq_design.peq_model)
         .is_open(ui_state.peq_model_open)
         .disabled(disabled)
         .size(SelectSize::Xs)
@@ -215,7 +215,7 @@ if is_iir {
     if !hide_spacing {
         let mut spacing_weight_input =
             NumberInput::new((base_id.clone(), "spacing-weight"))
-                .value(config.spacing_weight)
+                .value(config.eq_design.spacing_weight)
                 .min(ParamLimits::SPACING_WEIGHT.min)
                 .max(ParamLimits::SPACING_WEIGHT.max)
                 .step(ParamLimits::SPACING_WEIGHT.step)
@@ -233,7 +233,7 @@ if is_iir {
 
         let mut min_spacing_oct_input =
             NumberInput::new((base_id.clone(), "min-spacing-oct"))
-                .value(config.min_spacing_oct)
+                .value(config.eq_design.min_spacing_oct)
                 .min(ParamLimits::MIN_SPACING_OCT.min)
                 .max(ParamLimits::MIN_SPACING_OCT.max)
                 .step(ParamLimits::MIN_SPACING_OCT.step)

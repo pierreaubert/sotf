@@ -5,7 +5,8 @@ use super::types::{LimiterData, LimiterPluginParams};
 use math_audio_dsp::fast_math::fast_pow10;
 use sotf_host::TruePeakDetector;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 #[test]
 fn test_limiter_basic() {
@@ -35,7 +36,7 @@ fn test_threshold_transition_is_smooth() {
     let _output_before = b[4799];
 
     // Now change threshold from -6 dB to -20 dB
-    p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-20.0))
+    p.parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-20.0))
         .unwrap();
 
     // Process one small block (=1ms = 48 samples)
@@ -71,7 +72,7 @@ fn test_mix_smoother_advances_per_frame() {
     p.initialize(48000).unwrap();
 
     // Start from dry.
-    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
+    p.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
         .unwrap();
 
     // Warm up so the smoother is actually at mix=0.
@@ -80,7 +81,7 @@ fn test_mix_smoother_advances_per_frame() {
         .unwrap();
 
     // Ramp mix toward full wet.
-    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+    p.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
         .unwrap();
 
     // 5 ms at 48 kHz.
@@ -164,11 +165,11 @@ fn test_true_peak_parameter() {
     p.initialize(48000).unwrap();
     assert!(!p.true_peak);
 
-    p.set_parameter(ParameterId::from("true_peak"), ParameterValue::Bool(true))
+    p.parametric_set_parameter(ParameterId::from("true_peak"), ParameterValue::Bool(true))
         .unwrap();
     assert!(p.true_peak);
 
-    let val = p.get_parameter(&ParameterId::from("true_peak"));
+    let val = p.parametric_get_parameter(&ParameterId::from("true_peak"));
     assert_eq!(val, Some(ParameterValue::Bool(true)));
 }
 
@@ -179,14 +180,12 @@ fn test_dual_release_parameter() {
     p.initialize(48000).unwrap();
     assert!(!p.dual_release);
 
-    p.set_parameter(
-        ParameterId::from("dual_release"),
-        ParameterValue::Bool(true),
-    )
+    p.parametric_set_parameter(ParameterId::from("dual_release"),
+    ParameterValue::Bool(true),)
     .unwrap();
     assert!(p.dual_release);
 
-    let val = p.get_parameter(&ParameterId::from("dual_release"));
+    let val = p.parametric_get_parameter(&ParameterId::from("dual_release"));
     assert_eq!(val, Some(ParameterValue::Bool(true)));
 }
 
@@ -238,9 +237,9 @@ fn test_from_params_new_fields() {
     assert!(p.feed_forward);
     assert_eq!(p.mix, 0.8);
 
-    let tp_val = p.get_parameter(&ParameterId::from("true_peak"));
+    let tp_val = p.parametric_get_parameter(&ParameterId::from("true_peak"));
     assert_eq!(tp_val, Some(ParameterValue::Bool(true)));
-    let dr_val = p.get_parameter(&ParameterId::from("dual_release"));
+    let dr_val = p.parametric_get_parameter(&ParameterId::from("dual_release"));
     assert_eq!(dr_val, Some(ParameterValue::Bool(true)));
 }
 
@@ -253,8 +252,7 @@ fn test_limiter_mix_parameter() {
     // Create limiter with mix=0 set via parameter after init (so smoother starts at 0)
     let mut p_dry = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
     p_dry.initialize(sr).unwrap();
-    p_dry
-        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
+    p_dry.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
         .unwrap();
 
     let mut p_wet = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
@@ -405,7 +403,7 @@ fn test_isp_meter_floor_without_true_peak() {
 #[test]
 fn test_isp_meter_resets_to_floor_when_true_peak_disabled() {
     let mut p = LimiterPlugin::new(1, -1.0, 50.0, 5.0, false);
-    p.set_parameter(ParameterId::from("true_peak"), ParameterValue::Bool(true))
+    p.parametric_set_parameter(ParameterId::from("true_peak"), ParameterValue::Bool(true))
         .unwrap();
     p.initialize(48000).unwrap();
 
@@ -423,7 +421,7 @@ fn test_isp_meter_resets_to_floor_when_true_peak_disabled() {
         "ISP meter should reflect active true-peak detection"
     );
 
-    p.set_parameter(ParameterId::from("true_peak"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(ParameterId::from("true_peak"), ParameterValue::Bool(false))
         .unwrap();
     for _ in 0..(CACHE_UPDATE_THROTTLE + 1) {
         p.process_in_place(&mut b, &ctx).unwrap();
@@ -490,11 +488,11 @@ fn test_isp_mode_parameter() {
     p.initialize(48000).unwrap();
     assert!(!p.isp_mode);
 
-    p.set_parameter(ParameterId::from("isp_mode"), ParameterValue::Bool(true))
+    p.parametric_set_parameter(ParameterId::from("isp_mode"), ParameterValue::Bool(true))
         .unwrap();
     assert!(p.isp_mode);
 
-    let val = p.get_parameter(&ParameterId::from("isp_mode"));
+    let val = p.parametric_get_parameter(&ParameterId::from("isp_mode"));
     assert_eq!(val, Some(ParameterValue::Bool(true)));
 }
 
@@ -701,13 +699,13 @@ fn test_lookahead_parameter_change_uses_preallocated_storage() {
     assert_eq!(initial_peaks_len, 960);
     assert_eq!(p.lookahead_len, 240);
 
-    p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
+    p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
         .unwrap();
     assert_eq!(p.lookahead_len, 960);
     assert_eq!(p.lookahead_buffer.len(), initial_buffer_len);
     assert_eq!(p.lookahead_peaks.len(), initial_peaks_len);
 
-    p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(1.0))
+    p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(1.0))
         .unwrap();
     assert_eq!(p.lookahead_len, 48);
     assert_eq!(p.lookahead_buffer.len(), initial_buffer_len);
@@ -793,7 +791,7 @@ fn test_set_parameter_unknown_id_returns_error() {
     let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
     p.initialize(48000).unwrap();
 
-    let result = p.set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0));
+    let result = p.parametric_set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0));
     assert!(result.is_err());
 }
 
@@ -849,7 +847,7 @@ fn test_set_parameter_nan_returns_error() {
 #[test]
 fn test_get_parameter_unknown_id_returns_none() {
     let p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
-    let val = p.get_parameter(&ParameterId::from("not_a_param"));
+    let val = p.parametric_get_parameter(&ParameterId::from("not_a_param"));
     assert_eq!(val, None);
 }
 
@@ -858,20 +856,18 @@ fn test_set_parameter_feed_forward_and_link_amount() {
     let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
     p.initialize(48000).unwrap();
 
-    p.set_parameter(
-        ParameterId::from("feed_forward"),
-        ParameterValue::Bool(true),
-    )
+    p.parametric_set_parameter(ParameterId::from("feed_forward"),
+    ParameterValue::Bool(true),)
     .unwrap();
     assert!(p.feed_forward);
 
-    p.set_parameter(ParameterId::from("link_amount"), ParameterValue::Float(0.5))
+    p.parametric_set_parameter(ParameterId::from("link_amount"), ParameterValue::Float(0.5))
         .unwrap();
     assert!((p.link_amount - 0.5).abs() < 1e-6);
 
-    let val = p.get_parameter(&ParameterId::from("feed_forward"));
+    let val = p.parametric_get_parameter(&ParameterId::from("feed_forward"));
     assert_eq!(val, Some(ParameterValue::Bool(true)));
-    let val = p.get_parameter(&ParameterId::from("link_amount"));
+    let val = p.parametric_get_parameter(&ParameterId::from("link_amount"));
     assert_eq!(val, Some(ParameterValue::Float(0.5)));
 }
 
@@ -881,7 +877,7 @@ fn test_set_release_recomputes_coefficients() {
     p.initialize(48000).unwrap();
 
     let old_coeff = p.release_coeff;
-    p.set_parameter(ParameterId::from("release"), ParameterValue::Float(200.0))
+    p.parametric_set_parameter(ParameterId::from("release"), ParameterValue::Float(200.0))
         .unwrap();
     assert!((p.release_coeff - old_coeff).abs() > 1e-6);
     assert_eq!(p.release_ms, 200.0);
@@ -896,7 +892,7 @@ fn test_latency_samples_matches_lookahead() {
     let latency = p.latency_samples();
     assert_eq!(latency, 240);
 
-    p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(0.0))
+    p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(0.0))
         .unwrap();
     assert_eq!(p.latency_samples(), 0);
 }
@@ -926,7 +922,7 @@ fn test_channels() {
 #[test]
 fn test_parameters_returns_all_params() {
     let p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
-    let params = p.parameters();
+    let params = p.parametric_parameters();
     assert_eq!(params.len(), 10);
     let ids: Vec<_> = params.iter().map(|p| p.id.clone()).collect();
     assert!(ids.contains(&ParameterId::from("threshold")));
@@ -948,7 +944,7 @@ fn test_set_parameter_soft_roundtrip() {
     p.initialize(48000).unwrap();
     assert!(!p.soft);
 
-    p.set_parameter(ParameterId::from("soft"), ParameterValue::Bool(true))
+    p.parametric_set_parameter(ParameterId::from("soft"), ParameterValue::Bool(true))
         .unwrap();
     assert!(p.soft);
     assert_eq!(
@@ -956,7 +952,7 @@ fn test_set_parameter_soft_roundtrip() {
         Some(ParameterValue::Bool(true))
     );
 
-    p.set_parameter(ParameterId::from("soft"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(ParameterId::from("soft"), ParameterValue::Bool(false))
         .unwrap();
     assert!(!p.soft);
 }
@@ -980,34 +976,34 @@ fn test_set_parameter_boundary_values() {
     p.initialize(48000).unwrap();
 
     // Threshold boundaries [-20, 0]
-    p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-20.0))
+    p.parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-20.0))
         .unwrap();
     assert_eq!(p.threshold_db, -20.0);
-    p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(0.0))
+    p.parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Float(0.0))
         .unwrap();
     assert_eq!(p.threshold_db, 0.0);
 
     // Mix boundaries [0, 1]
-    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
+    p.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
         .unwrap();
     assert_eq!(p.mix, 0.0);
-    p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+    p.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
         .unwrap();
     assert_eq!(p.mix, 1.0);
 
     // Link amount boundaries [0, 1]
-    p.set_parameter(ParameterId::from("link_amount"), ParameterValue::Float(0.0))
+    p.parametric_set_parameter(ParameterId::from("link_amount"), ParameterValue::Float(0.0))
         .unwrap();
     assert_eq!(p.link_amount, 0.0);
-    p.set_parameter(ParameterId::from("link_amount"), ParameterValue::Float(1.0))
+    p.parametric_set_parameter(ParameterId::from("link_amount"), ParameterValue::Float(1.0))
         .unwrap();
     assert_eq!(p.link_amount, 1.0);
 
     // Lookahead boundaries [0, 20]
-    p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(0.0))
+    p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(0.0))
         .unwrap();
     assert_eq!(p.lookahead_ms, 0.0);
-    p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
+    p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
         .unwrap();
     assert_eq!(p.lookahead_ms, 20.0);
 }

@@ -26,7 +26,7 @@ use gpui_ui_kit::{
     CollapseDirection, IconButton, IconButtonSize, IconButtonVariant, PaneDivider,
     PaneDividerTheme, Select, SelectOption, SelectSize, Toggle, ToggleSize, ToggleStyle,
 };
-use sotf_audio_player::PluginType;
+use sotf_audio_player::{PluginType, UpmixerOutputSettings};
 use sotf_plugins::param_specs::{find_by_key as pk, index_of, upmixer::PARAMS as UP};
 
 /// Brief description for each plugin type (shown in add-plugin menu tooltips).
@@ -99,7 +99,7 @@ impl PlayerView {
     pub(crate) fn render_plugins_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
-        let current_hint = self.state.read(cx).app.current_hint.clone();
+        let current_hint = self.state.read(cx).app.tutorial.current_hint.clone();
 
         div()
             .id("plugins-screen")
@@ -121,8 +121,8 @@ impl PlayerView {
                 let (knob_drag, divider_drag) = {
                     let state_read = view.state.read(cx);
                     (
-                        state_read.app.knob_drag,
-                        state_read.app.dragging_divider.clone(),
+                        state_read.app.drag.knob_drag,
+                        state_read.app.layout.dragging_divider.clone(),
                     )
                 };
 
@@ -150,7 +150,7 @@ impl PlayerView {
                                 let mouse_x: f32 = event.position.x.into();
                                 let delta_x = mouse_x - drag.start_x;
                                 let new_width = (drag.start_width + delta_x).clamp(60.0, 200.0);
-                                state.app.input_meter_width = new_width;
+                                state.app.layout.input_meter_width = new_width;
                             }
                             DividerType::OutputMeter => {
                                 // Dragging left increases output meter width
@@ -158,7 +158,7 @@ impl PlayerView {
                                 let mouse_x: f32 = event.position.x.into();
                                 let delta_x = mouse_x - drag.start_x;
                                 let new_width = (drag.start_width - delta_x).max(60.0);
-                                state.app.output_meter_width = new_width;
+                                state.app.layout.output_meter_width = new_width;
                             }
                             DividerType::RackDetail => {
                                 let window_height: f32 = window.bounds().size.height.into();
@@ -184,10 +184,10 @@ impl PlayerView {
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, cx| {
-                        if state.app.knob_drag.is_some() {
-                            state.app.knob_drag = None;
+                        if state.app.drag.knob_drag.is_some() {
+                            state.app.drag.knob_drag = None;
                         }
-                        let had_divider_drag = state.app.dragging_divider.take().is_some();
+                        let had_divider_drag = state.app.layout.dragging_divider.take().is_some();
                         if had_divider_drag {
                             let layout = state.layout.read(cx).clone();
                             if let Err(e) = state.app.save_config(&layout) {
@@ -245,7 +245,8 @@ impl PlayerView {
                         let state = self.state.read(cx);
                         let layout = state.layout.read(cx);
                         (
-                            state.app.rack_detail_collapsed || layout.rack_detail_ratio <= 0.05,
+                            state.app.layout.rack_detail_collapsed
+                                || layout.rack_detail_ratio <= 0.05,
                             layout.rack_detail_ratio.clamp(0.12, 0.65),
                         )
                     };
@@ -284,7 +285,7 @@ impl PlayerView {
                                 .collapsed(is_collapsed)
                                 .on_toggle(move |collapsed, _window, cx| {
                                     state_for_toggle.update(cx, |s, cx| {
-                                        s.app.rack_detail_collapsed = collapsed;
+                                        s.app.layout.rack_detail_collapsed = collapsed;
                                         s.layout.update(cx, |layout, _| {
                                             layout.rack_detail_ratio =
                                                 if collapsed { 0.0 } else { 0.22 };
@@ -298,8 +299,8 @@ impl PlayerView {
                                     state_for_drag.update(cx, |s, cx| {
                                         let start_width =
                                             s.layout.read(cx).rack_detail_ratio.clamp(0.12, 0.65);
-                                        s.app.rack_detail_collapsed = false;
-                                        s.app.dragging_divider = Some(DividerDragState {
+                                        s.app.layout.rack_detail_collapsed = false;
+                                        s.app.layout.dragging_divider = Some(DividerDragState {
                                             divider_type: DividerType::RackDetail,
                                             start_x: pos,
                                             start_width,
@@ -403,10 +404,20 @@ impl PlayerView {
                     )
                 })
                 .collect();
-            let preset_open = state.app.plugin_state.plugin_preset_open;
-            let preset_list = state.app.plugin_state.plugin_preset_list.clone();
+            let preset_open = state.app.plugin_state.preset_state.plugin_preset_open;
+            let preset_list = state
+                .app
+                .plugin_state
+                .preset_state
+                .plugin_preset_list
+                .clone();
             let last_loaded_preset = state.app.plugin_state.last_loaded_preset.clone();
-            let has_pending_update = state.app.plugin_state.pending_plugin_update.is_some();
+            let has_pending_update = state
+                .app
+                .plugin_state
+                .update_state
+                .pending_plugin_update
+                .is_some();
 
             // Chain I/O summary: input is stereo at the rack head; output
             // depends on whether an Upmixer / BinauralDecoder is active and
@@ -490,7 +501,7 @@ impl PlayerView {
 
         let is_empty = plugins_data.is_empty();
         let d = Ds::from_cx(cx);
-        let show_add_plugin_menu = self.state.read(cx).app.show_add_plugin_menu;
+        let show_add_plugin_menu = self.state.read(cx).app.plugin_ui.show_add_plugin_menu;
 
         // Split: main plugins, then "+", then Matrix + output monitor
         // The "+" always appears just before the Matrix plugin.
@@ -544,8 +555,8 @@ impl PlayerView {
                                 surface: theme_c.surface,
                                 text_on_accent: theme_c.text_on_accent,
                             };
-                            let drop_highlight = theme_c.drag_over_highlight;
-                            let drop_border = theme_c.drag_over_border;
+                            let drop_highlight = theme_c.feedback.drag_over_highlight;
+                            let drop_border = theme_c.feedback.drag_over_border;
                             let accent_color = theme_c.accent;
 
                             // Module card with drop target
@@ -601,7 +612,7 @@ impl PlayerView {
                                                 state.app.plugin_state.graph.move_plugin(source, target);
                                                 state.app.plugin_state.selected_plugin_index = target;
                                                 state.app.plugin_state.graph.update_channel_dependent_plugins();
-                                                state.app.plugin_state.pending_plugin_update =
+                                                state.app.plugin_state.update_state.pending_plugin_update =
                                                     Some(PluginUpdateType::Structural);
                                                 state.app.update_level_meter_groups();
                                             });
@@ -631,7 +642,7 @@ impl PlayerView {
                                 .child({
                                     let is_soloed = {
                                         let state = self.state.read(cx);
-                                        state.app.plugin_state.soloed_plugin_index == Some(idx)
+                                        state.app.plugin_state.chain_state.soloed_plugin_index == Some(idx)
                                     };
                                     let warning_color = theme_c.warning;
                                     let accent_color = theme_c.accent;
@@ -744,21 +755,21 @@ impl PlayerView {
                                                             cx.stop_propagation();
                                                             view.state.update(cx, |state, _cx| {
                                                                 let ps = &mut state.app.plugin_state;
-                                                                if ps.plugin_preset_open == Some(idx) {
+                                                                if ps.preset_state.plugin_preset_open == Some(idx) {
                                                                     // Close
-                                                                    ps.plugin_preset_open = None;
-                                                                    ps.plugin_preset_save_mode = false;
-                                                                    ps.plugin_preset_input.clear();
-                                                                    ps.confirm_delete_preset = None;
+                                                                    ps.preset_state.plugin_preset_open = None;
+                                                                    ps.preset_state.plugin_preset_save_mode = false;
+                                                                    ps.preset_state.plugin_preset_input.clear();
+                                                                    ps.preset_state.confirm_delete_preset = None;
                                                                 } else {
                                                                     // Open and populate list
                                                                     if let Some(plugin) = ps.graph.get_plugin(idx) {
                                                                         let pt = plugin.plugin_type();
-                                                                        ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
+                                                                        ps.preset_state.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
                                                                     }
-                                                                    ps.plugin_preset_open = Some(idx);
-                                                                    ps.plugin_preset_save_mode = false;
-                                                                    ps.plugin_preset_input.clear();
+                                                                    ps.preset_state.plugin_preset_open = Some(idx);
+                                                                    ps.preset_state.plugin_preset_save_mode = false;
+                                                                    ps.preset_state.plugin_preset_input.clear();
                                                                 }
                                                             });
                                                             cx.notify();
@@ -776,7 +787,7 @@ impl PlayerView {
                                         // X (Remove) or lock icon for permanent
                                         .when(!is_permanent, |d| {
                                             let theme_tt = theme_c.clone();
-                                            let confirming = self.state.read(cx).app.plugin_state.confirm_remove_plugin == Some(idx);
+                                            let confirming = self.state.read(cx).app.plugin_state.preset_state.confirm_remove_plugin == Some(idx);
                                             d.child(
                                                 div()
                                                     .id(("plugin-close", idx))
@@ -798,14 +809,14 @@ impl PlayerView {
                                                             move |view, _e: &MouseUpEvent, _, cx| {
                                                                 cx.stop_propagation();
                                                                 view.state.update(cx, |state, _cx| {
-                                                                    if state.app.plugin_state.confirm_remove_plugin == Some(idx) {
+                                                                    if state.app.plugin_state.preset_state.confirm_remove_plugin == Some(idx) {
                                                                         // Second click: confirmed
-                                                                        state.app.plugin_state.confirm_remove_plugin = None;
+                                                                        state.app.plugin_state.preset_state.confirm_remove_plugin = None;
                                                                         state.app.remove_plugin(idx);
                                                                         state.app.update_level_meter_groups();
                                                                     } else {
                                                                         // First click: ask for confirmation
-                                                                        state.app.plugin_state.confirm_remove_plugin = Some(idx);
+                                                                        state.app.plugin_state.preset_state.confirm_remove_plugin = Some(idx);
                                                                     }
                                                                 });
                                                                 cx.notify();
@@ -880,13 +891,13 @@ impl PlayerView {
                                                                         let ps = &mut state.app.plugin_state;
                                                                         match ps.load_plugin_preset(idx, &name_load) {
                                                                             Ok(_) => {
-                                                                                ps.pending_plugin_update = Some(PluginUpdateType::Structural);
+                                                                                ps.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                                                                             }
                                                                             Err(e) => {
                                                                                 log::error!("Failed to load preset: {e}");
                                                                             }
                                                                         }
-                                                                        ps.plugin_preset_open = None;
+                                                                        ps.preset_state.plugin_preset_open = None;
                                                                     });
                                                                     cx.notify();
                                                                 },
@@ -900,7 +911,7 @@ impl PlayerView {
                                                                 .child(name.clone()),
                                                         )
                                                         .child({
-                                                            let confirming_del = self.state.read(cx).app.plugin_state.confirm_delete_preset.as_ref()
+                                                            let confirming_del = self.state.read(cx).app.plugin_state.preset_state.confirm_delete_preset.as_ref()
                                                                 .is_some_and(|(pi_idx, pn)| *pi_idx == idx && pn == name);
                                                             let name_confirm = name.clone();
                                                             div()
@@ -916,19 +927,19 @@ impl PlayerView {
                                                                             cx.stop_propagation();
                                                                             view.state.update(cx, |state, _cx| {
                                                                                 let ps = &mut state.app.plugin_state;
-                                                                                let is_confirmed = ps.confirm_delete_preset.as_ref()
+                                                                                let is_confirmed = ps.preset_state.confirm_delete_preset.as_ref()
                                                                                     .is_some_and(|(pi_idx, pn)| *pi_idx == idx && *pn == name_del);
                                                                                 if is_confirmed {
                                                                                     // Second click: confirmed
-                                                                                    ps.confirm_delete_preset = None;
+                                                                                    ps.preset_state.confirm_delete_preset = None;
                                                                                     if let Some(plugin) = ps.graph.get_plugin(idx) {
                                                                                         let pt = plugin.plugin_type().clone();
                                                                                         let _ = sotf_audio_player::PluginController::delete_plugin_preset(&pt, &name_del);
-                                                                                        ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
+                                                                                        ps.preset_state.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
                                                                                     }
                                                                                 } else {
                                                                                     // First click: ask for confirmation
-                                                                                    ps.confirm_delete_preset = Some((idx, name_confirm.clone()));
+                                                                                    ps.preset_state.confirm_delete_preset = Some((idx, name_confirm.clone()));
                                                                                 }
                                                                             });
                                                                             cx.notify();
@@ -940,11 +951,11 @@ impl PlayerView {
                                                 }
                                             ))
                                             .child({
-                                                let save_mode = self.state.read(cx).app.plugin_state.plugin_preset_save_mode;
+                                                let save_mode = self.state.read(cx).app.plugin_state.preset_state.plugin_preset_save_mode;
                                                 let theme_s = theme_p.clone();
                                                 if save_mode {
                                                     // Text input + confirm button
-                                                    let preset_name = self.state.read(cx).app.plugin_state.plugin_preset_input.clone();
+                                                    let preset_name = self.state.read(cx).app.plugin_state.preset_state.plugin_preset_input.clone();
                                                     div()
                                                         .flex()
                                                         .items_center()
@@ -962,7 +973,7 @@ impl PlayerView {
                                                                         .bg_color(theme_s.background_secondary)
                                                                         .on_text_change(move |text, _window, cx| {
                                                                             state_for_text.update(cx, |state, _cx| {
-                                                                                state.app.plugin_state.plugin_preset_input = text;
+                                                                                state.app.plugin_state.preset_state.plugin_preset_input = text;
                                                                             });
                                                                         }),
                                                                 )
@@ -985,21 +996,21 @@ impl PlayerView {
                                                                         cx.stop_propagation();
                                                                         view.state.update(cx, |state, _cx| {
                                                                             let ps = &mut state.app.plugin_state;
-                                                                            let name = ps.plugin_preset_input.trim().to_string();
+                                                                            let name = ps.preset_state.plugin_preset_input.trim().to_string();
                                                                             if !name.is_empty() {
                                                                                 match ps.save_plugin_preset(idx, &name) {
                                                                                     Ok(_) => {
                                                                                         if let Some(plugin) = ps.graph.get_plugin(idx) {
                                                                                             let pt = plugin.plugin_type().clone();
-                                                                                            ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
+                                                                                            ps.preset_state.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
                                                                                         }
                                                                                     }
                                                                                     Err(e) => {
                                                                                         log::error!("Failed to save preset: {e}");
                                                                                     }
                                                                                 }
-                                                                                ps.plugin_preset_save_mode = false;
-                                                                                ps.plugin_preset_input.clear();
+                                                                                ps.preset_state.plugin_preset_save_mode = false;
+                                                                                ps.preset_state.plugin_preset_input.clear();
                                                                             }
                                                                         });
                                                                         cx.notify();
@@ -1031,9 +1042,9 @@ impl PlayerView {
                                                                 cx.stop_propagation();
                                                                 view.state.update(cx, |state, _cx| {
                                                                     let ps = &mut state.app.plugin_state;
-                                                                    let n = ps.plugin_preset_list.len() + 1;
-                                                                    ps.plugin_preset_input = format!("Preset {n}");
-                                                                    ps.plugin_preset_save_mode = true;
+                                                                    let n = ps.preset_state.plugin_preset_list.len() + 1;
+                                                                    ps.preset_state.plugin_preset_input = format!("Preset {n}");
+                                                                    ps.preset_state.plugin_preset_save_mode = true;
                                                                 });
                                                                 cx.notify();
                                                             }),
@@ -1085,8 +1096,8 @@ impl PlayerView {
                     // "+" Add plugin slot (visually distinct from solid plugin boxes)
                     .child({
                         let theme_add = theme.clone();
-                        let drop_highlight = theme.drag_over_highlight;
-                        let drop_border = theme.drag_over_border;
+                        let drop_highlight = theme.feedback.drag_over_highlight;
+                        let drop_border = theme.feedback.drag_over_border;
 
                         div()
                             .id("plugin-add-slot")
@@ -1107,7 +1118,7 @@ impl PlayerView {
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
-                                        state.app.show_add_plugin_menu = !state.app.show_add_plugin_menu;
+                                        state.app.plugin_ui.show_add_plugin_menu = !state.app.plugin_ui.show_add_plugin_menu;
                                     });
                                     cx.notify();
                                 }),
@@ -1147,7 +1158,7 @@ impl PlayerView {
                                         state.app.plugin_state.graph.move_plugin(source, target);
                                         state.app.plugin_state.selected_plugin_index = target;
                                         state.app.plugin_state.graph.update_channel_dependent_plugins();
-                                        state.app.plugin_state.pending_plugin_update =
+                                        state.app.plugin_state.update_state.pending_plugin_update =
                                             Some(PluginUpdateType::Structural);
                                         state.app.update_level_meter_groups();
                                     });
@@ -1180,8 +1191,8 @@ impl PlayerView {
                                 .hover(|s| s.border_color(color))
                                 // Drop target for reordering
                                 .drag_over::<PluginDragInfo>({
-                                    let drop_highlight = theme_c.drag_over_highlight;
-                                    let drop_border = theme_c.drag_over_border;
+                                    let drop_highlight = theme_c.feedback.drag_over_highlight;
+                                    let drop_border = theme_c.feedback.drag_over_border;
                                     move |style, _, _, _| {
                                         style.bg(drop_highlight).border_color(drop_border)
                                     }
@@ -1201,7 +1212,7 @@ impl PlayerView {
                                                 state.app.plugin_state.graph.move_plugin(source, target);
                                                 state.app.plugin_state.selected_plugin_index = target;
                                                 state.app.plugin_state.graph.update_channel_dependent_plugins();
-                                                state.app.plugin_state.pending_plugin_update =
+                                                state.app.plugin_state.update_state.pending_plugin_update =
                                                     Some(PluginUpdateType::Structural);
                                                 state.app.update_level_meter_groups();
                                             }
@@ -1263,7 +1274,7 @@ impl PlayerView {
                                         // X (Remove) or lock icon
                                         .when(!is_permanent, |d| {
                                             let theme_tt = theme_c.clone();
-                                            let confirming = self.state.read(cx).app.plugin_state.confirm_remove_plugin == Some(idx);
+                                            let confirming = self.state.read(cx).app.plugin_state.preset_state.confirm_remove_plugin == Some(idx);
                                             d.child(
                                                 div()
                                                     .id(("plugin-close-tail", idx))
@@ -1285,12 +1296,12 @@ impl PlayerView {
                                                             move |view, _e: &MouseUpEvent, _, cx| {
                                                                 cx.stop_propagation();
                                                                 view.state.update(cx, |state, _cx| {
-                                                                    if state.app.plugin_state.confirm_remove_plugin == Some(idx) {
-                                                                        state.app.plugin_state.confirm_remove_plugin = None;
+                                                                    if state.app.plugin_state.preset_state.confirm_remove_plugin == Some(idx) {
+                                                                        state.app.plugin_state.preset_state.confirm_remove_plugin = None;
                                                                         state.app.remove_plugin(idx);
                                                                         state.app.update_level_meter_groups();
                                                                     } else {
-                                                                        state.app.plugin_state.confirm_remove_plugin = Some(idx);
+                                                                        state.app.plugin_state.preset_state.confirm_remove_plugin = Some(idx);
                                                                     }
                                                                 });
                                                                 cx.notify();
@@ -1795,7 +1806,7 @@ impl PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.add_plugin(&pt);
                                     state.app.update_level_meter_groups();
-                                    state.app.show_add_plugin_menu = false;
+                                    state.app.plugin_ui.show_add_plugin_menu = false;
                                 });
                                 cx.notify();
                             }),
@@ -1933,15 +1944,15 @@ impl PlayerView {
                         tint_hover: theme.accent,
                     };
 
-                    let output_collapsed = state.app.output_meter_collapsed;
-                    let config_open = state.app.plugin_state.rack_config_overlay_open;
+                    let output_collapsed = state.app.layout.output_meter_collapsed;
+                    let config_open = state.app.plugin_state.plugin_ui_state.rack_config_overlay_open;
                     // Auto-fit: default to min width, allow user to expand up to 2x
                     let max_meter_width = min_meter_width * 2.0;
                     // If stored width is below minimum (e.g. channel count increased), snap to min
-                    let output_meter_width = if state.app.output_meter_width < min_meter_width {
+                    let output_meter_width = if state.app.layout.output_meter_width < min_meter_width {
                         min_meter_width
                     } else {
-                        state.app.output_meter_width.min(max_meter_width)
+                        state.app.layout.output_meter_width.min(max_meter_width)
                     };
                     let plugin_bg = state
                         .app
@@ -2057,13 +2068,13 @@ impl PlayerView {
                                     };
 
                                     let app_st = self.state.read(cx);
-                                    let upmixer_config_open = app_st.app.upmixer_config_open;
+                                    let upmixer_config_open = app_st.app.plugin_ui.upmixer_config_open;
                                     let selected_eq_band = app_st.app.plugin_state.selected_eq_band;
-                                    let spectrum_tilt_open = app_st.app.spectrum_tilt_select_open;
-                                    let spectrum_ref_open = app_st.app.spectrum_reference_select_open;
+                                    let spectrum_tilt_open = app_st.app.plugin_ui.spectrum_tilt_select_open;
+                                    let spectrum_ref_open = app_st.app.plugin_ui.spectrum_reference_select_open;
                                     let plugin_graph = app_st.app.plugin_state.graph.clone();
                                     let midi_overlay = app_st.app.plugin_state.midi_mapping.build_overlay(&[]);
-                                    let plugin_ui_view = app_st.app.plugin_state.plugin_ui_view.clone();
+                                    let plugin_ui_view = app_st.app.plugin_state.plugin_ui_state.plugin_ui_view.clone();
 
                                     let midi_ref = if midi_overlay.has_controller() {
                                         Some(midi_overlay)
@@ -2154,7 +2165,7 @@ impl PlayerView {
                                                     let open = &mut state
                                                         .app
                                                         .plugin_state
-                                                        .rack_config_overlay_open;
+                                                        .plugin_ui_state.rack_config_overlay_open;
                                                     *open = !*open;
                                                 });
                                             }),
@@ -2173,12 +2184,12 @@ impl PlayerView {
                                 .collapsed(output_collapsed)
                                 .on_toggle(move |collapsed, _window, cx| {
                                     state_for_output_toggle.update(cx, |s, _| {
-                                        s.app.output_meter_collapsed = collapsed;
+                                        s.app.layout.output_meter_collapsed = collapsed;
                                     });
                                 })
                                 .on_drag_start(move |pos, _window, cx| {
                                     state_for_output_drag.update(cx, |s, _| {
-                                        s.app.dragging_divider = Some(DividerDragState {
+                                        s.app.layout.dragging_divider = Some(DividerDragState {
                                             divider_type: DividerType::OutputMeter,
                                             start_x: pos,
                                             start_width: output_meter_drag_start_width,
@@ -2249,10 +2260,19 @@ impl PlayerView {
                 selected_idx,
                 state.app.plugin_state.editing_plugin_index,
                 state.app.plugin_state.plugin_param_selection,
-                state.app.plugin_state.plugin_ui_view.clone(),
-                state.app.plugin_state.controller_picker_open,
-                state.app.plugin_state.rack_skin_picker_open,
-                state.app.upmixer_config_open,
+                state
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .plugin_ui_view
+                    .clone(),
+                state
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .controller_picker_open,
+                state.app.plugin_state.plugin_ui_state.rack_skin_picker_open,
+                state.app.plugin_ui.upmixer_config_open,
                 state.app.ui_state.theme.clone(),
                 state
                     .app
@@ -2373,7 +2393,11 @@ impl PlayerView {
                                 let state_for_view = state_for_view.clone();
                                 move |is_open, _window, cx| {
                                     state_for_view.update(cx, |state, cx| {
-                                        state.app.plugin_state.controller_picker_open = is_open;
+                                        state
+                                            .app
+                                            .plugin_state
+                                            .plugin_ui_state
+                                            .controller_picker_open = is_open;
                                         cx.notify();
                                     });
                                 }
@@ -2389,8 +2413,13 @@ impl PlayerView {
                                         _ => PluginUiView::UI,
                                     };
                                     state_for_view.update(cx, |state, _cx| {
-                                        state.app.plugin_state.plugin_ui_view = view;
-                                        state.app.plugin_state.controller_picker_open = false;
+                                        state.app.plugin_state.plugin_ui_state.plugin_ui_view =
+                                            view;
+                                        state
+                                            .app
+                                            .plugin_state
+                                            .plugin_ui_state
+                                            .controller_picker_open = false;
                                     });
                                 }
                             }),
@@ -2419,7 +2448,11 @@ impl PlayerView {
                                 let state_for_skin = state_for_skin.clone();
                                 move |is_open, _window, cx| {
                                     state_for_skin.update(cx, |state, cx| {
-                                        state.app.plugin_state.rack_skin_picker_open = is_open;
+                                        state
+                                            .app
+                                            .plugin_state
+                                            .plugin_ui_state
+                                            .rack_skin_picker_open = is_open;
                                         cx.notify();
                                     });
                                 }
@@ -2442,7 +2475,8 @@ impl PlayerView {
                                             .rack_theme_state
                                             .set_override(selected_idx, selected_theme);
                                     }
-                                    state.app.plugin_state.rack_skin_picker_open = false;
+                                    state.app.plugin_state.plugin_ui_state.rack_skin_picker_open =
+                                        false;
                                     let layout = state.layout.read(cx);
                                     if let Err(e) = state.app.save_config(layout) {
                                         log::error!("Failed to save plugin skin: {}", e);
@@ -2464,7 +2498,10 @@ impl PlayerView {
                     let (speaker_config, binaural_preview) = match &plugin.settings {
                         sotf_audio_player::PluginSettings::Upmixer {
                             speaker_config,
-                            binaural_preview,
+                            output:
+                                UpmixerOutputSettings {
+                                    binaural_preview, ..
+                                },
                             ..
                         } => (speaker_config.clone(), *binaural_preview),
                         _ => ("5.1".to_string(), false),
@@ -2493,7 +2530,7 @@ impl PlayerView {
                                         let state_for_output = state_for_output.clone();
                                         move |is_open, _window, cx| {
                                             state_for_output.update(cx, |state, cx| {
-                                                state.app.upmixer_config_open = is_open;
+                                                state.app.plugin_ui.upmixer_config_open = is_open;
                                                 cx.notify();
                                             });
                                         }
@@ -2505,7 +2542,7 @@ impl PlayerView {
                                             .unwrap_or(0);
                                         state_for_output.update(cx, |state, _cx| {
                                             state.app.set_plugin_param(selected_idx, 0, idx as f64);
-                                            state.app.upmixer_config_open = false;
+                                            state.app.plugin_ui.upmixer_config_open = false;
                                             state.app.update_level_meter_groups();
                                         });
                                     }),
@@ -2639,8 +2676,8 @@ impl PlayerView {
     pub(crate) fn render_chain_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let chain_bypass = state.app.plugin_state.chain_bypass;
-        let chain_autogain = state.app.plugin_state.chain_autogain;
+        let chain_bypass = state.app.plugin_state.chain_state.chain_bypass;
+        let chain_autogain = state.app.plugin_state.chain_state.chain_autogain;
         let d = Ds::from_cx(cx);
 
         // Detect current matrix preset for Mono/M/S button states
@@ -2821,7 +2858,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.state.update(cx, |state, _cx| {
-            state.app.upmixer_config_open = action.open;
+            state.app.plugin_ui.upmixer_config_open = action.open;
         });
         cx.notify();
     }

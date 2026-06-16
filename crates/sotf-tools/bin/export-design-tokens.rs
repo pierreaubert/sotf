@@ -56,6 +56,7 @@ fn theme_set_name(id: ThemeId) -> &'static str {
 
 fn export_theme_colors(theme: &Theme) -> Value {
     let band_map: Map<String, Value> = theme
+        .plugin_palette
         .band_colors
         .iter()
         .enumerate()
@@ -97,9 +98,9 @@ fn export_theme_colors(theme: &Theme) -> Value {
                 "info": c(theme.info)
             },
             "meter": {
-                "normal": c(theme.meter_normal),
-                "warning": c(theme.meter_warning),
-                "clip": c(theme.meter_clip)
+                "normal": c(theme.feedback.meter_normal),
+                "warning": c(theme.feedback.meter_warning),
+                "clip": c(theme.feedback.meter_clip)
             },
             "button": {
                 "muteActive": c(theme.button_mute_active),
@@ -107,75 +108,75 @@ fn export_theme_colors(theme: &Theme) -> Value {
                 "dimActive": c(theme.button_dim_active)
             },
             "playback": {
-                "progressBarBg": c(theme.progress_bar_bg),
-                "progressBarFill": c(theme.progress_bar_fill)
+                "progressBarBg": c(theme.feedback.progress_bar_bg),
+                "progressBarFill": c(theme.feedback.progress_bar_fill)
             },
             "toast": {
-                "successBg": c(theme.toast_success_bg),
-                "errorBg": c(theme.toast_error_bg),
-                "infoBg": c(theme.toast_info_bg),
-                "warningBg": c(theme.toast_warning_bg)
+                "successBg": c(theme.feedback.toast_success_bg),
+                "errorBg": c(theme.feedback.toast_error_bg),
+                "infoBg": c(theme.feedback.toast_info_bg),
+                "warningBg": c(theme.feedback.toast_warning_bg)
             },
             "plugin": {
-                "eq": c(theme.plugin_colors.eq),
-                "gain": c(theme.plugin_colors.gain),
-                "upmixer": c(theme.plugin_colors.upmixer),
-                "compressor": c(theme.plugin_colors.compressor),
-                "limiter": c(theme.plugin_colors.limiter),
-                "gate": c(theme.plugin_colors.gate),
-                "loudness": c(theme.plugin_colors.loudness),
-                "binaural": c(theme.plugin_colors.binaural),
-                "convolution": c(theme.plugin_colors.convolution),
-                "monitor": c(theme.plugin_colors.monitor),
-                "spectrum": c(theme.plugin_colors.spectrum),
-                "muteSolo": c(theme.plugin_colors.mute_solo)
+                "eq": c(theme.plugin_palette.plugin_colors.eq),
+                "gain": c(theme.plugin_palette.plugin_colors.gain),
+                "upmixer": c(theme.plugin_palette.plugin_colors.upmixer),
+                "compressor": c(theme.plugin_palette.plugin_colors.compressor),
+                "limiter": c(theme.plugin_palette.plugin_colors.limiter),
+                "gate": c(theme.plugin_palette.plugin_colors.gate),
+                "loudness": c(theme.plugin_palette.plugin_colors.loudness),
+                "binaural": c(theme.plugin_palette.plugin_colors.binaural),
+                "convolution": c(theme.plugin_palette.plugin_colors.convolution),
+                "monitor": c(theme.plugin_palette.plugin_colors.monitor),
+                "spectrum": c(theme.plugin_palette.plugin_colors.spectrum),
+                "muteSolo": c(theme.plugin_palette.plugin_colors.mute_solo)
             },
             "graph": {
-                "input": c(theme.graph_colors.input),
-                "target": c(theme.graph_colors.target),
-                "filterResponse": c(theme.graph_colors.filter_response),
-                "corrected": c(theme.graph_colors.corrected),
-                "error": c(theme.graph_colors.error),
-                "deviation": c(theme.graph_colors.deviation),
-                "grid": c(theme.graph_colors.grid),
-                "secondaryLine": c(theme.graph_colors.secondary_line),
-                "directivityEr": c(theme.graph_colors.directivity_er),
-                "directivitySp": c(theme.graph_colors.directivity_sp)
+                "input": c(theme.plugin_palette.graph_colors.input),
+                "target": c(theme.plugin_palette.graph_colors.target),
+                "filterResponse": c(theme.plugin_palette.graph_colors.filter_response),
+                "corrected": c(theme.plugin_palette.graph_colors.corrected),
+                "error": c(theme.plugin_palette.graph_colors.error),
+                "deviation": c(theme.plugin_palette.graph_colors.deviation),
+                "grid": c(theme.plugin_palette.graph_colors.grid),
+                "secondaryLine": c(theme.plugin_palette.graph_colors.secondary_line),
+                "directivityEr": c(theme.plugin_palette.graph_colors.directivity_er),
+                "directivitySp": c(theme.plugin_palette.graph_colors.directivity_sp)
             },
             "band": Value::Object(band_map),
             "eqCurve": {
-                "background": c(theme.eq_curve_colors.background),
-                "grid": c(theme.eq_curve_colors.grid),
-                "curveBoost": c(theme.eq_curve_colors.curve_boost),
-                "curveCut": c(theme.eq_curve_colors.curve_cut),
-                "fillBoost": c(theme.eq_curve_colors.fill_boost),
-                "fillCut": c(theme.eq_curve_colors.fill_cut),
-                "zeroLine": c(theme.eq_curve_colors.zero_line)
+                "background": c(theme.plugin_palette.eq_curve_colors.background),
+                "grid": c(theme.plugin_palette.eq_curve_colors.grid),
+                "curveBoost": c(theme.plugin_palette.eq_curve_colors.curve_boost),
+                "curveCut": c(theme.plugin_palette.eq_curve_colors.curve_cut),
+                "fillBoost": c(theme.plugin_palette.eq_curve_colors.fill_boost),
+                "fillCut": c(theme.plugin_palette.eq_curve_colors.fill_cut),
+                "zeroLine": c(theme.plugin_palette.eq_curve_colors.zero_line)
             },
             "spectrum": {
-                "background": c(theme.spectrum_colors.background),
-                "bass": c(theme.spectrum_colors.bass),
-                "mids": c(theme.spectrum_colors.mids),
-                "treble": c(theme.spectrum_colors.treble)
+                "background": c(theme.plugin_palette.spectrum_colors.background),
+                "bass": c(theme.plugin_palette.spectrum_colors.bass),
+                "mids": c(theme.plugin_palette.spectrum_colors.mids),
+                "treble": c(theme.plugin_palette.spectrum_colors.treble)
             },
             "meterColors": {
-                "background": c(theme.meter_colors.background),
-                "normal": c(theme.meter_colors.normal),
-                "warning": c(theme.meter_colors.warning),
-                "clip": c(theme.meter_colors.clip),
-                "peak": c(theme.meter_colors.peak),
-                "text": c(theme.meter_colors.text)
+                "background": c(theme.plugin_palette.meter_colors.background),
+                "normal": c(theme.plugin_palette.meter_colors.normal),
+                "warning": c(theme.plugin_palette.meter_colors.warning),
+                "clip": c(theme.plugin_palette.meter_colors.clip),
+                "peak": c(theme.plugin_palette.meter_colors.peak),
+                "text": c(theme.plugin_palette.meter_colors.text)
             },
             "additional": {
-                "peakIndicator": c(theme.peak_indicator),
-                "dragOverHighlight": c(theme.drag_over_highlight),
-                "dragOverBorder": c(theme.drag_over_border),
-                "neutralIndicator": c(theme.neutral_indicator),
-                "warningBackground": c(theme.warning_background),
-                "knobColor": c(theme.knob_color),
-                "optimizationColor": c(theme.optimization_color),
-                "gridColor": c(theme.grid_color),
-                "overlayBg": c(theme.overlay_bg)
+                "peakIndicator": c(theme.feedback.peak_indicator),
+                "dragOverHighlight": c(theme.feedback.drag_over_highlight),
+                "dragOverBorder": c(theme.feedback.drag_over_border),
+                "neutralIndicator": c(theme.feedback.neutral_indicator),
+                "warningBackground": c(theme.feedback.warning_background),
+                "knobColor": c(theme.feedback.knob_color),
+                "optimizationColor": c(theme.feedback.optimization_color),
+                "gridColor": c(theme.feedback.grid_color),
+                "overlayBg": c(theme.feedback.overlay_bg)
             }
         }
     })

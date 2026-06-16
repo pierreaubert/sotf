@@ -68,7 +68,8 @@ impl TestScenario for DefaultGraphStructureScenario {
         driver.navigate_to(Screen::PluginGraph);
 
         // The default graph should have a workflow canvas
-        let has_canvas = driver.read_app(|app| app.plugin_state.workflow_canvas.is_some());
+        let has_canvas =
+            driver.read_app(|app| app.plugin_state.graph_state.workflow_canvas.is_some());
 
         if !has_canvas {
             return Err("Workflow canvas should be created on PluginGraph screen".into());

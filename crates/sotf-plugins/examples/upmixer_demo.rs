@@ -120,22 +120,22 @@ fn main() {
 
     // Override speaker config from CLI if provided
     if let Some(fmt) = &cli.format {
-        params.speaker_config = fmt.clone();
+        params.core.speaker_config = fmt.clone();
         println!("  Format override: {fmt}");
     }
 
     // Validate speaker config and get channel count
-    let speaker_cfg = get_speaker_config(&params.speaker_config).unwrap_or_else(|| {
+    let speaker_cfg = get_speaker_config(&params.core.speaker_config).unwrap_or_else(|| {
         eprintln!(
             "Unknown speaker config '{}'. Supported: 2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6",
-            params.speaker_config
+            params.core.speaker_config
         );
         process::exit(1);
     });
     let out_channels = speaker_cfg.total_channels;
     println!(
         "  Speaker config:  {} ({} channels)",
-        params.speaker_config, out_channels
+        params.core.speaker_config, out_channels
     );
 
     // ── Create upmixer ──────────────────────────────────────────────────

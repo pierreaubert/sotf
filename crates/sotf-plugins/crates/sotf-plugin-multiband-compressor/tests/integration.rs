@@ -1,6 +1,6 @@
 // Integration tests for sotf-plugin-multiband-compressor exercising the public Plugin trait.
 
-use sotf_host::{InPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
+use sotf_host::{ParametricInPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugin_multiband_compressor::{
     MultibandCompressorPlugin, MultibandCompressorPluginParams,
 };
@@ -23,7 +23,7 @@ fn rms(samples: &[f32]) -> f32 {
 }
 
 fn process_blocks(
-    adapter: &mut InPlacePluginAdapter<MultibandCompressorPlugin>,
+    adapter: &mut ParametricInPlacePluginAdapter<MultibandCompressorPlugin>,
     input: &[f32],
     output: &mut [f32],
     sample_rate: u32,
@@ -47,7 +47,7 @@ fn process_blocks(
 #[test]
 fn plugin_info_and_channels() {
     let plugin = MultibandCompressorPlugin::new(2);
-    let adapter = InPlacePluginAdapter::new(plugin);
+    let adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     assert!(adapter.info().name.contains("Multiband Compressor"));
     assert_eq!(adapter.input_channels(), 2);
@@ -58,7 +58,7 @@ fn plugin_info_and_channels() {
 #[test]
 fn plugin_processes_stereo_sine() {
     let plugin = MultibandCompressorPlugin::new(2);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let input = sine_buffer(2048, 2, 1000.0, 48000);
@@ -74,7 +74,7 @@ fn plugin_processes_stereo_sine() {
 #[test]
 fn parameter_roundtrip() {
     let plugin = MultibandCompressorPlugin::new(2);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     adapter
         .set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-30.0))
@@ -131,7 +131,7 @@ fn compression_reduces_level() {
         mix: 1.0,
         ..Default::default()
     };
-    let mut plugin = InPlacePluginAdapter::new(MultibandCompressorPlugin::with_params(2, params));
+    let mut plugin = ParametricInPlacePluginAdapter::new(MultibandCompressorPlugin::with_params(2, params));
     plugin.initialize(48000).unwrap();
 
     let num_frames = 8192;
@@ -161,7 +161,7 @@ fn dry_mix_passthrough() {
         ..Default::default()
     };
     let plugin = MultibandCompressorPlugin::with_params(2, params);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let num_frames = 2048;
@@ -185,7 +185,7 @@ fn dry_mix_passthrough() {
 #[test]
 fn changing_num_bands_works() {
     let plugin = MultibandCompressorPlugin::new(2);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     adapter
@@ -204,7 +204,7 @@ fn changing_num_bands_works() {
 #[test]
 fn reset_then_process_is_stable() {
     let plugin = MultibandCompressorPlugin::new(2);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let input = sine_buffer(1024, 2, 800.0, 48000);
@@ -226,7 +226,7 @@ fn reset_then_process_is_stable() {
 #[test]
 fn unknown_parameter_is_rejected() {
     let plugin = MultibandCompressorPlugin::new(2);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     let result = adapter.set_parameter(
         ParameterId::from("not_a_real_param"),
@@ -238,7 +238,7 @@ fn unknown_parameter_is_rejected() {
 #[test]
 fn invalid_parameter_value_is_rejected() {
     let plugin = MultibandCompressorPlugin::new(2);
-    let adapter = InPlacePluginAdapter::new(plugin);
+    let adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     let result =
         adapter.validate_parameter(&ParameterId::from("ratio"), &ParameterValue::Float(25.0));

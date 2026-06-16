@@ -4,7 +4,7 @@ RNNoise-based voice denoiser plugin. Wraps the `RnnoiseBackend` block from `plug
 
 ## Architecture
 
-- `lib.rs` — `SpeechDenoiserPluginParams` + `InPlacePlugin` impl driving `plugins_denoiser::rnnoise::RnnoiseBackend`.
+- `lib.rs` — `SpeechDenoiserPluginParams` + `ParametricInPlacePlugin` impl driving `plugins_denoiser::rnnoise::RnnoiseBackend`.
 - `params.rs` — `PARAMS` array (parameter specs).
 
 ## Parameters
@@ -25,6 +25,6 @@ cargo run -p sotf-plugin-speech-denoiser --features qa --bin qa-speech-denoiser
 
 ## Important Notes
 
-- Implements `InPlacePlugin` — same in/out channel count.
+- Implements `ParametricInPlacePlugin` — same in/out channel count.
 - RNNoise expects 48 kHz mono frames; the wrapper handles framing/resampling at the host boundary.
 - DSP body lives in `plugins-denoiser::rnnoise`; this crate is a thin host adapter.

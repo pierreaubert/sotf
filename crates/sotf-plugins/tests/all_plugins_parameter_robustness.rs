@@ -294,8 +294,6 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
 /// existing behavior so the cross-cutting test stays green while fixes are
 /// planned per-plugin.
 const KNOWN_TO_ACCEPT_UNKNOWN_PARAMS: &[&str] = &[
-    "fir_designer",
-    "linear_phase_eq",
     "matrix",
     "ambisonics_decoder",
 ];

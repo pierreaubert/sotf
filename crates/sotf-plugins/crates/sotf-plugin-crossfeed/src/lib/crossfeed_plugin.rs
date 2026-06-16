@@ -9,7 +9,9 @@ use math_audio_iir_fir::Biquad;
 use sotf_host::lr4_crossover::MultibandLr4Crossover;
 use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{deinterleave_stereo, enable_ftz_daz, interleave_stereo};
 use sotf_host::smoothing::Smoother;
 
@@ -415,7 +417,7 @@ impl CrossfeedPlugin {
     }
 }
 
-impl InPlacePlugin for CrossfeedPlugin {
+impl ParametricInPlacePlugin for CrossfeedPlugin {
     fn info(&self) -> PluginInfo {
         let mode_str = match self.params.mode {
             CrossfeedMode::Off => "Off",
@@ -431,79 +433,91 @@ impl InPlacePlugin for CrossfeedPlugin {
         2
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        // head_yaw_deg is not in PARAMS — handle separately
-        if id.0 == "head_yaw_deg" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
-            if v.is_finite() {
-                self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
-                self.yaw_smoother.set_target(self.params.head_yaw_deg);
-                // Do NOT update delay lines here — process_in_place owns delay line updates
-                // via the yaw smoother, preventing the double-discontinuity bug.
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        for param in &self.cached_parameters {
+            if param.id.0 == "head_yaw_deg" {
+                values.insert(
+                    ParameterId::from("head_yaw_deg"),
+                    ParameterValue::Float(self.params.head_yaw_deg),
+                );
+            } else if let Some(v) = param_bridge::get_parameter(CF, &param.id, |i| self.param_value(i)) {
+                values.insert(param.id.clone(), v);
             }
-            self.rebuild_cached_parameters();
-            return Ok(());
+        }
+        values
+    }
+
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        let mut head_yaw_changed = false;
+        for (id, value) in values {
+            if id.0 == "head_yaw_deg" {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
+                if v.is_finite() {
+                    self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
+                    self.yaw_smoother.set_target(self.params.head_yaw_deg);
+                    // Do NOT update delay lines here — process_in_place owns delay line updates
+                    // via the yaw smoother, preventing the double-discontinuity bug.
+                }
+                head_yaw_changed = true;
+            } else {
+                let _idx = param_bridge::set_parameter(CF, &id, &value, |i, v| {
+                    self.set_param_value(i, v)
+                })?;
+            }
         }
 
-        let idx = param_bridge::set_parameter(CF, &id, &value, |i, v| self.set_param_value(i, v))?;
-
-        // Side effects based on parameter index
-        match idx {
-            3 => self.mix_smoother.set_target(self.params.mix), // mix
-            4 | 5 => self.update_filters(),                     // bauer_fcut_hz, bauer_feed_db
-            7 | 8 => self.update_filters(), // mb_low_freq_hz, mb_mid_high_freq_hz
-            9..=11 => self.update_mb_feed_cache(),
-            12 => {
-                // itd_delay_ms — delay lines are updated in process_in_place, not here.
-            }
-            13 => {
-                // autogain_enabled
-                if self.params.autogain_enabled && self.auto_gain.is_none() {
-                    self.auto_gain = Some(sotf_host::auto_gain::AutoGain::new(
-                        2,
-                        self.sample_rate,
-                        sotf_host::auto_gain::AutoGainParams {
-                            enabled: true,
-                            loudness_type: Default::default(),
-                            max_gain_db: self.params.autogain_max_gain_db,
-                            smoothing_ms: self.params.autogain_smoothing_ms,
-                        },
-                    )?);
-                } else if !self.params.autogain_enabled {
-                    self.auto_gain = None;
-                }
-            }
-            15 => {
-                // autogain_max_gain_db
-                if let Some(ag) = &mut self.auto_gain {
-                    ag.set_max_gain_db(self.params.autogain_max_gain_db);
-                }
-            }
-            16 => {
-                // autogain_smoothing_ms
-                if let Some(ag) = &mut self.auto_gain {
-                    ag.set_smoothing_ms(self.params.autogain_smoothing_ms);
-                }
-            }
-            _ => {}
+        // Apply side effects based on final parameter state.
+        self.mix_smoother.set_target(self.params.mix);
+        self.update_filters();
+        self.update_mb_feed_cache();
+        if self.params.autogain_enabled && self.auto_gain.is_none() {
+            self.auto_gain = Some(sotf_host::auto_gain::AutoGain::new(
+                2,
+                self.sample_rate,
+                sotf_host::auto_gain::AutoGainParams {
+                    enabled: true,
+                    loudness_type: Default::default(),
+                    max_gain_db: self.params.autogain_max_gain_db,
+                    smoothing_ms: self.params.autogain_smoothing_ms,
+                },
+            )?);
+        } else if !self.params.autogain_enabled {
+            self.auto_gain = None;
+        }
+        if let Some(ag) = &mut self.auto_gain {
+            ag.set_max_gain_db(self.params.autogain_max_gain_db);
+            ag.set_smoothing_ms(self.params.autogain_smoothing_ms);
         }
 
         self.rebuild_cached_parameters();
+        let _ = head_yaw_changed;
         Ok(())
     }
 
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        // head_yaw_deg is not in PARAMS — handle separately
+    fn parametric_validate_parameter(
+        &self,
+        id: &ParameterId,
+        value: &ParameterValue,
+    ) -> PluginResult<()> {
+        // head_yaw_deg is clamped in apply_values rather than rejected.
         if id.0 == "head_yaw_deg" {
-            return Some(ParameterValue::Float(self.params.head_yaw_deg));
+            value
+                .as_float()
+                .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
+            return Ok(());
         }
-        param_bridge::get_parameter(CF, id, |i| self.param_value(i))
+        if let Some(param) = self.parameter_schema().iter().find(|p| &p.id == id) {
+            param.validate(value).map_err(|e| format!("{}: {}", id, e))
+        } else {
+            Err(format!("Unknown parameter: {}", id))
+        }
     }
 
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {

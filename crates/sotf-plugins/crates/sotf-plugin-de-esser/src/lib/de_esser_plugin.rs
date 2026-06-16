@@ -17,8 +17,10 @@ use sotf_host::dynamics_core::DynamicsCore;
 use sotf_host::dynamics_core::DynamicsMode;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{apply_per_channel_gain_simd, enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
@@ -292,7 +294,7 @@ impl DeEsserPlugin {
     }
 }
 
-impl InPlacePlugin for DeEsserPlugin {
+impl ParametricInPlacePlugin for DeEsserPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("DeEsser", "1.0.0", "SotF")
     }
@@ -301,107 +303,115 @@ impl InPlacePlugin for DeEsserPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(
+            self.param_frequency.clone(),
+            ParameterValue::Float(self.frequency),
+        );
+        values.insert(self.param_q.clone(), ParameterValue::Float(self.q));
+        values.insert(
+            self.param_threshold.clone(),
+            ParameterValue::Float(self.threshold),
+        );
+        values.insert(self.param_ratio.clone(), ParameterValue::Float(self.ratio));
+        values.insert(
+            self.param_attack.clone(),
+            ParameterValue::Float(self.attack_ms),
+        );
+        values.insert(
+            self.param_release.clone(),
+            ParameterValue::Float(self.release_ms),
+        );
+        values.insert(
+            self.param_mode.clone(),
+            ParameterValue::String(self.mode_string()),
+        );
+        values.insert(self.param_mix.clone(), ParameterValue::Float(self.mix));
+        values
+    }
 
-        if id == self.param_frequency {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DE, "frequency").default_f64() as f32);
-            if v.is_finite() {
-                self.frequency = v.clamp(2000.0, 16000.0);
-                self.rebuild_detection_filters();
-                self.rebuild_crossovers();
-            }
-        } else if id == self.param_q {
-            let v = value.as_float().unwrap_or(pk(DE, "q").default_f64() as f32);
-            if v.is_finite() {
-                self.q = v.clamp(0.5, 5.0);
-                self.rebuild_detection_filters();
-            }
-        } else if id == self.param_threshold {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DE, "threshold").default_f64() as f32);
-            if v.is_finite() {
-                self.threshold = v.clamp(-60.0, 0.0);
-            }
-        } else if id == self.param_ratio {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DE, "ratio").default_f64() as f32);
-            if v.is_finite() {
-                self.ratio = v.clamp(1.0, 20.0);
-            }
-        } else if id == self.param_attack {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DE, "attack").default_f64() as f32);
-            if v.is_finite() {
-                self.attack_ms = v.clamp(0.1, 10.0);
-                for core in &mut self.cores {
-                    core.set_attack_release(self.attack_ms, self.release_ms);
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            if id == self.param_frequency {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DE, "frequency").default_f64() as f32);
+                if v.is_finite() {
+                    self.frequency = v.clamp(2000.0, 16000.0);
+                    self.rebuild_detection_filters();
+                    self.rebuild_crossovers();
                 }
-            }
-        } else if id == self.param_release {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DE, "release").default_f64() as f32);
-            if v.is_finite() {
-                self.release_ms = v.clamp(5.0, 200.0);
-                for core in &mut self.cores {
-                    core.set_attack_release(self.attack_ms, self.release_ms);
+            } else if id == self.param_q {
+                let v = value.as_float().unwrap_or(pk(DE, "q").default_f64() as f32);
+                if v.is_finite() {
+                    self.q = v.clamp(0.5, 5.0);
+                    self.rebuild_detection_filters();
                 }
-            }
-        } else if id == self.param_mode {
-            let new_index = if let Some(s) = value.as_string() {
-                match s {
-                    "Wideband" | "wideband" => 0,
-                    _ => 1,
+            } else if id == self.param_threshold {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DE, "threshold").default_f64() as f32);
+                if v.is_finite() {
+                    self.threshold = v.clamp(-60.0, 0.0);
                 }
-            } else if let Some(v) = value.as_float() {
-                (v as usize).min(1)
+            } else if id == self.param_ratio {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DE, "ratio").default_f64() as f32);
+                if v.is_finite() {
+                    self.ratio = v.clamp(1.0, 20.0);
+                }
+            } else if id == self.param_attack {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DE, "attack").default_f64() as f32);
+                if v.is_finite() {
+                    self.attack_ms = v.clamp(0.1, 10.0);
+                    for core in &mut self.cores {
+                        core.set_attack_release(self.attack_ms, self.release_ms);
+                    }
+                }
+            } else if id == self.param_release {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DE, "release").default_f64() as f32);
+                if v.is_finite() {
+                    self.release_ms = v.clamp(5.0, 200.0);
+                    for core in &mut self.cores {
+                        core.set_attack_release(self.attack_ms, self.release_ms);
+                    }
+                }
+            } else if id == self.param_mode {
+                let new_index = if let Some(s) = value.as_string() {
+                    match s {
+                        "Wideband" | "wideband" => 0,
+                        _ => 1,
+                    }
+                } else if let Some(v) = value.as_float() {
+                    (v as usize).min(1)
+                } else {
+                    1
+                };
+                self.mode_index = new_index;
+            } else if id == self.param_mix {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DE, "mix").default_f64() as f32);
+                if v.is_finite() {
+                    self.mix = v.clamp(0.0, 1.0);
+                    self.mix_smoother.set_target(self.mix);
+                }
             } else {
-                1
-            };
-            self.mode_index = new_index;
-        } else if id == self.param_mix {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DE, "mix").default_f64() as f32);
-            if v.is_finite() {
-                self.mix = v.clamp(0.0, 1.0);
-                self.mix_smoother.set_target(self.mix);
+                return Err(format!("Unknown parameter: {id}"));
             }
         }
         self.rebuild_cached_parameters();
         Ok(())
-    }
-
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_frequency {
-            Some(ParameterValue::Float(self.frequency))
-        } else if id == &self.param_q {
-            Some(ParameterValue::Float(self.q))
-        } else if id == &self.param_threshold {
-            Some(ParameterValue::Float(self.threshold))
-        } else if id == &self.param_ratio {
-            Some(ParameterValue::Float(self.ratio))
-        } else if id == &self.param_attack {
-            Some(ParameterValue::Float(self.attack_ms))
-        } else if id == &self.param_release {
-            Some(ParameterValue::Float(self.release_ms))
-        } else if id == &self.param_mode {
-            Some(ParameterValue::String(self.mode_string()))
-        } else if id == &self.param_mix {
-            Some(ParameterValue::Float(self.mix))
-        } else {
-            None
-        }
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

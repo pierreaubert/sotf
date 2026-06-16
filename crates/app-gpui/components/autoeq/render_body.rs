@@ -6,7 +6,7 @@
     let is_narrow_layout = is_narrow_default_layout(available_width);
 
     // Compute FIR latency for capability and filter design sections
-    let fir_latency_ms = config.fir_taps as f64 / config.sample_rate as f64 * 1000.0;
+    let fir_latency_ms = config.eq_design.fir_taps as f64 / config.eq_design.sample_rate as f64 * 1000.0;
 
     let toggle_theme = theme.toggle_theme();
 

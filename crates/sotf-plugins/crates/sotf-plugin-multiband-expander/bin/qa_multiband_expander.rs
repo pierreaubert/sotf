@@ -1,5 +1,6 @@
-use sotf_host::{CountingAlloc, measure_peak_db, run_standard_tests};
-use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::parametric_in_place_plugin::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, CountingAlloc, measure_peak_db, run_standard_tests};
+use sotf_host::ProcessContext;
 use sotf_plugin_multiband_expander::{MultibandExpanderPlugin, MultibandExpanderPluginParams};
 use std::f32::consts::PI;
 
@@ -47,7 +48,7 @@ fn main() {
     println!("  High Band Expansion: PASS");
 
     // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
+    let mut plugin = ParametricInPlacePluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "MultibandExpanderPlugin");
 
     println!("\n[ALL PASS] Multiband Expander QA Complete.");

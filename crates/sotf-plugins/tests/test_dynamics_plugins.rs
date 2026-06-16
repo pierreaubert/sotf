@@ -1,6 +1,6 @@
 // Multi-plugin dynamics chain test (uses Gate + Compressor + Limiter)
 
-use sotf_plugins::{CompressorPlugin, GatePlugin, InPlacePluginAdapter, LimiterPlugin, PluginHost};
+use sotf_plugins::{ParametricInPlacePluginAdapter, CompressorPlugin, GatePlugin, LimiterPlugin, PluginHost};
 
 #[test]
 fn test_dynamics_chain() {
@@ -9,17 +9,17 @@ fn test_dynamics_chain() {
 
     // Add gate to remove noise
     let gate = GatePlugin::new(2, -40.0, 10.0, 1.0, 10.0, 100.0);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(gate)))
+    host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(gate)))
         .unwrap();
 
     // Add compressor for dynamic range control
     let compressor = CompressorPlugin::new(2); // +6dB makeup gain
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(compressor)))
+    host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(compressor)))
         .unwrap();
 
     // Add limiter for peak control (hard limiting)
     let limiter = LimiterPlugin::new(2, -0.1, 50.0, 5.0, false);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(limiter)))
+    host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(limiter)))
         .unwrap();
 
     // Create a signal with varying dynamics

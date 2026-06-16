@@ -16,9 +16,9 @@
     );
 
     // Derive current goal from config state
-    let current_goal = if config.loss_type == "epa" || config.psychoacoustic {
+    let current_goal = if config.goals.loss_type == "epa" || config.algorithm.psychoacoustic {
         "psychoacoustic"
-    } else if config.asymmetric_loss || config.loss_type == "flat-asymmetric" {
+    } else if config.algorithm.asymmetric_loss || config.goals.loss_type == "flat-asymmetric" {
         "natural"
     } else {
         "match_target"

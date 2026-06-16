@@ -121,7 +121,9 @@ pub fn render_spectrum_analyzer_plugin(
                                 .height(px(200.0))
                                 .frequency_range(state.min_freq, state.max_freq)
                                 .smoothing(state.smoothing)
-                                .colors(spectrum_colors_from_theme(&theme.spectrum_colors))
+                                .colors(spectrum_colors_from_theme(
+                                    &theme.plugin_palette.spectrum_colors,
+                                ))
                                 .into_any_element()
                         } else {
                             div()
@@ -243,7 +245,7 @@ pub fn render_spectrum_analyzer_plugin(
                                 let entity = entity.clone();
                                 move |is_open, _window, cx| {
                                     entity.update(cx, |state, cx| {
-                                        state.app.spectrum_tilt_select_open = is_open;
+                                        state.app.plugin_ui.spectrum_tilt_select_open = is_open;
                                         cx.notify();
                                     });
                                 }
@@ -300,7 +302,8 @@ pub fn render_spectrum_analyzer_plugin(
                                 let entity = entity.clone();
                                 move |is_open, _window, cx| {
                                     entity.update(cx, |state, cx| {
-                                        state.app.spectrum_reference_select_open = is_open;
+                                        state.app.plugin_ui.spectrum_reference_select_open =
+                                            is_open;
                                         cx.notify();
                                     });
                                 }
@@ -367,7 +370,9 @@ impl PlayerView {
                                     .height(px(256.0))
                                     .frequency_range(20.0, 20000.0)
                                     .smoothing(0.3)
-                                    .colors(spectrum_colors_from_theme(&theme.spectrum_colors)),
+                                    .colors(spectrum_colors_from_theme(
+                                        &theme.plugin_palette.spectrum_colors,
+                                    )),
                             ),
                         ),
                 )

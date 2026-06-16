@@ -17,12 +17,53 @@ use std::collections::HashMap;
 pub struct PluginState {
     ctrl: PluginController,
 
-    // GPUI-specific: tracks whether chain has been modified since last save
-    pub plugin_graph_modified: bool,
-    pub pending_plugin_update: Option<PluginUpdateType>,
+    /// GPUI-specific: tracks whether chain has been modified since last save
+    /// and what kind of plugin update is pending.
+    pub update_state: PluginUpdateState,
 
-    // GPUI-specific: UI state
+    /// GPUI-specific: selected cell in the routing matrix UI.
     pub matrix_selected_cell: Option<(usize, usize)>,
+
+    /// GPUI-specific: graph/workflow view state.
+    pub graph_state: PluginGraphState,
+
+    /// GPUI-specific: A/B Compare plugin transient state.
+    pub ab_compare_state: AbCompareState,
+
+    /// GPUI-specific: plugin UI view mode and overlay/picker open flags.
+    pub plugin_ui_state: PluginUiState,
+
+    /// GPUI-specific: per-plugin preset picker state and destructive-action
+    /// confirmations.
+    pub preset_state: PluginPresetState,
+
+    /// GPUI-specific: chain-level bypass / auto-gain / solo state.
+    pub chain_state: PluginChainState,
+
+    /// MIDI controller → plugin parameter mapping engine
+    pub midi_mapping: MidiMappingEngine,
+
+    /// Rack-level plugin theme + per-plugin overrides (UI-only, persisted to
+    /// gpui state file separately from engine config).
+    pub rack_theme_state: RackThemeState,
+
+    /// Plugins discovered by scanning external plugin directories.
+    pub scanned_external_plugins: Vec<sotf_plugins::PluginDescriptor>,
+}
+
+/// Tracks whether the plugin chain has been modified since the last save and
+/// what kind of engine update is queued.
+#[derive(Debug, Clone, Default)]
+pub struct PluginUpdateState {
+    /// Whether the chain has been modified since last save.
+    pub plugin_graph_modified: bool,
+    /// Pending plugin update to apply on the next tick.
+    pub pending_plugin_update: Option<PluginUpdateType>,
+}
+
+/// GPUI-specific state for the graph / workflow view.
+#[derive(Debug, Clone, Default)]
+pub struct PluginGraphState {
     pub graph_selection: GraphSelection,
     pub graph_connection_drag: Option<ConnectionDrag>,
     pub graph_node_drag: Option<NodeDrag>,
@@ -33,7 +74,12 @@ pub struct PluginState {
     /// When set, `set_plugin_param` redirects to the node-ID-based path so
     /// parameter edits work even in non-linear graphs.
     pub editing_graph_node_uuid: Option<sotf_audio_player::GraphNodeId>,
-    /// Dropdown states for AB Compare plugin
+}
+
+/// GPUI-specific transient state for the A/B Compare plugin UI.
+#[derive(Debug, Clone, Default)]
+pub struct AbCompareState {
+    /// Dropdown open states for AB Compare plugin
     pub ab_compare_dropdowns: ABCompareDropdowns,
     /// File paths for AB Compare loaded configs (for display)
     pub ab_compare_file_a: Option<String>,
@@ -46,6 +92,11 @@ pub struct PluginState {
     pub ab_path_b_selected: Option<usize>,
     /// Which path's "add plugin" menu is currently open
     pub ab_add_menu_target: Option<ABPathTarget>,
+}
+
+/// GPUI-specific state for the plugin UI view mode and open pickers/overlays.
+#[derive(Debug, Clone, Default)]
+pub struct PluginUiState {
     /// Which plugin UI view mode to show
     pub plugin_ui_view: PluginUiView,
     /// Whether the controller picker dropdown is open
@@ -54,8 +105,12 @@ pub struct PluginState {
     pub rack_config_overlay_open: bool,
     /// Whether the plugin skin picker dropdown is open.
     pub rack_skin_picker_open: bool,
-    /// MIDI controller → plugin parameter mapping engine
-    pub midi_mapping: MidiMappingEngine,
+}
+
+/// GPUI-specific state for the per-plugin preset picker and destructive-action
+/// confirmations.
+#[derive(Debug, Clone, Default)]
+pub struct PluginPresetState {
     /// Per-plugin preset picker state
     pub plugin_preset_open: Option<usize>, // Some(plugin_idx) when open
     pub plugin_preset_list: Vec<String>, // Available presets for the open plugin
@@ -65,8 +120,11 @@ pub struct PluginState {
     /// Pending confirmation for destructive actions
     pub confirm_remove_plugin: Option<usize>, // Some(plugin_idx) awaiting confirmation
     pub confirm_delete_preset: Option<(usize, String)>, // Some((plugin_idx, preset_name)) awaiting confirmation
+}
 
-    // Chain-level state
+/// GPUI-specific state for chain-level bypass, auto-gain and solo.
+#[derive(Debug, Clone, Default)]
+pub struct PluginChainState {
     /// When true, all plugins are bypassed (audio passes through unchanged)
     pub chain_bypass: bool,
     /// Chain-level auto-gain toggle
@@ -77,11 +135,6 @@ pub struct PluginState {
     pub soloed_plugin_index: Option<usize>,
     /// Saved enabled states before solo was activated (to restore on un-solo)
     pub pre_solo_enabled_states: Vec<bool>,
-    /// Rack-level plugin theme + per-plugin overrides (UI-only, persisted to
-    /// gpui state file separately from engine config).
-    pub rack_theme_state: RackThemeState,
-    /// Plugins discovered by scanning external plugin directories.
-    pub scanned_external_plugins: Vec<sotf_plugins::PluginDescriptor>,
 }
 
 impl Deref for PluginState {
@@ -170,40 +223,14 @@ impl Default for PluginState {
     fn default() -> Self {
         Self {
             ctrl: PluginController::new(),
-            plugin_graph_modified: false,
-            pending_plugin_update: None,
+            update_state: PluginUpdateState::default(),
             matrix_selected_cell: None,
-            graph_selection: GraphSelection::default(),
-            graph_connection_drag: None,
-            graph_node_drag: None,
-            workflow_canvas: None,
-            workflow_node_mapping: None,
-            editing_plugin_node: None,
-            editing_graph_node_uuid: None,
-            ab_compare_dropdowns: ABCompareDropdowns::default(),
-            ab_compare_file_a: None,
-            ab_compare_file_b: None,
-            ab_path_a: Vec::new(),
-            ab_path_b: Vec::new(),
-            ab_path_a_selected: None,
-            ab_path_b_selected: None,
-            ab_add_menu_target: None,
-            plugin_ui_view: PluginUiView::UI,
-            controller_picker_open: false,
-            rack_config_overlay_open: false,
+            graph_state: PluginGraphState::default(),
+            ab_compare_state: AbCompareState::default(),
+            plugin_ui_state: PluginUiState::default(),
+            preset_state: PluginPresetState::default(),
+            chain_state: PluginChainState::default(),
             midi_mapping: MidiMappingEngine::new(),
-            rack_skin_picker_open: false,
-            plugin_preset_open: None,
-            plugin_preset_list: Vec::new(),
-            plugin_preset_save_mode: false,
-            plugin_preset_input: String::new(),
-            confirm_remove_plugin: None,
-            confirm_delete_preset: None,
-            chain_bypass: false,
-            chain_autogain: false,
-            chain_autogain_last_frame: 0,
-            soloed_plugin_index: None,
-            pre_solo_enabled_states: Vec::new(),
             rack_theme_state: RackThemeState::default(),
             scanned_external_plugins: Vec::new(),
         }
@@ -219,35 +246,35 @@ impl PluginState {
     /// Called on any structural change (toggle, reorder, screen switch)
     /// to prevent stale confirmation state from persisting.
     pub fn clear_confirmations(&mut self) {
-        self.confirm_remove_plugin = None;
-        self.confirm_delete_preset = None;
+        self.preset_state.confirm_remove_plugin = None;
+        self.preset_state.confirm_delete_preset = None;
     }
 
     /// Sync the parsed A/B path state from the engine-side JSON config strings.
     /// Call this when selecting an AB Compare plugin or after loading a preset.
     pub fn sync_ab_path_state(&mut self, path_a_json: &str, path_b_json: &str) {
         use sotf_audio_player::controllers::ab_compare_path::parse_path_config;
-        self.ab_path_a = parse_path_config(path_a_json);
-        self.ab_path_b = parse_path_config(path_b_json);
+        self.ab_compare_state.ab_path_a = parse_path_config(path_a_json);
+        self.ab_compare_state.ab_path_b = parse_path_config(path_b_json);
         // Clamp selections to valid range
-        if let Some(sel) = self.ab_path_a_selected
-            && sel >= self.ab_path_a.len()
+        if let Some(sel) = self.ab_compare_state.ab_path_a_selected
+            && sel >= self.ab_compare_state.ab_path_a.len()
         {
-            self.ab_path_a_selected = None;
+            self.ab_compare_state.ab_path_a_selected = None;
         }
-        if let Some(sel) = self.ab_path_b_selected
-            && sel >= self.ab_path_b.len()
+        if let Some(sel) = self.ab_compare_state.ab_path_b_selected
+            && sel >= self.ab_compare_state.ab_path_b.len()
         {
-            self.ab_path_b_selected = None;
+            self.ab_compare_state.ab_path_b_selected = None;
         }
     }
 
     /// Clear all A/B path state (called when an AB Compare plugin is removed).
     pub fn clear_ab_path_state(&mut self) {
-        self.ab_path_a.clear();
-        self.ab_path_b.clear();
-        self.ab_path_a_selected = None;
-        self.ab_path_b_selected = None;
-        self.ab_add_menu_target = None;
+        self.ab_compare_state.ab_path_a.clear();
+        self.ab_compare_state.ab_path_b.clear();
+        self.ab_compare_state.ab_path_a_selected = None;
+        self.ab_compare_state.ab_path_b_selected = None;
+        self.ab_compare_state.ab_add_menu_target = None;
     }
 }

@@ -1,7 +1,8 @@
 use super::super::render::render_channel_config_row;
 use crate::app::types::RoomEqOptimizationMode;
 use crate::components::autoeq::{
-    AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode, DetailLevel,
+    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode, DetailLevel,
+    EqDesignConfig, GoalsConfig, RoomCorrectionConfig, SystemOptimizationConfig, V2Config,
 };
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -42,115 +43,121 @@ impl PlayerView {
         // Build AutoEqConfig from our RoomEqOptimizerConfig
         let config = &room_eq.optimizer_config;
         let autoeq_config = AutoEqConfig {
-            opt_mode: config.mode.to_code().to_string(),
-            fir_taps: config.fir.taps,
-            fir_phase: config.fir.phase.clone(),
-            num_filters: config.num_filters,
-            sample_rate: config.sample_rate as u32,
-            min_db: config.min_db,
-            max_db: config.max_db,
-            min_q: config.min_q,
-            max_q: config.max_q,
-            min_freq: config.min_freq,
-            max_freq: config.max_freq,
-            peq_model: config.peq_model.clone(),
-            algo: config.algorithm.clone(),
-            population: config.population,
-            maxeval: config.max_iter,
-            bo_initial_samples: config.bo_initial_samples,
-            bo_batch_size: config.bo_batch_size,
-            bo_posterior_std_threshold: config.bo_posterior_std_threshold,
-            bo_acquisition: config.bo_acquisition.clone(),
-            bo_ehvi: config.bo_ehvi,
-            de_f: config.de_f,
-            de_cr: config.de_cr,
-            strategy: config.strategy.clone(),
-            adaptive_weight_f: config.adaptive_weight_f,
-            adaptive_weight_cr: config.adaptive_weight_cr,
-            refine: config.refine,
-            local_algo: config.local_algo.clone(),
-            smooth: config.smooth,
-            smooth_n: config.smooth_n,
-            spacing_weight: config.spacing_weight,
-            min_spacing_oct: config.min_spacing_oct,
-            tolerance: config.tolerance,
-            atolerance: config.atolerance,
-            psychoacoustic: config.psychoacoustic,
-            asymmetric_loss: config.asymmetric_loss,
-            loss_type: config.loss_type.clone(),
-            target_curve: config.target_curve.clone(),
-            system_type: config.system_type.clone(),
+            eq_design: EqDesignConfig {
+                opt_mode: config.mode.to_code().to_string(),
+                fir_taps: config.fir.taps,
+                fir_phase: config.fir.phase.clone(),
+                num_filters: config.num_filters,
+                sample_rate: config.sample_rate as u32,
+                min_db: config.min_db,
+                max_db: config.max_db,
+                min_q: config.min_q,
+                max_q: config.max_q,
+                min_freq: config.min_freq,
+                max_freq: config.max_freq,
+                peq_model: config.peq_model.clone(),
+                spacing_weight: config.spacing_weight,
+                min_spacing_oct: config.min_spacing_oct,
+            },
+            algorithm: AlgorithmConfig {
+                algo: config.algorithm.clone(),
+                population: config.population,
+                maxeval: config.max_iter,
+                bo_initial_samples: config.bo_initial_samples,
+                bo_batch_size: config.bo_batch_size,
+                bo_posterior_std_threshold: config.bo_posterior_std_threshold,
+                bo_acquisition: config.bo_acquisition.clone(),
+                bo_ehvi: config.bo_ehvi,
+                de_f: config.de_f,
+                de_cr: config.de_cr,
+                strategy: config.strategy.clone(),
+                adaptive_weight_f: config.adaptive_weight_f,
+                adaptive_weight_cr: config.adaptive_weight_cr,
+                refine: config.refine,
+                local_algo: config.local_algo.clone(),
+                smooth: config.smooth,
+                smooth_n: config.smooth_n,
+                tolerance: config.tolerance,
+                atolerance: config.atolerance,
+                psychoacoustic: config.psychoacoustic,
+                asymmetric_loss: config.asymmetric_loss,
+            },
+            goals: GoalsConfig {
+                loss_type: config.loss_type.clone(),
+                target_curve: config.target_curve.clone(),
+                system_type: config.system_type.clone(),
+            },
+            room_correction: RoomCorrectionConfig {
+                use_target_tilt: config.target_response.enabled,
+                tilt_type: config.target_response.shape.clone(),
+                tilt_slope: config.target_response.slope_db_per_octave,
+                tilt_reference_freq: config.target_response.reference_freq,
+                tilt_bass_shelf_db: config.target_response.bass_shelf_db,
+                tilt_bass_shelf_freq: config.target_response.bass_shelf_freq,
 
-            // v2 fields
-            allow_delay: config.allow_delay,
-            seed_enabled: config.seed.is_some(),
-            seed: config.seed.unwrap_or(42),
-            vog_enabled: config.vog.enabled,
-            vog_reference_channel: config.vog.reference_channel.clone(),
-            broadband_target_matching: config.target_response.broadband_precorrection,
-            mixed_crossover_freq: config.mixed_config.crossover_freq,
-            mixed_crossover_type: config.mixed_config.crossover_type.clone(),
-            mixed_fir_band: config.mixed_config.fir_band.clone(),
+                use_excursion_protection: config.excursion_protection.enabled,
+                excursion_auto_detect_f3: config.excursion_protection.auto_detect_f3,
+                excursion_manual_f3: config.excursion_protection.manual_f3_hz,
+                excursion_filter_order: config.excursion_protection.filter_order,
+                excursion_filter_type: config.excursion_protection.filter_type.clone(),
+                excursion_margin_octaves: config.excursion_protection.margin_octaves,
 
-            // Target response (shape + preference shelves)
-            use_target_tilt: config.target_response.enabled,
-            tilt_type: config.target_response.shape.clone(),
-            tilt_slope: config.target_response.slope_db_per_octave,
-            tilt_reference_freq: config.target_response.reference_freq,
-            tilt_bass_shelf_db: config.target_response.bass_shelf_db,
-            tilt_bass_shelf_freq: config.target_response.bass_shelf_freq,
+                use_schroeder_split: config.schroeder_split.enabled,
+                schroeder_freq: config.schroeder_split.schroeder_freq,
+                schroeder_low_max_q: config.schroeder_split.low_freq_max_q,
+                schroeder_low_allow_boost: config.schroeder_split.low_freq_allow_boost,
+                schroeder_high_max_q: config.schroeder_split.high_freq_max_q,
+                schroeder_high_shelving_only: config.schroeder_split.high_freq_shelving_only,
+                schroeder_low_max_db: config.schroeder_split.low_freq_max_db,
 
-            use_excursion_protection: config.excursion_protection.enabled,
-            excursion_auto_detect_f3: config.excursion_protection.auto_detect_f3,
-            excursion_manual_f3: config.excursion_protection.manual_f3_hz,
-            excursion_filter_order: config.excursion_protection.filter_order,
-            excursion_filter_type: config.excursion_protection.filter_type.clone(),
-            excursion_margin_octaves: config.excursion_protection.margin_octaves,
+                use_sub_config: config.sub_config.enabled,
+                sub_num_filters: config.sub_config.num_filters,
+                sub_max_db: config.sub_config.max_db,
+                sub_min_db: config.sub_config.min_db,
+                sub_min_q: config.sub_config.min_q,
+                sub_max_q: config.sub_config.max_q,
+                use_channel_matching: config.channel_matching.enabled,
+                channel_matching_threshold_db: config.channel_matching.threshold_db,
+                channel_matching_max_filters: config.channel_matching.max_filters,
+            },
+            v2: V2Config {
+                allow_delay: config.allow_delay,
+                seed_enabled: config.seed.is_some(),
+                seed: config.seed.unwrap_or(42),
+                vog_enabled: config.vog.enabled,
+                vog_reference_channel: config.vog.reference_channel.clone(),
+                broadband_target_matching: config.target_response.broadband_precorrection,
+                mixed_crossover_freq: config.mixed_config.crossover_freq,
+                mixed_crossover_type: config.mixed_config.crossover_type.clone(),
+                mixed_fir_band: config.mixed_config.fir_band.clone(),
+            },
+            system_optimization: SystemOptimizationConfig {
+                use_phase_alignment: config.phase_alignment.enabled,
+                phase_min_freq: config.phase_alignment.min_freq,
+                phase_max_freq: config.phase_alignment.max_freq,
+                phase_optimize_polarity: config.phase_alignment.optimize_polarity,
+                phase_max_delay_ms: config.phase_alignment.max_delay_ms,
 
-            use_schroeder_split: config.schroeder_split.enabled,
-            schroeder_freq: config.schroeder_split.schroeder_freq,
-            schroeder_low_max_q: config.schroeder_split.low_freq_max_q,
-            schroeder_low_allow_boost: config.schroeder_split.low_freq_allow_boost,
-            schroeder_high_max_q: config.schroeder_split.high_freq_max_q,
-            schroeder_high_shelving_only: config.schroeder_split.high_freq_shelving_only,
-            schroeder_low_max_db: config.schroeder_split.low_freq_max_db,
+                use_multi_seat: config.multi_seat.enabled,
+                multi_seat_strategy: config.multi_seat.strategy.clone(),
+                multi_seat_primary_seat: config.multi_seat.primary_seat,
+                multi_seat_max_deviation_db: config.multi_seat.max_deviation_db,
 
-            use_sub_config: config.sub_config.enabled,
-            sub_num_filters: config.sub_config.num_filters,
-            sub_max_db: config.sub_config.max_db,
-            sub_min_db: config.sub_config.min_db,
-            sub_min_q: config.sub_config.min_q,
-            sub_max_q: config.sub_config.max_q,
-            use_channel_matching: config.channel_matching.enabled,
-            channel_matching_threshold_db: config.channel_matching.threshold_db,
-            channel_matching_max_filters: config.channel_matching.max_filters,
-
-            // Scenario A
-            use_phase_alignment: config.phase_alignment.enabled,
-            phase_min_freq: config.phase_alignment.min_freq,
-            phase_max_freq: config.phase_alignment.max_freq,
-            phase_optimize_polarity: config.phase_alignment.optimize_polarity,
-            phase_max_delay_ms: config.phase_alignment.max_delay_ms,
-
-            use_multi_seat: config.multi_seat.enabled,
-            multi_seat_strategy: config.multi_seat.strategy.clone(),
-            multi_seat_primary_seat: config.multi_seat.primary_seat,
-            multi_seat_max_deviation_db: config.multi_seat.max_deviation_db,
-
-            use_multi_measurement: config.multi_measurement.enabled,
-            multi_measurement_strategy: config.multi_measurement.strategy.clone(),
-            multi_measurement_variance_lambda: config.multi_measurement.variance_lambda,
-            multi_measurement_weights: config.multi_measurement.weights.clone(),
-            multi_measurement_labels: {
-                let max_count = room_eq
-                    .multi_position_counts
-                    .iter()
-                    .map(|(_, c)| *c)
-                    .max()
-                    .unwrap_or(0);
-                (0..max_count)
-                    .map(|i| format!("Position {}", i + 1))
-                    .collect()
+                use_multi_measurement: config.multi_measurement.enabled,
+                multi_measurement_strategy: config.multi_measurement.strategy.clone(),
+                multi_measurement_variance_lambda: config.multi_measurement.variance_lambda,
+                multi_measurement_weights: config.multi_measurement.weights.clone(),
+                multi_measurement_labels: {
+                    let max_count = room_eq
+                        .multi_position_counts
+                        .iter()
+                        .map(|(_, c)| *c)
+                        .max()
+                        .unwrap_or(0);
+                    (0..max_count)
+                        .map(|i| format!("Position {}", i + 1))
+                        .collect()
+                },
             },
         };
 

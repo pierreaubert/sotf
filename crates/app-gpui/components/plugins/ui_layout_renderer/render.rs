@@ -251,7 +251,7 @@ fn render_solved_layout(
         .on_mouse_move(move |event, _window, cx| {
             let mouse_x: f32 = event.position.x.into();
             row_entity.update(cx, |state, _| {
-                let Some(drag) = state.app.dragging_divider.clone() else {
+                let Some(drag) = state.app.layout.dragging_divider.clone() else {
                     return;
                 };
                 match drag.divider_type {
@@ -260,6 +260,7 @@ fn render_solved_layout(
                     {
                         let current_output = state
                             .app
+                            .plugin_ui
                             .plugin_auto_output_width
                             .get(&plugin_idx)
                             .copied()
@@ -269,6 +270,7 @@ fn render_solved_layout(
                             .clamp(AUTO_COLUMN_MIN_SIDE_WIDTH, max_width);
                         state
                             .app
+                            .plugin_ui
                             .plugin_auto_config_width
                             .insert(plugin_idx, new_width);
                     }
@@ -277,6 +279,7 @@ fn render_solved_layout(
                     {
                         let current_config = state
                             .app
+                            .plugin_ui
                             .plugin_auto_config_width
                             .get(&plugin_idx)
                             .copied()
@@ -286,6 +289,7 @@ fn render_solved_layout(
                             .clamp(AUTO_COLUMN_MIN_SIDE_WIDTH, max_width);
                         state
                             .app
+                            .plugin_ui
                             .plugin_auto_output_width
                             .insert(plugin_idx, new_width);
                     }
@@ -298,15 +302,15 @@ fn render_solved_layout(
             move |_event, _window, cx| {
                 entity.update(cx, |state, _| {
                     if matches!(
-                        state.app.dragging_divider.as_ref().map(|drag| drag.divider_type),
+                        state.app.layout.dragging_divider.as_ref().map(|drag| drag.divider_type),
                         Some(crate::app::state::DividerType::PluginAutoConfig { plugin_idx: idx })
                             if idx == plugin_idx
                     ) || matches!(
-                        state.app.dragging_divider.as_ref().map(|drag| drag.divider_type),
+                        state.app.layout.dragging_divider.as_ref().map(|drag| drag.divider_type),
                         Some(crate::app::state::DividerType::PluginAutoOutput { plugin_idx: idx })
                             if idx == plugin_idx
                     ) {
-                        state.app.dragging_divider = None;
+                        state.app.layout.dragging_divider = None;
                     }
                 });
             }
@@ -588,7 +592,11 @@ fn render_main_column(
                         })
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             tab_entity.update(cx, |state, _| {
-                                state.app.plugin_auto_tab.insert(tab_plugin_idx, tab_idx);
+                                state
+                                    .app
+                                    .plugin_ui
+                                    .plugin_auto_tab
+                                    .insert(tab_plugin_idx, tab_idx);
                             });
                         })
                         .child(tab.name.to_string()),

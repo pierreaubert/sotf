@@ -1,4 +1,4 @@
-use sotf_plugins::{DawHost, GainPlugin, GraphEdge, InPlacePluginAdapter};
+use sotf_plugins::{ParametricPluginAdapter, DawHost, GainPlugin, GraphEdge};
 
 fn process_until_settled(host: &mut DawHost, input: &[f32], output: &mut [f32]) {
     let nf = input.len() / host.input_channels();
@@ -13,7 +13,7 @@ fn test_linear_chain() {
     let n1 = g
         .add_node(
             "g1".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -21,7 +21,7 @@ fn test_linear_chain() {
     let n2 = g
         .add_node(
             "g2".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, -12.0412, 0.0,
             ))),
         )
@@ -46,21 +46,21 @@ fn test_stream_merge() {
     let n1 = g
         .add_node(
             "s".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
         .unwrap();
     let n2 = g
-        .add_node("g1".into(), Box::new(InPlacePluginAdapter::new(gain1)))
+        .add_node("g1".into(), Box::new(ParametricPluginAdapter::new(gain1)))
         .unwrap();
     let n3 = g
-        .add_node("g2".into(), Box::new(InPlacePluginAdapter::new(gain2)))
+        .add_node("g2".into(), Box::new(ParametricPluginAdapter::new(gain2)))
         .unwrap();
     let n4 = g
         .add_node(
             "m".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -81,11 +81,11 @@ fn test_stream_merge() {
 #[test]
 fn test_pluginhost_api_linear_chain() {
     let mut g = DawHost::new(2, 48000);
-    g.add_plugin(Box::new(InPlacePluginAdapter::new(
+    g.add_plugin(Box::new(ParametricPluginAdapter::new(
         GainPlugin::with_smoothing(2, 0.0, 0.0),
     )))
     .unwrap();
-    g.add_plugin(Box::new(InPlacePluginAdapter::new(
+    g.add_plugin(Box::new(ParametricPluginAdapter::new(
         GainPlugin::with_smoothing(2, -12.0412, 0.0),
     )))
     .unwrap();
@@ -105,11 +105,11 @@ fn test_pluginhost_api_remove_plugin() {
     let mut gain3 = GainPlugin::with_smoothing(2, 0.0, 0.0);
     gain2.set_gain_linear(0.5);
     gain3.set_gain_linear(0.5);
-    g.add_plugin(Box::new(InPlacePluginAdapter::new(gain1)))
+    g.add_plugin(Box::new(ParametricPluginAdapter::new(gain1)))
         .unwrap();
-    g.add_plugin(Box::new(InPlacePluginAdapter::new(gain2)))
+    g.add_plugin(Box::new(ParametricPluginAdapter::new(gain2)))
         .unwrap();
-    g.add_plugin(Box::new(InPlacePluginAdapter::new(gain3)))
+    g.add_plugin(Box::new(ParametricPluginAdapter::new(gain3)))
         .unwrap();
     let _ = g.remove_plugin(1).unwrap();
     let i = vec![1.0; 96];
@@ -126,7 +126,7 @@ fn test_parallel_diamond() {
     let n1 = g
         .add_node(
             "g1".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, -3.0103, 0.0,
             ))),
         )
@@ -134,7 +134,7 @@ fn test_parallel_diamond() {
     let n2 = g
         .add_node(
             "g2".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -142,7 +142,7 @@ fn test_parallel_diamond() {
     let n3 = g
         .add_node(
             "g3".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -150,7 +150,7 @@ fn test_parallel_diamond() {
     let n4 = g
         .add_node(
             "g4".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -173,7 +173,7 @@ fn test_parallel_processing_enabled() {
     let n1 = g
         .add_node(
             "i".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -183,7 +183,7 @@ fn test_parallel_processing_enabled() {
         let n = g
             .add_node(
                 format!("p{}", i),
-                Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+                Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                     2, 0.0, 0.0,
                 ))),
             )
@@ -194,7 +194,7 @@ fn test_parallel_processing_enabled() {
     let on = g
         .add_node(
             "o".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -219,7 +219,7 @@ fn test_parallel_processing_disabled() {
     let n1 = g
         .add_node(
             "g1".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -227,7 +227,7 @@ fn test_parallel_processing_disabled() {
     let n2 = g
         .add_node(
             "g2".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -235,7 +235,7 @@ fn test_parallel_processing_disabled() {
     let n3 = g
         .add_node(
             "g3".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -258,7 +258,7 @@ fn test_mixed_api_usage() {
     let ln = g
         .add_node(
             "half".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, -3.0103, 0.0,
             ))),
         )
@@ -266,7 +266,7 @@ fn test_mixed_api_usage() {
     let ba = g
         .add_node(
             "ba".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -274,7 +274,7 @@ fn test_mixed_api_usage() {
     let bb = g
         .add_node(
             "bb".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -282,7 +282,7 @@ fn test_mixed_api_usage() {
     let m = g
         .add_node(
             "m".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -305,7 +305,7 @@ fn test_parallel_variable_frame_with_gain() {
     let input_node = g
         .add_node(
             "input".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -313,7 +313,7 @@ fn test_parallel_variable_frame_with_gain() {
     let n2 = g
         .add_node(
             "g2".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -321,7 +321,7 @@ fn test_parallel_variable_frame_with_gain() {
     let n3 = g
         .add_node(
             "g3".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )
@@ -329,7 +329,7 @@ fn test_parallel_variable_frame_with_gain() {
     let output_node = g
         .add_node(
             "out".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+            Box::new(ParametricPluginAdapter::new(GainPlugin::with_smoothing(
                 2, 0.0, 0.0,
             ))),
         )

@@ -5,8 +5,8 @@
 
         let toggle_theme = theme.toggle_theme();
 
-        let is_fir = matches!(config.opt_mode.as_str(), "fir" | "mixed" | "mixed_phase");
-        let is_iir = matches!(config.opt_mode.as_str(), "iir" | "mixed" | "mixed_phase");
+        let is_fir = matches!(config.eq_design.opt_mode.as_str(), "fir" | "mixed" | "mixed_phase");
+        let is_iir = matches!(config.eq_design.opt_mode.as_str(), "iir" | "mixed" | "mixed_phase");
 
         // ========================================
         // Section 2: Room Configuration
@@ -21,7 +21,7 @@
             // Target Tilt
             let mut tilt_toggle = Toggle::new((base_id.clone(), "tilt-enabled"))
                 .size(ToggleSize::Sm)
-                .checked(config.use_target_tilt)
+                .checked(config.room_correction.use_target_tilt)
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_use_target_tilt_change_rc {
@@ -40,7 +40,7 @@
                     .child(tilt_toggle),
             );
 
-            if config.use_target_tilt {
+            if config.room_correction.use_target_tilt {
                 let tilt_options: Vec<SelectOption> = ROOMEQ_TILT_TYPE_OPTIONS
                     .iter()
                     .map(|(val, lbl)| SelectOption::new(*val, *lbl))
@@ -48,7 +48,7 @@
 
                 let mut tilt_select = Select::new((base_id.clone(), "tilt-type"))
                     .options(tilt_options)
-                    .selected(&config.tilt_type)
+                    .selected(&config.room_correction.tilt_type)
                     .is_open(ui_state.tilt_type_open)
                     .size(SelectSize::Xs)
                 .theme(theme.select_theme.clone());
@@ -65,9 +65,9 @@
 
                 target_col = target_col.child(tilt_select);
 
-                if config.tilt_type == "custom" || config.tilt_type == "harman" {
+                if config.room_correction.tilt_type == "custom" || config.room_correction.tilt_type == "harman" {
                     let mut slope_input = NumberInput::new((base_id.clone(), "tilt-slope"))
-                        .value(config.tilt_slope)
+                        .value(config.room_correction.tilt_slope)
                         .min(ParamLimits::TILT_SLOPE.min)
                         .max(ParamLimits::TILT_SLOPE.max)
                         .step(ParamLimits::TILT_SLOPE.step)
@@ -82,7 +82,7 @@
                     }
 
                     let mut ref_freq_input = NumberInput::new((base_id.clone(), "tilt-ref-freq"))
-                        .value(config.tilt_reference_freq)
+                        .value(config.room_correction.tilt_reference_freq)
                         .min(20.0)
                         .max(20000.0)
                         .step(10.0)
@@ -108,7 +108,7 @@
                     };
 
                     let mut shelf_db_input = NumberInput::new((base_id.clone(), "tilt-shelf-db"))
-                        .value(config.tilt_bass_shelf_db)
+                        .value(config.room_correction.tilt_bass_shelf_db)
                         .min(ParamLimits::BASS_SHELF.min)
                         .max(ParamLimits::BASS_SHELF.max)
                         .step(ParamLimits::BASS_SHELF.step)
@@ -124,7 +124,7 @@
 
                     let mut shelf_freq_input =
                         NumberInput::new((base_id.clone(), "tilt-shelf-freq"))
-                            .value(config.tilt_bass_shelf_freq)
+                            .value(config.room_correction.tilt_bass_shelf_freq)
                             .min(20.0)
                             .max(1000.0)
                             .step(10.0)
@@ -155,7 +155,7 @@
             let mut broadband_toggle =
                 Toggle::new((base_id.clone(), "broadband-target-matching"))
                     .size(ToggleSize::Sm)
-                    .checked(config.broadband_target_matching)
+                    .checked(config.v2.broadband_target_matching)
                     .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_broadband_target_matching_change_rc {
@@ -189,7 +189,7 @@
                 let h = handler.clone();
                 target_col = target_col.child(
                     Button::new("edit-custom-target", "Edit Custom Target Curve")
-                        .variant(if config.target_curve == "custom" {
+                        .variant(if config.goals.target_curve == "custom" {
                             ButtonVariant::Primary
                         } else {
                             ButtonVariant::Secondary
@@ -207,8 +207,8 @@
             // Psychoacoustic Smoothing
             let mut psycho_toggle = Toggle::new((base_id.clone(), "psychoacoustic"))
                 .size(ToggleSize::Sm)
-                .checked(config.psychoacoustic)
-                .disabled(config.smooth)
+                .checked(config.algorithm.psychoacoustic)
+                .disabled(config.algorithm.smooth)
                 .theme(toggle_theme.clone());
 
             if let Some(ref handler) = on_psychoacoustic_change_rc {
@@ -240,8 +240,8 @@
             // Curve Smoothing (mutually exclusive with psychoacoustic)
             let mut smooth_toggle = Toggle::new((base_id.clone(), "smooth"))
                 .size(ToggleSize::Sm)
-                .checked(config.smooth)
-                .disabled(config.psychoacoustic)
+                .checked(config.algorithm.smooth)
+                .disabled(config.algorithm.psychoacoustic)
                 .theme(toggle_theme.clone());
 
             if let Some(ref handler) = on_smooth_change_rc {
@@ -270,9 +270,9 @@
                     .child(smooth_toggle),
             );
 
-            if config.smooth {
+            if config.algorithm.smooth {
                 let mut smooth_n_input = NumberInput::new((base_id.clone(), "smooth-n"))
-                    .value(config.smooth_n as f64)
+                    .value(config.algorithm.smooth_n as f64)
                     .min(ParamLimits::SMOOTH_N.min)
                     .max(ParamLimits::SMOOTH_N.max)
                     .step(ParamLimits::SMOOTH_N.step)
@@ -299,7 +299,7 @@
             // Asymmetric Loss
             let mut asymmetric_toggle = Toggle::new((base_id.clone(), "asymmetric-loss"))
                 .size(ToggleSize::Sm)
-                .checked(config.asymmetric_loss)
+                .checked(config.algorithm.asymmetric_loss)
                 .theme(toggle_theme.clone());
 
             if let Some(ref handler) = on_asymmetric_loss_change_rc {
@@ -331,7 +331,7 @@
             // Excursion Protection
             let mut excursion_toggle = Toggle::new((base_id.clone(), "excursion-enabled"))
                 .size(ToggleSize::Sm)
-                .checked(config.use_excursion_protection)
+                .checked(config.room_correction.use_excursion_protection)
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_use_excursion_protection_change_rc {
@@ -350,10 +350,10 @@
                     .child(excursion_toggle),
             );
 
-            if config.use_excursion_protection {
+            if config.room_correction.use_excursion_protection {
                 let mut auto_f3_toggle = Toggle::new((base_id.clone(), "excursion-auto-f3"))
                     .size(ToggleSize::Sm)
-                    .checked(config.excursion_auto_detect_f3)
+                    .checked(config.room_correction.excursion_auto_detect_f3)
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_excursion_auto_detect_f3_change_rc {
@@ -372,9 +372,9 @@
                         .child(auto_f3_toggle),
                 );
 
-                if !config.excursion_auto_detect_f3 {
+                if !config.room_correction.excursion_auto_detect_f3 {
                     let mut f3_input = NumberInput::new((base_id.clone(), "excursion-manual-f3"))
-                        .value(config.excursion_manual_f3)
+                        .value(config.room_correction.excursion_manual_f3)
                         .min(10.0)
                         .max(500.0)
                         .step(1.0)
@@ -397,7 +397,7 @@
 
                 let mut hp_select = Select::new((base_id.clone(), "excursion-hp-type"))
                     .options(hp_options)
-                    .selected(&config.excursion_filter_type)
+                    .selected(&config.room_correction.excursion_filter_type)
                     .is_open(ui_state.excursion_filter_type_open)
                     .size(SelectSize::Xs)
                 .theme(theme.select_theme.clone());
@@ -413,7 +413,7 @@
                 }
 
                 let mut order_input = NumberInput::new((base_id.clone(), "excursion-order"))
-                    .value(config.excursion_filter_order as f64)
+                    .value(config.room_correction.excursion_filter_order as f64)
                     .min(2.0)
                     .max(8.0)
                     .step(2.0)
@@ -440,7 +440,7 @@
                 };
 
                 let mut margin_input = NumberInput::new((base_id.clone(), "excursion-margin"))
-                    .value(config.excursion_margin_octaves)
+                    .value(config.room_correction.excursion_margin_octaves)
                     .min(0.0)
                     .max(1.0)
                     .step(0.05)
@@ -460,7 +460,7 @@
             // Schroeder Split
             let mut schroeder_toggle = Toggle::new((base_id.clone(), "schroeder-enabled"))
                 .size(ToggleSize::Sm)
-                .checked(config.use_schroeder_split)
+                .checked(config.room_correction.use_schroeder_split)
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_use_schroeder_split_change_rc {
@@ -479,9 +479,9 @@
                     .child(schroeder_toggle),
             );
 
-            if config.use_schroeder_split {
+            if config.room_correction.use_schroeder_split {
                 let mut s_freq_input = NumberInput::new((base_id.clone(), "schroeder-freq"))
-                    .value(config.schroeder_freq)
+                    .value(config.room_correction.schroeder_freq)
                     .min(ParamLimits::SCHROEDER_FREQ.min)
                     .max(ParamLimits::SCHROEDER_FREQ.max)
                     .step(ParamLimits::SCHROEDER_FREQ.step)
@@ -498,7 +498,7 @@
                 options_col = options_col.child(s_freq_input);
 
                 let mut low_q_input = NumberInput::new((base_id.clone(), "schroeder-low-q"))
-                    .value(config.schroeder_low_max_q)
+                    .value(config.room_correction.schroeder_low_max_q)
                     .min(1.0)
                     .max(20.0)
                     .step(0.5)
@@ -513,7 +513,7 @@
                 }
 
                 let mut high_q_input = NumberInput::new((base_id.clone(), "schroeder-high-q"))
-                    .value(config.schroeder_high_max_q)
+                    .value(config.room_correction.schroeder_high_max_q)
                     .min(0.5)
                     .max(5.0)
                     .step(0.1)
@@ -540,7 +540,7 @@
 
                 let mut boost_toggle = Toggle::new((base_id.clone(), "schroeder-boost"))
                     .size(ToggleSize::Sm)
-                    .checked(config.schroeder_low_allow_boost)
+                    .checked(config.room_correction.schroeder_low_allow_boost)
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_schroeder_low_allow_boost_change_rc {
@@ -550,7 +550,7 @@
 
                 let mut shelve_toggle = Toggle::new((base_id.clone(), "schroeder-shelve"))
                     .size(ToggleSize::Sm)
-                    .checked(config.schroeder_high_shelving_only)
+                    .checked(config.room_correction.schroeder_high_shelving_only)
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_schroeder_high_shelving_only_change_rc {
@@ -589,7 +589,7 @@
             // Allow Delay
             let mut delay_toggle = Toggle::new((base_id.clone(), "allow-delay"))
                 .size(ToggleSize::Sm)
-                .checked(config.allow_delay)
+                .checked(config.v2.allow_delay)
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_allow_delay_change_rc {
@@ -647,7 +647,7 @@
             // Voice of God
             let mut vog_toggle = Toggle::new((base_id.clone(), "vog-enabled"))
                 .size(ToggleSize::Sm)
-                .checked(config.vog_enabled)
+                .checked(config.v2.vog_enabled)
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_vog_enabled_change_rc {
@@ -697,7 +697,7 @@
                 )
             };
 
-            if config.vog_enabled {
+            if config.v2.vog_enabled {
                 let ref_channel_options: Vec<SelectOption> = ["C", "L", "R"]
                     .iter()
                     .map(|ch| SelectOption::new(*ch, *ch))
@@ -706,7 +706,7 @@
                 let mut ref_select = Select::new((base_id.clone(), "vog-ref-channel"))
                     .label("Reference Channel")
                     .options(ref_channel_options)
-                    .selected(&config.vog_reference_channel)
+                    .selected(&config.v2.vog_reference_channel)
                     .is_open(ui_state.vog_reference_channel_open)
                     .disabled(disabled)
                     .size(SelectSize::Xs)
@@ -729,7 +729,7 @@
             if !hide_phase_alignment {
                 let mut phase_toggle = Toggle::new((base_id.clone(), "phase-enabled"))
                     .size(ToggleSize::Sm)
-                    .checked(config.use_phase_alignment)
+                    .checked(config.system_optimization.use_phase_alignment)
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_use_phase_alignment_change_rc {
@@ -748,9 +748,9 @@
                         .child(phase_toggle),
                 );
 
-                if config.use_phase_alignment {
+                if config.system_optimization.use_phase_alignment {
                     let mut min_freq_input = NumberInput::new((base_id.clone(), "phase-min-freq"))
-                        .value(config.phase_min_freq)
+                        .value(config.system_optimization.phase_min_freq)
                         .min(20.0)
                         .max(1000.0)
                         .step(1.0)
@@ -765,7 +765,7 @@
                     }
 
                     let mut max_freq_input = NumberInput::new((base_id.clone(), "phase-max-freq"))
-                        .value(config.phase_max_freq)
+                        .value(config.system_optimization.phase_max_freq)
                         .min(20.0)
                         .max(1000.0)
                         .step(1.0)
@@ -792,7 +792,7 @@
 
                     let mut polarity_toggle = Toggle::new((base_id.clone(), "phase-polarity"))
                         .size(ToggleSize::Sm)
-                        .checked(config.phase_optimize_polarity)
+                        .checked(config.system_optimization.phase_optimize_polarity)
                         .theme(toggle_theme.clone());
 
                     if let Some(ref h) = on_phase_optimize_polarity_change_rc {
@@ -812,7 +812,7 @@
                     );
 
                     let mut p_max_delay = NumberInput::new((base_id.clone(), "phase-max-delay"))
-                        .value(config.phase_max_delay_ms)
+                        .value(config.system_optimization.phase_max_delay_ms)
                         .min(ParamLimits::DELAY_MS.min)
                         .max(ParamLimits::DELAY_MS.max)
                         .step(ParamLimits::DELAY_MS.step)
@@ -833,7 +833,7 @@
             if !hide_multi_seat {
                 let mut multi_seat_toggle = Toggle::new((base_id.clone(), "multi-seat-enabled"))
                     .size(ToggleSize::Sm)
-                    .checked(config.use_multi_seat)
+                    .checked(config.system_optimization.use_multi_seat)
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_use_multi_seat_change_rc {
@@ -852,7 +852,7 @@
                         .child(multi_seat_toggle),
                 );
 
-                if config.use_multi_seat {
+                if config.system_optimization.use_multi_seat {
                     let strategy_options: Vec<SelectOption> = MULTI_SEAT_STRATEGY_OPTIONS
                         .iter()
                         .map(|(val, lbl)| SelectOption::new(*val, *lbl))
@@ -860,7 +860,7 @@
 
                     let mut strategy_select = Select::new((base_id.clone(), "multi-seat-strategy"))
                         .options(strategy_options)
-                        .selected(&config.multi_seat_strategy)
+                        .selected(&config.system_optimization.multi_seat_strategy)
                         .is_open(ui_state.multi_seat_strategy_open)
                         .size(SelectSize::Xs)
                 .theme(theme.select_theme.clone());
@@ -878,10 +878,10 @@
 
                     options_col = options_col.child(strategy_select);
 
-                    if config.multi_seat_strategy == "primary" {
+                    if config.system_optimization.multi_seat_strategy == "primary" {
                         let mut primary_seat_input =
                             NumberInput::new((base_id.clone(), "multi-seat-primary"))
-                                .value(config.multi_seat_primary_seat as f64)
+                                .value(config.system_optimization.multi_seat_primary_seat as f64)
                                 .min(0.0)
                                 .max(16.0)
                                 .step(1.0)
@@ -899,7 +899,7 @@
                     }
 
                     let mut dev_input = NumberInput::new((base_id.clone(), "multi-seat-max-dev"))
-                        .value(config.multi_seat_max_deviation_db)
+                        .value(config.system_optimization.multi_seat_max_deviation_db)
                         .min(1.0)
                         .max(12.0)
                         .step(0.5)
@@ -920,7 +920,7 @@
             if !hide_multi_measurement {
                 let mut multi_meas_toggle = Toggle::new((base_id.clone(), "multi-meas-enabled"))
                     .size(ToggleSize::Sm)
-                    .checked(config.use_multi_measurement)
+                    .checked(config.system_optimization.use_multi_measurement)
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_use_multi_measurement_change_rc {
@@ -940,7 +940,7 @@
                         .child(multi_meas_toggle),
                 );
 
-                if config.use_multi_measurement {
+                if config.system_optimization.use_multi_measurement {
                     let strategy_options: Vec<SelectOption> = MULTI_MEASUREMENT_STRATEGY_OPTIONS
                         .iter()
                         .map(|&(v, l)| SelectOption::new(v, l))
@@ -948,7 +948,7 @@
 
                     let mut strategy_select = Select::new((base_id.clone(), "multi-meas-strategy"))
                         .options(strategy_options)
-                        .selected(&config.multi_measurement_strategy)
+                        .selected(&config.system_optimization.multi_measurement_strategy)
                         .is_open(ui_state.multi_measurement_strategy_open)
                         .size(SelectSize::Xs)
                         .theme(theme.select_theme.clone());
@@ -966,13 +966,14 @@
                     options_col = options_col.child(strategy_select);
 
                     // Weighted Sum: show per-measurement weight inputs
-                    if config.multi_measurement_strategy == "weighted_sum"
-                        && !config.multi_measurement_weights.is_empty()
+                    if config.system_optimization.multi_measurement_strategy == "weighted_sum"
+                        && !config.system_optimization.multi_measurement_weights.is_empty()
                     {
                         options_col =
                             options_col.child(Text::label("Weights").color(theme.text_muted));
-                        for (i, &weight) in config.multi_measurement_weights.iter().enumerate() {
+                        for (i, &weight) in config.system_optimization.multi_measurement_weights.iter().enumerate() {
                             let label = config
+                                .system_optimization
                                 .multi_measurement_labels
                                 .get(i)
                                 .cloned()
@@ -999,10 +1000,10 @@
                     }
 
                     // Variance Penalized: show lambda input
-                    if config.multi_measurement_strategy == "variance_penalized" {
+                    if config.system_optimization.multi_measurement_strategy == "variance_penalized" {
                         let mut lambda_input =
                             NumberInput::new((base_id.clone(), "multi-meas-lambda"))
-                                .value(config.multi_measurement_variance_lambda)
+                                .value(config.system_optimization.multi_measurement_variance_lambda)
                                 .min(ParamLimits::VARIANCE_LAMBDA.min)
                                 .max(ParamLimits::VARIANCE_LAMBDA.max)
                                 .step(ParamLimits::VARIANCE_LAMBDA.step)

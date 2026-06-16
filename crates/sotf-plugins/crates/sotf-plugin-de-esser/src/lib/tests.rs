@@ -1,7 +1,8 @@
 use super::de_esser_plugin::DeEsserPlugin;
 use super::types::DeEsserPluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 fn make_sine(freq_hz: f32, sample_rate: u32, num_frames: usize, amplitude: f32) -> Vec<f32> {
     (0..num_frames)
@@ -170,36 +171,36 @@ fn test_de_esser_parameter_set_get() {
 
     // Set frequency
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("frequency"),
             ParameterValue::Float(10000.0),
         )
         .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("frequency"));
+    let val = plugin.parametric_get_parameter(&ParameterId::from("frequency"));
     assert_eq!(val, Some(ParameterValue::Float(10000.0)));
 
     // Set threshold
     plugin
-        .set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-30.0))
+        .parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-30.0))
         .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("threshold"));
+    let val = plugin.parametric_get_parameter(&ParameterId::from("threshold"));
     assert_eq!(val, Some(ParameterValue::Float(-30.0)));
 
     // Set mode
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("mode"),
             ParameterValue::String("Wideband".to_string()),
         )
         .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("mode"));
+    let val = plugin.parametric_get_parameter(&ParameterId::from("mode"));
     assert_eq!(val, Some(ParameterValue::String("Wideband".to_string())));
 
     // Set mix
     plugin
-        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
         .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("mix"));
+    let val = plugin.parametric_get_parameter(&ParameterId::from("mix"));
     assert_eq!(val, Some(ParameterValue::Float(0.5)));
 }
 
@@ -230,7 +231,7 @@ fn test_mix_smoother_ramps_per_sample() {
 
     // Now request mix = 1.0 (fully wet). The smoother has a 5 ms ramp.
     plugin
-        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
         .unwrap();
 
     // A silent input: output should also be silent regardless of mix
@@ -297,7 +298,7 @@ fn test_mix_smoother_ramps_per_sample() {
 
     // Ramp to fully wet over 5ms
     plugin2
-        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
         .unwrap();
 
     // One block of 100 samples — still in the ramp window
@@ -406,9 +407,9 @@ fn test_set_parameter_all_float_params_roundtrip() {
 
     for &(id, value) in cases {
         plugin
-            .set_parameter(ParameterId::from(id), ParameterValue::Float(value))
+            .parametric_set_parameter(ParameterId::from(id), ParameterValue::Float(value))
             .unwrap();
-        let got = plugin.get_parameter(&ParameterId::from(id));
+        let got = plugin.parametric_get_parameter(&ParameterId::from(id));
         assert_eq!(
             got,
             Some(ParameterValue::Float(value)),
@@ -426,12 +427,12 @@ fn test_set_parameter_out_of_bounds_returns_error() {
     // Frequency range [2000, 16000]
     assert!(
         plugin
-            .set_parameter(ParameterId::from("frequency"), ParameterValue::Float(100.0))
+            .parametric_set_parameter(ParameterId::from("frequency"), ParameterValue::Float(100.0))
             .is_err()
     );
     assert!(
         plugin
-            .set_parameter(
+            .parametric_set_parameter(
                 ParameterId::from("frequency"),
                 ParameterValue::Float(20000.0)
             )
@@ -441,21 +442,21 @@ fn test_set_parameter_out_of_bounds_returns_error() {
     // Q range [0.5, 5.0]
     assert!(
         plugin
-            .set_parameter(ParameterId::from("q"), ParameterValue::Float(0.1))
+            .parametric_set_parameter(ParameterId::from("q"), ParameterValue::Float(0.1))
             .is_err()
     );
 
     // Threshold range [-60, 0]
     assert!(
         plugin
-            .set_parameter(ParameterId::from("threshold"), ParameterValue::Float(5.0))
+            .parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Float(5.0))
             .is_err()
     );
 
     // Mix range [0, 1]
     assert!(
         plugin
-            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(-0.1))
+            .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(-0.1))
             .is_err()
     );
 }
@@ -467,7 +468,7 @@ fn test_set_parameter_nan_returns_error() {
 
     assert!(
         plugin
-            .set_parameter(
+            .parametric_set_parameter(
                 ParameterId::from("frequency"),
                 ParameterValue::Float(f32::NAN)
             )
@@ -475,7 +476,7 @@ fn test_set_parameter_nan_returns_error() {
     );
     assert!(
         plugin
-            .set_parameter(
+            .parametric_set_parameter(
                 ParameterId::from("threshold"),
                 ParameterValue::Float(f32::NAN)
             )
@@ -490,7 +491,7 @@ fn test_set_parameter_unknown_id_returns_error() {
 
     assert!(
         plugin
-            .set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0))
+            .parametric_set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0))
             .is_err()
     );
 }
@@ -502,26 +503,26 @@ fn test_set_parameter_mode_variants() {
 
     // Mode is registered as a String parameter
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("mode"),
             ParameterValue::String("Wideband".to_string()),
         )
         .unwrap();
     assert_eq!(plugin.mode_index, 0);
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("mode")),
+        plugin.parametric_get_parameter(&ParameterId::from("mode")),
         Some(ParameterValue::String("Wideband".to_string()))
     );
 
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("mode"),
             ParameterValue::String("Split-Band".to_string()),
         )
         .unwrap();
     assert_eq!(plugin.mode_index, 1);
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("mode")),
+        plugin.parametric_get_parameter(&ParameterId::from("mode")),
         Some(ParameterValue::String("Split-Band".to_string()))
     );
 }
@@ -627,7 +628,7 @@ fn test_set_parameter_q_rebuilds_filters() {
 
     let original_hp_freq = plugin.hp_filters.freq;
     plugin
-        .set_parameter(ParameterId::from("q"), ParameterValue::Float(4.0))
+        .parametric_set_parameter(ParameterId::from("q"), ParameterValue::Float(4.0))
         .unwrap();
     let new_hp_freq = plugin.hp_filters.freq;
     assert_ne!(
@@ -642,11 +643,11 @@ fn test_set_parameter_attack_updates_cores() {
     plugin.initialize(48000).unwrap();
 
     plugin
-        .set_parameter(ParameterId::from("attack"), ParameterValue::Float(5.0))
+        .parametric_set_parameter(ParameterId::from("attack"), ParameterValue::Float(5.0))
         .unwrap();
     assert_eq!(plugin.attack_ms, 5.0);
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("attack")),
+        plugin.parametric_get_parameter(&ParameterId::from("attack")),
         Some(ParameterValue::Float(5.0))
     );
 }
@@ -657,11 +658,11 @@ fn test_set_parameter_release_updates_cores() {
     plugin.initialize(48000).unwrap();
 
     plugin
-        .set_parameter(ParameterId::from("release"), ParameterValue::Float(100.0))
+        .parametric_set_parameter(ParameterId::from("release"), ParameterValue::Float(100.0))
         .unwrap();
     assert_eq!(plugin.release_ms, 100.0);
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("release")),
+        plugin.parametric_get_parameter(&ParameterId::from("release")),
         Some(ParameterValue::Float(100.0))
     );
 }
@@ -683,14 +684,14 @@ fn test_set_parameter_mode_unknown_string_defaults_split_band() {
     plugin.initialize(48000).unwrap();
 
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("mode"),
             ParameterValue::String("Unknown".to_string()),
         )
         .unwrap();
     assert_eq!(plugin.mode_index, 1);
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("mode")),
+        plugin.parametric_get_parameter(&ParameterId::from("mode")),
         Some(ParameterValue::String("Split-Band".to_string()))
     );
 }
@@ -701,7 +702,7 @@ fn test_set_parameter_mix_updates_smoother_target() {
     plugin.initialize(48000).unwrap();
 
     plugin
-        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.75))
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.75))
         .unwrap();
     assert_eq!(plugin.mix, 0.75);
     assert!((plugin.mix_smoother.target() - 0.75).abs() < 1e-4);

@@ -3,7 +3,7 @@ use super::node_position::NodePosition;
 use super::types::GraphNodeId;
 use super::types::NodeRole;
 use serde::{Deserialize, Serialize};
-use sotf_audio::plugins::{Plugin, PluginSettings, upmixer_output_channels};
+use sotf_audio::plugins::{Plugin, PluginSettings, UpmixerOutputSettings, upmixer_output_channels};
 use uuid::Uuid;
 
 /// A plugin node in the graph
@@ -45,7 +45,7 @@ impl PluginGraphNode {
         match &plugin.settings {
             PluginSettings::Upmixer {
                 speaker_config,
-                binaural_preview,
+                output: UpmixerOutputSettings { binaural_preview, .. },
                 ..
             } => (
                 2,

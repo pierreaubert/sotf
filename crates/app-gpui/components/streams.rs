@@ -70,7 +70,7 @@ impl PlayerView {
                     div()
                         .p(d.pad_y)
                         .rounded(d.r_md)
-                        .bg(theme.toast_error_bg)
+                        .bg(theme.feedback.toast_error_bg)
                         .text_size(d.text_sm)
                         .text_color(theme.error)
                         .child(err),
@@ -81,7 +81,7 @@ impl PlayerView {
                     div()
                         .p(d.pad_y)
                         .rounded(d.r_md)
-                        .bg(theme.toast_success_bg)
+                        .bg(theme.feedback.toast_success_bg)
                         .text_size(d.text_sm)
                         .text_color(theme.success)
                         .child(status),

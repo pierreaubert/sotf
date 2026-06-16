@@ -19,8 +19,10 @@ use sotf_host::envelope_follower::EnvelopeFollower;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::oversampling::Oversampler;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
@@ -349,9 +351,36 @@ impl SaturationPlugin {
             }
         }
     }
+
+    /// Backward-compatible parameter list accessor.
+    pub fn parameters(&self) -> Vec<Parameter> {
+        self.parameter_schema()
+    }
+
+    /// Backward-compatible single-parameter getter.
+    pub fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        self.current_values().get(id).cloned()
+    }
+
+    /// Backward-compatible parameter validation.
+    pub fn validate_parameter(&self, id: &ParameterId, value: &ParameterValue) -> PluginResult<()> {
+        if let Some(param) = self.parameters().iter().find(|p| &p.id == id) {
+            param.validate(value).map_err(|e| format!("{}: {}", id, e))
+        } else {
+            Err(format!("Unknown parameter: {}", id))
+        }
+    }
+
+    /// Backward-compatible single-parameter setter.
+    pub fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+        let mut values = ParameterSet::new();
+        values.insert(id, value);
+        self.apply_values(values)
+    }
 }
 
-impl InPlacePlugin for SaturationPlugin {
+impl ParametricInPlacePlugin for SaturationPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Saturation", "1.0.0", "SotF")
     }
@@ -360,14 +389,57 @@ impl InPlacePlugin for SaturationPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(
+            self.param_mode.clone(),
+            ParameterValue::String(self.mode_string()),
+        );
+        values.insert(self.param_drive.clone(), ParameterValue::Float(self.drive));
+        values.insert(self.param_tone.clone(), ParameterValue::Float(self.tone));
+        values.insert(
+            self.param_exciter_freq.clone(),
+            ParameterValue::Float(self.exciter_freq),
+        );
+        values.insert(
+            self.param_oversampling.clone(),
+            ParameterValue::String(self.oversampling_string()),
+        );
+        values.insert(
+            self.param_output_gain.clone(),
+            ParameterValue::Float(self.output_gain_db),
+        );
+        values.insert(self.param_mix.clone(), ParameterValue::Float(self.mix));
+        values.insert(
+            self.param_dynamic_amount.clone(),
+            ParameterValue::Float(self.dynamic_amount),
+        );
+        values.insert(
+            self.param_dynamic_attack_ms.clone(),
+            ParameterValue::Float(self.dynamic_attack_ms),
+        );
+        values.insert(
+            self.param_dynamic_release_ms.clone(),
+            ParameterValue::Float(self.dynamic_release_ms),
+        );
+        values.insert(
+            self.param_dc_blocker.clone(),
+            ParameterValue::Float(if self.dc_blocker_enabled { 1.0 } else { 0.0 }),
+        );
+        values.insert(
+            self.param_use_adaa.clone(),
+            ParameterValue::Float(if self.use_adaa { 1.0 } else { 0.0 }),
+        );
+        values
+    }
 
-        if id == self.param_mode {
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            if id == self.param_mode {
             let new_mode = if let Some(s) = value.as_string() {
                 match s {
                     "Soft Clip" | "soft_clip" => SaturationMode::SoftClip,
@@ -471,43 +543,12 @@ impl InPlacePlugin for SaturationPlugin {
             self.dc_blocker_enabled = value.as_float().unwrap_or(1.0) > 0.5;
         } else if id == self.param_use_adaa {
             self.use_adaa = value.as_float().unwrap_or(1.0) > 0.5;
+        } else {
+            return Err(format!("Unknown parameter: {id}"));
+        }
         }
         self.rebuild_cached_parameters();
         Ok(())
-    }
-
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_mode {
-            Some(ParameterValue::String(self.mode_string()))
-        } else if id == &self.param_drive {
-            Some(ParameterValue::Float(self.drive))
-        } else if id == &self.param_tone {
-            Some(ParameterValue::Float(self.tone))
-        } else if id == &self.param_exciter_freq {
-            Some(ParameterValue::Float(self.exciter_freq))
-        } else if id == &self.param_oversampling {
-            Some(ParameterValue::String(self.oversampling_string()))
-        } else if id == &self.param_output_gain {
-            Some(ParameterValue::Float(self.output_gain_db))
-        } else if id == &self.param_mix {
-            Some(ParameterValue::Float(self.mix))
-        } else if id == &self.param_dynamic_amount {
-            Some(ParameterValue::Float(self.dynamic_amount))
-        } else if id == &self.param_dynamic_attack_ms {
-            Some(ParameterValue::Float(self.dynamic_attack_ms))
-        } else if id == &self.param_dynamic_release_ms {
-            Some(ParameterValue::Float(self.dynamic_release_ms))
-        } else if id == &self.param_dc_blocker {
-            Some(ParameterValue::Float(if self.dc_blocker_enabled {
-                1.0
-            } else {
-                0.0
-            }))
-        } else if id == &self.param_use_adaa {
-            Some(ParameterValue::Float(if self.use_adaa { 1.0 } else { 0.0 }))
-        } else {
-            None
-        }
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

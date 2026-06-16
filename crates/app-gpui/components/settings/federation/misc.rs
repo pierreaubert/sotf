@@ -51,7 +51,7 @@ impl PlayerView {
                             .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
-                            .child(format!("Sources ({})", sources.len()))
+                            .child(format!("Sources ({})", sources.len())),
                     )
                     .child(
                         HStack::new()

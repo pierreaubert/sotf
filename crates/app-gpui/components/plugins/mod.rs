@@ -96,12 +96,23 @@ pub fn render_plugin_content(
     let state = entity.read(cx);
     let auto_tab = state
         .app
+        .plugin_ui
         .plugin_auto_tab
         .get(&plugin_idx)
         .copied()
         .unwrap_or(0);
-    let auto_config_width = state.app.plugin_auto_config_width.get(&plugin_idx).copied();
-    let auto_output_width = state.app.plugin_auto_output_width.get(&plugin_idx).copied();
+    let auto_config_width = state
+        .app
+        .plugin_ui
+        .plugin_auto_config_width
+        .get(&plugin_idx)
+        .copied();
+    let auto_output_width = state
+        .app
+        .plugin_ui
+        .plugin_auto_output_width
+        .get(&plugin_idx)
+        .copied();
 
     // Resolve the active plugin chassis theme — cascade of rack default
     // and per-plugin override. Bound here so `&plugin_theme` references in
@@ -133,10 +144,10 @@ pub fn render_plugin_content(
             };
             rack_ratio * window_width
         };
-        let output_meter_width = if state.app.output_meter_collapsed {
+        let output_meter_width = if state.app.layout.output_meter_collapsed {
             0.0
         } else {
-            state.app.output_meter_width
+            state.app.layout.output_meter_width
         };
         (content_width - output_meter_width - 44.0).max(300.0)
     };
@@ -181,7 +192,7 @@ pub fn render_plugin_content(
             Some(
                 crate::components::plugins::spatial_spider::SpatialSpiderSnapshot {
                     loudness: app.playback.loudness_info.clone(),
-                    ui: app.spatial_spider.clone(),
+                    ui: app.plugin_ui.spatial_spider.clone(),
                 },
             )
         };

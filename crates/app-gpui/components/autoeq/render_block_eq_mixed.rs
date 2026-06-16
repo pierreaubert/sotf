@@ -1,9 +1,9 @@
 // === Shared: Mixed mode config ===
-// Appends to block_out. Expects config.opt_mode == "mixed" check done by caller.
+// Appends to block_out. Expects config.eq_design.opt_mode == "mixed" check done by caller.
 {
     let mut mixed_freq_input =
         NumberInput::new((base_id.clone(), "mixed-crossover-freq"))
-            .value(config.mixed_crossover_freq)
+            .value(config.v2.mixed_crossover_freq)
             .min(ParamLimits::MIXED_CROSSOVER_FREQ.min)
             .max(ParamLimits::MIXED_CROSSOVER_FREQ.max)
             .step(ParamLimits::MIXED_CROSSOVER_FREQ.step)
@@ -28,7 +28,7 @@
         Select::new((base_id.clone(), "mixed-crossover-type"))
             .label("Crossover Type")
             .options(mixed_type_options)
-            .selected(&config.mixed_crossover_type)
+            .selected(&config.v2.mixed_crossover_type)
             .is_open(ui_state.mixed_crossover_type_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -54,7 +54,7 @@
     let mut mixed_band_select = Select::new((base_id.clone(), "mixed-fir-band"))
         .label("FIR Band")
         .options(mixed_band_options)
-        .selected(&config.mixed_fir_band)
+        .selected(&config.v2.mixed_fir_band)
         .is_open(ui_state.mixed_fir_band_open)
         .disabled(disabled)
         .size(SelectSize::Xs)

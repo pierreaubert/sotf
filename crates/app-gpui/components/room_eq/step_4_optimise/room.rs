@@ -960,7 +960,11 @@ impl PlayerView {
             state.app.measurement_state.room_eq_state.artifact_dir = Some(artifact_dir.clone());
             state.app.measurement_state.room_eq_state.current_channel = None;
             state.app.measurement_state.room_eq_state.error_message = None;
-            state.app.measurement_state.room_eq_state.current_pipeline_step = None;
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .current_pipeline_step = None;
             state
                 .app
                 .measurement_state

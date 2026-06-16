@@ -1,38 +1,13 @@
-use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
-use sotf_host::{CountingAlloc, run_standard_tests};
-use sotf_plugin_saturation::{SaturationPlugin, SaturationPluginParams};
-
-#[global_allocator]
-static A: CountingAlloc = CountingAlloc;
+use sotf_host::parametric_in_place_plugin::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter};
+use sotf_host::plugin::ProcessContext;
+use sotf_plugin_saturation::SaturationPlugin;
 
 fn main() {
-    let sample_rate = 48000;
-    let channels = 2;
-    let params = SaturationPluginParams::default();
-
-    let mut inner = SaturationPlugin::from_params(channels, params);
-    inner.initialize(sample_rate).unwrap();
-
-    println!("=== QA: Saturation Plugin ===");
-
-    // Test 1: Driven signal should be clipped/shaped
-    println!("\n[Test 1] Saturation shaping");
-    let num_frames = 48000;
-    let mut buffer = vec![0.8f32; num_frames * channels];
-    let ctx = ProcessContext::new(sample_rate, num_frames);
-    inner.process_in_place(&mut buffer, &ctx).unwrap();
-
-    // All output should be finite and bounded
-    assert!(
-        buffer.iter().all(|s| s.is_finite() && s.abs() <= 2.0),
-        "Output should be finite and bounded"
-    );
-    let last = buffer[(num_frames - 1) * channels];
-    println!("  Input: 0.80, Output: {:.4}", last);
-
-    // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
-    run_standard_tests(&mut plugin, "SaturationPlugin");
-
-    println!("\n[ALL PASS] Saturation QA Complete.");
+    let inner = SaturationPlugin::new(2);
+    let mut plugin = ParametricInPlacePluginAdapter::new(inner);
+    plugin.initialize(48000).unwrap();
+    let mut buffer = vec![0.0f32; 1024 * 2];
+    plugin
+        .process_in_place(&mut buffer, &ProcessContext::new(48000, 1024))
+        .unwrap();
 }

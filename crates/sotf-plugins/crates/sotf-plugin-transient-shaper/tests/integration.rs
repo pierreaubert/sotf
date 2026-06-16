@@ -1,12 +1,13 @@
 // Integration tests for sotf-plugin-transient-shaper exercising the public InPlacePlugin trait.
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePluginAdapter;
 use sotf_host::plugin::{InPlacePlugin, ProcessContext};
 use sotf_plugin_transient_shaper::{TransientShaperPlugin, TransientShaperPluginParams};
 
 #[test]
 fn integration_plugin_info_and_channels() {
-    let plugin = TransientShaperPlugin::new(2);
+    let plugin = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::new(2));
     assert_eq!(plugin.channels(), 2);
     assert_eq!(plugin.input_channels(), 2);
     let info = plugin.info();
@@ -15,7 +16,7 @@ fn integration_plugin_info_and_channels() {
 
 #[test]
 fn integration_default_parameters() {
-    let plugin = TransientShaperPlugin::new(1);
+    let plugin = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::new(1));
     let params = plugin.parameters();
     assert_eq!(params.len(), 5);
 
@@ -29,7 +30,7 @@ fn integration_default_parameters() {
 
 #[test]
 fn integration_parameter_roundtrip_and_validation() {
-    let mut plugin = TransientShaperPlugin::new(1);
+    let mut plugin = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::new(1));
     plugin.initialize(48000).unwrap();
 
     plugin
@@ -107,16 +108,13 @@ fn integration_parameter_roundtrip_and_validation() {
 
 #[test]
 fn integration_from_params_applies_initial_state() {
-    let plugin = TransientShaperPlugin::from_params(
-        2,
-        TransientShaperPluginParams {
-            attack: 100.0,
-            sustain: -100.0,
-            sensitivity_db: 12.0,
-            output_gain_db: 6.0,
-            mix: 0.0,
-        },
-    );
+    let plugin = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(2, TransientShaperPluginParams {
+        attack: 100.0,
+        sustain: -100.0,
+        sensitivity_db: 12.0,
+        output_gain_db: 6.0,
+        mix: 0.0,
+    }));
     assert_eq!(plugin.channels(), 2);
     let mix = plugin
         .get_parameter(&ParameterId::from("mix"))
@@ -128,16 +126,13 @@ fn integration_from_params_applies_initial_state() {
 
 #[test]
 fn integration_bypass_preserves_input_after_warmup() {
-    let mut plugin = TransientShaperPlugin::from_params(
-        1,
-        TransientShaperPluginParams {
-            attack: 0.0,
-            sustain: 0.0,
-            sensitivity_db: 0.0,
-            output_gain_db: 0.0,
-            mix: 0.0,
-        },
-    );
+    let mut plugin = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(1, TransientShaperPluginParams {
+        attack: 0.0,
+        sustain: 0.0,
+        sensitivity_db: 0.0,
+        output_gain_db: 0.0,
+        mix: 0.0,
+    }));
     plugin.initialize(48000).unwrap();
 
     // Warm up the mix smoother so it converges to the dry target.
@@ -164,28 +159,22 @@ fn integration_bypass_preserves_input_after_warmup() {
 
 #[test]
 fn integration_output_gain_changes_level() {
-    let mut p_low = TransientShaperPlugin::from_params(
-        1,
-        TransientShaperPluginParams {
-            attack: 0.0,
-            sustain: 0.0,
-            sensitivity_db: -12.0,
-            output_gain_db: 0.0,
-            mix: 1.0,
-        },
-    );
+    let mut p_low = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(1, TransientShaperPluginParams {
+        attack: 0.0,
+        sustain: 0.0,
+        sensitivity_db: -12.0,
+        output_gain_db: 0.0,
+        mix: 1.0,
+    }));
     p_low.initialize(48000).unwrap();
 
-    let mut p_high = TransientShaperPlugin::from_params(
-        1,
-        TransientShaperPluginParams {
-            attack: 0.0,
-            sustain: 0.0,
-            sensitivity_db: -12.0,
-            output_gain_db: 6.0,
-            mix: 1.0,
-        },
-    );
+    let mut p_high = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(1, TransientShaperPluginParams {
+        attack: 0.0,
+        sustain: 0.0,
+        sensitivity_db: -12.0,
+        output_gain_db: 6.0,
+        mix: 1.0,
+    }));
     p_high.initialize(48000).unwrap();
 
     // Warm up smoothers.
@@ -217,7 +206,7 @@ fn integration_output_gain_changes_level() {
 
 #[test]
 fn integration_reset_clears_envelope_state() {
-    let mut plugin = TransientShaperPlugin::new(1);
+    let mut plugin = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::new(1));
     plugin.initialize(48000).unwrap();
 
     // Drive the envelope detectors with a loud signal.
@@ -235,16 +224,13 @@ fn integration_reset_clears_envelope_state() {
 
 #[test]
 fn integration_process_finite_output_with_extreme_parameters() {
-    let mut plugin = TransientShaperPlugin::from_params(
-        1,
-        TransientShaperPluginParams {
-            attack: 100.0,
-            sustain: -100.0,
-            sensitivity_db: 12.0,
-            output_gain_db: 12.0,
-            mix: 1.0,
-        },
-    );
+    let mut plugin = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(1, TransientShaperPluginParams {
+        attack: 100.0,
+        sustain: -100.0,
+        sensitivity_db: 12.0,
+        output_gain_db: 12.0,
+        mix: 1.0,
+    }));
     plugin.initialize(48000).unwrap();
 
     let frames = 256usize;

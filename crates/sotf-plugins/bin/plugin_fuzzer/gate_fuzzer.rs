@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{GatePlugin, GatePluginParams, InPlacePluginAdapter, Plugin};
+use sotf_plugins::{ParametricInPlacePluginAdapter, GatePlugin, GatePluginParams, Plugin};
 
 pub(super) struct GateFuzzer;
 
@@ -47,6 +47,6 @@ impl PluginFuzzer for GateFuzzer {
             sidechain_hpf_hz
         );
 
-        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+        (Box::new(ParametricInPlacePluginAdapter::new(plugin)), desc)
     }
 }

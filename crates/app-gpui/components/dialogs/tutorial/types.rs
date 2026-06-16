@@ -33,7 +33,7 @@ pub fn render_hint_banner(
         .mx(d.card)
         .mt(d.gap)
         .rounded(d.r_lg)
-        .bg(theme.toast_info_bg)
+        .bg(theme.feedback.toast_info_bg)
         .border_1()
         .border_color(theme.info)
         .child(

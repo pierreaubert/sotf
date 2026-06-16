@@ -32,6 +32,7 @@ pub mod param_bridge;
 pub mod param_registry;
 pub mod param_specs;
 pub mod parameters;
+pub mod parametric_in_place_plugin;
 pub mod parametric_plugin;
 pub mod plugin;
 pub mod plugin_layout;
@@ -142,6 +143,9 @@ pub use oversampling::{
     planar_to_interleaved,
 };
 pub use parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+pub use parametric_in_place_plugin::{
+    ParametricInPlacePlugin, ParametricInPlacePluginAdapter,
+};
 pub use parametric_plugin::{
     ParameterSchema, ParameterSet, ParametricPlugin, ParametricPluginAdapter,
 };

@@ -4,10 +4,9 @@ use sotf_host::auto_gain::AutoGain;
 use sotf_host::oversampling::OversampledPlugin;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{PluginInfo, PluginResult};
-use sotf_host::{
-    CountingAlloc, InPlacePlugin, InPlacePluginAdapter, Plugin, ProcessContext, assert_no_allocs,
-    run_standard_tests,
-};
+use sotf_plugins::{ParametricPluginAdapter, 
+    CountingAlloc,   Plugin, ProcessContext, assert_no_allocs,
+    run_standard_tests};
 use std::time::Instant;
 
 #[global_allocator]
@@ -132,7 +131,7 @@ fn qa_oversampled_plugin() {
 
     let inner = PassthroughPlugin;
     let os = OversampledPlugin::new(inner, 4, 2).expect("create oversampled plugin");
-    let mut plugin = InPlacePluginAdapter::new(os);
+    let mut plugin = ParametricPluginAdapter::new(os);
     plugin.initialize(48000).unwrap();
 
     run_standard_tests(&mut plugin, "OversampledPlugin_4x");

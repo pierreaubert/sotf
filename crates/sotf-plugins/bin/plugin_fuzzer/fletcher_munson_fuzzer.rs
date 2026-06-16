@@ -1,9 +1,8 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{
-    InPlacePluginAdapter, LoudnessCompensationPlugin, LoudnessCompensationPluginParams, Plugin,
-};
+use sotf_plugins::{ParametricInPlacePluginAdapter, 
+    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, Plugin};
 
 pub(super) struct FletcherMunsonFuzzer;
 
@@ -26,6 +25,6 @@ impl PluginFuzzer for FletcherMunsonFuzzer {
             playback_volume_db, reference_level_db
         );
 
-        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+        (Box::new(ParametricInPlacePluginAdapter::new(plugin)), desc)
     }
 }

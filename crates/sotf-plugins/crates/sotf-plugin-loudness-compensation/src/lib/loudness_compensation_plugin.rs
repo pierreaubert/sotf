@@ -16,7 +16,9 @@ use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
@@ -533,228 +535,221 @@ impl LoudnessCompensationPlugin {
     }
 }
 
-impl InPlacePlugin for LoudnessCompensationPlugin {
+impl ParametricInPlacePlugin for LoudnessCompensationPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Loudness Compensation", "3.0.0", "Sotf")
     }
     fn channels(&self) -> usize {
         self.num_channels
     }
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-
-        if id.0 == "low_gain" {
-            let v = value.as_float().unwrap_or(pk(LC, "low_gain").default_f32());
-            if v.is_finite() {
-                self.low_gain = v;
-                self.rebuild_filters();
+    fn current_values(&self) -> ParameterSet {
+        self.cached_parameters
+            .iter()
+            .map(|p| (p.id.clone(), self.parametric_get_parameter(&p.id).unwrap()))
+            .collect()
+    }
+    fn parametric_get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        Some(match id.as_str() {
+            "low_gain" => ParameterValue::Float(self.low_gain),
+            "high_gain" => ParameterValue::Float(self.high_gain),
+            "low_freq" => ParameterValue::Float(self.low_freq),
+            "high_freq" => ParameterValue::Float(self.high_freq),
+            "mid_enabled" => ParameterValue::Bool(self.mid_enabled),
+            "mid_freq" => ParameterValue::Float(self.mid_freq),
+            "mid_gain" => ParameterValue::Float(self.mid_gain),
+            "mid_q" => ParameterValue::Float(self.mid_q),
+            "auto_gain_enabled" => ParameterValue::Bool(self.auto_gain_enabled),
+            "auto_gain_max_db" => ParameterValue::Float(self.auto_gain_max_db),
+            "auto_gain_smoothing_ms" => ParameterValue::Float(self.auto_gain_smoothing_ms),
+            "auto_gain_position" => {
+                ParameterValue::String(self.auto_gain_position.to_string())
             }
-        } else if id.0 == "high_gain" {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(LC, "high_gain").default_f32());
-            if v.is_finite() {
-                self.high_gain = v;
-                self.rebuild_filters();
-            }
-        } else if id.0 == "low_freq" {
-            let v = value.as_float().unwrap_or(pk(LC, "low_freq").default_f32());
-            if v.is_finite() {
-                self.low_freq = v;
-                self.rebuild_filters();
-            }
-        } else if id.0 == "high_freq" {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(LC, "high_freq").default_f32());
-            if v.is_finite() {
-                self.high_freq = v;
-                self.rebuild_filters();
-            }
-        } else if id.0 == "mid_enabled" {
-            let v = value
-                .as_bool()
-                .ok_or_else(|| "mid_enabled must be a boolean".to_string())?;
-            self.mid_enabled = v;
-            self.rebuild_filters();
-        } else if id.0 == "mid_freq" {
-            let v = value.as_float().unwrap_or(pk(LC, "mid_freq").default_f32());
-            if v.is_finite() {
-                self.mid_freq = v;
-                self.rebuild_filters();
-            }
-        } else if id.0 == "mid_gain" {
-            let v = value.as_float().unwrap_or(pk(LC, "mid_gain").default_f32());
-            if v.is_finite() {
-                self.mid_gain = v;
-                self.rebuild_filters();
-            }
-        } else if id.0 == "mid_q" {
-            let v = value.as_float().unwrap_or(pk(LC, "mid_q").default_f32());
-            if v.is_finite() {
-                self.mid_q = v;
-                self.rebuild_filters();
-            }
-        } else if id.0 == "auto_gain_enabled" {
-            let v = value
-                .as_bool()
-                .ok_or_else(|| "auto_gain_enabled must be a boolean".to_string())?;
-            self.auto_gain_enabled = v;
-            if v && self.auto_gain.is_none() {
-                self.auto_gain = Some(AutoGain::new(
-                    self.num_channels,
-                    self.sample_rate,
-                    AutoGainParams {
-                        enabled: true,
-                        loudness_type: AutoGainLoudnessType::Momentary,
-                        max_gain_db: self.auto_gain_max_db,
-                        smoothing_ms: self.auto_gain_smoothing_ms,
-                    },
-                )?);
-            } else if !v {
-                self.auto_gain = None;
-            }
-        } else if id.0 == "auto_gain_max_db" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "auto_gain_max_db must be a float".to_string())?;
-            if v.is_finite() {
-                self.auto_gain_max_db = v;
-                if let Some(ag) = &mut self.auto_gain {
-                    ag.set_max_gain_db(v);
+            "mode" => ParameterValue::Int(self.mode_index as i32),
+            "playback_level_db" => ParameterValue::Float(self.playback_level_db),
+            "reference_level_db" => ParameterValue::Float(self.reference_level_db),
+            "playback_volume_db" => ParameterValue::Float(self.playback_volume_db),
+            _ => return None,
+        })
+    }
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            let key = id.as_str();
+            if key == "low_gain" {
+                let v = value.as_float().unwrap_or(pk(LC, "low_gain").default_f32());
+                if v.is_finite() {
+                    self.low_gain = v;
+                    self.rebuild_filters();
                 }
-            }
-        } else if id.0 == "auto_gain_smoothing_ms" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "auto_gain_smoothing_ms must be a float".to_string())?;
-            if v.is_finite() {
-                self.auto_gain_smoothing_ms = v;
-                if let Some(ag) = &mut self.auto_gain {
-                    ag.set_smoothing_ms(v);
+            } else if key == "high_gain" {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(LC, "high_gain").default_f32());
+                if v.is_finite() {
+                    self.high_gain = v;
+                    self.rebuild_filters();
                 }
-            }
-        } else if id.0 == "auto_gain_position" {
-            let s = value
-                .as_string()
-                .ok_or_else(|| "auto_gain_position must be a string".to_string())?;
-            let pos = AutoGainPosition::from_str_lossy(s);
-            self.auto_gain_position = pos;
-            let want_enabled = pos != AutoGainPosition::Disabled;
-            if want_enabled && self.auto_gain.is_none() {
-                self.auto_gain = Some(AutoGain::new(
-                    self.num_channels,
-                    self.sample_rate,
-                    AutoGainParams {
-                        enabled: true,
-                        loudness_type: AutoGainLoudnessType::Momentary,
-                        max_gain_db: self.auto_gain_max_db,
-                        smoothing_ms: self.auto_gain_smoothing_ms,
-                    },
-                )?);
-            } else if !want_enabled {
-                self.auto_gain = None;
-            }
-            self.auto_gain_enabled = want_enabled;
-        } else if id.0 == "mode" {
-            // Accept both int and float representations
-            let v = match &value {
-                ParameterValue::Int(i) => *i as usize,
-                ParameterValue::Float(f) => *f as usize,
-                _ => return Err(format!("mode must be numeric, got {:?}", value)),
-            };
-            if v <= 2 {
-                self.mode_index = v;
-                if v == 2 {
-                    // Auto mode: force an initial rebuild
-                    self.last_auto_volume_db = f32::MIN;
+            } else if key == "low_freq" {
+                let v = value.as_float().unwrap_or(pk(LC, "low_freq").default_f32());
+                if v.is_finite() {
+                    self.low_freq = v;
+                    self.rebuild_filters();
+                }
+            } else if key == "high_freq" {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(LC, "high_freq").default_f32());
+                if v.is_finite() {
+                    self.high_freq = v;
+                    self.rebuild_filters();
+                }
+            } else if key == "mid_enabled" {
+                let v = value
+                    .as_bool()
+                    .ok_or_else(|| "mid_enabled must be a boolean".to_string())?;
+                self.mid_enabled = v;
+                self.rebuild_filters();
+            } else if key == "mid_freq" {
+                let v = value.as_float().unwrap_or(pk(LC, "mid_freq").default_f32());
+                if v.is_finite() {
+                    self.mid_freq = v;
+                    self.rebuild_filters();
+                }
+            } else if key == "mid_gain" {
+                let v = value.as_float().unwrap_or(pk(LC, "mid_gain").default_f32());
+                if v.is_finite() {
+                    self.mid_gain = v;
+                    self.rebuild_filters();
+                }
+            } else if key == "mid_q" {
+                let v = value.as_float().unwrap_or(pk(LC, "mid_q").default_f32());
+                if v.is_finite() {
+                    self.mid_q = v;
+                    self.rebuild_filters();
+                }
+            } else if key == "auto_gain_enabled" {
+                let v = value
+                    .as_bool()
+                    .ok_or_else(|| "auto_gain_enabled must be a boolean".to_string())?;
+                self.auto_gain_enabled = v;
+                if v && self.auto_gain.is_none() {
+                    self.auto_gain = Some(AutoGain::new(
+                        self.num_channels,
+                        self.sample_rate,
+                        AutoGainParams {
+                            enabled: true,
+                            loudness_type: AutoGainLoudnessType::Momentary,
+                            max_gain_db: self.auto_gain_max_db,
+                            smoothing_ms: self.auto_gain_smoothing_ms,
+                        },
+                    )?);
+                } else if !v {
+                    self.auto_gain = None;
+                }
+            } else if key == "auto_gain_max_db" {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "auto_gain_max_db must be a float".to_string())?;
+                if v.is_finite() {
+                    self.auto_gain_max_db = v;
+                    if let Some(ag) = &mut self.auto_gain {
+                        ag.set_max_gain_db(v);
+                    }
+                }
+            } else if key == "auto_gain_smoothing_ms" {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "auto_gain_smoothing_ms must be a float".to_string())?;
+                if v.is_finite() {
+                    self.auto_gain_smoothing_ms = v;
+                    if let Some(ag) = &mut self.auto_gain {
+                        ag.set_smoothing_ms(v);
+                    }
+                }
+            } else if key == "auto_gain_position" {
+                let s = value
+                    .as_string()
+                    .ok_or_else(|| "auto_gain_position must be a string".to_string())?;
+                let pos = AutoGainPosition::from_str_lossy(s);
+                self.auto_gain_position = pos;
+                let want_enabled = pos != AutoGainPosition::Disabled;
+                if want_enabled && self.auto_gain.is_none() {
+                    self.auto_gain = Some(AutoGain::new(
+                        self.num_channels,
+                        self.sample_rate,
+                        AutoGainParams {
+                            enabled: true,
+                            loudness_type: AutoGainLoudnessType::Momentary,
+                            max_gain_db: self.auto_gain_max_db,
+                            smoothing_ms: self.auto_gain_smoothing_ms,
+                        },
+                    )?);
+                } else if !want_enabled {
+                    self.auto_gain = None;
+                }
+                self.auto_gain_enabled = want_enabled;
+            } else if key == "mode" {
+                // Accept both int and float representations
+                let v = match value {
+                    ParameterValue::Int(i) => i as usize,
+                    ParameterValue::Float(f) => f as usize,
+                    _ => return Err(format!("mode must be numeric, got {:?}", value)),
+                };
+                if v <= 2 {
+                    self.mode_index = v;
+                    if v == 2 {
+                        // Auto mode: force an initial rebuild
+                        self.last_auto_volume_db = f32::MIN;
+                        self.maybe_rebuild_auto_filters();
+                    }
+                    self.update_comp_gain_smoother();
+                }
+            } else if key == "playback_volume_db" {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "playback_volume_db must be a float".to_string())?;
+                if v.is_finite() {
+                    self.playback_volume_db = v;
                     self.maybe_rebuild_auto_filters();
                 }
-                self.update_comp_gain_smoother();
-            }
-        } else if id.0 == "playback_volume_db" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "playback_volume_db must be a float".to_string())?;
-            if v.is_finite() {
-                self.playback_volume_db = v;
-                self.maybe_rebuild_auto_filters();
-            }
-        } else if id.0 == "playback_level_db" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "playback_level_db must be a float".to_string())?;
-            if v.is_finite() {
-                self.playback_level_db = v;
-                if self.mode_index == 2 {
-                    // Auto mode: force rebuild with updated reference
-                    self.last_auto_volume_db = f32::MIN;
-                    self.maybe_rebuild_auto_filters();
-                } else if self.mode_index == 1 {
-                    // ISO 226 mode only — no-op in Manual mode (Bug #5 fix)
-                    self.rebuild_iso_filters();
+            } else if key == "playback_level_db" {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "playback_level_db must be a float".to_string())?;
+                if v.is_finite() {
+                    self.playback_level_db = v;
+                    if self.mode_index == 2 {
+                        // Auto mode: force rebuild with updated reference
+                        self.last_auto_volume_db = f32::MIN;
+                        self.maybe_rebuild_auto_filters();
+                    } else if self.mode_index == 1 {
+                        // ISO 226 mode only — no-op in Manual mode (Bug #5 fix)
+                        self.rebuild_iso_filters();
+                    }
                 }
-            }
-        } else if id.0 == "reference_level_db" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "reference_level_db must be a float".to_string())?;
-            if v.is_finite() {
-                self.reference_level_db = v;
-                if self.mode_index == 2 {
-                    // Auto mode: force rebuild with updated reference
-                    self.last_auto_volume_db = f32::MIN;
-                    self.maybe_rebuild_auto_filters();
-                } else if self.mode_index == 1 {
-                    // ISO 226 mode only — no-op in Manual mode (Bug #5 fix)
-                    self.rebuild_iso_filters();
+            } else if key == "reference_level_db" {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "reference_level_db must be a float".to_string())?;
+                if v.is_finite() {
+                    self.reference_level_db = v;
+                    if self.mode_index == 2 {
+                        // Auto mode: force rebuild with updated reference
+                        self.last_auto_volume_db = f32::MIN;
+                        self.maybe_rebuild_auto_filters();
+                    } else if self.mode_index == 1 {
+                        // ISO 226 mode only — no-op in Manual mode (Bug #5 fix)
+                        self.rebuild_iso_filters();
+                    }
                 }
+            } else {
+                return Err(format!("Unknown parameter: {}", id));
             }
-        } else {
-            return Err(format!("Unknown parameter: {}", id));
         }
         self.rebuild_cached_parameters();
         Ok(())
-    }
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id.0 == "low_gain" {
-            Some(ParameterValue::Float(self.low_gain))
-        } else if id.0 == "high_gain" {
-            Some(ParameterValue::Float(self.high_gain))
-        } else if id.0 == "low_freq" {
-            Some(ParameterValue::Float(self.low_freq))
-        } else if id.0 == "high_freq" {
-            Some(ParameterValue::Float(self.high_freq))
-        } else if id.0 == "mid_enabled" {
-            Some(ParameterValue::Bool(self.mid_enabled))
-        } else if id.0 == "mid_freq" {
-            Some(ParameterValue::Float(self.mid_freq))
-        } else if id.0 == "mid_gain" {
-            Some(ParameterValue::Float(self.mid_gain))
-        } else if id.0 == "mid_q" {
-            Some(ParameterValue::Float(self.mid_q))
-        } else if id.0 == "auto_gain_enabled" {
-            Some(ParameterValue::Bool(self.auto_gain_enabled))
-        } else if id.0 == "auto_gain_max_db" {
-            Some(ParameterValue::Float(self.auto_gain_max_db))
-        } else if id.0 == "auto_gain_smoothing_ms" {
-            Some(ParameterValue::Float(self.auto_gain_smoothing_ms))
-        } else if id.0 == "auto_gain_position" {
-            Some(ParameterValue::String(self.auto_gain_position.to_string()))
-        } else if id.0 == "mode" {
-            Some(ParameterValue::Int(self.mode_index as i32))
-        } else if id.0 == "playback_level_db" {
-            Some(ParameterValue::Float(self.playback_level_db))
-        } else if id.0 == "reference_level_db" {
-            Some(ParameterValue::Float(self.reference_level_db))
-        } else if id.0 == "playback_volume_db" {
-            Some(ParameterValue::Float(self.playback_volume_db))
-        } else {
-            None
-        }
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;

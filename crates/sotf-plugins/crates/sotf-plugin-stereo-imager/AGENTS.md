@@ -4,12 +4,13 @@ Stereo Imager — multi-band M/S stereo width control.
 
 ## Architecture
 
-- `lib.rs` — Main `StereoImagerPlugin`, implements `InPlacePlugin` trait, `StereoImagerPluginParams`
+- `lib.rs` — Main `StereoImagerPlugin`, implements `ParametricParametricInPlacePlugin` trait, `StereoImagerPluginParams`
 - `params.rs` — Parameter definitions
 
 ## Key Public API
 
-- `StereoImagerPlugin` implementing `InPlacePlugin`
+- `StereoImagerPlugin` implementing `ParametricParametricInPlacePlugin`
+- Wrapped with `ParametricParametricInPlacePluginAdapter` for host use
 
 ## Testing
 
@@ -22,4 +23,4 @@ cargo test -p sotf-plugin-stereo-imager
 - Stereo only (2 channels)
 - M/S (Mid/Side) encoding for width control
 - Multi-band: different width settings per frequency band
-- InPlacePlugin — processes stereo buffer in-place
+- ParametricParametricInPlacePlugin — processes stereo buffer in-place via the parametric adapter

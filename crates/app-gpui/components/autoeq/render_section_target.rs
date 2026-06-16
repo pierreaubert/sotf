@@ -24,7 +24,7 @@
             // Auto-detect from current slope value
             TARGET_DISTANCE_OPTIONS
                 .iter()
-                .find(|(id, _, _, slope)| *id != "custom" && (*slope - config.tilt_slope).abs() < 0.01)
+                .find(|(id, _, _, slope)| *id != "custom" && (*slope - config.room_correction.tilt_slope).abs() < 0.01)
                 .map(|(id, _, _, _)| *id)
         });
 
@@ -92,7 +92,7 @@
         HStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new(format!("Current slope: {:.1} dB/oct", config.tilt_slope))
+                Text::new(format!("Current slope: {:.1} dB/oct", config.room_correction.tilt_slope))
                     .size(TextSize::Xs)
                     .color(theme.label_color),
             ),
@@ -100,7 +100,7 @@
 
     // Slope input
     let mut slope_input = NumberInput::new((base_id.clone(), "target-slope"))
-        .value(config.tilt_slope)
+        .value(config.room_correction.tilt_slope)
         .min(ParamLimits::TILT_SLOPE.min)
         .max(ParamLimits::TILT_SLOPE.max)
         .step(ParamLimits::TILT_SLOPE.step)
@@ -119,7 +119,7 @@
 
     // Reference frequency and bass shelf
     let mut ref_freq_input = NumberInput::new((base_id.clone(), "target-ref-freq"))
-        .value(config.tilt_reference_freq)
+        .value(config.room_correction.tilt_reference_freq)
         .min(20.0)
         .max(20000.0)
         .step(10.0)
@@ -135,7 +135,7 @@
     }
 
     let mut shelf_db_input = NumberInput::new((base_id.clone(), "target-shelf-db"))
-        .value(config.tilt_bass_shelf_db)
+        .value(config.room_correction.tilt_bass_shelf_db)
         .min(ParamLimits::BASS_SHELF.min)
         .max(ParamLimits::BASS_SHELF.max)
         .step(ParamLimits::BASS_SHELF.step)
@@ -151,7 +151,7 @@
     }
 
     let mut shelf_freq_input = NumberInput::new((base_id.clone(), "target-shelf-freq"))
-        .value(config.tilt_bass_shelf_freq)
+        .value(config.room_correction.tilt_bass_shelf_freq)
         .min(20.0)
         .max(1000.0)
         .step(10.0)

@@ -629,9 +629,9 @@ impl PlayerView {
                 }
             };
 
-            state.app.plugin_state.plugin_graph_modified = true;
+            state.app.plugin_state.update_state.plugin_graph_modified = true;
             // Invalidate the workflow canvas so the graph view rebuilds.
-            state.app.plugin_state.workflow_canvas = None;
+            state.app.plugin_state.graph_state.workflow_canvas = None;
 
             // Flush the right way for each path: rack → `update_plugins`
             // from the linear-chain projection; graph → `update_plugin_graph`
@@ -756,8 +756,8 @@ impl PlayerView {
             // with the routed UI graph. Invalidate the canvas so the graph
             // view rebuilds against the new model and switch to it (the
             // rack can't represent the topology).
-            state.app.plugin_state.workflow_canvas = None;
-            state.app.plugin_state.plugin_graph_modified = true;
+            state.app.plugin_state.graph_state.workflow_canvas = None;
+            state.app.plugin_state.update_state.plugin_graph_modified = true;
             state.app.ui_state.current_screen = crate::app::Screen::PluginGraph;
 
             match state.player.lock().update_plugin_graph(outcome.config) {

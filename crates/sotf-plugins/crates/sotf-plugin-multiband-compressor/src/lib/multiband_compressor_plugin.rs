@@ -11,8 +11,10 @@ use sotf_host::lookahead::LookaheadBuffer;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::{LogSmoother, Smoother};
 use std::any::Any;
@@ -90,10 +92,23 @@ impl MultibandCompressorPlugin {
             pk(MC, "num_bands").max_f64() as usize,
         );
         let sr = 44100;
+        let default_xfs = [200.0f32, 2000.0, 8000.0, 12000.0];
         let mut xfs = params.crossover_frequencies.clone();
-        while xfs.len() < 4 {
-            xfs.push(1000.0);
+        for (i, &d) in default_xfs.iter().enumerate() {
+            if xfs.get(i).map_or(true, |&v| v == 0.0) {
+                if i < xfs.len() {
+                    xfs[i] = d;
+                } else {
+                    xfs.push(d);
+                }
+            }
         }
+        while xfs.len() < 4 {
+            xfs.push(default_xfs[xfs.len()]);
+        }
+        let ratio = if params.ratio == 0.0 { 4.0 } else { params.ratio };
+        let attack_ms = if params.attack_ms == 0.0 { 5.0 } else { params.attack_ms };
+        let release_ms = if params.release_ms == 0.0 { 50.0 } else { params.release_ms };
         let mut bcomps = Vec::with_capacity(nb);
         for _ in 0..nb {
             bcomps.push(BandCompressor {
@@ -146,9 +161,9 @@ impl MultibandCompressorPlugin {
             _crossover_preset: params.crossover_preset,
             crossover_frequencies: xfs.clone(),
             threshold_db: params.threshold_db,
-            ratio: params.ratio,
-            attack_ms: params.attack_ms,
-            release_ms: params.release_ms,
+            ratio,
+            attack_ms,
+            release_ms,
             knee_db: params.knee_db,
             link_channels: params.link_channels,
             mix: params.mix,
@@ -466,18 +481,13 @@ impl MultibandCompressorPlugin {
     }
 }
 
-impl InPlacePlugin for MultibandCompressorPlugin {
-    fn info(&self) -> PluginInfo {
-        PluginInfo::new("Multiband Compressor", "2.0.0", "Sotf")
-            .with_description("Phase-coherent multiband dynamics processor")
-    }
-    fn channels(&self) -> usize {
-        self.channels
-    }
-    fn parameters(&self) -> Vec<Parameter> {
+impl MultibandCompressorPlugin {
+    /// Backward-compatible parameter list accessor.
+    pub fn parameters(&self) -> Vec<Parameter> {
         self.cached_parameters.clone()
     }
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+
+    pub fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         // Try global params first via param_bridge
         if let Ok(idx) =
             param_bridge::set_parameter(MC, &id, &value, |i, v| self.set_param_value(i, v))
@@ -711,7 +721,8 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         self.rebuild_cached_parameters();
         Ok(())
     }
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+
+    pub fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         // Try global params first
         if let Some(v) = param_bridge::get_parameter(MC, id, |i| self.param_value(i)) {
             return Some(v);
@@ -784,6 +795,36 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             None
         }
     }
+}
+
+impl ParametricInPlacePlugin for MultibandCompressorPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Multiband Compressor", "2.0.0", "Sotf")
+            .with_description("Phase-coherent multiband dynamics processor")
+    }
+    fn channels(&self) -> usize {
+        self.channels
+    }
+    fn parameter_schema(&self) -> ParameterSchema {
+        self.cached_parameters.clone()
+    }
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            self.set_parameter(id, value)?;
+        }
+        Ok(())
+    }
+
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        for param in &self.cached_parameters {
+            if let Some(value) = self.get_parameter(&param.id) {
+                values.insert(param.id.clone(), value);
+            }
+        }
+        values
+    }
+
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;
         // Update cache throttle threshold: fire every ~50 ms worth of samples.

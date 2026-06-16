@@ -1,7 +1,10 @@
 use crate::app::*;
 use crate::theme::Theme;
 
-use sotf_audio_player::{PluginSettings, PluginType};
+use sotf_audio_player::{
+    PluginSettings, PluginType, UpmixerAmbientAnalysisSettings, UpmixerGainSettings,
+    UpmixerHeightSettings, UpmixerLfeSettings, UpmixerSubharmonicSettings,
+};
 
 #[path = "tests/create.rs"]
 mod create;
@@ -113,23 +116,38 @@ fn test_adjust_upmixer_parameters() {
     ) = match &plugin.settings {
         PluginSettings::Upmixer {
             speaker_config,
-            gain_front_direct,
-            gain_front_ambient,
-            gain_rear_ambient,
-            height_gain,
-            lfe_gain,
-            lfe_cutoff_hz,
-            stereo_width,
-            center_spread,
-            bandpass_hz,
-            enable_subharmonic_synth,
-            subharmonic_gain,
-            subharmonic_freq_hz,
-            subharmonic_attack_ms,
-            subharmonic_release_ms,
-            enable_hr_direct,
-            hr_sharpen,
-            safety_cap_db,
+            gains:
+                UpmixerGainSettings {
+                    gain_front_direct,
+                    gain_front_ambient,
+                    gain_rear_ambient,
+                    height_gain,
+                    stereo_width,
+                    center_spread,
+                    ..
+                },
+            lfe: UpmixerLfeSettings {
+                lfe_gain,
+                lfe_cutoff_hz,
+                bandpass_hz,
+                ..
+            },
+            subharmonic:
+                UpmixerSubharmonicSettings {
+                    enable_subharmonic_synth,
+                    subharmonic_gain,
+                    subharmonic_freq_hz,
+                    subharmonic_attack_ms,
+                    subharmonic_release_ms,
+                    ..
+                },
+            height:
+                UpmixerHeightSettings {
+                    enable_hr_direct,
+                    hr_sharpen,
+                    ..
+                },
+            ambient_analysis: UpmixerAmbientAnalysisSettings { safety_cap_db, .. },
             ..
         } => (
             speaker_config.clone(),
@@ -166,20 +184,31 @@ fn test_adjust_upmixer_parameters() {
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     if let PluginSettings::Upmixer {
         speaker_config,
-        gain_front_direct,
-        gain_front_ambient,
-        gain_rear_ambient,
-        height_gain,
-        lfe_gain,
-        lfe_cutoff_hz,
-        stereo_width,
-        center_spread,
-        bandpass_hz,
-        enable_subharmonic_synth,
-        subharmonic_gain,
-        subharmonic_freq_hz,
-        subharmonic_attack_ms,
-        subharmonic_release_ms,
+        gains:
+            UpmixerGainSettings {
+                gain_front_direct,
+                gain_front_ambient,
+                gain_rear_ambient,
+                height_gain,
+                stereo_width,
+                center_spread,
+                ..
+            },
+        lfe: UpmixerLfeSettings {
+            lfe_gain,
+            lfe_cutoff_hz,
+            bandpass_hz,
+            ..
+        },
+        subharmonic:
+            UpmixerSubharmonicSettings {
+                enable_subharmonic_synth,
+                subharmonic_gain,
+                subharmonic_freq_hz,
+                subharmonic_attack_ms,
+                subharmonic_release_ms,
+                ..
+            },
         ..
     } = &plugin.settings
     {

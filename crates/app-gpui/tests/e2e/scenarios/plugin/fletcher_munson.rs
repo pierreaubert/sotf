@@ -25,7 +25,8 @@ impl TestScenario for FletcherMunsonScenario {
         driver.update_app(|app, _cx| {
             println!("Adding Fletcher-Munson plugin...");
             app.add_plugin(&PluginType::FletcherMunson);
-            app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+            app.plugin_state.update_state.pending_plugin_update =
+                Some(PluginUpdateType::Structural);
         });
 
         // 2. Modify Reference Level (Index 13 in LoudnessCompensation PARAMS)

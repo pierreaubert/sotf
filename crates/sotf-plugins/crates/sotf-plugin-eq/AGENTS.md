@@ -6,7 +6,7 @@ Parametric equalizer plugin with biquad and SVF filter topologies, supporting ca
 
 ```
 src/
-  lib.rs    -- EqPlugin (InPlacePlugin), BiquadFilterConfig, EqPluginParams, band transitions
+  lib.rs    -- EqPlugin (ParametricPlugin), BiquadFilterConfig, EqPluginParams, band transitions
   params.rs -- Centralized parameter specs
   ui.rs     -- GPUI UI (behind gpui-ui feature)
 ```
@@ -15,7 +15,7 @@ Data flow: `EqPluginParams` (JSON config with filter list) -> `EqPlugin::from_pa
 
 **Key types:**
 
-- `EqPlugin` -- Main plugin struct implementing `InPlacePlugin`. Holds `filters[channel][band][stage]` (3D Vec of Biquad).
+- `EqPlugin` -- Main plugin struct implementing `ParametricPlugin`. Holds `filters[channel][band][stage]` (3D Vec of Biquad).
 - `EqPluginParams` -- Serde config: `filters` (global), `channel_filters` (per-channel override), `auto_gain` settings.
 - `BiquadFilterConfig` -- Per-band config: filter_type, freq, q, db_gain, order (2/4/6/8).
 - `BandTransition` -- Coefficient interpolation state for click-free parameter changes (~5ms crossfade).
@@ -35,7 +35,7 @@ Data flow: `EqPluginParams` (JSON config with filter list) -> `EqPlugin::from_pa
 - `EqPlugin::new(channels, filters) -> Self` -- Construct from filter list (`lib.rs`)
 - `BiquadFilterConfig` -- Filter definition struct (`lib.rs`)
 - `EqPluginParams` -- Top-level config with optional per-channel filters and auto-gain (`lib.rs`)
-- Implements `InPlacePlugin` trait (same channel count in/out)
+- Implements `ParametricPlugin` trait (same channel count in/out)
 - Exposes `AutoGainData` via `analyzer_data()` for UI monitoring
 
 ## Testing

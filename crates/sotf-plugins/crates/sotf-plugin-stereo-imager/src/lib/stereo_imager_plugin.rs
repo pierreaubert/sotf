@@ -3,8 +3,10 @@ use super::stereo_imager_plugin_params::StereoImagerPluginParams;
 use crate::params::PARAMS as SI;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_specs::find_by_key as pk;
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::parameters::Parameter;
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
@@ -137,7 +139,7 @@ impl StereoImagerPlugin {
     }
 }
 
-impl InPlacePlugin for StereoImagerPlugin {
+impl ParametricInPlacePlugin for StereoImagerPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("StereoImager", env!("CARGO_PKG_VERSION"), "SotF")
             .with_description("Multi-band M/S stereo width control")
@@ -147,120 +149,76 @@ impl InPlacePlugin for StereoImagerPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    /// Override default to avoid cloning `cached_parameters` on every call.
-    /// The trait default calls `self.parameters()` (a clone), which allocates.
-    /// Instead, validate directly against the static PARAMS table — no heap
-    /// allocation required.
-    fn validate_parameter(&self, id: &ParameterId, value: &ParameterValue) -> PluginResult<()> {
-        // Search the static PARAMS array; `find_by_key` panics so use .find() directly.
-        let spec = SI.iter().find(|s| s.engine_key == id.as_str());
-        if let Some(spec) = spec {
-            if let ParameterValue::Float(v) = value {
-                let min = spec.min_f64() as f32;
-                let max = spec.max_f64() as f32;
-                if *v < min || *v > max {
-                    return Err(format!(
-                        "{}: value {} out of range [{}, {}]",
-                        id, v, min, max
-                    ));
-                }
-            }
-            Ok(())
-        } else {
-            Err(format!("Unknown parameter: {}", id))
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        for param in &self.cached_parameters {
+            values.insert(param.id.clone(), param.default_value.clone());
         }
+        values
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-
-        // Update the corresponding cached_parameter in-place (no Vec reallocation).
-        // `Parameter::default_value` is the current value field used by the host.
-        macro_rules! update_cached {
-            ($id:expr, $val:expr) => {
-                if let Some(p) = self.cached_parameters.iter_mut().find(|p| p.id == $id) {
-                    p.default_value = $val;
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            match id.as_str() {
+                "width" => {
+                    if let Some(v) = value.as_float() {
+                        self.width = v;
+                        self.width_smoother.set_target(v);
+                    }
                 }
-            };
-        }
-
-        match id.as_str() {
-            "width" => {
-                if let Some(v) = value.as_float() {
-                    self.width = v;
-                    self.width_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
+                "low_mid_freq" => {
+                    if let Some(v) = value.as_float() {
+                        self.low_mid_freq = v;
+                        self.low_mid_freq_smoother.set_target(v);
+                    }
                 }
+                "mid_high_freq" => {
+                    if let Some(v) = value.as_float() {
+                        self.mid_high_freq = v;
+                        self.mid_high_freq_smoother.set_target(v);
+                    }
+                }
+                "low_width" => {
+                    if let Some(v) = value.as_float() {
+                        self.low_width = v;
+                        self.low_width_smoother.set_target(v);
+                    }
+                }
+                "mid_width" => {
+                    if let Some(v) = value.as_float() {
+                        self.mid_width = v;
+                        self.mid_width_smoother.set_target(v);
+                    }
+                }
+                "high_width" => {
+                    if let Some(v) = value.as_float() {
+                        self.high_width = v;
+                        self.high_width_smoother.set_target(v);
+                    }
+                }
+                "mono_bass" => {
+                    if let Some(v) = value.as_bool() {
+                        self.mono_bass = v;
+                    }
+                }
+                "mix" => {
+                    if let Some(v) = value.as_float() {
+                        self.mix = v;
+                        self.mix_smoother.set_target(v);
+                    }
+                }
+                _ => return Err(format!("Unknown parameter: {}", id)),
             }
-            "low_mid_freq" => {
-                if let Some(v) = value.as_float() {
-                    self.low_mid_freq = v;
-                    self.low_mid_freq_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
-                }
+            // Keep the cached parameter list in sync with the live state.
+            if let Some(p) = self.cached_parameters.iter_mut().find(|p| p.id == id) {
+                p.default_value = value;
             }
-            "mid_high_freq" => {
-                if let Some(v) = value.as_float() {
-                    self.mid_high_freq = v;
-                    self.mid_high_freq_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
-                }
-            }
-            "low_width" => {
-                if let Some(v) = value.as_float() {
-                    self.low_width = v;
-                    self.low_width_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
-                }
-            }
-            "mid_width" => {
-                if let Some(v) = value.as_float() {
-                    self.mid_width = v;
-                    self.mid_width_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
-                }
-            }
-            "high_width" => {
-                if let Some(v) = value.as_float() {
-                    self.high_width = v;
-                    self.high_width_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
-                }
-            }
-            "mono_bass" => {
-                if let Some(v) = value.as_bool() {
-                    self.mono_bass = v;
-                    update_cached!(id, ParameterValue::Bool(v));
-                }
-            }
-            "mix" => {
-                if let Some(v) = value.as_float() {
-                    self.mix = v;
-                    self.mix_smoother.set_target(v);
-                    update_cached!(id, ParameterValue::Float(v));
-                }
-            }
-            _ => return Err(format!("Unknown parameter: {}", id)),
         }
         Ok(())
-    }
-
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        match id.as_str() {
-            "width" => Some(ParameterValue::Float(self.width)),
-            "low_mid_freq" => Some(ParameterValue::Float(self.low_mid_freq)),
-            "mid_high_freq" => Some(ParameterValue::Float(self.mid_high_freq)),
-            "low_width" => Some(ParameterValue::Float(self.low_width)),
-            "mid_width" => Some(ParameterValue::Float(self.mid_width)),
-            "high_width" => Some(ParameterValue::Float(self.high_width)),
-            "mono_bass" => Some(ParameterValue::Bool(self.mono_bass)),
-            "mix" => Some(ParameterValue::Float(self.mix)),
-            _ => None,
-        }
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

@@ -1,7 +1,7 @@
 use super::band_compressor_params::BandCompressorParams;
 use super::multiband_compressor_plugin::MultibandCompressorPlugin;
 use super::types::MultibandCompressorPluginParams;
-use sotf_host::InPlacePlugin;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::ProcessContext;
 
@@ -1176,20 +1176,20 @@ fn test_set_parameter_crossover_freqs_update_smoothers() {
 #[test]
 fn test_get_parameter_band_defaults() {
     let p = MultibandCompressorPlugin::new(2);
-    // Default struct fields for optional band params fall back to 0.0
+    // Default band dynamics fall back to sensible defaults.
     assert_eq!(
         p.get_parameter(&ParameterId::from("band_0_ratio")).unwrap(),
-        ParameterValue::Float(0.0)
+        ParameterValue::Float(4.0)
     );
     assert_eq!(
         p.get_parameter(&ParameterId::from("band_0_attack"))
             .unwrap(),
-        ParameterValue::Float(0.0)
+        ParameterValue::Float(5.0)
     );
     assert_eq!(
         p.get_parameter(&ParameterId::from("band_0_release"))
             .unwrap(),
-        ParameterValue::Float(0.0)
+        ParameterValue::Float(50.0)
     );
     // makeup defaults to 0.0
     assert_eq!(

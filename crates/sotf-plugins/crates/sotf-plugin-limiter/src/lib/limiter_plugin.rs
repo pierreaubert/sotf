@@ -6,10 +6,11 @@ use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
-use sotf_host::{DualRelease, TruePeakDetector};
+use sotf_host::{ParametricInPlacePlugin, DualRelease, TruePeakDetector};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -245,106 +246,92 @@ impl LimiterPlugin {
     }
 }
 
-impl InPlacePlugin for LimiterPlugin {
+impl ParametricInPlacePlugin for LimiterPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Limiter", "1.3.0", "SotF")
     }
     fn channels(&self) -> usize {
         self.channels
     }
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        // Validate against parameter definitions
-        if let Some(param) = self.cached_parameters.iter().find(|p| p.id == id) {
-            param.validate(&value)?;
-        } else {
-            return Err(format!("Unknown parameter: {}", id));
-        }
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(self.param_threshold.clone(), ParameterValue::Float(self.threshold_db));
+        values.insert(self.param_release.clone(), ParameterValue::Float(self.release_ms));
+        values.insert(self.param_lookahead.clone(), ParameterValue::Float(self.lookahead_ms));
+        values.insert(self.param_soft.clone(), ParameterValue::Bool(self.soft));
+        values.insert(self.param_true_peak.clone(), ParameterValue::Bool(self.true_peak));
+        values.insert(self.param_isp_mode.clone(), ParameterValue::Bool(self.isp_mode));
+        values.insert(self.param_dual_release.clone(), ParameterValue::Bool(self.dual_release));
+        values.insert(self.param_mix.clone(), ParameterValue::Float(self.mix));
+        values.insert(self.param_feed_forward.clone(), ParameterValue::Bool(self.feed_forward));
+        values.insert(self.param_link_amount.clone(), ParameterValue::Float(self.link_amount));
+        values
+    }
 
-        if id == self.param_threshold {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(LM, "threshold").default_f64() as f32);
-            if val.is_finite() {
-                self.threshold_db = val;
-                self.threshold_smoother
-                    .set_target(fast_pow10(self.threshold_db / 20.0));
-            }
-        } else if id == self.param_release {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(LM, "release").default_f64() as f32);
-            if val.is_finite() {
-                self.release_ms = val.max(1.0);
-                self.update_coefficients();
-            }
-        } else if id == self.param_lookahead {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(LM, "lookahead").default_f64() as f32);
-            if val.is_finite() {
-                self.lookahead_ms = val.max(0.0);
-                self.update_coefficients();
-            }
-        } else if id == self.param_soft {
-            self.soft = value.as_bool().unwrap_or(pk(LM, "soft").default_bool());
-        } else if id == self.param_true_peak {
-            self.true_peak = value
-                .as_bool()
-                .unwrap_or(pk(LM, "true_peak").default_bool());
-        } else if id == self.param_isp_mode {
-            self.isp_mode = value.as_bool().unwrap_or(pk(LM, "isp_mode").default_bool());
-        } else if id == self.param_dual_release {
-            self.dual_release = value
-                .as_bool()
-                .unwrap_or(pk(LM, "dual_release").default_bool());
-        } else if id == self.param_mix {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(LM, "mix").default_f64() as f32);
-            if val.is_finite() {
-                self.mix = val.clamp(0.0, 1.0);
-                self.mix_smoother.set_target(self.mix);
-            }
-        } else if id == self.param_feed_forward {
-            self.feed_forward = value.as_bool().unwrap_or(false);
-        } else if id == self.param_link_amount {
-            let val = value.as_float().unwrap_or(1.0);
-            if val.is_finite() {
-                self.link_amount = val.clamp(0.0, 1.0);
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            if id == self.param_threshold {
+                let val = value
+                    .as_float()
+                    .unwrap_or(pk(LM, "threshold").default_f64() as f32);
+                if val.is_finite() {
+                    self.threshold_db = val;
+                    self.threshold_smoother
+                        .set_target(fast_pow10(self.threshold_db / 20.0));
+                }
+            } else if id == self.param_release {
+                let val = value
+                    .as_float()
+                    .unwrap_or(pk(LM, "release").default_f64() as f32);
+                if val.is_finite() {
+                    self.release_ms = val.max(1.0);
+                    self.update_coefficients();
+                }
+            } else if id == self.param_lookahead {
+                let val = value
+                    .as_float()
+                    .unwrap_or(pk(LM, "lookahead").default_f64() as f32);
+                if val.is_finite() {
+                    self.lookahead_ms = val.max(0.0);
+                    self.update_coefficients();
+                }
+            } else if id == self.param_soft {
+                self.soft = value.as_bool().unwrap_or(pk(LM, "soft").default_bool());
+            } else if id == self.param_true_peak {
+                self.true_peak = value
+                    .as_bool()
+                    .unwrap_or(pk(LM, "true_peak").default_bool());
+            } else if id == self.param_isp_mode {
+                self.isp_mode = value.as_bool().unwrap_or(pk(LM, "isp_mode").default_bool());
+            } else if id == self.param_dual_release {
+                self.dual_release = value
+                    .as_bool()
+                    .unwrap_or(pk(LM, "dual_release").default_bool());
+            } else if id == self.param_mix {
+                let val = value
+                    .as_float()
+                    .unwrap_or(pk(LM, "mix").default_f64() as f32);
+                if val.is_finite() {
+                    self.mix = val.clamp(0.0, 1.0);
+                    self.mix_smoother.set_target(self.mix);
+                }
+            } else if id == self.param_feed_forward {
+                self.feed_forward = value.as_bool().unwrap_or(false);
+            } else if id == self.param_link_amount {
+                let val = value.as_float().unwrap_or(1.0);
+                if val.is_finite() {
+                    self.link_amount = val.clamp(0.0, 1.0);
+                }
+            } else {
+                return Err(format!("Unknown parameter: {}", id));
             }
         }
         self.rebuild_cached_parameters();
         Ok(())
-    }
-
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_threshold {
-            Some(ParameterValue::Float(self.threshold_db))
-        } else if id == &self.param_release {
-            Some(ParameterValue::Float(self.release_ms))
-        } else if id == &self.param_soft {
-            Some(ParameterValue::Bool(self.soft))
-        } else if id == &self.param_lookahead {
-            Some(ParameterValue::Float(self.lookahead_ms))
-        } else if id == &self.param_true_peak {
-            Some(ParameterValue::Bool(self.true_peak))
-        } else if id == &self.param_isp_mode {
-            Some(ParameterValue::Bool(self.isp_mode))
-        } else if id == &self.param_dual_release {
-            Some(ParameterValue::Bool(self.dual_release))
-        } else if id == &self.param_mix {
-            Some(ParameterValue::Float(self.mix))
-        } else if id == &self.param_feed_forward {
-            Some(ParameterValue::Bool(self.feed_forward))
-        } else if id == &self.param_link_amount {
-            Some(ParameterValue::Float(self.link_amount))
-        } else {
-            None
-        }
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

@@ -206,7 +206,7 @@ fn dispatch_metadata_action(
                 state.app.library_state.invalidate_cache();
                 state.app.ui_state.current_screen = Screen::Library;
                 state.app.ui_state.input_mode = InputMode::Normal;
-                state.app.metadata_editor = None;
+                state.app.modal.metadata_editor = None;
                 Ok(())
             })?;
             Ok(true)
@@ -220,7 +220,7 @@ fn dispatch_metadata_action(
                     .cloned()
                     .or_else(|| state.app.library_state.library.albums.first().cloned())
                     .ok_or_else(|| anyhow!("no album available for metadata editor"))?;
-                state.app.metadata_editor = Some(
+                state.app.modal.metadata_editor = Some(
                     MetadataEditorState::for_album(&album)
                         .map_err(|err| anyhow!("metadata editor unavailable: {err}"))?,
                 );
@@ -233,6 +233,7 @@ fn dispatch_metadata_action(
             with_app_state(window, cx, |state| {
                 let editor = state
                     .app
+                    .modal
                     .metadata_editor
                     .as_mut()
                     .ok_or_else(|| anyhow!("metadata editor is not open"))?;
@@ -248,6 +249,7 @@ fn dispatch_metadata_action(
                 let (target, patch) = {
                     let editor = state
                         .app
+                        .modal
                         .metadata_editor
                         .as_ref()
                         .ok_or_else(|| anyhow!("metadata editor is not open"))?;
@@ -261,6 +263,7 @@ fn dispatch_metadata_action(
                 let result = state.app.library_state.preview_metadata_edit(target, patch);
                 let editor = state
                     .app
+                    .modal
                     .metadata_editor
                     .as_mut()
                     .ok_or_else(|| anyhow!("metadata editor is not open"))?;
@@ -282,6 +285,7 @@ fn dispatch_metadata_action(
             with_app_state(window, cx, |state| {
                 let editor = state
                     .app
+                    .modal
                     .metadata_editor
                     .as_mut()
                     .ok_or_else(|| anyhow!("metadata editor is not open"))?;
@@ -298,6 +302,7 @@ fn dispatch_metadata_action(
             with_app_state(window, cx, |state| {
                 let editor = state
                     .app
+                    .modal
                     .metadata_editor
                     .as_mut()
                     .ok_or_else(|| anyhow!("metadata editor is not open"))?;
@@ -313,7 +318,7 @@ fn dispatch_metadata_action(
         }
         "MetadataClose" => {
             with_app_state(window, cx, |state| {
-                state.app.metadata_editor = None;
+                state.app.modal.metadata_editor = None;
                 state.app.ui_state.input_mode = InputMode::Normal;
                 Ok(())
             })?;

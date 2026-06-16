@@ -3,21 +3,20 @@ use super::consts::SAMPLE_RATE;
 use super::consts::generate_test_buffer;
 use super::misc::assert_no_allocs;
 use serial_test::serial;
-use sotf_plugins::{
+use sotf_plugins::{ParametricInPlacePlugin, ParametricPluginAdapter, 
     ABComparePlugin, AutoGain, AutoGainParams, BandMergePlugin, BandSplitPlugin,
     BinauralDecoderPlugin, ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin,
     CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, CrossoverPlugin, DeclickPlugin,
     DenoiserPlugin, DownmixPlugin, DownmixPluginParams, EqPlugin, ExpanderPlugin, GainPlugin,
-    GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
+    GatePlugin,   LimiterPlugin, LoudnessCompensationPlugin,
     LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
     MultibandExpanderPlugin, Plugin, PndPlugin, ProcessContext, ResamplerPlugin, RoomModel,
-    SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, XtcPlugin, XtcPluginParams,
-};
+    SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, XtcPlugin, XtcPluginParams};
 
 #[test]
 #[serial]
 fn test_eq_zero_alloc() {
-    let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(2, vec![]));
+    let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(2, vec![]));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
@@ -41,21 +40,22 @@ fn test_eq_zero_alloc() {
 #[test]
 #[serial]
 fn test_gain_zero_alloc() {
-    let mut plugin = GainPlugin::new(2, -3.0);
+    let mut plugin = ParametricPluginAdapter::new(GainPlugin::new(2, -3.0));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
-    let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
+    let input = generate_test_buffer(BUFFER_SIZE, 2);
+    let mut output = vec![0.0f32; input.len()];
     let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
 
     // Warm-up
     for _ in 0..20 {
-        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+        plugin.process(&input, &mut output, &ctx).unwrap();
         let _ = plugin.get_data();
     }
 
     assert_no_allocs("GainPlugin", || {
         for _ in 0..1000 {
-            plugin.process_in_place(&mut buffer, &ctx).unwrap();
+            plugin.process(&input, &mut output, &ctx).unwrap();
             let _ = plugin.get_data();
         }
     });
@@ -569,7 +569,7 @@ fn test_fletcher_munson_zero_alloc() {
             sotf_plugins::ParameterValue::Float(-20.0),
         )
         .unwrap();
-    InPlacePlugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
+    ParametricInPlacePlugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
     let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
@@ -577,13 +577,13 @@ fn test_fletcher_munson_zero_alloc() {
     // Warm-up
     for _ in 0..20 {
         plugin.process_in_place(&mut buffer, &ctx).unwrap();
-        let _ = InPlacePlugin::get_data(&plugin);
+        let _ = ParametricInPlacePlugin::get_data(&plugin);
     }
 
     assert_no_allocs("FletcherMunsonPlugin (LoudnessComp Auto)", || {
         for _ in 0..1000 {
             plugin.process_in_place(&mut buffer, &ctx).unwrap();
-            let _ = InPlacePlugin::get_data(&plugin);
+            let _ = ParametricInPlacePlugin::get_data(&plugin);
         }
     });
 }

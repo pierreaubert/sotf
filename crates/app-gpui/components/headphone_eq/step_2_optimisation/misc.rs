@@ -1,6 +1,7 @@
 use crate::app::types::OptimizationStatus;
 use crate::components::autoeq::{
-    AutoEqConfig, AutoEqForm, AutoEqFormUiState, DetailLevel, OptimizationType,
+    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, DetailLevel, EqDesignConfig,
+    GoalsConfig, OptimizationType,
 };
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -31,39 +32,47 @@ impl PlayerView {
         // Build AutoEqConfig from our HeadphoneEqOptimizerConfig
         let config = &headphone_eq.optimizer_config;
         let autoeq_config = AutoEqConfig {
-            num_filters: config.num_filters,
-            sample_rate: 48000,
-            min_db: config.min_db,
-            max_db: config.max_db,
-            min_q: config.min_q,
-            max_q: config.max_q,
-            min_freq: config.min_freq,
-            max_freq: config.max_freq,
-            peq_model: config.peq_model.clone(),
-            algo: config.algorithm.to_autoeq_string().to_string(),
-            population: config.population,
-            maxeval: config.max_iter,
-            de_f: config.de_f,
-            de_cr: config.de_cr,
-            strategy: config.strategy.clone(),
-            adaptive_weight_f: config.adaptive_weight_f,
-            adaptive_weight_cr: config.adaptive_weight_cr,
-            tolerance: config.tolerance,
-            atolerance: config.atolerance,
-            bo_initial_samples: config.bo_initial_samples,
-            bo_batch_size: config.bo_batch_size,
-            bo_posterior_std_threshold: config.bo_posterior_std_threshold,
-            bo_acquisition: config.bo_acquisition.clone(),
-            bo_ehvi: config.bo_ehvi,
-            refine: config.refine,
-            local_algo: config.local_algo.clone(),
-            smooth: config.smooth,
-            smooth_n: config.smooth_n,
-            spacing_weight: config.spacing_weight,
-            min_spacing_oct: config.min_spacing_oct,
-            // Goals - use headphone_eq_state values
-            loss_type: headphone_eq.model.ui_loss_type().to_string(),
-            target_curve: headphone_eq.target_preset.clone(),
+            eq_design: EqDesignConfig {
+                num_filters: config.num_filters,
+                sample_rate: 48000,
+                min_db: config.min_db,
+                max_db: config.max_db,
+                min_q: config.min_q,
+                max_q: config.max_q,
+                min_freq: config.min_freq,
+                max_freq: config.max_freq,
+                peq_model: config.peq_model.clone(),
+                spacing_weight: config.spacing_weight,
+                min_spacing_oct: config.min_spacing_oct,
+                ..Default::default()
+            },
+            algorithm: AlgorithmConfig {
+                algo: config.algorithm.to_autoeq_string().to_string(),
+                population: config.population,
+                maxeval: config.max_iter,
+                de_f: config.de_f,
+                de_cr: config.de_cr,
+                strategy: config.strategy.clone(),
+                adaptive_weight_f: config.adaptive_weight_f,
+                adaptive_weight_cr: config.adaptive_weight_cr,
+                tolerance: config.tolerance,
+                atolerance: config.atolerance,
+                bo_initial_samples: config.bo_initial_samples,
+                bo_batch_size: config.bo_batch_size,
+                bo_posterior_std_threshold: config.bo_posterior_std_threshold,
+                bo_acquisition: config.bo_acquisition.clone(),
+                bo_ehvi: config.bo_ehvi,
+                refine: config.refine,
+                local_algo: config.local_algo.clone(),
+                smooth: config.smooth,
+                smooth_n: config.smooth_n,
+                ..Default::default()
+            },
+            goals: GoalsConfig {
+                loss_type: headphone_eq.model.ui_loss_type().to_string(),
+                target_curve: headphone_eq.target_preset.clone(),
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -137,8 +146,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |target, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.headphone_eq_state.model.target_preset =
-                            target.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .model
+                            .target_preset = target.to_string();
                         state
                             .app
                             .measurement_state
@@ -728,8 +741,7 @@ impl PlayerView {
             )
             .child(autoeq_form)
             .when(headphone_eq.model.requires_custom_target_path(), |vstack| {
-                let custom_target_path =
-                    headphone_eq.model.custom_target_path.clone();
+                let custom_target_path = headphone_eq.model.custom_target_path.clone();
                 let path_text = if custom_target_path.is_empty() {
                     "No target curve selected".to_string()
                 } else {

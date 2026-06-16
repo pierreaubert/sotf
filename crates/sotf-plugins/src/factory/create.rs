@@ -29,8 +29,8 @@ use crate::{
     DownmixPlugin, DownmixPluginParams, DynamicEqPlugin, DynamicEqPluginParams, EqPlugin,
     EqPluginParams, ExpanderPlugin, ExpanderPluginParams, FirDesignerPlugin,
     FirDesignerPluginParams, GainPlugin, GainPluginParams, GatePlugin, GatePluginParams,
-    HissReducerPlugin, HissReducerPluginParams, InPlacePluginAdapter, LimiterPlugin,
-    ParametricPluginAdapter, LimiterPluginParams, LinearPhaseEqPlugin, LinearPhaseEqPluginParams,
+    HissReducerPlugin, HissReducerPluginParams, LimiterPlugin,
+    ParametricInPlacePluginAdapter, ParametricPluginAdapter, LimiterPluginParams, LinearPhaseEqPlugin, LinearPhaseEqPluginParams,
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
     MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams, MultibandCompressorPlugin,
     MultibandCompressorPluginParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
@@ -89,35 +89,35 @@ pub fn create_plugin(
             let params: CompressorPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse compressor params: {e}"))?;
             let plugin = CompressorPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "expander" => {
             let params: ExpanderPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse expander params: {e}"))?;
             let plugin = ExpanderPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "limiter" => {
             let params: LimiterPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse limiter params: {e}"))?;
             let plugin = LimiterPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "gate" => {
             let params: GatePluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse gate params: {e}"))?;
             let plugin = GatePlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "delay" => {
             let params: DelayPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse delay params: {e}"))?;
             let plugin = DelayPlugin::from_params(channels, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "convolution" => {
@@ -125,7 +125,7 @@ pub fn create_plugin(
                 .map_err(|e| format!("Failed to parse convolution params: {e}"))?;
             let plugin = ConvolutionPlugin::from_params(channels, sample_rate, params)
                 .map_err(|e| format!("Failed to create convolution plugin: {e}"))?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "upmixer" => {
@@ -176,28 +176,28 @@ pub fn create_plugin(
                 serde_json::from_value(parameters.clone())
                     .map_err(|e| format!("Failed to parse multiband compressor params: {e}"))?;
             let plugin = MultibandCompressorPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "multiband_expander" => {
             let params: MultibandExpanderPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse multiband expander params: {e}"))?;
             let plugin = MultibandExpanderPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "de_esser" => {
             let params: DeEsserPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse de-esser params: {e}"))?;
             let plugin = DeEsserPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "dynamic_eq" => {
             let params: DynamicEqPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse dynamic EQ params: {e}"))?;
             let plugin = DynamicEqPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "fir_designer" => {
@@ -205,7 +205,7 @@ pub fn create_plugin(
                 .map_err(|e| format!("Failed to parse FIR designer params: {e}"))?;
             let plugin = FirDesignerPlugin::from_params(channels, sample_rate, params)
                 .map_err(|e| format!("Failed to create FIR designer plugin: {e}"))?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "linear_phase_eq" => {
@@ -213,35 +213,35 @@ pub fn create_plugin(
                 .map_err(|e| format!("Failed to parse linear-phase EQ params: {e}"))?;
             let plugin = LinearPhaseEqPlugin::from_params(channels, sample_rate, params)
                 .map_err(|e| format!("Failed to create linear-phase EQ plugin: {e}"))?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "spectral_compressor" => {
             let params: SpectralCompressorPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse spectral compressor params: {e}"))?;
             let plugin = SpectralCompressorPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "stereo_imager" => {
             let params: StereoImagerPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse stereo imager params: {e}"))?;
             let plugin = StereoImagerPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "transient_shaper" => {
             let params: TransientShaperPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse transient shaper params: {e}"))?;
             let plugin = TransientShaperPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "saturation" => {
             let params: SaturationPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse saturation params: {e}"))?;
             let plugin = SaturationPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "loudness_compensation" => {
@@ -249,7 +249,7 @@ pub fn create_plugin(
                 serde_json::from_value(parameters.clone())
                     .map_err(|e| format!("Failed to parse loudness compensation params: {e}"))?;
             let plugin = LoudnessCompensationPlugin::from_params(channels, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "fletcher_munson" => {
@@ -260,7 +260,7 @@ pub fn create_plugin(
                 channels,
                 fm.into_loudness_compensation_params(),
             )?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "crossfeed" => {
@@ -273,7 +273,7 @@ pub fn create_plugin(
                 .map_err(|e| format!("Failed to parse crossfeed params: {e}"))?;
             let plugin = CrossfeedPlugin::new(params)
                 .map_err(|e| format!("Failed to create crossfeed plugin: {e}"))?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "xtc" | "crosstalk_cancellation" => {
@@ -292,28 +292,28 @@ pub fn create_plugin(
             let params: DenoiserPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse denoiser params: {e}"))?;
             let plugin = DenoiserPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "speech_denoiser" | "rnnoise" | "rnnoise_denoiser" => {
             let params: SpeechDenoiserPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse speech denoiser params: {e}"))?;
             let plugin = SpeechDenoiserPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "hiss_reducer" | "hiss" => {
             let params: HissReducerPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse hiss reducer params: {e}"))?;
             let plugin = HissReducerPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "declick" | "transient_repair" => {
             let params: DeclickPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse declick params: {e}"))?;
             let plugin = DeclickPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "pnd" | "varispeed" => {
@@ -343,7 +343,7 @@ pub fn create_plugin(
             let params: ChannelMuteSoloParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse channel_mute_solo params: {e}"))?;
             let plugin = ChannelMuteSoloPlugin::from_params(channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "loudness_monitor" => {

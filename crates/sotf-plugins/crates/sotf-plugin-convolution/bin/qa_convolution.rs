@@ -1,5 +1,5 @@
-use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
-use sotf_host::{CountingAlloc, run_standard_tests};
+use sotf_host::plugin::{InPlacePlugin, ParametricInPlacePluginAdapter, ProcessContext};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, CountingAlloc, run_standard_tests};
 use sotf_plugin_convolution::ConvolutionPlugin;
 
 #[global_allocator]
@@ -28,7 +28,7 @@ fn main() {
     assert!(last.is_finite(), "Output should be finite");
 
     // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
+    let mut plugin = ParametricInPlacePluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "ConvolutionPlugin");
 
     println!("\n[ALL PASS] Convolution QA Complete.");

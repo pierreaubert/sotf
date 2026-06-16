@@ -30,7 +30,7 @@ src/
 
 **Key types:**
 
-- `XtcPlugin` -- Main plugin implementing `Plugin`. 2 input -> 2 output channels.
+- `XtcPlugin` -- Main plugin implementing `Plugin`. 2 input -> 2 output channels. Decomposed into cohesive sub-structs aligned with processing stages: `XtcFftConfig`, `XtcInputBuffers`, `XtcWorkBuffers`, `XtcFilterState`, `XtcOutputBuffers`, `XtcDynamics`, and `XtcDiagnostics`.
 - `XtcPluginParams` -- Config: speaker distance/angle, head radius, regularization, HRTF options, room reflections.
 - `XtcData` -- Monitoring data: auto-gain info, limiter envelope.
 - `XtcFilters` -- Pre-computed frequency-domain XTC filter matrix (lock-free via `ArcSwap`).

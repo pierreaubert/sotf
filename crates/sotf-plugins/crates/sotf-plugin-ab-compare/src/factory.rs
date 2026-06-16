@@ -1,7 +1,7 @@
 //! Plugin factory and path builder for A/B Compare plugin.
 
 use super::config::{GraphEdgeConfig, GraphNodeConfig, PathConfig};
-use sotf_host::InPlacePluginAdapter;
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricPluginAdapter};
 use sotf_host::PluginFactoryFn;
 use sotf_host::host::{DawHost, GraphEdge};
 use sotf_host::plugin::Plugin;
@@ -49,32 +49,32 @@ fn create_plugin_builtin(
             let params: GainPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Invalid Gain params: {}", e))?;
             let plugin = GainPlugin::from_params(num_channels, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricPluginAdapter::new(plugin)))
         }
         "compressor" => {
             let params: MultibandCompressorPluginParams =
                 serde_json::from_value(parameters.clone())
                     .map_err(|e| format!("Invalid Compressor params: {}", e))?;
             let plugin = MultibandCompressorPlugin::from_params(num_channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
         "limiter" => {
             let params: LimiterPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Invalid Limiter params: {}", e))?;
             let plugin = LimiterPlugin::from_params(num_channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
         "gate" => {
             let params: GatePluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Invalid Gate params: {}", e))?;
             let plugin = GatePlugin::from_params(num_channels, params);
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
         "delay" => {
             let params: DelayPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Invalid Delay params: {}", e))?;
             let plugin = DelayPlugin::from_params(num_channels, params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
         _ => Err(format!("Unknown plugin type: {}", plugin_type)),
     }

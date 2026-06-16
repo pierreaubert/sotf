@@ -33,6 +33,64 @@ pub use theme_accent_preference::*;
 pub use theme_id::*;
 pub use types::*;
 
+/// Plugin-related color palettes and multi-color data used across visualizations.
+#[derive(Debug, Clone)]
+pub struct ThemePluginPalette {
+    pub plugin_colors: PluginColorMap,
+    pub graph_colors: GraphLineColors,
+    pub band_colors: Vec<Rgba>,
+    pub channel_colors: Vec<Rgba>,
+    pub eq_curve_colors: EQCurveColors,
+    pub spectrum_colors: SpectrumColors,
+    pub meter_colors: MeterColors,
+}
+
+/// Feedback, indicator, and decorative colors that communicate state or embellish
+/// the interface.
+#[derive(Debug, Clone)]
+pub struct ThemeFeedback {
+    // Level meter colors
+    pub meter_normal: Rgba,
+    pub meter_warning: Rgba,
+    pub meter_clip: Rgba,
+
+    // Playback bar
+    pub progress_bar_bg: Rgba,
+    pub progress_bar_fill: Rgba,
+
+    // Toast backgrounds
+    pub toast_success_bg: Rgba,
+    pub toast_error_bg: Rgba,
+    pub toast_info_bg: Rgba,
+    pub toast_warning_bg: Rgba,
+
+    // Additional semantic colors
+    pub peak_indicator: Rgba,
+    pub drag_over_highlight: Rgba,
+    pub drag_over_border: Rgba,
+    pub neutral_indicator: Rgba,
+    pub warning_background: Rgba,
+    pub knob_color: Rgba,
+    pub optimization_color: Rgba,
+    pub grid_color: Rgba,
+    pub overlay_bg: Rgba,
+}
+
+/// Layout and typography configuration for a theme.
+#[derive(Debug, Clone)]
+pub struct ThemeLayout {
+    // Layout sizes
+    pub separator_size: f32,
+
+    // Font family. `None` falls back to `cx.design().typography.font_family`,
+    // letting the active design system (Apple HIG / Fluent / Material3 / Neutral)
+    // pick a platform-native font. `Some(name)` overrides per theme.
+    pub font_family: Option<SharedString>,
+
+    // Design system tokens for platform-adaptive component geometry
+    pub design_tokens: gpui_audio_kit::AudioDesignTokens,
+}
+
 /// Complete theme definition with all UI colors
 #[derive(Debug, Clone)]
 pub struct Theme {
@@ -70,56 +128,19 @@ pub struct Theme {
     pub error: Rgba,
     pub info: Rgba,
 
-    // Level meter colors
-    pub meter_normal: Rgba,
-    pub meter_warning: Rgba,
-    pub meter_clip: Rgba,
-
     // Button colors
     pub button_mute_active: Rgba,
     pub button_solo_active: Rgba,
     pub button_dim_active: Rgba,
 
-    // Playback bar
-    pub progress_bar_bg: Rgba,
-    pub progress_bar_fill: Rgba,
+    // Plugin palette
+    pub plugin_palette: ThemePluginPalette,
 
-    // Toast backgrounds
-    pub toast_success_bg: Rgba,
-    pub toast_error_bg: Rgba,
-    pub toast_info_bg: Rgba,
-    pub toast_warning_bg: Rgba,
+    // Feedback & indicators
+    pub feedback: ThemeFeedback,
 
-    // Plugin colors
-    pub plugin_colors: PluginColorMap,
-    pub graph_colors: GraphLineColors,
-    pub band_colors: Vec<Rgba>,
-    pub channel_colors: Vec<Rgba>,
-    pub eq_curve_colors: EQCurveColors,
-    pub spectrum_colors: SpectrumColors,
-    pub meter_colors: MeterColors,
-
-    // Additional semantic colors
-    pub peak_indicator: Rgba,
-    pub drag_over_highlight: Rgba,
-    pub drag_over_border: Rgba,
-    pub neutral_indicator: Rgba,
-    pub warning_background: Rgba,
-    pub knob_color: Rgba,
-    pub optimization_color: Rgba,
-    pub grid_color: Rgba,
-    pub overlay_bg: Rgba,
-
-    // Layout sizes
-    pub separator_size: f32,
-
-    // Font family. `None` falls back to `cx.design().typography.font_family`,
-    // letting the active design system (Apple HIG / Fluent / Material3 / Neutral)
-    // pick a platform-native font. `Some(name)` overrides per theme.
-    pub font_family: Option<SharedString>,
-
-    // Design system tokens for platform-adaptive component geometry
-    pub design_tokens: gpui_audio_kit::AudioDesignTokens,
+    // Layout & tokens
+    pub layout: ThemeLayout,
 }
 
 impl Theme {
@@ -137,7 +158,7 @@ impl Theme {
                 b: 0.0,
                 a: 0.0,
             },
-            overlay_bg: self.overlay_bg,
+            overlay_bg: self.feedback.overlay_bg,
             text_primary: self.text_primary,
             text_secondary: self.text_secondary,
             text_muted: self.text_muted,
@@ -178,7 +199,8 @@ impl Theme {
     /// Resolve the font family to use for this theme, falling back to the
     /// active design system's typography font when the theme has no override.
     pub fn resolved_font_family(&self, cx: &App) -> SharedString {
-        self.font_family
+        self.layout
+            .font_family
             .clone()
             .unwrap_or_else(|| SharedString::from(cx.design().typography.font_family.clone()))
     }
@@ -238,23 +260,23 @@ impl Theme {
         theme.error = editor_theme.error.to_rgba();
         theme.info = editor_theme.info.to_rgba();
 
-        theme.meter_normal = editor_theme.meter_normal.to_rgba();
-        theme.meter_warning = editor_theme.meter_warning.to_rgba();
-        theme.meter_clip = editor_theme.meter_clip.to_rgba();
+        theme.feedback.meter_normal = editor_theme.meter_normal.to_rgba();
+        theme.feedback.meter_warning = editor_theme.meter_warning.to_rgba();
+        theme.feedback.meter_clip = editor_theme.meter_clip.to_rgba();
 
         theme.button_mute_active = editor_theme.button_mute_active.to_rgba();
         theme.button_solo_active = editor_theme.button_solo_active.to_rgba();
         theme.button_dim_active = editor_theme.button_dim_active.to_rgba();
 
-        theme.progress_bar_bg = editor_theme.progress_bar_bg.to_rgba();
-        theme.progress_bar_fill = editor_theme.progress_bar_fill.to_rgba();
+        theme.feedback.progress_bar_bg = editor_theme.progress_bar_bg.to_rgba();
+        theme.feedback.progress_bar_fill = editor_theme.progress_bar_fill.to_rgba();
 
-        theme.toast_success_bg = editor_theme.toast_success_bg.to_rgba();
-        theme.toast_error_bg = editor_theme.toast_error_bg.to_rgba();
-        theme.toast_info_bg = editor_theme.toast_info_bg.to_rgba();
-        theme.toast_warning_bg = editor_theme.toast_warning_bg.to_rgba();
+        theme.feedback.toast_success_bg = editor_theme.toast_success_bg.to_rgba();
+        theme.feedback.toast_error_bg = editor_theme.toast_error_bg.to_rgba();
+        theme.feedback.toast_info_bg = editor_theme.toast_info_bg.to_rgba();
+        theme.feedback.toast_warning_bg = editor_theme.toast_warning_bg.to_rgba();
 
-        theme.plugin_colors = PluginColorMap {
+        theme.plugin_palette.plugin_colors = PluginColorMap {
             eq: editor_theme.plugin_colors.eq.to_rgba(),
             gain: editor_theme.plugin_colors.gain.to_rgba(),
             upmixer: editor_theme.plugin_colors.upmixer.to_rgba(),
@@ -268,7 +290,7 @@ impl Theme {
             spectrum: editor_theme.plugin_colors.spectrum.to_rgba(),
             mute_solo: editor_theme.plugin_colors.mute_solo.to_rgba(),
         };
-        theme.graph_colors = GraphLineColors {
+        theme.plugin_palette.graph_colors = GraphLineColors {
             input: editor_theme.graph_colors.input.to_rgba(),
             target: editor_theme.graph_colors.target.to_rgba(),
             filter_response: editor_theme.graph_colors.filter_response.to_rgba(),
@@ -280,13 +302,13 @@ impl Theme {
             directivity_er: editor_theme.graph_colors.directivity_er.to_rgba(),
             directivity_sp: editor_theme.graph_colors.directivity_sp.to_rgba(),
         };
-        theme.band_colors = editor_theme
+        theme.plugin_palette.band_colors = editor_theme
             .band_colors
             .iter()
             .map(|color| color.to_rgba())
             .collect();
-        theme.channel_colors = theme.band_colors.clone();
-        theme.eq_curve_colors = EQCurveColors {
+        theme.plugin_palette.channel_colors = theme.plugin_palette.band_colors.clone();
+        theme.plugin_palette.eq_curve_colors = EQCurveColors {
             background: editor_theme.eq_curve_colors.background.to_rgba(),
             grid: editor_theme.eq_curve_colors.grid.to_rgba(),
             curve_boost: editor_theme.eq_curve_colors.curve_boost.to_rgba(),
@@ -295,13 +317,13 @@ impl Theme {
             fill_cut: editor_theme.eq_curve_colors.fill_cut.to_rgba(),
             zero_line: editor_theme.eq_curve_colors.zero_line.to_rgba(),
         };
-        theme.spectrum_colors = SpectrumColors {
+        theme.plugin_palette.spectrum_colors = SpectrumColors {
             background: editor_theme.spectrum_colors.background.to_rgba(),
             bass: editor_theme.spectrum_colors.bass.to_rgba(),
             mids: editor_theme.spectrum_colors.mids.to_rgba(),
             treble: editor_theme.spectrum_colors.treble.to_rgba(),
         };
-        theme.meter_colors = MeterColors {
+        theme.plugin_palette.meter_colors = MeterColors {
             background: editor_theme.meter_colors.background.to_rgba(),
             normal: editor_theme.meter_colors.normal.to_rgba(),
             warning: editor_theme.meter_colors.warning.to_rgba(),
@@ -310,16 +332,16 @@ impl Theme {
             text: editor_theme.meter_colors.text.to_rgba(),
         };
 
-        theme.peak_indicator = editor_theme.peak_indicator.to_rgba();
-        theme.drag_over_highlight = editor_theme.drag_over_highlight.to_rgba();
-        theme.drag_over_border = editor_theme.drag_over_border.to_rgba();
-        theme.neutral_indicator = editor_theme.neutral_indicator.to_rgba();
-        theme.warning_background = editor_theme.warning_background.to_rgba();
-        theme.knob_color = editor_theme.knob_color.to_rgba();
-        theme.optimization_color = editor_theme.optimization_color.to_rgba();
-        theme.grid_color = editor_theme.grid_color.to_rgba();
-        theme.separator_size = editor_theme.separator_size;
-        theme.font_family = if editor_theme.font_family.trim().is_empty() {
+        theme.feedback.peak_indicator = editor_theme.peak_indicator.to_rgba();
+        theme.feedback.drag_over_highlight = editor_theme.drag_over_highlight.to_rgba();
+        theme.feedback.drag_over_border = editor_theme.drag_over_border.to_rgba();
+        theme.feedback.neutral_indicator = editor_theme.neutral_indicator.to_rgba();
+        theme.feedback.warning_background = editor_theme.warning_background.to_rgba();
+        theme.feedback.knob_color = editor_theme.knob_color.to_rgba();
+        theme.feedback.optimization_color = editor_theme.optimization_color.to_rgba();
+        theme.feedback.grid_color = editor_theme.grid_color.to_rgba();
+        theme.layout.separator_size = editor_theme.separator_size;
+        theme.layout.font_family = if editor_theme.font_family.trim().is_empty() {
             None
         } else {
             Some(SharedString::from(editor_theme.font_family.clone()))
@@ -349,14 +371,14 @@ impl Theme {
         self.text_on_accent = palette.text_on_accent.to_rgba();
         self.text_on_accent_muted = Self::with_opacity(self.text_on_accent, 0.8);
         self.icon_on_accent = self.text_on_accent;
-        self.progress_bar_fill = self.accent;
-        self.drag_over_highlight = Self::with_opacity(self.accent, 0.25);
-        self.drag_over_border = self.accent;
-        self.neutral_indicator = self.accent;
-        self.optimization_color = self.accent_hover;
-        self.plugin_colors.eq = self.accent;
-        self.plugin_colors.convolution = self.accent;
-        self.graph_colors.corrected = self.accent;
+        self.feedback.progress_bar_fill = self.accent;
+        self.feedback.drag_over_highlight = Self::with_opacity(self.accent, 0.25);
+        self.feedback.drag_over_border = self.accent;
+        self.feedback.neutral_indicator = self.accent;
+        self.feedback.optimization_color = self.accent_hover;
+        self.plugin_palette.plugin_colors.eq = self.accent;
+        self.plugin_palette.plugin_colors.convolution = self.accent;
+        self.plugin_palette.graph_colors.corrected = self.accent;
         self
     }
 

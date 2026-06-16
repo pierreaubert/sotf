@@ -194,7 +194,7 @@ fn test_formant_preservation_floors_gains_at_peaks() {
 
     // Verify the FormantPreserver fields are accessible and contain valid data
     // after processing (envelope computed, non-zero for signal with content).
-    let preserver = &plugin_on.formant_preserver;
+    let preserver = &plugin_on.auxiliary.formant_preserver;
     let max_env = preserver
         .envelope
         .iter()
@@ -220,14 +220,14 @@ fn test_spatial_coherence_uses_complex_cross_term() {
     let mut decorrelated_sum = 0.0;
 
     // Strongly coherent case: identical complex bins each frame.
-    plugin.spatial_coherence.fill(1.0);
+    plugin.spatial.spatial_coherence.fill(1.0);
     plugin
-        .spatial_cross
+        .spatial.spatial_cross
         .fill(rustfft::num_complex::Complex::new(0.0, 0.0));
     for frame in 0..12 {
         let angle = frame as f32 * 0.0;
-        plugin.freq_domain[0][k] = rustfft::num_complex::Complex::new(angle.cos(), angle.sin());
-        plugin.freq_domain[1][k] = plugin.freq_domain[0][k];
+        plugin.fft.freq_domain[0][k] = rustfft::num_complex::Complex::new(angle.cos(), angle.sin());
+        plugin.fft.freq_domain[1][k] = plugin.fft.freq_domain[0][k];
         coherent_sum += plugin.compute_spatial_coherence(k);
     }
     coherent_sum /= 12.0;
@@ -238,14 +238,14 @@ fn test_spatial_coherence_uses_complex_cross_term() {
 
     // Decorrelated case: rapidly rotating relative phase; average complex cross
     // should cancel toward 0 even though magnitudes stay the same.
-    plugin.spatial_coherence.fill(1.0);
+    plugin.spatial.spatial_coherence.fill(1.0);
     plugin
-        .spatial_cross
+        .spatial.spatial_cross
         .fill(rustfft::num_complex::Complex::new(0.0, 0.0));
     for frame in 0..12 {
         let phase = (frame as f32) * 0.7;
-        plugin.freq_domain[0][k] = rustfft::num_complex::Complex::new(1.0, 0.0);
-        plugin.freq_domain[1][k] = rustfft::num_complex::Complex::new(phase.cos(), phase.sin());
+        plugin.fft.freq_domain[0][k] = rustfft::num_complex::Complex::new(1.0, 0.0);
+        plugin.fft.freq_domain[1][k] = rustfft::num_complex::Complex::new(phase.cos(), phase.sin());
         decorrelated_sum += plugin.compute_spatial_coherence(k);
     }
     decorrelated_sum /= 12.0;
@@ -265,7 +265,7 @@ fn test_power_at_bin_reads_no_alloc_vector_per_call() {
     let mut plugin = DenoiserPlugin::new(2, false);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
-    plugin.freq_domain[0][3] = rustfft::num_complex::Complex::new(3.0, 4.0);
+    plugin.fft.freq_domain[0][3] = rustfft::num_complex::Complex::new(3.0, 4.0);
     let p = plugin.get_power_at_bin(0, 3);
     assert!((p - 25.0).abs() < 1e-6, "Expected norm^2 = 25, got {p}");
 }

@@ -332,7 +332,11 @@ pub use plugin_transient_shaper::{
     TransientShaperData, TransientShaperPlugin, TransientShaperPluginParams,
 };
 pub use plugin_upmixer::{
-    UpmixerPlugin, UpmixerPluginParams, default_hr_sharpen as upmixer_default_hr_sharpen,
+    UpmixerPlugin, UpmixerPluginBypassParams, UpmixerPluginCoreParams,
+    UpmixerPluginDecorrelationParams, UpmixerPluginDialogueParams, UpmixerPluginGainsParams,
+    UpmixerPluginHeightParams, UpmixerPluginMlParams, UpmixerPluginOutputParams,
+    UpmixerPluginParams, UpmixerPluginSpectralParams, UpmixerPluginSubharmonicParams,
+    UpmixerPluginSurroundParams, default_hr_sharpen as upmixer_default_hr_sharpen,
     default_safety_cap_db as upmixer_default_safety_cap_db,
     default_subharmonic_gain as upmixer_default_subharmonic_gain,
 };
@@ -359,8 +363,10 @@ pub use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, Par
 pub use sotf_host::plugin::{
     InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
 };
-pub use sotf_host::ParametricPluginAdapter;
-
+pub use sotf_host::{
+    ParametricInPlacePlugin, ParametricInPlacePluginAdapter, ParametricPlugin,
+    ParametricPluginAdapter,
+};
 #[cfg(feature = "qa")]
 pub use sotf_host::test_utils::benchmark_plugin_full;
 #[cfg(any(feature = "qa", debug_assertions))]

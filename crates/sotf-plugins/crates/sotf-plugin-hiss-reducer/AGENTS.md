@@ -4,7 +4,7 @@ Stationary high-frequency-noise reducer. Wraps the `HissReducer` block from `plu
 
 ## Architecture
 
-- `lib.rs` — `HissReducerPluginParams` + `InPlacePlugin` impl driving `plugins_denoiser::hiss::HissReducer`.
+- `lib.rs` — `HissReducerPluginParams` + `ParametricInPlacePlugin` impl driving `plugins_denoiser::hiss::HissReducer`.
 - `params.rs` — `PARAMS` array (parameter specs) and registration via `param_specs::find_by_key`.
 
 ## Parameters
@@ -29,6 +29,6 @@ cargo run -p sotf-plugin-hiss-reducer --features qa --bin qa-hiss-reducer
 
 ## Important Notes
 
-- Implements `InPlacePlugin` — same in/out channel count.
+- Implements `ParametricInPlacePlugin` — same in/out channel count.
 - Parameter registration must appear in 3 places (see `param_bridge`).
 - DSP body lives in `plugins-denoiser::hiss`; this crate is a thin host adapter.

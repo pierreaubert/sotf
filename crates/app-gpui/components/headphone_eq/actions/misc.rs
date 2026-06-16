@@ -130,7 +130,12 @@ impl PlayerView {
                 .measurement_state
                 .headphone_eq_state
                 .status_message = "Starting optimization...".to_string();
-            state.app.measurement_state.headphone_eq_state.model.progress = 0.0;
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .model
+                .progress = 0.0;
             state
                 .app
                 .measurement_state
@@ -138,7 +143,12 @@ impl PlayerView {
                 .progress_history
                 .clear();
             state.app.measurement_state.headphone_eq_state.model.result = None;
-            state.app.measurement_state.headphone_eq_state.model.error_message = None;
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .model
+                .error_message = None;
             cx.notify();
             state
                 .app
@@ -272,7 +282,8 @@ impl PlayerView {
                             ),
                         };
 
-                        state.app.measurement_state.headphone_eq_state.model.result = Some(app_result);
+                        state.app.measurement_state.headphone_eq_state.model.result =
+                            Some(app_result);
                         state
                             .app
                             .measurement_state
@@ -290,8 +301,12 @@ impl PlayerView {
                             .measurement_state
                             .headphone_eq_state
                             .optimization_status = crate::app::types::OptimizationStatus::Failed;
-                        state.app.measurement_state.headphone_eq_state.model.error_message =
-                            Some(e.clone());
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .model
+                            .error_message = Some(e.clone());
                         state
                             .app
                             .measurement_state
@@ -373,7 +388,7 @@ impl PlayerView {
                 }
 
                 // Notify engine
-                state.app.plugin_state.pending_plugin_update =
+                state.app.plugin_state.update_state.pending_plugin_update =
                     Some(crate::app::types::PluginUpdateType::Structural);
                 state.app.sync_spectrum_visible();
 
@@ -512,7 +527,12 @@ impl PlayerView {
                 .measurement_state
                 .headphone_eq_state
                 .loading_headphones = true;
-            state.app.measurement_state.headphone_eq_state.model.error_message = None;
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .model
+                .error_message = None;
         });
         cx.notify();
 
@@ -574,8 +594,12 @@ impl PlayerView {
                                     .headphone_eq_state
                                     .loading_headphones = false;
                                 let msg = format!("Failed to fetch headphones: {}", e);
-                                state.app.measurement_state.headphone_eq_state.model.error_message =
-                                    Some(msg.clone());
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .model
+                                    .error_message = Some(msg.clone());
                                 state.app.ui_state.toast_message =
                                     Some(crate::app::types::ToastMessage::error(msg));
                                 cx.notify();
@@ -608,7 +632,12 @@ impl PlayerView {
                 .headphone_eq_state
                 .model
                 .loading_download = true;
-            state.app.measurement_state.headphone_eq_state.model.error_message = None;
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .model
+                .error_message = None;
             // Clear any previous measurement_path from a previous download
             state
                 .app
@@ -701,8 +730,12 @@ impl PlayerView {
                                     .headphone_eq_state
                                     .loading_download = false;
                                 let msg = format!("Headphone download failed: {}", e);
-                                state.app.measurement_state.headphone_eq_state.model.error_message =
-                                    Some(e);
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .model
+                                    .error_message = Some(e);
                                 state.app.ui_state.toast_message =
                                     Some(crate::app::types::ToastMessage::error(msg));
                                 cx.notify();

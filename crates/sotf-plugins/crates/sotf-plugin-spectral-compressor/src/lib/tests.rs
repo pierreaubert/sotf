@@ -3,7 +3,7 @@ use super::misc::fft_size_from_index;
 use super::misc::smooth_spectral_envelope;
 use super::spectral_compressor_plugin::SpectralCompressorPlugin;
 use super::spectral_compressor_plugin_params::SpectralCompressorPluginParams;
-use sotf_host::InPlacePlugin;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::ProcessContext;
 

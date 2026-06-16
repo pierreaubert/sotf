@@ -1,7 +1,8 @@
 use super::convolution_plugin::ConvolutionPlugin;
 use super::types::ConvolutionPluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 mod misc;
 
@@ -22,7 +23,7 @@ fn test_from_params_propagates_ir_load_errors() {
 fn test_ir_file_parameter_reports_load_errors() {
     let mut plugin = ConvolutionPlugin::new(1, 48000);
     let err = plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("ir_file"),
             ParameterValue::String("/definitely/missing/sotf-test-ir.wav".to_string()),
         )
@@ -90,7 +91,7 @@ fn test_set_parameter_long_ir_loads_without_process_allocations() {
 
     let mut plugin = ConvolutionPlugin::new(1, 48000);
     plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("ir_file"),
             ParameterValue::String(ir_path.to_string_lossy().into_owned()),
         )

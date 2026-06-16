@@ -354,14 +354,16 @@ mod tests {
         assert_eq!(p.group, "EQ");
         assert_eq!(p.importance, ParameterImportance::Critical);
         assert_eq!(p.unit, "Hz");
-        assert_eq!(p.description.as_deref(), Some("Center frequency of the filter"));
+        assert_eq!(
+            p.description.as_deref(),
+            Some("Center frequency of the filter")
+        );
         assert!(p.logarithmic);
     }
 
     #[test]
     fn parameter_groups_are_independent_between_instances() {
-        let eq = Parameter::new_float("freq", "Frequency", 1000.0, 20.0, 20_000.0)
-            .with_group("EQ");
+        let eq = Parameter::new_float("freq", "Frequency", 1000.0, 20.0, 20_000.0).with_group("EQ");
         let dynamics = Parameter::new_float("threshold", "Threshold", -18.0, -60.0, 0.0)
             .with_group("Dynamics");
 

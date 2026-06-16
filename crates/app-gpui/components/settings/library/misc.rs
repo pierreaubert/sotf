@@ -197,7 +197,8 @@ impl PlayerView {
                                         move |view, _: &ClickEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
                                                 // Set selection to this index and remove
-                                                state.app.selected_directory_index = idx;
+                                                state.app.library_view.selected_directory_index =
+                                                    idx;
                                                 state.app.remove_selected_directory();
                                             });
                                             cx.notify();
@@ -741,7 +742,7 @@ impl PlayerView {
                                             state.app.ui_state.scanner_threads = Some(threads);
                                             state
                                                 .app
-                                                .scan_ctrl
+                                                .scan.ctrl
                                                 .set_num_threads(Some(threads as usize));
                                         });
                                     }),

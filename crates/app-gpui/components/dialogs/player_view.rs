@@ -480,10 +480,18 @@ impl PlayerView {
 
         if let Some((message, variant, action_label)) = toast_data {
             let (bg_color, border_color, text_color) = match variant {
-                ToastVariant::Success => (theme.toast_success_bg, theme.success, theme.success),
-                ToastVariant::Error => (theme.toast_error_bg, theme.error, theme.error),
-                ToastVariant::Info => (theme.toast_info_bg, theme.info, theme.info),
-                ToastVariant::Warning => (theme.toast_warning_bg, theme.warning, theme.warning),
+                ToastVariant::Success => (
+                    theme.feedback.toast_success_bg,
+                    theme.success,
+                    theme.success,
+                ),
+                ToastVariant::Error => (theme.feedback.toast_error_bg, theme.error, theme.error),
+                ToastVariant::Info => (theme.feedback.toast_info_bg, theme.info, theme.info),
+                ToastVariant::Warning => (
+                    theme.feedback.toast_warning_bg,
+                    theme.warning,
+                    theme.warning,
+                ),
             };
 
             div()
@@ -640,7 +648,7 @@ impl PlayerView {
                                             match crate::app::MetadataEditorState::for_album(&album)
                                             {
                                                 Ok(editor) => {
-                                                    state.app.metadata_editor = Some(editor);
+                                                    state.app.modal.metadata_editor = Some(editor);
                                                     state.app.ui_state.input_mode =
                                                         crate::app::InputMode::MetadataEditor;
                                                 }
@@ -662,7 +670,7 @@ impl PlayerView {
                                                 .current_track()
                                                 .or_else(|| queue_item.album.tracks.first())
                                         {
-                                            state.app.metadata_editor =
+                                            state.app.modal.metadata_editor =
                                                 Some(crate::app::MetadataEditorState::for_track(
                                                     track,
                                                 ));
@@ -747,7 +755,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let Some(editor) = state.app.metadata_editor.clone() else {
+        let Some(editor) = state.app.modal.metadata_editor.clone() else {
             return div().into_any_element();
         };
 
@@ -767,7 +775,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |_window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.metadata_editor = None;
+                        state.app.modal.metadata_editor = None;
                         state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                     });
                 }
@@ -945,7 +953,7 @@ impl PlayerView {
                                                 move |value, _window, cx| {
                                                     state.update(cx, |state, _cx| {
                                                         if let Some(editor) =
-                                                            &mut state.app.metadata_editor
+                                                            &mut state.app.modal.metadata_editor
                                                         {
                                                             editor.search_query = value;
                                                             editor.search_error = None;
@@ -1102,7 +1110,7 @@ impl PlayerView {
                         let state = self.state.clone();
                         move |value, _window, cx| {
                             state.update(cx, |state, _cx| {
-                                let Some(editor) = &mut state.app.metadata_editor else {
+                                let Some(editor) = &mut state.app.modal.metadata_editor else {
                                     return;
                                 };
                                 match field {
@@ -1132,7 +1140,7 @@ impl PlayerView {
 
     pub(crate) fn close_metadata_editor(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.metadata_editor = None;
+            state.app.modal.metadata_editor = None;
             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
         });
         cx.notify();
@@ -1140,7 +1148,7 @@ impl PlayerView {
 
     pub(crate) fn refresh_metadata_preview(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            let Some(editor) = state.app.metadata_editor.clone() else {
+            let Some(editor) = state.app.modal.metadata_editor.clone() else {
                 return;
             };
             let result = editor.patch().and_then(|patch| {
@@ -1150,7 +1158,7 @@ impl PlayerView {
                     .preview_metadata_edit(editor.target.clone(), patch)
                     .map_err(|err| err.to_string())
             });
-            if let Some(current) = &mut state.app.metadata_editor {
+            if let Some(current) = &mut state.app.modal.metadata_editor {
                 match result {
                     Ok(preview) => {
                         current.preview = Some(preview);
@@ -1168,7 +1176,7 @@ impl PlayerView {
 
     pub(crate) fn apply_metadata_editor(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            let Some(editor) = state.app.metadata_editor.clone() else {
+            let Some(editor) = state.app.modal.metadata_editor.clone() else {
                 return;
             };
             let result = editor.patch().and_then(|patch| {
@@ -1180,7 +1188,7 @@ impl PlayerView {
             });
             match result {
                 Ok(preview) => {
-                    state.app.metadata_editor = None;
+                    state.app.modal.metadata_editor = None;
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                     state.app.ui_state.toast_message =
                         Some(crate::app::ToastMessage::success(format!(
@@ -1190,7 +1198,7 @@ impl PlayerView {
                     state.app.invalidate_library_stats();
                 }
                 Err(err) => {
-                    if let Some(current) = &mut state.app.metadata_editor {
+                    if let Some(current) = &mut state.app.modal.metadata_editor {
                         current.error = Some(err);
                     }
                 }
@@ -1203,7 +1211,7 @@ impl PlayerView {
         let (scope, query) = self
             .state
             .update(cx, |state, _cx| {
-                let Some(editor) = &mut state.app.metadata_editor else {
+                let Some(editor) = &mut state.app.modal.metadata_editor else {
                     return None;
                 };
                 let query = editor.search_query.trim().to_string();
@@ -1253,7 +1261,7 @@ impl PlayerView {
                 return;
             };
             state_entity.update(cx, |state, cx| {
-                if let Some(editor) = &mut state.app.metadata_editor {
+                if let Some(editor) = &mut state.app.modal.metadata_editor {
                     editor.search_in_progress = false;
                     match result {
                         Ok(candidates) => {
@@ -1276,7 +1284,7 @@ impl PlayerView {
 
     pub(crate) fn import_metadata_candidate(&mut self, index: usize, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            let Some(editor) = &mut state.app.metadata_editor else {
+            let Some(editor) = &mut state.app.modal.metadata_editor else {
                 return;
             };
             let Some(candidate) = editor.search_results.get(index).cloned() else {
@@ -1649,9 +1657,10 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let track_channels = state.app.channel_conflict_track_channels;
+        let track_channels = state.app.modal.channel_conflict_track_channels;
         let conflict_names: Vec<String> = state
             .app
+            .modal
             .channel_conflicts
             .iter()
             .map(|c| {
@@ -1673,8 +1682,8 @@ impl PlayerView {
                     let state_entity = state_entity.clone();
                     cx.defer(move |cx| {
                         state_entity.update(cx, |state, _| {
-                            state.app.channel_conflict_path = None;
-                            state.app.channel_conflicts.clear();
+                            state.app.modal.channel_conflict_path = None;
+                            state.app.modal.channel_conflicts.clear();
                             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                             state.app.playback.is_playing = false;
                         });
@@ -1718,7 +1727,7 @@ impl PlayerView {
                                         cx.defer(move |cx| {
                                             state_entity.update(cx, |state, _| {
                                                 let conflicts =
-                                                    std::mem::take(&mut state.app.channel_conflicts);
+                                                    std::mem::take(&mut state.app.modal.channel_conflicts);
                                                 let indices: Vec<usize> =
                                                     conflicts.iter().map(|c| c.index).collect();
                                                 state
@@ -1737,7 +1746,7 @@ impl PlayerView {
                                             // Play the pending track
                                             let path = state_entity
                                                 .update(cx, |state, _| {
-                                                    state.app.channel_conflict_path.take()
+                                                    state.app.modal.channel_conflict_path.take()
                                                 });
                                             if let Some(path) = path {
                                                 state_entity.update(cx, |state, _| {
@@ -1763,7 +1772,7 @@ impl PlayerView {
                                         cx.defer(move |cx| {
                                             state_entity.update(cx, |state, _| {
                                                 let conflicts =
-                                                    std::mem::take(&mut state.app.channel_conflicts);
+                                                    std::mem::take(&mut state.app.modal.channel_conflicts);
                                                 let mut indices: Vec<usize> =
                                                     conflicts.iter().map(|c| c.index).collect();
                                                 indices.sort_unstable_by(|a, b| b.cmp(a));
@@ -1779,7 +1788,7 @@ impl PlayerView {
                                             });
                                             let path = state_entity
                                                 .update(cx, |state, _| {
-                                                    state.app.channel_conflict_path.take()
+                                                    state.app.modal.channel_conflict_path.take()
                                                 });
                                             if let Some(path) = path {
                                                 state_entity.update(cx, |state, _| {
@@ -1801,8 +1810,8 @@ impl PlayerView {
                                             let state_entity = state_entity.clone();
                                             cx.defer(move |cx| {
                                                 state_entity.update(cx, |state, _| {
-                                                    state.app.channel_conflict_path = None;
-                                                    state.app.channel_conflicts.clear();
+                                                    state.app.modal.channel_conflict_path = None;
+                                                    state.app.modal.channel_conflicts.clear();
                                                     state.app.ui_state.input_mode =
                                                         crate::app::InputMode::Normal;
                                                     state.app.playback.is_playing = false;

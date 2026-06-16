@@ -5,7 +5,8 @@
 //! reset, and error paths.
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 use sotf_plugin_gate::{GateData, GatePlugin, GatePluginParams};
 
 const SR: u32 = 48000;
@@ -30,7 +31,7 @@ fn instantiate_and_declare_metadata() {
     assert_eq!(plugin.channels(), 2);
     assert_eq!(plugin.input_channels(), 2);
 
-    let params = plugin.parameters();
+    let params = plugin.parametric_parameters();
     let ids: Vec<_> = params.iter().map(|p| p.id.as_str()).collect();
     assert!(ids.contains(&"threshold"));
     assert!(ids.contains(&"ratio"));
@@ -119,8 +120,8 @@ fn parameter_roundtrip() {
     ];
 
     for (id, value) in cases {
-        plugin.set_parameter(id.clone(), value.clone()).unwrap();
-        let read = plugin.get_parameter(&id).expect("parameter should exist");
+        plugin.parametric_set_parameter(id.clone(), value.clone()).unwrap();
+        let read = plugin.parametric_get_parameter(&id).expect("parameter should exist");
         assert_eq!(read, value, "round-trip failed for {}", id);
     }
 
@@ -132,7 +133,7 @@ fn parameter_roundtrip() {
 fn set_parameter_unknown_rejected() {
     let mut plugin = GatePlugin::new(1, -40.0, 10.0, 1.0, 10.0, 100.0);
     let err = plugin
-        .set_parameter(ParameterId::from("nope"), ParameterValue::Float(1.0))
+        .parametric_set_parameter(ParameterId::from("nope"), ParameterValue::Float(1.0))
         .unwrap_err();
     assert!(err.contains("Unknown parameter"), "unexpected error: {err}");
 }
@@ -141,7 +142,7 @@ fn set_parameter_unknown_rejected() {
 fn set_parameter_type_mismatch_rejected() {
     let mut plugin = GatePlugin::new(1, -40.0, 10.0, 1.0, 10.0, 100.0);
     let err = plugin
-        .set_parameter(
+        .parametric_set_parameter(
             ParameterId::from("threshold"),
             ParameterValue::String("low".to_string()),
         )
@@ -252,7 +253,7 @@ fn bypass_mix_zero_passthrough() {
 
     // Set mix to 0 explicitly and let its smoother settle.
     plugin
-        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
         .unwrap();
 
     let make_sine = |frames: usize| {

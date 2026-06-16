@@ -2,7 +2,8 @@ use super::allpass_state::AllpassState;
 use super::delay_plugin::DelayPlugin;
 use super::types::DelayPluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 #[test]
 fn test_delay_basic() {

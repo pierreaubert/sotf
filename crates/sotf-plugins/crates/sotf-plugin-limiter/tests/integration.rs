@@ -1,7 +1,8 @@
 // Integration tests for sotf-plugin-limiter — exercises the public API only.
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 use sotf_plugin_limiter::{LimiterData, LimiterPlugin, LimiterPluginParams};
 
 fn make_sine(freq_hz: f32, sample_rate: u32, num_frames: usize, amplitude: f32) -> Vec<f32> {

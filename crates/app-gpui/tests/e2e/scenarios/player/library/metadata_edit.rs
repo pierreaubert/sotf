@@ -34,13 +34,13 @@ impl TestScenario for MetadataEditorScenario {
 
         driver.update_app(|app, _| {
             let album = app.library_state.library.albums[0].clone();
-            app.metadata_editor = Some(MetadataEditorState::for_album(&album).unwrap());
+            app.modal.metadata_editor = Some(MetadataEditorState::for_album(&album).unwrap());
             app.ui_state.input_mode = InputMode::MetadataEditor;
         });
         driver.run_until_parked();
 
         driver.update_app(|app, _| {
-            let editor = app.metadata_editor.as_mut().unwrap();
+            let editor = app.modal.metadata_editor.as_mut().unwrap();
             editor.fields.title = "Imported Album".to_string();
             editor.search_results.push(MetadataImportCandidate {
                 provider_id: "musicbrainz".to_string(),
@@ -66,7 +66,7 @@ impl TestScenario for MetadataEditorScenario {
         });
 
         let (mode, title, year, preview_files) = driver.read_app(|app| {
-            let editor = app.metadata_editor.as_ref().unwrap();
+            let editor = app.modal.metadata_editor.as_ref().unwrap();
             (
                 app.ui_state.input_mode,
                 editor.fields.title.clone(),

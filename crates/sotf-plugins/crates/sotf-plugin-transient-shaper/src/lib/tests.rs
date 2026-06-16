@@ -3,7 +3,8 @@ use super::misc::time_to_coeff;
 use super::transient_shaper_plugin::TransientShaperPlugin;
 use super::types::TransientShaperPluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 mod misc;
 
@@ -14,41 +15,33 @@ fn test_parameter_roundtrip() {
     plugin.initialize(48000).unwrap();
 
     // Set attack to 50%
-    plugin
-        .set_parameter(ParameterId::from("attack"), ParameterValue::Float(50.0))
+    plugin.parametric_set_parameter(ParameterId::from("attack"), ParameterValue::Float(50.0))
         .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("attack"));
+    let val = plugin.parametric_get_parameter(&ParameterId::from("attack"));
     assert_eq!(val, Some(ParameterValue::Float(50.0)));
 
     // Set sustain to -75%
-    plugin
-        .set_parameter(ParameterId::from("sustain"), ParameterValue::Float(-75.0))
+    plugin.parametric_set_parameter(ParameterId::from("sustain"), ParameterValue::Float(-75.0))
         .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("sustain"));
+    let val = plugin.parametric_get_parameter(&ParameterId::from("sustain"));
     assert_eq!(val, Some(ParameterValue::Float(-75.0)));
 
     // Set sensitivity
-    plugin
-        .set_parameter(ParameterId::from("sensitivity"), ParameterValue::Float(6.0))
+    plugin.parametric_set_parameter(ParameterId::from("sensitivity"), ParameterValue::Float(6.0))
         .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("sensitivity"));
+    let val = plugin.parametric_get_parameter(&ParameterId::from("sensitivity"));
     assert_eq!(val, Some(ParameterValue::Float(6.0)));
 
     // Set output gain
-    plugin
-        .set_parameter(
-            ParameterId::from("output_gain"),
-            ParameterValue::Float(-3.0),
-        )
+    plugin.parametric_set_parameter(ParameterId::from("output_gain"), ParameterValue::Float(-3.0))
         .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("output_gain"));
+    let val = plugin.parametric_get_parameter(&ParameterId::from("output_gain"));
     assert_eq!(val, Some(ParameterValue::Float(-3.0)));
 
     // Set mix
-    plugin
-        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+    plugin.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
         .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("mix"));
+    let val = plugin.parametric_get_parameter(&ParameterId::from("mix"));
     assert_eq!(val, Some(ParameterValue::Float(0.5)));
 }
 
@@ -367,17 +360,14 @@ fn test_set_parameter_unknown_id_returns_error() {
     let mut plugin = TransientShaperPlugin::new(1);
     plugin.initialize(48000).unwrap();
 
-    let result = plugin.set_parameter(
-        ParameterId::from("not_a_real_param"),
-        ParameterValue::Float(1.0),
-    );
+    let result = plugin.parametric_set_parameter(ParameterId::from("not_a_real_param"), ParameterValue::Float(1.0));
     assert!(result.is_err());
 }
 
 #[test]
 fn test_get_parameter_unknown_id_returns_none() {
     let plugin = TransientShaperPlugin::new(1);
-    let val = plugin.get_parameter(&ParameterId::from("not_a_real_param"));
+    let val = plugin.parametric_get_parameter(&ParameterId::from("not_a_real_param"));
     assert_eq!(val, None);
 }
 

@@ -7,8 +7,8 @@
 // (typically less than 1ms for 48kHz with 512 sample buffers).
 
 use sotf_plugins::{
-    GainPlugin, InPlacePlugin, LimiterPlugin, Plugin, ProcessContext, UpmixerPlugin,
-};
+    GainPlugin, LimiterPlugin, ParametricInPlacePlugin, ParametricPlugin, Plugin, ProcessContext,
+    UpmixerPlugin};
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
@@ -27,7 +27,7 @@ fn percentile(times: &[Duration], p: f64) -> Duration {
 #[test]
 fn test_gain_plugin_timing() {
     let mut gain = GainPlugin::new(2, 3.0);
-    gain.initialize(TEST_SAMPLE_RATE).unwrap();
+    gain.plugin_initialize(TEST_SAMPLE_RATE).unwrap();
 
     let input = vec![0.5f32; TEST_BUFFER_SIZE * 2];
     let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE);
@@ -36,13 +36,13 @@ fn test_gain_plugin_timing() {
 
     for _ in 0..10 {
         let mut output = input.clone();
-        let _ = gain.process_in_place(&mut output, &context);
+        let _ = gain.process(&input, &mut output, &context);
     }
 
     for _ in 0..ITERATIONS {
         let mut output = input.clone();
         let start = Instant::now();
-        let _ = black_box(gain.process_in_place(&mut output, &context));
+        let _ = black_box(gain.process(&input, &mut output, &context));
         let elapsed = start.elapsed();
         times.push(elapsed);
     }
@@ -80,11 +80,11 @@ fn test_gain_plugin_chain_timing() {
     let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE);
 
     let mut gain = GainPlugin::new(2, 1.0);
-    gain.initialize(TEST_SAMPLE_RATE).unwrap();
+    gain.plugin_initialize(TEST_SAMPLE_RATE).unwrap();
 
     for _ in 0..2 {
         let mut output = input.clone();
-        gain.process_in_place(&mut output, &context).unwrap();
+        gain.process(&input, &mut output, &context).unwrap();
     }
 
     let mut times = Vec::with_capacity(ITERATIONS);
@@ -92,7 +92,7 @@ fn test_gain_plugin_chain_timing() {
     for _ in 0..ITERATIONS {
         let mut output = input.clone();
         let start = Instant::now();
-        let _ = black_box(gain.process_in_place(&mut output, &context));
+        let _ = black_box(gain.process(&input, &mut output, &context));
         let elapsed = start.elapsed();
         times.push(elapsed);
     }
@@ -184,7 +184,7 @@ fn test_upmixer_plugin_timing() {
 #[test]
 fn test_no_allocations_in_processing_loop() {
     let mut gain = GainPlugin::new(2, 0.0);
-    gain.initialize(TEST_SAMPLE_RATE).unwrap();
+    gain.plugin_initialize(TEST_SAMPLE_RATE).unwrap();
 
     let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE);
 
@@ -192,14 +192,14 @@ fn test_no_allocations_in_processing_loop() {
 
     for _ in 0..100 {
         let mut output = input.clone();
-        gain.process_in_place(&mut output, &context).unwrap();
+        gain.process(&input, &mut output, &context).unwrap();
     }
 }
 
 #[test]
 fn test_memory_usage_stability() {
     let mut gain = GainPlugin::new(2, 0.0);
-    gain.initialize(TEST_SAMPLE_RATE).unwrap();
+    gain.plugin_initialize(TEST_SAMPLE_RATE).unwrap();
 
     let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE);
 
@@ -207,7 +207,7 @@ fn test_memory_usage_stability() {
 
     for _ in 0..1000 {
         let mut output = input.clone();
-        gain.process_in_place(&mut output, &context).unwrap();
+        gain.process(&input, &mut output, &context).unwrap();
     }
 }
 
@@ -216,7 +216,7 @@ fn test_processing_under_load() {
     let mut times = Vec::with_capacity(ITERATIONS);
 
     let mut gain = GainPlugin::new(2, 0.0);
-    gain.initialize(TEST_SAMPLE_RATE).unwrap();
+    gain.plugin_initialize(TEST_SAMPLE_RATE).unwrap();
 
     let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE);
 
@@ -224,13 +224,13 @@ fn test_processing_under_load() {
 
     for _ in 0..10 {
         let mut output = input.clone();
-        let _ = gain.process_in_place(&mut output, &context);
+        let _ = gain.process(&input, &mut output, &context);
     }
 
     for _ in 0..ITERATIONS {
         let mut output = input.clone();
         let start = Instant::now();
-        let _ = black_box(gain.process_in_place(&mut output, &context));
+        let _ = black_box(gain.process(&input, &mut output, &context));
         let elapsed = start.elapsed();
         times.push(elapsed);
     }

@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{InPlacePluginAdapter, LimiterPlugin, LimiterPluginParams, Plugin};
+use sotf_plugins::{ParametricInPlacePluginAdapter, LimiterPlugin, LimiterPluginParams, Plugin};
 
 pub(super) struct LimiterFuzzer;
 
@@ -32,6 +32,6 @@ impl PluginFuzzer for LimiterFuzzer {
             threshold_db, release_ms, lookahead_ms, soft, mix
         );
 
-        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+        (Box::new(ParametricInPlacePluginAdapter::new(plugin)), desc)
     }
 }

@@ -44,31 +44,31 @@ pub mod colors {
     use super::*;
 
     pub fn input(theme: &Theme) -> Rgba {
-        theme.graph_colors.input
+        theme.plugin_palette.graph_colors.input
     }
 
     pub fn target(theme: &Theme) -> Rgba {
-        theme.graph_colors.target
+        theme.plugin_palette.graph_colors.target
     }
 
     pub fn filter(theme: &Theme) -> Rgba {
-        theme.graph_colors.filter_response
+        theme.plugin_palette.graph_colors.filter_response
     }
 
     pub fn corrected(theme: &Theme) -> Rgba {
-        theme.graph_colors.corrected
+        theme.plugin_palette.graph_colors.corrected
     }
 
     pub fn error(theme: &Theme) -> Rgba {
-        theme.graph_colors.error
+        theme.plugin_palette.graph_colors.error
     }
 
     pub fn deviation(theme: &Theme) -> Rgba {
-        theme.graph_colors.deviation
+        theme.plugin_palette.graph_colors.deviation
     }
 
     pub fn secondary_line(theme: &Theme) -> Rgba {
-        theme.graph_colors.secondary_line
+        theme.plugin_palette.graph_colors.secondary_line
     }
 }
 

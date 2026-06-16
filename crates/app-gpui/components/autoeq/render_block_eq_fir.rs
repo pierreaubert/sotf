@@ -2,7 +2,7 @@
 // Appends to block_out. Expects is_fir check done by caller.
 {
     let mut fir_taps_input = NumberInput::new((base_id.clone(), "fir-taps"))
-        .value(config.fir_taps as f64)
+        .value(config.eq_design.fir_taps as f64)
         .min(ParamLimits::FIR_TAPS.min)
         .max(ParamLimits::FIR_TAPS.max)
         .step(ParamLimits::FIR_TAPS.step)
@@ -27,7 +27,7 @@
     let mut fir_phase_select = Select::new((base_id.clone(), "fir-phase"))
         .label("Phase")
         .options(fir_phase_options)
-        .selected(&config.fir_phase)
+        .selected(&config.eq_design.fir_phase)
         .is_open(ui_state.fir_phase_open)
         .disabled(disabled)
         .size(SelectSize::Xs)

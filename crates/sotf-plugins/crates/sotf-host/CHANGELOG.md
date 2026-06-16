@@ -23,7 +23,7 @@
 
 ## Features
 
-- Added `Plugin::process_f64`, `InPlacePlugin::process_in_place_f64`, and `DawHost::process_f64` so hosts and plugins have a stable f64 processing API. Native f64 simple chains and DAGs are used when every active plugin declares `supports_f64()`; existing f32-only plugins use a compatibility bridge.
+- Added `Plugin::process_f64`, `ParametricInPlacePlugin::process_in_place_f64`, and `DawHost::process_f64` so hosts and plugins have a stable f64 processing API. Native f64 simple chains and DAGs are used when every active plugin declares `supports_f64()`; existing f32-only plugins use a compatibility bridge.
 - Added lock-free graph mutation handoff in `DawHost`: `take_graph_mutation_sender()` exposes a single-producer `GraphMutationSender` for queued add-node/add-plugin/add-edge/remove-plugin requests, and rebuilt `GraphTopology` snapshots are published through `ArcSwap`.
 - Added a preallocated `rtrb` parameter-event queue so `DawHost::set_plugin_parameter()` hands changes to the audio block instead of mutating plugin state directly from the caller. `take_parameter_event_sender()` exposes the single-producer handle for control/UI ownership, `set_plugin_parameter_at()` / `queue_node_parameter_at()` support sample-offset events for fixed-rate f32/f64 blocks, and `set_plugin_parameter_immediate()` remains available for offline setup and tests.
 - Added automatic host insertion of `AutoOversampledPlugin` for `Box<dyn Plugin>` values that declare `preferred_oversampling()`.
@@ -57,6 +57,6 @@
 ## Fixes
 
 - Route sidechain graph edges into extended per-frame input lanes instead of dropping them during input merge.
-- Compact extended `InPlacePluginAdapter` output back to audio channels after processing so sidechain lanes are not exposed downstream.
+- Compact extended `ParametricInPlacePluginAdapter` output back to audio channels after processing so sidechain lanes are not exposed downstream.
 - Grow host scratch input buffers before large-block copies to avoid panics on offline render or high-channel-count blocks.
 - Add regression coverage for sidechain routing through an extended in-place plugin and large input blocks.

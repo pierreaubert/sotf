@@ -24,7 +24,7 @@
     let mut algo_select = Select::new((base_id.clone(), "algo"))
         .label("Algorithm")
         .options(algo_options)
-        .selected(&config.algo)
+        .selected(&config.algorithm.algo)
         .is_open(ui_state.algo_open)
         .disabled(disabled)
         .size(SelectSize::Xs)
@@ -46,7 +46,7 @@
 // --- Population + Max Evals ---
 {
     let mut population_input = NumberInput::new((base_id.clone(), "population"))
-        .value(config.population as f64)
+        .value(config.algorithm.population as f64)
         .min(ParamLimits::POPULATION.min)
         .max(ParamLimits::POPULATION.max)
         .step(ParamLimits::POPULATION.step)
@@ -64,7 +64,7 @@
     }
 
     let mut maxeval_input = NumberInput::new((base_id.clone(), "maxeval"))
-        .value(config.maxeval as f64)
+        .value(config.algorithm.maxeval as f64)
         .min(ParamLimits::MAXEVAL.min)
         .max(ParamLimits::MAXEVAL.max)
         .step(ParamLimits::MAXEVAL.step)
@@ -96,7 +96,7 @@
 // --- Tolerance (conditional) ---
 if !hide_tolerance {
     let mut tolerance_input = NumberInput::new((base_id.clone(), "tolerance"))
-        .value(config.tolerance)
+        .value(config.algorithm.tolerance)
         .min(ParamLimits::TOLERANCE.min)
         .max(ParamLimits::TOLERANCE.max)
         .step(ParamLimits::TOLERANCE.step)
@@ -113,7 +113,7 @@ if !hide_tolerance {
     }
 
     let mut atolerance_input = NumberInput::new((base_id.clone(), "atolerance"))
-        .value(config.atolerance)
+        .value(config.algorithm.atolerance)
         .min(ParamLimits::TOLERANCE.min)
         .max(ParamLimits::TOLERANCE.max)
         .step(ParamLimits::TOLERANCE.step)
@@ -144,9 +144,9 @@ if !hide_tolerance {
 }
 
 // --- BO-specific settings (conditional) ---
-if config.algo.eq_ignore_ascii_case("autoeq:bo") || config.algo.eq_ignore_ascii_case("bo") {
+if config.algorithm.algo.eq_ignore_ascii_case("autoeq:bo") || config.algorithm.algo.eq_ignore_ascii_case("bo") {
     let mut bo_initial_input = NumberInput::new((base_id.clone(), "bo-initial-samples"))
-        .value(config.bo_initial_samples as f64)
+        .value(config.algorithm.bo_initial_samples as f64)
         .min(ParamLimits::BO_INITIAL_SAMPLES.min)
         .max(ParamLimits::BO_INITIAL_SAMPLES.max)
         .step(ParamLimits::BO_INITIAL_SAMPLES.step)
@@ -164,7 +164,7 @@ if config.algo.eq_ignore_ascii_case("autoeq:bo") || config.algo.eq_ignore_ascii_
     }
 
     let mut bo_batch_input = NumberInput::new((base_id.clone(), "bo-batch-size"))
-        .value(config.bo_batch_size as f64)
+        .value(config.algorithm.bo_batch_size as f64)
         .min(ParamLimits::BO_BATCH_SIZE.min)
         .max(ParamLimits::BO_BATCH_SIZE.max)
         .step(ParamLimits::BO_BATCH_SIZE.step)
@@ -181,7 +181,7 @@ if config.algo.eq_ignore_ascii_case("autoeq:bo") || config.algo.eq_ignore_ascii_
     }
 
     let mut bo_std_input = NumberInput::new((base_id.clone(), "bo-posterior-std"))
-        .value(config.bo_posterior_std_threshold)
+        .value(config.algorithm.bo_posterior_std_threshold)
         .min(ParamLimits::BO_POSTERIOR_STD.min)
         .max(ParamLimits::BO_POSTERIOR_STD.max)
         .step(ParamLimits::BO_POSTERIOR_STD.step)
@@ -220,7 +220,7 @@ if config.algo.eq_ignore_ascii_case("autoeq:bo") || config.algo.eq_ignore_ascii_
     let mut bo_acquisition_select = Select::new((base_id.clone(), "bo-acquisition"))
         .label("BO Acquisition")
         .options(bo_acquisition_options)
-        .selected(&config.bo_acquisition)
+        .selected(&config.algorithm.bo_acquisition)
         .is_open(ui_state.bo_acquisition_open)
         .disabled(disabled)
         .size(SelectSize::Xs)
@@ -240,7 +240,7 @@ if config.algo.eq_ignore_ascii_case("autoeq:bo") || config.algo.eq_ignore_ascii_
 
     let mut bo_ehvi_toggle = Toggle::new((base_id.clone(), "bo-ehvi"))
         .size(ToggleSize::Sm)
-        .checked(config.bo_ehvi)
+        .checked(config.algorithm.bo_ehvi)
         .theme(toggle_theme.clone());
 
     if let Some(ref handler) = on_bo_ehvi_change_rc {
@@ -281,7 +281,7 @@ if config.algo.eq_ignore_ascii_case("autoeq:bo") || config.algo.eq_ignore_ascii_
 }
 
 // --- DE-specific settings (conditional) ---
-if !hide_de_params && config.algo.contains(":de") {
+if !hide_de_params && config.algorithm.algo.contains(":de") {
     {
         // DE Strategy dropdown
         let strategy_options: Vec<SelectOption> = DE_STRATEGY_OPTIONS
@@ -292,7 +292,7 @@ if !hide_de_params && config.algo.contains(":de") {
         let mut strategy_select = Select::new((base_id.clone(), "strategy"))
             .label("DE Strategy")
             .options(strategy_options)
-            .selected(&config.strategy)
+            .selected(&config.algorithm.strategy)
             .is_open(ui_state.strategy_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -314,7 +314,7 @@ if !hide_de_params && config.algo.contains(":de") {
 
         // DE F and CR row
         let mut de_f_input = NumberInput::new((base_id.clone(), "de-f"))
-            .value(config.de_f)
+            .value(config.algorithm.de_f)
             .min(ParamLimits::DE_FACTOR.min)
             .max(ParamLimits::DE_FACTOR.max)
             .step(ParamLimits::DE_FACTOR.step)
@@ -331,7 +331,7 @@ if !hide_de_params && config.algo.contains(":de") {
         }
 
         let mut de_cr_input = NumberInput::new((base_id.clone(), "de-cr"))
-            .value(config.de_cr)
+            .value(config.algorithm.de_cr)
             .min(ParamLimits::DE_CR.min)
             .max(ParamLimits::DE_CR.max)
             .step(ParamLimits::DE_CR.step)
@@ -359,9 +359,9 @@ if !hide_de_params && config.algo.contains(":de") {
         };
 
         // Adaptive weight inputs (only for adaptive strategies)
-        if config.strategy.starts_with("adaptive") {
+        if config.algorithm.strategy.starts_with("adaptive") {
             let mut weight_f_input = NumberInput::new((base_id.clone(), "adaptive-weight-f"))
-                .value(config.adaptive_weight_f)
+                .value(config.algorithm.adaptive_weight_f)
                 .min(ParamLimits::ADAPTIVE_WEIGHT.min)
                 .max(ParamLimits::ADAPTIVE_WEIGHT.max)
                 .step(ParamLimits::ADAPTIVE_WEIGHT.step)
@@ -378,7 +378,7 @@ if !hide_de_params && config.algo.contains(":de") {
             }
 
             let mut weight_cr_input = NumberInput::new((base_id.clone(), "adaptive-weight-cr"))
-                .value(config.adaptive_weight_cr)
+                .value(config.algorithm.adaptive_weight_cr)
                 .min(ParamLimits::ADAPTIVE_WEIGHT.min)
                 .max(ParamLimits::ADAPTIVE_WEIGHT.max)
                 .step(ParamLimits::ADAPTIVE_WEIGHT.step)
@@ -412,7 +412,7 @@ if !hide_de_params && config.algo.contains(":de") {
 {
     let mut refine_toggle = Toggle::new((base_id.clone(), "refine"))
         .size(ToggleSize::Sm)
-        .checked(config.refine)
+        .checked(config.algorithm.refine)
         .theme(toggle_theme.clone());
 
     if let Some(ref handler) = on_refine_change_rc {
@@ -432,7 +432,7 @@ if !hide_de_params && config.algo.contains(":de") {
             .child(refine_toggle),
     );
 
-    if config.refine {
+    if config.algorithm.refine {
         let local_algo_options: Vec<SelectOption> = LOCAL_ALGO_OPTIONS
             .iter()
             .map(|(val, lbl)| SelectOption::new(*val, *lbl))
@@ -441,7 +441,7 @@ if !hide_de_params && config.algo.contains(":de") {
         let mut local_algo_select = Select::new((base_id.clone(), "local-algo"))
             .label("Local Algo")
             .options(local_algo_options)
-            .selected(&config.local_algo)
+            .selected(&config.algorithm.local_algo)
             .is_open(ui_state.local_algo_open)
             .disabled(disabled)
             .size(SelectSize::Xs)

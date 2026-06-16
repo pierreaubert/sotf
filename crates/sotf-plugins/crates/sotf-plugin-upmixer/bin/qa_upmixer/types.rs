@@ -154,15 +154,13 @@ pub(super) fn build_isolation_variants(
 ) -> Vec<IsolationVariant> {
     let mut variants = Vec::new();
     for frequency_resolution in &opts.frequency_resolutions {
-        let mut base = UpmixerPluginParams {
-            fft_size: opts.fft_size,
-            speaker_config: config.to_string(),
-            frequency_resolution: frequency_resolution.clone(),
-            ..Default::default()
-        };
+        let mut base = UpmixerPluginParams::default();
+        base.core.fft_size = opts.fft_size;
+        base.core.speaker_config = config.to_string();
+        base.core.frequency_resolution = frequency_resolution.clone();
         if let Some(model_path) = opts.ml_model_path.clone() {
-            base.enable_ml_detection = true;
-            base.ml_model_path = model_path;
+            base.ml.enable_ml_detection = true;
+            base.ml.ml_model_path = model_path;
         }
 
         push_isolation_variant(
@@ -175,7 +173,7 @@ pub(super) fn build_isolation_variants(
         );
 
         let mut low_latency = base.clone();
-        low_latency.low_latency = true;
+        low_latency.core.low_latency = true;
         push_isolation_variant(
             &mut variants,
             config,
@@ -186,7 +184,7 @@ pub(super) fn build_isolation_variants(
         );
 
         let mut no_hr = base.clone();
-        no_hr.enable_hr_direct = false;
+        no_hr.core.enable_hr_direct = false;
         push_isolation_variant(
             &mut variants,
             config,
@@ -197,7 +195,7 @@ pub(super) fn build_isolation_variants(
         );
 
         let mut no_decorrelation = base.clone();
-        no_decorrelation.bypass_decorrelation = true;
+        no_decorrelation.bypass.bypass_decorrelation = true;
         push_isolation_variant(
             &mut variants,
             config,
@@ -208,7 +206,7 @@ pub(super) fn build_isolation_variants(
         );
 
         let mut no_transients = base.clone();
-        no_transients.bypass_transient_detection = true;
+        no_transients.bypass.bypass_transient_detection = true;
         push_isolation_variant(
             &mut variants,
             config,
@@ -219,9 +217,9 @@ pub(super) fn build_isolation_variants(
         );
 
         let mut no_height = base.clone();
-        no_height.height_gain = 0.0;
-        no_height.height_direct_leak = 0.0;
-        no_height.rear_late_reflection = 0.0;
+        no_height.height.height_gain = 0.0;
+        no_height.height.height_direct_leak = 0.0;
+        no_height.surround.rear_late_reflection = 0.0;
         push_isolation_variant(
             &mut variants,
             config,
@@ -232,12 +230,12 @@ pub(super) fn build_isolation_variants(
         );
 
         let mut no_ambient = base.clone();
-        no_ambient.gain_front_ambient = 0.0;
-        no_ambient.gain_rear_ambient = 0.0;
-        no_ambient.ambient_boost = 0.5;
-        no_ambient.surround_direct_bleed = 0.0;
-        no_ambient.rear_ambient_boost = 1.0;
-        no_ambient.rear_late_reflection = 0.0;
+        no_ambient.gains.gain_front_ambient = 0.0;
+        no_ambient.gains.gain_rear_ambient = 0.0;
+        no_ambient.surround.ambient_boost = 0.5;
+        no_ambient.surround.surround_direct_bleed = 0.0;
+        no_ambient.surround.rear_ambient_boost = 1.0;
+        no_ambient.surround.rear_late_reflection = 0.0;
         push_isolation_variant(
             &mut variants,
             config,
@@ -248,8 +246,8 @@ pub(super) fn build_isolation_variants(
         );
 
         let mut center_off = base.clone();
-        center_off.center_spread = 1.0;
-        center_off.dialogue_weight = 0.0;
+        center_off.gains.center_spread = 1.0;
+        center_off.dialogue.dialogue_weight = 0.0;
         push_isolation_variant(
             &mut variants,
             config,
@@ -260,15 +258,15 @@ pub(super) fn build_isolation_variants(
         );
 
         let mut fft_front_only = base.clone();
-        fft_front_only.gain_front_ambient = 0.0;
-        fft_front_only.gain_rear_ambient = 0.0;
-        fft_front_only.height_gain = 0.0;
-        fft_front_only.height_direct_leak = 0.0;
-        fft_front_only.lfe_gain = 0.0;
-        fft_front_only.surround_direct_bleed = 0.0;
-        fft_front_only.rear_late_reflection = 0.0;
-        fft_front_only.center_spread = 1.0;
-        fft_front_only.dialogue_weight = 0.0;
+        fft_front_only.gains.gain_front_ambient = 0.0;
+        fft_front_only.gains.gain_rear_ambient = 0.0;
+        fft_front_only.height.height_gain = 0.0;
+        fft_front_only.height.height_direct_leak = 0.0;
+        fft_front_only.gains.lfe_gain = 0.0;
+        fft_front_only.surround.surround_direct_bleed = 0.0;
+        fft_front_only.surround.rear_late_reflection = 0.0;
+        fft_front_only.gains.center_spread = 1.0;
+        fft_front_only.dialogue.dialogue_weight = 0.0;
         push_isolation_variant(
             &mut variants,
             config,
@@ -279,8 +277,8 @@ pub(super) fn build_isolation_variants(
         );
 
         let mut bypass_all = base;
-        bypass_all.bypass_all_processing = true;
-        bypass_all.enable_hr_direct = false;
+        bypass_all.bypass.bypass_all_processing = true;
+        bypass_all.core.enable_hr_direct = false;
         push_isolation_variant(
             &mut variants,
             config,

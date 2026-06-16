@@ -52,101 +52,116 @@ use misc::current_minutes_after_midnight;
 use misc::stream_queue_album;
 
 #[derive(Debug)]
-pub struct App {
-    // Library state - now managed via library_state
-    /// Cached library statistics (artists, tracks, genres, years, etc.)
-    /// Call invalidate_library_stats() when library changes, get_library_stats() to access
-    pub library_stats: LibraryStats,
-    pub library_scanner: Option<sotf_audio_player::LibraryScanner>,
-
-    // Queue state
-    pub queue_state: QueueState,
-
-    // Saved HTTP/SOTF streams
-    pub stream_state: StreamUiState,
-
-    // Speaker Optimization State
-    pub speaker_opt: SpeakerOptState,
-
-    // Selection indices
+pub struct LibraryViewState {
     pub selected_directory_index: usize,
     pub album_list_offset: usize,
+    pub stats: LibraryStats,
+    pub stats_computing: bool,
+    pub pending_stats: Arc<parking_lot::Mutex<Option<LibraryStats>>>,
+    pub loading_initial_data: bool,
+}
 
-    // Level meters
-    pub level_meters: LevelMeterState,
-
-    // Spectrum analyzer
-    pub spectrum_visible: bool,
-
-    // Flags
+pub struct ScanState {
     pub needs_rescan: bool,
-    pub is_loading_initial_data: bool,
-    pub library_stats_computing: bool,
-    pub pending_library_stats: Arc<parking_lot::Mutex<Option<LibraryStats>>>,
+    pub library_scanner: Option<sotf_audio_player::LibraryScanner>,
+    pub status_hidden: bool,
+    pub total_files: usize,
+    pub started_at: Option<std::time::Instant>,
+    pub progress_elapsed_secs: u64,
+    pub progress_eta_secs: Option<u64>,
+    pub progress_tracks_per_sec: f32,
+    pub progress_phase: String,
+    pub ctrl: sotf_audio_player::ScanController,
+}
 
-    // Footer scan status row (hidden by the user while scans continue)
-    pub scan_status_hidden: bool,
-
-    // Shared album/track metadata editor modal state
+pub struct ModalState {
     pub metadata_editor: Option<crate::app::MetadataEditorState>,
+    pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>,
+    pub channel_conflicts: Vec<sotf_audio_player::ChannelConflict>,
+    pub channel_conflict_track_channels: usize,
+}
 
-    // Layout configuration is now managed via AppState.layout entity
+pub struct WorkspaceLayoutState {
     pub divider_click_start: Option<std::time::Instant>,
-
-    // 3-Panel Layout (Library | Queue | Rack)
-    pub layout_orientation: LayoutOrientation,
+    pub orientation: LayoutOrientation,
     pub rack_display_mode: RackDisplayMode,
-    // Hide queue meters when rack is visible in 3-panel layout
     pub hide_queue_meters_for_rack: bool,
+    pub dragging_divider: Option<DividerDragState>,
+    pub rack_detail_collapsed: bool,
+    pub input_meter_collapsed: bool,
+    pub output_meter_collapsed: bool,
+    pub rack_strip_height: f32,
+    pub input_meter_width: f32,
+    pub output_meter_width: f32,
+    pub spectrum_visible: bool,
+}
 
-    // Scan progress for threaded scanning
-    pub scan_total_files: usize,
-    pub scan_started_at: Option<std::time::Instant>,
-    pub scan_progress_elapsed_secs: u64,
-    pub scan_progress_eta_secs: Option<u64>,
-    pub scan_progress_tracks_per_sec: f32,
-    pub scan_progress_phase: String,
-
-    // Drag states (None = not dragging)
+pub struct DragState {
     pub volume_drag: Option<VolumeDragState>,
     pub knob_drag: Option<KnobDragState>,
+}
 
-    // Settings accordion expanded sections
-    pub expanded_settings_sections: Vec<String>,
-
-    // Playlists
-    pub playlist_controller: sotf_audio_player::PlaylistController,
-
-    // Scan managers (ReplayGain, Waveform, Bliss)
-    pub scan_ctrl: sotf_audio_player::ScanController,
-
-    // Plugin UI states
+pub struct PluginUiState {
     pub upmixer_config_open: bool,
     pub upmixer_tab: usize,
-    /// State for the spatial spider visualizer (shared across upmixer / XTC / AAE).
     pub spatial_spider: crate::components::plugins::spatial_spider::SpatialSpiderUiState,
     pub spectrum_tilt_select_open: bool,
     pub spectrum_reference_select_open: bool,
     pub show_add_plugin_menu: bool,
-    /// Active secondary tab index for auto-layout plugins (per-plugin, keyed by plugin_idx)
     pub plugin_auto_tab: std::collections::HashMap<usize, usize>,
-    /// User-resized config column width for auto-layout plugins.
     pub plugin_auto_config_width: std::collections::HashMap<usize, f32>,
-    /// User-resized output column width for auto-layout plugins.
     pub plugin_auto_output_width: std::collections::HashMap<usize, f32>,
+}
 
-    // Rack panel collapse states
-    pub rack_detail_collapsed: bool, // Horizontal divider between rack and detail
-    pub input_meter_collapsed: bool, // Left meter panel
-    pub output_meter_collapsed: bool, // Right meter panel
+pub struct PlaylistState {
+    pub controller: sotf_audio_player::PlaylistController,
+}
 
-    // Rack panel widths (for resizing)
-    pub rack_strip_height: f32, // Height of signal-chain strip above plugin detail
-    pub input_meter_width: f32, // Width of input meter panel
-    pub output_meter_width: f32, // Width of output meter panel
+pub struct SettingsState {
+    pub expanded_sections: Vec<String>,
+}
 
-    // Divider drag state
-    pub dragging_divider: Option<DividerDragState>,
+pub struct TutorialState {
+    pub completed: bool,
+    pub seen_hints: Vec<String>,
+    pub current_hint: Option<crate::components::dialogs::tutorial::ContextualHint>,
+}
+
+pub struct GeometryState {
+    pub last_saved_geometry: Option<crate::config::WindowGeometry>,
+}
+
+pub struct App {
+    // Library view state
+    pub library_view: LibraryViewState,
+    // Queue state
+    pub queue_state: QueueState,
+    // Saved HTTP/SOTF streams
+    pub stream_state: StreamUiState,
+    // Speaker Optimization State
+    pub speaker_opt: SpeakerOptState,
+    // Level meters
+    pub level_meters: LevelMeterState,
+    // Scan progress / control
+    pub scan: ScanState,
+    // Shared album/track metadata editor modal state + channel conflict dialog
+    pub modal: ModalState,
+    // 3-Panel layout, rack display, divider drag / sizes
+    pub layout: WorkspaceLayoutState,
+    // Active drag operations
+    pub drag: DragState,
+    // Plugin-specific UI overlays
+    pub plugin_ui: PluginUiState,
+    // Playlists
+    pub playlist: PlaylistState,
+    // Settings accordion expanded sections
+    pub settings: SettingsState,
+    // Tutorial / hint state
+    pub tutorial: TutorialState,
+    // Cached window geometry
+    pub geometry: GeometryState,
+    // Play tracking for statistics (30s threshold)
+    pub track_tracking: TrackTrackingState,
 
     // Composed state structs (for better separation of concerns)
     /// Playback-related state
@@ -173,26 +188,6 @@ pub struct App {
     /// Event sourcing for playback state
     pub playback_events: super::playback_events::PlaybackEventStore,
 
-    // Play tracking for statistics (30s threshold)
-    pub track_tracking: TrackTrackingState,
-
-    // Channel conflict dialog state
-    pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>,
-    pub channel_conflicts: Vec<sotf_audio_player::ChannelConflict>,
-    pub channel_conflict_track_channels: usize,
-
-    /// Whether the tutorial has been completed/dismissed (persisted to config)
-    pub tutorial_completed: bool,
-
-    /// Hint IDs that have been shown and dismissed (persisted to config).
-    /// Uses string IDs so new hints can be added without migration.
-    pub seen_hints: Vec<String>,
-    /// Currently displayed contextual hint (None if no hint active).
-    pub current_hint: Option<crate::components::dialogs::tutorial::ContextualHint>,
-
-    /// Cached window geometry to avoid re-reading config from disk on every save
-    pub last_saved_geometry: Option<crate::config::WindowGeometry>,
-
     // Federation & Server configuration
     pub federation: FederationState,
 
@@ -209,56 +204,84 @@ impl Default for App {
 impl App {
     pub fn new() -> Self {
         let mut app = Self {
-            library_stats: LibraryStats::default(),
-            library_scanner: None,
+            library_view: LibraryViewState {
+                selected_directory_index: 0,
+                album_list_offset: 0,
+                stats: LibraryStats::default(),
+                stats_computing: false,
+                pending_stats: Arc::new(parking_lot::Mutex::new(None)),
+                loading_initial_data: true,
+            },
             queue_state: QueueState::new(),
             stream_state: StreamUiState::default(),
 
             speaker_opt: SpeakerOptState::default(),
 
-            selected_directory_index: 0,
-            album_list_offset: 0,
             level_meters: LevelMeterState::default(),
-            spectrum_visible: false,
-            needs_rescan: false,
-            is_loading_initial_data: true,
-            library_stats_computing: false,
-            pending_library_stats: Arc::new(parking_lot::Mutex::new(None)),
-            scan_status_hidden: false,
-            metadata_editor: None,
-            divider_click_start: None,
-            // 3-Panel Layout defaults
-            layout_orientation: LayoutOrientation::default(),
-            rack_display_mode: RackDisplayMode::default(),
-            hide_queue_meters_for_rack: false,
-            scan_total_files: 0,
-            scan_started_at: None,
-            scan_progress_elapsed_secs: 0,
-            scan_progress_eta_secs: None,
-            scan_progress_tracks_per_sec: 0.0,
-            scan_progress_phase: String::new(),
-            volume_drag: None,
-            knob_drag: None,
-            expanded_settings_sections: vec!["library".to_string()],
-            playlist_controller: sotf_audio_player::PlaylistController::new(),
-            scan_ctrl: sotf_audio_player::ScanController::new(),
-            upmixer_config_open: false,
-            upmixer_tab: 1,
-            spatial_spider:
-                crate::components::plugins::spatial_spider::SpatialSpiderUiState::default(),
-            spectrum_tilt_select_open: false,
-            spectrum_reference_select_open: false,
-            show_add_plugin_menu: false,
-            plugin_auto_tab: std::collections::HashMap::new(),
-            plugin_auto_config_width: std::collections::HashMap::new(),
-            plugin_auto_output_width: std::collections::HashMap::new(),
-            rack_detail_collapsed: false,
-            input_meter_collapsed: false,
-            output_meter_collapsed: false,
-            rack_strip_height: RACK_STRIP_DEFAULT_HEIGHT,
-            input_meter_width: 80.0,   // Default width for input meter panel
-            output_meter_width: 140.0, // Default width for output meter panel
-            dragging_divider: None,
+            scan: ScanState {
+                needs_rescan: false,
+                library_scanner: None,
+                status_hidden: false,
+                total_files: 0,
+                started_at: None,
+                progress_elapsed_secs: 0,
+                progress_eta_secs: None,
+                progress_tracks_per_sec: 0.0,
+                progress_phase: String::new(),
+                ctrl: sotf_audio_player::ScanController::new(),
+            },
+            modal: ModalState {
+                metadata_editor: None,
+                channel_conflict_path: None,
+                channel_conflicts: Vec::new(),
+                channel_conflict_track_channels: 2,
+            },
+            layout: WorkspaceLayoutState {
+                divider_click_start: None,
+                orientation: LayoutOrientation::default(),
+                rack_display_mode: RackDisplayMode::default(),
+                hide_queue_meters_for_rack: false,
+                dragging_divider: None,
+                rack_detail_collapsed: false,
+                input_meter_collapsed: false,
+                output_meter_collapsed: false,
+                rack_strip_height: RACK_STRIP_DEFAULT_HEIGHT,
+                input_meter_width: 80.0, // Default width for input meter panel
+                output_meter_width: 140.0, // Default width for output meter panel
+                spectrum_visible: false,
+            },
+            drag: DragState {
+                volume_drag: None,
+                knob_drag: None,
+            },
+            plugin_ui: PluginUiState {
+                upmixer_config_open: false,
+                upmixer_tab: 1,
+                spatial_spider:
+                    crate::components::plugins::spatial_spider::SpatialSpiderUiState::default(),
+                spectrum_tilt_select_open: false,
+                spectrum_reference_select_open: false,
+                show_add_plugin_menu: false,
+                plugin_auto_tab: std::collections::HashMap::new(),
+                plugin_auto_config_width: std::collections::HashMap::new(),
+                plugin_auto_output_width: std::collections::HashMap::new(),
+            },
+            playlist: PlaylistState {
+                controller: sotf_audio_player::PlaylistController::new(),
+            },
+            settings: SettingsState {
+                expanded_sections: vec!["library".to_string()],
+            },
+            tutorial: TutorialState {
+                completed: false,
+                seen_hints: Vec::new(),
+                current_hint: None,
+            },
+            geometry: GeometryState {
+                last_saved_geometry: None,
+            },
+            track_tracking: TrackTrackingState::default(),
+
             // Initialize composed state structs
             playback: PlaybackState::new(),
             library_state: LibraryState::new(),
@@ -270,15 +293,6 @@ impl App {
             shared_state: Arc::new(super::SharedState::new()),
             state_history: StateHistory::new(),
             playback_events: super::playback_events::PlaybackEventStore::new(),
-            track_tracking: TrackTrackingState::default(),
-            channel_conflict_path: None,
-            channel_conflicts: Vec::new(),
-            channel_conflict_track_channels: 2,
-            tutorial_completed: false,
-            seen_hints: Vec::new(),
-            current_hint: None,
-
-            last_saved_geometry: None,
 
             federation: FederationState::default(),
             remote: RemoteState::default(),
@@ -475,18 +489,20 @@ impl App {
     /// Try to show a contextual hint. Only shows if the hint hasn't been seen before.
     pub fn try_show_hint(&mut self, hint_id: crate::components::dialogs::tutorial::HintId) {
         let id_str = hint_id.as_str();
-        if !self.seen_hints.iter().any(|s| s == id_str) && self.current_hint.is_none() {
-            self.current_hint =
+        if !self.tutorial.seen_hints.iter().any(|s| s == id_str)
+            && self.tutorial.current_hint.is_none()
+        {
+            self.tutorial.current_hint =
                 Some(crate::components::dialogs::tutorial::ContextualHint { hint_id });
         }
     }
 
     /// Dismiss the current hint and mark it as seen.
     pub fn dismiss_hint(&mut self) {
-        if let Some(hint) = self.current_hint.take() {
+        if let Some(hint) = self.tutorial.current_hint.take() {
             let id_str = hint.hint_id.as_str().to_string();
-            if !self.seen_hints.contains(&id_str) {
-                self.seen_hints.push(id_str);
+            if !self.tutorial.seen_hints.contains(&id_str) {
+                self.tutorial.seen_hints.push(id_str);
             }
         }
     }
@@ -812,10 +828,10 @@ impl App {
         self.ui_state.startup_db_check_done = true;
 
         // Show tutorial on first launch
-        if !self.tutorial_completed {
+        if !self.tutorial.completed {
             self.ui_state.input_mode = InputMode::Tutorial;
             self.ui_state.tutorial_screen = 0;
-            self.is_loading_initial_data = false;
+            self.library_view.loading_initial_data = false;
             return;
         }
 
@@ -835,7 +851,7 @@ impl App {
             self.ui_state.input_mode = InputMode::EmptyLibraryPrompt;
         }
 
-        self.is_loading_initial_data = false;
+        self.library_view.loading_initial_data = false;
     }
 
     /// Whether startup should block Home/Search with the local-empty-library prompt.
@@ -1000,7 +1016,7 @@ impl App {
         config: crate::config::Config,
     ) -> Result<LayoutState, Box<dyn std::error::Error>> {
         // Cache window geometry so save_config doesn't need to re-read from disk
-        self.last_saved_geometry = Some(config.window_geometry.clone());
+        self.geometry.last_saved_geometry = Some(config.window_geometry.clone());
 
         // Restore directories
         self.library_state.library.directories = config.directories;
@@ -1058,7 +1074,7 @@ impl App {
             rack_v_ratio: config.panel_layout.rack_v_ratio,
             ..Default::default()
         };
-        self.rack_detail_collapsed = config.panel_layout.rack_detail_ratio <= 0.05;
+        self.layout.rack_detail_collapsed = config.panel_layout.rack_detail_ratio <= 0.05;
 
         // Restore volume and muted state
         // self.playback.volume = config.volume; // Always start at default (10%) per requirement
@@ -1138,7 +1154,7 @@ impl App {
                 .load_from_file(&presets_dir, &preset_name)
             {
                 Ok(warnings) => {
-                    self.plugin_state.pending_plugin_update =
+                    self.plugin_state.update_state.pending_plugin_update =
                         Some(crate::app::types::PluginUpdateType::Structural);
                     self.sync_spectrum_visible();
                     if warnings.is_empty() {
@@ -1167,13 +1183,13 @@ impl App {
         }
 
         // Restore tutorial completed state
-        self.tutorial_completed = config.tutorial_completed;
-        self.seen_hints = config.seen_hints.clone();
+        self.tutorial.completed = config.tutorial_completed;
+        self.tutorial.seen_hints = config.seen_hints.clone();
 
         // Restore scanner thread count
         self.ui_state.scanner_threads = config.scanner_threads;
         if let Some(threads) = config.scanner_threads {
-            self.scan_ctrl.set_num_threads(Some(threads as usize));
+            self.scan.ctrl.set_num_threads(Some(threads as usize));
         }
 
         // Restore max CPU cores
@@ -1209,10 +1225,14 @@ impl App {
         window_geometry: Option<crate::config::WindowGeometry>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::config::{Config, PanelLayout};
-        let geometry =
-            window_geometry.unwrap_or_else(|| self.last_saved_geometry.clone().unwrap_or_default());
+        let geometry = window_geometry.unwrap_or_else(|| {
+            self.geometry
+                .last_saved_geometry
+                .clone()
+                .unwrap_or_default()
+        });
         // Update cache so future saves without geometry don't need disk I/O
-        self.last_saved_geometry = Some(geometry.clone());
+        self.geometry.last_saved_geometry = Some(geometry.clone());
         let config = Config {
             directories: self.library_state.library.directories.clone(),
             last_loaded_plugin_preset: self.plugin_state.last_loaded_preset.clone(),
@@ -1283,8 +1303,8 @@ impl App {
             max_cpu_cores: self.ui_state.max_cpu_cores,
             min_font_size_px: self.ui_state.min_font_size_px,
             max_font_size_px: self.ui_state.max_font_size_px,
-            tutorial_completed: self.tutorial_completed,
-            seen_hints: self.seen_hints.clone(),
+            tutorial_completed: self.tutorial.completed,
+            seen_hints: self.tutorial.seen_hints.clone(),
             design_language: self.ui_state.design_language.clone(),
             rack_theme_state: self.plugin_state.rack_theme_state.clone(),
             remote_library_identity: self.remote.local_library_identity.clone(),
@@ -1549,7 +1569,7 @@ impl App {
     /// Invalidate cached library statistics. Call this when the library changes
     /// (albums added/removed, tracks modified, etc.)
     pub fn invalidate_library_stats(&mut self) {
-        self.library_stats.valid = false;
+        self.library_view.stats.valid = false;
     }
 
     /// Compute library statistics from scratch.
@@ -1561,7 +1581,7 @@ impl App {
     /// Get library statistics, returning currently cached values.
     /// If stats are invalid, they should be updated via compute_library_stats_async.
     pub fn get_library_stats(&self) -> &LibraryStats {
-        &self.library_stats
+        &self.library_view.stats
     }
 
     // ============== Dynamic Text Truncation ==============

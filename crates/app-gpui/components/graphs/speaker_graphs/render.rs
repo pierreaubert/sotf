@@ -202,10 +202,12 @@ fn render_speaker_filter_response_plot(
     if !result.individual_filter_responses.is_empty() {
         for (i, filter_response) in result.individual_filter_responses.iter().enumerate() {
             // Use band colors from theme, cycling through them
-            let color = if i < theme.band_colors.len() {
-                rgba_to_u32(theme.band_colors[i])
+            let color = if i < theme.plugin_palette.band_colors.len() {
+                rgba_to_u32(theme.plugin_palette.band_colors[i])
             } else {
-                rgba_to_u32(theme.band_colors[i % theme.band_colors.len()])
+                rgba_to_u32(
+                    theme.plugin_palette.band_colors[i % theme.plugin_palette.band_colors.len()],
+                )
             };
 
             chart_builder = chart_builder.add_series(

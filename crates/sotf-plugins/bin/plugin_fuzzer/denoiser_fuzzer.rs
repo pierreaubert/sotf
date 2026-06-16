@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{DenoiserPlugin, DenoiserPluginParams, InPlacePluginAdapter, Plugin};
+use sotf_plugins::{ParametricInPlacePluginAdapter, DenoiserPlugin, DenoiserPluginParams, Plugin};
 
 pub(super) struct DenoiserFuzzer;
 
@@ -39,6 +39,6 @@ impl PluginFuzzer for DenoiserFuzzer {
             polyphonic_detection
         );
 
-        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+        (Box::new(ParametricInPlacePluginAdapter::new(plugin)), desc)
     }
 }

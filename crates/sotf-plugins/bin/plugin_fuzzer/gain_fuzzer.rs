@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{GainPlugin, GainPluginParams, InPlacePluginAdapter, Plugin};
+use sotf_plugins::{ParametricPluginAdapter, GainPlugin, GainPluginParams,  Plugin};
 
 pub(super) struct GainFuzzer;
 
@@ -12,7 +12,7 @@ impl PluginFuzzer for GainFuzzer {
             gain_db,
             channel_gains: vec![],
         };
-        let plugin = Box::new(InPlacePluginAdapter::new(
+        let plugin = Box::new(ParametricPluginAdapter::new(
             GainPlugin::from_params(channels, params).expect("Failed to create GainPlugin"),
         ));
         let desc = format!("gain_db={:.2}", gain_db);

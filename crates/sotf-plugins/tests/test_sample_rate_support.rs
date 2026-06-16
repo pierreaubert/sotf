@@ -8,9 +8,8 @@
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
     CompressorPlugin, CrossoverPlugin, DelayPlugin, EqPlugin, ExpanderPlugin, GainPlugin,
-    GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, MatrixPlugin, Plugin,
-    PluginHost, ProcessContext,
-};
+    GatePlugin, LimiterPlugin, MatrixPlugin, ParametricInPlacePlugin,
+    ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin, PluginHost, ProcessContext};
 
 const SAMPLE_RATES: [u32; 5] = [22050, 44100, 48000, 96000, 192000];
 const NUM_FRAMES: usize = 512;
@@ -62,17 +61,18 @@ fn assert_all_finite(buffer: &[f32], label: &str) {
 #[test]
 fn test_gain_multi_sample_rate() {
     for &sr in &SAMPLE_RATES {
-        let mut plugin = GainPlugin::new(2, -6.0);
+        let mut plugin = ParametricPluginAdapter::new(GainPlugin::new(2, -6.0));
         plugin.initialize(sr).unwrap();
 
-        let mut buffer = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
+        let input = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
+        let mut output = vec![0.0f32; input.len()];
         let context = ProcessContext::new(sr, NUM_FRAMES);
 
-        plugin.process_in_place(&mut buffer, &context).unwrap();
-        assert_all_finite(&buffer, &format!("Gain@{}Hz", sr));
+        plugin.process(&input, &mut output, &context).unwrap();
+        assert_all_finite(&output, &format!("Gain@{}Hz", sr));
 
         // -6dB should halve amplitude
-        let peak = buffer.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+        let peak = output.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
         assert!(
             peak < 0.4,
             "Gain@{}Hz: -6dB should reduce 0.5 amplitude, peak={}",
@@ -94,7 +94,7 @@ fn test_eq_multi_sample_rate() {
             Biquad::new(BiquadFilterType::Lowshelf, 200.0, sr as f64, 0.707, -3.0),
         ];
 
-        let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(2, filters));
+        let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(2, filters));
         plugin.initialize(sr).unwrap();
 
         let input = generate_sine_stereo(sr, 1000.0, 0.3, NUM_FRAMES);
@@ -262,7 +262,7 @@ fn test_plugin_chain_multi_sample_rate() {
 
         // Build a chain: Gain -> EQ -> Compressor -> Limiter
         let gain = GainPlugin::new(2, -3.0);
-        host.add_plugin(Box::new(InPlacePluginAdapter::new(gain)))
+        host.add_plugin(Box::new(ParametricPluginAdapter::new(gain)))
             .unwrap();
 
         let filters = vec![Biquad::new(
@@ -273,15 +273,15 @@ fn test_plugin_chain_multi_sample_rate() {
             3.0,
         )];
         let eq = EqPlugin::new(2, filters);
-        host.add_plugin(Box::new(InPlacePluginAdapter::new(eq)))
+        host.add_plugin(Box::new(ParametricPluginAdapter::new(eq)))
             .unwrap();
 
         let compressor = CompressorPlugin::new(2);
-        host.add_plugin(Box::new(InPlacePluginAdapter::new(compressor)))
+        host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(compressor)))
             .unwrap();
 
         let limiter = LimiterPlugin::new(2, -1.0, 50.0, 5.0, false);
-        host.add_plugin(Box::new(InPlacePluginAdapter::new(limiter)))
+        host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(limiter)))
             .unwrap();
 
         // Use enough frames to exceed the limiter's lookahead at all sample rates.
@@ -313,15 +313,15 @@ fn test_dynamics_chain_multi_sample_rate() {
 
         // Gate -> Compressor -> Limiter chain
         let gate = GatePlugin::new(2, -50.0, 10.0, 1.0, 10.0, 100.0);
-        host.add_plugin(Box::new(InPlacePluginAdapter::new(gate)))
+        host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(gate)))
             .unwrap();
 
         let compressor = CompressorPlugin::new(2);
-        host.add_plugin(Box::new(InPlacePluginAdapter::new(compressor)))
+        host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(compressor)))
             .unwrap();
 
         let limiter = LimiterPlugin::new(2, -0.5, 50.0, 5.0, false);
-        host.add_plugin(Box::new(InPlacePluginAdapter::new(limiter)))
+        host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(limiter)))
             .unwrap();
 
         let input = generate_sine_stereo(sr, 440.0, 0.8, NUM_FRAMES);
@@ -379,7 +379,7 @@ fn test_eq_near_nyquist() {
             3.0,
         )];
 
-        let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(2, filters));
+        let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(2, filters));
         plugin.initialize(sr).unwrap();
 
         let input = generate_sine_stereo(sr, freq as f32, 0.3, NUM_FRAMES);

@@ -1,6 +1,6 @@
 // Integration tests for sotf-plugin-linear-phase-eq exercising the public Plugin trait.
 
-use sotf_host::{InPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
+use sotf_host::{ParametricInPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugin_linear_phase_eq::{BandConfig, LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 
 fn sine_buffer(num_frames: usize, channels: usize, freq: f32, sample_rate: u32) -> Vec<f32> {
@@ -23,7 +23,7 @@ fn rms(samples: &[f32]) -> f32 {
 #[test]
 fn plugin_info_and_channels() {
     let plugin = LinearPhaseEqPlugin::new(2, 48000);
-    let adapter = InPlacePluginAdapter::new(plugin);
+    let adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     assert!(adapter.info().name.contains("Linear-Phase"));
     assert_eq!(adapter.input_channels(), 2);
@@ -34,7 +34,7 @@ fn plugin_info_and_channels() {
 #[test]
 fn plugin_processes_silence_and_sine() {
     let plugin = LinearPhaseEqPlugin::new(2, 48000);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let num_frames = 512;
@@ -54,7 +54,7 @@ fn plugin_processes_silence_and_sine() {
 #[test]
 fn parameter_roundtrip() {
     let plugin = LinearPhaseEqPlugin::new(1, 48000);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     adapter
         .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.75))
@@ -108,7 +108,7 @@ fn dry_mix_passthrough() {
         filters: vec![],
     };
     let plugin = LinearPhaseEqPlugin::from_params(2, 48000, params).unwrap();
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let num_frames = 256;
@@ -147,7 +147,7 @@ fn eq_boost_changes_amplitude() {
         }],
     };
     let plugin = LinearPhaseEqPlugin::from_params(1, 48000, params).unwrap();
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let num_frames = 4096;
@@ -179,7 +179,7 @@ fn latency_matches_fir_length() {
         filters: vec![],
     };
     let plugin = LinearPhaseEqPlugin::from_params(1, 48000, params).unwrap();
-    let adapter = InPlacePluginAdapter::new(plugin);
+    let adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     let fir_length = 4096;
     let expected = (fir_length - 1) / 2;
@@ -189,7 +189,7 @@ fn latency_matches_fir_length() {
 #[test]
 fn unknown_parameter_is_rejected() {
     let plugin = LinearPhaseEqPlugin::new(1, 48000);
-    let adapter = InPlacePluginAdapter::new(plugin);
+    let adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     // The default Plugin::validate_parameter helper rejects unknown ids.
     let result = adapter.validate_parameter(
@@ -205,7 +205,7 @@ fn unknown_parameter_is_rejected() {
 #[test]
 fn invalid_parameter_value_is_rejected() {
     let plugin = LinearPhaseEqPlugin::new(1, 48000);
-    let adapter = InPlacePluginAdapter::new(plugin);
+    let adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     let result = adapter.validate_parameter(&ParameterId::from("mix"), &ParameterValue::Float(2.0));
     assert!(
@@ -217,7 +217,7 @@ fn invalid_parameter_value_is_rejected() {
 #[test]
 fn reset_then_process_is_stable() {
     let plugin = LinearPhaseEqPlugin::new(2, 48000);
-    let mut adapter = InPlacePluginAdapter::new(plugin);
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
     let num_frames = 256;

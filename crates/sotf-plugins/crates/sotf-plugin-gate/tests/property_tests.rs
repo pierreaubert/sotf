@@ -2,7 +2,8 @@
 
 use proptest::prelude::*;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 use sotf_plugin_gate::GatePlugin;
 
 proptest! {
@@ -39,33 +40,33 @@ proptest! {
         let mut p = GatePlugin::new(1, -40.0, 10.0, 1.0, 0.0, 50.0);
         p.initialize(48000).unwrap();
 
-        p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(threshold))
+        p.parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Float(threshold))
             .unwrap();
         let got = p
-            .get_parameter(&ParameterId::from("threshold"))
+            .parametric_get_parameter(&ParameterId::from("threshold"))
             .unwrap()
             .as_float()
             .unwrap();
         prop_assert!((got - threshold).abs() < 1e-4, "threshold roundtrip drift");
 
-        p.set_parameter(ParameterId::from("ratio"), ParameterValue::Float(ratio))
+        p.parametric_set_parameter(ParameterId::from("ratio"), ParameterValue::Float(ratio))
             .unwrap();
-        let got = p.get_parameter(&ParameterId::from("ratio")).unwrap().as_float().unwrap();
+        let got = p.parametric_get_parameter(&ParameterId::from("ratio")).unwrap().as_float().unwrap();
         prop_assert!((got - ratio).abs() < 1e-4, "ratio roundtrip drift");
 
-        p.set_parameter(ParameterId::from("attack"), ParameterValue::Float(attack))
+        p.parametric_set_parameter(ParameterId::from("attack"), ParameterValue::Float(attack))
             .unwrap();
-        let got = p.get_parameter(&ParameterId::from("attack")).unwrap().as_float().unwrap();
+        let got = p.parametric_get_parameter(&ParameterId::from("attack")).unwrap().as_float().unwrap();
         prop_assert!((got - attack).abs() < 1e-4, "attack roundtrip drift");
 
-        p.set_parameter(ParameterId::from("release"), ParameterValue::Float(release))
+        p.parametric_set_parameter(ParameterId::from("release"), ParameterValue::Float(release))
             .unwrap();
-        let got = p.get_parameter(&ParameterId::from("release")).unwrap().as_float().unwrap();
+        let got = p.parametric_get_parameter(&ParameterId::from("release")).unwrap().as_float().unwrap();
         prop_assert!((got - release).abs() < 1e-4, "release roundtrip drift");
 
-        p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(mix))
+        p.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(mix))
             .unwrap();
-        let got = p.get_parameter(&ParameterId::from("mix")).unwrap().as_float().unwrap();
+        let got = p.parametric_get_parameter(&ParameterId::from("mix")).unwrap().as_float().unwrap();
         prop_assert!((got - mix).abs() < 1e-4, "mix roundtrip drift");
     }
 
@@ -73,7 +74,7 @@ proptest! {
     fn unity_mix_passthrough(sample in -1.0f32..1.0f32) {
         let mut p = GatePlugin::new(1, -40.0, 10.0, 1.0, 0.0, 50.0);
         p.initialize(48000).unwrap();
-        p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
+        p.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
             .unwrap();
 
         // Warm up the mix smoother to converge to 0
@@ -130,13 +131,13 @@ proptest! {
         let mut p_low = GatePlugin::new(1, threshold, 100.0, 1.0, 0.0, 10.0);
         p_low.initialize(48000).unwrap();
         p_low
-            .set_parameter(ParameterId::from("range_db"), ParameterValue::Float(0.0))
+            .parametric_set_parameter(ParameterId::from("range_db"), ParameterValue::Float(0.0))
             .unwrap();
 
         let mut p_high = GatePlugin::new(1, threshold, 100.0, 1.0, 0.0, 10.0);
         p_high.initialize(48000).unwrap();
         p_high
-            .set_parameter(ParameterId::from("range_db"), ParameterValue::Float(120.0))
+            .parametric_set_parameter(ParameterId::from("range_db"), ParameterValue::Float(120.0))
             .unwrap();
 
         let frames = 512usize;

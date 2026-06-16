@@ -98,6 +98,16 @@ pub use sotf_audio::plugins::{
     PluginSettings,
     PluginType,
     ReleaseChannel,
+    // Upmixer decomposed settings
+    UpmixerAmbientAnalysisSettings,
+    UpmixerBypassSettings,
+    UpmixerDecorrelationSettings,
+    UpmixerDialogueSettings,
+    UpmixerGainSettings,
+    UpmixerHeightSettings,
+    UpmixerLfeSettings,
+    UpmixerOutputSettings,
+    UpmixerSubharmonicSettings,
     // Matrix helper functions
     apply_matrix_preset,
     available_matrix_presets,

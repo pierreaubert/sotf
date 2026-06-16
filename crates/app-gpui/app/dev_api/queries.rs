@@ -49,36 +49,42 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         ),
 
         // Metadata editor
-        "metadata.editor_open" => json!(app.metadata_editor.is_some()),
+        "metadata.editor_open" => json!(app.modal.metadata_editor.is_some()),
         "metadata.target" => json!(
-            app.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .map(|editor| editor.target_label.clone())
         ),
         "metadata.title" => json!(
-            app.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .map(|editor| editor.fields.title.clone())
         ),
         "metadata.year" => json!(
-            app.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .map(|editor| editor.fields.year.clone())
         ),
         "metadata.preview_files" => json!(
-            app.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .and_then(|editor| editor.preview.as_ref())
                 .map(|preview| preview.affected_files.len())
         ),
         "metadata.unsupported_count" => json!(
-            app.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .and_then(|editor| editor.preview.as_ref())
                 .map(|preview| preview.unsupported_writes.len())
         ),
         "metadata.candidate_count" => json!(
-            app.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .map(|editor| editor.search_results.len())
         ),

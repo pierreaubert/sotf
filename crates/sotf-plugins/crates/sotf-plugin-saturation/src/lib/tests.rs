@@ -1,8 +1,8 @@
 use super::misc::tube;
 use super::saturation_plugin::SaturationPlugin;
 use super::saturation_plugin_params::SaturationPluginParams;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::InPlacePlugin;
 
 #[path = "tests/make.rs"]
 mod make;

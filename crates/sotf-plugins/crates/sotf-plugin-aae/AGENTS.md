@@ -35,6 +35,6 @@ cargo run -p sotf-plugin-aae --features qa --bin qa-aae
 
 ## Important Notes
 
-- Implements `Plugin` (not `InPlacePlugin`): output channel count differs from input (stereo → 5.0–9.1.6).
+- Implements `Plugin` (not `ParametricInPlacePlugin`): output channel count differs from input (stereo → 5.0–9.1.6).
 - VBAP routing depends on the active speaker layout from `sotf-host::speaker_config`.
 - Pre-allocate FDN/delay-line buffers in `build()`; never resize on the audio path.

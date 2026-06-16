@@ -12,14 +12,14 @@
 // get_parameter.
 
 use sotf_plugins::param_specs::{self, ParamSpec, ParamType};
-use sotf_plugins::{
+use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, 
     ABComparePlugin, BandMergePlugin, BandSplitPlugin, BinauralDecoderPlugin,
     ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin, DelayPlugin,
     DenoiserPlugin, DownmixPlugin, ExpanderPlugin, FirDesignerPlugin, GainPlugin, GatePlugin,
-    InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin,
+     LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin,
     MonoToStereoPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, ParameterId,
-    ParameterValue, Plugin, PndPlugin, RoomModel, UpmixerPlugin, XtcPlugin, XtcPluginParams,
-};
+    ParameterValue, Plugin, PndPlugin, RoomModel, UpmixerPlugin,
+    XtcPlugin, XtcPluginParams};
 
 const SAMPLE_RATE: u32 = 48000;
 
@@ -34,45 +34,45 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
     vec![
         PluginWithSpec {
             name: "gain",
-            plugin: Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            plugin: Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, 0.0))),
             params: param_specs::gain::PARAMS,
         },
         PluginWithSpec {
             name: "compressor",
-            plugin: Box::new(InPlacePluginAdapter::new(CompressorPlugin::new(2))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(CompressorPlugin::new(2))),
             params: param_specs::compressor::GLOBAL_PARAMS,
         },
         PluginWithSpec {
             name: "limiter",
-            plugin: Box::new(InPlacePluginAdapter::new(LimiterPlugin::new(
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(LimiterPlugin::new(
                 2, -1.0, 50.0, 5.0, false,
             ))),
             params: param_specs::limiter::PARAMS,
         },
         PluginWithSpec {
             name: "gate",
-            plugin: Box::new(InPlacePluginAdapter::new(GatePlugin::new(
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(GatePlugin::new(
                 2, -40.0, 10.0, 1.0, 10.0, 100.0,
             ))),
             params: param_specs::gate::PARAMS,
         },
         PluginWithSpec {
             name: "expander",
-            plugin: Box::new(InPlacePluginAdapter::new(ExpanderPlugin::new(2))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(ExpanderPlugin::new(2))),
             params: param_specs::expander::GLOBAL_PARAMS,
         },
         PluginWithSpec {
             name: "delay",
-            plugin: Box::new(InPlacePluginAdapter::new(DelayPlugin::new(
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(DelayPlugin::new(
                 2, 100.0, 0.3, 0.5,
             ))),
             params: param_specs::delay::PARAMS,
         },
         PluginWithSpec {
             name: "loudness_compensation",
-            plugin: Box::new(InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
-                2, 200.0, 3.0, 6000.0, 2.0,
-            ))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(
+                LoudnessCompensationPlugin::new(2, 200.0, 3.0, 6000.0, 2.0),
+            )),
             params: param_specs::loudness_compensation::PARAMS,
         },
         PluginWithSpec {
@@ -106,7 +106,7 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "denoiser",
-            plugin: Box::new(InPlacePluginAdapter::new(DenoiserPlugin::new(2, false))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(DenoiserPlugin::new(2, false))),
             params: param_specs::denoiser::PARAMS,
         },
         PluginWithSpec {
@@ -131,14 +131,14 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "channel_mute_solo",
-            plugin: Box::new(InPlacePluginAdapter::new(ChannelMuteSoloPlugin::new(
-                2, true,
-            ))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(
+                ChannelMuteSoloPlugin::new(2, true),
+            )),
             params: param_specs::channel_mute_solo::PARAMS,
         },
         PluginWithSpec {
             name: "crossfeed",
-            plugin: Box::new(InPlacePluginAdapter::new(
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(
                 CrossfeedPlugin::new(Default::default()).unwrap(),
             )),
             params: param_specs::crossfeed::PARAMS,
@@ -160,17 +160,17 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "multiband_compressor",
-            plugin: Box::new(InPlacePluginAdapter::new(MultibandCompressorPlugin::new(2))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(MultibandCompressorPlugin::new(2))),
             params: param_specs::multiband_compressor::GLOBAL_PARAMS,
         },
         PluginWithSpec {
             name: "multiband_expander",
-            plugin: Box::new(InPlacePluginAdapter::new(MultibandExpanderPlugin::new(2))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(MultibandExpanderPlugin::new(2))),
             params: param_specs::multiband_expander::GLOBAL_PARAMS,
         },
         PluginWithSpec {
             name: "convolution",
-            plugin: Box::new(InPlacePluginAdapter::new(ConvolutionPlugin::new(
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(
                 2,
                 SAMPLE_RATE,
             ))),
@@ -178,7 +178,7 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "fir_designer",
-            plugin: Box::new(InPlacePluginAdapter::new(FirDesignerPlugin::new(
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(FirDesignerPlugin::new(
                 2,
                 SAMPLE_RATE,
             ))),

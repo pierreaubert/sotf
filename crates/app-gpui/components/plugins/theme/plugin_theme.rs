@@ -144,12 +144,12 @@ impl PluginTheme {
         // Audio-component look tokens — patched into the resolved theme so
         // the knob and meter renderers downstream pick them up without
         // signature changes.
-        out.design_tokens.knob_label_style = self.knob_label_style;
-        out.design_tokens.knob_arc_glow = self.knob_arc_glow;
-        out.design_tokens.meter_label_style = self.meter_label_style;
-        out.design_tokens.meter_use_gradient = self.meter_use_gradient;
-        out.design_tokens.meter_corner_radius = self.meter_corner_radius;
-        out.design_tokens.meter_glow = self.meter_glow;
+        out.layout.design_tokens.knob_label_style = self.knob_label_style;
+        out.layout.design_tokens.knob_arc_glow = self.knob_arc_glow;
+        out.layout.design_tokens.meter_label_style = self.meter_label_style;
+        out.layout.design_tokens.meter_use_gradient = self.meter_use_gradient;
+        out.layout.design_tokens.meter_corner_radius = self.meter_corner_radius;
+        out.layout.design_tokens.meter_glow = self.meter_glow;
 
         // Surfaces — the chassis gradient maps to background; panels to
         // background_secondary; recessed tiles to background_tertiary; the
@@ -176,7 +176,7 @@ impl PluginTheme {
         out.text_muted = self.ink_mid;
 
         // Font family: prefer the chassis-supplied UI font.
-        out.font_family = Some(self.font_ui.clone());
+        out.layout.font_family = Some(self.font_ui.clone());
 
         out
     }

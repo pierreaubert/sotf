@@ -17,7 +17,7 @@ This crate provides:
 ### Crate Organization
 
 The plugins workspace is organized as a facade crate (`sotf-plugins`) that re-exports:
-- **`sotf-host`**: Core infrastructure — `Plugin`/`InPlacePlugin` traits, `DawHost`, parameter system, analyzers, SIMD, smoothing, SOFA/HRTF, speaker configs, STFT common utilities
+- **`sotf-host`**: Core infrastructure — `Plugin`/`ParametricInPlacePlugin` traits, `DawHost`, parameter system, analyzers, SIMD, smoothing, SOFA/HRTF, speaker configs, STFT common utilities
 - **`sotf-plugin-*`**: Individual plugin crates, each self-contained with their own tests and dependencies
 
 ```
@@ -58,12 +58,12 @@ pub trait Plugin: Send {
 }
 ```
 
-#### `InPlacePlugin` Trait
+#### `ParametricInPlacePlugin` Trait
 
 For plugins that process audio in-place (same input/output channel count):
 
 ```rust
-pub trait InPlacePlugin: Send {
+pub trait ParametricInPlacePlugin: Send {
     fn info(&self) -> PluginInfo;
     fn channels(&self) -> usize;
     fn process_in_place(&mut self, buffer: &mut [f32], context: &ProcessContext) -> PluginResult<()>;
@@ -71,7 +71,7 @@ pub trait InPlacePlugin: Send {
 }
 ```
 
-Use `InPlacePluginAdapter` to wrap an `InPlacePlugin` as a `Plugin`.
+Use `ParametricInPlacePluginAdapter` to wrap an `ParametricInPlacePlugin` as a `Plugin`.
 
 ### Audio Format
 
@@ -131,7 +131,7 @@ Analyzers pass audio through unmodified while extracting measurements accessible
 | Module | Description |
 |--------|-------------|
 | `host.rs` | `DawHost` — DAG-based plugin routing with parallel processing |
-| `plugin.rs` | Core `Plugin`/`InPlacePlugin` traits |
+| `plugin.rs` | Core `Plugin`/`ParametricInPlacePlugin` traits |
 | `parameters.rs` | Parameter system (Float, Int, Bool, Choice) |
 | `param_specs.rs` | Centralized parameter defaults/ranges for all plugins |
 | `param_registry.rs` | Parameter registry |
@@ -164,7 +164,7 @@ The main host supports two modes:
 
 ```rust
 let mut host = PluginHost::new(2, 48000);
-host.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0))))?;
+host.add_plugin(Box::new(ParametricInPlacePluginAdapter::new(GainPlugin::new(2, -6.0))))?;
 host.process(&input, &mut output)?;
 ```
 
@@ -262,7 +262,7 @@ For real-time audio at 48kHz with 512-sample buffers (10.67ms of audio):
 
 ## Performance Considerations
 
-1. **In-Place Processing**: Prefer `InPlacePlugin` when channel count doesn't change — avoids buffer copies
+1. **In-Place Processing**: Prefer `ParametricInPlacePlugin` when channel count doesn't change — avoids buffer copies
 2. **Buffer Sizes**: Larger buffers amortize per-call overhead but increase latency
 3. **Memory Allocation**: Pre-allocate buffers in `initialize()`, avoid allocations in `process()`
 4. **SIMD**: Use SIMD intrinsics in hot paths (see `simd.rs`)

@@ -18,7 +18,7 @@
     {
         let mut vog_toggle = Toggle::new((base_id.clone(), "hc-vog-enabled"))
             .size(ToggleSize::Sm)
-            .checked(config.vog_enabled)
+            .checked(config.v2.vog_enabled)
             .theme(toggle_theme.clone());
 
         if let Some(ref h) = on_vog_enabled_change_rc {
@@ -38,7 +38,7 @@
                 .child(vog_toggle),
         );
 
-        if config.vog_enabled {
+        if config.v2.vog_enabled {
             let ref_channel_options: Vec<SelectOption> = ["C", "L", "R"]
                 .iter()
                 .map(|ch| SelectOption::new(*ch, *ch))
@@ -47,7 +47,7 @@
             let mut ref_select = Select::new((base_id.clone(), "hc-vog-ref-channel"))
                 .label("Reference Channel")
                 .options(ref_channel_options)
-                .selected(&config.vog_reference_channel)
+                .selected(&config.v2.vog_reference_channel)
                 .is_open(ui_state.vog_reference_channel_open)
                 .disabled(disabled)
                 .size(SelectSize::Xs)
@@ -70,7 +70,7 @@
     if !hide_phase_alignment {
         let mut phase_toggle = Toggle::new((base_id.clone(), "hc-phase-enabled"))
             .size(ToggleSize::Sm)
-            .checked(config.use_phase_alignment)
+            .checked(config.system_optimization.use_phase_alignment)
             .theme(toggle_theme.clone());
 
         if let Some(ref h) = on_use_phase_alignment_change_rc {
@@ -85,9 +85,9 @@
                 .child(phase_toggle),
         );
 
-        if config.use_phase_alignment {
+        if config.system_optimization.use_phase_alignment {
             let mut min_freq_input = NumberInput::new((base_id.clone(), "hc-phase-min-freq"))
-                .value(config.phase_min_freq)
+                .value(config.system_optimization.phase_min_freq)
                 .min(20.0).max(1000.0).step(1.0).decimals(0)
                 .label("Min Freq (Hz)")
                 .size(NumberInputSize::Sm)
@@ -100,7 +100,7 @@
             }
 
             let mut max_freq_input = NumberInput::new((base_id.clone(), "hc-phase-max-freq"))
-                .value(config.phase_max_freq)
+                .value(config.system_optimization.phase_max_freq)
                 .min(20.0).max(1000.0).step(1.0).decimals(0)
                 .label("Max Freq (Hz)")
                 .size(NumberInputSize::Sm)
@@ -118,7 +118,7 @@
 
             let mut polarity_toggle = Toggle::new((base_id.clone(), "hc-phase-polarity"))
                 .size(ToggleSize::Sm)
-                .checked(config.phase_optimize_polarity)
+                .checked(config.system_optimization.phase_optimize_polarity)
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_phase_optimize_polarity_change_rc {
@@ -134,7 +134,7 @@
             );
 
             let mut p_max_delay = NumberInput::new((base_id.clone(), "hc-phase-max-delay"))
-                .value(config.phase_max_delay_ms)
+                .value(config.system_optimization.phase_max_delay_ms)
                 .min(ParamLimits::DELAY_MS.min).max(ParamLimits::DELAY_MS.max).step(ParamLimits::DELAY_MS.step)
                 .decimals(1)
                 .label("Max Delay (ms)")
@@ -154,7 +154,7 @@
     if !hide_multi_seat {
         let mut multi_seat_toggle = Toggle::new((base_id.clone(), "hc-multi-seat-enabled"))
             .size(ToggleSize::Sm)
-            .checked(config.use_multi_seat)
+            .checked(config.system_optimization.use_multi_seat)
             .theme(toggle_theme.clone());
 
         if let Some(ref h) = on_use_multi_seat_change_rc {
@@ -169,7 +169,7 @@
                 .child(multi_seat_toggle),
         );
 
-        if config.use_multi_seat {
+        if config.system_optimization.use_multi_seat {
             let strategy_options: Vec<SelectOption> = MULTI_SEAT_STRATEGY_OPTIONS
                 .iter()
                 .map(|(val, lbl)| SelectOption::new(*val, *lbl))
@@ -178,7 +178,7 @@
             let mut strategy_select = Select::new((base_id.clone(), "hc-multi-seat-strategy"))
                 .label("Strategy")
                 .options(strategy_options)
-                .selected(&config.multi_seat_strategy)
+                .selected(&config.system_optimization.multi_seat_strategy)
                 .is_open(ui_state.multi_seat_strategy_open)
                 .size(SelectSize::Xs)
                 .theme(theme.select_theme.clone());
@@ -194,9 +194,9 @@
 
             section = section.child(strategy_select);
 
-            if config.multi_seat_strategy == "primary" {
+            if config.system_optimization.multi_seat_strategy == "primary" {
                 let mut primary_seat_input = NumberInput::new((base_id.clone(), "hc-multi-seat-primary"))
-                    .value(config.multi_seat_primary_seat as f64)
+                    .value(config.system_optimization.multi_seat_primary_seat as f64)
                     .min(0.0).max(16.0).step(1.0).decimals(0)
                     .label("Primary Seat")
                     .size(NumberInputSize::Sm)
@@ -211,7 +211,7 @@
             }
 
             let mut dev_input = NumberInput::new((base_id.clone(), "hc-multi-seat-max-dev"))
-                .value(config.multi_seat_max_deviation_db)
+                .value(config.system_optimization.multi_seat_max_deviation_db)
                 .min(1.0).max(12.0).step(0.5).decimals(1)
                 .label("Max Deviation (dB)")
                 .size(NumberInputSize::Sm)

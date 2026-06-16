@@ -4,16 +4,15 @@ use super::consts::assert_no_allocs;
 use super::consts::generate_test_buffer;
 use criterion::Criterion;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use sotf_plugins::{
+use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, 
     ABComparePlugin, AaePlugin, AaePluginParams, AecPlugin, AecPluginParams, AutoGain,
     AutoGainParams, BandMergePlugin, BandSplitPlugin, BeamformerPlugin, ChannelMuteSoloPlugin,
     CompressorPlugin, CrossoverPlugin, DeclickPlugin, DelayPlugin, DenoiserPlugin, EqPlugin,
-    ExpanderPlugin, GainPlugin, GatePlugin, HissReducerPlugin, InPlacePluginAdapter, LimiterPlugin,
+    ExpanderPlugin, GainPlugin, GatePlugin, HissReducerPlugin,  LimiterPlugin,
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
-    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
-    SPEECH_DENOISER_FRAME_SIZE, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
-    UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
-};
+    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext, SPEECH_DENOISER_FRAME_SIZE,
+    SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin, UpmixerPlugin, UpmixerPluginParams,
+    XtcPlugin, XtcPluginParams};
 
 pub(super) fn test_eq_zero_alloc() {
     let filters = vec![
@@ -26,7 +25,7 @@ pub(super) fn test_eq_zero_alloc() {
             2.0,
         ),
     ];
-    let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(2, filters));
+    let mut plugin = ParametricPluginAdapter::new(EqPlugin::new(2, filters));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
@@ -170,8 +169,9 @@ pub(super) fn test_channel_mute_solo_zero_alloc() {
 }
 
 pub(super) fn test_loudness_compensation_zero_alloc() {
-    let mut plugin =
-        InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(2, 200.0, 3.0, 6000.0, 2.0));
+    let mut plugin = ParametricInPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
+        2, 200.0, 3.0, 6000.0, 2.0,
+    ));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
@@ -192,8 +192,9 @@ pub(super) fn test_fletcher_munson_zero_alloc() {
         reference_level_db: 69.0, // 83 + (-14)
         ..Default::default()
     };
-    let mut plugin =
-        InPlacePluginAdapter::new(LoudnessCompensationPlugin::from_params(2, params).unwrap());
+    let mut plugin = ParametricInPlacePluginAdapter::new(
+        LoudnessCompensationPlugin::from_params(2, params).unwrap(),
+    );
     Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);

@@ -22,4 +22,4 @@ cargo test -p sotf-plugin-hal-input
 ## Important Notes
 
 - macOS only — requires CoreAudio HAL driver (sotf-macos-hal)
-- Plugin trait (not InPlacePlugin) — generates output without input
+- Plugin trait (not ParametricInPlacePlugin) — generates output without input

@@ -1,5 +1,6 @@
-use sotf_host::{CountingAlloc, measure_peak_db, run_standard_tests};
-use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ParameterValue, ProcessContext};
+use sotf_host::parametric_in_place_plugin::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, CountingAlloc, measure_peak_db, run_standard_tests};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParameterValue, ProcessContext};
 use sotf_plugin_multiband_compressor::{
     MultibandCompressorPlugin, MultibandCompressorPluginParams,
 };
@@ -68,7 +69,7 @@ fn main() {
     assert!(peak < -25.0);
 
     // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
+    let mut plugin = ParametricInPlacePluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "MultibandCompressorPlugin");
 
     println!("\n[ALL PASS] Multiband Compressor QA Complete.");

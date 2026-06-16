@@ -6,7 +6,9 @@ use super::misc::NOISE_SHAPING_COEFFS;
 use super::misc::random_f32;
 use super::types::DitherPluginParams;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 
 pub struct DitherPlugin {
@@ -149,7 +151,7 @@ impl DitherPlugin {
     }
 }
 
-impl InPlacePlugin for DitherPlugin {
+impl ParametricInPlacePlugin for DitherPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Dither", "1.0.0", "Sotf")
     }
@@ -158,51 +160,64 @@ impl InPlacePlugin for DitherPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, val: ParameterValue) -> PluginResult<()> {
-        if id == self.param_bit_depth
-            && let Some(v) = val.as_int()
-        {
-            let idx = (v as usize).min(BIT_DEPTHS.len() - 1);
-            self.bit_depth_index = idx;
-            self.update_scales();
-            self.rebuild_cached_parameters();
-            return Ok(());
-        }
-
-        if id == self.param_noise_shaping
-            && let Some(v) = val.as_bool()
-        {
-            self.noise_shaping_enabled = v;
-            self.rebuild_cached_parameters();
-            return Ok(());
-        }
-
-        if id == self.param_dither_type
-            && let Some(v) = val.as_int()
-        {
-            let idx = (v as usize).min(2);
-            self.dither_type_index = idx;
-            self.rebuild_cached_parameters();
-            return Ok(());
-        }
-
-        Err(format!("Invalid or unknown parameter: {}", id))
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(
+            ParameterId::from("bit_depth"),
+            ParameterValue::Int(self.bit_depth_index as i32),
+        );
+        values.insert(
+            ParameterId::from("noise_shaping"),
+            ParameterValue::Bool(self.noise_shaping_enabled),
+        );
+        values.insert(
+            ParameterId::from("dither_type"),
+            ParameterValue::Int(self.dither_type_index as i32),
+        );
+        values
     }
 
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_bit_depth {
-            Some(ParameterValue::Int(self.bit_depth_index as i32))
-        } else if id == &self.param_noise_shaping {
-            Some(ParameterValue::Bool(self.noise_shaping_enabled))
-        } else if id == &self.param_dither_type {
-            Some(ParameterValue::Int(self.dither_type_index as i32))
-        } else {
-            None
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, val) in values {
+            if id == self.param_bit_depth {
+                if let Some(v) = val.as_int() {
+                    let idx = (v as usize).min(BIT_DEPTHS.len() - 1);
+                    self.bit_depth_index = idx;
+                    self.update_scales();
+                } else {
+                    return Err("bit_depth must be an int".to_string());
+                }
+            } else if id == self.param_noise_shaping {
+                if let Some(v) = val.as_bool() {
+                    self.noise_shaping_enabled = v;
+                } else {
+                    return Err("noise_shaping must be a bool".to_string());
+                }
+            } else if id == self.param_dither_type {
+                if let Some(v) = val.as_int() {
+                    let idx = (v as usize).min(2);
+                    self.dither_type_index = idx;
+                } else {
+                    return Err("dither_type must be an int".to_string());
+                }
+            } else {
+                return Err(format!("Invalid or unknown parameter: {}", id));
+            }
         }
+        self.rebuild_cached_parameters();
+        Ok(())
+    }
+
+    /// Preserve original DitherPlugin behavior: clamp out-of-range ints instead of
+    /// rejecting them at the schema-validation layer.
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        let mut values = ParameterSet::new();
+        values.insert(id, value);
+        self.apply_values(values)
     }
 
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {

@@ -1,5 +1,5 @@
-use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
-use sotf_host::{CountingAlloc, measure_peak_db, run_standard_tests};
+use sotf_host::plugin::ProcessContext;
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, CountingAlloc, measure_peak_db, run_standard_tests};
 use sotf_plugin_fir_designer::{BandConfig, FirDesignerPlugin, FirDesignerPluginParams};
 use std::f32::consts::PI;
 
@@ -52,7 +52,7 @@ fn main() {
     );
 
     // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
+    let mut plugin = ParametricInPlacePluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "FirDesignerPlugin");
 
     println!("\n[ALL PASS] FIR Designer QA Complete.");

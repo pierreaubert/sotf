@@ -1,7 +1,8 @@
 //! Integration tests for sotf-plugin-declick exercising the public `InPlacePlugin` trait.
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 use sotf_plugin_declick::{DeclickPlugin, DeclickPluginParams};
 
 const SR: u32 = 48000;

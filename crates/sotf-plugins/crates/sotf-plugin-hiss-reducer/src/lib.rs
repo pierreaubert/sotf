@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HissReducerPluginParams {
@@ -95,7 +97,7 @@ impl HissReducerPlugin {
     }
 }
 
-impl InPlacePlugin for HissReducerPlugin {
+impl ParametricInPlacePlugin for HissReducerPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Hiss Reducer", "1.0.0", "SotF")
             .with_description("Stationary high-frequency hiss reducer")
@@ -105,35 +107,51 @@ impl InPlacePlugin for HissReducerPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
-        self.cached_parameters.clone()
+    fn parameter_schema(&self) -> ParameterSchema {
+        param_bridge::build_parameters(HP, |i| self.param_value(i))
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        let idx = param_bridge::set_parameter(HP, &id, &value, |i, v| match i {
-            0 => self.params.enabled = v > 0.5,
-            1 => self.params.threshold_db = v as f32,
-            2 => self.params.frequency_hz = v as f32,
-            3 => self.params.strength = v as f32,
-            _ => {}
-        })?;
-        // For continuous parameters (threshold, frequency, strength) update the
-        // reducer in-place via set_params() to preserve DSP state (IIR history,
-        // envelope followers) and avoid audible clicks. Only the enabled flag
-        // (idx == 0) needs no reducer update at all.
-        if idx != 0 {
-            self.reducer.set_params(
-                self.params.frequency_hz,
-                self.params.threshold_db,
-                self.params.strength,
-            );
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(ParameterId::from("enabled"), ParameterValue::Bool(self.params.enabled));
+        values.insert(
+            ParameterId::from("threshold_db"),
+            ParameterValue::Float(self.params.threshold_db),
+        );
+        values.insert(
+            ParameterId::from("frequency_hz"),
+            ParameterValue::Float(self.params.frequency_hz),
+        );
+        values.insert(
+            ParameterId::from("strength"),
+            ParameterValue::Float(self.params.strength),
+        );
+        values
+    }
+
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            let idx = param_bridge::set_parameter(HP, &id, &value, |i, v| match i {
+                0 => self.params.enabled = v > 0.5,
+                1 => self.params.threshold_db = v as f32,
+                2 => self.params.frequency_hz = v as f32,
+                3 => self.params.strength = v as f32,
+                _ => {}
+            })?;
+            // For continuous parameters (threshold, frequency, strength) update the
+            // reducer in-place via set_params() to preserve DSP state (IIR history,
+            // envelope followers) and avoid audible clicks. Only the enabled flag
+            // (idx == 0) needs no reducer update at all.
+            if idx != 0 {
+                self.reducer.set_params(
+                    self.params.frequency_hz,
+                    self.params.threshold_db,
+                    self.params.strength,
+                );
+            }
+            self.rebuild_cached_parameters();
         }
-        self.rebuild_cached_parameters();
         Ok(())
-    }
-
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        param_bridge::get_parameter(HP, id, |i| self.param_value(i))
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

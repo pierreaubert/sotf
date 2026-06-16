@@ -30,16 +30,16 @@ impl DenoiserPlugin {
     pub(super) fn update_noise_estimation(&mut self) -> bool {
         let mut any_bootstrapping = false;
 
-        for ch in 0..self.channels {
-            if self.frame_counter[ch] < BOOTSTRAP_FRAMES {
+        for ch in 0..self.config.channels {
+            if self.mcra.frame_counter[ch] < BOOTSTRAP_FRAMES {
                 // Bootstrap: accumulate power into noise_psd
-                for k in 0..self.spectrum_size {
+                for k in 0..self.config.spectrum_size {
                     let power = self.get_power_at_bin(ch, k);
-                    self.noise_psd[ch][k] += power;
+                    self.mcra.noise_psd[ch][k] += power;
                 }
-                self.frame_counter[ch] += 1;
+                self.mcra.frame_counter[ch] += 1;
 
-                if self.frame_counter[ch] >= BOOTSTRAP_FRAMES {
+                if self.mcra.frame_counter[ch] >= BOOTSTRAP_FRAMES {
                     self.finalize_bootstrap(ch);
                 } else {
                     any_bootstrapping = true;
@@ -55,17 +55,17 @@ impl DenoiserPlugin {
     /// Finalize bootstrap by averaging accumulated power and initializing
     /// all MCRA state from the averaged noise estimate.
     fn finalize_bootstrap(&mut self, channel: usize) {
-        let n = self.frame_counter[channel] as f32;
+        let n = self.mcra.frame_counter[channel] as f32;
         // Minimum noise floor: -60 dB power. Prevents division-by-near-zero
         // in Wiener gain when bootstrap captured mostly silence.
         let min_noise_power = 1e-6_f32;
-        for k in 0..self.spectrum_size {
-            let avg = (self.noise_psd[channel][k] / n).max(min_noise_power);
-            self.noise_psd[channel][k] = avg;
-            self.smoothed_psd[channel][k] = avg;
-            self.min_psd[channel][k] = avg;
-            self.min_psd_b[channel][k] = avg;
-            self.speech_presence[channel][k] = 0.0;
+        for k in 0..self.config.spectrum_size {
+            let avg = (self.mcra.noise_psd[channel][k] / n).max(min_noise_power);
+            self.mcra.noise_psd[channel][k] = avg;
+            self.mcra.smoothed_psd[channel][k] = avg;
+            self.mcra.min_psd[channel][k] = avg;
+            self.mcra.min_psd_b[channel][k] = avg;
+            self.mcra.speech_presence[channel][k] = 0.0;
         }
     }
 
@@ -78,12 +78,12 @@ impl DenoiserPlugin {
     /// 4. Smooth speech probability: p = α_p * p + (1-α_p) * I
     /// 5. Update noise: σ_n² adaptive based on speech probability
     fn update_mcra(&mut self, channel: usize) {
-        let alpha_s = self.mcra_alpha_s;
-        let alpha_p = self.mcra_alpha_p;
-        let delta = self.mcra_delta;
-        let l = self.mcra_l;
+        let alpha_s = self.mcra.mcra_alpha_s;
+        let alpha_p = self.mcra.mcra_alpha_p;
+        let delta = self.mcra.mcra_delta;
+        let l = self.mcra.mcra_l;
         let half_l = l / 2;
-        let frame = self.frame_counter[channel];
+        let frame = self.mcra.frame_counter[channel];
 
         // Hoist loop-invariant frame boundary checks out of the per-bin loop
         let reset_window_a = frame.is_multiple_of(l);
@@ -91,35 +91,35 @@ impl DenoiserPlugin {
 
         // Use previous frame's learning_active as fast-adapt trigger
         // (avoids chicken-and-egg: we need quiet_ratio before the loop)
-        let use_fast_adapt = self.learning_active;
+        let use_fast_adapt = self.ui.learning_active;
         // Track whether we're learning (quiet moment detected)
         let mut quiet_bins = 0;
 
-        for k in 0..self.spectrum_size {
+        for k in 0..self.config.spectrum_size {
             let power = self.get_power_at_bin(channel, k);
 
             // Step 1: Update smoothed power spectral density
-            let s_tmp = alpha_s * self.smoothed_psd[channel][k] + (1.0 - alpha_s) * power;
-            self.smoothed_psd[channel][k] = s_tmp;
+            let s_tmp = alpha_s * self.mcra.smoothed_psd[channel][k] + (1.0 - alpha_s) * power;
+            self.mcra.smoothed_psd[channel][k] = s_tmp;
 
             // Step 2: IMCRA dual-window minimum tracking
             // Window A: resets at frames 0, L, 2L, ...
             if reset_window_a {
-                self.min_psd[channel][k] = s_tmp;
+                self.mcra.min_psd[channel][k] = s_tmp;
             } else {
-                self.min_psd[channel][k] = self.min_psd[channel][k].min(s_tmp);
+                self.mcra.min_psd[channel][k] = self.mcra.min_psd[channel][k].min(s_tmp);
             }
 
             // Window B: resets at frames L/2, 3L/2, 5L/2, ...
             if reset_window_b {
-                self.min_psd_b[channel][k] = s_tmp;
+                self.mcra.min_psd_b[channel][k] = s_tmp;
             } else {
-                self.min_psd_b[channel][k] = self.min_psd_b[channel][k].min(s_tmp);
+                self.mcra.min_psd_b[channel][k] = self.mcra.min_psd_b[channel][k].min(s_tmp);
             }
 
             // Use minimum of both windows (ensures no blind spot at reset)
-            let s_min = self.min_psd[channel][k]
-                .min(self.min_psd_b[channel][k])
+            let s_min = self.mcra.min_psd[channel][k]
+                .min(self.mcra.min_psd_b[channel][k])
                 .max(EPSILON);
 
             // Step 3: Compute speech presence indicator
@@ -127,8 +127,8 @@ impl DenoiserPlugin {
             let indicator = if s_r > delta { 1.0 } else { 0.0 };
 
             // Step 4: Smooth speech presence probability
-            let p = alpha_p * self.speech_presence[channel][k] + (1.0 - alpha_p) * indicator;
-            self.speech_presence[channel][k] = p;
+            let p = alpha_p * self.mcra.speech_presence[channel][k] + (1.0 - alpha_p) * indicator;
+            self.mcra.speech_presence[channel][k] = p;
 
             // Step 5: Update noise estimate with adaptive smoothing
             // When p is high (speech present), alpha_d → 1 → slow/no update
@@ -139,8 +139,8 @@ impl DenoiserPlugin {
             if use_fast_adapt && p < 0.3 {
                 alpha_d /= 2.0; // 2x faster tracking
             }
-            let noise_est = alpha_d * self.noise_psd[channel][k] + (1.0 - alpha_d) * power;
-            self.noise_psd[channel][k] = noise_est;
+            let noise_est = alpha_d * self.mcra.noise_psd[channel][k] + (1.0 - alpha_d) * power;
+            self.mcra.noise_psd[channel][k] = noise_est;
 
             // Count quiet bins for learning indicator
             if p < 0.5 {
@@ -149,25 +149,25 @@ impl DenoiserPlugin {
         }
 
         // Update learning indicator (more than half the bins are quiet)
-        self.learning_active = quiet_bins > self.spectrum_size / 2;
+        self.ui.learning_active = quiet_bins > self.config.spectrum_size / 2;
 
         // Increment frame counter
-        self.frame_counter[channel] += 1;
+        self.mcra.frame_counter[channel] += 1;
     }
 
     /// Get estimated noise power at a specific bin
     #[inline]
     pub(super) fn get_noise_power(&self, channel: usize, bin: usize) -> f32 {
-        self.noise_psd[channel][bin].max(EPSILON)
+        self.mcra.noise_psd[channel][bin].max(EPSILON)
     }
 
     /// Reset MCRA state for a channel
     pub(super) fn reset_mcra(&mut self, channel: usize) {
-        self.noise_psd[channel].fill(0.0);
-        self.smoothed_psd[channel].fill(0.0);
-        self.min_psd[channel].fill(0.0);
-        self.min_psd_b[channel].fill(0.0);
-        self.speech_presence[channel].fill(0.0);
-        self.frame_counter[channel] = 0;
+        self.mcra.noise_psd[channel].fill(0.0);
+        self.mcra.smoothed_psd[channel].fill(0.0);
+        self.mcra.min_psd[channel].fill(0.0);
+        self.mcra.min_psd_b[channel].fill(0.0);
+        self.mcra.speech_presence[channel].fill(0.0);
+        self.mcra.frame_counter[channel] = 0;
     }
 }

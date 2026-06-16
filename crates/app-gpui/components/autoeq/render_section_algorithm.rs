@@ -29,8 +29,8 @@
         // Psychoacoustic toggle (disabled when curve smoothing is on)
         let mut psycho_toggle = Toggle::new((base_id.clone(), "alg-psychoacoustic"))
             .size(ToggleSize::Sm)
-            .checked(config.psychoacoustic)
-            .disabled(config.smooth)
+            .checked(config.algorithm.psychoacoustic)
+            .disabled(config.algorithm.smooth)
             .theme(toggle_theme.clone());
 
         if let Some(ref handler) = on_psychoacoustic_change_rc {
@@ -54,8 +54,8 @@
         // Curve smoothing toggle (disabled when psychoacoustic is on)
         let mut smooth_toggle = Toggle::new((base_id.clone(), "alg-smooth"))
             .size(ToggleSize::Sm)
-            .checked(config.smooth)
-            .disabled(config.psychoacoustic)
+            .checked(config.algorithm.smooth)
+            .disabled(config.algorithm.psychoacoustic)
             .theme(toggle_theme.clone());
 
         if let Some(ref handler) = on_smooth_change_rc {
@@ -76,9 +76,9 @@
                 .child(smooth_toggle),
         );
 
-        if config.smooth {
+        if config.algorithm.smooth {
             let mut smooth_n_input = NumberInput::new((base_id.clone(), "alg-smooth-n"))
-                .value(config.smooth_n as f64)
+                .value(config.algorithm.smooth_n as f64)
                 .min(ParamLimits::SMOOTH_N.min)
                 .max(ParamLimits::SMOOTH_N.max)
                 .step(ParamLimits::SMOOTH_N.step)
@@ -102,7 +102,7 @@
     if !hide_asymmetric_loss {
         let mut asymmetric_toggle = Toggle::new((base_id.clone(), "alg-asymmetric-loss"))
             .size(ToggleSize::Sm)
-            .checked(config.asymmetric_loss)
+            .checked(config.algorithm.asymmetric_loss)
             .theme(toggle_theme.clone());
 
         if let Some(ref handler) = on_asymmetric_loss_change_rc {
@@ -128,7 +128,7 @@
     {
         let mut seed_toggle = Toggle::new((base_id.clone(), "alg-seed-enabled"))
             .size(ToggleSize::Sm)
-            .checked(config.seed_enabled)
+            .checked(config.v2.seed_enabled)
             .theme(toggle_theme.clone());
 
         if let Some(ref h) = on_seed_enabled_change_rc {
@@ -143,9 +143,9 @@
                 .child(seed_toggle),
         );
 
-        if config.seed_enabled {
+        if config.v2.seed_enabled {
             let mut seed_input = NumberInput::new((base_id.clone(), "alg-seed-value"))
-                .value(config.seed as f64)
+                .value(config.v2.seed as f64)
                 .min(ParamLimits::SEED.min)
                 .max(ParamLimits::SEED.max)
                 .step(ParamLimits::SEED.step)
@@ -169,7 +169,7 @@
     if !hide_broadband_matching {
         let mut broadband_toggle = Toggle::new((base_id.clone(), "alg-broadband"))
             .size(ToggleSize::Sm)
-            .checked(config.broadband_target_matching)
+            .checked(config.v2.broadband_target_matching)
             .theme(toggle_theme.clone());
 
         if let Some(ref h) = on_broadband_target_matching_change_rc {

@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, generate_dc, measure_peak_db, run_standard_tests};
-use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, CountingAlloc, ProcessContext};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, ParametricInPlacePlugin, ParametricPlugin, generate_dc, measure_peak_db, run_standard_tests};
 use sotf_plugin_limiter::{LimiterPlugin, LimiterPluginParams};
 
 #[global_allocator]
@@ -37,7 +37,7 @@ fn main() {
     assert!(peak <= -0.99 && peak > -1.1);
 
     // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
+    let mut plugin = ParametricInPlacePluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "LimiterPlugin");
 
     println!("\n[ALL PASS] Limiter QA Complete.");

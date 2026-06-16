@@ -283,8 +283,11 @@ fn test_community_theme_preset_exports_valid_bundle() {
         let app_theme = Theme::from_community_bundle(&bundle)
             .unwrap_or_else(|err| panic!("{} failed app contrast validation: {err}", id.name()));
         assert_eq!(app_theme.accent, bundle.theme.accent.to_rgba());
-        assert!(!app_theme.band_colors.is_empty());
-        assert_eq!(app_theme.channel_colors, app_theme.band_colors);
+        assert!(!app_theme.plugin_palette.band_colors.is_empty());
+        assert_eq!(
+            app_theme.plugin_palette.channel_colors,
+            app_theme.plugin_palette.band_colors
+        );
     }
 }
 

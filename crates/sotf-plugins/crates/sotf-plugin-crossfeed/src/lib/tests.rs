@@ -4,7 +4,8 @@ use super::delay_line::DelayLine;
 use super::types::CrossfeedMode;
 use super::types::CrossfeedPreset;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
 #[test]
 fn test_crossfeed_basic() {
@@ -754,7 +755,7 @@ fn test_process_in_place_yaw_parameter_affects_itd() {
     let n = 300usize;
 
     let find_onset = |yaw_deg: f32| -> usize {
-        let mut params = CrossfeedPluginParams {
+        let params = CrossfeedPluginParams {
             mode: CrossfeedMode::Bauer,
             bauer_feed_db: 6.0,
             itd_delay_ms: 0.5,

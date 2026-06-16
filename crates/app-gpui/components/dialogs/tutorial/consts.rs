@@ -259,12 +259,12 @@ impl PlayerView {
 
         // 1. Close the dialog immediately (UI update — no I/O)
         if dont_show {
-            state.app.tutorial_completed = true;
+            state.app.tutorial.completed = true;
         }
         state.app.ui_state.input_mode = crate::app::InputMode::Normal;
         state.app.ui_state.tutorial_screen = 0;
         state.app.ui_state.tutorial_dont_show = false;
-        state.app.is_loading_initial_data = false;
+        state.app.library_view.loading_initial_data = false;
 
         // 2. Defer I/O-heavy operations so the dialog closes first
         let entity = cx.entity().clone();

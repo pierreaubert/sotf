@@ -358,6 +358,127 @@ use sotf_plugins::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpmixerGainSettings {
+    pub gain_front_direct: f64,
+    pub gain_front_ambient: f64,
+    pub gain_rear_ambient: f64,
+    pub height_gain: f64,
+    pub stereo_width: f64,
+    #[serde(default = "default_upmixer_center_spread")]
+    pub center_spread: f64,
+    #[serde(default = "default_upmixer_surround_direct_bleed")]
+    pub surround_direct_bleed: f64,
+    #[serde(default = "default_upmixer_rear_late_reflection")]
+    pub rear_late_reflection: f64,
+    #[serde(default = "default_upmixer_ambient_boost")]
+    pub ambient_boost: f64,
+    #[serde(default = "default_upmixer_rear_ambient_boost")]
+    pub rear_ambient_boost: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpmixerLfeSettings {
+    pub lfe_cutoff_hz: f64,
+    pub lfe_gain: f64,
+    pub bandpass_hz: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpmixerSubharmonicSettings {
+    #[serde(default)] // false
+    pub enable_subharmonic_synth: bool,
+    #[serde(default = "default_upmixer_subharmonic_gain")]
+    pub subharmonic_gain: f64,
+    #[serde(default = "default_upmixer_subharmonic_freq_hz")]
+    pub subharmonic_freq_hz: f64,
+    #[serde(default = "default_upmixer_subharmonic_attack_ms")]
+    pub subharmonic_attack_ms: f64,
+    #[serde(default = "default_upmixer_subharmonic_release_ms")]
+    pub subharmonic_release_ms: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpmixerDecorrelationSettings {
+    #[serde(default)] // 0
+    pub decorrelation_mode: usize,
+    #[serde(default = "default_upmixer_decorrelation_lfo_rate_hz")]
+    pub decorrelation_lfo_rate_hz: f64,
+    #[serde(default = "default_upmixer_velvet_noise_duration_ms")]
+    pub velvet_noise_duration_ms: f64,
+    #[serde(default = "default_upmixer_velvet_noise_density")]
+    pub velvet_noise_density: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpmixerHeightSettings {
+    #[serde(default = "default_upmixer_enable_hr_direct")]
+    pub enable_hr_direct: bool,
+    #[serde(default = "default_upmixer_hr_sharpen")]
+    pub hr_sharpen: f64,
+    #[serde(default = "default_upmixer_height_hf_cap_hz")]
+    pub height_hf_cap_hz: f64,
+    #[serde(default = "default_upmixer_height_transient_reduction")]
+    pub height_transient_reduction: f64,
+    #[serde(default = "default_upmixer_height_direct_leak")]
+    pub height_direct_leak: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpmixerDialogueSettings {
+    #[serde(default = "default_upmixer_dialogue_weight")]
+    pub dialogue_weight: f64,
+    #[serde(default = "default_upmixer_voice_freq_min_hz")]
+    pub voice_freq_min_hz: f64,
+    #[serde(default = "default_upmixer_voice_freq_max_hz")]
+    pub voice_freq_max_hz: f64,
+    #[serde(default = "default_upmixer_dialogue_centroid_weight")]
+    pub dialogue_centroid_weight: f64,
+    #[serde(default = "default_upmixer_dialogue_variance_weight")]
+    pub dialogue_variance_weight: f64,
+    #[serde(default = "default_upmixer_dialogue_coherence_weight")]
+    pub dialogue_coherence_weight: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpmixerBypassSettings {
+    #[serde(default)] // false
+    pub bypass_decorrelation: bool,
+    #[serde(default)] // false
+    pub bypass_transient_detection: bool,
+    #[serde(default)] // false
+    pub bypass_all_processing: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpmixerAmbientAnalysisSettings {
+    #[serde(default)] // false
+    pub low_latency: bool,
+    #[serde(default = "default_upmixer_frequency_resolution")]
+    pub frequency_resolution: usize,
+    #[serde(default = "default_upmixer_safety_cap_db")]
+    pub safety_cap_db: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpmixerOutputSettings {
+    #[serde(default)] // false
+    pub enable_ml_detection: bool,
+    #[serde(default)]
+    pub multi_source_extraction: bool,
+    #[serde(default = "default_upmixer_multi_source_threshold")]
+    pub multi_source_threshold: f64,
+    #[serde(default)]
+    pub binaural_preview: bool,
+    #[serde(default = "default_upmixer_auto_gain_enabled")]
+    pub auto_gain_enabled: bool,
+    #[serde(default = "default_upmixer_auto_gain_max_db")]
+    pub auto_gain_max_db: f64,
+    #[serde(default = "default_upmixer_auto_gain_smoothing_ms")]
+    pub auto_gain_smoothing_ms: f64,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginSettings {
     EQ {
         #[serde(default = "default_channels")]
@@ -391,103 +512,24 @@ pub enum PluginSettings {
     Upmixer {
         #[serde(deserialize_with = "deserialize_speaker_config")]
         speaker_config: String,
-        // Gain parameters (vertical sliders)
-        gain_front_direct: f64,
-        gain_front_ambient: f64,
-        gain_rear_ambient: f64,
-        height_gain: f64,
-        stereo_width: f64,
-        #[serde(default = "default_upmixer_center_spread")]
-        center_spread: f64,
-        #[serde(default = "default_upmixer_surround_direct_bleed")]
-        surround_direct_bleed: f64,
-        #[serde(default = "default_upmixer_rear_late_reflection")]
-        rear_late_reflection: f64,
-        // LFE parameters
-        lfe_cutoff_hz: f64,
-        lfe_gain: f64,
-        bandpass_hz: f64,
-        // Sub-harmonic parameters
-        #[serde(default)] // false
-        enable_subharmonic_synth: bool,
-        #[serde(default = "default_upmixer_subharmonic_gain")]
-        subharmonic_gain: f64,
-        #[serde(default = "default_upmixer_subharmonic_freq_hz")]
-        subharmonic_freq_hz: f64,
-        #[serde(default = "default_upmixer_subharmonic_attack_ms")]
-        subharmonic_attack_ms: f64,
-        #[serde(default = "default_upmixer_subharmonic_release_ms")]
-        subharmonic_release_ms: f64,
-        // Decorrelation parameters
-        #[serde(default)] // 0
-        decorrelation_mode: usize,
-        #[serde(default = "default_upmixer_decorrelation_lfo_rate_hz")]
-        decorrelation_lfo_rate_hz: f64,
-        #[serde(default = "default_upmixer_velvet_noise_duration_ms")]
-        velvet_noise_duration_ms: f64,
-        #[serde(default = "default_upmixer_velvet_noise_density")]
-        velvet_noise_density: f64,
-        // Height parameters
-        #[serde(default = "default_upmixer_enable_hr_direct")]
-        enable_hr_direct: bool,
-        #[serde(default = "default_upmixer_hr_sharpen")]
-        hr_sharpen: f64,
-        #[serde(default = "default_upmixer_height_hf_cap_hz")]
-        height_hf_cap_hz: f64,
-        #[serde(default = "default_upmixer_height_transient_reduction")]
-        height_transient_reduction: f64,
-        #[serde(default = "default_upmixer_height_direct_leak")]
-        height_direct_leak: f64,
-        // Ambient parameters
-        #[serde(default = "default_upmixer_ambient_boost")]
-        ambient_boost: f64,
-        #[serde(default = "default_upmixer_safety_cap_db")]
-        safety_cap_db: f64,
-        // Analysis window parameters
-        #[serde(default)]
-        low_latency: bool,
-        #[serde(default = "default_upmixer_frequency_resolution")]
-        frequency_resolution: usize,
-        #[serde(default = "default_upmixer_rear_ambient_boost")]
-        rear_ambient_boost: f64,
-        // Dialogue parameters
-        #[serde(default = "default_upmixer_dialogue_weight")]
-        dialogue_weight: f64,
-        #[serde(default = "default_upmixer_voice_freq_min_hz")]
-        voice_freq_min_hz: f64,
-        #[serde(default = "default_upmixer_voice_freq_max_hz")]
-        voice_freq_max_hz: f64,
-        #[serde(default = "default_upmixer_dialogue_centroid_weight")]
-        dialogue_centroid_weight: f64,
-        #[serde(default = "default_upmixer_dialogue_variance_weight")]
-        dialogue_variance_weight: f64,
-        #[serde(default = "default_upmixer_dialogue_coherence_weight")]
-        dialogue_coherence_weight: f64,
-        // Diagnostic bypass parameters
-        #[serde(default)] // false
-        bypass_decorrelation: bool,
-        #[serde(default)] // false
-        bypass_transient_detection: bool,
-        #[serde(default)] // false
-        bypass_all_processing: bool,
-        // ML vocal detection
-        #[serde(default)] // false
-        enable_ml_detection: bool,
-        // Multi-source extraction (2nd eigenvector)
-        #[serde(default)]
-        multi_source_extraction: bool,
-        #[serde(default = "default_upmixer_multi_source_threshold")]
-        multi_source_threshold: f64,
-        // Binaural preview (Phase 4G)
-        #[serde(default)]
-        binaural_preview: bool,
-        // Upmixer output auto gain
-        #[serde(default = "default_upmixer_auto_gain_enabled")]
-        auto_gain_enabled: bool,
-        #[serde(default = "default_upmixer_auto_gain_max_db")]
-        auto_gain_max_db: f64,
-        #[serde(default = "default_upmixer_auto_gain_smoothing_ms")]
-        auto_gain_smoothing_ms: f64,
+        #[serde(flatten)]
+        gains: UpmixerGainSettings,
+        #[serde(flatten)]
+        lfe: UpmixerLfeSettings,
+        #[serde(flatten)]
+        subharmonic: UpmixerSubharmonicSettings,
+        #[serde(flatten)]
+        decorrelation: UpmixerDecorrelationSettings,
+        #[serde(flatten)]
+        height: UpmixerHeightSettings,
+        #[serde(flatten)]
+        ambient_analysis: UpmixerAmbientAnalysisSettings,
+        #[serde(flatten)]
+        dialogue: UpmixerDialogueSettings,
+        #[serde(flatten)]
+        bypass: UpmixerBypassSettings,
+        #[serde(flatten)]
+        output: UpmixerOutputSettings,
     },
     AAE {
         #[serde(default = "default_aae_speaker_config")]
@@ -1500,52 +1542,70 @@ impl PluginSettings {
                 let u = upmixer_specs::PARAMS;
                 Self::Upmixer {
                     speaker_config: "5.1".to_string(),
-                    gain_front_direct: p(u, "gain_front_direct").default_f64(),
-                    gain_front_ambient: p(u, "gain_front_ambient").default_f64(),
-                    gain_rear_ambient: p(u, "gain_rear_ambient").default_f64(),
-                    height_gain: p(u, "height_gain").default_f64(),
-                    stereo_width: p(u, "stereo_width").default_f64(),
-                    center_spread: p(u, "center_spread").default_f64(),
-                    surround_direct_bleed: p(u, "surround_direct_bleed").default_f64(),
-                    rear_late_reflection: p(u, "rear_late_reflection").default_f64(),
-                    lfe_cutoff_hz: p(u, "lfe_cutoff_hz").default_f64(),
-                    lfe_gain: p(u, "lfe_gain").default_f64(),
-                    bandpass_hz: p(u, "bandpass_hz").default_f64(),
-                    enable_subharmonic_synth: p(u, "enable_subharmonic_synth").default_bool(),
-                    subharmonic_gain: p(u, "subharmonic_gain").default_f64(),
-                    subharmonic_freq_hz: p(u, "subharmonic_freq_hz").default_f64(),
-                    subharmonic_attack_ms: p(u, "subharmonic_attack_ms").default_f64(),
-                    subharmonic_release_ms: p(u, "subharmonic_release_ms").default_f64(),
-                    decorrelation_mode: p(u, "decorrelation_mode").default_usize(),
-                    decorrelation_lfo_rate_hz: p(u, "decorrelation_lfo_rate_hz").default_f64(),
-                    velvet_noise_duration_ms: p(u, "velvet_noise_duration_ms").default_f64(),
-                    velvet_noise_density: p(u, "velvet_noise_density").default_f64(),
-                    enable_hr_direct: p(u, "enable_hr_direct").default_bool(),
-                    hr_sharpen: p(u, "hr_sharpen").default_f64(),
-                    height_hf_cap_hz: p(u, "height_hf_cap_hz").default_f64(),
-                    height_transient_reduction: p(u, "height_transient_reduction").default_f64(),
-                    height_direct_leak: p(u, "height_direct_leak").default_f64(),
-                    ambient_boost: p(u, "ambient_boost").default_f64(),
-                    safety_cap_db: p(u, "safety_cap_db").default_f64(),
-                    low_latency: p(u, "low_latency").default_bool(),
-                    frequency_resolution: p(u, "frequency_resolution").default_usize(),
-                    rear_ambient_boost: p(u, "rear_ambient_boost").default_f64(),
-                    dialogue_weight: p(u, "dialogue_weight").default_f64(),
-                    voice_freq_min_hz: p(u, "voice_freq_min_hz").default_f64(),
-                    voice_freq_max_hz: p(u, "voice_freq_max_hz").default_f64(),
-                    dialogue_centroid_weight: p(u, "dialogue_centroid_weight").default_f64(),
-                    dialogue_variance_weight: p(u, "dialogue_variance_weight").default_f64(),
-                    dialogue_coherence_weight: p(u, "dialogue_coherence_weight").default_f64(),
-                    bypass_decorrelation: false,
-                    bypass_transient_detection: false,
-                    bypass_all_processing: false,
-                    enable_ml_detection: p(u, "enable_ml_detection").default_bool(),
-                    multi_source_extraction: p(u, "multi_source_extraction").default_bool(),
-                    multi_source_threshold: p(u, "multi_source_threshold").default_f64(),
-                    binaural_preview: p(u, "binaural_preview").default_bool(),
-                    auto_gain_enabled: p(u, "auto_gain_enabled").default_bool(),
-                    auto_gain_max_db: p(u, "auto_gain_max_db").default_f64(),
-                    auto_gain_smoothing_ms: p(u, "auto_gain_smoothing_ms").default_f64(),
+                    gains: UpmixerGainSettings {
+                        gain_front_direct: p(u, "gain_front_direct").default_f64(),
+                        gain_front_ambient: p(u, "gain_front_ambient").default_f64(),
+                        gain_rear_ambient: p(u, "gain_rear_ambient").default_f64(),
+                        height_gain: p(u, "height_gain").default_f64(),
+                        stereo_width: p(u, "stereo_width").default_f64(),
+                        center_spread: p(u, "center_spread").default_f64(),
+                        surround_direct_bleed: p(u, "surround_direct_bleed").default_f64(),
+                        rear_late_reflection: p(u, "rear_late_reflection").default_f64(),
+                        ambient_boost: p(u, "ambient_boost").default_f64(),
+                        rear_ambient_boost: p(u, "rear_ambient_boost").default_f64(),
+                    },
+                    lfe: UpmixerLfeSettings {
+                        lfe_cutoff_hz: p(u, "lfe_cutoff_hz").default_f64(),
+                        lfe_gain: p(u, "lfe_gain").default_f64(),
+                        bandpass_hz: p(u, "bandpass_hz").default_f64(),
+                    },
+                    subharmonic: UpmixerSubharmonicSettings {
+                        enable_subharmonic_synth: p(u, "enable_subharmonic_synth").default_bool(),
+                        subharmonic_gain: p(u, "subharmonic_gain").default_f64(),
+                        subharmonic_freq_hz: p(u, "subharmonic_freq_hz").default_f64(),
+                        subharmonic_attack_ms: p(u, "subharmonic_attack_ms").default_f64(),
+                        subharmonic_release_ms: p(u, "subharmonic_release_ms").default_f64(),
+                    },
+                    decorrelation: UpmixerDecorrelationSettings {
+                        decorrelation_mode: p(u, "decorrelation_mode").default_usize(),
+                        decorrelation_lfo_rate_hz: p(u, "decorrelation_lfo_rate_hz").default_f64(),
+                        velvet_noise_duration_ms: p(u, "velvet_noise_duration_ms").default_f64(),
+                        velvet_noise_density: p(u, "velvet_noise_density").default_f64(),
+                    },
+                    height: UpmixerHeightSettings {
+                        enable_hr_direct: p(u, "enable_hr_direct").default_bool(),
+                        hr_sharpen: p(u, "hr_sharpen").default_f64(),
+                        height_hf_cap_hz: p(u, "height_hf_cap_hz").default_f64(),
+                        height_transient_reduction: p(u, "height_transient_reduction").default_f64(),
+                        height_direct_leak: p(u, "height_direct_leak").default_f64(),
+                    },
+                    ambient_analysis: UpmixerAmbientAnalysisSettings {
+                        low_latency: p(u, "low_latency").default_bool(),
+                        frequency_resolution: p(u, "frequency_resolution").default_usize(),
+                        safety_cap_db: p(u, "safety_cap_db").default_f64(),
+                    },
+                    dialogue: UpmixerDialogueSettings {
+                        dialogue_weight: p(u, "dialogue_weight").default_f64(),
+                        voice_freq_min_hz: p(u, "voice_freq_min_hz").default_f64(),
+                        voice_freq_max_hz: p(u, "voice_freq_max_hz").default_f64(),
+                        dialogue_centroid_weight: p(u, "dialogue_centroid_weight").default_f64(),
+                        dialogue_variance_weight: p(u, "dialogue_variance_weight").default_f64(),
+                        dialogue_coherence_weight: p(u, "dialogue_coherence_weight").default_f64(),
+                    },
+                    bypass: UpmixerBypassSettings {
+                        bypass_decorrelation: false,
+                        bypass_transient_detection: false,
+                        bypass_all_processing: false,
+                    },
+                    output: UpmixerOutputSettings {
+                        enable_ml_detection: p(u, "enable_ml_detection").default_bool(),
+                        multi_source_extraction: p(u, "multi_source_extraction").default_bool(),
+                        multi_source_threshold: p(u, "multi_source_threshold").default_f64(),
+                        binaural_preview: p(u, "binaural_preview").default_bool(),
+                        auto_gain_enabled: p(u, "auto_gain_enabled").default_bool(),
+                        auto_gain_max_db: p(u, "auto_gain_max_db").default_f64(),
+                        auto_gain_smoothing_ms: p(u, "auto_gain_smoothing_ms").default_f64(),
+                    },
                 }
             }
             PluginType::Compressor => {
@@ -2128,6 +2188,175 @@ impl PluginSettings {
                     solo_late: false,
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upmixer_deserializes_legacy_flat_json() {
+        let legacy = serde_json::json!({
+            "Upmixer": {
+                "speaker_config": "5.1",
+                "gain_front_direct": 1.1,
+                "gain_front_ambient": 0.6,
+                "gain_rear_ambient": 0.4,
+                "height_gain": 0.25,
+                "stereo_width": 1.2,
+                "center_spread": 0.55,
+                "surround_direct_bleed": 0.15,
+                "rear_late_reflection": 0.25,
+                "ambient_boost": 0.05,
+                "rear_ambient_boost": 0.05,
+                "lfe_cutoff_hz": 90.0,
+                "lfe_gain": 0.5,
+                "bandpass_hz": 110.0,
+                "enable_subharmonic_synth": true,
+                "subharmonic_gain": 0.7,
+                "subharmonic_freq_hz": 45.0,
+                "subharmonic_attack_ms": 12.0,
+                "subharmonic_release_ms": 120.0,
+                "decorrelation_mode": 1,
+                "decorrelation_lfo_rate_hz": 0.6,
+                "velvet_noise_duration_ms": 25.0,
+                "velvet_noise_density": 0.6,
+                "enable_hr_direct": false,
+                "hr_sharpen": 0.4,
+                "height_hf_cap_hz": 13000.0,
+                "height_transient_reduction": 0.4,
+                "height_direct_leak": 0.2,
+                "safety_cap_db": -0.2,
+                "low_latency": true,
+                "frequency_resolution": 1024,
+                "dialogue_weight": 0.9,
+                "voice_freq_min_hz": 220.0,
+                "voice_freq_max_hz": 3800.0,
+                "dialogue_centroid_weight": 0.4,
+                "dialogue_variance_weight": 0.4,
+                "dialogue_coherence_weight": 0.4,
+                "bypass_decorrelation": true,
+                "bypass_transient_detection": false,
+                "bypass_all_processing": false,
+                "enable_ml_detection": false,
+                "multi_source_extraction": false,
+                "multi_source_threshold": 0.25,
+                "binaural_preview": false,
+                "auto_gain_enabled": true,
+                "auto_gain_max_db": 10.0,
+                "auto_gain_smoothing_ms": 80.0,
+            }
+        });
+
+        let settings: PluginSettings = serde_json::from_value(legacy).expect("deserialize legacy");
+        match settings {
+            PluginSettings::Upmixer {
+                speaker_config,
+                gains,
+                output,
+                ..
+            } => {
+                assert_eq!(speaker_config, "5.1");
+                assert_eq!(gains.gain_front_direct, 1.1);
+                assert!(!output.binaural_preview);
+                assert!(output.auto_gain_enabled);
+            }
+            _ => panic!("expected Upmixer variant"),
+        }
+    }
+
+    #[test]
+    fn upmixer_serde_roundtrip_preserves_flat_keys() {
+        let settings = PluginSettings::Upmixer {
+            speaker_config: "7.1.4".to_string(),
+            gains: UpmixerGainSettings {
+                gain_front_direct: 1.0,
+                gain_front_ambient: 0.5,
+                gain_rear_ambient: 0.3,
+                height_gain: 0.2,
+                stereo_width: 1.0,
+                center_spread: 0.5,
+                surround_direct_bleed: 0.1,
+                rear_late_reflection: 0.2,
+                ambient_boost: 0.0,
+                rear_ambient_boost: 0.0,
+            },
+            lfe: UpmixerLfeSettings {
+                lfe_cutoff_hz: 80.0,
+                lfe_gain: 0.0,
+                bandpass_hz: 100.0,
+            },
+            subharmonic: UpmixerSubharmonicSettings {
+                enable_subharmonic_synth: false,
+                subharmonic_gain: 0.0,
+                subharmonic_freq_hz: 40.0,
+                subharmonic_attack_ms: 10.0,
+                subharmonic_release_ms: 100.0,
+            },
+            decorrelation: UpmixerDecorrelationSettings {
+                decorrelation_mode: 0,
+                decorrelation_lfo_rate_hz: 0.5,
+                velvet_noise_duration_ms: 20.0,
+                velvet_noise_density: 0.5,
+            },
+            height: UpmixerHeightSettings {
+                enable_hr_direct: true,
+                hr_sharpen: 0.5,
+                height_hf_cap_hz: 12000.0,
+                height_transient_reduction: 0.5,
+                height_direct_leak: 0.1,
+            },
+            ambient_analysis: UpmixerAmbientAnalysisSettings {
+                low_latency: false,
+                frequency_resolution: 2048,
+                safety_cap_db: -0.1,
+            },
+            dialogue: UpmixerDialogueSettings {
+                dialogue_weight: 1.0,
+                voice_freq_min_hz: 200.0,
+                voice_freq_max_hz: 4000.0,
+                dialogue_centroid_weight: 0.5,
+                dialogue_variance_weight: 0.5,
+                dialogue_coherence_weight: 0.5,
+            },
+            bypass: UpmixerBypassSettings {
+                bypass_decorrelation: false,
+                bypass_transient_detection: false,
+                bypass_all_processing: false,
+            },
+            output: UpmixerOutputSettings {
+                enable_ml_detection: false,
+                multi_source_extraction: false,
+                multi_source_threshold: 0.3,
+                binaural_preview: true,
+                auto_gain_enabled: false,
+                auto_gain_max_db: 12.0,
+                auto_gain_smoothing_ms: 100.0,
+            },
+        };
+
+        let json = serde_json::to_value(&settings).expect("serialize");
+        // PluginSettings is an externally tagged enum, so the variant is the outer key.
+        let inner = json.get("Upmixer").expect("externally tagged variant object");
+        // Flattened sub-structs must produce keys inside the variant object, not nested objects.
+        assert!(inner.get("speaker_config").is_some());
+        assert!(inner.get("gain_front_direct").is_some());
+        assert!(inner.get("binaural_preview").is_some());
+        assert!(inner.get("gains").is_none());
+
+        let roundtripped: PluginSettings = serde_json::from_value(json).expect("deserialize");
+        match roundtripped {
+            PluginSettings::Upmixer {
+                speaker_config,
+                output: UpmixerOutputSettings { binaural_preview, .. },
+                ..
+            } => {
+                assert_eq!(speaker_config, "7.1.4");
+                assert!(binaural_preview);
+            }
+            _ => panic!("expected Upmixer variant"),
         }
     }
 }

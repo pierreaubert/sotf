@@ -2,9 +2,7 @@ use super::SharedAudioHeader;
 use super::misc::SHARED_MEMORY_MAGIC;
 use super::misc::SHARED_MEMORY_VERSION;
 use driver_hal::SharedAudioBuffer;
-use sotf_plugins::GainPlugin;
-use sotf_plugins::InPlacePlugin;
-use sotf_plugins::ProcessContext;
+use sotf_plugins::{GainPlugin, ParametricPluginAdapter, Plugin, ProcessContext};
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, AtomicU64};
 use tempfile::NamedTempFile;
@@ -232,20 +230,21 @@ fn test_volume_with_hal_pipeline() {
     hal_buffer.read_audio(&mut read_buffer);
 
     // Apply volume via GainPlugin (-6dB global)
-    let mut gain_plugin = GainPlugin::new(channel_count as usize, -6.0);
+    let mut gain_plugin = ParametricPluginAdapter::new(GainPlugin::new(channel_count as usize, -6.0));
     gain_plugin
         .initialize(sample_rate)
         .expect("Failed to initialize");
 
     let context = ProcessContext::new(sample_rate, buffer_frames as usize);
+    let mut gain_output = vec![0.0f32; read_buffer.len()];
 
     gain_plugin
-        .process_in_place(&mut read_buffer, &context)
+        .process(&read_buffer, &mut gain_output, &context)
         .expect("Failed to process");
 
     // Verify attenuation
     let expected_gain = 10.0_f32.powf(-6.0 / 20.0);
-    for (i, (orig, processed)) in input_audio.iter().zip(read_buffer.iter()).enumerate() {
+    for (i, (orig, processed)) in input_audio.iter().zip(gain_output.iter()).enumerate() {
         let expected = orig * expected_gain;
         assert!(
             (processed - expected).abs() < 0.001,

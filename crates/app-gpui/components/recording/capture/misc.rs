@@ -585,7 +585,7 @@ impl PlayerView {
                 })
                 .when(noise_floor_warning.is_some(), |stack| {
                     let warning_msg = noise_floor_warning.clone().unwrap_or_default();
-                    let warning_bg = theme.warning_background;
+                    let warning_bg = theme.feedback.warning_background;
                     stack.child(
                         div()
                             .p(d.pad_x)
@@ -2487,7 +2487,7 @@ impl PlayerView {
                     .id("migration-backdrop")
                     .absolute()
                     .inset_0()
-                    .bg(theme.overlay_bg)
+                    .bg(theme.feedback.overlay_bg)
                     .on_click({
                         let view = view.clone();
                         move |_event, _window, cx| {
@@ -2711,7 +2711,7 @@ impl PlayerView {
                     .id("move-position-backdrop")
                     .absolute()
                     .inset_0()
-                    .bg(theme.overlay_bg),
+                    .bg(theme.feedback.overlay_bg),
             )
             .child(
                 div()

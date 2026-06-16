@@ -17,7 +17,7 @@
     // Allow Delay toggle
     let mut delay_toggle = Toggle::new((base_id.clone(), "dc-allow-delay"))
         .size(ToggleSize::Sm)
-        .checked(config.allow_delay)
+        .checked(config.v2.allow_delay)
         .theme(toggle_theme.clone());
 
     if let Some(ref h) = on_allow_delay_change_rc {

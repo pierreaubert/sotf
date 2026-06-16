@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, measure_peak_db, run_standard_tests};
-use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, ParametricInPlacePlugin, ParametricPlugin, CountingAlloc, measure_peak_db, run_standard_tests};
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, ProcessContext};
 use sotf_plugin_loudness_compensation::{
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
 };
@@ -59,7 +59,7 @@ fn main() {
     assert!((peak + 16.0).abs() < 1.0);
 
     // Run standard QA tests
-    let mut plugin = InPlacePluginAdapter::new(inner);
+    let mut plugin = ParametricInPlacePluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "LoudnessCompensationPlugin");
 
     println!("\n[ALL PASS] Loudness Compensation QA Complete.");

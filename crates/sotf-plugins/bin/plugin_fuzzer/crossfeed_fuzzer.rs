@@ -1,9 +1,8 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{
-    CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, InPlacePluginAdapter, Plugin,
-};
+use sotf_plugins::{ParametricInPlacePluginAdapter, 
+    CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, Plugin};
 
 pub(super) struct CrossfeedFuzzer;
 
@@ -34,6 +33,6 @@ impl PluginFuzzer for CrossfeedFuzzer {
             mode, params.mix, params.bauer_fcut_hz
         );
 
-        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+        (Box::new(ParametricInPlacePluginAdapter::new(plugin)), desc)
     }
 }

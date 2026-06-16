@@ -1,5 +1,5 @@
 use super::super::{
-    ChannelConflict, Plugin, PluginSettings, PluginType,
+    ChannelConflict, Plugin, PluginSettings, PluginType, UpmixerOutputSettings,
     matrix::{resize_matrix, upmixer_output_channels},
 };
 use super::misc::default_plugin_preset_version;
@@ -540,7 +540,7 @@ impl PluginChain {
             match &plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    binaural_preview,
+                    output: UpmixerOutputSettings { binaural_preview, .. },
                     ..
                 } => {
                     return Some(if *binaural_preview {
@@ -572,7 +572,7 @@ impl PluginChain {
             match &plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    binaural_preview,
+                    output: UpmixerOutputSettings { binaural_preview, .. },
                     ..
                 } => {
                     config = Some(if *binaural_preview {
@@ -611,7 +611,7 @@ impl PluginChain {
             match &plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    binaural_preview,
+                    output: UpmixerOutputSettings { binaural_preview, .. },
                     ..
                 } => {
                     return upmixer_settings_output_channels(speaker_config, *binaural_preview);
@@ -658,7 +658,7 @@ impl PluginChain {
             match &plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    binaural_preview,
+                    output: UpmixerOutputSettings { binaural_preview, .. },
                     ..
                 } => {
                     running_channels =
@@ -746,7 +746,7 @@ impl PluginChain {
             match &plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    binaural_preview,
+                    output: UpmixerOutputSettings { binaural_preview, .. },
                     ..
                 } => {
                     running_channels =
@@ -1218,7 +1218,7 @@ impl PluginChain {
                 match &self.plugins[i].settings {
                     PluginSettings::Upmixer {
                         speaker_config,
-                        binaural_preview,
+                        output: UpmixerOutputSettings { binaural_preview, .. },
                         ..
                     } => {
                         current_channels =
@@ -1261,6 +1261,11 @@ impl PluginChain {
 mod tests {
 
     use super::*;
+    use crate::plugins::{
+        UpmixerAmbientAnalysisSettings, UpmixerBypassSettings, UpmixerDecorrelationSettings,
+        UpmixerDialogueSettings, UpmixerGainSettings, UpmixerHeightSettings, UpmixerLfeSettings,
+        UpmixerOutputSettings, UpmixerSubharmonicSettings,
+    };
     use crate::plugins::matrix::{
         apply_matrix_preset, available_matrix_presets, detect_matrix_preset,
     };
@@ -1294,52 +1299,70 @@ mod tests {
         if let Some(plugin) = chain.get_plugin_mut(idx) {
             plugin.settings = PluginSettings::Upmixer {
                 speaker_config: "7.1".to_string(),
-                gain_front_direct: 1.0,
-                gain_front_ambient: 0.5,
-                gain_rear_ambient: 1.0,
-                lfe_cutoff_hz: 120.0,
-                stereo_width: 0.5,
-                center_spread: 0.3,
-                surround_direct_bleed: 0.15,
-                rear_late_reflection: 0.2,
-                bandpass_hz: 250.0,
-                height_gain: 1.0,
-                lfe_gain: 1.0,
-                enable_subharmonic_synth: false,
-                subharmonic_gain: 0.5,
-                subharmonic_freq_hz: 56.0,
-                subharmonic_attack_ms: 20.0,
-                subharmonic_release_ms: 100.0,
-                decorrelation_mode: 0,
-                decorrelation_lfo_rate_hz: 0.3,
-                velvet_noise_duration_ms: 30.0,
-                velvet_noise_density: 2000.0,
-                enable_hr_direct: false,
-                hr_sharpen: 1.0,
-                height_hf_cap_hz: 8000.0,
-                height_transient_reduction: 0.3,
-                height_direct_leak: 0.1,
-                ambient_boost: 1.0,
-                safety_cap_db: 3.0,
-                rear_ambient_boost: 1.0,
-                dialogue_weight: 0.5,
-                voice_freq_min_hz: 300.0,
-                voice_freq_max_hz: 3400.0,
-                dialogue_centroid_weight: 0.3,
-                dialogue_variance_weight: 0.2,
-                dialogue_coherence_weight: 0.5,
-                bypass_decorrelation: false,
-                bypass_transient_detection: false,
-                bypass_all_processing: false,
-                enable_ml_detection: false,
-                multi_source_extraction: false,
-                multi_source_threshold: 0.5,
-                low_latency: false,
-                frequency_resolution: 0,
-                binaural_preview: false,
-                auto_gain_enabled: false,
-                auto_gain_max_db: 12.0,
-                auto_gain_smoothing_ms: 100.0,
+                gains: UpmixerGainSettings {
+                    gain_front_direct: 1.0,
+                    gain_front_ambient: 0.5,
+                    gain_rear_ambient: 1.0,
+                    height_gain: 1.0,
+                    stereo_width: 0.5,
+                    center_spread: 0.3,
+                    surround_direct_bleed: 0.15,
+                    rear_late_reflection: 0.2,
+                    ambient_boost: 1.0,
+                    rear_ambient_boost: 1.0,
+                },
+                lfe: UpmixerLfeSettings {
+                    lfe_cutoff_hz: 120.0,
+                    lfe_gain: 1.0,
+                    bandpass_hz: 250.0,
+                },
+                subharmonic: UpmixerSubharmonicSettings {
+                    enable_subharmonic_synth: false,
+                    subharmonic_gain: 0.5,
+                    subharmonic_freq_hz: 56.0,
+                    subharmonic_attack_ms: 20.0,
+                    subharmonic_release_ms: 100.0,
+                },
+                decorrelation: UpmixerDecorrelationSettings {
+                    decorrelation_mode: 0,
+                    decorrelation_lfo_rate_hz: 0.3,
+                    velvet_noise_duration_ms: 30.0,
+                    velvet_noise_density: 2000.0,
+                },
+                height: UpmixerHeightSettings {
+                    enable_hr_direct: false,
+                    hr_sharpen: 1.0,
+                    height_hf_cap_hz: 8000.0,
+                    height_transient_reduction: 0.3,
+                    height_direct_leak: 0.1,
+                },
+                ambient_analysis: UpmixerAmbientAnalysisSettings {
+                    low_latency: false,
+                    frequency_resolution: 0,
+                    safety_cap_db: 3.0,
+                },
+                dialogue: UpmixerDialogueSettings {
+                    dialogue_weight: 0.5,
+                    voice_freq_min_hz: 300.0,
+                    voice_freq_max_hz: 3400.0,
+                    dialogue_centroid_weight: 0.3,
+                    dialogue_variance_weight: 0.2,
+                    dialogue_coherence_weight: 0.5,
+                },
+                bypass: UpmixerBypassSettings {
+                    bypass_decorrelation: false,
+                    bypass_transient_detection: false,
+                    bypass_all_processing: false,
+                },
+                output: UpmixerOutputSettings {
+                    enable_ml_detection: false,
+                    multi_source_extraction: false,
+                    multi_source_threshold: 0.5,
+                    binaural_preview: false,
+                    auto_gain_enabled: false,
+                    auto_gain_max_db: 12.0,
+                    auto_gain_smoothing_ms: 100.0,
+                },
             };
         }
         assert_eq!(chain.output_channels(), 8);
@@ -1353,7 +1376,7 @@ mod tests {
         if let Some(plugin) = chain.get_plugin_mut(0)
             && let PluginSettings::Upmixer {
                 speaker_config,
-                binaural_preview,
+                output: UpmixerOutputSettings { binaural_preview, .. },
                 ..
             } = &mut plugin.settings
         {
@@ -1395,52 +1418,70 @@ mod tests {
         if let Some(plugin) = chain.get_plugin_mut(0) {
             plugin.settings = PluginSettings::Upmixer {
                 speaker_config: "7.1".to_string(),
-                gain_front_direct: 1.0,
-                gain_front_ambient: 0.5,
-                gain_rear_ambient: 1.0,
-                lfe_cutoff_hz: 120.0,
-                stereo_width: 0.5,
-                center_spread: 0.3,
-                surround_direct_bleed: 0.15,
-                rear_late_reflection: 0.2,
-                bandpass_hz: 250.0,
-                height_gain: 1.0,
-                lfe_gain: 1.0,
-                enable_subharmonic_synth: false,
-                subharmonic_gain: 0.5,
-                subharmonic_freq_hz: 56.0,
-                subharmonic_attack_ms: 20.0,
-                subharmonic_release_ms: 100.0,
-                decorrelation_mode: 0,
-                decorrelation_lfo_rate_hz: 0.3,
-                velvet_noise_duration_ms: 30.0,
-                velvet_noise_density: 2000.0,
-                enable_hr_direct: false,
-                hr_sharpen: 1.0,
-                height_hf_cap_hz: 8000.0,
-                height_transient_reduction: 0.3,
-                height_direct_leak: 0.1,
-                ambient_boost: 1.0,
-                safety_cap_db: 3.0,
-                rear_ambient_boost: 1.0,
-                dialogue_weight: 0.5,
-                voice_freq_min_hz: 300.0,
-                voice_freq_max_hz: 3400.0,
-                dialogue_centroid_weight: 0.3,
-                dialogue_variance_weight: 0.2,
-                dialogue_coherence_weight: 0.5,
-                bypass_decorrelation: false,
-                bypass_transient_detection: false,
-                bypass_all_processing: false,
-                enable_ml_detection: false,
-                multi_source_extraction: false,
-                multi_source_threshold: 0.5,
-                low_latency: false,
-                frequency_resolution: 0,
-                binaural_preview: false,
-                auto_gain_enabled: false,
-                auto_gain_max_db: 12.0,
-                auto_gain_smoothing_ms: 100.0,
+                gains: UpmixerGainSettings {
+                    gain_front_direct: 1.0,
+                    gain_front_ambient: 0.5,
+                    gain_rear_ambient: 1.0,
+                    height_gain: 1.0,
+                    stereo_width: 0.5,
+                    center_spread: 0.3,
+                    surround_direct_bleed: 0.15,
+                    rear_late_reflection: 0.2,
+                    ambient_boost: 1.0,
+                    rear_ambient_boost: 1.0,
+                },
+                lfe: UpmixerLfeSettings {
+                    lfe_cutoff_hz: 120.0,
+                    lfe_gain: 1.0,
+                    bandpass_hz: 250.0,
+                },
+                subharmonic: UpmixerSubharmonicSettings {
+                    enable_subharmonic_synth: false,
+                    subharmonic_gain: 0.5,
+                    subharmonic_freq_hz: 56.0,
+                    subharmonic_attack_ms: 20.0,
+                    subharmonic_release_ms: 100.0,
+                },
+                decorrelation: UpmixerDecorrelationSettings {
+                    decorrelation_mode: 0,
+                    decorrelation_lfo_rate_hz: 0.3,
+                    velvet_noise_duration_ms: 30.0,
+                    velvet_noise_density: 2000.0,
+                },
+                height: UpmixerHeightSettings {
+                    enable_hr_direct: false,
+                    hr_sharpen: 1.0,
+                    height_hf_cap_hz: 8000.0,
+                    height_transient_reduction: 0.3,
+                    height_direct_leak: 0.1,
+                },
+                ambient_analysis: UpmixerAmbientAnalysisSettings {
+                    low_latency: false,
+                    frequency_resolution: 0,
+                    safety_cap_db: 3.0,
+                },
+                dialogue: UpmixerDialogueSettings {
+                    dialogue_weight: 0.5,
+                    voice_freq_min_hz: 300.0,
+                    voice_freq_max_hz: 3400.0,
+                    dialogue_centroid_weight: 0.3,
+                    dialogue_variance_weight: 0.2,
+                    dialogue_coherence_weight: 0.5,
+                },
+                bypass: UpmixerBypassSettings {
+                    bypass_decorrelation: false,
+                    bypass_transient_detection: false,
+                    bypass_all_processing: false,
+                },
+                output: UpmixerOutputSettings {
+                    enable_ml_detection: false,
+                    multi_source_extraction: false,
+                    multi_source_threshold: 0.5,
+                    binaural_preview: false,
+                    auto_gain_enabled: false,
+                    auto_gain_max_db: 12.0,
+                    auto_gain_smoothing_ms: 100.0,
+                },
             };
         }
 

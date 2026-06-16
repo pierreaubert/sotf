@@ -4,12 +4,13 @@ Transient Shaper — SPL Transient Designer approach.
 
 ## Architecture
 
-- `lib.rs` — Main `TransientShaperPlugin`, implements `InPlacePlugin` trait
+- `lib.rs` — Main `TransientShaperPlugin`, implements `ParametricParametricInPlacePlugin` trait
 - `params.rs` — Parameter definitions
 
 ## Key Public API
 
-- `TransientShaperPlugin` implementing `InPlacePlugin`
+- `TransientShaperPlugin` implementing `ParametricParametricInPlacePlugin`
+- Wrapped with `ParametricParametricInPlacePluginAdapter` for host use
 
 ## Testing
 

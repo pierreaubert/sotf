@@ -57,15 +57,15 @@ impl Render for PlayerView {
                             let solved = crate::ui::layout_tree::solve_app_layout(
                                 window_width, window_height, layout,
                             );
-                            state.app.layout_orientation =
+                            state.app.layout.orientation =
                                 if crate::ui::layout_tree::solved_is_horizontal(&solved) {
                                     crate::app::LayoutOrientation::Horizontal
                                 } else {
                                     crate::app::LayoutOrientation::Vertical
                                 };
-                            state.app.rack_display_mode =
+                            state.app.layout.rack_display_mode =
                                 crate::ui::layout_tree::solved_rack_display_mode(&solved);
-                            state.app.hide_queue_meters_for_rack =
+                            state.app.layout.hide_queue_meters_for_rack =
                                 crate::ui::layout_tree::solved_hide_queue_meters(&solved);
                         });
                     });
@@ -475,7 +475,7 @@ impl Render for PlayerView {
                                 // Default action: suspend incompatible plugins and play
                                 view.state.update(cx, |state, _| {
                                     let conflicts =
-                                        std::mem::take(&mut state.app.channel_conflicts);
+                                        std::mem::take(&mut state.app.modal.channel_conflicts);
                                     let indices: Vec<usize> =
                                         conflicts.iter().map(|c| c.index).collect();
                                     state.app.plugin_state.graph.suspend_plugins(&indices);
@@ -490,8 +490,8 @@ impl Render for PlayerView {
                                 let (path, track_channels) = view
                                     .state
                                     .update(cx, |state, _| {
-                                        let p = state.app.channel_conflict_path.take();
-                                        let ch = state.app.channel_conflict_track_channels;
+                                        let p = state.app.modal.channel_conflict_path.take();
+                                        let ch = state.app.modal.channel_conflict_track_channels;
                                         (p, ch)
                                     });
                                 if let Some(path) = path {
@@ -513,8 +513,8 @@ impl Render for PlayerView {
                             }
                             "escape" => {
                                 view.state.update(cx, |state, _| {
-                                    state.app.channel_conflict_path = None;
-                                    state.app.channel_conflicts.clear();
+                                    state.app.modal.channel_conflict_path = None;
+                                    state.app.modal.channel_conflicts.clear();
                                     state.app.ui_state.input_mode =
                                         crate::app::InputMode::Normal;
                                     state.app.playback.is_playing = false;
@@ -538,7 +538,7 @@ impl Render for PlayerView {
                                 .state
                                 .read(cx)
                                 .app
-                                .expanded_settings_sections
+                                .settings.expanded_sections
                                 .contains(&"plugins".to_string()) =>
                     {
                         match event.keystroke.key.as_str() {
@@ -706,7 +706,7 @@ impl PlayerView {
             Screen::Playlists => div().into_any_element(),
             // Library/Queue use 3-panel layout in Expanded mode, individual screens in Compact
             Screen::NowPlaying | Screen::Library | Screen::Queue => {
-                let layout_orientation = self.state.read(cx).app.layout_orientation;
+                let layout_orientation = self.state.read(cx).app.layout.orientation;
                 match layout_mode {
                     crate::app::LayoutMode::Expanded => match layout_orientation {
                         crate::app::LayoutOrientation::Horizontal => {

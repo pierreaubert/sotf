@@ -7,8 +7,10 @@ use super::stft_state::StftState;
 use crate::params::{PARAMS as SC, TARGET_MODES};
 use sotf_host::delta_monitor::DeltaMonitor;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
@@ -426,9 +428,26 @@ impl SpectralCompressorPlugin {
         let mixed = dry * (1.0 - mix) + wet * mix;
         if delta_enabled { mixed - dry } else { mixed }
     }
+
+    /// Backward-compatible parameter list accessor.
+    pub fn parameters(&self) -> Vec<Parameter> {
+        self.parameter_schema()
+    }
+
+    /// Backward-compatible single-parameter getter.
+    pub fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        self.current_values().get(id).cloned()
+    }
+
+    /// Backward-compatible single-parameter setter.
+    pub fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        let mut values = ParameterSet::new();
+        values.insert(id, value);
+        self.apply_values(values)
+    }
 }
 
-impl InPlacePlugin for SpectralCompressorPlugin {
+impl ParametricInPlacePlugin for SpectralCompressorPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Spectral Compressor", "1.0.0", "Sotf")
     }
@@ -437,109 +456,134 @@ impl InPlacePlugin for SpectralCompressorPlugin {
         self.channels
     }
 
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameter_schema(&self) -> ParameterSchema {
         self.cached_parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        let name = &id.0;
-        match name.as_str() {
-            "fft_size" => {
-                let idx = value
-                    .as_int()
-                    .ok_or_else(|| "FFT size must be an integer".to_string())?
-                    as usize;
-                if idx != self.fft_size_index {
-                    self.fft_size_index = idx;
-                    self.rebuild_stft();
+    fn current_values(&self) -> ParameterSet {
+        let mut values = ParameterSet::new();
+        values.insert(
+            ParameterId::from("fft_size"),
+            ParameterValue::Int(self.fft_size_index as i32),
+        );
+        values.insert(
+            ParameterId::from("threshold"),
+            ParameterValue::Float(self.threshold_db),
+        );
+        values.insert(ParameterId::from("ratio"), ParameterValue::Float(self.ratio));
+        values.insert(
+            ParameterId::from("attack"),
+            ParameterValue::Float(self.attack_ms),
+        );
+        values.insert(
+            ParameterId::from("release"),
+            ParameterValue::Float(self.release_ms),
+        );
+        values.insert(ParameterId::from("knee"), ParameterValue::Float(self.knee_db));
+        values.insert(
+            ParameterId::from("spectral_smoothing"),
+            ParameterValue::Float(self.spectral_smoothing),
+        );
+        values.insert(ParameterId::from("mix"), ParameterValue::Float(self.mix));
+        values.insert(
+            ParameterId::from("target_mode"),
+            ParameterValue::String(TARGET_MODES[self.target_mode.min(2)].to_string()),
+        );
+        values.insert(
+            ParameterId::from("delta_listen"),
+            ParameterValue::Bool(self.delta_monitor.enabled()),
+        );
+        values.insert(
+            ParameterId::from("adaptive_threshold"),
+            ParameterValue::Bool(self.adaptive_threshold),
+        );
+        values.insert(
+            ParameterId::from("adaptive_offset_db"),
+            ParameterValue::Float(self.adaptive_offset_db),
+        );
+        values
+    }
+
+    fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            match id.as_str() {
+                "fft_size" => {
+                    let idx = value
+                        .as_int()
+                        .ok_or_else(|| "FFT size must be an integer".to_string())?
+                        as usize;
+                    if idx != self.fft_size_index {
+                        self.fft_size_index = idx;
+                        self.rebuild_stft();
+                    }
                 }
-            }
-            "threshold" => {
-                self.threshold_db = value
-                    .as_float()
-                    .ok_or_else(|| "Threshold must be a float".to_string())?;
-                self.threshold_smoother.set_target(self.threshold_db);
-            }
-            "ratio" => {
-                self.ratio = value
-                    .as_float()
-                    .ok_or_else(|| "Ratio must be a float".to_string())?;
-            }
-            "attack" => {
-                self.attack_ms = value
-                    .as_float()
-                    .ok_or_else(|| "Attack must be a float".to_string())?;
-                self.recompute_coefficients();
-            }
-            "release" => {
-                self.release_ms = value
-                    .as_float()
-                    .ok_or_else(|| "Release must be a float".to_string())?;
-                self.recompute_coefficients();
-            }
-            "knee" => {
-                self.knee_db = value
-                    .as_float()
-                    .ok_or_else(|| "Knee must be a float".to_string())?;
-            }
-            "spectral_smoothing" => {
-                self.spectral_smoothing = value
-                    .as_float()
-                    .ok_or_else(|| "Spectral smoothing must be a float".to_string())?;
-            }
-            "mix" => {
-                self.mix = value
-                    .as_float()
-                    .ok_or_else(|| "Mix must be a float".to_string())?;
-                self.mix_smoother.set_target(self.mix);
-            }
-            "target_mode" => {
-                let idx = if let Some(s) = value.as_string() {
-                    TARGET_MODES.iter().position(|&m| m == s).unwrap_or(0)
-                } else if let Some(v) = value.as_float() {
-                    (v as usize).min(2)
-                } else {
-                    0
-                };
-                self.target_mode = idx;
-            }
-            "delta_listen" => {
-                let enabled = value.as_bool().unwrap_or(false);
-                self.delta_monitor.set_enabled(enabled);
-            }
-            "adaptive_threshold" => {
-                self.adaptive_threshold = value.as_bool().unwrap_or(false);
-            }
-            "adaptive_offset_db" => {
-                let v = value.as_float().unwrap_or(0.0);
-                if v.is_finite() {
-                    self.adaptive_offset_db = v.clamp(-20.0, 20.0);
+                "threshold" => {
+                    self.threshold_db = value
+                        .as_float()
+                        .ok_or_else(|| "Threshold must be a float".to_string())?;
+                    self.threshold_smoother.set_target(self.threshold_db);
                 }
+                "ratio" => {
+                    self.ratio = value
+                        .as_float()
+                        .ok_or_else(|| "Ratio must be a float".to_string())?;
+                }
+                "attack" => {
+                    self.attack_ms = value
+                        .as_float()
+                        .ok_or_else(|| "Attack must be a float".to_string())?;
+                    self.recompute_coefficients();
+                }
+                "release" => {
+                    self.release_ms = value
+                        .as_float()
+                        .ok_or_else(|| "Release must be a float".to_string())?;
+                    self.recompute_coefficients();
+                }
+                "knee" => {
+                    self.knee_db = value
+                        .as_float()
+                        .ok_or_else(|| "Knee must be a float".to_string())?;
+                }
+                "spectral_smoothing" => {
+                    self.spectral_smoothing = value
+                        .as_float()
+                        .ok_or_else(|| "Spectral smoothing must be a float".to_string())?;
+                }
+                "mix" => {
+                    self.mix = value
+                        .as_float()
+                        .ok_or_else(|| "Mix must be a float".to_string())?;
+                    self.mix_smoother.set_target(self.mix);
+                }
+                "target_mode" => {
+                    let idx = if let Some(s) = value.as_string() {
+                        TARGET_MODES.iter().position(|&m| m == s).unwrap_or(0)
+                    } else if let Some(v) = value.as_float() {
+                        (v as usize).min(2)
+                    } else {
+                        0
+                    };
+                    self.target_mode = idx;
+                }
+                "delta_listen" => {
+                    let enabled = value.as_bool().unwrap_or(false);
+                    self.delta_monitor.set_enabled(enabled);
+                }
+                "adaptive_threshold" => {
+                    self.adaptive_threshold = value.as_bool().unwrap_or(false);
+                }
+                "adaptive_offset_db" => {
+                    let v = value.as_float().unwrap_or(0.0);
+                    if v.is_finite() {
+                        self.adaptive_offset_db = v.clamp(-20.0, 20.0);
+                    }
+                }
+                other => return Err(format!("Unknown parameter: {other}")),
             }
-            other => return Err(format!("Unknown parameter: {other}")),
         }
         self.rebuild_cached_parameters();
         Ok(())
-    }
-
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        match id.0.as_str() {
-            "fft_size" => Some(ParameterValue::Int(self.fft_size_index as i32)),
-            "threshold" => Some(ParameterValue::Float(self.threshold_db)),
-            "ratio" => Some(ParameterValue::Float(self.ratio)),
-            "attack" => Some(ParameterValue::Float(self.attack_ms)),
-            "release" => Some(ParameterValue::Float(self.release_ms)),
-            "knee" => Some(ParameterValue::Float(self.knee_db)),
-            "spectral_smoothing" => Some(ParameterValue::Float(self.spectral_smoothing)),
-            "mix" => Some(ParameterValue::Float(self.mix)),
-            "target_mode" => Some(ParameterValue::String(
-                TARGET_MODES[self.target_mode.min(2)].to_string(),
-            )),
-            "delta_listen" => Some(ParameterValue::Bool(self.delta_monitor.enabled())),
-            "adaptive_threshold" => Some(ParameterValue::Bool(self.adaptive_threshold)),
-            "adaptive_offset_db" => Some(ParameterValue::Float(self.adaptive_offset_db)),
-            _ => None,
-        }
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

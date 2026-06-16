@@ -1,12 +1,11 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use sotf_plugins::{
+use sotf_plugins::{ParametricPluginAdapter, 
     AaePlugin, AaePluginParams, ChannelMuteSoloPlugin, CrossoverPlugin, DeclickPlugin, DelayPlugin,
-    EqPlugin, ExpanderPlugin, GatePlugin, HissReducerPlugin, InPlacePlugin, InPlacePluginAdapter,
+    EqPlugin, ExpanderPlugin, GatePlugin, HissReducerPlugin,  
     LimiterPlugin, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
     LoudnessMonitorPlugin, MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
-    Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
-};
+    Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin};
 use std::hint::black_box;
 
 criterion_group!(

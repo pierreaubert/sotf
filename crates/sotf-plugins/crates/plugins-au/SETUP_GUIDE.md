@@ -181,7 +181,7 @@ End users download the `.pkg` matching their Mac's CPU and double-click to insta
 
 ## Adding a New Audio Unit
 
-1. **Add a new plugin crate** under `crates/sotf-plugins/crates/sotf-plugin-<name>/` and re-export it from `sotf-plugins`. Implement `Plugin` (or `InPlacePlugin`).
+1. **Add a new plugin crate** under `crates/sotf-plugins/crates/sotf-plugin-<name>/` and re-export it from `sotf-plugins`. Implement `Plugin` (or `ParametricInPlacePlugin`).
 
 2. **Wire it into the FFI factory** (`crates/sotf-plugins/crates/plugins-ffi/src/plugin_factory.rs`):
 

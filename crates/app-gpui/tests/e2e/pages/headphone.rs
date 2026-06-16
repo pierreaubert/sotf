@@ -12,8 +12,10 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
 
     pub fn inject_mock_data(&mut self) {
         self.driver.update_app(|app, _| {
-            app.measurement_state.headphone_eq_state.model.measurement_path =
-                "/tmp/test_headphone.csv".to_string();
+            app.measurement_state
+                .headphone_eq_state
+                .model
+                .measurement_path = "/tmp/test_headphone.csv".to_string();
             app.measurement_state.headphone_eq_state.model.loss_type = "score".to_string();
             app.measurement_state.headphone_eq_state.model.target_preset =
                 "harman-over-ear-2018".to_string();
@@ -24,8 +26,10 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
 
     pub fn select_headphone(&mut self, _name: &str) {
         self.driver.update_app(|app, _| {
-            app.measurement_state.headphone_eq_state.model.measurement_path =
-                "/tmp/test_headphone.csv".to_string();
+            app.measurement_state
+                .headphone_eq_state
+                .model
+                .measurement_path = "/tmp/test_headphone.csv".to_string();
         });
         self.driver.cx.run_until_parked();
     }
@@ -116,8 +120,10 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
 
     pub fn start_optimization(&mut self) {
         self.driver.update_app(|app, _| {
-            app.measurement_state.headphone_eq_state.model.optimization_status =
-                OptimizationStatus::Running;
+            app.measurement_state
+                .headphone_eq_state
+                .model
+                .optimization_status = OptimizationStatus::Running;
         });
         self.driver.cx.run_until_parked();
     }
@@ -192,12 +198,21 @@ impl<'a, 'b> HeadphoneEqPage<'a, 'b> {
     }
 
     pub fn get_optimization_status(&mut self) -> OptimizationStatus {
-        self.driver
-            .read_app(|app| app.measurement_state.headphone_eq_state.model.optimization_status)
+        self.driver.read_app(|app| {
+            app.measurement_state
+                .headphone_eq_state
+                .model
+                .optimization_status
+        })
     }
 
     pub fn has_result(&mut self) -> bool {
-        self.driver
-            .read_app(|app| app.measurement_state.headphone_eq_state.model.result.is_some())
+        self.driver.read_app(|app| {
+            app.measurement_state
+                .headphone_eq_state
+                .model
+                .result
+                .is_some()
+        })
     }
 }

@@ -7,8 +7,9 @@ use super::misc::{
 use super::types::BandConfig;
 use super::types::LinearPhaseEqPluginParams;
 use math_audio_iir_fir::BiquadFilterType;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+use sotf_host::plugin::ProcessContext;
 
 mod misc;
 
@@ -515,7 +516,7 @@ fn test_set_parameter_unknown_band_param_returns_error() {
         ParameterValue::Float(1.0),
     );
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Unknown band parameter"));
+    assert!(result.unwrap_err().contains("Unknown parameter"));
 }
 
 #[test]

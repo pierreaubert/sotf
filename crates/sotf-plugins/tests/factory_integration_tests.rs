@@ -7,8 +7,7 @@
 // through multiple factory-created plugins.
 
 use sotf_plugins::{
-    DawHost, PluginHost, SUPPORTED_PLUGIN_TYPES, create_plugin, is_supported_plugin_type,
-};
+    DawHost, PluginHost, SUPPORTED_PLUGIN_TYPES, create_plugin, is_supported_plugin_type};
 use std::collections::HashSet;
 
 const SAMPLE_RATE: u32 = 48_000;

@@ -73,17 +73,18 @@ impl App {
     pub fn select_next_directory(&mut self) {
         let tree_items = self.get_directory_tree_items();
         if !tree_items.is_empty() {
-            self.selected_directory_index = (self.selected_directory_index + 1) % tree_items.len();
+            self.library_view.selected_directory_index =
+                (self.library_view.selected_directory_index + 1) % tree_items.len();
         }
     }
 
     pub fn select_previous_directory(&mut self) {
         let tree_items = self.get_directory_tree_items();
         if !tree_items.is_empty() {
-            if self.selected_directory_index == 0 {
-                self.selected_directory_index = tree_items.len() - 1;
+            if self.library_view.selected_directory_index == 0 {
+                self.library_view.selected_directory_index = tree_items.len() - 1;
             } else {
-                self.selected_directory_index -= 1;
+                self.library_view.selected_directory_index -= 1;
             }
         }
     }
@@ -91,15 +92,18 @@ impl App {
     pub fn page_down_directories(&mut self, page_size: usize) {
         let tree_items = self.get_directory_tree_items();
         if !tree_items.is_empty() {
-            self.selected_directory_index =
-                (self.selected_directory_index + page_size).min(tree_items.len() - 1);
+            self.library_view.selected_directory_index =
+                (self.library_view.selected_directory_index + page_size).min(tree_items.len() - 1);
         }
     }
 
     pub fn page_up_directories(&mut self, page_size: usize) {
         let tree_items = self.get_directory_tree_items();
         if !tree_items.is_empty() {
-            self.selected_directory_index = self.selected_directory_index.saturating_sub(page_size);
+            self.library_view.selected_directory_index = self
+                .library_view
+                .selected_directory_index
+                .saturating_sub(page_size);
         }
     }
 }

@@ -151,7 +151,7 @@
         let mut target_select = Select::new((base_id.clone(), "target-curve"))
             .label("Target Curve")
             .options(target_curve_options)
-            .selected(&config.target_curve)
+            .selected(&config.goals.target_curve)
             .is_open(ui_state.target_curve_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -198,7 +198,7 @@
         let mut loss_select = Select::new((base_id.clone(), "loss-type"))
             .label("Loss Function")
             .options(loss_type_options)
-            .selected(&config.loss_type)
+            .selected(&config.goals.loss_type)
             .is_open(ui_state.loss_type_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -216,7 +216,7 @@
         // Loss description tooltip
         let loss_desc = LOSS_TYPE_DESCRIPTIONS
             .iter()
-            .find(|(id, _)| *id == config.loss_type.as_str())
+            .find(|(id, _)| *id == config.goals.loss_type.as_str())
             .map(|(_, desc)| *desc);
 
         let mut loss_group = VStack::new().spacing(StackSpacing::Xs).child(loss_select);
@@ -244,7 +244,7 @@
         // Num filters
         let mut num_filters_input = NumberInput::new((base_id.clone(), "num-filters"))
             .label("Number of Filters")
-            .value(config.num_filters as f64)
+            .value(config.eq_design.num_filters as f64)
             .min(ParamLimits::NUM_FILTERS.min)
             .max(ParamLimits::NUM_FILTERS.max)
             .step(ParamLimits::NUM_FILTERS.step)
@@ -263,7 +263,7 @@
             .child(num_filters_input);
 
         // Warning for high filter count
-        if let Some(warning) = field_warning("num_filters", config.num_filters as f64) {
+        if let Some(warning) = field_warning("num_filters", config.eq_design.num_filters as f64) {
             filters_group = filters_group.child(
                 Text::new(warning)
                     .size(TextSize::Xs)
@@ -289,7 +289,7 @@
         let mut peq_select = Select::new((base_id.clone(), "peq-model"))
             .label("Filter Type")
             .options(peq_model_options)
-            .selected(&config.peq_model)
+            .selected(&config.eq_design.peq_model)
             .is_open(ui_state.peq_model_open)
             .disabled(disabled)
             .size(SelectSize::Xs)
@@ -307,7 +307,7 @@
         // PEQ model description
         let peq_desc = PEQ_MODEL_DESCRIPTIONS
             .iter()
-            .find(|(id, _)| *id == config.peq_model.as_str())
+            .find(|(id, _)| *id == config.eq_design.peq_model.as_str())
             .map(|(_, desc)| *desc);
 
         let mut peq_group = VStack::new().spacing(StackSpacing::Xs).child(peq_select);
@@ -325,7 +325,7 @@
 
         let mut min_freq_input = NumberInput::new((base_id.clone(), "min-freq"))
             .label("Min Freq (Hz)")
-            .value(config.min_freq)
+            .value(config.eq_design.min_freq)
             .min(ParamLimits::FREQUENCY.min)
             .max(ParamLimits::FREQUENCY.max)
             .step(ParamLimits::FREQUENCY.step)
@@ -340,7 +340,7 @@
 
         let mut max_freq_input = NumberInput::new((base_id.clone(), "max-freq"))
             .label("Max Freq (Hz)")
-            .value(config.max_freq)
+            .value(config.eq_design.max_freq)
             .min(ParamLimits::FREQUENCY.min)
             .max(ParamLimits::FREQUENCY.max)
             .step(ParamLimits::FREQUENCY.step)
@@ -378,7 +378,7 @@
         );
 
         // Compute current quality level from population
-        let current_quality = population_to_quality(config.population) as f64;
+        let current_quality = population_to_quality(config.algorithm.population) as f64;
 
         let quality_label_text = quality_label(current_quality as f32);
 

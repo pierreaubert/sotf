@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{EqPlugin, EqPluginParams, InPlacePluginAdapter, Plugin};
+use sotf_plugins::{ParametricPluginAdapter, EqPlugin, EqPluginParams,  Plugin};
 
 pub(super) struct EqFuzzer {
     pub(super) sample_rate: u32,
@@ -86,6 +86,6 @@ impl PluginFuzzer for EqFuzzer {
             ..Default::default()
         };
         let plugin = EqPlugin::from_params(channels, self.sample_rate, params).unwrap();
-        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+        (Box::new(ParametricPluginAdapter::new(plugin)), desc)
     }
 }

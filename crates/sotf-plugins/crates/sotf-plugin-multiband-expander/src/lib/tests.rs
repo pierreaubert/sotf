@@ -4,7 +4,7 @@ use super::misc::parse_detection_mode;
 use super::multiband_expander_plugin::MultibandExpanderPlugin;
 use super::types::GateState;
 use super::types::MultibandExpanderPluginParams;
-use sotf_host::InPlacePlugin;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::detector::DetectionMode;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::ProcessContext;

@@ -8,11 +8,11 @@ use std::ops::{Deref, DerefMut};
 use super::room_eq::AutoEqField;
 
 // Re-export shared domain types from player crate
-pub use sotf_audio_player::ui_models::spinorama_eq::{DirectivityCurve, SpinoramaCurves};
 pub use sotf_audio_player::spinorama_eq_types::{
     SpinoramaBiquad, SpinoramaEqResult, SpinoramaOptimizationMode, SpinoramaOptimizerConfig,
     SpinoramaStep, SpinoramaTargetCurve,
 };
+pub use sotf_audio_player::ui_models::spinorama_eq::{DirectivityCurve, SpinoramaCurves};
 
 /// UI state for Spinorama EQ dropdowns
 #[derive(Debug, Clone)]
