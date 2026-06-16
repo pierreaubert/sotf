@@ -5,7 +5,7 @@
 // This example shows how to use the DawHost to create complex
 // audio processing topologies with parallel processing and stream merging.
 
-use sotf_plugins::{DawHost, GainPlugin, GraphEdge, InPlacePluginAdapter};
+use sotf_plugins::{DawHost, GainPlugin, GraphEdge, ParametricPluginAdapter};
 
 fn main() -> Result<(), String> {
     println!("=== Plugin Graph Demo ===\n");
@@ -44,12 +44,12 @@ fn linear_chain_example() -> Result<(), String> {
 
     let node1 = graph.add_node(
         "gain1".to_string(),
-        Box::new(InPlacePluginAdapter::new(gain1)),
+        Box::new(ParametricPluginAdapter::new(gain1)),
     )?;
 
     let node2 = graph.add_node(
         "gain2".to_string(),
-        Box::new(InPlacePluginAdapter::new(gain2)),
+        Box::new(ParametricPluginAdapter::new(gain2)),
     )?;
 
     // Connect nodes
@@ -95,22 +95,22 @@ fn parallel_diamond_example() -> Result<(), String> {
     // Create nodes
     let node1 = graph.add_node(
         "splitter".to_string(),
-        Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -3.0))),
+        Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, -3.0))),
     )?;
 
     let node2 = graph.add_node(
         "branch_a".to_string(),
-        Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+        Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, 0.0))),
     )?;
 
     let node3 = graph.add_node(
         "branch_b".to_string(),
-        Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+        Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, 0.0))),
     )?;
 
     let node4 = graph.add_node(
         "merger".to_string(),
-        Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+        Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, 0.0))),
     )?;
 
     // Connect edges
@@ -159,22 +159,22 @@ fn stream_merge_example() -> Result<(), String> {
 
     let split = graph.add_node(
         "split".to_string(),
-        Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+        Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, 0.0))),
     )?;
 
     let path1 = graph.add_node(
         "path1".to_string(),
-        Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0))),
+        Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, -6.0))),
     )?;
 
     let path2 = graph.add_node(
         "path2".to_string(),
-        Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0))),
+        Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, -6.0))),
     )?;
 
     let merge = graph.add_node(
         "merge".to_string(),
-        Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+        Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, 0.0))),
     )?;
 
     // Split

@@ -1,8 +1,17 @@
-use sotf_host::{ParametricPluginAdapter, ParametricPlugin, CountingAlloc, measure_peak_db, run_standard_tests};
-use sotf_host::ProcessContext;
-use sotf_host::parametric_plugin::{ParametricPlugin, ParametricPluginAdapter};
+use sotf_host::parametric_plugin::{ParameterSet, ParametricPlugin};
+use sotf_host::plugin::ProcessContext;
+use sotf_host::{
+    CountingAlloc, ParametricPluginAdapter, ParameterId, ParameterValue, measure_peak_db,
+    run_standard_tests,
+};
 use sotf_plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 use std::f32::consts::PI;
+
+fn set_param(plugin: &mut EqPlugin, id: &str, value: ParameterValue) {
+    let mut m = ParameterSet::new();
+    m.insert(ParameterId::from(id), value);
+    plugin.apply_values(m).unwrap();
+}
 
 #[global_allocator]
 static A: CountingAlloc = CountingAlloc;
@@ -43,9 +52,7 @@ fn main() {
 
     // Test 2: Cut at peak frequency
     println!("\n[Test 2] Peak Cut (-6dB at 1kHz)");
-    inner
-        .parametric_set_parameter("band_0_gain".into(), sotf_host::ParameterValue::Float(-6.0))
-        .unwrap();
+    set_param(&mut inner, "band_0_gain", ParameterValue::Float(-6.0));
     let input = generate_sine(sample_rate, 1000.0, -10.0, num_frames);
     let mut buffer = vec![0.0f32; input.len()];
     inner.process(&input, &mut buffer, &ctx).unwrap();

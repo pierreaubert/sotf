@@ -1,6 +1,8 @@
-use sotf_host::parametric_in_place_plugin::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter};
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, CountingAlloc, measure_peak_db, run_standard_tests};
-use sotf_host::ProcessContext;
+use sotf_host::plugin::ProcessContext;
+use sotf_host::{
+    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, measure_peak_db,
+    run_standard_tests,
+};
 use sotf_plugin_multiband_expander::{MultibandExpanderPlugin, MultibandExpanderPluginParams};
 use std::f32::consts::PI;
 

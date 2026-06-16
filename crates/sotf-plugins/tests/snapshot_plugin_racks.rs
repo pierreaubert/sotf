@@ -1,12 +1,35 @@
 //! Snapshot tests for plugin racks/configs and parameter descriptors.
 
-use serde_json::json;
+use serde_json::{Value, json};
 use sotf_plugins::create_plugin;
 use sotf_types::PluginConfig;
 
+/// Recursively sort object keys so snapshots are stable regardless of
+/// serde_json's map backend (BTreeMap vs IndexMap/preserve_order).
+fn sort_json_keys(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<_> = map.into_iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (k, sort_json_keys(v)))
+                    .collect(),
+            )
+        }
+        Value::Array(arr) => Value::Array(arr.into_iter().map(sort_json_keys).collect()),
+        other => other,
+    }
+}
+
+fn sorted_config(plugin_type: &str, parameters: Value) -> PluginConfig {
+    PluginConfig::new(plugin_type, sort_json_keys(parameters))
+}
+
 #[test]
 fn snapshot_eq_rack_plugin_config() {
-    let config = PluginConfig::new(
+    let config = sorted_config(
         "eq",
         json!({
             "filters": [
@@ -20,7 +43,7 @@ fn snapshot_eq_rack_plugin_config() {
 
 #[test]
 fn snapshot_compressor_plugin_config() {
-    let config = PluginConfig::new(
+    let config = sorted_config(
         "compressor",
         json!({
             "threshold_db": -12.0,
@@ -35,7 +58,7 @@ fn snapshot_compressor_plugin_config() {
 
 #[test]
 fn snapshot_upmixer_plugin_config() {
-    let config = PluginConfig::new(
+    let config = sorted_config(
         "upmixer",
         json!({
             "mode": "5.1",

@@ -2,11 +2,11 @@ use sotf_host::analyzer_loudness_monitor::LoudnessMonitorPlugin;
 use sotf_host::analyzer_spectrum::SpectrumAnalyzerPlugin;
 use sotf_host::auto_gain::AutoGain;
 use sotf_host::oversampling::OversampledPlugin;
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{PluginInfo, PluginResult};
-use sotf_plugins::{ParametricPluginAdapter, 
-    CountingAlloc,   Plugin, ProcessContext, assert_no_allocs,
-    run_standard_tests};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+
+use sotf_host::plugin::{InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::test_utils::{assert_no_allocs, run_standard_tests, CountingAlloc};
 use std::time::Instant;
 
 #[global_allocator]
@@ -97,26 +97,22 @@ fn qa_loudness_monitor() {
 /// Minimal passthrough for testing the oversampler wrapper.
 struct PassthroughPlugin;
 
-impl InPlacePlugin for PassthroughPlugin {
+impl ParametricInPlacePlugin for PassthroughPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Passthrough", "1.0", "Test")
     }
     fn channels(&self) -> usize {
         2
     }
-    fn parameters(&self) -> Vec<Parameter> {
-        vec![]
+    fn parameter_schema(&self) -> ParameterSchema {
+        ParameterSchema::default()
     }
-    fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> PluginResult<()> {
+    fn current_values(&self) -> ParameterSet {
+        ParameterSet::default()
+    }
+    fn apply_values(&mut self, _: ParameterSet) -> PluginResult<()> {
         Ok(())
     }
-    fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
-        None
-    }
-    fn initialize(&mut self, _: u32) -> PluginResult<()> {
-        Ok(())
-    }
-    fn reset(&mut self) {}
     fn process_in_place(
         &mut self,
         _buffer: &mut [f32],
@@ -129,9 +125,9 @@ impl InPlacePlugin for PassthroughPlugin {
 fn qa_oversampled_plugin() {
     println!("\n--- Oversampled Plugin (4x) ---");
 
-    let inner = PassthroughPlugin;
+    let inner = sotf_host::ParametricInPlacePluginAdapter::new(PassthroughPlugin);
     let os = OversampledPlugin::new(inner, 4, 2).expect("create oversampled plugin");
-    let mut plugin = ParametricPluginAdapter::new(os);
+    let mut plugin = InPlacePluginAdapter::new(os);
     plugin.initialize(48000).unwrap();
 
     run_standard_tests(&mut plugin, "OversampledPlugin_4x");

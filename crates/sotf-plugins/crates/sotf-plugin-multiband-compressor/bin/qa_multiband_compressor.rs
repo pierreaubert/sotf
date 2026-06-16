@@ -1,6 +1,9 @@
-use sotf_host::parametric_in_place_plugin::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter};
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, CountingAlloc, measure_peak_db, run_standard_tests};
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParameterValue, ProcessContext};
+use sotf_host::parametric_plugin::ParameterSet;
+use sotf_host::plugin::ProcessContext;
+use sotf_host::{
+    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, ParameterId,
+    ParameterValue, measure_peak_db, run_standard_tests,
+};
 use sotf_plugin_multiband_compressor::{
     MultibandCompressorPlugin, MultibandCompressorPluginParams,
 };
@@ -51,15 +54,11 @@ fn main() {
     // Test 2: Band Muting
     println!("\n[Test 2] Low Band Mute (100Hz signal muted by mid band solo)");
     inner.reset();
-    inner
-        .set_parameter("band_0_solo".into(), ParameterValue::Bool(false))
-        .unwrap();
-    inner
-        .set_parameter("band_1_solo".into(), ParameterValue::Bool(true))
-        .unwrap();
-    inner
-        .set_parameter("band_2_solo".into(), ParameterValue::Bool(false))
-        .unwrap();
+    let mut values = ParameterSet::new();
+    values.insert(ParameterId::from("band_0_solo"), ParameterValue::Bool(false));
+    values.insert(ParameterId::from("band_1_solo"), ParameterValue::Bool(true));
+    values.insert(ParameterId::from("band_2_solo"), ParameterValue::Bool(false));
+    inner.apply_values(values).unwrap();
 
     let mut buffer = generate_sine(sample_rate, 100.0, -10.0, 4096);
     let ctx = ProcessContext::new(sample_rate, 4096);

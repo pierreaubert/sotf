@@ -13,7 +13,7 @@
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// Schema returned by a [`ParametricPlugin`].
@@ -23,7 +23,7 @@ use std::sync::Arc;
 pub type ParameterSchema = Vec<Parameter>;
 
 /// Snapshot of current parameter values.
-pub type ParameterSet = HashMap<ParameterId, ParameterValue>;
+pub type ParameterSet = BTreeMap<ParameterId, ParameterValue>;
 
 /// Trait for plugins whose parameters can be described by a declarative schema.
 ///

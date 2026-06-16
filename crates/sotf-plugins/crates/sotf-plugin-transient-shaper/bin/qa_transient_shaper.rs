@@ -1,6 +1,5 @@
-use sotf_host::parametric_in_place_plugin::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter};
 use sotf_host::plugin::{InPlacePluginAdapter, ProcessContext};
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, ParametricInPlacePlugin, ParametricPlugin, CountingAlloc, run_standard_tests};
+use sotf_host::{CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, run_standard_tests};
 use sotf_plugin_transient_shaper::{TransientShaperPlugin, TransientShaperPluginParams};
 
 #[global_allocator]
@@ -37,7 +36,7 @@ fn main() {
     );
 
     // Run standard QA tests
-    let mut plugin = ParametricPluginAdapter::new(ParametricInPlacePluginAdapter::new(inner));
+    let mut plugin = InPlacePluginAdapter::new(ParametricInPlacePluginAdapter::new(inner));
     run_standard_tests(&mut plugin, "TransientShaperPlugin");
 
     println!("\n[ALL PASS] TransientShaper QA Complete.");

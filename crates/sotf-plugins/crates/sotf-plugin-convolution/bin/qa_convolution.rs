@@ -1,5 +1,5 @@
-use sotf_host::plugin::{InPlacePlugin, ParametricInPlacePluginAdapter, ProcessContext};
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, CountingAlloc, run_standard_tests};
+use sotf_host::plugin::ProcessContext;
+use sotf_host::{CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, run_standard_tests};
 use sotf_plugin_convolution::ConvolutionPlugin;
 
 #[global_allocator]

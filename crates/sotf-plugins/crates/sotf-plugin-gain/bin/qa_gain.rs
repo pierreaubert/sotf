@@ -1,6 +1,6 @@
-use sotf_host::{ParametricPluginAdapter, ParametricPlugin, CountingAlloc, run_standard_tests};
-use sotf_host::ProcessContext;
-use sotf_host::parametric_plugin::{ParametricPlugin, ParametricPluginAdapter};
+use sotf_host::plugin::ProcessContext;
+use sotf_host::parametric_plugin::ParametricPlugin;
+use sotf_host::{CountingAlloc, ParametricPluginAdapter, run_standard_tests};
 use sotf_plugin_gain::{GainPlugin, GainPluginParams};
 
 #[global_allocator]

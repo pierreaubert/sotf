@@ -5,6 +5,27 @@ use std::net::TcpStream;
 use std::time::{Duration, Instant};
 use sotf_streaming::{PcmStreamServer, PcmStreamServerConfig};
 
+/// Recursively sort object keys so snapshots are stable regardless of
+/// serde_json's map backend (BTreeMap vs IndexMap/preserve_order).
+fn sort_json_keys(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut entries: Vec<_> = map.into_iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            serde_json::Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (k, sort_json_keys(v)))
+                    .collect(),
+            )
+        }
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.into_iter().map(sort_json_keys).collect())
+        }
+        other => other,
+    }
+}
+
 fn start_server() -> PcmStreamServer {
     PcmStreamServer::start(PcmStreamServerConfig {
         bind_addr: "127.0.0.1".to_string(),
@@ -83,7 +104,7 @@ fn snapshot_status_http_response_body() {
     if let Some(addr) = value.get_mut("bind_addr").and_then(|v| v.as_str()) {
         *value.get_mut("bind_addr").unwrap() = serde_json::json!(addr.replace(addr.split(':').last().unwrap_or(""), "<port>"));
     }
-    insta::assert_json_snapshot!(value);
+    insta::assert_json_snapshot!(sort_json_keys(value));
 }
 
 #[test]

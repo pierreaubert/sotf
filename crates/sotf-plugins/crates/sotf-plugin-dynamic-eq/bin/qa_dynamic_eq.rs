@@ -1,5 +1,5 @@
 use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
-use sotf_host::{ParametricPluginAdapter, ParametricPlugin, CountingAlloc, run_standard_tests};
+use sotf_host::{CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, run_standard_tests};
 use sotf_plugin_dynamic_eq::{DynEqBandParams, DynamicEqPlugin, DynamicEqPluginParams};
 use std::f32::consts::PI;
 
@@ -50,7 +50,7 @@ fn main() {
     assert!(output_rms.is_finite(), "Output should be finite");
 
     // Run standard QA tests
-    let mut plugin = ParametricPluginAdapter::new(inner);
+    let mut plugin = InPlacePluginAdapter::new(ParametricInPlacePluginAdapter::new(inner));
     run_standard_tests(&mut plugin, "DynamicEqPlugin");
 
     println!("\n[ALL PASS] DynamicEQ QA Complete.");
