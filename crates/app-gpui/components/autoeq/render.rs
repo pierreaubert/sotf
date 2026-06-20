@@ -34,7 +34,7 @@ impl RenderOnce for AutoEqForm {
             .meta
             .theme
             .clone()
-            .unwrap_or_else(|| AutoEqFormTheme::from(&global_theme));
+            .unwrap_or_else(|| AutoEqFormTheme::from(global_theme.as_ref()));
 
         let id = self.meta.id;
         let config = self.meta.config;

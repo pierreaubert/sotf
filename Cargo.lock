@@ -760,10 +760,11 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.45"
-source = "git+https://github.com/pierreaubert/autoeq#10f6e8f676a5acf76dc1dfb1820d6921999adee0"
+version = "0.4.46"
+source = "git+https://github.com/pierreaubert/autoeq#5a1bdcc8dff7626b96d3bd3b56734985b73962ad"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "build_html",
  "chrono",
@@ -791,7 +792,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "sofa-reader",
+ "sofa-reader 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "strsim",
  "thiserror 2.0.18",
  "tokio",
@@ -1799,6 +1800,8 @@ dependencies = [
 [[package]]
 name = "coreaudio-rs"
 version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aae284fbaf7d27aa0e292f7677dfbe26503b0d555026f702940805a630eac17"
 dependencies = [
  "bitflags 1.3.2",
  "libc",
@@ -3433,14 +3436,14 @@ dependencies = [
  "waker-fn",
  "web-time",
  "windows 0.61.3",
- "zed-font-kit",
+ "zed-font-kit 0.14.1-zed (git+https://github.com/zed-industries/font-kit?rev=94b0f28166665e8fd2f53ff6d268a14955c82269)",
  "zed-scap",
 ]
 
 [[package]]
 name = "gpui-au"
-version = "0.7.4"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.5"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.0",
@@ -3458,13 +3461,13 @@ dependencies = [
  "smallvec",
  "uuid",
  "wgpu",
- "zed-font-kit",
+ "zed-font-kit 0.14.1-zed (git+https://github.com/zed-industries/font-kit?rev=110523127440aefb11ce0cf280ae7c5071337ec5)",
 ]
 
 [[package]]
 name = "gpui-audio-kit"
-version = "0.7.2"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.3"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "gpui",
  "gpui-design",
@@ -3473,8 +3476,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-builder"
-version = "0.7.3"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.4"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "gpui-pretext",
  "serde",
@@ -3482,8 +3485,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.7.2"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.5"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "bytemuck",
  "delaunator",
@@ -3506,8 +3509,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-design"
-version = "0.7.2"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.3"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "gpui",
  "serde",
@@ -3515,8 +3518,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-design-tools"
-version = "0.7.2"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.3"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "anyhow",
  "clap",
@@ -3527,8 +3530,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-ios"
-version = "0.7.5"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.6"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "anyhow",
  "block2",
@@ -3546,13 +3549,13 @@ dependencies = [
  "smallvec",
  "uuid",
  "wgpu",
- "zed-font-kit",
+ "zed-font-kit 0.14.1-zed (git+https://github.com/zed-industries/font-kit?rev=110523127440aefb11ce0cf280ae7c5071337ec5)",
 ]
 
 [[package]]
 name = "gpui-keybinding"
-version = "0.7.2"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.3"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "gpui",
  "serde",
@@ -3560,8 +3563,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-miniapp"
-version = "0.7.6"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.7"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "gpui",
  "gpui-builder",
@@ -3575,16 +3578,16 @@ dependencies = [
 
 [[package]]
 name = "gpui-pretext"
-version = "0.7.3"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.4"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "unicode-segmentation",
 ]
 
 [[package]]
 name = "gpui-px"
-version = "0.7.5"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.6"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "gpui",
  "gpui-builder",
@@ -3597,8 +3600,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-themes"
-version = "0.7.3"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.4"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "gpui",
  "gpui-design",
@@ -3610,8 +3613,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.7.25"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.26"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "gpui",
  "gpui-builder",
@@ -3626,8 +3629,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit-macros"
-version = "0.7.3"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=0.7#4d5c78c385004ffdcae76fa0e0277e0ad4da4cc2"
+version = "0.8.4"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#d014b823d0c114085e4150de063288efe9f8af6e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3686,6 +3689,7 @@ dependencies = [
 [[package]]
 name = "gpui_macos"
 version = "0.1.0"
+source = "git+https://github.com/zed-industries/zed.git?tag=v1.0.0#5ec84a926ef83865afb92d2a3d1ca3b419572cf9"
 dependencies = [
  "anyhow",
  "async-task",
@@ -3722,7 +3726,7 @@ dependencies = [
  "strum",
  "util",
  "uuid",
- "zed-font-kit",
+ "zed-font-kit 0.14.1-zed (git+https://github.com/zed-industries/font-kit?rev=94b0f28166665e8fd2f53ff6d268a14955c82269)",
 ]
 
 [[package]]
@@ -3759,6 +3763,7 @@ dependencies = [
 [[package]]
 name = "gpui_wgpu"
 version = "0.1.0"
+source = "git+https://github.com/zed-industries/zed.git?tag=v1.0.0#5ec84a926ef83865afb92d2a3d1ca3b419572cf9"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3780,7 +3785,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "wgpu",
- "zed-font-kit",
+ "zed-font-kit 0.14.1-zed (git+https://github.com/zed-industries/font-kit?rev=94b0f28166665e8fd2f53ff6d268a14955c82269)",
 ]
 
 [[package]]
@@ -5356,6 +5361,8 @@ dependencies = [
 [[package]]
 name = "mach2"
 version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a1b95cd5421ec55b445b5ae102f5ea0e768de1f82bd3001e11f426c269c3aea"
 dependencies = [
  "libc",
 ]
@@ -5386,8 +5393,8 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.5.20"
-source = "git+https://github.com/pierreaubert/math-audio#470fc8a138484faa890debd999f31cfbbcedd666"
+version = "0.5.21"
+source = "git+https://github.com/pierreaubert/math-audio#443d6f0cf61698d8318e189affc431ec3a64a045"
 dependencies = [
  "clap",
  "hound",
@@ -5407,7 +5414,7 @@ dependencies = [
 [[package]]
 name = "math-iir-fir"
 version = "0.5.14"
-source = "git+https://github.com/pierreaubert/math-audio#470fc8a138484faa890debd999f31cfbbcedd666"
+source = "git+https://github.com/pierreaubert/math-audio#443d6f0cf61698d8318e189affc431ec3a64a045"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -5423,7 +5430,7 @@ dependencies = [
 [[package]]
 name = "math-optimisation"
 version = "0.5.10"
-source = "git+https://github.com/pierreaubert/math-audio#470fc8a138484faa890debd999f31cfbbcedd666"
+source = "git+https://github.com/pierreaubert/math-audio#443d6f0cf61698d8318e189affc431ec3a64a045"
 dependencies = [
  "clap",
  "directories",
@@ -5439,7 +5446,7 @@ dependencies = [
 [[package]]
 name = "math-rir"
 version = "0.5.6"
-source = "git+https://github.com/pierreaubert/math-audio#470fc8a138484faa890debd999f31cfbbcedd666"
+source = "git+https://github.com/pierreaubert/math-audio#443d6f0cf61698d8318e189affc431ec3a64a045"
 dependencies = [
  "math-iir-fir",
  "rayon",
@@ -5448,7 +5455,7 @@ dependencies = [
 [[package]]
 name = "math-test-functions"
 version = "0.5.2"
-source = "git+https://github.com/pierreaubert/math-audio#470fc8a138484faa890debd999f31cfbbcedd666"
+source = "git+https://github.com/pierreaubert/math-audio#443d6f0cf61698d8318e189affc431ec3a64a045"
 dependencies = [
  "clap",
  "directories",
@@ -7525,7 +7532,9 @@ dependencies = [
 
 [[package]]
 name = "psm"
-version = "0.1.30"
+version = "0.1.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "645dbe486e346d9b5de3ef16ede18c26e6c70ad97418f4874b8b1889d6e761ea"
 dependencies = [
  "ar_archive_writer",
  "cc",
@@ -9339,6 +9348,20 @@ dependencies = [
 [[package]]
 name = "sofa-reader"
 version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "100fa9983620cf1e17673dc8bb15c49f3860567a4313913d6d8d49bd2f2f6a64"
+dependencies = [
+ "bincode",
+ "flate2",
+ "log",
+ "rusqlite",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sofa-reader"
+version = "0.1.6"
 source = "git+https://github.com/pierreaubert/sofa-reader#0b3fffb8dcaba293e9537c6a3e8359b507d79919"
 dependencies = [
  "bincode",
@@ -9455,7 +9478,7 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "signal-hook 0.4.4",
- "sofa-reader",
+ "sofa-reader 0.1.6 (git+https://github.com/pierreaubert/sofa-reader)",
  "sotf-iamf",
  "sotf-midi",
  "sotf-plugin-ambisonics",
@@ -9599,7 +9622,7 @@ dependencies = [
  "rustfft 6.4.1",
  "serde",
  "serde_json",
- "sofa-reader",
+ "sofa-reader 0.1.6 (git+https://github.com/pierreaubert/sofa-reader)",
  "tempfile",
  "thiserror 2.0.18",
  "windows-sys 0.61.2",
@@ -9851,7 +9874,7 @@ dependencies = [
  "rustfft 6.4.1",
  "serde",
  "serde_json",
- "sofa-reader",
+ "sofa-reader 0.1.6 (git+https://github.com/pierreaubert/sofa-reader)",
  "sotf-host",
 ]
 
@@ -10299,7 +10322,7 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "signal-hook 0.4.4",
- "sofa-reader",
+ "sofa-reader 0.1.6 (git+https://github.com/pierreaubert/sofa-reader)",
  "sotf-host",
  "sotf-plugin-aae",
  "sotf-plugin-ab-compare",
@@ -14221,6 +14244,7 @@ dependencies = [
 [[package]]
 name = "zed-font-kit"
 version = "0.14.1-zed"
+source = "git+https://github.com/zed-industries/font-kit?rev=110523127440aefb11ce0cf280ae7c5071337ec5#110523127440aefb11ce0cf280ae7c5071337ec5"
 dependencies = [
  "bitflags 2.11.1",
  "byteorder",
@@ -14228,6 +14252,30 @@ dependencies = [
  "core-graphics 0.24.0",
  "core-text",
  "dirs 5.0.1",
+ "dwrote",
+ "float-ord",
+ "freetype-sys",
+ "lazy_static",
+ "libc",
+ "log",
+ "pathfinder_geometry",
+ "pathfinder_simd",
+ "walkdir",
+ "winapi",
+ "yeslogic-fontconfig-sys",
+]
+
+[[package]]
+name = "zed-font-kit"
+version = "0.14.1-zed"
+source = "git+https://github.com/zed-industries/font-kit?rev=94b0f28166665e8fd2f53ff6d268a14955c82269#94b0f28166665e8fd2f53ff6d268a14955c82269"
+dependencies = [
+ "bitflags 2.11.1",
+ "byteorder",
+ "core-foundation 0.10.0",
+ "core-graphics 0.24.0",
+ "core-text",
+ "dirs 6.0.0",
  "dwrote",
  "float-ord",
  "freetype-sys",
@@ -14509,3 +14557,7 @@ dependencies = [
  "syn 2.0.117",
  "winnow 1.0.2",
 ]
+
+[[patch.unused]]
+name = "psm"
+version = "0.1.30"

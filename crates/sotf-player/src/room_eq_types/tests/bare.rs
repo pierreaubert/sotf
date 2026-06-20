@@ -232,6 +232,7 @@ fn test_build_room_eq_graph_ctc_uses_stereo_input_and_speaker_branches() {
         multi_seat_correction: None,
         bass_management: None,
         timing_diagnostics: None,
+        supporting_source: None,
         ctc: Some(autoeq::roomeq::ctc::CtcReport {
             enabled: true,
             source: "measured".to_string(),
@@ -376,6 +377,7 @@ fn test_build_room_eq_graph_tracks_global_variable_channel_widths() {
         multi_seat_correction: None,
         bass_management: None,
         timing_diagnostics: None,
+        supporting_source: None,
         ctc: Some(autoeq::roomeq::ctc::CtcReport {
             enabled: true,
             source: "measured".to_string(),
@@ -499,6 +501,7 @@ fn test_factored_graph_lfe_chain_route_owned_gain_overrides_route_gain() {
         home_cinema_layout: None,
         multi_seat_coverage: None,
         multi_seat_correction: None,
+        supporting_source: None,
         bass_management: Some(BassManagementReport {
             enabled: true,
             crossover_type: "LR24".to_string(),
@@ -650,6 +653,7 @@ fn test_factored_graph_all_destinations_no_sources_builds_cleanly() {
         home_cinema_layout: None,
         multi_seat_coverage: None,
         multi_seat_correction: None,
+        supporting_source: None,
         bass_management: Some(BassManagementReport {
             enabled: true,
             crossover_type: "LR24".to_string(),

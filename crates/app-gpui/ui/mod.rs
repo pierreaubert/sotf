@@ -9,6 +9,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::theme::ThemeState as UiKitThemeState;
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
+use std::sync::Arc;
 use std::time::Duration;
 
 include!("handle.rs");

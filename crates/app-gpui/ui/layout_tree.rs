@@ -22,6 +22,63 @@ static RACK_TIERS: &[DisplayTier<'_>] = &[
     },
 ];
 
+/// Owned result of solving the 3-panel content layout.
+///
+/// `gpui_builder::SolvedNode` borrows strings from the source tree, but the
+/// source tree is built from local values inside `solve_app_layout`. This
+/// wrapper copies the small amount of data the UI actually needs so it can be
+/// returned to callers without lifetime issues.
+#[derive(Debug, Clone)]
+pub struct AppSolvedLayout {
+    pub is_horizontal: bool,
+    pub library: SolvedSlot,
+    pub queue: SolvedSlot,
+    pub rack: SolvedSlot,
+}
+
+/// Resolved state for a single layout slot.
+#[derive(Debug, Clone, Default)]
+pub struct SolvedSlot {
+    pub visible: bool,
+    pub width: f32,
+    pub height: f32,
+    pub active_tier: Option<String>,
+}
+
+impl AppSolvedLayout {
+    /// Look up a slot by its id.
+    pub fn find(&self, id: &str) -> Option<&SolvedSlot> {
+        match id {
+            "library" => Some(&self.library),
+            "queue" => Some(&self.queue),
+            "rack" => Some(&self.rack),
+            _ => None,
+        }
+    }
+}
+
+impl From<SolvedNode<'_>> for AppSolvedLayout {
+    fn from(solved: SolvedNode<'_>) -> Self {
+        Self {
+            is_horizontal: solved.resolved_axis == Some(Axis::Horizontal),
+            library: solved.find("library").map(SolvedSlot::from).unwrap_or_default(),
+            queue: solved.find("queue").map(SolvedSlot::from).unwrap_or_default(),
+            rack: solved.find("rack").map(SolvedSlot::from).unwrap_or_default(),
+        }
+    }
+}
+
+impl From<&SolvedNode<'_>> for SolvedSlot {
+    fn from(node: &SolvedNode<'_>) -> Self {
+        Self {
+            visible: node.visible,
+            width: node.width,
+            height: node.height,
+            active_tier: node.active_tier.map(String::from),
+        }
+    }
+}
+
 /// Solve the 3-panel content layout (Library | Queue | Rack) for the given
 /// content area dimensions and user layout state.
 ///
@@ -34,7 +91,7 @@ pub fn solve_app_layout(
     content_width: f32,
     content_height: f32,
     layout: &LayoutState,
-) -> SolvedNode {
+) -> AppSolvedLayout {
     let content_children: [LayoutNode<'_>; 3] = [
         LayoutNode::Slot(SlotNode {
             id: "library",
@@ -81,21 +138,23 @@ pub fn solve_app_layout(
         ("library", layout.library_panel_collapsed),
         ("rack", layout.rack_panel_collapsed),
     ];
-    let prefs = LayoutPreferences {
-        ratios: &ratios,
-        collapsed: &collapsed,
-    };
+    let prefs = LayoutPreferences::new(&ratios, &collapsed);
 
-    gpui_builder::solve(&root, content_width, content_height, &prefs)
+    AppSolvedLayout::from(gpui_builder::solve(
+        &root,
+        content_width,
+        content_height,
+        &prefs,
+    ))
 }
 
 /// Whether the solver chose horizontal axis (panels side-by-side).
-pub fn solved_is_horizontal(solved: &SolvedNode) -> bool {
-    solved.resolved_axis == Some(Axis::Horizontal)
+pub fn solved_is_horizontal(solved: &AppSolvedLayout) -> bool {
+    solved.is_horizontal
 }
 
 /// Derive `RackDisplayMode` from the solver output.
-pub fn solved_rack_display_mode(solved: &SolvedNode) -> crate::app::RackDisplayMode {
+pub fn solved_rack_display_mode(solved: &AppSolvedLayout) -> crate::app::RackDisplayMode {
     match solved.find("rack") {
         Some(rack) if rack.visible => match rack.active_tier.as_deref() {
             Some("Full") => crate::app::RackDisplayMode::Full,
@@ -107,7 +166,7 @@ pub fn solved_rack_display_mode(solved: &SolvedNode) -> crate::app::RackDisplayM
 }
 
 /// Whether queue meters should be hidden (rack is showing its own meters).
-pub fn solved_hide_queue_meters(solved: &SolvedNode) -> bool {
+pub fn solved_hide_queue_meters(solved: &AppSolvedLayout) -> bool {
     matches!(
         solved_rack_display_mode(solved),
         crate::app::RackDisplayMode::Full | crate::app::RackDisplayMode::Mini

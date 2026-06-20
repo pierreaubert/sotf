@@ -41,6 +41,7 @@ where
             mapping: HashMap::new(),
         }),
         bass_management: None,
+        supporting_source_outputs: None,
     })
 }
 

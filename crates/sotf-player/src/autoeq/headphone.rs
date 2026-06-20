@@ -96,10 +96,11 @@ pub fn run_headphone_optimization(
     let target_curve = load_target_curve(target, target_custom_path)?;
 
     // Use library function (no progress callback, no config)
+    let optim_params = autoeq::OptimParams::from(args);
     let result = autoeq::optimize_headphone(
         &curve_path,
         &target_curve,
-        args,
+        &optim_params,
         None, // No progress config
         None::<fn(&autoeq::ProgressUpdate) -> autoeq::de::CallbackAction>,
     )
@@ -129,10 +130,11 @@ where
         frequencies: Vec::new(),
     });
 
+    let optim_params = autoeq::OptimParams::from(args);
     let result = autoeq::optimize_headphone(
         &curve_path,
         &target_curve,
-        args,
+        &optim_params,
         progress_config,
         progress_callback,
     )

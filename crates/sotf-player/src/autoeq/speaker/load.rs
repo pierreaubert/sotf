@@ -69,8 +69,9 @@ pub async fn load_preview_curves_async(
 
     // Build target curve using default args
     let args = autoeq::Args::speaker_defaults();
+    let target_config = autoeq::workflow::TargetConfig::from(&args);
     let target_curve =
-        autoeq::workflow::build_target_curve(&args, &standard_freq, &input_normalized)
+        autoeq::workflow::build_target_curve(&target_config, &standard_freq, &input_normalized)
             .map_err(|e| e.to_string())?;
 
     // Compute deviation

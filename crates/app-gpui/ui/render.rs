@@ -213,7 +213,7 @@ impl Render for PlayerView {
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.
         let ui_kit_theme: gpui_ui_kit::Theme = theme.to_ui_kit_theme(theme_id, cx);
         cx.set_global(UiKitThemeState {
-            theme: ui_kit_theme,
+            theme: Arc::new(ui_kit_theme),
         });
 
         // Determine key context based on input mode

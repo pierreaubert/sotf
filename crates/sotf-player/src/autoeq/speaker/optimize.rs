@@ -21,7 +21,7 @@ pub(super) fn optimize_single_driver(
 
     rt.block_on(async {
         // Extract spinorama parameters from input
-        let (speaker, version, measurement, _curve_name) = match input {
+        let (speaker, version, measurement, curve_name) = match input {
             MeasurementInput::Spinorama {
                 speaker,
                 version,
@@ -57,11 +57,18 @@ pub(super) fn optimize_single_driver(
             }
         });
 
+        let input_config = autoeq::workflow::InputConfig {
+            speaker: Some(speaker.to_string()),
+            version: Some(version.to_string()),
+            measurement: Some(measurement.to_string()),
+            curve_name: curve_name.to_string(),
+            curve_path: None,
+        };
+        let optim_params = autoeq::OptimParams::from(&config.args);
+
         let result = autoeq::optimize_speaker(
-            speaker,
-            version,
-            measurement,
-            &config.args,
+            &input_config,
+            &optim_params,
             progress_config,
             lib_callback,
         )
@@ -94,8 +101,9 @@ pub(super) fn optimize_from_curve(
     let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, curve);
 
     // Build target curve
+    let target_config = autoeq::workflow::TargetConfig::from(&config.args);
     let target_curve =
-        autoeq::workflow::build_target_curve(&config.args, &standard_freq, &input_normalized)
+        autoeq::workflow::build_target_curve(&target_config, &standard_freq, &input_normalized)
             .map_err(|e| e.to_string())?;
 
     // Create deviation curve
@@ -140,7 +148,7 @@ pub(super) fn optimize_from_curve(
     };
 
     let output = autoeq::perform_optimization_with_progress(
-        &config.args,
+        &optim_params,
         &objective_data,
         progress_config,
         lib_callback,

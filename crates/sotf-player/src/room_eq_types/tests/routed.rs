@@ -149,6 +149,7 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
         home_cinema_layout: None,
         multi_seat_coverage: None,
         multi_seat_correction: None,
+        supporting_source: None,
         bass_management: Some(BassManagementReport {
             enabled: true,
             crossover_type: "LR24".to_string(),

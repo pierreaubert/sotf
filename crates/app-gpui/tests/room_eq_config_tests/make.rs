@@ -140,6 +140,7 @@ fn test_room_eq_to_room_config_preserves_imported_system_and_crossovers() {
             max_sub_boost_db: 3.0,
             ..Default::default()
         }),
+        supporting_source_outputs: None,
     });
     let mut crossovers = HashMap::new();
     crossovers.insert(
